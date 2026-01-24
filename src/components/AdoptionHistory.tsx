@@ -17,8 +17,7 @@ export default function AdoptionHistory({ adoptions }: { adoptions: Adoption[] }
     if (adoptions.length === 0) return null;
 
     return (
-        <div className="space-y-4 mt-6">
-            <h3 className="text-xl font-bold text-emerald-900 px-1">{t('adoption.history_title')}</h3>
+        <div className="space-y-4">
             {adoptions.map((adoption) => (
                 <div key={adoption.id} className="bg-white rounded-xl p-5 shadow-sm border border-emerald-100 relative overflow-hidden transition-all hover:shadow-md">
                     <div className={`absolute left-0 top-0 bottom-0 w-1 ${adoption.status === 'returned' || adoption.status === 'failed' ? 'bg-rose-400' : 'bg-emerald-400'
@@ -27,7 +26,7 @@ export default function AdoptionHistory({ adoptions }: { adoptions: Adoption[] }
                     <div className="flex justify-between items-start mb-2">
                         <div>
                             <div className="flex items-center gap-2">
-                                <h4 className="font-bold text-lg text-emerald-950">{adoption.animalName}</h4>
+                                <h4 className="font-bold text-base text-emerald-950">{adoption.animalName}</h4>
                                 {(adoption as any).species && (
                                     <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
                                         {(adoption as any).species}

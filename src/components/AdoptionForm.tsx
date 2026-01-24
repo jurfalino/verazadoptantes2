@@ -41,15 +41,15 @@ export default function AdoptionForm({ adopterId }: { adopterId: string }) {
 
     if (!isOpen) {
         return (
-            <button onClick={() => setIsOpen(true)} className="mt-4 w-full py-4 border-2 border-dashed border-emerald-200/60 rounded-xl text-emerald-600 font-bold hover:border-emerald-400 hover:bg-emerald-50 transition-all duration-300">
+            <button onClick={() => setIsOpen(true)} className="w-full py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 transition-all duration-300 transform active:scale-[0.99] mb-4">
                 + {t('adoption.record_new')}
             </button>
         )
     }
 
     return (
-        <div className="mt-8 bg-white rounded-2xl shadow-sm border border-emerald-100/60 p-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <h3 className="text-xl font-bold mb-6 text-emerald-900 tracking-tight">{t('adoption.record_new')}</h3>
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <h3 className="text-xl font-bold mb-4 text-emerald-900 tracking-tight">{t('adoption.record_new')}</h3>
             <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>

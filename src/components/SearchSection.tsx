@@ -27,7 +27,7 @@ export default function SearchSection() {
 
     return (
         <div className="w-full max-w-md mx-auto p-4">
-            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 shadow-xl border border-white/20">
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-5 shadow-xl border border-white/20">
                 <h2 className="text-2xl font-bold text-gray-800 mb-4 text-center">Vet an Adopter</h2>
                 <form onSubmit={handleSearch} className="space-y-4">
                     <div>
@@ -59,10 +59,10 @@ export default function SearchSection() {
                     {results.map((res) => (
                         <a key={res.adopter.id} href={`/adopter/${res.adopter.id}`} className="block group">
                             <div className="bg-white rounded-xl p-4 shadow-sm border border-emerald-100/60 group-hover:border-emerald-300 group-hover:shadow-md transition-all">
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <div className="font-bold text-emerald-900 group-hover:text-emerald-700 transition-colors">{res.adopter.name}</div>
-                                        <div className="text-sm text-emerald-600/70 truncate max-w-[200px]">{res.adopter.contactInfo || 'No contact info'}</div>
+                                <div className="flex justify-between items-start gap-4">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="font-bold text-emerald-900 group-hover:text-emerald-700 transition-colors truncate">{res.adopter.name}</div>
+                                        <div className="text-sm text-emerald-600/70 truncate">{res.adopter.contactInfo || 'No contact info'}</div>
                                     </div>
                                     {/* Use RatingBadge for consistent display if status is 1-5 */}
                                     {res.adopter.status && ['1', '2', '3', '4', '5'].includes(res.adopter.status) ? (
