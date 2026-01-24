@@ -54,6 +54,7 @@ export const adoptions = sqliteTable("adoptions", {
     id: text("id").primaryKey(),
     adopterId: text("adopter_id").notNull(),
     animalName: text("animal_name"),
+    species: text("species"), // cat, dog, etc
     details: text("details"),
     status: text("status"), // completed, failed, etc
     rating: integer("rating"),

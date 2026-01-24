@@ -1,8 +1,25 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Premium Pastel Palette */
+  --background: #f8fafc;
+  /* Slate-50 - Soft Pastel White/Gray */
+  --foreground: #334155;
+  /* Slate-700 - Deep Soft Slate for Text */
+
+  /* Primary Actions */
+  --primary: #10b981;
+  /* Emerald-500 */
+  --primary-hover: #059669;
+  /* Emerald-600 */
+
+  /* Status Colors */
+  --success: #34d399;
+  /* Emerald-400 - Pastel Green */
+  --warning: #fbbf24;
+  /* Amber-400 - Pastel Orange/Yellow */
+  --danger: #fb7185;
+  /* Rose-400 - Pastel Red */
 }
 
 @theme inline {
@@ -10,12 +27,58 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+}
+
+/* Fix "White Gray" Text in Inputs - Enforce High Contrast */
+input,
+textarea,
+select {
+  background-color: #ffffff;
+  color: #1e293b;
+  /* Slate-800 - Very dark slate for max readability */
+  border-color: #e2e8f0;
+  /* Slate-200 */
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: 2px solid var(--primary);
+  border-color: var(--primary);
+}
+
+/* Button & UI Defaults */
+button {
+  transition: all 0.2s ease-in-out;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* Dark Mode Pastel Equivalents */
+    --background: #0f172a;
+    /* Slate-900 */
+    --foreground: #e2e8f0;
+    /* Slate-200 */
+
+    --primary: #818cf8;
+    --primary-hover: #a5b4fc;
+  }
+
+  input,
+  textarea,
+  select {
+    background-color: #1e293b;
+    /* Slate-800 */
+    color: #f1f5f9;
+    /* Slate-100 */
+    border-color: #334155;
+    /* Slate-700 */
   }
 }
 

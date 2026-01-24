@@ -1,7 +1,7 @@
 'use client';
 
-import { Star } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
+import { RatingBadge } from '@/components/RatingBadge';
 
 interface Adoption {
     id: string;
@@ -18,35 +18,39 @@ export default function AdoptionHistory({ adoptions }: { adoptions: Adoption[] }
 
     return (
         <div className="space-y-4 mt-6">
-            <h3 className="text-xl font-bold text-gray-800 px-1">{t('adoption.history_title')}</h3>
+            <h3 className="text-xl font-bold text-emerald-900 px-1">{t('adoption.history_title')}</h3>
             {adoptions.map((adoption) => (
-                <div key={adoption.id} className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 relative overflow-hidden">
-                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${adoption.status === 'returned' || adoption.status === 'failed' ? 'bg-red-500' : 'bg-green-500'
+                <div key={adoption.id} className="bg-white rounded-xl p-5 shadow-sm border border-emerald-100 relative overflow-hidden transition-all hover:shadow-md">
+                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${adoption.status === 'returned' || adoption.status === 'failed' ? 'bg-rose-400' : 'bg-emerald-400'
                         }`} />
 
                     <div className="flex justify-between items-start mb-2">
                         <div>
-                            <h4 className="font-bold text-lg text-gray-900">{adoption.animalName}</h4>
-                            <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full mt-1 ${adoption.status === 'returned' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                            <div className="flex items-center gap-2">
+                                <h4 className="font-bold text-lg text-emerald-950">{adoption.animalName}</h4>
+                                {(adoption as any).species && (
+                                    <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                                        {(adoption as any).species}
+                                    </span>
+                                )}
+                            </div>
+                            <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full mt-1 ${adoption.status === 'returned' || adoption.status === 'failed' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
                                 }`}>
                                 {adoption.status?.toUpperCase()}
                             </span>
                         </div>
                         {adoption.rating && (
-                            <div className="flex items-center bg-yellow-50 px-2 py-1 rounded-lg">
-                                <span className="font-bold text-yellow-700 mr-1">{adoption.rating}</span>
-                                <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-                            </div>
+                            <RatingBadge rating={adoption.rating} size="sm" />
                         )}
                     </div>
 
                     {adoption.details && (
-                        <p className="text-gray-600 text-sm mt-2 leading-relaxed bg-gray-50 p-3 rounded-lg">
+                        <p className="text-emerald-800/80 text-sm mt-3 leading-relaxed bg-emerald-50/50 p-3 rounded-lg border border-emerald-100/50">
                             {adoption.details}
                         </p>
                     )}
 
-                    <div className="mt-3 text-xs text-gray-400">
+                    <div className="mt-3 text-xs text-emerald-500 font-medium">
                         {adoption.date ? new Date(adoption.date).toLocaleDateString() : t('adoption.date_unknown')}
                     </div>
                 </div>

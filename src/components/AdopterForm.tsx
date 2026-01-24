@@ -3,194 +3,203 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { saveAdopter } from "@/app/actions";
-import { SmartText } from "@/components/SmartText";
 import { useLanguage } from "@/context/LanguageContext";
+import { RatingBadge } from '@/components/RatingBadge';
 
-interface EditableSectionProps {
-    title: string;
-    value: string; // Text content
-    type?: 'text' | 'smart-contact' | 'smart-address';
-    placeholder?: string;
-    isNew?: boolean;
-    onSave: (newValue: string) => Promise<void>;
-}
-
-function EditableSection({ title, value, type = 'text', placeholder, isNew, onSave }: EditableSectionProps) {
+export function AdopterForm({ initialData }: { initialData?: any }) {
+    const router = useRouter();
     const { t } = useLanguage();
+    const isNew = !initialData?.id;
+
     const [isEditing, setIsEditing] = useState(isNew);
-    const [tempValue, setTempValue] = useState(value);
     const [loading, setLoading] = useState(false);
 
-    const handleSave = async () => {
+    const [data, setData] = useState({
+        id: initialData?.id || '',
+        name: initialData?.name || '',
+        status: initialData?.status || '5', // Default to 5 stars
+        contactInfo: initialData?.contactInfo || '',
+        addressInfo: initialData?.addressInfo || '',
+    });
+
+    const handleSave = async (e: React.FormEvent) => {
+        e.preventDefault();
         setLoading(true);
         try {
-            await onSave(tempValue);
-            if (!isNew) {
-                setIsEditing(false);
+            const res = await saveAdopter(data);
+            if (res.success) {
+                if (isNew) {
+                    router.push(`/adopter/${res.id}`);
+                } else {
+                    setIsEditing(false);
+                    router.refresh();
+                }
+            } else {
+                alert("Failed to save");
             }
-        } catch (e) {
-            console.error(e);
-            alert("Failed to save");
+        } catch (err) {
+            console.error(err);
+            alert("An error occurred while saving");
         } finally {
             setLoading(false);
         }
     };
 
     const handleCancel = () => {
-        setTempValue(value);
-        setIsEditing(false);
-    };
-
-    if (isEditing) {
-        return (
-            <div className="space-y-2 p-4 bg-white border border-blue-200 rounded-lg shadow-sm">
-                <label className="text-sm font-bold text-blue-600 uppercase tracking-wider">{title}</label>
-                {type === 'text' ? (
-                    <input
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                        value={tempValue}
-                        onChange={e => setTempValue(e.target.value)}
-                        placeholder={placeholder}
-                    />
-                ) : (
-                    <textarea
-                        rows={type === 'smart-address' ? 4 : 6}
-                        className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                        value={tempValue}
-                        onChange={e => setTempValue(e.target.value)}
-                        placeholder={placeholder}
-                    />
-                )}
-                <div className="flex justify-end gap-2 mt-2">
-                    {!isNew && (
-                        <button
-                            onClick={handleCancel}
-                            disabled={loading}
-                            className="px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded"
-                        >
-                            {t('common.cancel')}
-                        </button>
-                    )}
-                    <button
-                        onClick={handleSave}
-                        disabled={loading}
-                        className="px-3 py-1 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded shadow-sm"
-                    >
-                        {loading ? t('common.loading') : t('common.save')}
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
-    return (
-        <div
-            onClick={() => setIsEditing(true)}
-            className="group cursor-pointer p-4 bg-transparent border border-transparent hover:bg-white hover:border-gray-200 hover:shadow-sm rounded-lg transition-all duration-200"
-        >
-            <div className="flex justify-between items-center mb-2">
-                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider group-hover:text-blue-500 transition-colors">
-                    {title}
-                </label>
-                <span className="opacity-0 group-hover:opacity-100 text-xs text-blue-500 font-medium">{t('common.edit')}</span>
-            </div>
-
-            {/* Display View */}
-            {value ? (
-                type === 'smart-contact' ? (
-                    <SmartText text={value} type="contact" className="text-sm text-gray-800" />
-                ) : type === 'smart-address' ? (
-                    <SmartText text={value} type="address" className="text-sm text-gray-800" />
-                ) : (
-                    <div className="text-lg font-medium text-gray-900">{value}</div>
-                )
-            ) : (
-                <div className="text-sm text-gray-400 italic">Example: {placeholder?.split('\n')[0]}...</div>
-            )}
-        </div>
-    );
-}
-
-export function AdopterForm({ initialData }: { initialData?: any }) {
-    const router = useRouter();
-    const { t } = useLanguage();
-
-    // Core state matches DB schema
-    const [data, setData] = useState({
-        id: initialData?.id || '',
-        name: initialData?.name || '',
-        status: initialData?.status || 'good',
-        contactInfo: initialData?.contactInfo || '',
-        addressInfo: initialData?.addressInfo || '',
-    });
-
-    const isNew = !initialData?.id;
-
-    const handleSaveField = async (field: keyof typeof data, val: string) => {
-        const newData = { ...data, [field]: val };
-
-        // Optimistic update
-        setData(newData);
-
-        // Save entire object (actions.ts handles diffing efficiently)
-        const res = await saveAdopter(newData);
-
-        if (res.success) {
-            if (isNew) {
-                router.push(`/adopter/${res.id}`);
-            } else {
-                router.refresh();
-            }
+        if (isNew) {
+            router.back();
+        } else {
+            // Reset data and exit edit mode
+            setData({
+                id: initialData?.id || '',
+                name: initialData?.name || '',
+                status: initialData?.status || '5',
+                contactInfo: initialData?.contactInfo || '',
+                addressInfo: initialData?.addressInfo || '',
+            });
+            setIsEditing(false);
         }
     };
 
+    // Helper to render clickable links in text
+    const renderTextWithLinks = (text: string) => {
+        if (!text) return <span className="text-emerald-900/40 italic">{t('audit.empty_val')}</span>;
+
+        return text.split('\n').map((line, i) => (
+            <div key={i} className="min-h-[1.5em]">
+                {line.split(' ').map((word, j) => {
+                    if (word.match(/^(http|https):\/\//) || word.match(/^www\./)) {
+                        const href = word.startsWith('www') ? `https://${word}` : word;
+                        return <a key={j} href={href} target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:underline mr-1">{word}</a>;
+                    }
+                    if (word.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+                        return <a key={j} href={`mailto:${word}`} className="text-emerald-600 hover:underline mr-1">{word}</a>;
+                    }
+                    return <span key={j} className="mr-1">{word}</span>;
+                })}
+            </div>
+        ));
+    };
+
     return (
-        <div className="space-y-6">
-            {/* Status Dropdown (Always visible/interactive for simplicity, or make it custom too) */}
-            <div className="p-4 border-b border-gray-100 flex justify-end">
-                <select
-                    className={`px-3 py-1 text-sm font-medium rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-offset-2
-                        ${data.status === 'good' ? 'bg-green-100 text-green-800 hover:bg-green-200' : ''}
-                        ${data.status === 'warning' ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' : ''}
-                        ${data.status === 'blocked' ? 'bg-red-100 text-red-800 hover:bg-red-200' : ''}
-                    `}
-                    value={data.status}
-                    onChange={async (e) => handleSaveField('status', e.target.value)}
-                >
-                    <option value="good">{t('adopter.status')}: {t('adopter.status_good')}</option>
-                    <option value="warning">{t('adopter.status')}: {t('adopter.status_warning')}</option>
-                    <option value="blocked">{t('adopter.status')}: {t('adopter.status_blocked')}</option>
-                </select>
+        <form onSubmit={handleSave} className={`bg-white p-8 rounded-2xl shadow-sm border border-emerald-100/60 relative group transition-all duration-300 ${isEditing ? 'ring-4 ring-emerald-50/50' : ''}`}>
+
+            {/* UNIFIED HEADER */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-emerald-100 pb-6 mb-8 gap-4">
+
+                {/* Left: Name (Identity) */}
+                <div className="flex-1 w-full md:w-auto">
+                    {isEditing ? (
+                        <input
+                            type="text"
+                            required
+                            className="w-full text-2xl font-bold text-emerald-900 bg-transparent border-b-2 border-emerald-200 focus:border-emerald-500 outline-none px-1 py-1 placeholder-emerald-900/30 transition-all"
+                            value={data.name}
+                            onChange={e => setData({ ...data, name: e.target.value })}
+                            placeholder={t('adopter.placeholder_name')}
+                            autoFocus
+                        />
+                    ) : (
+                        <h2 className="text-2xl font-bold text-emerald-900 tracking-tight px-1 py-1 border-b-2 border-transparent">
+                            {data.name}
+                        </h2>
+                    )}
+                </div>
+
+                {/* Right: Actions & Status */}
+                <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
+
+                    {/* Status Select/Badge */}
+                    {isEditing ? (
+                        <div className="relative">
+                            <select
+                                className={`appearance-none pl-4 pr-10 py-2 text-sm font-bold rounded-full border border-emerald-200 cursor-pointer focus:ring-4 focus:ring-emerald-500/20 transition-all duration-200 shadow-sm outline-none bg-emerald-50 text-emerald-900 hover:bg-emerald-100`}
+                                value={data.status}
+                                onChange={(e) => setData({ ...data, status: e.target.value })}
+                            >
+                                <option value="5">5 - {t('adopter.status_5')}</option>
+                                <option value="4">4 - {t('adopter.status_4')}</option>
+                                <option value="3">3 - {t('adopter.status_3')}</option>
+                                <option value="2">2 - {t('adopter.status_2')}</option>
+                                <option value="1">1 - {t('adopter.status_1')}</option>
+                            </select>
+                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 opacity-50 text-emerald-800">
+                                <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                            </div>
+                        </div>
+                    ) : (
+                        <RatingBadge rating={data.status} />
+                    )}
+
+                    {/* Action Buttons */}
+                    {isEditing ? (
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={handleCancel}
+                                className="px-4 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
+                            >
+                                {t('common.cancel')}
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="px-6 py-2 text-sm font-bold text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 focus:ring-4 focus:ring-emerald-200 disabled:opacity-70 disabled:cursor-not-allowed transition-all shadow-lg shadow-emerald-500/30 transform active:scale-95"
+                            >
+                                {loading ? t('common.loading') : t('common.save')}
+                            </button>
+                        </div>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={() => setIsEditing(true)}
+                            className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                            {t('common.edit')}
+                        </button>
+                    )}
+                </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4">
-                <EditableSection
-                    title={t('adopter.name')}
-                    value={data.name}
-                    type="text"
-                    placeholder={t('adopter.placeholder_name')}
-                    isNew={isNew}
-                    onSave={(val) => handleSaveField('name', val)}
-                />
+            {/* SHARED CONTENT GRID */}
+            <div className={`grid md:grid-cols-2 gap-8 ${isEditing ? 'opacity-100' : 'opacity-90'}`}>
+                {/* Contact Info */}
+                <div>
+                    <h3 className="text-sm font-bold text-emerald-800 mb-3 uppercase tracking-wider">{t('adopter.contact')}</h3>
+                    {isEditing ? (
+                        <textarea
+                            rows={3}
+                            className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none resize-y min-h-[120px]"
+                            value={data.contactInfo}
+                            onChange={e => setData({ ...data, contactInfo: e.target.value })}
+                            placeholder={t('adopter.placeholder_contact')}
+                        />
+                    ) : (
+                        <div className="text-emerald-900/80 leading-relaxed font-medium bg-emerald-50/30 p-4 rounded-xl border border-emerald-100/50 min-h-[120px]">
+                            {renderTextWithLinks(data.contactInfo)}
+                        </div>
+                    )}
+                </div>
 
-                <EditableSection
-                    title={t('adopter.contact')}
-                    value={data.contactInfo}
-                    type="smart-contact"
-                    placeholder={t('adopter.placeholder_contact')}
-                    isNew={isNew}
-                    onSave={(val) => handleSaveField('contactInfo', val)}
-                />
-
-                <EditableSection
-                    title={t('adopter.address')}
-                    value={data.addressInfo}
-                    type="smart-address"
-                    placeholder={t('adopter.placeholder_address')}
-                    isNew={isNew}
-                    onSave={(val) => handleSaveField('addressInfo', val)}
-                />
+                {/* Address Info */}
+                <div>
+                    <h3 className="text-sm font-bold text-emerald-800 mb-3 uppercase tracking-wider">{t('adopter.address')}</h3>
+                    {isEditing ? (
+                        <textarea
+                            rows={3}
+                            className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none resize-y min-h-[120px]"
+                            value={data.addressInfo}
+                            onChange={e => setData({ ...data, addressInfo: e.target.value })}
+                            placeholder={t('adopter.placeholder_address')}
+                        />
+                    ) : (
+                        <div className="text-emerald-900/80 leading-relaxed font-medium bg-emerald-50/30 p-4 rounded-xl border border-emerald-100/50 min-h-[120px]">
+                            {renderTextWithLinks(data.addressInfo)}
+                        </div>
+                    )}
+                </div>
             </div>
-        </div>
+        </form>
     );
 }
