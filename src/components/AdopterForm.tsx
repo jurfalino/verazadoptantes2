@@ -231,41 +231,90 @@ export function AdopterForm({ initialData, history = [] }: { initialData?: any, 
                     <div className="space-y-6 pb-6">
                         {history.map((h) => {
                             let changes = null;
+                            let eventType = 'update';
                             try {
-                                changes = JSON.parse(h.changes as string);
+                                const parsed = JSON.parse(h.changes as string);
+                                // Determine event type and data
+                                if (parsed.adoption_updated) {
+                                    eventType = 'adoption_updated';
+                                    changes = parsed.adoption_updated;
+                                } else if (parsed.adoption_added) {
+                                    eventType = 'adoption_added';
+                                    changes = parsed.adoption_added;
+                                } else if (parsed.adoption_deleted) {
+                                    eventType = 'adoption_deleted';
+                                    changes = parsed.adoption_deleted;
+                                } else if (parsed.image_deleted) {
+                                    eventType = 'image_deleted';
+                                    changes = parsed.image_deleted;
+                                } else {
+                                    // Fallback for old/direct profile updates
+                                    changes = parsed;
+                                }
                             } catch (e) { }
 
                             return (
-                                <div key={h.id} className="text-sm border-l-4 border-emerald-200 pl-4 py-1">
-                                    <div className="flex justify-between items-start mb-1">
-                                        <span className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">
-                                            {new Date(h.changedAt).toLocaleString()}
-                                        </span>
-                                        <span className="text-xs px-2.5 py-0.5 bg-emerald-100 rounded-full text-emerald-700 font-medium">
+                                <div key={h.id} className="text-sm border-l-4 border-emerald-200 pl-4 py-3 bg-emerald-50/30 rounded-r-lg mb-2">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">
+                                                {new Date(h.changedAt).toLocaleString()}
+                                            </span>
+                                            {/* Badge for event type */}
+                                            {eventType === 'adoption_added' && <span className="bg-emerald-100 text-emerald-700 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase">{t('audit.event_adoption_added')}</span>}
+                                            {eventType === 'adoption_deleted' && <span className="bg-rose-100 text-rose-700 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase">{t('audit.event_adoption_deleted')}</span>}
+                                            {eventType === 'image_deleted' && <span className="bg-rose-100 text-rose-700 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase">{t('audit.event_image_deleted')}</span>}
+                                        </div>
+                                        <span className="text-xs px-2.5 py-0.5 bg-white border border-emerald-100 rounded-full text-emerald-700 font-medium shadow-sm">
                                             {t('audit.by')} {h.changedBy || 'anonymous'}
                                         </span>
                                     </div>
 
-                                    <div className="mt-2 space-y-2">
+                                    <div className="space-y-1.5">
                                         {changes ? (
-                                            Object.entries(changes).map(([key, delta]: [string, any]) => (
-                                                <div key={key} className="grid grid-cols-[100px_1fr] gap-3 items-start">
-                                                    <span className="font-bold text-emerald-800 capitalize">{key}:</span>
-                                                    <div className="text-emerald-700 break-words font-medium">
-                                                        <div className="line-through text-rose-400 text-xs mb-0.5 bg-rose-50 inline-block px-1.5 rounded decoration-2">
-                                                            {typeof delta.from === 'string' && delta.from.length > 50
-                                                                ? delta.from.substring(0, 50) + '...'
-                                                                : (delta.from || t('audit.empty_val'))}
-                                                        </div>
-                                                        <div className="text-emerald-400 ml-2 inline-block font-bold">→</div>
-                                                        <div className="text-emerald-900 bg-emerald-100 inline-block px-1.5 rounded ml-2 shadow-sm border border-emerald-200/50">
-                                                            {delta.to || t('audit.empty_val')}
+                                            <>
+                                                {/* Profile Updates / Adoption Updates (Diffs) */}
+                                                {(eventType === 'update' || eventType === 'adoption_updated') && Object.entries(changes).map(([key, delta]: [string, any]) => (
+                                                    <div key={key} className="grid grid-cols-[120px_1fr] gap-3 items-start text-sm">
+                                                        <span className="font-bold text-emerald-800 capitalize truncate" title={key}>{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
+                                                        <div className="text-emerald-700 break-words font-medium">
+                                                            <div className="line-through text-rose-400 text-xs mr-2 opacity-70 inline-block">
+                                                                {typeof delta.from === 'string' && delta.from.length > 30 ? delta.from.substring(0, 30) + '...' : (delta.from || t('audit.empty_val'))}
+                                                            </div>
+                                                            <span className="text-emerald-300 mr-2">➜</span>
+                                                            <span className="text-emerald-900 bg-emerald-100/50 px-1.5 rounded">
+                                                                {delta.to || t('audit.empty_val')}
+                                                            </span>
                                                         </div>
                                                     </div>
-                                                </div>
-                                            ))
+                                                ))}
+
+                                                {/* Added Adoption (Snapshot) */}
+                                                {eventType === 'adoption_added' && (
+                                                    <div className="text-emerald-800 font-medium">
+                                                        {t('audit.desc_adoption_added')} <span className="font-bold">{changes.animalName}</span> ({changes.species}) - {changes.status}
+                                                    </div>
+                                                )}
+
+                                                {/* Deleted Adoption (Snapshot) */}
+                                                {eventType === 'adoption_deleted' && (
+                                                    <div className="space-y-1 text-emerald-800/80">
+                                                        <div><span className="font-bold">{t('adoption.animal_name')}:</span> {changes.animalName} ({changes.species})</div>
+                                                        <div><span className="font-bold">{t('adoption.status')}:</span> {changes.status}</div>
+                                                        <div><span className="font-bold">{t('adoption.rating')}:</span> {changes.rating}/5</div>
+                                                        {changes.details && <div className="text-xs italic mt-1">"{changes.details}"</div>}
+                                                    </div>
+                                                )}
+
+                                                {/* Deleted Image */}
+                                                {eventType === 'image_deleted' && (
+                                                    <div className="text-emerald-800">
+                                                        {t('audit.desc_image_deleted')} <span className="italic opacity-75">"{changes.caption || 'Untitled'}"</span> ({t('audit.by')} {new Date(changes.uploadedAt).toLocaleDateString()})
+                                                    </div>
+                                                )}
+                                            </>
                                         ) : (
-                                            <span className="text-emerald-400 italic">{t('audit.metadata_update')}</span>
+                                            <span className="text-emerald-400 italic text-xs">{t('audit.metadata_update')}</span>
                                         )}
                                     </div>
                                 </div>

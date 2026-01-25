@@ -5,7 +5,9 @@ export const en = {
         loading: 'Loading...',
         search: 'Search',
         edit: 'Click to Edit',
+        delete: 'Delete',
         back_to_search: 'Back to Search',
+        added_by: 'Added by',
     },
     search: {
         title: 'Vet an Adopter',
@@ -91,5 +93,11 @@ export const en = {
         system: 'System',
         metadata_update: 'Metadata update only',
         empty_val: 'empty',
+        event_adoption_added: 'New Adoption',
+        event_adoption_deleted: 'Adoption Deleted',
+        event_image_deleted: 'Photo Deleted',
+        desc_adoption_added: 'Added record for',
+        desc_adoption_deleted: 'Deleted adoption record:',
+        desc_image_deleted: 'Deleted photo'
     }
 };

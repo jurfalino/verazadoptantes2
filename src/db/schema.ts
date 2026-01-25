@@ -22,6 +22,7 @@ export const adopterImages = sqliteTable("adopter_images", {
     url: text("url").notNull(), // Base64 or URL
     caption: text("caption"),
     uploadedAt: integer("uploaded_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    addedBy: text("added_by").default("anonymous"),
 });
 
 export const adopterFlags = sqliteTable("adopter_flags", {

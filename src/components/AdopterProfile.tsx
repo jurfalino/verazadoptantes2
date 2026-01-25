@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+
 import { AdopterForm } from '@/components/AdopterForm';
 import { CollapsibleSection } from '@/components/CollapsibleSection';
 import AdoptionHistory from '@/components/AdoptionHistory';
@@ -17,10 +19,12 @@ interface AdopterProfileProps {
     adoptions: any[];
     images: any[];
     flags: any[];
+    currentUser: string;
 }
 
-export function AdopterProfile({ id, isNew, adopter, history, adoptions, images, flags }: AdopterProfileProps) {
+export function AdopterProfile({ id, isNew, adopter, history, adoptions, images, flags, currentUser }: AdopterProfileProps) {
     const { t } = useLanguage();
+    const [editingAdoption, setEditingAdoption] = useState<any>(null);
 
     return (
         <main className="min-h-screen bg-emerald-50/30 py-12 px-4 relative">
@@ -55,13 +59,29 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                                 onUpload={async (adopterId, url, caption) => {
                                     await saveImage(adopterId, url, caption);
                                 }}
+                                currentUser={currentUser}
                             />
                         </CollapsibleSection>
 
                         {/* Adoptions - Collapsible */}
                         <CollapsibleSection title={t('adoption.title')} count={adoptions.length} defaultOpen={true}>
-                            <AdoptionForm adopterId={id} />
-                            <AdoptionHistory adoptions={adoptions} />
+                            <AdoptionForm
+                                adopterId={id}
+                                initialData={editingAdoption}
+                                onCancel={() => setEditingAdoption(null)}
+                                onSuccess={() => setEditingAdoption(null)}
+                            />
+                            <AdoptionHistory
+                                adoptions={adoptions}
+                                onEdit={(adoption) => {
+                                    setEditingAdoption(adoption);
+                                    // Scroll to form
+                                    const form = document.getElementById('adoption-form');
+                                    if (form) form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                }}
+                                adopterId={id}
+                                currentUser={currentUser}
+                            />
                         </CollapsibleSection>
                     </>
                 )}

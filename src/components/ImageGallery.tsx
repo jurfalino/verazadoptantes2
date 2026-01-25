@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useLanguage } from '@/context/LanguageContext';
 
-export function ImageGallery({ adopterId, initialImages, onUpload }: { adopterId: string, initialImages: any[], onUpload: (id: string, url: string, caption: string) => Promise<void> }) {
+export function ImageGallery({ adopterId, initialImages, onUpload, currentUser }: { adopterId: string, initialImages: any[], onUpload: (id: string, url: string, caption: string) => Promise<void>, currentUser: string }) {
     const { t } = useLanguage();
     const [images, setImages] = useState(initialImages);
     const [uploading, setUploading] = useState(false);
@@ -72,8 +72,14 @@ export function ImageGallery({ adopterId, initialImages, onUpload }: { adopterId
             // Compress image before uploading
             const base64 = await compressImage(file);
             await onUpload(adopterId, base64, 'Uploaded Image');
-            // Update local state to show the image immediately
-            setImages([...images, { url: base64, caption: 'Uploaded Image', createdAt: new Date() }]);
+            // Optimistic update with prepend and ownership
+            setImages([{
+                url: base64,
+                caption: 'Uploaded Image',
+                createdAt: new Date(),
+                addedBy: currentUser,
+                id: 'temp-' + Date.now()
+            }, ...images]);
         } catch (error) {
             console.error('Image upload failed:', error);
             alert('Failed to upload image. Please try again.');
@@ -88,8 +94,41 @@ export function ImageGallery({ adopterId, initialImages, onUpload }: { adopterId
                 {images.map((img, idx) => (
                     <div key={idx} className="aspect-square bg-emerald-50 rounded-xl overflow-hidden relative group border border-emerald-100/50">
                         <img src={img.url} className="w-full h-full object-cover" />
-                        <div className="absolute inset-0 bg-emerald-900/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
-                            <p className="text-white text-xs truncate font-medium">{img.caption}</p>
+
+                        {/* Delete Button - Top Right - Direct Child */}
+                        {(img.id && (img.addedBy === currentUser || ((!img.addedBy || img.addedBy === 'anonymous') && currentUser === 'Anon: Guest'))) && (
+                            <button
+                                onClick={async (e) => {
+                                    e.preventDefault();
+                                    if (!confirm(t('common.delete') + '?')) return;
+                                    try {
+                                        const { deleteImage } = await import('@/app/actions');
+                                        if (img.id) {
+                                            await deleteImage(img.id, adopterId);
+                                            setImages(images.filter(i => i.id !== img.id));
+                                        }
+                                    } catch (err) {
+                                        console.error(err);
+                                        alert('Failed to delete');
+                                    }
+                                }}
+                                className="absolute top-0 right-0 m-3 p-2 bg-white/90 hover:bg-white text-rose-600 rounded-xl shadow-md z-50 transition-all hover:scale-105 backdrop-blur-sm"
+                                title={t('common.delete')}
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                        )}
+
+                        {/* Caption - Bottom Overlay */}
+                        <div className="absolute inset-x-0 bottom-0 p-3 pt-10 bg-gradient-to-t from-black/80 to-transparent pointer-events-none z-10 flex items-end">
+                            <p className="text-white text-xs truncate font-medium">
+                                {img.addedBy ? (
+                                    <span className="flex items-center gap-1">
+                                        <span className="opacity-75 font-normal">{t('common.added_by')}</span>
+                                        <span>{img.addedBy.replace('User: ', '')}</span>
+                                    </span>
+                                ) : img.caption}
+                            </p>
                         </div>
                     </div>
                 ))}

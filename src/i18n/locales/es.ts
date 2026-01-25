@@ -5,7 +5,9 @@ export const es = {
         loading: 'Cargando...',
         search: 'Buscar',
         edit: 'Clic para Editar',
+        delete: 'Eliminar',
         back_to_search: 'Volver a Buscar',
+        added_by: 'Agregado por',
     },
     search: {
         title: 'Verificar Adoptante',
@@ -91,5 +93,11 @@ export const es = {
         system: 'Sistema',
         metadata_update: 'Solo actualización de metadatos',
         empty_val: 'vacío',
+        event_adoption_added: 'Nueva Adopción',
+        event_adoption_deleted: 'Adopción Eliminada',
+        event_image_deleted: 'Foto Eliminada',
+        desc_adoption_added: 'Registro añadido para',
+        desc_adoption_deleted: 'Registro de adopción eliminado:',
+        desc_image_deleted: 'Foto eliminada'
     }
 };

@@ -5,19 +5,34 @@ import { saveAdoption } from '@/app/actions';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 
-export default function AdoptionForm({ adopterId }: { adopterId: string }) {
+export default function AdoptionForm({ adopterId, initialData, onCancel, onSuccess }: { adopterId: string, initialData?: any, onCancel?: () => void, onSuccess?: () => void }) {
     const router = useRouter();
     const { t } = useLanguage();
-    const [isOpen, setIsOpen] = useState(false);
+    const [isOpen, setIsOpen] = useState(!!initialData);
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState({
-        animalName: '',
-        details: '',
-        status: 'completed',
-        rating: 5,
-        comments: '',
-        species: '' // Add state for species
+        id: initialData?.id,
+        animalName: initialData?.animalName || '',
+        details: initialData?.details || '',
+        status: initialData?.status || 'completed',
+        rating: initialData?.rating || 5,
+        comments: initialData?.comments || '',
+        species: initialData?.species || ''
     });
+
+    // Update form data when initialData changes (important for switching between edits)
+    if (initialData && formData.id !== initialData.id) {
+        setFormData({
+            id: initialData.id,
+            animalName: initialData.animalName || '',
+            details: initialData.details || '',
+            status: initialData.status || 'completed',
+            rating: initialData.rating || 5,
+            comments: initialData.comments || '',
+            species: initialData.species || ''
+        });
+        setIsOpen(true);
+    }
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -28,9 +43,14 @@ export default function AdoptionForm({ adopterId }: { adopterId: string }) {
                 adopterId: adopterId,
                 rating: Number(formData.rating)
             } as any);
-            setIsOpen(false);
-            setFormData({ animalName: '', details: '', status: 'completed', rating: 5, comments: '', species: '' });
-            router.refresh();
+
+            if (onSuccess) {
+                onSuccess();
+            } else {
+                setIsOpen(false);
+                setFormData({ id: undefined, animalName: '', details: '', status: 'completed', rating: 5, comments: '', species: '' });
+                router.refresh();
+            }
         } catch (err) {
             console.error(err);
             alert('Failed to save adoption');
@@ -39,7 +59,15 @@ export default function AdoptionForm({ adopterId }: { adopterId: string }) {
         }
     };
 
-    if (!isOpen) {
+    const handleCancel = () => {
+        if (onCancel) {
+            onCancel();
+        } else {
+            setIsOpen(false);
+        }
+    }
+
+    if (!isOpen && !initialData) {
         return (
             <button onClick={() => setIsOpen(true)} className="w-full py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 transition-all duration-300 transform active:scale-[0.99] mb-4">
                 + {t('adoption.record_new')}
@@ -48,8 +76,15 @@ export default function AdoptionForm({ adopterId }: { adopterId: string }) {
     }
 
     return (
-        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <h3 className="text-xl font-bold mb-4 text-emerald-900 tracking-tight">{t('adoption.record_new')}</h3>
+        <div id="adoption-form" className="animate-in fade-in slide-in-from-bottom-2 duration-300 bg-white p-6 rounded-xl border border-emerald-100 shadow-sm mb-6">
+            <h3 className="text-xl font-bold mb-4 text-emerald-900 tracking-tight flex items-center gap-2">
+                {initialData ? (
+                    <>
+                        <svg className="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                        Edit Adoption
+                    </>
+                ) : t('adoption.record_new')}
+            </h3>
             <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
@@ -115,7 +150,7 @@ export default function AdoptionForm({ adopterId }: { adopterId: string }) {
                 </div>
 
                 <div className="flex justify-end gap-3 pt-4 border-t border-emerald-100">
-                    <button type="button" onClick={() => setIsOpen(false)} className="px-5 py-2.5 text-emerald-700 font-semibold hover:bg-emerald-50 rounded-xl transition-colors">{t('common.cancel')}</button>
+                    <button type="button" onClick={handleCancel} className="px-5 py-2.5 text-emerald-700 font-semibold hover:bg-emerald-50 rounded-xl transition-colors">{t('common.cancel')}</button>
                     <button
                         type="submit"
                         disabled={loading}

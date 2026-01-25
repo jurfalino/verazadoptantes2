@@ -31,7 +31,7 @@ async function getDb() {
     return db;
 }
 
-async function getUser() {
+export async function getUser() {
     const session = await auth();
     if (session?.user?.email) return `User: ${session.user.email}`;
 
@@ -166,6 +166,7 @@ export async function saveImage(adopterId: string, url: string, caption?: string
     try {
         const db = await getDb();
         if (!db) throw new Error("No database");
+        const addedBy = await getUser();
 
         const id = crypto.randomUUID();
         await db.insert(adopterImages).values({
@@ -173,7 +174,8 @@ export async function saveImage(adopterId: string, url: string, caption?: string
             adopterId,
             url,
             caption: caption || null,
-            uploadedAt: new Date()
+            uploadedAt: new Date(),
+            addedBy
         });
 
         return { success: true, id };
@@ -230,37 +232,139 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
     try {
         const db = await getDb();
         if (!db) throw new Error("No database");
-        const addedBy = await getUser();
+        const changedBy = await getUser();
 
-        const id = crypto.randomUUID();
-        await db.insert(adoptions).values({
-            ...data,
-            id,
-            date: new Date(),
-            addedBy
-        });
+        // Check if exists (for updates)
+        const existing = data.id ? await db.select().from(adoptions).where(eq(adoptions.id, data.id)).get() : null;
+
+        if (existing) {
+            // Calculate changes
+            const changes: Record<string, any> = {};
+            let hasChanges = false;
+
+            const fields = ['animalName', 'species', 'status', 'rating', 'details'] as const;
+            for (const field of fields) {
+                // @ts-ignore
+                if (data[field] !== undefined && data[field] !== existing[field]) {
+                    // @ts-ignore
+                    changes[field] = { from: existing[field], to: data[field] };
+                    hasChanges = true;
+                }
+            }
+
+            if (hasChanges) {
+                // Update adoption
+                await db.update(adoptions).set(data).where(eq(adoptions.id, data.id as string));
+
+                // Log to adopter history
+                await db.insert(adopterHistory).values({
+                    id: crypto.randomUUID(),
+                    adopterId: data.adopterId,
+                    changedBy,
+                    changes: JSON.stringify({ adoption_updated: changes }),
+                    changedAt: new Date()
+                });
+            }
+            revalidatePath(`/adopter/${data.adopterId}`);
+            return { success: true, id: data.id };
+        } else {
+            // Create new adoption
+            const id = crypto.randomUUID();
+            await db.insert(adoptions).values({
+                ...data,
+                id,
+                date: new Date(),
+                addedBy: changedBy
+            });
+
+            // Log to adopter history
+            await db.insert(adopterHistory).values({
+                id: crypto.randomUUID(),
+                adopterId: data.adopterId,
+                changedBy,
+                changes: JSON.stringify({
+                    adoption_added: {
+                        animalName: data.animalName,
+                        species: data.species,
+                        status: data.status,
+                        rating: data.rating
+                    }
+                }),
+                changedAt: new Date()
+            });
+
+            revalidatePath(`/adopter/${data.adopterId}`);
+            return { success: true, id };
+        }
+    } catch (error) {
+        console.error("Save adoption error:", error);
+        throw new Error("Failed to save adoption");
+    }
+}
+
+export async function deleteAdoption(adoptionId: string, adopterId: string) {
+    try {
+        const db = await getDb();
+        if (!db) throw new Error("No database");
+        const changedBy = await getUser();
+
+        // Get snapshot before delete
+        const existing = await db.select().from(adoptions).where(eq(adoptions.id, adoptionId)).get();
+        if (!existing) throw new Error("Adoption not found");
+
+        await db.delete(adoptions).where(eq(adoptions.id, adoptionId));
 
         // Log to adopter history
         await db.insert(adopterHistory).values({
             id: crypto.randomUUID(),
-            adopterId: data.adopterId,
-            changedBy: addedBy,
+            adopterId,
+            changedBy,
             changes: JSON.stringify({
-                adoption_added: {
-                    animalName: data.animalName,
-                    species: data.species,
-                    status: data.status,
-                    rating: data.rating
+                adoption_deleted: existing
+            }),
+            changedAt: new Date()
+        });
+
+        revalidatePath(`/adopter/${adopterId}`);
+        return { success: true };
+    } catch (error) {
+        console.error("Delete adoption error:", error);
+        throw new Error("Failed to delete adoption");
+    }
+}
+
+export async function deleteImage(imageId: string, adopterId: string) {
+    try {
+        const db = await getDb();
+        if (!db) throw new Error("No database");
+        const changedBy = await getUser();
+
+        // Get snapshot
+        const existing = await db.select().from(adopterImages).where(eq(adopterImages.id, imageId)).get();
+        if (!existing) throw new Error("Image not found");
+
+        await db.delete(adopterImages).where(eq(adopterImages.id, imageId));
+
+        // Log to history
+        await db.insert(adopterHistory).values({
+            id: crypto.randomUUID(),
+            adopterId,
+            changedBy,
+            changes: JSON.stringify({
+                image_deleted: {
+                    caption: existing.caption,
+                    // Don't log the full base64/url to save space, just metadata
+                    uploadedAt: existing.uploadedAt
                 }
             }),
             changedAt: new Date()
         });
 
-        revalidatePath(`/adopter/${data.adopterId}`);
-        return { success: true, id };
+        revalidatePath(`/adopter/${adopterId}`);
+        return { success: true };
     } catch (error) {
-        console.error("Save adoption error:", error);
-        throw new Error("Failed to save adoption");
+        console.error("Delete image error:", error);
+        throw new Error("Failed to delete image");
     }
 }
 
