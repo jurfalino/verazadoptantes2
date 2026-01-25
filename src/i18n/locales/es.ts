@@ -7,6 +7,22 @@ export const es = {
         edit: 'Clic para Editar',
         back_to_search: 'Volver a Buscar',
     },
+    search: {
+        title: 'Verificar Adoptante',
+        placeholder: 'Nombre, Teléfono o Email',
+        button: 'Buscar Registros',
+        searching: 'Buscando...',
+        results: '{count} resultados encontrados',
+        no_results: 'No se encontraron registros',
+        no_history: 'No se encontró historial para "{query}".',
+        create_new: 'Crear Nuevo Registro',
+        clear: 'Limpiar Búsqueda',
+    },
+    home: {
+        title: 'SafeAdoption',
+        tagline: 'La fuente única de verdad para adopciones de mascotas. Verifica adoptantes potenciales y asegura que tus animales vayan a hogares seguros.',
+        footer: '© 2026 SafeAdoption. Protegiendo mascotas juntos.',
+    },
     adopter: {
         title_new: 'Nuevo Adoptante',
         title_profile: 'Perfil de Adoptante',
@@ -32,6 +48,7 @@ export const es = {
         caption_placeholder: 'Descripción...',
     },
     adoption: {
+        title: 'Adopciones',
         history_title: 'Historial de Adopciones',
         record_new: 'Registrar Nueva Adopción',
         animal_name: 'Nombre del Animal',

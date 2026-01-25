@@ -8,21 +8,78 @@ export function ImageGallery({ adopterId, initialImages, onUpload }: { adopterId
     const [images, setImages] = useState(initialImages);
     const [uploading, setUploading] = useState(false);
 
+    // Helper to compress image before upload
+    const compressImage = (file: File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    // Create canvas to resize image
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) {
+                        reject(new Error('Failed to get canvas context'));
+                        return;
+                    }
+
+                    // Calculate new dimensions (max 1200px on longest side)
+                    const maxSize = 1200;
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > height) {
+                        if (width > maxSize) {
+                            height = (height * maxSize) / width;
+                            width = maxSize;
+                        }
+                    } else {
+                        if (height > maxSize) {
+                            width = (width * maxSize) / height;
+                            height = maxSize;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    // Convert to base64 with compression (0.8 quality)
+                    const base64 = canvas.toDataURL('image/jpeg', 0.8);
+                    resolve(base64);
+                };
+                img.onerror = () => reject(new Error('Failed to load image'));
+                img.src = e.target?.result as string;
+            };
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsDataURL(file);
+        });
+    };
+
     // Simplistic Base64 upload for MVP
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
+        // Check file type
+        if (!file.type.startsWith('image/')) {
+            alert('Please select an image file.');
+            return;
+        }
+
         setUploading(true);
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-            const base64 = reader.result as string;
-            // In real app, upload to R2 here and get URL
+        try {
+            // Compress image before uploading
+            const base64 = await compressImage(file);
             await onUpload(adopterId, base64, 'Uploaded Image');
+            // Update local state to show the image immediately
             setImages([...images, { url: base64, caption: 'Uploaded Image', createdAt: new Date() }]);
+        } catch (error) {
+            console.error('Image upload failed:', error);
+            alert('Failed to upload image. Please try again.');
+        } finally {
             setUploading(false);
-        };
-        reader.readAsDataURL(file);
+        }
     };
 
     return (
@@ -43,9 +100,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload }: { adopterId
                     <span className="text-xs text-emerald-600/70 group-hover:text-emerald-700 font-bold mt-1 uppercase tracking-wide">{uploading ? t('adopter.uploading') : t('adopter.upload_image')}</span>
                 </label>
             </div>
-            {images.length === 0 && (
-                <p className="text-sm text-emerald-900/30 italic text-center py-4 bg-emerald-50/30 rounded-xl border border-dashed border-emerald-100/50">{t('adopter.no_images')}</p>
-            )}
+
         </div>
     );
 }

@@ -63,18 +63,34 @@ export function AdopterForm({ initialData, history = [] }: { initialData?: any, 
     };
 
     // Helper to render clickable links in text
-    const renderTextWithLinks = (text: string) => {
+    const renderTextWithLinks = (text: string, type: 'text' | 'address' = 'text') => {
         if (!text) return <span className="text-emerald-900/40 italic">{t('audit.empty_val')}</span>;
 
+        if (type === 'address') {
+            const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(text.replace(/\n/g, ', '))}`;
+            return (
+                <a href={mapUrl} target="_blank" rel="noopener noreferrer" className="flex items-start gap-2 text-emerald-700 hover:text-emerald-900 group transition-colors">
+                    <svg className="w-5 h-5 shrink-0 mt-0.5 text-emerald-500 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    <span className="whitespace-pre-line group-hover:underline decoration-emerald-500/50 underline-offset-4">{text}</span>
+                </a>
+            );
+        }
+
         return text.split('\n').map((line, i) => (
-            <div key={i} className="min-h-[1.5em]">
+            <div key={i} className="min-h-[1.5em] mb-1 last:mb-0">
                 {line.split(' ').map((word, j) => {
+                    // URL
                     if (word.match(/^(http|https):\/\//) || word.match(/^www\./)) {
                         const href = word.startsWith('www') ? `https://${word}` : word;
-                        return <a key={j} href={href} target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:underline mr-1">{word}</a>;
+                        return <a key={j} href={href} target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:text-emerald-800 hover:underline mr-1 font-medium">{word}</a>;
                     }
+                    // Email
                     if (word.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
-                        return <a key={j} href={`mailto:${word}`} className="text-emerald-600 hover:underline mr-1">{word}</a>;
+                        return <a key={j} href={`mailto:${word}`} className="text-emerald-600 hover:text-emerald-800 hover:underline mr-1 font-medium">{word}</a>;
+                    }
+                    // Phone (Simple detection: 7+ digits, maybe dashes/dots)
+                    if (word.match(/^(\+?\d{1,3}[-.]?)?\(?\d{3}\)?[-.]?\d{3}[-.]?\d{4}$/)) {
+                        return <a key={j} href={`tel:${word}`} className="text-emerald-600 hover:text-emerald-800 hover:underline mr-1 font-medium bg-emerald-50 px-1 rounded">{word}</a>;
                     }
                     return <span key={j} className="mr-1">{word}</span>;
                 })}
@@ -87,10 +103,10 @@ export function AdopterForm({ initialData, history = [] }: { initialData?: any, 
 
             <form onSubmit={handleSave} className="p-5">
                 {/* UNIFIED HEADER */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-emerald-100/60 pb-5 mb-5 gap-4">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-emerald-100/60 pb-6 mb-10 gap-6">
                     {/* ... (keep header content: Name, Status, Buttons) ... */}
                     {/* Left: Name (Identity) */}
-                    <div className="flex-1 w-full md:w-auto">
+                    <div className="w-full md:w-auto">
                         {isEditing ? (
                             <input
                                 type="text"
@@ -102,7 +118,7 @@ export function AdopterForm({ initialData, history = [] }: { initialData?: any, 
                                 autoFocus
                             />
                         ) : (
-                            <h2 className="text-2xl font-bold text-emerald-900 tracking-tight px-1 py-1 border-b-2 border-transparent">
+                            <h2 className="text-3xl font-bold text-emerald-900 tracking-tight px-1 py-1 border-b-2 border-transparent">
                                 {data.name}
                             </h2>
                         )}
@@ -165,21 +181,21 @@ export function AdopterForm({ initialData, history = [] }: { initialData?: any, 
                 </div>
 
                 {/* SHARED CONTENT GRID */}
-                <div className={`grid md:grid-cols-2 gap-5 ${isEditing ? 'opacity-100' : 'opacity-90'}`}>
+                <div className={`grid md:grid-cols-2 gap-6 ${isEditing ? 'opacity-100' : 'opacity-90'}`}>
                     {/* Contact Info */}
                     <div>
                         <h3 className="text-sm font-bold text-emerald-800 mb-3 uppercase tracking-wider">{t('adopter.contact')}</h3>
                         {isEditing ? (
                             <textarea
                                 rows={3}
-                                className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none resize-y min-h-[120px]"
+                                className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none resize-y min-h-[80px]"
                                 value={data.contactInfo}
                                 onChange={e => setData({ ...data, contactInfo: e.target.value })}
                                 placeholder={t('adopter.placeholder_contact')}
                             />
                         ) : (
-                            <div className="text-emerald-900/80 leading-relaxed font-medium bg-emerald-50/30 p-4 rounded-xl border border-emerald-100/50 min-h-[120px]">
-                                {renderTextWithLinks(data.contactInfo)}
+                            <div className="text-emerald-900/80 leading-relaxed font-medium bg-emerald-50/30 p-4 rounded-xl border border-emerald-100/50 min-h-[80px]">
+                                {renderTextWithLinks(data.contactInfo, 'text')}
                             </div>
                         )}
                     </div>
@@ -190,14 +206,14 @@ export function AdopterForm({ initialData, history = [] }: { initialData?: any, 
                         {isEditing ? (
                             <textarea
                                 rows={3}
-                                className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none resize-y min-h-[120px]"
+                                className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none resize-y min-h-[80px]"
                                 value={data.addressInfo}
                                 onChange={e => setData({ ...data, addressInfo: e.target.value })}
                                 placeholder={t('adopter.placeholder_address')}
                             />
                         ) : (
-                            <div className="text-emerald-900/80 leading-relaxed font-medium bg-emerald-50/30 p-4 rounded-xl border border-emerald-100/50 min-h-[120px]">
-                                {renderTextWithLinks(data.addressInfo)}
+                            <div className="text-emerald-900/80 leading-relaxed font-medium bg-emerald-50/30 p-4 rounded-xl border border-emerald-100/50 min-h-[80px]">
+                                {renderTextWithLinks(data.addressInfo, 'address')}
                             </div>
                         )}
                     </div>
@@ -212,7 +228,7 @@ export function AdopterForm({ initialData, history = [] }: { initialData?: any, 
                     defaultOpen={false}
                     className="border-t border-emerald-100/60 rounded-none shadow-none border-x-0 border-b-0"
                 >
-                    <div className="space-y-6">
+                    <div className="space-y-6 pb-6">
                         {history.map((h) => {
                             let changes = null;
                             try {

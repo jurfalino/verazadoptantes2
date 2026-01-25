@@ -2,6 +2,7 @@
 
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { createDb } from '@/db';
+import { revalidatePath } from 'next/cache';
 import { adopters, searches, adopterHistory, adoptions, adopterImages, adopterFlags } from '@/db/schema';
 import { or, like, eq, sql } from 'drizzle-orm';
 import { auth } from '@/auth';
@@ -239,6 +240,23 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
             addedBy
         });
 
+        // Log to adopter history
+        await db.insert(adopterHistory).values({
+            id: crypto.randomUUID(),
+            adopterId: data.adopterId,
+            changedBy: addedBy,
+            changes: JSON.stringify({
+                adoption_added: {
+                    animalName: data.animalName,
+                    species: data.species,
+                    status: data.status,
+                    rating: data.rating
+                }
+            }),
+            changedAt: new Date()
+        });
+
+        revalidatePath(`/adopter/${data.adopterId}`);
         return { success: true, id };
     } catch (error) {
         console.error("Save adoption error:", error);

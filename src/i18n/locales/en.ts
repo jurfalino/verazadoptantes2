@@ -7,6 +7,22 @@ export const en = {
         edit: 'Click to Edit',
         back_to_search: 'Back to Search',
     },
+    search: {
+        title: 'Vet an Adopter',
+        placeholder: 'Name, Phone, or Email',
+        button: 'Search Records',
+        searching: 'Searching...',
+        results: 'Found {count} matches',
+        no_results: 'No records found',
+        no_history: 'No history found for "{query}".',
+        create_new: 'Create New Record',
+        clear: 'Clear Search',
+    },
+    home: {
+        title: 'SafeAdoption',
+        tagline: 'The single source of truth for pet adoptions. Vet potential adopters and ensure your animals go to safe homes.',
+        footer: '© 2026 SafeAdoption. Protecting pets together.',
+    },
     adopter: {
         title_new: 'New Adopter',
         title_profile: 'Adopter Profile',
@@ -32,6 +48,7 @@ export const en = {
         caption_placeholder: 'Caption...',
     },
     adoption: {
+        title: 'Adoptions',
         history_title: 'Adoption History',
         record_new: 'Record New Adoption',
         animal_name: 'Animal Name',

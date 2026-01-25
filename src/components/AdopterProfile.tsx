@@ -24,7 +24,7 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
 
     return (
         <main className="min-h-screen bg-emerald-50/30 py-12 px-4 relative">
-            <div className="max-w-3xl mx-auto space-y-4">
+            <div className="max-w-3xl mx-auto space-y-8">
 
                 {!isNew && adopter && (
                     <AdopterFlagging
@@ -52,8 +52,8 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                             <ImageGallery
                                 adopterId={id}
                                 initialImages={images}
-                                onUpload={async (id, url, caption) => {
-                                    await saveImage(id, url, caption);
+                                onUpload={async (adopterId, url, caption) => {
+                                    await saveImage(adopterId, url, caption);
                                 }}
                             />
                         </CollapsibleSection>

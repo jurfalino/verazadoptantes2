@@ -17,7 +17,7 @@ export default function AdoptionHistory({ adoptions }: { adoptions: Adoption[] }
     if (adoptions.length === 0) return null;
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-4 pb-6">
             {adoptions.map((adoption) => (
                 <div key={adoption.id} className="bg-white rounded-xl p-5 shadow-sm border border-emerald-100 relative overflow-hidden transition-all hover:shadow-md">
                     <div className={`absolute left-0 top-0 bottom-0 w-1 ${adoption.status === 'returned' || adoption.status === 'failed' ? 'bg-rose-400' : 'bg-emerald-400'

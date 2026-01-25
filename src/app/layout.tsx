@@ -32,7 +32,7 @@ export default async function RootLayout({
             <div className="min-h-screen flex flex-col">
               <nav className="bg-white border-b border-emerald-100/50 sticky top-0 z-50 backdrop-blur-sm bg-white/90">
                 <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-                  <a href="/" className="font-bold text-xl bg-clip-text text-transparent bg-gradient-to-r from-emerald-600 to-teal-500">
+                  <a href="/" className="font-bold text-xl text-emerald-900">
                     SafeAdoption
                   </a>
                   <div className="flex items-center gap-4">

@@ -3,8 +3,10 @@
 import { useState } from 'react';
 import { searchAdopter, SearchResult } from '@/app/actions';
 import { RatingBadge } from './RatingBadge';
+import { useLanguage } from '@/context/LanguageContext';
 
 export default function SearchSection() {
+    const { t } = useLanguage();
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<SearchResult[] | null>(null);
     const [loading, setLoading] = useState(false);
@@ -25,18 +27,23 @@ export default function SearchSection() {
         }
     };
 
+    const handleClear = () => {
+        setQuery('');
+        setResults(null);
+    };
+
     return (
-        <div className="w-full max-w-md mx-auto p-4">
-            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-5 shadow-xl border border-white/20">
-                <h2 className="text-2xl font-bold text-gray-800 mb-4 text-center">Vet an Adopter</h2>
+        <div className="w-full">
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-emerald-100/60">
+                <h2 className="text-2xl font-bold text-emerald-900 mb-5 text-center tracking-tight">{t('search.title')}</h2>
                 <form onSubmit={handleSearch} className="space-y-4">
                     <div>
-                        <label htmlFor="search" className="sr-only">Search</label>
+                        <label htmlFor="search" className="sr-only">{t('common.search')}</label>
                         <input
                             type="text"
                             id="search"
-                            placeholder="Name, Phone, or Email"
-                            className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 transition-all outline-none text-gray-800 placeholder:text-gray-400"
+                            placeholder={t('search.placeholder')}
+                            className="w-full px-4 py-3 rounded-xl bg-white border border-emerald-200 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none text-emerald-900 placeholder:text-emerald-800/40 font-medium"
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                         />
@@ -44,25 +51,33 @@ export default function SearchSection() {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full py-3 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all disabled:opacity-70 disabled:scale-100"
+                        className="w-full py-3 px-4 bg-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 hover:shadow-xl transition-all disabled:opacity-70 transform active:scale-95"
                     >
-                        {loading ? 'Searching...' : 'Search Records'}
+                        {loading ? t('search.searching') : t('search.button')}
                     </button>
                 </form>
             </div>
 
             {results && (
                 <div className="mt-8 space-y-4">
-                    <h3 className="text-lg font-semibold text-emerald-800/80 px-2">
-                        {results.length === 0 ? 'No records found' : `Found ${results.length} matches`}
-                    </h3>
+                    <div className="flex justify-between items-center px-2">
+                        <h3 className="text-lg font-semibold text-emerald-900">
+                            {results.length === 0 ? t('search.no_results') : t('search.results').replace('{count}', results.length.toString())}
+                        </h3>
+                        <button
+                            onClick={handleClear}
+                            className="text-sm font-medium text-emerald-600 hover:text-emerald-800 underline"
+                        >
+                            {t('search.clear')}
+                        </button>
+                    </div>
                     {results.map((res) => (
                         <a key={res.adopter.id} href={`/adopter/${res.adopter.id}`} className="block group">
-                            <div className="bg-white rounded-xl p-4 shadow-sm border border-emerald-100/60 group-hover:border-emerald-300 group-hover:shadow-md transition-all">
+                            <div className="bg-white rounded-2xl p-5 shadow-sm border border-emerald-100/60 group-hover:border-emerald-300 group-hover:shadow-md transition-all">
                                 <div className="flex justify-between items-start gap-4">
                                     <div className="flex-1 min-w-0">
-                                        <div className="font-bold text-emerald-900 group-hover:text-emerald-700 transition-colors truncate">{res.adopter.name}</div>
-                                        <div className="text-sm text-emerald-600/70 truncate">{res.adopter.contactInfo || 'No contact info'}</div>
+                                        <div className="font-bold text-lg text-emerald-900 group-hover:text-emerald-700 transition-colors truncate">{res.adopter.name}</div>
+                                        <div className="text-sm text-emerald-600/70 truncate mt-1">{res.adopter.contactInfo || 'No contact info'}</div>
                                     </div>
                                     {/* Use RatingBadge for consistent display if status is 1-5 */}
                                     {res.adopter.status && ['1', '2', '3', '4', '5'].includes(res.adopter.status) ? (
@@ -80,10 +95,10 @@ export default function SearchSection() {
                         </a>
                     ))}
                     {results.length === 0 && (
-                        <div className="bg-emerald-50 rounded-xl p-6 text-center border border-emerald-100">
-                            <p className="text-emerald-800 mb-3">No history found for "{query}".</p>
+                        <div className="bg-emerald-50 rounded-2xl p-6 text-center border border-emerald-100">
+                            <p className="text-emerald-800 mb-3">{t('search.no_history').replace('{query}', query)}</p>
                             <a href="/adopter/create" className="inline-block text-sm font-semibold text-emerald-600 hover:text-emerald-800 underline">
-                                Create New Record
+                                {t('search.create_new')}
                             </a>
                         </div>
                     )}
