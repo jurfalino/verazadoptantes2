@@ -5,7 +5,7 @@ import { createDb } from '@/db';
 import { revalidatePath } from 'next/cache';
 import { adopters, searches, adopterHistory, adoptions, adopterImages, adopterFlags } from '@/db/schema';
 import { or, like, eq, sql } from 'drizzle-orm';
-// import { auth } from '@/auth';
+import { auth } from '@/auth';
 import { cookies } from 'next/headers';
 
 export interface SearchResult {
@@ -22,13 +22,24 @@ async function getDb() {
     } catch (e) {
         // Ignore error
     }
+
+    // Fallback for local development (npm run dev)
+    try {
+        const { createLocalDb } = await import('@/db/local');
+        return createLocalDb('local.db');
+    } catch (e) {
+        // This is expected in Edge runtime if better-sqlite3 is excluded
+    }
     return undefined;
 }
 
 export async function getUser() {
-    // const session = await auth();
-    // if (session?.user?.email) return `User: ${session.user.email}`;
-    const session = null;
+    try {
+        const session = await auth();
+        if (session?.user?.email) return `User: ${session.user.email}`;
+    } catch (e) {
+        // Auth failed
+    }
 
     const cookieStore = await cookies();
     const isAnon = cookieStore.get("anon_user");
