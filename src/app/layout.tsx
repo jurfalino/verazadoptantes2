@@ -20,7 +20,12 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await auth();
+  let session = null;
+  try {
+    session = await auth();
+  } catch (e) {
+    console.error("Layout Auth Error:", e);
+  }
   const cookieStore = await cookies();
   const isAnon = cookieStore.get("anon_user");
   const isAuthenticated = !!session?.user || !!isAnon;
