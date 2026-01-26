@@ -1,4 +1,4 @@
-import { auth } from "@/auth";
+// import { auth } from "@/auth";
 export const runtime = "edge";
 import Login from "@/components/Login";
 import { cookies } from "next/headers";
@@ -21,11 +21,13 @@ export default async function RootLayout({
   children: React.ReactNode;
 }) {
   let session = null;
+  /*
   try {
     session = await auth();
   } catch (e) {
     console.error("Layout Auth Error:", e);
   }
+  */
   const cookieStore = await cookies();
   const isAnon = cookieStore.get("anon_user");
   const isAuthenticated = !!session?.user || !!isAnon;

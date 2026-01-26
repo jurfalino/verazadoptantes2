@@ -25,6 +25,7 @@ export default async function DebugPage() {
         output.push("Error getting request context: " + e.message);
     }
 
+    /*
     try {
         const { auth } = await import("@/auth"); // Dynamic import to isolate
         const session = await auth();
@@ -33,6 +34,7 @@ export default async function DebugPage() {
         output.push("Auth Error: " + e.message);
         output.push("Auth Stack: " + e.stack);
     }
+    */
 
     return (
         <div className="p-8 font-mono bg-white text-black whitespace-pre-wrap">
