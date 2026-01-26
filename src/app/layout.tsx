@@ -20,7 +20,7 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  let session = null;
+  let session: any = null;
   /*
   try {
     session = await auth();
