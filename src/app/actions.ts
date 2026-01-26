@@ -14,21 +14,15 @@ export interface SearchResult {
 }
 
 async function getDb() {
-    let db;
     try {
         const { env } = getRequestContext();
         if (env && env.DB) {
-            db = createDb(env.DB);
+            return createDb(env.DB);
         }
     } catch (e) {
         // Ignore error
     }
-
-    if (!db) {
-        const { createLocalDb } = await import('@/db');
-        db = await createLocalDb('local.db');
-    }
-    return db;
+    return undefined;
 }
 
 export async function getUser() {

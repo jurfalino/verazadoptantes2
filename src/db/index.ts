@@ -21,10 +21,4 @@ export const createDb = (d1: D1Database) => {
     return drizzle(d1, { schema });
 };
 
-// For local script interaction (if needed outside of Pages/Workers context):
-export const createLocalDb = async (path: string) => {
-    const { default: Database } = await import("better-sqlite3");
-    const { drizzle: drizzleSqlite } = await import("drizzle-orm/better-sqlite3");
-    const sqlite = new Database(path);
-    return drizzleSqlite(sqlite, { schema });
-};
+
