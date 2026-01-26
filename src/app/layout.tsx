@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+export const runtime = "edge";
 import Login from "@/components/Login";
 import { cookies } from "next/headers";
 import type { Metadata } from 'next';
