@@ -1,6 +1,4 @@
 import { drizzle } from "drizzle-orm/d1";
-import { drizzle as drizzleSqlite } from "drizzle-orm/better-sqlite3";
-import Database from "better-sqlite3";
 import * as schema from "./schema";
 
 // Helper to determine if we are running in a Cloudflare Worker/Pages environment
@@ -24,7 +22,9 @@ export const createDb = (d1: D1Database) => {
 };
 
 // For local script interaction (if needed outside of Pages/Workers context):
-export const createLocalDb = (path: string) => {
+export const createLocalDb = async (path: string) => {
+    const { default: Database } = await import("better-sqlite3");
+    const { drizzle: drizzleSqlite } = await import("drizzle-orm/better-sqlite3");
     const sqlite = new Database(path);
     return drizzleSqlite(sqlite, { schema });
 };

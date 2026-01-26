@@ -76,32 +76,42 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
     }
 
     return (
-        <div id="adoption-form" className="animate-in fade-in slide-in-from-bottom-2 duration-300 bg-white p-6 rounded-xl border border-emerald-100 shadow-sm mb-6">
-            <h3 className="text-xl font-bold mb-4 text-emerald-900 tracking-tight flex items-center gap-2">
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 bg-white p-5 rounded-xl border-2 border-emerald-400/50 shadow-lg relative ring-4 ring-emerald-50/50">
+            <h3 className="text-lg font-bold mb-4 text-emerald-900 tracking-tight flex items-center gap-2">
                 {initialData ? (
                     <>
-                        <svg className="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                        Edit Adoption
+                        <div className="p-1.5 bg-emerald-100 rounded-lg text-emerald-600">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                        </div>
+                        {t('adoption.record_edit') || 'Edit Adoption'}
                     </>
-                ) : t('adoption.record_new')}
+                ) : (
+                    <>
+                        <div className="p-1.5 bg-emerald-100 rounded-lg text-emerald-600">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                        </div>
+                        {t('adoption.record_new')}
+                    </>
+                )}
             </h3>
-            <form onSubmit={handleSubmit} className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-sm font-bold text-emerald-800 mb-2 uppercase tracking-wider">{t('adoption.animal_name')}</label>
+                        <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">{t('adoption.animal_name')}</label>
                         <input
                             required
-                            className="w-full h-12 px-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none"
+                            className="w-full h-10 px-4 rounded-lg border border-emerald-200 bg-white text-emerald-950 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none text-sm"
                             value={formData.animalName}
                             onChange={e => setFormData({ ...formData, animalName: e.target.value })}
                             placeholder={t('adoption.animal_placeholder')}
                         />
                     </div>
                     <div>
-                        <label className="block text-sm font-bold text-emerald-800 mb-2 uppercase tracking-wider">{t('adoption.species')}</label>
+                        <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">{t('adoption.species')}</label>
                         <input
                             required
-                            className="w-full h-12 px-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none"
+                            className="w-full h-10 px-4 rounded-lg border border-emerald-200 bg-white text-emerald-950 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none text-sm"
                             value={formData.species}
                             onChange={e => setFormData({ ...formData, species: e.target.value })}
                             placeholder={t('adoption.species_placeholder')}
@@ -109,39 +119,49 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                     </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-sm font-bold text-emerald-800 mb-2 uppercase tracking-wider">{t('adoption.status')}</label>
-                        <select
-                            className="w-full h-12 px-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none"
-                            value={formData.status}
-                            onChange={e => setFormData({ ...formData, status: e.target.value })}
-                        >
-                            <option value="completed">{t('adoption.status_completed')}</option>
-                            <option value="returned">{t('adoption.status_returned')}</option>
-                            <option value="featured">{t('adoption.status_failed')}</option>
-                        </select>
+                        <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">{t('adoption.status')}</label>
+                        <div className="relative">
+                            <select
+                                className="w-full h-10 pl-4 pr-10 rounded-lg border border-emerald-200 bg-white text-emerald-950 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none appearance-none text-sm"
+                                value={formData.status}
+                                onChange={e => setFormData({ ...formData, status: e.target.value })}
+                            >
+                                <option value="completed">{t('adoption.status_completed')}</option>
+                                <option value="returned">{t('adoption.status_returned')}</option>
+                                <option value="featured">{t('adoption.status_failed')}</option>
+                            </select>
+                            <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-emerald-600">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                            </div>
+                        </div>
                     </div>
                     <div>
-                        <label className="block text-sm font-bold text-emerald-800 mb-2 uppercase tracking-wider">{t('adoption.rating')}</label>
-                        <select
-                            className="w-full h-12 px-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none"
-                            value={formData.rating}
-                            onChange={e => setFormData({ ...formData, rating: Number(e.target.value) })}
-                        >
-                            <option value="5">5 - Excellent</option>
-                            <option value="4">4 - Good</option>
-                            <option value="3">3 - Average</option>
-                            <option value="2">2 - Poor</option>
-                            <option value="1">1 - Bad</option>
-                        </select>
+                        <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">{t('adoption.rating')}</label>
+                        <div className="relative">
+                            <select
+                                className="w-full h-10 pl-4 pr-10 rounded-lg border border-emerald-200 bg-white text-emerald-950 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none appearance-none text-sm"
+                                value={formData.rating}
+                                onChange={e => setFormData({ ...formData, rating: Number(e.target.value) })}
+                            >
+                                <option value="5">5 - Excellent</option>
+                                <option value="4">4 - Good</option>
+                                <option value="3">3 - Average</option>
+                                <option value="2">2 - Poor</option>
+                                <option value="1">1 - Bad</option>
+                            </select>
+                            <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-emerald-600">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <div>
-                    <label className="block text-sm font-bold text-emerald-800 mb-2 uppercase tracking-wider">{t('adoption.notes')}</label>
+                    <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">{t('adoption.notes')}</label>
                     <textarea
-                        className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none resize-none"
+                        className="w-full p-3 rounded-lg border border-emerald-200 bg-white text-emerald-950 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none resize-none text-sm"
                         rows={3}
                         value={formData.details}
                         onChange={e => setFormData({ ...formData, details: e.target.value })}
@@ -149,12 +169,18 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                     />
                 </div>
 
-                <div className="flex justify-end gap-3 pt-4 border-t border-emerald-100">
-                    <button type="button" onClick={handleCancel} className="px-5 py-2.5 text-emerald-700 font-semibold hover:bg-emerald-50 rounded-xl transition-colors">{t('common.cancel')}</button>
+                <div className="flex justify-end gap-3 pt-4 border-t border-emerald-100/50">
+                    <button
+                        type="button"
+                        onClick={handleCancel}
+                        className="px-4 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
+                    >
+                        {t('common.cancel')}
+                    </button>
                     <button
                         type="submit"
                         disabled={loading}
-                        className="px-8 py-2.5 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 shadow-lg shadow-emerald-500/30 disabled:opacity-50 transition-all transform hover:-translate-y-0.5"
+                        className="px-6 py-2 text-sm font-bold text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 shadow-md shadow-emerald-500/20 disabled:opacity-50 transition-all active:scale-95"
                     >
                         {loading ? t('adoption.saving') : t('adoption.submit')}
                     </button>

@@ -1,3 +1,13 @@
+CREATE TABLE `adopter_flags` (
+	`id` text PRIMARY KEY NOT NULL,
+	`adopter_id` text NOT NULL,
+	`flagged_by` text DEFAULT 'anonymous',
+	`reason` text DEFAULT 'duplicate',
+	`target_adopter_id` text,
+	`details` text,
+	`created_at` integer DEFAULT (strftime('%s', 'now'))
+);
+--> statement-breakpoint
 CREATE TABLE `adopter_history` (
 	`id` text PRIMARY KEY NOT NULL,
 	`adopter_id` text NOT NULL,
@@ -6,29 +16,37 @@ CREATE TABLE `adopter_history` (
 	`changed_at` integer DEFAULT (strftime('%s', 'now'))
 );
 --> statement-breakpoint
+CREATE TABLE `adopter_images` (
+	`id` text PRIMARY KEY NOT NULL,
+	`adopter_id` text NOT NULL,
+	`url` text NOT NULL,
+	`caption` text,
+	`uploaded_at` integer DEFAULT (strftime('%s', 'now')),
+	`added_by` text DEFAULT 'anonymous'
+);
+--> statement-breakpoint
 CREATE TABLE `adopters` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
-	`phone` text,
-	`email` text,
-	`address` text,
-	`socials` text,
+	`contact_info` text,
+	`address_info` text,
 	`created_at` integer DEFAULT (strftime('%s', 'now')),
 	`updated_at` integer DEFAULT (strftime('%s', 'now')),
 	`status` text DEFAULT 'good'
 );
 --> statement-breakpoint
 CREATE INDEX `name_idx` ON `adopters` (`name`);--> statement-breakpoint
-CREATE INDEX `phone_idx` ON `adopters` (`phone`);--> statement-breakpoint
 CREATE TABLE `adoptions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`adopter_id` text NOT NULL,
 	`animal_name` text,
+	`species` text,
 	`details` text,
 	`status` text,
 	`rating` integer,
 	`comments` text,
-	`date` integer
+	`date` integer,
+	`added_by` text DEFAULT 'anonymous'
 );
 --> statement-breakpoint
 CREATE TABLE `searches` (

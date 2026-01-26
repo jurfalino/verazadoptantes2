@@ -1,9 +1,71 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "26618223-e0ef-47a4-8c1e-5aabe92ef590",
+  "id": "8e82025f-9e7d-486d-bfeb-f0be6936a4ee",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
+    "adopter_flags": {
+      "name": "adopter_flags",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "adopter_id": {
+          "name": "adopter_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "flagged_by": {
+          "name": "flagged_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": "'anonymous'"
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": "'duplicate'"
+        },
+        "target_adopter_id": {
+          "name": "target_adopter_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "details": {
+          "name": "details",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": "(strftime('%s', 'now'))"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "adopter_history": {
       "name": "adopter_history",
       "columns": {
@@ -51,6 +113,60 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "adopter_images": {
+      "name": "adopter_images",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "adopter_id": {
+          "name": "adopter_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "url": {
+          "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "caption": {
+          "name": "caption",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "uploaded_at": {
+          "name": "uploaded_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": "(strftime('%s', 'now'))"
+        },
+        "added_by": {
+          "name": "added_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": "'anonymous'"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "adopters": {
       "name": "adopters",
       "columns": {
@@ -68,29 +184,15 @@
           "notNull": true,
           "autoincrement": false
         },
-        "phone": {
-          "name": "phone",
+        "contact_info": {
+          "name": "contact_info",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
         },
-        "email": {
-          "name": "email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "address": {
-          "name": "address",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "socials": {
-          "name": "socials",
+        "address_info": {
+          "name": "address_info",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -128,13 +230,6 @@
             "name"
           ],
           "isUnique": false
-        },
-        "phone_idx": {
-          "name": "phone_idx",
-          "columns": [
-            "phone"
-          ],
-          "isUnique": false
         }
       },
       "foreignKeys": {},
@@ -161,6 +256,13 @@
         },
         "animal_name": {
           "name": "animal_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "species": {
+          "name": "species",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -200,6 +302,14 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "added_by": {
+          "name": "added_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": "'anonymous'"
         }
       },
       "indexes": {},

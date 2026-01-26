@@ -24,7 +24,6 @@ interface AdopterProfileProps {
 
 export function AdopterProfile({ id, isNew, adopter, history, adoptions, images, flags, currentUser }: AdopterProfileProps) {
     const { t } = useLanguage();
-    const [editingAdoption, setEditingAdoption] = useState<any>(null);
 
     return (
         <main className="min-h-screen bg-emerald-50/30 py-12 px-4 relative">
@@ -67,18 +66,10 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                         <CollapsibleSection title={t('adoption.title')} count={adoptions.length} defaultOpen={true}>
                             <AdoptionForm
                                 adopterId={id}
-                                initialData={editingAdoption}
-                                onCancel={() => setEditingAdoption(null)}
-                                onSuccess={() => setEditingAdoption(null)}
                             />
                             <AdoptionHistory
                                 adoptions={adoptions}
-                                onEdit={(adoption) => {
-                                    setEditingAdoption(adoption);
-                                    // Scroll to form
-                                    const form = document.getElementById('adoption-form');
-                                    if (form) form.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                }}
+                                onEdit={() => { }}
                                 adopterId={id}
                                 currentUser={currentUser}
                             />

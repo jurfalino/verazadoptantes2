@@ -26,7 +26,7 @@ async function getDb() {
 
     if (!db) {
         const { createLocalDb } = await import('@/db');
-        db = createLocalDb('local.db');
+        db = await createLocalDb('local.db');
     }
     return db;
 }

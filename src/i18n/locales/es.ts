@@ -53,6 +53,7 @@ export const es = {
         title: 'Adopciones',
         history_title: 'Historial de Adopciones',
         record_new: 'Registrar Nueva Adopción',
+        record_edit: 'Editar Registro',
         animal_name: 'Nombre del Animal',
         animal_placeholder: 'ej. Luna',
         species: 'Especie',

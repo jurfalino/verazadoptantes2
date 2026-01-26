@@ -6,4 +6,4 @@ pages_build_output_dir = ".vercel/output/static"
 [[d1_databases]]
 binding = "DB"
 database_name = "pet-adoption-db"
-database_id = "xxxx-xxxx-xxxx-xxxx" # Placeholder, will need to be set by user or created
+database_id = "62ec01e7-deae-4536-be62-7c0a0064b45c"
