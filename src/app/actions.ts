@@ -22,6 +22,14 @@ async function getDb() {
     } catch (e) {
         // Ignore error
     }
+
+    // Fallback for local development (npm run dev)
+    try {
+        const { createLocalDb } = await import('@/db/local');
+        return createLocalDb('local.db');
+    } catch (e) {
+        // This is expected in Edge runtime where 'better-sqlite3' is excluded
+    }
     return undefined;
 }
 
