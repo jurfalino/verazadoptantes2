@@ -5,7 +5,9 @@ export const runtime = 'edge';
 export default async function DebugPage() {
     let output = [];
 
-    output.push("Runtime: " + (typeof EdgeRuntime === 'string' ? 'EdgeRuntime' : 'Node'));
+    // @ts-ignore
+    const isEdge = (globalThis as any).EdgeRuntime;
+    output.push("Runtime: " + (isEdge ? 'EdgeRuntime' : 'Node'));
 
     try {
         const { env } = getRequestContext();
@@ -13,8 +15,9 @@ export default async function DebugPage() {
         if (env) {
             output.push("Env Keys: " + Object.keys(env).join(", "));
             // Check specific keys
-            output.push("DB Binding: " + (env.DB ? "Present" : "MISSING"));
-            output.push("AUTH_SECRET: " + (env.AUTH_SECRET ? "Present" : "MISSING"));
+            const safeEnv = env as any;
+            output.push("DB Binding: " + (safeEnv.DB ? "Present" : "MISSING"));
+            output.push("AUTH_SECRET: " + (safeEnv.AUTH_SECRET ? "Present" : "MISSING"));
         } else {
             output.push("Env: Null");
         }
