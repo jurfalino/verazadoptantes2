@@ -9,6 +9,10 @@ const nextConfig: NextConfig = {
         "better-sqlite3": false,
         fs: false,
         path: false,
+        async_hooks: false,
+        net: false,
+        tls: false,
+        child_process: false,
       };
     }
     return config;
