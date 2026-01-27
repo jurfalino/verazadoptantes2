@@ -6,8 +6,8 @@ const nextConfig: NextConfig = {
     if (nextRuntime === 'edge') {
       config.resolve.alias = {
         ...config.resolve.alias,
-        "async_hooks": path.resolve(__dirname, "src/polyfills/async_hooks.js"),
-        "node:async_hooks": path.resolve(__dirname, "src/polyfills/async_hooks.js"),
+        "async_hooks": path.join(process.cwd(), "src/polyfills/async_hooks.js"),
+        "node:async_hooks": path.join(process.cwd(), "src/polyfills/async_hooks.js"),
       };
       config.externals = [...(config.externals || []), 'better-sqlite3'];
       config.resolve.fallback = {
