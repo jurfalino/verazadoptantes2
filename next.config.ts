@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
         fs: false,
         path: false,
         async_hooks: false,
+        "node:async_hooks": false,
         net: false,
         tls: false,
         child_process: false,
