@@ -1,9 +1,15 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const nextConfig: NextConfig = {
   webpack: (config, { nextRuntime }) => {
     if (nextRuntime === 'edge') {
-      config.externals = [...(config.externals || []), 'better-sqlite3', 'node:async_hooks', 'async_hooks'];
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        "async_hooks": path.resolve(__dirname, "src/polyfills/async_hooks.js"),
+        "node:async_hooks": path.resolve(__dirname, "src/polyfills/async_hooks.js"),
+      };
+      config.externals = [...(config.externals || []), 'better-sqlite3'];
       config.resolve.fallback = {
         ...config.resolve.fallback,
         "better-sqlite3": false,
