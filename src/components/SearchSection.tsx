@@ -4,12 +4,45 @@ import { useState } from 'react';
 import { searchAdopter, SearchResult } from '@/app/actions';
 import { RatingBadge } from './RatingBadge';
 import { useLanguage } from '@/context/LanguageContext';
+import { useSession } from 'next-auth/react';
+import { useAuthContext } from '@/context/AuthContext';
+import { useRouter } from 'next/navigation';
 
 export default function SearchSection() {
     const { t } = useLanguage();
+    const router = useRouter();
+    const { data: session } = useSession();
+    const { openLogin } = useAuthContext();
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<SearchResult[] | null>(null);
     const [loading, setLoading] = useState(false);
+
+    const handleCreateNew = (e: React.MouseEvent) => {
+        e.preventDefault();
+        // Check both session and anon cookie (anon cookie handling in client is via document.cookie usually, but layout handles session hydration)
+        // Since we wrapped SessionProvider, session should be active for anon users if the backend returns it?
+        // Actually, our RootLayout manual check `isAuthenticated` doesn't automatically sync with `useSession` if next-auth doesn't know about anon cookie.
+        // However, UserMenu uses `isAnon` prop.
+        // Let's check if session.user exists. If not, check "anon_user" cookie manually or just use a helper.
+        // For simplicity, if !session?.user && !document.cookie.includes('anon_user'), open login.
+
+        const isAnon = document.cookie.includes('anon_user=true');
+        if (!session?.user && !isAnon) {
+            openLogin();
+        } else {
+            try {
+                router.push('/adopter/create');
+                // Fallback if router fails
+                setTimeout(() => {
+                    if (!window.location.pathname.includes('/adopter/')) {
+                        window.location.href = '/adopter/create';
+                    }
+                }, 500);
+            } catch (e) {
+                window.location.href = '/adopter/create';
+            }
+        }
+    };
 
     const handleSearch = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -78,13 +111,13 @@ export default function SearchSection() {
                             <h3 className="text-lg font-semibold text-emerald-900">
                                 {t('search.results').replace('{count}', results.length.toString())}
                             </h3>
-                            <a
-                                href="/adopter/create"
+                            <button
+                                onClick={handleCreateNew}
                                 className="flex items-center gap-2 px-3 py-1.5 text-sm font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors border border-emerald-100"
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                                 {t('search.create_new')}
-                            </a>
+                            </button>
                         </div>
                     )}
                     {results.map((res) => (
@@ -120,9 +153,9 @@ export default function SearchSection() {
                     {results.length === 0 && (
                         <div className="bg-emerald-50 rounded-2xl p-6 text-center border border-emerald-100">
                             <p className="text-emerald-800 mb-3">{t('search.no_history').replace('{query}', query)}</p>
-                            <a href="/adopter/create" className="inline-block text-sm font-semibold text-emerald-600 hover:text-emerald-800 underline">
+                            <button onClick={handleCreateNew} className="inline-block text-sm font-semibold text-emerald-600 hover:text-emerald-800 underline">
                                 {t('search.create_new')}
-                            </a>
+                            </button>
                         </div>
                     )}
                 </div>
@@ -130,3 +163,4 @@ export default function SearchSection() {
         </div>
     );
 }
+

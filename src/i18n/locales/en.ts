@@ -13,13 +13,30 @@ export const en = {
         welcome: 'Welcome to SafeAdoption',
         welcome_sub: 'Please sign in to ensure accountability. Your identity helps build trust in the community.',
         continue_google: 'Continue with Google',
+        login_title: 'Sign In',
+        login_desc: 'Sign in to access advanced features.',
+        continue_email: 'Continue with Email',
+        signing_in: 'Signing in...',
         or: 'Or',
         skip_anon: 'Skip and continue anonymously',
         anon_disclaimer: '*Anonymous edits are tracked by IP address and device fingerprint to prevent abuse.',
     },
     nav: {
         sign_out: 'Sign Out',
+        sign_in: 'Sign In',
         anon_mode: 'Anonymous Mode',
+        back_to_search: 'Back to Search',
+    },
+    login: {
+        title: 'Sign In',
+        desc: 'Access the registry to protect your animals.',
+        google: 'Continue with Google',
+        email_label: 'Or sign in with email',
+        email_placeholder: 'vet@clinic.com',
+        email_btn: 'Continue with Email',
+        email_magic_link: 'We\'ll send you a magic link to sign in.',
+        check_email: 'Check your email for the login link!',
+        cancel: 'Cancel'
     },
     search: {
         title: 'Vet an Adopter',
@@ -35,6 +52,12 @@ export const en = {
     home: {
         title: 'SafeAdoption',
         tagline: 'The single source of truth for pet adoptions. Vet potential adopters and ensure your animals go to safe homes.',
+        action_register_title: 'Register Adoption',
+        action_register_desc: 'Record a new successful adoption.',
+        action_register_btn: 'Register Now',
+        action_report_title: 'Report Bad Adopter',
+        action_report_desc: 'Flag an adopter to warn others.',
+        action_report_btn: 'Report Adopter',
         footer: '© 2026 SafeAdoption. Protecting pets together.',
     },
     adopter: {
@@ -45,10 +68,10 @@ export const en = {
         manage_details: 'Manage contact details, history, and adoptions.',
         status: 'Status (Rating)',
         status_5: '5 - Excellent ⭐⭐⭐⭐⭐',
-        status_4: '4 - Good ⭐⭐⭐⭐',
-        status_3: '3 - Average ⭐⭐⭐',
-        status_2: '2 - Poor ⭐⭐',
-        status_1: '1 - Bad ⭐',
+        status_4: '4 - Good ⭐⭐⭐',
+        status_3: '3 - Average ⭐',
+        status_2: '2 - Unclear ⚠️',
+        status_1: '1 - Dangerous 🚩',
         name: 'Full Name',
         contact: 'Contact Details',
         address: 'Addresses',
@@ -118,5 +141,13 @@ export const en = {
         desc_adoption_added: 'Added record for',
         desc_adoption_deleted: 'Deleted adoption record:',
         desc_image_deleted: 'Deleted photo'
+    },
+    ratings: {
+        excellent: 'Excellent',
+        good: 'Good',
+        average: 'Average',
+        poor: 'Poor',
+        bad: 'Bad',
+        unknown: 'Unknown'
     }
 };

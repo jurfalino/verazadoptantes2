@@ -135,7 +135,7 @@ export async function searchAdopter(query: string): Promise<SearchResult[]> {
         const extraIds = new Set([...historyIds, ...adoptionIds]);
 
         // Remove IDs already found in directResults
-        directResults.forEach(r => extraIds.delete(r.id));
+        directResults.forEach((r: any) => extraIds.delete(r.id));
 
         // Fetch profiles for extra IDs
         let extraProfiles: typeof adopters.$inferSelect[] = [];
@@ -198,8 +198,16 @@ export async function getAdopter(id: string) {
 export async function saveAdopter(data: typeof adopters.$inferInsert) {
     try {
         const db = await getDb();
-        if (!db) throw new Error("No database");
-        const changedBy = await getUser();
+        if (!db) {
+            throw new Error("No database");
+        }
+
+        let changedBy = 'Unknown';
+        try {
+            changedBy = await getUser();
+        } catch (e) {
+            console.error("getUser failed", e);
+        }
 
         // Check if exists
         const existing = await db.select().from(adopters).where(eq(adopters.id, data.id || 'new')).get();

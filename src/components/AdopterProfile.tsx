@@ -54,7 +54,7 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                     </div>
                 </header>
 
-                <AdopterForm initialData={adopter} history={history} />
+                <AdopterForm initialData={adopter} history={history} currentUser={currentUser} />
 
                 {!isNew && adopter && (
                     <>

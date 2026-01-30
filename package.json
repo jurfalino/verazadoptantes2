@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@auth/core": "^0.41.0",
+    "@auth/drizzle-adapter": "^1.11.1",
     "@cloudflare/next-on-pages": "^1.13.16",
     "better-sqlite3": "^12.6.2",
     "drizzle-orm": "^0.45.1",
@@ -17,7 +18,8 @@
     "next": "15.1.6",
     "next-auth": "^5.0.0-beta.30",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "resend": "^6.9.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260118.0",

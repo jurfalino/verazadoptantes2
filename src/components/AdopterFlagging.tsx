@@ -4,10 +4,14 @@ import { useState, useEffect } from 'react';
 import { flagAdopter, searchAdopter } from '@/app/actions';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
+import { useSession } from 'next-auth/react';
+import { useAuthContext } from '@/context/AuthContext';
 
 export function AdopterFlagging({ adopterId, adopterName, existingFlags }: { adopterId: string, adopterName: string, existingFlags: any[] }) {
     const router = useRouter();
     const { t } = useLanguage();
+    const { data: session } = useSession();
+    const { openLogin } = useAuthContext();
     const [isOpen, setIsOpen] = useState(false);
     const [reason, setReason] = useState('duplicate');
     const [details, setDetails] = useState('');
@@ -157,7 +161,14 @@ export function AdopterFlagging({ adopterId, adopterName, existingFlags }: { ado
             {/* Header Button */}
             <div className="absolute top-0 right-0 mt-4 mr-4">
                 <button
-                    onClick={() => setIsOpen(true)}
+                    onClick={() => {
+                        const isAnon = document.cookie.includes('anon_user=true');
+                        if (!session?.user && !isAnon) {
+                            openLogin();
+                            return;
+                        }
+                        setIsOpen(true);
+                    }}
                     className="group flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-all duration-200"
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 transition-transform group-hover:scale-110" fill="none" viewBox="0 0 24 24" stroke="currentColor">

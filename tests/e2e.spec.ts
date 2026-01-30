@@ -28,6 +28,10 @@ async function loginAsAnon(page: any) {
 test.describe('Adopter Lifecycle & Core Features', () => {
 
     test.beforeEach(async ({ page }) => {
+        // Stream console logs to stdout for debugging
+        page.on('console', msg => console.log(`[Browser Console] ${msg.text()}`));
+        page.on('pageerror', exception => console.log(`[Browser Error] ${exception}`));
+
         await loginAsAnon(page);
     });
 
@@ -42,12 +46,35 @@ test.describe('Adopter Lifecycle & Core Features', () => {
         await page.getByPlaceholder(/John Doe|Juan Pérez/i).fill(testName);
         await page.getByPlaceholder(/Phone: 555-0123|Tel: 555-0123/i).fill(`Phone: ${testPhone}`);
 
+        // Verify default status is 5
+        await expect(page.locator('select')).toHaveValue('5');
+
         await page.click('button[type="submit"]');
 
         await expect(page).toHaveURL(/\/adopter\/\d+/);
 
         await expect(page.getByRole('heading', { name: /Adopter Profile|Perfil/i })).toBeVisible();
         await expect(page.getByText(testName)).toBeVisible();
+    });
+
+    test('Report Bad Adopter Flow', async ({ page }) => {
+        await page.goto('/adopter/create?intent=report');
+
+        const testName = `Bad Actor ${Date.now()}`;
+        await page.getByPlaceholder(/John Doe|Juan Pérez/i).fill(testName);
+
+        // Verify default status is 1 (Bad)
+        await expect(page.locator('select')).toHaveValue('1');
+
+        await page.click('button[type="submit"]');
+
+        // Should save successfully
+        await expect(page).toHaveURL(/\/adopter\/\d+/);
+        await expect(page.getByText(testName)).toBeVisible();
+
+        // Verify the saved status is indeed 1/Bad
+        // We look for the status text or badge
+        await expect(page.getByText(/1 - Bad|1 - Pésimo|1 - Dangerous|1 - Peligro/i)).toBeVisible();
     });
 
     test('Edit Adopter Profile', async ({ page }) => {

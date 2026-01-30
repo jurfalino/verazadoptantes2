@@ -2,9 +2,13 @@
 
 import { useState } from "react";
 import { useLanguage } from '@/context/LanguageContext';
+import { useSession } from 'next-auth/react';
+import { useAuthContext } from '@/context/AuthContext';
 
 export function ImageGallery({ adopterId, initialImages, onUpload, currentUser }: { adopterId: string, initialImages: any[], onUpload: (id: string, url: string, caption: string) => Promise<void>, currentUser: string }) {
     const { t } = useLanguage();
+    const { data: session } = useSession();
+    const { openLogin } = useAuthContext();
     const [images, setImages] = useState(initialImages);
     const [uploading, setUploading] = useState(false);
 
@@ -100,6 +104,12 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser }
                             <button
                                 onClick={async (e) => {
                                     e.preventDefault();
+                                    const isAnon = document.cookie.includes('anon_user=true');
+                                    if (!session?.user && !isAnon) {
+                                        openLogin();
+                                        return;
+                                    }
+
                                     if (!confirm(t('common.delete') + '?')) return;
                                     try {
                                         const { deleteImage } = await import('@/app/actions');
@@ -133,7 +143,15 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser }
                     </div>
                 ))}
 
-                <label className="aspect-square bg-emerald-50/50 border-2 border-dashed border-emerald-200/60 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-emerald-50 hover:border-emerald-300 transition-all group">
+                <label
+                    onClick={(e) => {
+                        const isAnon = document.cookie.includes('anon_user=true');
+                        if (!session?.user && !isAnon) {
+                            e.preventDefault();
+                            openLogin();
+                        }
+                    }}
+                    className="aspect-square bg-emerald-50/50 border-2 border-dashed border-emerald-200/60 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-emerald-50 hover:border-emerald-300 transition-all group">
                     <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} disabled={uploading} />
                     <span className="text-3xl text-emerald-300 group-hover:text-emerald-500 transition-colors">+</span>
                     <span className="text-xs text-emerald-600/70 group-hover:text-emerald-700 font-bold mt-1 uppercase tracking-wide">{uploading ? t('adopter.uploading') : t('adopter.upload_image')}</span>

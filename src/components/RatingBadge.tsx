@@ -1,4 +1,5 @@
 import { Star } from 'lucide-react';
+import { useLanguage } from '@/context/LanguageContext';
 
 interface RatingBadgeProps {
     rating: number | string; // Supports '1'-'5' or 1-5
@@ -6,6 +7,7 @@ interface RatingBadgeProps {
 }
 
 export function RatingBadge({ rating, size = 'md' }: RatingBadgeProps) {
+    const { t } = useLanguage();
     const numRating = Number(rating);
     const isValid = !isNaN(numRating) && numRating >= 1 && numRating <= 5;
 
@@ -16,12 +18,12 @@ export function RatingBadge({ rating, size = 'md' }: RatingBadgeProps) {
     // Unified Style: Always Emerald-50 background, Emerald-900 text.
     // Only the Label text changes, but the container style remains exactely the same.
     const config = {
-        5: { label: 'Excellent' },
-        4: { label: 'Good' },
-        3: { label: 'Average' },
-        2: { label: 'Poor' },
-        1: { label: 'Bad' },
-    }[numRating] || { label: 'Unknown' };
+        5: { label: t('ratings.excellent') },
+        4: { label: t('ratings.good') },
+        3: { label: t('ratings.average') },
+        2: { label: t('ratings.poor') },
+        1: { label: t('ratings.bad') },
+    }[numRating] || { label: t('ratings.unknown') };
 
     const commonStyle = "bg-emerald-50 text-emerald-900 border border-emerald-100";
 

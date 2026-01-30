@@ -13,13 +13,30 @@ export const es = {
         welcome: 'Bienvenido a SafeAdoption',
         welcome_sub: 'Inicia sesión para garantizar la responsabilidad. Tu identidad ayuda a construir confianza en la comunidad.',
         continue_google: 'Continuar con Google',
+        login_title: 'Iniciar Sesión',
+        login_desc: 'Inicia sesión para acceder a funciones avanzadas.',
+        continue_email: 'Continuar con Email',
+        signing_in: 'Iniciando sesión...',
         or: 'O',
         skip_anon: 'Saltar y continuar anónimamente',
         anon_disclaimer: '*Las ediciones anónimas se rastrean por dirección IP y huella digital para evitar abusos.',
     },
     nav: {
         sign_out: 'Cerrar Sesión',
+        sign_in: 'Iniciar Sesión',
         anon_mode: 'Modo Anónimo',
+        back_to_search: 'Volver a Buscar',
+    },
+    login: {
+        title: 'Iniciar Sesión',
+        desc: 'Accede al registro para proteger a tus animales.',
+        google: 'Continuar con Google',
+        email_label: 'O ingresa con tu email',
+        email_placeholder: 'vet@clinica.com',
+        email_btn: 'Continuar con Email',
+        email_magic_link: 'Te enviaremos un enlace mágico para entrar.',
+        check_email: '¡Revisa tu correo para el enlace de acceso!',
+        cancel: 'Cancelar'
     },
     search: {
         title: 'Verificar Adoptante',
@@ -35,6 +52,12 @@ export const es = {
     home: {
         title: 'SafeAdoption',
         tagline: 'La fuente única de verdad para adopciones de mascotas. Verifica adoptantes potenciales y asegura que tus animales vayan a hogares seguros.',
+        action_register_title: 'Registrar Adopción',
+        action_register_desc: 'Registrar una nueva adopción exitosa.',
+        action_register_btn: 'Registrar Ahora',
+        action_report_title: 'Reportar Mal Adoptante',
+        action_report_desc: 'Marcar a un adoptante para advertir a otros.',
+        action_report_btn: 'Reportar Adoptante',
         footer: '© 2026 SafeAdoption. Protegiendo mascotas juntos.',
     },
     adopter: {
@@ -45,10 +68,10 @@ export const es = {
         manage_details: 'Gestionar datos de contacto, historial y adopciones.',
         status: 'Estado (Calificación)',
         status_5: '5 - Excelente ⭐⭐⭐⭐⭐',
-        status_4: '4 - Bueno ⭐⭐⭐⭐',
-        status_3: '3 - Regular ⭐⭐⭐',
-        status_2: '2 - Malo ⭐⭐',
-        status_1: '1 - Pésimo ⭐',
+        status_4: '4 - Bueno ⭐⭐⭐',
+        status_3: '3 - Regular ⭐',
+        status_2: '2 - Cuidado ⚠️',
+        status_1: '1 - Peligro 🚩',
         name: 'Nombre Completo',
         contact: 'Detalles de Contacto',
         address: 'Direcciones',
@@ -118,5 +141,13 @@ export const es = {
         desc_adoption_added: 'Registro añadido para',
         desc_adoption_deleted: 'Registro de adopción eliminado:',
         desc_image_deleted: 'Foto eliminada'
+    },
+    ratings: {
+        excellent: 'Excelente',
+        good: 'Bueno',
+        average: 'Regular',
+        poor: 'Malo',
+        bad: 'Pésimo',
+        unknown: 'Desconocido'
     }
 };

@@ -1,15 +1,21 @@
 'use client';
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { saveAdopter } from "@/app/actions";
 import { useLanguage } from "@/context/LanguageContext";
 import { RatingBadge } from '@/components/RatingBadge';
 import { CollapsibleSection } from '@/components/CollapsibleSection';
+import { useSession } from 'next-auth/react';
+import { useAuthContext } from '@/context/AuthContext';
 
-export function AdopterForm({ initialData, history = [] }: { initialData?: any, history?: any[] }) {
+export function AdopterForm({ initialData, history = [], currentUser }: { initialData?: any, history?: any[], currentUser?: string }) {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const intent = searchParams.get('intent');
     const { t } = useLanguage();
+    const { data: session } = useSession();
+    const { openLogin } = useAuthContext();
     const isNew = !initialData?.id;
 
     const [isEditing, setIsEditing] = useState(isNew);
@@ -18,7 +24,7 @@ export function AdopterForm({ initialData, history = [] }: { initialData?: any, 
     const [data, setData] = useState({
         id: initialData?.id || '',
         name: initialData?.name || '',
-        status: initialData?.status || '5', // Default to 5 stars
+        status: initialData?.status || (intent === 'report' ? '1' : '5'), // Default to 1 if reporting, else 5
         contactInfo: initialData?.contactInfo || '',
         addressInfo: initialData?.addressInfo || '',
         familyMembers: initialData?.familyMembers || '',
@@ -26,17 +32,55 @@ export function AdopterForm({ initialData, history = [] }: { initialData?: any, 
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
+        console.log("[ADOPTER FORM] handleSave triggered");
+
+        // Check auth using server prop OR client session
+        const isServerAuth = currentUser && (currentUser.startsWith('User:') || currentUser.startsWith('Anon:'));
+        const isClientAuth = session?.user || document.cookie.includes('anon_user=true');
+
+        console.log("[ADOPTER FORM] Auth check:", {
+            currentUser,
+            isServerAuth,
+            sessionUser: session?.user?.email,
+            hasCookie: document.cookie.includes('anon_user=true'),
+            isClientAuth
+        });
+
+        if (!isServerAuth && !isClientAuth) {
+            console.log("[ADOPTER FORM] Auth FAILED - calling openLogin()");
+            openLogin();
+            return;
+        }
+
+        console.log("[ADOPTER FORM] Auth PASSED - proceeding with save", data);
         setLoading(true);
         try {
+            console.log("[ADOPTER FORM] Calling saveAdopter...");
             const res = await saveAdopter(data);
+            console.log("[ADOPTER FORM] saveAdopter response:", res);
             if (res.success) {
+                console.log("[ADOPTER FORM] Save success! isNew:", isNew, "res.id:", res.id);
                 if (isNew) {
-                    router.push(`/adopter/${res.id}`);
+                    console.log("[ADOPTER FORM] Navigating to /adopter/" + res.id);
+                    try {
+                        router.push(`/adopter/${res.id}`);
+                        // Fallback: Force navigation if router.push doesn't work
+                        setTimeout(() => {
+                            if (window.location.pathname === '/adopter/create') {
+                                console.warn("[ADOPTER FORM] router.push failed, using window.location");
+                                window.location.href = `/adopter/${res.id}`;
+                            }
+                        }, 500);
+                    } catch (navError) {
+                        console.error("[ADOPTER FORM] Navigation error:", navError);
+                        window.location.href = `/adopter/${res.id}`;
+                    }
                 } else {
                     setIsEditing(false);
                     router.refresh();
                 }
             } else {
+                console.error("[ADOPTER FORM] Save failed - no success flag");
                 alert("Failed to save");
             }
         } catch (err: any) {
@@ -137,11 +181,11 @@ export function AdopterForm({ initialData, history = [] }: { initialData?: any, 
                                     value={data.status}
                                     onChange={(e) => setData({ ...data, status: e.target.value })}
                                 >
-                                    <option value="5">5 - {t('adopter.status_5')}</option>
-                                    <option value="4">4 - {t('adopter.status_4')}</option>
-                                    <option value="3">3 - {t('adopter.status_3')}</option>
-                                    <option value="2">2 - {t('adopter.status_2')}</option>
-                                    <option value="1">1 - {t('adopter.status_1')}</option>
+                                    <option value="5">{t('adopter.status_5')}</option>
+                                    <option value="4">{t('adopter.status_4')}</option>
+                                    <option value="3">{t('adopter.status_3')}</option>
+                                    <option value="2">{t('adopter.status_2')}</option>
+                                    <option value="1">{t('adopter.status_1')}</option>
                                 </select>
                                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 opacity-50 text-emerald-800">
                                     <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
@@ -172,7 +216,14 @@ export function AdopterForm({ initialData, history = [] }: { initialData?: any, 
                         ) : (
                             <button
                                 type="button"
-                                onClick={() => setIsEditing(true)}
+                                onClick={() => {
+                                    const isAnon = document.cookie.includes('anon_user=true');
+                                    if (!session?.user && !isAnon) {
+                                        openLogin();
+                                        return;
+                                    }
+                                    setIsEditing(true);
+                                }}
                                 className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>

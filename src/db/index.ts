@@ -1,4 +1,4 @@
-import { drizzle } from "drizzle-orm/d1";
+// import { drizzle } from "drizzle-orm/d1"; // This may crash in Node environment if D1 specific bindings are used immediately
 import * as schema from "./schema";
 
 // Helper to determine if we are running in a Cloudflare Worker/Pages environment
@@ -18,6 +18,8 @@ import * as schema from "./schema";
 // Let's standardise on passing the D1Database binding to the drizzle helper function.
 
 export const createDb = (d1: D1Database) => {
+    // Dynamic import to avoid crash in Node.js (local npm run dev)
+    const { drizzle } = require("drizzle-orm/d1");
     return drizzle(d1, { schema });
 };
 

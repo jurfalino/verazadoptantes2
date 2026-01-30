@@ -2,6 +2,7 @@
 
 import { signOut } from 'next-auth/react';
 import { useLanguage } from '@/context/LanguageContext';
+import { useAuthContext } from '@/context/AuthContext';
 
 interface UserMenuProps {
     user?: {
@@ -14,6 +15,7 @@ interface UserMenuProps {
 
 export default function UserMenu({ user, isAnon }: UserMenuProps) {
     const { t } = useLanguage();
+    const { openLogin } = useAuthContext();
 
     const handleSignOut = async () => {
         if (isAnon) {
@@ -60,7 +62,15 @@ export default function UserMenu({ user, isAnon }: UserMenuProps) {
                         {t('nav.sign_out')}
                     </button>
                 </div>
-            ) : null}
+            ) : (
+                <button
+                    onClick={() => openLogin()}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-all"
+                >
+                    {t('nav.sign_in') || 'Sign In'}
+                </button>
+            )}
         </div>
     );
 }
+

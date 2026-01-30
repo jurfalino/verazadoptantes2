@@ -4,10 +4,14 @@ import { useState } from 'react';
 import { saveAdoption } from '@/app/actions';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
+import { useSession } from 'next-auth/react';
+import { useAuthContext } from '@/context/AuthContext';
 
 export default function AdoptionForm({ adopterId, initialData, onCancel, onSuccess }: { adopterId: string, initialData?: any, onCancel?: () => void, onSuccess?: () => void }) {
     const router = useRouter();
     const { t } = useLanguage();
+    const { data: session } = useSession();
+    const { openLogin } = useAuthContext();
     const [isOpen, setIsOpen] = useState(!!initialData);
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState({
@@ -36,6 +40,13 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        const isAnon = document.cookie.includes('anon_user=true');
+        if (!session?.user && !isAnon) {
+            openLogin();
+            return;
+        }
+
         setLoading(true);
         try {
             await saveAdoption({
@@ -69,7 +80,14 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
 
     if (!isOpen && !initialData) {
         return (
-            <button onClick={() => setIsOpen(true)} className="w-full py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 transition-all duration-300 transform active:scale-[0.99] mb-4">
+            <button onClick={() => {
+                const isAnon = document.cookie.includes('anon_user=true');
+                if (!session?.user && !isAnon) {
+                    openLogin();
+                    return;
+                }
+                setIsOpen(true);
+            }} className="w-full py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 transition-all duration-300 transform active:scale-[0.99] mb-4">
                 + {t('adoption.record_new')}
             </button>
         )
