@@ -29,7 +29,69 @@ export function AdopterFlagging({ adopterId, adopterName, existingFlags }: { ado
 
 
 
-    // ... (rest of useEffects) ...
+    // Debounce search
+    useEffect(() => {
+        const delayDebounceFn = setTimeout(async () => {
+            if (searchTerm && reason === 'duplicate') {
+                setIsSearching(true);
+                try {
+                    const results = await searchAdopter(searchTerm);
+                    setSearchResults(results);
+                    setHasSearched(true);
+                } catch (error) {
+                    console.error("Search failed", error);
+                } finally {
+                    setIsSearching(false);
+                }
+            } else {
+                setSearchResults([]);
+            }
+        }, 500);
+
+        return () => clearTimeout(delayDebounceFn);
+    }, [searchTerm, reason]);
+
+    const handleManualSearch = async () => {
+        if (!searchTerm) return;
+        setIsSearching(true);
+        try {
+            const results = await searchAdopter(searchTerm);
+            setSearchResults(results);
+            setHasSearched(true);
+        } catch (error) {
+            console.error("Search failed", error);
+        } finally {
+            setIsSearching(false);
+        }
+    };
+
+    const handleSubmit = async () => {
+        if (!reason) return;
+        if (reason === 'duplicate' && !targetAdopter) return;
+
+        setSubmitLoading(true);
+        try {
+            const targetId = reason === 'duplicate' ? targetAdopter?.id : undefined;
+            const res = await flagAdopter(adopterId, reason, details, targetId);
+
+            if (res.success) {
+                alert(t('flagging.submit_success') || 'Report submitted successfully');
+                setIsOpen(false);
+                setDetails('');
+                setReason('duplicate');
+                setTargetAdopter(null);
+                setSearchTerm('');
+                router.refresh();
+            } else {
+                alert('Failed to submit report');
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Error submitting report');
+        } finally {
+            setSubmitLoading(false);
+        }
+    };
 
     return (
         <>
