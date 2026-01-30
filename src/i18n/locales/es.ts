@@ -9,6 +9,18 @@ export const es = {
         back_to_search: 'Volver a Buscar',
         added_by: 'Agregado por',
     },
+    auth: {
+        welcome: 'Bienvenido a SafeAdoption',
+        welcome_sub: 'Inicia sesión para garantizar la responsabilidad. Tu identidad ayuda a construir confianza en la comunidad.',
+        continue_google: 'Continuar con Google',
+        or: 'O',
+        skip_anon: 'Saltar y continuar anónimamente',
+        anon_disclaimer: '*Las ediciones anónimas se rastrean por dirección IP y huella digital para evitar abusos.',
+    },
+    nav: {
+        sign_out: 'Cerrar Sesión',
+        anon_mode: 'Modo Anónimo',
+    },
     search: {
         title: 'Verificar Adoptante',
         placeholder: 'Nombre, Teléfono o Email',
@@ -48,6 +60,10 @@ export const es = {
         uploading: 'Subiendo...',
         no_images: 'Aún no hay imágenes.',
         caption_placeholder: 'Descripción...',
+        placeholder_name_aliases: 'Nombre Completo (y Apodos/Alias)',
+        family_members: 'Familiares / Convivientes',
+        placeholder_family: 'Enumere otros familiares, cónyuges o personas que vivan en el mismo hogar...',
+        no_family: 'No hay familiares registrados.',
     },
     adoption: {
         title: 'Adopciones',
@@ -86,6 +102,8 @@ export const es = {
         banner_duplicate: 'Este perfil ha sido marcado como posible duplicado.',
         banner_check: 'Verifica si este perfil es el original.',
         check_link: 'este perfil',
+        banner_fake: 'Este perfil ha sido marcado como Falso / Spam.',
+        banner_abusive: 'Este perfil ha sido marcado por Contenido Abusivo.',
     },
     audit: {
         log_title: 'Registro de Cambios',

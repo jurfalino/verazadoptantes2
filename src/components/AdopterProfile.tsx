@@ -29,6 +29,14 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
         <main className="min-h-screen bg-emerald-50/30 py-12 px-4 relative">
             <div className="max-w-3xl mx-auto space-y-8">
 
+                {/* Back Navigation */}
+                <div className="mb-2">
+                    <a href="/" className="inline-flex items-center gap-2 text-sm text-emerald-600/70 hover:text-emerald-800 transition-colors font-medium group">
+                        <svg className="w-4 h-4 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+                        {t('nav.back_to_search') || 'Back to Search'}
+                    </a>
+                </div>
+
                 {!isNew && adopter && (
                     <AdopterFlagging
                         adopterId={id}
@@ -40,7 +48,7 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                 <header className="flex flex-wrap justify-between items-end px-2 gap-4">
                     <div>
                         <h1 className="text-3xl md:text-4xl font-extrabold text-emerald-950 tracking-tight">
-                            {isNew ? t('adopter.title_new') : (adopter?.name || t('adopter.title_profile'))}
+                            {t('adopter.title_profile')}
                         </h1>
                         {!isNew && <p className="text-emerald-600/80 font-medium mt-1 text-sm">{t('adopter.id')}: <span className="font-mono text-emerald-500/60">{id}</span></p>}
                     </div>

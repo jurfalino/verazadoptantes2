@@ -21,6 +21,7 @@ export function AdopterForm({ initialData, history = [] }: { initialData?: any, 
         status: initialData?.status || '5', // Default to 5 stars
         contactInfo: initialData?.contactInfo || '',
         addressInfo: initialData?.addressInfo || '',
+        familyMembers: initialData?.familyMembers || '',
     });
 
     const handleSave = async (e: React.FormEvent) => {
@@ -38,9 +39,9 @@ export function AdopterForm({ initialData, history = [] }: { initialData?: any, 
             } else {
                 alert("Failed to save");
             }
-        } catch (err) {
-            console.error(err);
-            alert("An error occurred while saving");
+        } catch (err: any) {
+            console.error("Save Error:", err);
+            alert(`An error occurred while saving: ${err?.message || JSON.stringify(err)}`);
         } finally {
             setLoading(false);
         }
@@ -57,6 +58,7 @@ export function AdopterForm({ initialData, history = [] }: { initialData?: any, 
                 status: initialData?.status || '5',
                 contactInfo: initialData?.contactInfo || '',
                 addressInfo: initialData?.addressInfo || '',
+                familyMembers: initialData?.familyMembers || '',
             });
             setIsEditing(false);
         }
@@ -111,10 +113,10 @@ export function AdopterForm({ initialData, history = [] }: { initialData?: any, 
                             <input
                                 type="text"
                                 required
-                                className="w-full text-2xl font-bold text-emerald-900 bg-transparent border-b-2 border-emerald-200 focus:border-emerald-500 outline-none px-1 py-1 placeholder-emerald-900/30 transition-all"
+                                className="w-full text-3xl font-bold text-emerald-900 bg-transparent border-b-2 border-emerald-200 focus:border-emerald-500 outline-none px-1 py-1 placeholder-emerald-900/30 transition-all"
                                 value={data.name}
                                 onChange={e => setData({ ...data, name: e.target.value })}
-                                placeholder={t('adopter.placeholder_name')}
+                                placeholder={t('adopter.placeholder_name_aliases')}
                                 autoFocus
                             />
                         ) : (
@@ -215,6 +217,30 @@ export function AdopterForm({ initialData, history = [] }: { initialData?: any, 
                             <div className="text-emerald-900/80 leading-relaxed font-medium bg-emerald-50/30 p-4 rounded-xl border border-emerald-100/50 min-h-[80px]">
                                 {renderTextWithLinks(data.addressInfo, 'address')}
                             </div>
+                        )}
+                    </div>
+
+                    {/* Family Members (Full Width) */}
+                    <div className="md:col-span-2">
+                        <h3 className="text-sm font-bold text-emerald-800 mb-3 uppercase tracking-wider">{t('adopter.family_members')}</h3>
+                        {isEditing ? (
+                            <textarea
+                                rows={2}
+                                className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none resize-y min-h-[60px]"
+                                value={data.familyMembers}
+                                onChange={e => setData({ ...data, familyMembers: e.target.value })}
+                                placeholder={t('adopter.placeholder_family')}
+                            />
+                        ) : (
+                            data.familyMembers ? (
+                                <div className="text-emerald-900/80 leading-relaxed font-medium bg-emerald-50/30 p-4 rounded-xl border border-emerald-100/50 min-h-[60px]">
+                                    {renderTextWithLinks(data.familyMembers, 'text')}
+                                </div>
+                            ) : (
+                                <div className="text-emerald-900/30 italic p-4 rounded-xl border border-dashed border-emerald-100/50">
+                                    {t('adopter.no_family')}
+                                </div>
+                            )
                         )}
                     </div>
                 </div>
@@ -326,4 +352,3 @@ export function AdopterForm({ initialData, history = [] }: { initialData?: any, 
         </div>
     );
 }
-

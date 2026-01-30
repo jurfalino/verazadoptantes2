@@ -9,6 +9,18 @@ export const en = {
         back_to_search: 'Back to Search',
         added_by: 'Added by',
     },
+    auth: {
+        welcome: 'Welcome to SafeAdoption',
+        welcome_sub: 'Please sign in to ensure accountability. Your identity helps build trust in the community.',
+        continue_google: 'Continue with Google',
+        or: 'Or',
+        skip_anon: 'Skip and continue anonymously',
+        anon_disclaimer: '*Anonymous edits are tracked by IP address and device fingerprint to prevent abuse.',
+    },
+    nav: {
+        sign_out: 'Sign Out',
+        anon_mode: 'Anonymous Mode',
+    },
     search: {
         title: 'Vet an Adopter',
         placeholder: 'Name, Phone, or Email',
@@ -48,6 +60,10 @@ export const en = {
         uploading: 'Uploading...',
         no_images: 'No images uploaded yet.',
         caption_placeholder: 'Caption...',
+        placeholder_name_aliases: 'Full Name (and Nicknames/Aliases)',
+        family_members: 'Family Members / Households',
+        placeholder_family: 'List other family members, spouses, or people living in the same home...',
+        no_family: 'No family members listed.',
     },
     adoption: {
         title: 'Adoptions',
@@ -86,6 +102,8 @@ export const en = {
         banner_duplicate: 'This profile has been flagged as a potential duplicate.',
         banner_check: 'Check if this profile is the original.',
         check_link: 'this profile',
+        banner_fake: 'This profile has been flagged as Fake / Spam.',
+        banner_abusive: 'This profile has been flagged for Abusive Content.',
     },
     audit: {
         log_title: 'History Log',

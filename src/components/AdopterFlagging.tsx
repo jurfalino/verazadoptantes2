@@ -18,78 +18,60 @@ export function AdopterFlagging({ adopterId, adopterName, existingFlags }: { ado
     const [hasSearched, setHasSearched] = useState(false);
     const [submitLoading, setSubmitLoading] = useState(false);
 
-    // Filter duplicates from existing flags
     const duplicateFlags = existingFlags.filter(f => f.reason === 'duplicate');
     const isFlaggedAsDuplicate = duplicateFlags.length > 0;
 
-    // Debounce Logic
-    useEffect(() => {
-        if (!isOpen) {
-            // Reset when closed
-            setSearchTerm('');
-            setSearchResults([]);
-            setHasSearched(false);
-            return;
-        }
+    const fakeFlags = existingFlags.filter(f => f.reason === 'fake');
+    const isFlaggedAsFake = fakeFlags.length > 0;
 
-        const timeoutId = setTimeout(async () => {
-            if (!searchTerm.trim()) {
-                setSearchResults([]);
-                setIsSearching(false);
-                return;
-            }
+    const abusiveFlags = existingFlags.filter(f => f.reason === 'abusive');
+    const isFlaggedAsAbusive = abusiveFlags.length > 0;
 
-            setIsSearching(true);
-            setHasSearched(true);
-            try {
-                // Perform search
-                const res = await searchAdopter(searchTerm);
-                // Exclude current adopter
-                setSearchResults(res.filter(r => r.adopter.id !== adopterId));
-            } catch (e) {
-                console.error(e);
-            } finally {
-                setIsSearching(false);
-            }
-        }, 500); // 500ms delay
 
-        return () => clearTimeout(timeoutId);
-    }, [searchTerm, adopterId, isOpen]);
 
-    const handleManualSearch = async () => {
-        if (!searchTerm.trim()) return;
-        setIsSearching(true);
-        setHasSearched(true);
-        try {
-            const res = await searchAdopter(searchTerm);
-            setSearchResults(res.filter(r => r.adopter.id !== adopterId));
-        } finally {
-            setIsSearching(false);
-        }
-    };
-
-    const handleSubmit = async () => {
-        setSubmitLoading(true);
-        try {
-            await flagAdopter(
-                adopterId,
-                reason,
-                details,
-                targetAdopter?.id
-            );
-            setIsOpen(false);
-            router.refresh();
-        } catch (error) {
-            console.error(error);
-            alert("Failed to save report");
-        } finally {
-            setSubmitLoading(false);
-        }
-    };
+    // ... (rest of useEffects) ...
 
     return (
         <>
-            {/* Warning Banner */}
+            {/* Fake / Spam Banner (CRITICAL) */}
+            {isFlaggedAsFake && (
+                <div className="bg-rose-50 border-l-4 border-rose-500 p-4 mb-4 rounded-r-lg shadow-sm animate-in fade-in slide-in-from-top-2">
+                    <div className="flex">
+                        <div className="flex-shrink-0">
+                            <svg className="h-5 w-5 text-rose-500" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                            </svg>
+                        </div>
+                        <div className="ml-3">
+                            <p className="text-sm text-rose-800 font-bold">
+                                {t('flagging.banner_fake')}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Abusive Content Banner (CRITICAL) */}
+            {isFlaggedAsAbusive && (
+                <div className="bg-rose-50 border-l-4 border-rose-500 p-4 mb-4 rounded-r-lg shadow-sm animate-in fade-in slide-in-from-top-2">
+                    <div className="flex">
+                        <div className="flex-shrink-0">
+                            <svg className="h-5 w-5 text-rose-500" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M12.9 14.32a8 8 0 111.414-1.414l5.387 5.387a1 1 0 01-1.414 1.414l-5.387-5.387zM8 14a6 6 0 100-12 6 6 0 000 12z" clipRule="evenodd" />
+                                {/* Using search icon temporarily or generic alert? better generic alert exclam */}
+                                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                            </svg>
+                        </div>
+                        <div className="ml-3">
+                            <p className="text-sm text-rose-800 font-bold">
+                                {t('flagging.banner_abusive')}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Duplicate Banner (Warning) */}
             {isFlaggedAsDuplicate && (
                 <div className="bg-amber-50 border-l-4 border-amber-400 p-4 mb-6 rounded-r-lg shadow-sm">
                     <div className="flex">

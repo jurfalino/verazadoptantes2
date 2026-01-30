@@ -2,9 +2,14 @@
 
 import { signIn } from 'next-auth/react';
 import { useState } from 'react';
+import { useLanguage } from '@/context/LanguageContext';
+import { useSearchParams } from 'next/navigation';
 
 export default function Login() {
     const [loading, setLoading] = useState(false);
+    const { t } = useLanguage();
+    const searchParams = useSearchParams();
+    const enableAnon = searchParams.get('enable_anon') === 'true';
 
     const handleGoogleLogin = async () => {
         setLoading(true);
@@ -20,9 +25,9 @@ export default function Login() {
     return (
         <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-6">
             <div className="text-center space-y-2">
-                <h2 className="text-2xl font-bold text-gray-800">Welcome to SafeAdoption</h2>
+                <h2 className="text-2xl font-bold text-gray-800">{t('auth.welcome')}</h2>
                 <p className="text-gray-500 text-sm max-w-xs mx-auto">
-                    Please sign in to ensure accountability. Your identity helps build trust in the community.
+                    {t('auth.welcome_sub')}
                 </p>
             </div>
 
@@ -32,24 +37,28 @@ export default function Login() {
                 className="flex items-center gap-3 px-6 py-3 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:bg-gray-50 transition-all w-full max-w-sm justify-center group"
             >
                 <img src="https://authjs.dev/img/providers/google.svg" className="w-5 h-5" alt="Google" />
-                <span className="font-semibold text-gray-700 group-hover:text-gray-900">Continue with Google</span>
+                <span className="font-semibold text-gray-700 group-hover:text-gray-900">{t('auth.continue_google')}</span>
             </button>
 
-            <div className="relative w-full max-w-sm">
-                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200"></div></div>
-                <div className="relative flex justify-center text-xs uppercase"><span className="bg-gray-50 px-2 text-gray-500">Or</span></div>
-            </div>
+            {enableAnon && (
+                <>
+                    <div className="relative w-full max-w-sm">
+                        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200"></div></div>
+                        <div className="relative flex justify-center text-xs uppercase"><span className="bg-gray-50 px-2 text-gray-500">{t('auth.or')}</span></div>
+                    </div>
 
-            <button
-                onClick={handleSkip}
-                className="text-sm text-gray-400 hover:text-gray-600 font-medium underline decoration-gray-300 underline-offset-4"
-            >
-                Skip and continue anonymously
-            </button>
+                    <button
+                        onClick={handleSkip}
+                        className="text-sm text-gray-400 hover:text-gray-600 font-medium underline decoration-gray-300 underline-offset-4"
+                    >
+                        {t('auth.skip_anon')}
+                    </button>
 
-            <p className="text-xs text-gray-400 max-w-xs text-center">
-                *Anonymous edits are tracked by IP address and device fingerprint to prevent abuse.
-            </p>
+                    <p className="text-xs text-gray-400 max-w-xs text-center">
+                        {t('auth.anon_disclaimer')}
+                    </p>
+                </>
+            )}
         </div>
     );
 }

@@ -1,0 +1,1 @@
+ALTER TABLE `adopters` ADD `family_members` text;

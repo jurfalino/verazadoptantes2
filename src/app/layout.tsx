@@ -1,5 +1,5 @@
 import { auth } from "@/auth";
-export const runtime = "edge";
+// export const runtime = "edge";
 import Login from "@/components/Login";
 import { cookies } from "next/headers";
 import type { Metadata } from 'next';
@@ -9,6 +9,10 @@ import { LanguageProvider } from "@/context/LanguageContext";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 
 const inter = Inter({ subsets: ['latin'] });
+
+import UserMenu from "@/components/UserMenu";
+
+// ... existing imports
 
 export const metadata: Metadata = {
   title: 'SafeAdoption',
@@ -46,14 +50,7 @@ export default async function RootLayout({
                   <div className="flex items-center gap-4">
                     <LanguageSwitcher />
                     <div className="h-6 w-px bg-emerald-100" />
-                    {session?.user ? (
-                      <div className="flex items-center gap-2">
-                        {session.user.image && <img src={session.user.image} className="w-8 h-8 rounded-full border border-emerald-200" alt="Avatar" />}
-                        <span className="text-sm font-medium text-emerald-900 hidden md:block">{session.user.name}</span>
-                      </div>
-                    ) : (
-                      <span className="text-xs font-mono bg-emerald-50 text-emerald-600 px-2 py-1 rounded">Anonymous Mode</span>
-                    )}
+                    <UserMenu user={session?.user} isAnon={!!isAnon} />
                   </div>
                 </div>
               </nav>

@@ -7,6 +7,7 @@ export const adopters = sqliteTable("adopters", {
     // Free text blobs for flexible contact info and addresses
     contactInfo: text("contact_info"), // Stores phones, emails, socials, etc.
     addressInfo: text("address_info"), // Stores physical addresses
+    familyMembers: text("family_members"), // Stores household members / aliases
 
     // Metadata
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),

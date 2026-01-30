@@ -11,6 +11,7 @@
   "dependencies": {
     "@auth/core": "^0.41.0",
     "@cloudflare/next-on-pages": "^1.13.16",
+    "better-sqlite3": "^12.6.2",
     "drizzle-orm": "^0.45.1",
     "lucide-react": "^0.562.0",
     "next": "15.1.6",
@@ -20,12 +21,12 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260118.0",
+    "@playwright/test": "^1.58.0",
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "better-sqlite3": "^12.6.2",
     "dotenv": "^17.2.3",
     "drizzle-kit": "^0.31.8",
     "eslint": "^9",

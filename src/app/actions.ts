@@ -11,6 +11,7 @@ import { cookies } from 'next/headers';
 export interface SearchResult {
     adopter: typeof adopters.$inferSelect;
     historyCount: number; // Placeholder for now
+    matchContext?: string;
 }
 
 async function getDb() {
@@ -24,21 +25,23 @@ async function getDb() {
     }
 
     // Fallback for local development (npm run dev)
-    // Fallback for local development (npm run dev)
-    // try {
-    //     const { createLocalDb } = await import('@/db/local');
-    //     return await createLocalDb('local.db');
-    // } catch (e) {
-    //     // This is expected in Edge runtime if better-sqlite3 is excluded
-    // }
+    try {
+        const { createLocalDb } = await import('@/db/local');
+        return await createLocalDb('local.db');
+    } catch (e) {
+        console.error("Local DB Init Error:", e);
+        // This is expected in Edge runtime if better-sqlite3 is excluded
+    }
     return undefined;
 }
 
 export async function getUser() {
     try {
         const session = await auth();
+        console.log("getUser Session:", session?.user?.email);
         if (session?.user?.email) return `User: ${session.user.email}`;
     } catch (e) {
+        console.error("getUser Auth Error:", e);
         // Auth failed
     }
 
@@ -50,6 +53,39 @@ export async function getUser() {
 }
 
 
+
+// Helper to perform parallel searches
+async function searchHistoryIds(db: any, query: string): Promise<string[]> {
+    try {
+        // Search in history for JSON changes containing the query
+        // Note: 'like' on text column is expensive but necessary for this requirement
+        const logs = await db.select({ adopterId: adopterHistory.adopterId })
+            .from(adopterHistory)
+            .where(like(adopterHistory.changes, `%${query}%`))
+            .limit(50);
+        return logs.map((l: any) => l.adopterId);
+    } catch (e) {
+        console.error("History search error", e);
+        return [];
+    }
+}
+
+async function searchAdoptionsIds(db: any, query: string): Promise<string[]> {
+    try {
+        const adoptionLogs = await db.select({ adopterId: adoptions.adopterId })
+            .from(adoptions)
+            .where(or(
+                like(adoptions.animalName, `%${query}%`),
+                like(adoptions.details, `%${query}%`)
+            ))
+            .limit(50);
+        return adoptionLogs.map((l: any) => l.adopterId);
+    } catch (e) {
+        console.error("Adoption search error", e);
+        return [];
+    }
+}
+
 export async function searchAdopter(query: string): Promise<SearchResult[]> {
     try {
         const db = await getDb();
@@ -59,39 +95,87 @@ export async function searchAdopter(query: string): Promise<SearchResult[]> {
         const normalizedQuery = query.trim();
         if (!normalizedQuery) return [];
 
-        // Log the search
-        try {
-            await db.insert(searches).values({
-                id: crypto.randomUUID(),
-                query: normalizedQuery,
-                type: "general",
-                count: 1,
-                lastSearchedAt: new Date(),
-            }).onConflictDoUpdate({
-                target: searches.query,
-                set: {
-                    count: sql`count + 1`,
-                    lastSearchedAt: new Date()
-                }
-            });
-        } catch (e) {
-            console.error("Failed to log search", e);
-        }
+        // Log the search (fire and forget)
+        (async () => {
+            try {
+                await db.insert(searches).values({
+                    id: crypto.randomUUID(),
+                    query: normalizedQuery,
+                    type: "general",
+                    count: 1,
+                    lastSearchedAt: new Date(),
+                }).onConflictDoUpdate({
+                    target: searches.query,
+                    set: {
+                        count: sql`count + 1`,
+                        lastSearchedAt: new Date()
+                    }
+                });
+            } catch (e) { }
+        })();
 
-        // Perform Search
-        const results = await db.select().from(adopters).where(
+        // 1. Search Main Profile (Name, Contact, Address, Family)
+        const profileQuery = db.select().from(adopters).where(
             or(
                 like(adopters.name, `%${normalizedQuery}%`),
                 like(adopters.contactInfo, `%${normalizedQuery}%`),
-                like(adopters.addressInfo, `%${normalizedQuery}%`)
+                like(adopters.addressInfo, `%${normalizedQuery}%`),
+                like(adopters.familyMembers, `%${normalizedQuery}%`)
             )
         ).limit(20);
 
-        // Map to result type
-        return results.map(a => ({
-            adopter: a,
-            historyCount: 0 // TODO: Fetch adoption history count
-        }));
+        // 2. Parallel Deep Search (History & Adoptions)
+        const [directResults, historyIds, adoptionIds] = await Promise.all([
+            profileQuery,
+            searchHistoryIds(db, normalizedQuery),
+            searchAdoptionsIds(db, normalizedQuery)
+        ]);
+
+        // Merge IDs unique
+        const extraIds = new Set([...historyIds, ...adoptionIds]);
+
+        // Remove IDs already found in directResults
+        directResults.forEach(r => extraIds.delete(r.id));
+
+        // Fetch profiles for extra IDs
+        let extraProfiles: typeof adopters.$inferSelect[] = [];
+        if (extraIds.size > 0) {
+            extraProfiles = await db.select().from(adopters)
+                .where(sql`id IN ${Array.from(extraIds)}`);
+        }
+
+        // Combine Results
+        const allProfiles = [...directResults, ...extraProfiles];
+
+        // Map to result type with context hints
+        return allProfiles.map(a => {
+            // Determine match context
+            let context = "";
+            const qLower = normalizedQuery.toLowerCase();
+
+            // Priority 1: Direct Match (if not obvious)
+            // If name/contact/address don't match, check family
+            const basicMatch =
+                (a.name?.toLowerCase().includes(qLower)) ||
+                (a.contactInfo?.toLowerCase().includes(qLower)) ||
+                (a.addressInfo?.toLowerCase().includes(qLower));
+
+            if (!basicMatch) {
+                if (a.familyMembers?.toLowerCase().includes(qLower)) {
+                    context = "Matches family members";
+                } else if (historyIds.includes(a.id)) {
+                    context = "Matches history log";
+                } else if (adoptionIds.includes(a.id)) {
+                    context = "Matches adoption records";
+                }
+            }
+
+            return {
+                adopter: a,
+                historyCount: 0,
+                matchContext: context // Pass this to UI
+            };
+        });
 
     } catch (error) {
         console.error("Search error:", error);
@@ -100,6 +184,7 @@ export async function searchAdopter(query: string): Promise<SearchResult[]> {
 }
 
 export async function getAdopter(id: string) {
+    // ... existing ...
     try {
         const db = await getDb();
         if (!db) return null;
@@ -124,7 +209,7 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
             const changes: Record<string, any> = {};
             let hasChanges = false;
 
-            const fields = ['name', 'contactInfo', 'addressInfo', 'status'] as const;
+            const fields = ['name', 'contactInfo', 'addressInfo', 'status', 'familyMembers'] as const;
             for (const field of fields) {
                 // @ts-ignore
                 if (data[field] !== undefined && data[field] !== existing[field]) {
@@ -165,7 +250,7 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
 
     } catch (error) {
         console.error("Save adopter error:", error);
-        throw new Error("Failed to save adopter");
+        throw new Error(`Failed to save adopter: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 
