@@ -1,6 +1,8 @@
-// export const runtime = 'edge';
+// eximport { auth } from "@/auth";
 
-export default function DebugPage() {
+export const runtime = 'edge';
+
+export default async function DebugPage() {
     return (
         <div className="p-8 font-mono bg-white text-black">
             <h1 className="text-xl font-bold">Sanity Check: Passed</h1>

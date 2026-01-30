@@ -2,6 +2,8 @@
 import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser } from '@/app/actions';
 import { AdopterProfile } from '@/components/AdopterProfile';
 
+export const runtime = 'edge';
+
 export default async function AdopterPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
     const isNew = id === 'create';
