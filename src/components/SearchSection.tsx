@@ -66,7 +66,6 @@ export default function SearchSection() {
     };
 
     return (
-    return (
         <div className="w-full">
             <div className="bg-white rounded-3xl p-6 shadow-sm border border-stone-200">
                 <h2 className="text-2xl font-bold text-stone-900 mb-5 text-center tracking-tight">{t('search.title')}</h2>
