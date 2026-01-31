@@ -1,6 +1,6 @@
 // eximport { auth } from "@/auth";
 
-// export const runtime = 'edge';
+export const runtime = 'edge';
 
 export default async function DebugPage() {
     return (

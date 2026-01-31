@@ -10,7 +10,7 @@ import { SessionProvider } from 'next-auth/react';
 import { AuthProvider } from '@/context/AuthContext';
 import LoginModal from '@/components/LoginModal';
 
-// export const runtime = "edge"; // Commented out for local debug
+export const runtime = "edge";
 export const dynamic = 'force-dynamic';
 
 const inter = Inter({ subsets: ['latin'] });
