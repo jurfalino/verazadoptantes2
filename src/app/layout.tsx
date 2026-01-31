@@ -42,15 +42,15 @@ export default async function RootLayout({
         <SessionProvider>
           <LanguageProvider>
             <AuthProvider>
-              <div className="min-h-screen flex flex-col">
-                <nav className="bg-white border-b border-emerald-100/50 sticky top-0 z-50 backdrop-blur-sm bg-white/90">
+              <div className="min-h-screen flex flex-col bg-stone-50">
+                <nav className="bg-white/80 border-b border-stone-200 sticky top-0 z-50 backdrop-blur-md">
                   <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-                    <a href="/" className="font-bold text-xl text-emerald-900">
+                    <a href="/" className="font-bold text-xl text-teal-800 tracking-tight flex items-center gap-2">
                       SafeAdoption
                     </a>
                     <div className="flex items-center gap-4">
                       <LanguageSwitcher />
-                      <div className="h-6 w-px bg-emerald-100" />
+                      <div className="h-6 w-px bg-stone-200" />
                       <UserMenu user={session?.user} isAnon={!!isAnon} />
                     </div>
                   </div>

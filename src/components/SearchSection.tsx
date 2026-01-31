@@ -66,9 +66,10 @@ export default function SearchSection() {
     };
 
     return (
+    return (
         <div className="w-full">
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-emerald-100/60">
-                <h2 className="text-2xl font-bold text-emerald-900 mb-5 text-center tracking-tight">{t('search.title')}</h2>
+            <div className="bg-white rounded-3xl p-6 shadow-sm border border-stone-200">
+                <h2 className="text-2xl font-bold text-stone-900 mb-5 text-center tracking-tight">{t('search.title')}</h2>
                 <form onSubmit={handleSearch} className="space-y-4">
                     <div className="relative">
                         <label htmlFor="search" className="sr-only">{t('common.search')}</label>
@@ -76,7 +77,7 @@ export default function SearchSection() {
                             type="text"
                             id="search"
                             placeholder={t('search.placeholder')}
-                            className="w-full px-4 py-3 pr-10 rounded-xl bg-white border border-emerald-200 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none text-emerald-900 placeholder:text-emerald-800/40 font-medium"
+                            className="w-full px-5 py-4 pr-12 rounded-2xl bg-stone-50 border border-stone-200 focus:border-teal-400 focus:ring-4 focus:ring-teal-100 transition-all outline-none text-stone-900 placeholder:text-stone-400 font-medium"
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                         />
@@ -84,7 +85,7 @@ export default function SearchSection() {
                             <button
                                 type="button"
                                 onClick={handleClear}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-400 hover:text-emerald-600 transition-colors p-1"
+                                className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 transition-colors p-1"
                                 aria-label={t('search.clear')}
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -97,7 +98,7 @@ export default function SearchSection() {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full py-3 px-4 bg-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 hover:shadow-xl transition-all disabled:opacity-70 transform active:scale-95"
+                        className="w-full py-4 px-6 bg-teal-200 text-teal-900 font-bold rounded-2xl shadow-sm hover:bg-teal-300 hover:shadow-md transition-all disabled:opacity-70 transform active:scale-[0.98] text-lg"
                     >
                         {loading ? t('search.searching') : t('search.button')}
                     </button>
@@ -108,12 +109,12 @@ export default function SearchSection() {
                 <div className="mt-8 space-y-4">
                     {results.length > 0 && (
                         <div className="flex justify-between items-center px-2">
-                            <h3 className="text-lg font-semibold text-emerald-900">
+                            <h3 className="text-lg font-semibold text-stone-800">
                                 {t('search.results').replace('{count}', results.length.toString())}
                             </h3>
                             <button
                                 onClick={handleCreateNew}
-                                className="flex items-center gap-2 px-3 py-1.5 text-sm font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors border border-emerald-100"
+                                className="flex items-center gap-2 px-3 py-1.5 text-sm font-bold text-teal-800 bg-teal-100 hover:bg-teal-200 rounded-lg transition-colors"
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                                 {t('search.create_new')}
@@ -122,14 +123,13 @@ export default function SearchSection() {
                     )}
                     {results.map((res) => (
                         <a key={res.adopter.id} href={`/adopter/${res.adopter.id}`} className="block group">
-                            <div className="bg-white rounded-2xl p-5 shadow-sm border border-emerald-100/60 group-hover:border-emerald-300 group-hover:shadow-md transition-all">
+                            <div className="bg-white rounded-2xl p-5 shadow-sm border border-stone-200 group-hover:border-teal-300 group-hover:shadow-md transition-all">
                                 <div className="flex justify-between items-start gap-4">
                                     <div className="flex-1 min-w-0">
-                                        <div className="font-bold text-lg text-emerald-900 group-hover:text-emerald-700 transition-colors truncate">{res.adopter.name}</div>
-                                        <div className="text-sm text-emerald-600/70 truncate mt-1">{res.adopter.contactInfo || 'No contact info'}</div>
+                                        <div className="font-bold text-lg text-stone-900 group-hover:text-teal-700 transition-colors truncate">{res.adopter.name}</div>
+                                        <div className="text-sm text-stone-500 truncate mt-1">{res.adopter.contactInfo || 'No contact info'}</div>
                                         {res.matchContext && (
-                                            <div className="mt-2 text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-1 rounded inline-block border border-emerald-100/50">
-                                                {/* Translate if possible, or display raw */}
+                                            <div className="mt-2 text-xs font-semibold text-teal-800 bg-teal-50 px-2 py-1 rounded inline-block border border-teal-100">
                                                 <span className="opacity-70">ⓘ </span>
                                                 {res.matchContext}
                                             </div>
@@ -139,9 +139,9 @@ export default function SearchSection() {
                                     {res.adopter.status && ['1', '2', '3', '4', '5'].includes(res.adopter.status) ? (
                                         <RatingBadge rating={res.adopter.status} size="sm" />
                                     ) : (
-                                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${res.adopter.status === 'blocked' ? 'bg-red-100 text-red-700' :
-                                            res.adopter.status === 'warning' ? 'bg-yellow-100 text-yellow-700' :
-                                                'bg-emerald-100 text-emerald-700'
+                                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${res.adopter.status === 'blocked' ? 'bg-rose-100 text-rose-800' :
+                                            res.adopter.status === 'warning' ? 'bg-amber-100 text-amber-800' :
+                                                'bg-teal-100 text-teal-800'
                                             }`}>
                                             {res.adopter.status === 'good' ? 'Good Record' : (res.adopter.status || 'Unknown')}
                                         </span>
@@ -151,9 +151,9 @@ export default function SearchSection() {
                         </a>
                     ))}
                     {results.length === 0 && (
-                        <div className="bg-emerald-50 rounded-2xl p-6 text-center border border-emerald-100">
-                            <p className="text-emerald-800 mb-3">{t('search.no_history').replace('{query}', query)}</p>
-                            <button onClick={handleCreateNew} className="inline-block text-sm font-semibold text-emerald-600 hover:text-emerald-800 underline">
+                        <div className="bg-stone-50 rounded-2xl p-8 text-center border border-stone-200">
+                            <p className="text-stone-600 mb-4 text-lg">{t('search.no_history').replace('{query}', query)}</p>
+                            <button onClick={handleCreateNew} className="inline-block px-5 py-2.5 bg-white border border-stone-200 rounded-xl text-stone-800 font-bold hover:border-stone-300 hover:bg-stone-50 transition-all shadow-sm">
                                 {t('search.create_new')}
                             </button>
                         </div>

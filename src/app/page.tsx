@@ -35,13 +35,13 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-emerald-50/30 py-12 px-4 relative">
+    <main className="min-h-screen bg-stone-50 py-12 px-4 relative">
       <div className="max-w-3xl mx-auto space-y-8">
         <header className="text-center mb-12">
-          <h1 className="text-4xl md:text-5xl font-extrabold text-emerald-900 mb-4">
+          <h1 className="text-4xl md:text-5xl font-extrabold text-stone-900 mb-4 tracking-tight">
             {t('home.title')}
           </h1>
-          <p className="text-emerald-900/70 text-lg max-w-xl mx-auto font-medium">
+          <p className="text-stone-600 text-lg max-w-xl mx-auto font-medium">
             {t('home.tagline')}
           </p>
         </header>
@@ -50,37 +50,37 @@ export default function Home() {
 
         <div className="grid md:grid-cols-2 gap-6 mt-12">
           {/* Action 1: Register Adoption */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-100 hover:shadow-md transition-all text-center">
-            <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-600">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200 hover:shadow-md hover:border-teal-200 transition-all text-center group">
+            <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4 text-teal-700 group-hover:scale-110 transition-transform">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
             </div>
-            <h3 className="text-xl font-bold text-emerald-900 mb-2">{t('home.action_register_title')}</h3>
-            <p className="text-emerald-600/70 mb-4 text-sm">{t('home.action_register_desc')}</p>
+            <h3 className="text-xl font-bold text-stone-900 mb-2">{t('home.action_register_title')}</h3>
+            <p className="text-stone-500 mb-4 text-sm">{t('home.action_register_desc')}</p>
             <button
               onClick={() => handleAuthNavigation('/adopter/create')}
-              className="inline-block px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700 transition-colors"
+              className="inline-block px-6 py-2.5 bg-teal-200 text-teal-900 font-bold rounded-xl hover:bg-teal-300 transition-colors shadow-sm"
             >
               {t('home.action_register_btn')}
             </button>
           </div>
 
           {/* Action 2: Report Bad Adopter */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-100 hover:shadow-md transition-all text-center">
-            <div className="w-12 h-12 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4 text-rose-600">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200 hover:shadow-md hover:border-rose-200 transition-all text-center group">
+            <div className="w-12 h-12 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4 text-rose-700 group-hover:scale-110 transition-transform">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
             </div>
-            <h3 className="text-xl font-bold text-emerald-900 mb-2">{t('home.action_report_title')}</h3>
-            <p className="text-emerald-600/70 mb-4 text-sm">{t('home.action_report_desc')}</p>
+            <h3 className="text-xl font-bold text-stone-900 mb-2">{t('home.action_report_title')}</h3>
+            <p className="text-stone-500 mb-4 text-sm">{t('home.action_report_desc')}</p>
             <button
               onClick={() => handleAuthNavigation('/adopter/create?intent=report')}
-              className="inline-block px-4 py-2 bg-rose-600 text-white font-bold rounded-lg hover:bg-rose-700 transition-colors"
+              className="inline-block px-6 py-2.5 bg-rose-200 text-rose-900 font-bold rounded-xl hover:bg-rose-300 transition-colors shadow-sm"
             >
               {t('home.action_report_btn')}
             </button>
           </div>
         </div>
 
-        <footer className="mt-20 text-center text-emerald-600/60 text-sm">
+        <footer className="mt-20 text-center text-stone-400 text-sm">
           <p>{t('home.footer')}</p>
         </footer>
       </div>

@@ -5,25 +5,52 @@ import { DrizzleAdapter } from "@auth/drizzle-adapter"
 import { eq } from "drizzle-orm"
 import { users } from "./db/schema"
 
-function getDrizzleDb() {
+import { getRequestContext } from "@cloudflare/next-on-pages";
+
+async function getDb() {
+    // 1. Try Cloudflare D1 (Production/Edge)
     try {
-        const Database = require("better-sqlite3");
-        const { drizzle } = require("drizzle-orm/better-sqlite3");
-        const schema = require("./db/schema");
-        const sqlite = new Database("local.db");
-        return drizzle(sqlite, { schema });
+        const { env } = getRequestContext();
+        if (env && env.DB) {
+            const { drizzle } = await import("drizzle-orm/d1");
+            const schema = await import("./db/schema");
+            return drizzle(env.DB, { schema });
+        }
     } catch (e) {
-        console.error("DB Init Error:", e);
-        return null;
+        // Ignore error, likely running locally or during build
     }
+
+    // 2. Fallback to Local SQLite (Development)
+    if (process.env.NODE_ENV === 'development' || process.env.NEXT_RUNTIME === 'nodejs') {
+        try {
+            const Database = require("better-sqlite3");
+            const { drizzle } = require("drizzle-orm/better-sqlite3");
+            const schema = require("./db/schema");
+            const sqlite = new Database("local.db");
+            return drizzle(sqlite, { schema });
+        } catch (e) {
+            console.warn("Local DB init failed:", e);
+        }
+    }
+    return null;
 }
 
+// Adapter is not easily supported in Edge with Drizzle currently due to sync requirements?
+// For now, return undefined for Edge to rely on JWT strategy fully.
+// Or if possible, we could try to get it, but it might be async.
 function getAdapter() {
-    // For local development, we use better-sqlite3 directly
-    const db = getDrizzleDb();
-    if (db) {
-        // @ts-ignore - Adapter type mismatch issues are common but harmless here
-        return DrizzleAdapter(db);
+    // We are skipping adapter for Edge to avoid complexity, relying on JWT.
+    // DrizzleAdapter requires a db instance synchronouslyish or passed in.
+    // If we need it, we'd need to init it.
+    if (process.env.NODE_ENV === 'development') {
+        try {
+            const Database = require("better-sqlite3");
+            const { drizzle } = require("drizzle-orm/better-sqlite3");
+            const schema = require("./db/schema");
+            const sqlite = new Database("local.db");
+            const db = drizzle(sqlite, { schema });
+            return DrizzleAdapter(db);
+        } catch (e) { return undefined; }
     }
     return undefined;
 }
@@ -41,10 +68,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                 const email = credentials.email as string;
                 if (!email) return null;
 
-                const db = getDrizzleDb();
-                if (!db) return null; // Should not happen in local dev
+                const db = await getDb();
+                if (!db) return null; // Should not happen if env is set
 
                 // Check if user exists
+                // @ts-ignore
                 const existingUser = await db.query.users.findFirst({
                     where: eq(users.email, email)
                 });
