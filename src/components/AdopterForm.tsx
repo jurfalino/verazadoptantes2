@@ -21,10 +21,13 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
     const [isEditing, setIsEditing] = useState(isNew);
     const [loading, setLoading] = useState(false);
 
+    // Status uses numeric values 1-5 only
+    const defaultStatus = intent === 'report' ? '1' : '5';
+
     const [data, setData] = useState({
         id: initialData?.id || '',
         name: initialData?.name || '',
-        status: initialData?.status || (intent === 'report' ? '1' : '5'), // Default to 1 if reporting, else 5
+        status: initialData?.status || defaultStatus,
         contactInfo: initialData?.contactInfo || '',
         addressInfo: initialData?.addressInfo || '',
         familyMembers: initialData?.familyMembers || '',
@@ -34,19 +37,21 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
         e.preventDefault();
         console.log("[ADOPTER FORM] handleSave triggered");
 
-        // Check auth using server prop OR client session
-        const isServerAuth = currentUser && (currentUser.startsWith('User:') || currentUser.startsWith('Anon:'));
-        const isClientAuth = session?.user || document.cookie.includes('anon_user=true');
+        // Trust server-side auth (currentUser prop) as primary source of truth
+        // Fall back to client-side checks only if server didn't provide user info
+        const isAuthenticated =
+            (currentUser && (currentUser.startsWith('User:') || currentUser.startsWith('Anon:'))) ||
+            session?.user ||
+            document.cookie.includes('anon_user=true');
 
         console.log("[ADOPTER FORM] Auth check:", {
             currentUser,
-            isServerAuth,
             sessionUser: session?.user?.email,
             hasCookie: document.cookie.includes('anon_user=true'),
-            isClientAuth
+            isAuthenticated
         });
 
-        if (!isServerAuth && !isClientAuth) {
+        if (!isAuthenticated) {
             console.log("[ADOPTER FORM] Auth FAILED - calling openLogin()");
             openLogin();
             return;
@@ -181,11 +186,11 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                                     value={data.status}
                                     onChange={(e) => setData({ ...data, status: e.target.value })}
                                 >
-                                    <option value="5">{t('adopter.status_5')}</option>
-                                    <option value="4">{t('adopter.status_4')}</option>
-                                    <option value="3">{t('adopter.status_3')}</option>
-                                    <option value="2">{t('adopter.status_2')}</option>
-                                    <option value="1">{t('adopter.status_1')}</option>
+                                    <option value="5">{t('ratings.5')}</option>
+                                    <option value="4">{t('ratings.4')}</option>
+                                    <option value="3">{t('ratings.3')}</option>
+                                    <option value="2">{t('ratings.2')}</option>
+                                    <option value="1">{t('ratings.1')}</option>
                                 </select>
                                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 opacity-50 text-emerald-800">
                                     <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
@@ -217,8 +222,13 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                             <button
                                 type="button"
                                 onClick={() => {
-                                    const isAnon = document.cookie.includes('anon_user=true');
-                                    if (!session?.user && !isAnon) {
+                                    // Use same auth check as handleSave
+                                    const isAuthenticated =
+                                        (currentUser && (currentUser.startsWith('User:') || currentUser.startsWith('Anon:'))) ||
+                                        session?.user ||
+                                        document.cookie.includes('anon_user=true');
+
+                                    if (!isAuthenticated) {
                                         openLogin();
                                         return;
                                     }
@@ -343,7 +353,7 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                                             {eventType === 'image_deleted' && <span className="bg-rose-100 text-rose-700 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase">{t('audit.event_image_deleted')}</span>}
                                         </div>
                                         <span className="text-xs px-2.5 py-0.5 bg-white border border-emerald-100 rounded-full text-emerald-700 font-medium shadow-sm">
-                                            {t('audit.by')} {h.changedBy || 'anonymous'}
+                                            {t('audit.by')} {h.changedBy || t('common.anonymous')}
                                         </span>
                                     </div>
 
@@ -386,7 +396,7 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                                                 {/* Deleted Image */}
                                                 {eventType === 'image_deleted' && (
                                                     <div className="text-emerald-800">
-                                                        {t('audit.desc_image_deleted')} <span className="italic opacity-75">"{changes.caption || 'Untitled'}"</span> ({t('audit.by')} {new Date(changes.uploadedAt).toLocaleDateString()})
+                                                        {t('audit.desc_image_deleted')} <span className="italic opacity-75">"{changes.caption || t('common.untitled')}"</span> ({t('audit.by')} {new Date(changes.uploadedAt).toLocaleDateString()})
                                                     </div>
                                                 )}
                                             </>

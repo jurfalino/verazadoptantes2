@@ -126,7 +126,7 @@ export default function SearchSection() {
                                 <div className="flex justify-between items-start gap-4">
                                     <div className="flex-1 min-w-0">
                                         <div className="font-bold text-lg text-stone-900 group-hover:text-teal-700 transition-colors truncate">{res.adopter.name}</div>
-                                        <div className="text-sm text-stone-500 truncate mt-1">{res.adopter.contactInfo || 'No contact info'}</div>
+                                        <div className="text-sm text-stone-500 truncate mt-1">{res.adopter.contactInfo || t('common.no_contact')}</div>
                                         {res.matchContext && (
                                             <div className="mt-2 text-xs font-semibold text-teal-800 bg-teal-50 px-2 py-1 rounded inline-block border border-teal-100">
                                                 <span className="opacity-70">ⓘ </span>
@@ -134,16 +134,9 @@ export default function SearchSection() {
                                             </div>
                                         )}
                                     </div>
-                                    {/* Use RatingBadge for consistent display if status is 1-5 */}
-                                    {res.adopter.status && ['1', '2', '3', '4', '5'].includes(res.adopter.status) ? (
+                                    {/* Always use RatingBadge for consistent display */}
+                                    {res.adopter.status && (
                                         <RatingBadge rating={res.adopter.status} size="sm" />
-                                    ) : (
-                                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${res.adopter.status === 'blocked' ? 'bg-rose-100 text-rose-800' :
-                                            res.adopter.status === 'warning' ? 'bg-amber-100 text-amber-800' :
-                                                'bg-teal-100 text-teal-800'
-                                            }`}>
-                                            {res.adopter.status === 'good' ? 'Good Record' : (res.adopter.status || 'Unknown')}
-                                        </span>
                                     )}
                                 </div>
                             </div>

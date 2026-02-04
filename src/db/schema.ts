@@ -12,7 +12,8 @@ export const adopters = sqliteTable("adopters", {
     // Metadata
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     updatedAt: integer("updated_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
-    status: text("status").default("good"),
+    status: text("status").default("5"), // Rating: 1-5 (1=Dangerous, 5=Excellent)
+    addedBy: text("added_by").default("anonymous"),
 }, (table) => ({
     nameIdx: index("name_idx").on(table.name),
 }));
@@ -54,7 +55,7 @@ export const searches = sqliteTable("searches", {
 
 export const adoptions = sqliteTable("adoptions", {
     id: text("id").primaryKey(),
-    adopterId: text("adopter_id").notNull(),
+    adopterId: text("adopter_id"), // Nullable for "Available" animals not yet linked
     animalName: text("animal_name"),
     species: text("species"), // cat, dog, etc
     details: text("details"),

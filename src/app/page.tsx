@@ -1,12 +1,13 @@
 'use client';
 
 import SearchSection from '@/components/SearchSection';
-export const runtime = 'edge';
+// export const runtime = 'edge'; // Disabled for local dev (better-sqlite3 compatibility)
 import { useLanguage } from '@/context/LanguageContext';
 
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
+import AdoptionWizard from '@/components/AdoptionWizard';
 
 export default function Home() {
   const { t } = useLanguage();
@@ -49,20 +50,8 @@ export default function Home() {
         <SearchSection />
 
         <div className="grid md:grid-cols-2 gap-6 mt-12">
-          {/* Action 1: Register Adoption */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200 hover:shadow-md hover:border-teal-200 transition-all text-center group">
-            <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4 text-teal-700 group-hover:scale-110 transition-transform">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            </div>
-            <h3 className="text-xl font-bold text-stone-900 mb-2">{t('home.action_register_title')}</h3>
-            <p className="text-stone-500 mb-4 text-sm">{t('home.action_register_desc')}</p>
-            <button
-              onClick={() => handleAuthNavigation('/adopter/create')}
-              className="inline-block px-6 py-2.5 bg-teal-200 text-teal-900 font-bold rounded-xl hover:bg-teal-300 transition-colors shadow-sm"
-            >
-              {t('home.action_register_btn')}
-            </button>
-          </div>
+          {/* Action 1: Register Adoption (Wizard) */}
+          <AdoptionWizard />
 
           {/* Action 2: Report Bad Adopter */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200 hover:shadow-md hover:border-rose-200 transition-all text-center group">

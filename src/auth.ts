@@ -4,6 +4,7 @@ import Credentials from "next-auth/providers/credentials"
 import { DrizzleAdapter } from "@auth/drizzle-adapter"
 import { eq } from "drizzle-orm"
 import { users } from "./db/schema"
+import Resend from "next-auth/providers/resend"
 
 import { getRequestContext } from "@cloudflare/next-on-pages";
 
@@ -39,19 +40,24 @@ async function getDb() {
 // For now, return undefined for Edge to rely on JWT strategy fully.
 // Or if possible, we could try to get it, but it might be async.
 function getAdapter() {
-    // We are skipping adapter for Edge to avoid complexity, relying on JWT.
-    // DrizzleAdapter requires a db instance synchronouslyish or passed in.
-    // If we need it, we'd need to init it.
-    if (process.env.NODE_ENV === 'development') {
-        try {
+    // DrizzleAdapter is REQUIRED for Resend (Email) provider to store verification tokens.
+    // In local/Node.js environments, use better-sqlite3.
+    // In Edge/Cloudflare, the adapter would need async init (not supported here), so we skip.
+    try {
+        // Check if we're in a Node.js environment where better-sqlite3 works
+        if (typeof window === 'undefined' && process.env.NEXT_RUNTIME !== 'edge') {
             const Database = require("better-sqlite3");
             const { drizzle } = require("drizzle-orm/better-sqlite3");
             const schema = require("./db/schema");
             const sqlite = new Database("local.db");
             const db = drizzle(sqlite, { schema });
+            console.log("[Auth] DrizzleAdapter initialized successfully");
             return DrizzleAdapter(db);
-        } catch (e) { return undefined; }
+        }
+    } catch (e) {
+        console.warn("[Auth] Adapter init failed:", e);
     }
+    // Return undefined for Edge - Resend won't work there without async adapter support
     return undefined;
 }
 
@@ -59,20 +65,28 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     ...authConfig,
     providers: [
         ...authConfig.providers,
+        // Resend (Magic Links) requires adapter in all environments - not compatible with Edge/RSC.
+        // Using Credentials provider instead for simpler direct login.
         Credentials({
             name: "Direct Login",
             credentials: {
                 email: { label: "Email", type: "email" }
             },
             authorize: async (credentials) => {
-                const email = credentials.email as string;
+                const email = credentials?.email as string;
                 if (!email) return null;
 
                 const db = await getDb();
-                if (!db) return null; // Should not happen if env is set
+                if (!db) {
+                    // If no DB, create a simple user object (anonymous-ish)
+                    return {
+                        id: crypto.randomUUID(),
+                        email: email,
+                        name: email.split('@')[0],
+                    };
+                }
 
                 // Check if user exists
-                // @ts-ignore
                 const existingUser = await db.query.users.findFirst({
                     where: eq(users.email, email)
                 });
@@ -81,11 +95,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                     return existingUser;
                 }
 
-                // Create new user (Simulated "Signup")
+                // Create new user
                 const newUser = {
                     id: crypto.randomUUID(),
                     email: email,
-                    name: email.split('@')[0], // Default name
+                    name: email.split('@')[0],
                     emailVerified: new Date(),
                     image: null
                 };
@@ -97,6 +111,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     ],
     adapter: getAdapter(),
     session: {
-        strategy: "jwt", // Credentials provider requires strategy: 'jwt'
+        strategy: "jwt", // Credentials provider requires JWT strategy
+        maxAge: 315360000, // 10 years (effectively "never" expire)
     },
 })

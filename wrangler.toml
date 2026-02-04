@@ -8,3 +8,8 @@ binding = "DB"
 database_name = "pet-adoption-db"
 database_id = "62ec01e7-deae-4536-be62-7c0a0064b45c"
 migrations_dir = "drizzle"
+
+[vars]
+EMAIL_FROM = "noreply@buenadoptante.org"
+# AUTH_URL is vital for NextAuth in prod. Update this if your custom domain differs.
+AUTH_URL = "https://verazadoptantes2.pages.dev"

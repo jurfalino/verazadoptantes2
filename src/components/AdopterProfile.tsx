@@ -20,9 +20,10 @@ interface AdopterProfileProps {
     images: any[];
     flags: any[];
     currentUser: string;
+    availableAnimals: any[];
 }
 
-export function AdopterProfile({ id, isNew, adopter, history, adoptions, images, flags, currentUser }: AdopterProfileProps) {
+export function AdopterProfile({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals }: AdopterProfileProps) {
     const { t } = useLanguage();
 
     return (
@@ -74,6 +75,8 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                         <CollapsibleSection title={t('adoption.title')} count={adoptions.length} defaultOpen={true}>
                             <AdoptionForm
                                 adopterId={id}
+                                availableAnimals={availableAnimals}
+                                currentUser={currentUser}
                             />
                             <AdoptionHistory
                                 adoptions={adoptions}

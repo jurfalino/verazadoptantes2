@@ -21,7 +21,7 @@ export default function LoginModal() {
     const handleEmailLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
-        // Direct login (Credentials) - No magic link
+        // Direct login (Credentials) - simpler, no Magic Link
         await signIn('credentials', { email, redirectTo: redirectPath || window.location.pathname });
     };
 

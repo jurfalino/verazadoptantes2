@@ -15,6 +15,13 @@
       "when": 1769694236588,
       "tag": "0001_cute_quasimodo",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1769859881550,
+      "tag": "0002_milky_tenebrous",
+      "breakpoints": true
     }
   ]
 }

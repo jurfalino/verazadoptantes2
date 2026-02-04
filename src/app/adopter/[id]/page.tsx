@@ -1,5 +1,5 @@
-export const runtime = 'edge';
-import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser } from '@/app/actions';
+// export const runtime = 'edge';
+import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, getAvailableAnimals } from '@/app/actions';
 import { AdopterProfile } from '@/components/AdopterProfile';
 
 export default async function AdopterPage({ params }: { params: Promise<{ id: string }> }) {
@@ -11,6 +11,7 @@ export default async function AdopterPage({ params }: { params: Promise<{ id: st
     let adoptions: any[] = [];
     let images: any[] = [];
     let flags: any[] = [];
+    let availableAnimals: any[] = [];
     const currentUser = await getUser();
 
     if (!isNew) {
@@ -20,6 +21,9 @@ export default async function AdopterPage({ params }: { params: Promise<{ id: st
         images = await getImages(id);
         flags = await getFlags(id);
     }
+
+    // Fetch available animals for authenticated users
+    availableAnimals = await getAvailableAnimals();
 
     return (
         <AdopterProfile
@@ -31,6 +35,7 @@ export default async function AdopterPage({ params }: { params: Promise<{ id: st
             images={images}
             flags={flags}
             currentUser={currentUser}
+            availableAnimals={availableAnimals}
         />
     );
 }
