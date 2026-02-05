@@ -1,3 +1,4 @@
+export const runtime = 'edge';
 import { auth } from "@/auth";
 import { isAdmin } from "@/config/admins";
 import { getDb } from "@/app/actions";
