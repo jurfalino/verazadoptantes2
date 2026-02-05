@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getMyAdoptions } from '@/app/actions';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 export async function GET(request: Request) {
     try {

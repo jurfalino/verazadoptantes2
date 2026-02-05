@@ -1,4 +1,4 @@
-// export const runtime = 'edge';
+export const runtime = 'edge';
 import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getAdoptionConfig } from '@/app/actions';
 import { AdopterProfile } from '@/components/AdopterProfile';
 
