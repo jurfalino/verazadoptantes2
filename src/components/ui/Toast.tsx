@@ -38,7 +38,7 @@ export function useShowToast() {
         success: (title: string, message?: string) =>
             showToast({ type: 'success', title, message }),
         error: (title: string, message?: string, errorId?: string) =>
-            showToast({ type: 'error', title, message, errorId, duration: 10000 }),
+            showToast({ type: 'error', title, message, errorId, duration: 0 }),
         warning: (title: string, message?: string) =>
             showToast({ type: 'warning', title, message }),
         info: (title: string, message?: string) =>
