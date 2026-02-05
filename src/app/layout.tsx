@@ -12,6 +12,7 @@ import UserMenu from "@/components/UserMenu";
 import { SessionProvider } from 'next-auth/react';
 import { AuthProvider } from '@/context/AuthContext';
 import LoginModal from '@/components/LoginModal';
+import { ToastProvider } from '@/components/ui/Toast';
 
 export const runtime = "edge";
 export const dynamic = 'force-dynamic';
@@ -45,23 +46,25 @@ export default async function RootLayout({
         <SessionProvider refetchOnWindowFocus={true} refetchInterval={5 * 60}>
           <LanguageProvider>
             <ThemeProvider>
-              <AuthProvider>
-                <div className="min-h-screen flex flex-col bg-stone-50">
-                  <nav className="bg-white/80 border-b border-stone-200 sticky top-0 z-50 backdrop-blur-md">
-                    <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-                      <Logo />
-                      <div className="flex items-center gap-3">
-                        <ThemeSelector />
-                        <LanguageSwitcher />
-                        <div className="h-6 w-px bg-stone-200" />
-                        <UserMenu user={session?.user} isAnon={!!isAnon} />
+              <ToastProvider>
+                <AuthProvider>
+                  <div className="min-h-screen flex flex-col bg-stone-50">
+                    <nav className="bg-white/80 border-b border-stone-200 sticky top-0 z-50 backdrop-blur-md">
+                      <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+                        <Logo />
+                        <div className="flex items-center gap-3">
+                          <ThemeSelector />
+                          <LanguageSwitcher />
+                          <div className="h-6 w-px bg-stone-200" />
+                          <UserMenu user={session?.user} isAnon={!!isAnon} />
+                        </div>
                       </div>
-                    </div>
-                  </nav>
-                  <LoginModal />
-                  {children}
-                </div>
-              </AuthProvider>
+                    </nav>
+                    <LoginModal />
+                    {children}
+                  </div>
+                </AuthProvider>
+              </ToastProvider>
             </ThemeProvider>
           </LanguageProvider>
         </SessionProvider>

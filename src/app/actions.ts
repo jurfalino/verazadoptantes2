@@ -7,6 +7,7 @@ import { adopters, searches, adopterHistory, adoptions, adopterImages, adopterFl
 import { or, like, eq, sql, and, gte, isNull, inArray } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { cookies } from 'next/headers';
+import { logger, withTrace } from '@/lib/logger';
 
 export interface AdopterFlags {
     inaccurate: boolean;
@@ -373,9 +374,8 @@ export async function searchAdopter(query: string): Promise<SearchResult[]> {
         });
 
     } catch (error) {
-        console.error("Search error:", error);
-        const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`Failed to search adopters: ${message}`);
+        const errorId = logger.error('Search failed', error, { query });
+        throw new Error(`Search failed (ID: ${errorId})`);
     }
 }
 

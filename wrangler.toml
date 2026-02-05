@@ -13,3 +13,6 @@ migrations_dir = "drizzle"
 EMAIL_FROM = "noreply@buenadoptante.org"
 # AUTH_URL is vital for NextAuth in prod. Update this if your custom domain differs.
 AUTH_URL = "https://buenadoptante.org"
+# Axiom logging
+AXIOM_DATASET = "buenadoptante"
+AXIOM_TOKEN = "xaat-7192ed63-3c6f-4789-9e3d-dfe67d442da3"
