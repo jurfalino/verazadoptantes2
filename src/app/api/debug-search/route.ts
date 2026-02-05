@@ -5,7 +5,7 @@ import * as schema from '@/db/schema';
 
 export async function GET(request: Request) {
     const url = new URL(request.url);
-    const query = url.searchParams.get('q') || 'test';
+    const query = url.searchParams.get('q') || 'jon';
 
     const debug: Record<string, unknown> = {
         timestamp: new Date().toISOString(),
@@ -17,34 +17,42 @@ export async function GET(request: Request) {
         debug.hasDB = !!env?.DB;
 
         if (env?.DB) {
-            // Import drizzle dynamically
             const { drizzle } = await import("drizzle-orm/d1");
             const db = drizzle(env.DB, { schema });
-            debug.drizzleLoaded = true;
 
-            // Try to count adopters
-            try {
-                const { sql } = await import("drizzle-orm");
-                const countResult = await db.select({ count: sql`count(*)` }).from(schema.adopters);
-                debug.adopterCount = countResult[0]?.count;
-            } catch (countErr) {
-                debug.countError = countErr instanceof Error ? countErr.message : String(countErr);
-            }
+            // Get ALL adopters first
+            const allAdopters = await db.select({
+                id: schema.adopters.id,
+                name: schema.adopters.name,
+                contactInfo: schema.adopters.contactInfo,
+            }).from(schema.adopters);
+            debug.allAdopters = allAdopters;
 
-            // Try search
-            try {
-                const { like, or } = await import("drizzle-orm");
-                const results = await db.select().from(schema.adopters).where(
-                    or(
-                        like(schema.adopters.name, `%${query}%`),
-                        like(schema.adopters.contactInfo, `%${query}%`)
-                    )
-                ).limit(5);
-                debug.searchResults = results.length;
-                debug.firstResult = results[0] ? { id: results[0].id, name: results[0].name } : null;
-            } catch (searchErr) {
-                debug.searchError = searchErr instanceof Error ? searchErr.message : String(searchErr);
-            }
+            // Try raw SQL LIKE
+            const rawResult = await env.DB.prepare(
+                `SELECT id, name, contact_info FROM adopters WHERE name LIKE ?`
+            ).bind(`%${query}%`).all();
+            debug.rawSqlResult = rawResult.results;
+
+            // Try drizzle LIKE
+            const { like } = await import("drizzle-orm");
+            const drizzleResult = await db.select({
+                id: schema.adopters.id,
+                name: schema.adopters.name,
+            }).from(schema.adopters).where(
+                like(schema.adopters.name, `%${query}%`)
+            );
+            debug.drizzleResult = drizzleResult;
+
+            // Try exact match
+            const { eq } = await import("drizzle-orm");
+            const exactResult = await db.select({
+                id: schema.adopters.id,
+                name: schema.adopters.name,
+            }).from(schema.adopters).where(
+                eq(schema.adopters.name, query)
+            );
+            debug.exactMatchResult = exactResult;
         }
     } catch (e) {
         debug.error = e instanceof Error ? e.message : String(e);
