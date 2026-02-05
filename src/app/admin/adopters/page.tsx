@@ -1,4 +1,3 @@
-export const runtime = 'edge';
 import { getDb, deleteAdopter } from "@/app/actions";
 import { adopters } from "@/db/schema";
 import { desc, like, or } from "drizzle-orm";

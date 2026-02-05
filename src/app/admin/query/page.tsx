@@ -1,5 +1,4 @@
 'use client';
-export const runtime = 'edge';
 
 import { useState } from 'react';
 import { runAdminQuery } from '@/app/actions'; // Need to implement this

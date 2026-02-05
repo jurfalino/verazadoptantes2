@@ -1,4 +1,3 @@
-export const runtime = 'edge';
 import { auth } from "@/auth";
 import { getDb } from "@/app/actions"; // Or use direct DB access in Server Component
 import { adopters, adoptions, adopterFlags } from "@/db/schema";

@@ -1,4 +1,3 @@
-export const runtime = 'edge';
 import { getDb, dismissFlag } from "@/app/actions";
 import { adopterFlags, adopters } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";

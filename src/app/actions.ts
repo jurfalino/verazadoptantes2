@@ -39,7 +39,7 @@ export async function getDb() {
         console.log("[getDb] env.DB:", env?.DB ? "exists" : "null");
         if (env && env.DB) {
             console.log("[getDb] Using D1 database");
-            return createDb(env.DB);
+            return await createDb(env.DB);
         }
     } catch (e) {
         console.log("[getDb] getRequestContext failed:", e instanceof Error ? e.message : String(e));

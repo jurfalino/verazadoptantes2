@@ -1,7 +1,7 @@
 'use client';
 
 import SearchSection from '@/components/SearchSection';
-export const runtime = 'edge';
+// export const runtime = 'edge'; // Disabled for local dev (better-sqlite3 compatibility)
 import { useLanguage } from '@/context/LanguageContext';
 
 import { useRouter } from 'next/navigation';
