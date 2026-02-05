@@ -32,12 +32,17 @@ export interface SearchResult {
 }
 
 export async function getDb() {
+    console.log("[getDb] Starting database connection...");
     try {
         const { env } = getRequestContext();
+        console.log("[getDb] Got request context, env:", env ? "exists" : "null");
+        console.log("[getDb] env.DB:", env?.DB ? "exists" : "null");
         if (env && env.DB) {
+            console.log("[getDb] Using D1 database");
             return createDb(env.DB);
         }
     } catch (e) {
+        console.log("[getDb] getRequestContext failed:", e instanceof Error ? e.message : String(e));
         // Ignore error - we are likely local
     }
 
