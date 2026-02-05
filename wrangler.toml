@@ -11,6 +11,5 @@ migrations_dir = "drizzle"
 
 [vars]
 EMAIL_FROM = "noreply@buenadoptante.org"
-# AUTH_URL is vital for NextAuth in prod. Update this if your custom domain differs.
-AUTH_URL = "https://buenadoptante.org"
-# Note: AXIOM_DATASET and AXIOM_TOKEN are configured in Cloudflare Pages dashboard
+# AUTH_URL must be set in Cloudflare Dashboard per environment (Production/Preview)
+# Note: AXIOM_DATASET and AXIOM_TOKEN are also configured in Cloudflare Pages dashboard
