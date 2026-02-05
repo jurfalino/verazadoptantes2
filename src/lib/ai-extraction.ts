@@ -53,8 +53,14 @@ If you cannot extract any relevant information, return:
 function getAI(): Ai | null {
     try {
         const { env } = getRequestContext();
-        return (env as { AI?: Ai })?.AI || null;
-    } catch {
+        console.log('[AI] Available env keys:', Object.keys(env || {}));
+        const ai = (env as { AI?: Ai })?.AI;
+        if (!ai) {
+            console.log('[AI] AI binding not found in env. Available bindings:', JSON.stringify(Object.keys(env || {})));
+        }
+        return ai || null;
+    } catch (error) {
+        console.error('[AI] Error accessing request context:', error);
         return null;
     }
 }
