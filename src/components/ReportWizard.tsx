@@ -65,29 +65,26 @@ export default function ReportWizard() {
     const handleFinish = async () => {
         setLoading(true);
         try {
+            // Encode observation data for URL
+            const params = new URLSearchParams({
+                newAdoption: 'observation',
+                rating: String(observationData.rating),
+                details: observationData.details
+            });
+
             if (adopterMode === 'new') {
-                // Redirect to create adopter page with observation intent
-                router.push('/adopter/create?intent=observation');
+                // Redirect to create adopter page with observation intent and data
+                router.push(`/adopter/create?intent=observation&${params.toString()}`);
                 return;
             }
 
-            // Create observation record for existing adopter
-            const result = await saveAdoption({
-                adopterId: selectedAdopterId,
-                animalName: '',
-                recordType: 'observation',
-                status: 'noted',
-                rating: observationData.rating,
-                details: observationData.details
-            } as any);
-
-            // Navigate to adopter profile with editAdoption param
-            router.push(`/adopter/${selectedAdopterId}?editAdoption=${result.id}`);
-            router.refresh();
+            // Navigate to adopter profile with observation data
+            router.push(`/adopter/${selectedAdopterId}?${params.toString()}#adoption-form`);
+            handleClose();
 
         } catch (e) {
             console.error(e);
-            alert('Error creating observation');
+            alert('Error');
         } finally {
             setLoading(false);
         }
@@ -202,8 +199,8 @@ export default function ReportWizard() {
                                             key={r}
                                             onClick={() => setObservationData({ ...observationData, rating: r })}
                                             className={`w-10 h-10 rounded-lg font-bold transition-all border-2 ${isSelected
-                                                    ? `${colors.bg} ${colors.text} ${colors.border} shadow-sm`
-                                                    : 'bg-stone-100 text-stone-600 border-transparent hover:bg-stone-200'
+                                                ? `${colors.bg} ${colors.text} ${colors.border} shadow-sm`
+                                                : 'bg-stone-100 text-stone-600 border-transparent hover:bg-stone-200'
                                                 }`}
                                         >
                                             {r}

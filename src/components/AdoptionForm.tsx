@@ -20,8 +20,13 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
     const newAdoptionParam = searchParams.get('newAdoption');
     const prefillAnimalName = searchParams.get('animalName') || '';
     const prefillSpecies = searchParams.get('species') || 'cat';
+    // Support newAdoption=observation to preselect observation type
+    const prefillRecordType = newAdoptionParam === 'observation' ? 'observation' : (initialData?.recordType || 'adoption');
+    // Read rating and details from URL (from observation wizard)
+    const prefillRating = searchParams.get('rating');
+    const prefillDetails = searchParams.get('details') || '';
 
-    const [isOpen, setIsOpen] = useState(!!initialData || newAdoptionParam === 'true');
+    const [isOpen, setIsOpen] = useState(!!initialData || !!newAdoptionParam);
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [adoptionImages, setAdoptionImages] = useState<any[]>([]);
@@ -39,13 +44,13 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
     const [formData, setFormData] = useState({
         id: initialData?.id,
         animalName: initialData?.animalName || prefillAnimalName,
-        details: initialData?.details || '',
+        details: initialData?.details || prefillDetails,
         status: initialData?.status || 'completed',
-        rating: initialData?.rating || 5,
+        rating: initialData?.rating || (prefillRating ? Number(prefillRating) : 5),
         comments: initialData?.comments || '',
         species: initialData?.species || prefillSpecies,
         adopterId: initialData?.adopterId || adopterId,
-        recordType: initialData?.recordType || 'adoption',
+        recordType: prefillRecordType,
         date: initialData?.date ? new Date(initialData.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
         onBehalfOf: initialData?.onBehalfOf || '',
         deliveredToHome: initialData?.deliveredToHome || false,
@@ -84,9 +89,9 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
         }
     }, [formData.id]);
 
-    // Auto-scroll to adoption form when coming from new adopter flow
+    // Auto-scroll to adoption form when coming from new adopter flow or observation flow
     useEffect(() => {
-        if (newAdoptionParam === 'true') {
+        if (newAdoptionParam) {
             // Small delay to ensure the form is rendered
             setTimeout(() => {
                 const formElement = document.getElementById('adoption-form-section');

@@ -9,6 +9,7 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import AdoptionWizard from '@/components/AdoptionWizard';
 import ReportWizard from '@/components/ReportWizard';
+import packageJson from '../../package.json';
 
 export default function Home() {
   const { t } = useLanguage();
@@ -60,6 +61,7 @@ export default function Home() {
 
         <footer className="mt-20 text-center text-stone-400 text-sm">
           <p>{t('home.footer')}</p>
+          <p className="mt-1 text-stone-300 text-xs">v{packageJson.version}</p>
         </footer>
       </div>
     </main>

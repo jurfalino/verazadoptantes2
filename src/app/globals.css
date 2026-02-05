@@ -1,25 +1,111 @@
 @import "tailwindcss";
 
-:root {
-  /* High Contrast Pastel Palette (Stone/Teal/Rose) */
-  --background: #fafaf9; /* Stone-50 */
-  --foreground: #1c1917; /* Stone-900 */
+/* ========================================
+   THEME: LIGHT (Default - Current Stone/Teal)
+   ======================================== */
+:root,
+[data-theme="light"] {
+  --background: #fafaf9;
+  /* Stone-50 */
+  --foreground: #1c1917;
+  /* Stone-900 */
+  --card: #ffffff;
+  --card-foreground: #1c1917;
 
   /* Primary (Teal) */
-  --primary: #99f6e4; /* Teal-200 (Pastel) */
-  --primary-foreground: #0f766e; /* Teal-700 (High Contrast Text) */
-  --primary-hover: #5eead4; /* Teal-300 */
+  --primary: #14b8a6;
+  /* Teal-500 */
+  --primary-light: #99f6e4;
+  /* Teal-200 */
+  --primary-foreground: #ffffff;
+  --primary-hover: #0d9488;
+  /* Teal-600 */
 
   /* Secondary (Rose) */
-  --secondary: #fecdd3; /* Rose-200 (Pastel) */
-  --secondary-foreground: #be123c; /* Rose-700 */
+  --secondary: #fecdd3;
+  /* Rose-200 */
+  --secondary-foreground: #be123c;
+  /* Rose-700 */
 
   /* UI Elements */
-  --border: #e7e5e4; /* Stone-200 */
+  --border: #e7e5e4;
+  /* Stone-200 */
   --input: #ffffff;
-  --ring: #14b8a6; /* Teal-500 */
+  --ring: #14b8a6;
+  /* Teal-500 */
+  --muted: #f5f5f4;
+  /* Stone-100 */
+  --muted-foreground: #78716c;
+  /* Stone-500 */
 }
 
+/* ========================================
+   THEME: GRAY (Darker Medium Grays)
+   ======================================== */
+[data-theme="apple"] {
+  --background: #e5e5ea;
+  /* Darker gray background */
+  --foreground: #1d1d1f;
+  /* Near-black text */
+  --card: #f2f2f7;
+  --card-foreground: #1d1d1f;
+
+  /* Primary (Blue accent) */
+  --primary: #0071e3;
+  --primary-light: #b3d7ff;
+  --primary-foreground: #ffffff;
+  --primary-hover: #0077ed;
+
+  /* Secondary */
+  --secondary: #d1d1d6;
+  --secondary-foreground: #1d1d1f;
+
+  /* UI Elements */
+  --border: #c7c7cc;
+  /* Darker border */
+  --input: #ffffff;
+  --ring: #0071e3;
+  --muted: #d1d1d6;
+  --muted-foreground: #48484a;
+  /* Darker gray text */
+}
+
+/* ========================================
+   THEME: DARK (Midnight Blue)
+   ======================================== */
+[data-theme="dark"] {
+  --background: #0a1628;
+  /* Deep midnight blue */
+  --foreground: #e0e7ff;
+  /* Soft blue-white text */
+  --card: #1e293b;
+  /* Slate-800 */
+  --card-foreground: #e0e7ff;
+
+  /* Primary (Electric Blue) */
+  --primary: #60a5fa;
+  /* Blue-400 */
+  --primary-light: #3b82f6;
+  --primary-foreground: #0a1628;
+  --primary-hover: #93c5fd;
+
+  /* Secondary */
+  --secondary: #1e3a5f;
+  --secondary-foreground: #e0e7ff;
+
+  /* UI Elements */
+  --border: #334155;
+  /* Slate-700 */
+  --input: #1e293b;
+  --ring: #60a5fa;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  /* Slate-400 */
+}
+
+/* ========================================
+   THEME MAPPINGS FOR TAILWIND
+   ======================================== */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -29,27 +115,40 @@
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary-hover: var(--primary-hover);
-  
+
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
 }
 
-/* Base Styles */
+/* ========================================
+   BASE STYLES
+   ======================================== */
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-/* Inputs - High Contrast & Clean */
-input, textarea, select {
+/* Cards and elevated surfaces */
+.bg-white {
+  background-color: var(--card) !important;
+}
+
+/* Inputs - Theme aware */
+input,
+textarea,
+select {
   background-color: var(--input);
-  color: #1c1917; /* Stone-900 */
+  color: var(--foreground);
   border: 1px solid var(--border);
-  border-radius: 0.75rem; /* Rounded-xl */
+  border-radius: 0.75rem;
+  transition: all 0.2s ease;
 }
 
-input:focus, textarea:focus, select:focus {
+input:focus,
+textarea:focus,
+select:focus {
   outline: 2px solid var(--ring);
   border-color: var(--ring);
 }
@@ -57,4 +156,628 @@ input:focus, textarea:focus, select:focus {
 /* Buttons */
 button {
   transition: all 0.2s ease-in-out;
+}
+
+/* Stone colors - theme aware overrides */
+[data-theme="dark"] .bg-stone-50 {
+  background-color: var(--background) !important;
+}
+
+[data-theme="dark"] .bg-stone-100 {
+  background-color: var(--muted) !important;
+}
+
+[data-theme="dark"] .bg-stone-200 {
+  background-color: var(--border) !important;
+}
+
+[data-theme="dark"] .text-stone-900 {
+  color: var(--foreground) !important;
+}
+
+[data-theme="dark"] .text-stone-800 {
+  color: var(--foreground) !important;
+}
+
+[data-theme="dark"] .text-stone-700 {
+  color: var(--muted-foreground) !important;
+}
+
+[data-theme="dark"] .text-stone-600 {
+  color: var(--muted-foreground) !important;
+}
+
+[data-theme="dark"] .text-stone-500 {
+  color: var(--muted-foreground) !important;
+}
+
+[data-theme="dark"] .text-stone-400 {
+  color: var(--muted-foreground) !important;
+}
+
+[data-theme="dark"] .border-stone-200 {
+  border-color: var(--border) !important;
+}
+
+[data-theme="dark"] .border-stone-100 {
+  border-color: var(--border) !important;
+}
+
+[data-theme="dark"] .divide-stone-100>*+* {
+  border-color: var(--border) !important;
+}
+
+/* ========================================
+   DARK THEME - Emerald → Blue Color Overrides (Midnight Blue)
+   ======================================== */
+[data-theme="dark"] .bg-emerald-50 {
+  background-color: rgba(96, 165, 250, 0.1) !important;
+}
+
+[data-theme="dark"] .bg-emerald-100 {
+  background-color: rgba(96, 165, 250, 0.15) !important;
+}
+
+[data-theme="dark"] .bg-emerald-500 {
+  background-color: #60a5fa !important;
+}
+
+[data-theme="dark"] .bg-emerald-600 {
+  background-color: #3b82f6 !important;
+}
+
+[data-theme="dark"] .text-emerald-600 {
+  color: #60a5fa !important;
+}
+
+[data-theme="dark"] .text-emerald-700 {
+  color: #60a5fa !important;
+}
+
+[data-theme="dark"] .text-emerald-800 {
+  color: #93c5fd !important;
+}
+
+[data-theme="dark"] .text-emerald-900 {
+  color: #dbeafe !important;
+}
+
+[data-theme="dark"] .text-emerald-950 {
+  color: #e0e7ff !important;
+}
+
+[data-theme="dark"] .border-emerald-100 {
+  border-color: rgba(96, 165, 250, 0.2) !important;
+}
+
+[data-theme="dark"] .border-emerald-200 {
+  border-color: rgba(96, 165, 250, 0.3) !important;
+}
+
+[data-theme="dark"] .border-emerald-400 {
+  border-color: #60a5fa !important;
+}
+
+[data-theme="dark"] .border-emerald-500 {
+  border-color: #60a5fa !important;
+}
+
+[data-theme="dark"] .ring-emerald-50 {
+  --tw-ring-color: rgba(96, 165, 250, 0.1) !important;
+}
+
+[data-theme="dark"] .placeholder-emerald-800\/40::placeholder {
+  color: rgba(96, 165, 250, 0.4) !important;
+}
+
+/* ========================================
+   DARK THEME - Teal → Blue Color Overrides (Midnight Blue)
+   ======================================== */
+[data-theme="dark"] .bg-teal-50 {
+  background-color: rgba(96, 165, 250, 0.1) !important;
+}
+
+[data-theme="dark"] .bg-teal-500 {
+  background-color: #60a5fa !important;
+}
+
+[data-theme="dark"] .bg-teal-600 {
+  background-color: #3b82f6 !important;
+}
+
+[data-theme="dark"] .text-teal-600 {
+  color: #60a5fa !important;
+}
+
+[data-theme="dark"] .text-teal-700 {
+  color: #60a5fa !important;
+}
+
+[data-theme="dark"] .text-teal-800 {
+  color: #93c5fd !important;
+}
+
+[data-theme="dark"] .border-teal-200 {
+  border-color: rgba(96, 165, 250, 0.3) !important;
+}
+
+/* ========================================
+   DARK THEME - Rose/Red Color Overrides
+   ======================================== */
+[data-theme="dark"] .bg-rose-50 {
+  background-color: rgba(251, 113, 133, 0.1) !important;
+}
+
+[data-theme="dark"] .bg-rose-100 {
+  background-color: rgba(251, 113, 133, 0.15) !important;
+}
+
+[data-theme="dark"] .bg-rose-500 {
+  background-color: #fb7185 !important;
+}
+
+[data-theme="dark"] .text-rose-600 {
+  color: #fb7185 !important;
+}
+
+[data-theme="dark"] .text-rose-700 {
+  color: #fb7185 !important;
+}
+
+[data-theme="dark"] .text-rose-800 {
+  color: #fda4af !important;
+}
+
+[data-theme="dark"] .border-rose-200 {
+  border-color: rgba(251, 113, 133, 0.3) !important;
+}
+
+[data-theme="dark"] .bg-red-50 {
+  background-color: rgba(239, 68, 68, 0.1) !important;
+}
+
+[data-theme="dark"] .text-red-600 {
+  color: #f87171 !important;
+}
+
+[data-theme="dark"] .text-red-700 {
+  color: #f87171 !important;
+}
+
+/* ========================================
+   DARK THEME - Blue Color Overrides
+   ======================================== */
+[data-theme="dark"] .bg-blue-50 {
+  background-color: rgba(96, 165, 250, 0.1) !important;
+}
+
+[data-theme="dark"] .bg-blue-100 {
+  background-color: rgba(96, 165, 250, 0.15) !important;
+}
+
+[data-theme="dark"] .text-blue-600 {
+  color: #60a5fa !important;
+}
+
+[data-theme="dark"] .text-blue-700 {
+  color: #60a5fa !important;
+}
+
+[data-theme="dark"] .text-blue-800 {
+  color: #93c5fd !important;
+}
+
+[data-theme="dark"] .border-blue-100 {
+  border-color: rgba(96, 165, 250, 0.2) !important;
+}
+
+[data-theme="dark"] .border-blue-200 {
+  border-color: rgba(96, 165, 250, 0.3) !important;
+}
+
+/* ========================================
+   DARK THEME - Yellow/Amber Color Overrides
+   ======================================== */
+[data-theme="dark"] .bg-yellow-50 {
+  background-color: rgba(250, 204, 21, 0.1) !important;
+}
+
+[data-theme="dark"] .bg-yellow-100 {
+  background-color: rgba(250, 204, 21, 0.15) !important;
+}
+
+[data-theme="dark"] .bg-amber-50 {
+  background-color: rgba(251, 191, 36, 0.1) !important;
+}
+
+[data-theme="dark"] .bg-amber-100 {
+  background-color: rgba(251, 191, 36, 0.15) !important;
+}
+
+[data-theme="dark"] .text-yellow-600 {
+  color: #facc15 !important;
+}
+
+[data-theme="dark"] .text-yellow-700 {
+  color: #facc15 !important;
+}
+
+[data-theme="dark"] .text-yellow-800 {
+  color: #fde047 !important;
+}
+
+[data-theme="dark"] .text-amber-600 {
+  color: #fbbf24 !important;
+}
+
+[data-theme="dark"] .text-amber-700 {
+  color: #fbbf24 !important;
+}
+
+[data-theme="dark"] .border-yellow-200 {
+  border-color: rgba(250, 204, 21, 0.3) !important;
+}
+
+[data-theme="dark"] .border-amber-200 {
+  border-color: rgba(251, 191, 36, 0.3) !important;
+}
+
+/* ========================================
+   DARK THEME - Orange Color Overrides
+   ======================================== */
+[data-theme="dark"] .bg-orange-50 {
+  background-color: rgba(251, 146, 60, 0.1) !important;
+}
+
+[data-theme="dark"] .bg-orange-100 {
+  background-color: rgba(251, 146, 60, 0.15) !important;
+}
+
+[data-theme="dark"] .text-orange-600 {
+  color: #fb923c !important;
+}
+
+[data-theme="dark"] .text-orange-700 {
+  color: #fb923c !important;
+}
+
+[data-theme="dark"] .border-orange-200 {
+  border-color: rgba(251, 146, 60, 0.3) !important;
+}
+
+/* ========================================
+   DARK THEME - Gray Color Overrides
+   ======================================== */
+[data-theme="dark"] .bg-gray-50 {
+  background-color: var(--muted) !important;
+}
+
+[data-theme="dark"] .bg-gray-100 {
+  background-color: var(--muted) !important;
+}
+
+[data-theme="dark"] .text-gray-500 {
+  color: var(--muted-foreground) !important;
+}
+
+[data-theme="dark"] .text-gray-600 {
+  color: var(--muted-foreground) !important;
+}
+
+[data-theme="dark"] .text-gray-700 {
+  color: var(--foreground) !important;
+}
+
+[data-theme="dark"] .text-gray-900 {
+  color: var(--foreground) !important;
+}
+
+[data-theme="dark"] .border-gray-200 {
+  border-color: var(--border) !important;
+}
+
+[data-theme="dark"] .border-gray-300 {
+  border-color: var(--border) !important;
+}
+
+/* ========================================
+   DARK THEME - Navigation and Modals
+   ======================================== */
+[data-theme="dark"] .bg-white\/80 {
+  background-color: rgba(44, 44, 46, 0.9) !important;
+}
+
+[data-theme="dark"] .bg-white\/90 {
+  background-color: rgba(44, 44, 46, 0.95) !important;
+}
+
+[data-theme="dark"] .bg-black\/50 {
+  background-color: rgba(0, 0, 0, 0.7) !important;
+}
+
+[data-theme="dark"] .shadow-lg {
+  --tw-shadow-color: rgba(0, 0, 0, 0.4) !important;
+}
+
+[data-theme="dark"] .shadow-xl {
+  --tw-shadow-color: rgba(0, 0, 0, 0.5) !important;
+}
+
+/* ========================================
+   APPLE THEME - Stone Color Overrides
+   ======================================== */
+[data-theme="apple"] .bg-stone-50 {
+  background-color: var(--background) !important;
+}
+
+[data-theme="apple"] .bg-stone-100 {
+  background-color: var(--muted) !important;
+}
+
+[data-theme="apple"] .border-stone-200 {
+  border-color: var(--border) !important;
+}
+
+[data-theme="apple"] .text-stone-500 {
+  color: var(--muted-foreground) !important;
+}
+
+/* ========================================
+   APPLE THEME - Convert Teal/Emerald to Blue
+   ======================================== */
+[data-theme="apple"] .bg-teal-500 {
+  background-color: #0071e3 !important;
+}
+
+[data-theme="apple"] .bg-teal-600 {
+  background-color: #0077ed !important;
+}
+
+[data-theme="apple"] .text-teal-600 {
+  color: #0071e3 !important;
+}
+
+[data-theme="apple"] .text-teal-700 {
+  color: #0071e3 !important;
+}
+
+[data-theme="apple"] .text-teal-800 {
+  color: #0071e3 !important;
+}
+
+[data-theme="apple"] .bg-emerald-50 {
+  background-color: rgba(0, 113, 227, 0.05) !important;
+}
+
+[data-theme="apple"] .bg-emerald-100 {
+  background-color: rgba(0, 113, 227, 0.1) !important;
+}
+
+[data-theme="apple"] .bg-emerald-500 {
+  background-color: #0071e3 !important;
+}
+
+[data-theme="apple"] .bg-emerald-600 {
+  background-color: #0077ed !important;
+}
+
+[data-theme="apple"] .text-emerald-600 {
+  color: #0071e3 !important;
+}
+
+[data-theme="apple"] .text-emerald-700 {
+  color: #0071e3 !important;
+}
+
+[data-theme="apple"] .text-emerald-800 {
+  color: #0051a3 !important;
+}
+
+[data-theme="apple"] .text-emerald-900 {
+  color: #003d7a !important;
+}
+
+[data-theme="apple"] .text-emerald-950 {
+  color: #002851 !important;
+}
+
+[data-theme="apple"] .border-emerald-100 {
+  border-color: rgba(0, 113, 227, 0.15) !important;
+}
+
+[data-theme="apple"] .border-emerald-200 {
+  border-color: rgba(0, 113, 227, 0.2) !important;
+}
+
+[data-theme="apple"] .border-emerald-400 {
+  border-color: #0071e3 !important;
+}
+
+[data-theme="apple"] .border-emerald-500 {
+  border-color: #0071e3 !important;
+}
+
+[data-theme="apple"] .ring-emerald-50 {
+  --tw-ring-color: rgba(0, 113, 227, 0.1) !important;
+}
+
+[data-theme="apple"] .placeholder-emerald-800\/40::placeholder {
+  color: rgba(0, 113, 227, 0.4) !important;
+}
+
+/* ========================================
+   APPLE THEME - Navigation
+   ======================================== */
+[data-theme="apple"] .bg-white\/80 {
+  background-color: rgba(255, 255, 255, 0.85) !important;
+  backdrop-filter: saturate(180%) blur(20px);
+}
+
+/* ========================================
+   DARK THEME - Purple Color Overrides
+   ======================================== */
+[data-theme="dark"] .bg-purple-50 {
+  background-color: rgba(168, 85, 247, 0.1) !important;
+}
+
+[data-theme="dark"] .bg-purple-100 {
+  background-color: rgba(168, 85, 247, 0.15) !important;
+}
+
+[data-theme="dark"] .text-purple-600 {
+  color: #c084fc !important;
+}
+
+[data-theme="dark"] .text-purple-700 {
+  color: #c084fc !important;
+}
+
+[data-theme="dark"] .border-purple-200 {
+  border-color: rgba(168, 85, 247, 0.3) !important;
+}
+
+/* ========================================
+   DARK THEME - Green Color Overrides
+   ======================================== */
+[data-theme="dark"] .bg-green-50 {
+  background-color: rgba(74, 222, 128, 0.1) !important;
+}
+
+[data-theme="dark"] .bg-green-100 {
+  background-color: rgba(74, 222, 128, 0.15) !important;
+}
+
+[data-theme="dark"] .text-green-600 {
+  color: #4ade80 !important;
+}
+
+[data-theme="dark"] .text-green-700 {
+  color: #4ade80 !important;
+}
+
+[data-theme="dark"] .border-green-200 {
+  border-color: rgba(74, 222, 128, 0.3) !important;
+}
+
+/* ========================================
+   DARK THEME - Ring Color Overrides
+   ======================================== */
+[data-theme="dark"] .ring-emerald-200 {
+  --tw-ring-color: rgba(94, 234, 212, 0.4) !important;
+}
+
+[data-theme="dark"] .ring-stone-200 {
+  --tw-ring-color: var(--border) !important;
+}
+
+/* ========================================
+   DARK THEME - Opacity Variants
+   ======================================== */
+[data-theme="dark"] .bg-emerald-50\/30 {
+  background-color: rgba(94, 234, 212, 0.05) !important;
+}
+
+[data-theme="dark"] .text-emerald-600\/70 {
+  color: rgba(94, 234, 212, 0.7) !important;
+}
+
+[data-theme="dark"] .text-emerald-600\/80 {
+  color: rgba(94, 234, 212, 0.8) !important;
+}
+
+[data-theme="dark"] .text-emerald-800\/80 {
+  color: rgba(204, 251, 241, 0.8) !important;
+}
+
+[data-theme="dark"] .bg-emerald-50\/50 {
+  background-color: rgba(94, 234, 212, 0.08) !important;
+}
+
+[data-theme="dark"] .border-emerald-100\/50 {
+  border-color: rgba(94, 234, 212, 0.15) !important;
+}
+
+[data-theme="dark"] .text-purple-600\/70 {
+  color: rgba(192, 132, 252, 0.7) !important;
+}
+
+[data-theme="dark"] .text-green-600\/70 {
+  color: rgba(74, 222, 128, 0.7) !important;
+}
+
+[data-theme="dark"] .text-orange-600\/70 {
+  color: rgba(251, 146, 60, 0.7) !important;
+}
+
+[data-theme="dark"] .text-blue-600\/70 {
+  color: rgba(96, 165, 250, 0.7) !important;
+}
+
+/* ========================================
+   APPLE THEME - Purple and Green Overrides
+   ======================================== */
+[data-theme="apple"] .bg-purple-50 {
+  background-color: rgba(88, 86, 214, 0.08) !important;
+}
+
+[data-theme="apple"] .text-purple-600 {
+  color: #5856d6 !important;
+}
+
+[data-theme="apple"] .text-purple-600\/70 {
+  color: rgba(88, 86, 214, 0.7) !important;
+}
+
+[data-theme="apple"] .bg-green-50 {
+  background-color: rgba(52, 199, 89, 0.08) !important;
+}
+
+[data-theme="apple"] .text-green-600 {
+  color: #34c759 !important;
+}
+
+[data-theme="apple"] .text-green-600\/70 {
+  color: rgba(52, 199, 89, 0.7) !important;
+}
+
+[data-theme="apple"] .bg-orange-50 {
+  background-color: rgba(255, 149, 0, 0.08) !important;
+}
+
+[data-theme="apple"] .text-orange-600 {
+  color: #ff9500 !important;
+}
+
+[data-theme="apple"] .text-orange-600\/70 {
+  color: rgba(255, 149, 0, 0.7) !important;
+}
+
+/* Apple Blue colors */
+[data-theme="apple"] .bg-blue-50 {
+  background-color: rgba(0, 113, 227, 0.05) !important;
+}
+
+[data-theme="apple"] .text-blue-600 {
+  color: #0071e3 !important;
+}
+
+[data-theme="apple"] .text-blue-600\/70 {
+  color: rgba(0, 113, 227, 0.7) !important;
+}
+
+/* Apple ring and opacity variants */
+[data-theme="apple"] .ring-emerald-200 {
+  --tw-ring-color: rgba(0, 113, 227, 0.3) !important;
+}
+
+[data-theme="apple"] .bg-emerald-50\/30 {
+  background-color: rgba(0, 113, 227, 0.02) !important;
+}
+
+[data-theme="apple"] .text-emerald-600\/70 {
+  color: rgba(0, 113, 227, 0.7) !important;
+}
+
+[data-theme="apple"] .text-emerald-600\/80 {
+  color: rgba(0, 113, 227, 0.8) !important;
 }
