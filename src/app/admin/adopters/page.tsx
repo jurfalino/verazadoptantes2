@@ -14,18 +14,33 @@ async function handleDeleteAdopter(formData: FormData) {
     'use server';
 
     const adopterId = formData.get('adopterId') as string;
-    if (!adopterId) return;
+    if (!adopterId) {
+        logger.warn('Delete attempt with no adopterId');
+        return;
+    }
 
     try {
         const session = await auth();
+
+        // Debug: log session info
+        logger.info('Delete attempt debug', {
+            adopterId,
+            hasSession: !!session,
+            userEmail: session?.user?.email || 'no-email',
+            isAdmin: session?.user?.email ? ADMIN_EMAILS.includes(session.user.email) : false
+        });
+
         if (!session?.user?.email || !ADMIN_EMAILS.includes(session.user.email)) {
-            console.error("Unauthorized delete attempt");
+            logger.warn('Unauthorized delete attempt', {
+                adopterId,
+                email: session?.user?.email || 'no-session'
+            });
             return;
         }
 
         const db = await getDb();
         if (!db) {
-            console.error("No database for delete");
+            logger.error('No database for delete', null, { adopterId });
             return;
         }
 
