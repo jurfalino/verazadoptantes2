@@ -203,74 +203,31 @@ export async function searchAdopter(query: string): Promise<SearchResult[]> {
         const thumbnailMap = new Map<string, string>();
         const allAdoptionRecords: { adopterId: string; recordType: string | null; date: number | null }[] = [];
 
-        // Fetch data for each adopter sequentially (safer for D1)
-        for (const adopter of allProfiles) {
+        // Fetch data for each adopter in parallel (D1 compatible - uses eq() not inArray())
+        await Promise.all(allProfiles.map(async (adopter) => {
             const adopterId = adopter.id;
 
-            // Adoptions data
-            try {
-                const adopterAdoptions = await db.select({
+            // Run all 4 enrichment queries in parallel for this adopter
+            const [adopterAdoptions, adopterFlagRecords, adopterStatRecords, adopterImagesResult] = await Promise.all([
+                // Adoptions
+                db.select({
                     rating: adoptions.rating,
                     recordType: adoptions.recordType,
                     date: adoptions.date
-                })
-                    .from(adoptions)
-                    .where(eq(adoptions.adopterId, adopterId));
+                }).from(adoptions).where(eq(adoptions.adopterId, adopterId)).catch(() => []),
 
-                if (adopterAdoptions.length > 0) {
-                    const avgRating = adopterAdoptions.reduce((sum: number, a: { rating: number | null }) => sum + (a.rating || 0), 0) / adopterAdoptions.length;
-                    adoptionMap.set(adopterId, { avgRating, count: adopterAdoptions.length });
-
-                    for (const rec of adopterAdoptions) {
-                        allAdoptionRecords.push({ adopterId, recordType: rec.recordType, date: rec.date });
-                    }
-                }
-            } catch (e) { console.error("Adoption fetch error:", e); }
-
-            // Flags
-            try {
-                const adopterFlagRecords = await db.select({ reason: adopterFlags.reason })
+                // Flags
+                db.select({ reason: adopterFlags.reason })
                     .from(adopterFlags)
-                    .where(eq(adopterFlags.adopterId, adopterId));
+                    .where(eq(adopterFlags.adopterId, adopterId)).catch(() => []),
 
-                const flags: AdopterFlags = {
-                    inaccurate: false,
-                    duplicate: false,
-                    verified_identity: false,
-                    verified_address: false,
-                    tooManyAdoptions: null,
-                    tooManyRequests: null
-                };
-                for (const f of adopterFlagRecords) {
-                    if (f.reason === 'inaccurate') flags.inaccurate = true;
-                    if (f.reason === 'duplicate') flags.duplicate = true;
-                    if (f.reason === 'verified_identity') flags.verified_identity = true;
-                    if (f.reason === 'verified_address') flags.verified_address = true;
-                }
-                flagsMap.set(adopterId, flags);
-            } catch (e) { console.error("Flags fetch error:", e); }
-
-            // Stats
-            try {
-                const adopterStatRecords = await db.select({
-                    eventType: adopterStats.eventType
-                })
+                // Stats
+                db.select({ eventType: adopterStats.eventType })
                     .from(adopterStats)
-                    .where(eq(adopterStats.adopterId, adopterId));
+                    .where(eq(adopterStats.adopterId, adopterId)).catch(() => []),
 
-                const stats = { searchHits: 0, profileViews: 0, requests: 0, adoptions: 0 };
-                for (const s of adopterStatRecords) {
-                    if (s.eventType === 'search_hit') stats.searchHits++;
-                    else if (s.eventType === 'profile_view') stats.profileViews++;
-                    else if (s.eventType === 'adoption_request') stats.requests++;
-                    else if (s.eventType === 'adoption_completed') stats.adoptions++;
-                }
-                statsMap.set(adopterId, stats);
-            } catch (e) { console.error("Stats fetch error:", e); }
-
-            // Thumbnail
-            try {
-                const adopterImagesResult = await db.select({
+                // Images
+                db.select({
                     url: adopterImages.url,
                     isProfilePicture: adopterImages.isProfilePicture
                 })
@@ -280,13 +237,50 @@ export async function searchAdopter(query: string): Promise<SearchResult[]> {
                         isNull(adopterImages.adoptionId)
                     ))
                     .orderBy(sql`${adopterImages.isProfilePicture} DESC, ${adopterImages.uploadedAt} DESC`)
-                    .limit(1);
+                    .limit(1).catch(() => [])
+            ]);
 
-                if (adopterImagesResult.length > 0) {
-                    thumbnailMap.set(adopterId, adopterImagesResult[0].url);
+            // Process adoptions
+            if (adopterAdoptions.length > 0) {
+                const avgRating = adopterAdoptions.reduce((sum: number, a: { rating: number | null }) => sum + (a.rating || 0), 0) / adopterAdoptions.length;
+                adoptionMap.set(adopterId, { avgRating, count: adopterAdoptions.length });
+                for (const rec of adopterAdoptions) {
+                    allAdoptionRecords.push({ adopterId, recordType: rec.recordType, date: rec.date });
                 }
-            } catch (e) { console.error("Images fetch error:", e); }
-        }
+            }
+
+            // Process flags
+            const flags: AdopterFlags = {
+                inaccurate: false,
+                duplicate: false,
+                verified_identity: false,
+                verified_address: false,
+                tooManyAdoptions: null,
+                tooManyRequests: null
+            };
+            for (const f of adopterFlagRecords) {
+                if (f.reason === 'inaccurate') flags.inaccurate = true;
+                if (f.reason === 'duplicate') flags.duplicate = true;
+                if (f.reason === 'verified_identity') flags.verified_identity = true;
+                if (f.reason === 'verified_address') flags.verified_address = true;
+            }
+            flagsMap.set(adopterId, flags);
+
+            // Process stats
+            const stats = { searchHits: 0, profileViews: 0, requests: 0, adoptions: 0 };
+            for (const s of adopterStatRecords) {
+                if (s.eventType === 'search_hit') stats.searchHits++;
+                else if (s.eventType === 'profile_view') stats.profileViews++;
+                else if (s.eventType === 'adoption_request') stats.requests++;
+                else if (s.eventType === 'adoption_completed') stats.adoptions++;
+            }
+            statsMap.set(adopterId, stats);
+
+            // Process thumbnail
+            if (adopterImagesResult.length > 0) {
+                thumbnailMap.set(adopterId, adopterImagesResult[0].url);
+            }
+        }));
 
         // Process adoption records for tooMany flags
         const periodCutoff = Date.now() - (adoptionConfig.periodDays * 24 * 60 * 60 * 1000);
