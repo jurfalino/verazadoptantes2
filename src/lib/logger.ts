@@ -54,7 +54,7 @@ function getAxiomConfig() {
     }
 }
 
-// Send log to Axiom (fire and forget)
+// Send log to Axiom (using waitUntil to keep worker alive on Edge)
 async function sendToAxiom(entries: LogEntry[]) {
     const config = getAxiomConfig();
     if (!config.dataset || !config.token) {
@@ -62,17 +62,32 @@ async function sendToAxiom(entries: LogEntry[]) {
         return;
     }
 
+    const doFetch = async () => {
+        try {
+            await fetch(`https://api.axiom.co/v1/datasets/${config.dataset}/ingest`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${config.token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(entries)
+            });
+        } catch (e) {
+            console.error('[Logger] Failed to send to Axiom:', e);
+        }
+    };
+
+    // Use waitUntil if available (Edge runtime) to prevent worker from terminating
     try {
-        await fetch(`https://api.axiom.co/v1/datasets/${config.dataset}/ingest`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${config.token}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(entries)
-        });
-    } catch (e) {
-        console.error('[Logger] Failed to send to Axiom:', e);
+        const { ctx } = getRequestContext();
+        if (ctx?.waitUntil) {
+            ctx.waitUntil(doFetch());
+        } else {
+            doFetch(); // Fallback: fire and forget
+        }
+    } catch {
+        // Not in request context, just fire and forget
+        doFetch();
     }
 }
 
