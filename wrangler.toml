@@ -12,4 +12,4 @@ migrations_dir = "drizzle"
 [vars]
 EMAIL_FROM = "noreply@buenadoptante.org"
 # AUTH_URL is vital for NextAuth in prod. Update this if your custom domain differs.
-AUTH_URL = "https://verazadoptantes2.pages.dev"
+AUTH_URL = "https://buenadoptante.org"
