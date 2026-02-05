@@ -4,7 +4,7 @@ import { getRequestContext } from '@cloudflare/next-on-pages';
 import { createDb } from '@/db';
 import { revalidatePath } from 'next/cache';
 import { adopters, searches, adopterHistory, adoptions, adopterImages, adopterFlags, adopterStats, adoptionImages, appConfig } from '@/db/schema';
-import { or, like, eq, sql, and, gte, isNull } from 'drizzle-orm';
+import { or, like, eq, sql, and, gte, isNull, inArray } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { cookies } from 'next/headers';
 
@@ -184,7 +184,7 @@ export async function searchAdopter(query: string): Promise<SearchResult[]> {
         let extraProfiles: typeof adopters.$inferSelect[] = [];
         if (extraIds.size > 0) {
             extraProfiles = await db.select().from(adopters)
-                .where(sql`id IN ${Array.from(extraIds)}`);
+                .where(inArray(adopters.id, Array.from(extraIds)));
         }
 
         // Combine Results
@@ -203,7 +203,7 @@ export async function searchAdopter(query: string): Promise<SearchResult[]> {
                 adoptionCount: sql<number>`COUNT(*)`
             })
                 .from(adoptions)
-                .where(sql`${adoptions.adopterId} IN ${adopterIds}`)
+                .where(inArray(adoptions.adopterId, adopterIds))
                 .groupBy(adoptions.adopterId),
             // All adoption records (for counting within period)
             db.select({
@@ -212,14 +212,14 @@ export async function searchAdopter(query: string): Promise<SearchResult[]> {
                 date: adoptions.date
             })
                 .from(adoptions)
-                .where(sql`${adoptions.adopterId} IN ${adopterIds}`),
+                .where(inArray(adoptions.adopterId, adopterIds)),
             // Flags
             db.select({
                 adopterId: adopterFlags.adopterId,
                 reason: adopterFlags.reason
             })
                 .from(adopterFlags)
-                .where(sql`${adopterFlags.adopterId} IN ${adopterIds}`),
+                .where(inArray(adopterFlags.adopterId, adopterIds)),
             // Stats (all-time counts)
             db.select({
                 adopterId: adopterStats.adopterId,
@@ -227,7 +227,7 @@ export async function searchAdopter(query: string): Promise<SearchResult[]> {
                 count: sql<number>`COUNT(*)`
             })
                 .from(adopterStats)
-                .where(sql`${adopterStats.adopterId} IN ${adopterIds}`)
+                .where(inArray(adopterStats.adopterId, adopterIds))
                 .groupBy(adopterStats.adopterId, adopterStats.eventType),
             // Profile images (for thumbnails)
             db.select({
@@ -237,7 +237,7 @@ export async function searchAdopter(query: string): Promise<SearchResult[]> {
             })
                 .from(adopterImages)
                 .where(and(
-                    sql`${adopterImages.adopterId} IN ${adopterIds}`,
+                    inArray(adopterImages.adopterId, adopterIds),
                     isNull(adopterImages.adoptionId)
                 ))
                 .orderBy(sql`${adopterImages.isProfilePicture} DESC, ${adopterImages.uploadedAt} DESC`)
