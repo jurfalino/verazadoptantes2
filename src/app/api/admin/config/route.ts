@@ -35,10 +35,14 @@ export async function GET() {
 
     return NextResponse.json({
         config: {
+            // Threshold defaults
             too_many_adoptions_threshold: config['too_many_adoptions_threshold'] || '5',
             too_many_adoptions_period_days: config['too_many_adoptions_period_days'] || '90',
             too_many_requests_threshold: config['too_many_requests_threshold'] || '3',
-            too_many_requests_period_days: config['too_many_requests_period_days'] || '30'
+            too_many_requests_period_days: config['too_many_requests_period_days'] || '30',
+            // Feature flags (from DB)
+            ENABLE_FACEBOOK_IMPORT: config['ENABLE_FACEBOOK_IMPORT'] || 'false',
+            ENABLE_AI_EXTRACTION: config['ENABLE_AI_EXTRACTION'] || 'false',
         },
         statsCount,
         oldestStat

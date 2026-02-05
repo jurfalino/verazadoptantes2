@@ -9,6 +9,8 @@ interface ConfigData {
         too_many_adoptions_period_days?: string;
         too_many_requests_threshold?: string;
         too_many_requests_period_days?: string;
+        ENABLE_FACEBOOK_IMPORT?: string;
+        ENABLE_AI_EXTRACTION?: string;
     };
     statsCount?: number;
     oldestStat?: string | null;
@@ -18,6 +20,13 @@ interface PurgeData {
     deleted: number;
     remaining: number;
 }
+
+// Feature flags definition
+const FEATURE_FLAGS = [
+    { key: 'ENABLE_FACEBOOK_IMPORT', label: 'Facebook Import', description: 'Allow users to import adopter data from Facebook posts using AI' },
+    { key: 'ENABLE_AI_EXTRACTION', label: 'AI Data Extraction', description: 'Enable AI-powered data extraction from images and text' },
+];
+
 export default function AdminConfigPage() {
     const [config, setConfig] = useState({
         too_many_adoptions_threshold: '5',
@@ -25,11 +34,16 @@ export default function AdminConfigPage() {
         too_many_requests_threshold: '3',
         too_many_requests_period_days: '30'
     });
+    const [featureFlags, setFeatureFlags] = useState<Record<string, boolean>>({
+        ENABLE_FACEBOOK_IMPORT: false,
+        ENABLE_AI_EXTRACTION: false,
+    });
     const [statsCount, setStatsCount] = useState<number | null>(null);
     const [oldestStat, setOldestStat] = useState<string | null>(null);
     const [purgeDays, setPurgeDays] = useState('365');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [savingFlags, setSavingFlags] = useState(false);
     const [purging, setPurging] = useState(false);
 
     // Fetch current config and stats info
@@ -44,6 +58,11 @@ export default function AdminConfigPage() {
                         too_many_adoptions_period_days: data.config?.too_many_adoptions_period_days || '90',
                         too_many_requests_threshold: data.config?.too_many_requests_threshold || '3',
                         too_many_requests_period_days: data.config?.too_many_requests_period_days || '30'
+                    });
+                    // Set feature flags from config
+                    setFeatureFlags({
+                        ENABLE_FACEBOOK_IMPORT: data.config?.ENABLE_FACEBOOK_IMPORT === 'true',
+                        ENABLE_AI_EXTRACTION: data.config?.ENABLE_AI_EXTRACTION === 'true',
                     });
                     setStatsCount(data.statsCount ?? null);
                     setOldestStat(data.oldestStat ?? null);
@@ -75,6 +94,27 @@ export default function AdminConfigPage() {
             alert('Error saving configuration');
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleToggleFlag = async (flagKey: string, newValue: boolean) => {
+        setSavingFlags(true);
+        try {
+            const res = await fetch('/api/admin/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ [flagKey]: newValue ? 'true' : 'false' })
+            });
+            if (res.ok) {
+                setFeatureFlags(prev => ({ ...prev, [flagKey]: newValue }));
+            } else {
+                alert('Failed to save feature flag');
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Error saving feature flag');
+        } finally {
+            setSavingFlags(false);
         }
     };
 
@@ -120,6 +160,38 @@ export default function AdminConfigPage() {
                 <h2 className="text-3xl font-bold text-stone-900">System Configuration</h2>
                 <p className="text-stone-500 mt-2">Manage application settings and maintenance tasks.</p>
             </header>
+
+            {/* Feature Flags */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200">
+                <h3 className="text-lg font-bold text-stone-900 mb-4 flex items-center gap-2">
+                    <span className="text-xl">🚩</span>
+                    Feature Flags
+                </h3>
+                <p className="text-sm text-stone-500 mb-4">
+                    Enable or disable experimental features.
+                </p>
+                <div className="space-y-4">
+                    {FEATURE_FLAGS.map(flag => (
+                        <div key={flag.key} className="flex items-center justify-between p-4 bg-stone-50 rounded-xl">
+                            <div>
+                                <p className="font-bold text-stone-800">{flag.label}</p>
+                                <p className="text-sm text-stone-500">{flag.description}</p>
+                            </div>
+                            <button
+                                onClick={() => handleToggleFlag(flag.key, !featureFlags[flag.key])}
+                                disabled={savingFlags}
+                                className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:opacity-50 ${featureFlags[flag.key] ? 'bg-blue-600' : 'bg-stone-300'
+                                    }`}
+                            >
+                                <span
+                                    className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${featureFlags[flag.key] ? 'translate-x-5' : 'translate-x-0'
+                                        }`}
+                                />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            </div>
 
             {/* Threshold Configuration */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200">
@@ -246,3 +318,4 @@ export default function AdminConfigPage() {
         </div>
     );
 }
+

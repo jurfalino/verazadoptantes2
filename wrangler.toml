@@ -3,13 +3,35 @@ compatibility_date = "2025-01-27"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = ".vercel/output/static"
 
+# Top-level bindings for wrangler CLI commands (e.g., migrations)
 [[d1_databases]]
 binding = "DB"
 database_name = "pet-adoption-db"
 database_id = "62ec01e7-deae-4536-be62-7c0a0064b45c"
 migrations_dir = "drizzle"
 
+[[d1_databases]]
+binding = "DB_STAGING"
+database_name = "pet-adoption-db-staging"
+database_id = "1b3b21c3-38ef-45ee-af86-d1f08adfb834"
+migrations_dir = "drizzle"
+
 [vars]
 EMAIL_FROM = "noreply@buenadoptante.org"
 # AUTH_URL must be set in Cloudflare Dashboard per environment (Production/Preview)
 # Note: AXIOM_DATASET and AXIOM_TOKEN are also configured in Cloudflare Pages dashboard
+
+# Production environment - uses production database
+[env.production]
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "pet-adoption-db"
+database_id = "62ec01e7-deae-4536-be62-7c0a0064b45c"
+
+# Preview environment - uses staging database
+[env.preview]
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "pet-adoption-db-staging"
+database_id = "1b3b21c3-38ef-45ee-af86-d1f08adfb834"
+

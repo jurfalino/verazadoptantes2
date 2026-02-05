@@ -9,13 +9,32 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import AdoptionWizard from '@/components/AdoptionWizard';
 import ReportWizard from '@/components/ReportWizard';
+import FacebookImportWizard from '@/components/FacebookImportWizard';
 import packageJson from '../../package.json';
+import { useEffect, useState } from 'react';
 
 export default function Home() {
   const { t } = useLanguage();
   const router = useRouter();
   const { data: session } = useSession();
   const { openLogin } = useAuthContext();
+  const [facebookImportEnabled, setFacebookImportEnabled] = useState(false);
+
+  // Check feature flag on client side
+  useEffect(() => {
+    fetch('/api/admin/config')
+      .then(res => res.json())
+      .then((data) => {
+        console.log('[Homepage] Fetched config:', data);
+        const cfg = data as { config?: Record<string, string> };
+        console.log('[Homepage] ENABLE_FACEBOOK_IMPORT value:', cfg.config?.ENABLE_FACEBOOK_IMPORT);
+        if (cfg.config?.ENABLE_FACEBOOK_IMPORT === 'true') {
+          console.log('[Homepage] Enabling Facebook Import');
+          setFacebookImportEnabled(true);
+        }
+      })
+      .catch((e) => { console.error('[Homepage] Config fetch error:', e); });
+  }, []);
 
   const handleAuthNavigation = (url: string) => {
     // Check if user is logged in or anonymous
@@ -48,6 +67,13 @@ export default function Home() {
             {t('home.tagline')}
           </p>
         </header>
+
+        {/* Facebook Import (Feature-Flagged) */}
+        {facebookImportEnabled && (
+          <div className="flex justify-center">
+            <FacebookImportWizard />
+          </div>
+        )}
 
         <SearchSection />
 
