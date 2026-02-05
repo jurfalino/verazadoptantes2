@@ -7,7 +7,7 @@ import { auth } from "@/auth";
 import { logger } from "@/lib/logger";
 import { NextRequest, NextResponse } from "next/server";
 
-const ADMIN_EMAILS = ['jurfalino@gmail.com'];
+import { isAdmin } from "@/config/admins";
 
 export async function POST(request: NextRequest) {
     try {
@@ -26,10 +26,10 @@ export async function POST(request: NextRequest) {
             adopterId,
             hasSession: !!session,
             userEmail: session?.user?.email || 'no-email',
-            isAdmin: session?.user?.email ? ADMIN_EMAILS.includes(session.user.email) : false
+            isAdminUser: isAdmin(session?.user?.email)
         });
 
-        if (!session?.user?.email || !ADMIN_EMAILS.includes(session.user.email)) {
+        if (!session?.user?.email || !isAdmin(session.user.email)) {
             logger.warn('Unauthorized delete attempt', {
                 adopterId,
                 email: session?.user?.email || 'no-session'
