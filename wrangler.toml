@@ -21,6 +21,10 @@ EMAIL_FROM = "noreply@buenadoptante.org"
 # AUTH_URL must be set in Cloudflare Dashboard per environment (Production/Preview)
 # Note: AXIOM_DATASET and AXIOM_TOKEN are also configured in Cloudflare Pages dashboard
 
+# Cloudflare Workers AI binding (free, no API key needed)
+[ai]
+binding = "AI"
+
 # Production environment - uses production database
 [env.production]
 [[env.production.d1_databases]]

@@ -2,7 +2,7 @@ export const runtime = 'edge';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { extractAdopterData } from '@/lib/gemini';
+import { extractAdopterData } from '@/lib/ai-extraction';
 import { getFeatureFlag } from '@/config/features';
 import { logger } from '@/lib/logger';
 
