@@ -404,6 +404,10 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
 
         // Apply result cap
         const totalCount = allResults.length;
+
+        // Log search hit
+        logger.info('Search', { query, resultCount: Math.min(totalCount, SEARCH_RESULT_LIMIT), truncated: totalCount > SEARCH_RESULT_LIMIT });
+
         if (totalCount > SEARCH_RESULT_LIMIT) {
             return {
                 results: allResults.slice(0, SEARCH_RESULT_LIMIT),
@@ -561,6 +565,8 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
                     changes: JSON.stringify(changes),
                     changedAt: new Date()
                 });
+
+                logger.info('Adopter updated', { adopterId: data.id, changedBy });
             }
             return { success: true, id: data.id };
         } else {
@@ -573,6 +579,8 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
                 createdAt: new Date(),
                 updatedAt: new Date()
             });
+
+            logger.info('Adopter created', { adopterId: newId, changedBy });
             return { success: true, id: newId };
         }
 
@@ -735,6 +743,7 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
                     revalidatePath(`/adopter/${targetAdopterId}`);
                 }
             }
+            logger.info('Adoption updated', { adoptionId: data.id, adopterId: data.adopterId, changedBy });
             return { success: true, id: data.id };
         } else {
             // Create new
@@ -809,6 +818,7 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
                 revalidatePath(`/adopter/${data.adopterId}`);
             }
 
+            logger.info('Adoption created', { adoptionId: id, adopterId: data.adopterId, species: data.species, changedBy });
             return { success: true, id };
         }
     } catch (error) {
