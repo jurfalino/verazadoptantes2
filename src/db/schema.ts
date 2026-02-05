@@ -21,17 +21,19 @@ export const adopters = sqliteTable("adopters", {
 export const adopterImages = sqliteTable("adopter_images", {
     id: text("id").primaryKey(),
     adopterId: text("adopter_id").notNull(),
+    adoptionId: text("adoption_id"), // Optional: link to specific adoption record
     url: text("url").notNull(), // Base64 or URL
     caption: text("caption"),
     uploadedAt: integer("uploaded_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     addedBy: text("added_by").default("anonymous"),
+    isProfilePicture: integer("is_profile_picture").default(0), // 1 if this is the profile picture
 });
 
 export const adopterFlags = sqliteTable("adopter_flags", {
     id: text("id").primaryKey(),
     adopterId: text("adopter_id").notNull(), // The profile being flagged
     flaggedBy: text("flagged_by").default("anonymous"),
-    reason: text("reason").default("duplicate"), // duplicate, fake, abusive
+    reason: text("reason").default("duplicate"), // duplicate, inaccurate_information
     targetAdopterId: text("target_adopter_id"), // If duplicate, which one is the original?
     details: text("details"),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
@@ -64,7 +66,43 @@ export const adoptions = sqliteTable("adoptions", {
     comments: text("comments"),
     date: integer("date", { mode: "timestamp" }),
     addedBy: text("added_by").default("anonymous"),
+    onBehalfOf: text("on_behalf_of"), // Name of person this was recorded for
+    recordType: text("record_type").default("adoption"), // adoption, adoption_request, observation, follow_up, returned_pet
+    deliveredToHome: integer("delivered_to_home"), // 1 if pet was delivered to adopter's home
+    verifiedAddress: text("verified_address"), // Snapshot of verified address at time of adoption
+    identityVerified: integer("identity_verified"), // 1 if adopter identity was verified during this adoption
 });
+
+// Adopter Stats - Track profile events for analytics
+export const adopterStats = sqliteTable("adopter_stats", {
+    id: text("id").primaryKey(),
+    adopterId: text("adopter_id").notNull(),
+    eventType: text("event_type").notNull(), // search_hit, profile_view, adoption_request, adoption_completed
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+    adopterIdx: index("idx_stats_adopter").on(table.adopterId),
+    createdIdx: index("idx_stats_created").on(table.createdAt),
+}));
+
+// App Config - Admin-configurable settings
+export const appConfig = sqliteTable("app_config", {
+    key: text("key").primaryKey(),
+    value: text("value").notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    updatedBy: text("updated_by"),
+});
+
+// Adoption Images - Photos attached to adoption/observation records
+export const adoptionImages = sqliteTable("adoption_images", {
+    id: text("id").primaryKey(),
+    adoptionId: text("adoption_id").notNull(),
+    url: text("url").notNull(),
+    caption: text("caption"),
+    uploadedAt: integer("uploaded_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    addedBy: text("added_by"),
+}, (table) => ({
+    adoptionIdx: index("idx_adoption_images").on(table.adoptionId),
+}));
 
 // Auth.js Tables
 import type { AdapterAccount } from "next-auth/adapters";

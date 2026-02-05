@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import AdoptionWizard from '@/components/AdoptionWizard';
+import ReportWizard from '@/components/ReportWizard';
 
 export default function Home() {
   const { t } = useLanguage();
@@ -53,20 +54,8 @@ export default function Home() {
           {/* Action 1: Register Adoption (Wizard) */}
           <AdoptionWizard />
 
-          {/* Action 2: Report Bad Adopter */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200 hover:shadow-md hover:border-rose-200 transition-all text-center group">
-            <div className="w-12 h-12 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4 text-rose-700 group-hover:scale-110 transition-transform">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-            </div>
-            <h3 className="text-xl font-bold text-stone-900 mb-2">{t('home.action_report_title')}</h3>
-            <p className="text-stone-500 mb-4 text-sm">{t('home.action_report_desc')}</p>
-            <button
-              onClick={() => handleAuthNavigation('/adopter/create?intent=report')}
-              className="inline-block px-6 py-2.5 bg-rose-200 text-rose-900 font-bold rounded-xl hover:bg-rose-300 transition-colors shadow-sm"
-            >
-              {t('home.action_report_btn')}
-            </button>
-          </div>
+          {/* Action 2: Report Bad Adopter (Wizard) */}
+          <ReportWizard />
         </div>
 
         <footer className="mt-20 text-center text-stone-400 text-sm">

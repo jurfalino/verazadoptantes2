@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { getDb } from "@/app/actions"; // Or use direct DB access in Server Component
 import { adopters, adoptions, adopterFlags } from "@/db/schema";
 import { count, eq, isNull } from "drizzle-orm";
+import AdminDangerZone from "@/components/AdminDangerZone";
 
 export default async function AdminOverviewPage() {
     const db = await getDb();
@@ -48,6 +49,9 @@ export default async function AdminOverviewPage() {
             <div className="bg-white p-8 rounded-2xl shadow-sm border border-stone-200 text-center py-24 text-stone-400">
                 <p>Activity Log coming soon...</p>
             </div>
+
+            {/* Danger Zone */}
+            <AdminDangerZone />
         </div>
     );
 }

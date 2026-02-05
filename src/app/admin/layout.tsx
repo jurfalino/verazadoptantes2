@@ -48,6 +48,12 @@ export default async function AdminLayout({
                     >
                         SQL Runner
                     </Link>
+                    <Link
+                        href="/admin/config"
+                        className="block px-4 py-2 rounded-lg hover:bg-stone-800 hover:text-white transition-colors"
+                    >
+                        ⚙️ Configuration
+                    </Link>
 
                     <div className="pt-8 mt-8 border-t border-stone-800">
                         <Link

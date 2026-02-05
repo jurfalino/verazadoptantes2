@@ -46,12 +46,15 @@ export default function AdoptionWizard() {
     const [selectedAnimalId, setSelectedAnimalId] = useState<string>('');
     const [animalData, setAnimalData] = useState({
         animalName: '',
-        species: '',
+        species: 'cat',
         details: '',
         status: 'completed',
         rating: 5,
         comments: ''
     });
+
+    // Track if user selected "Other" for species
+    const [customSpecies, setCustomSpecies] = useState(false);
 
     // Step 2: Adopter Data
     const [adopterMode, setAdopterMode] = useState<'existing' | 'new'>('new');
@@ -99,39 +102,44 @@ export default function AdoptionWizard() {
             // For now, let's just support linking to EXISTING adopter or redirecting to create new adopter.
 
             if (adopterMode === 'new') {
-                // Determine payload for URL
+                // Pass animal data to create adopter page so it can continue to adoption form after save
                 const query = new URLSearchParams();
-                if (animalMode === 'new') {
-                    // prefill logic? Maybe generic 'intent=adoption'?
-                    // For now, simple redirect
-                    router.push('/adopter/create');
+                query.set('continueToAdoption', 'true');
+                if (animalMode === 'existing') {
+                    query.set('linkAnimalId', selectedAnimalId);
                 } else {
-                    // Linking existing animal to NEW adopter
-                    // We need to pass the animal ID so the Create page knows to link it after creation.
-                    router.push(`/adopter/create?linkAnimalId=${selectedAnimalId}`);
+                    // Pass new animal data
+                    if (animalData.animalName) query.set('animalName', animalData.animalName);
+                    if (animalData.species) query.set('species', animalData.species);
                 }
+                router.push(`/adopter/create?${query.toString()}`);
                 return;
             }
 
             // Existing Adopter mode
+            let newAdoptionId: string | undefined;
+
             if (animalMode === 'existing') {
                 // Update existing adoption
-                await saveAdoption({
+                const result = await saveAdoption({
                     id: selectedAnimalId,
                     adopterId: selectedAdopterId,
                     status: animalData.status,
                     rating: animalData.rating
                     // details? comments?
                 } as any);
+                newAdoptionId = result.id;
             } else {
                 // Create new adoption for existing adopter
-                await saveAdoption({
+                const result = await saveAdoption({
                     adopterId: selectedAdopterId,
                     ...animalData
                 } as any);
+                newAdoptionId = result.id;
             }
 
-            router.push(`/adopter/${selectedAdopterId}`);
+            // Navigate to adopter profile with editAdoption param to auto-expand the card
+            router.push(`/adopter/${selectedAdopterId}?editAdoption=${newAdoptionId}`);
             router.refresh();
 
         } catch (e) {
@@ -208,12 +216,51 @@ export default function AdoptionWizard() {
                                     value={animalData.animalName}
                                     onChange={e => setAnimalData({ ...animalData, animalName: e.target.value })}
                                 />
-                                <input
-                                    className="p-3 rounded-xl border border-stone-300"
-                                    placeholder="Species"
-                                    value={animalData.species}
-                                    onChange={e => setAnimalData({ ...animalData, species: e.target.value })}
-                                />
+                                {customSpecies ? (
+                                    <div className="flex gap-2">
+                                        <input
+                                            autoFocus
+                                            className="flex-1 p-3 rounded-xl border border-stone-300"
+                                            placeholder={t('adoption.species_other_placeholder') || 'Enter species...'}
+                                            value={animalData.species}
+                                            onChange={e => setAnimalData({ ...animalData, species: e.target.value })}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setCustomSpecies(false);
+                                                setAnimalData({ ...animalData, species: 'cat' });
+                                            }}
+                                            className="px-3 rounded-xl border border-stone-300 bg-stone-50 text-stone-600 text-xs font-medium hover:bg-stone-100 transition-colors whitespace-nowrap"
+                                            title={t('adoption.species_select_preset') || 'Select preset'}
+                                        >
+                                            ↩ {t('adoption.species_presets') || 'Presets'}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="relative">
+                                        <select
+                                            className="w-full p-3 rounded-xl border border-stone-300 appearance-none bg-white"
+                                            value={animalData.species.toLowerCase() || 'cat'}
+                                            onChange={e => {
+                                                if (e.target.value === '_other') {
+                                                    setCustomSpecies(true);
+                                                    setAnimalData({ ...animalData, species: '' });
+                                                } else {
+                                                    setAnimalData({ ...animalData, species: e.target.value });
+                                                }
+                                            }}
+                                        >
+                                            <option value="cat">{t('species.cat') || 'Cat'} 🐱</option>
+                                            <option value="dog">{t('species.dog') || 'Dog'} 🐶</option>
+                                            <option value="bird">{t('species.bird') || 'Bird'} 🐦</option>
+                                            <option value="_other">{t('species.other') || 'Other...'}</option>
+                                        </select>
+                                        <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-stone-500">
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
 

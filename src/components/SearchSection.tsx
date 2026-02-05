@@ -1,21 +1,54 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { searchAdopter, SearchResult } from '@/app/actions';
 import { RatingBadge } from './RatingBadge';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+
+// Format date as "Feb 4 '26" (3-letter month + day + year)
+function formatShortDate(input: Date | number): string {
+    const date = input instanceof Date ? input : new Date(input);
+    const month = date.toLocaleDateString('en-US', { month: 'short' });
+    const day = date.getDate();
+    const year = date.getFullYear().toString().slice(-2);
+    return `${month} ${day} '${year}`;
+}
 
 export default function SearchSection() {
     const { t } = useLanguage();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { data: session } = useSession();
     const { openLogin } = useAuthContext();
-    const [query, setQuery] = useState('');
+
+    // Initialize from URL params for back-navigation persistence
+    const initialQuery = searchParams.get('q') || '';
+    const [query, setQuery] = useState(initialQuery);
     const [results, setResults] = useState<SearchResult[] | null>(null);
     const [loading, setLoading] = useState(false);
+
+    // Re-run search when returning to page with query in URL
+    const runSearch = useCallback(async (searchQuery: string) => {
+        if (!searchQuery.trim()) return;
+        setLoading(true);
+        try {
+            const data = await searchAdopter(searchQuery);
+            setResults(data);
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (initialQuery && !results) {
+            runSearch(initialQuery);
+        }
+    }, [initialQuery, results, runSearch]);
 
     const handleCreateNew = (e: React.MouseEvent) => {
         e.preventDefault();
@@ -48,6 +81,11 @@ export default function SearchSection() {
         e.preventDefault();
         if (!query.trim()) return;
 
+        // Update URL with query for back-navigation
+        const url = new URL(window.location.href);
+        url.searchParams.set('q', query.trim());
+        window.history.replaceState({}, '', url.toString());
+
         setLoading(true);
         try {
             const data = await searchAdopter(query);
@@ -63,6 +101,10 @@ export default function SearchSection() {
     const handleClear = () => {
         setQuery('');
         setResults(null);
+        // Clear URL param
+        const url = new URL(window.location.href);
+        url.searchParams.delete('q');
+        window.history.replaceState({}, '', url.toString());
     };
 
     return (
@@ -120,28 +162,115 @@ export default function SearchSection() {
                             </button>
                         </div>
                     )}
-                    {results.map((res) => (
-                        <a key={res.adopter.id} href={`/adopter/${res.adopter.id}`} className="block group">
-                            <div className="bg-white rounded-2xl p-5 shadow-sm border border-stone-200 group-hover:border-teal-300 group-hover:shadow-md transition-all">
-                                <div className="flex justify-between items-start gap-4">
-                                    <div className="flex-1 min-w-0">
-                                        <div className="font-bold text-lg text-stone-900 group-hover:text-teal-700 transition-colors truncate">{res.adopter.name}</div>
-                                        <div className="text-sm text-stone-500 truncate mt-1">{res.adopter.contactInfo || t('common.no_contact')}</div>
-                                        {res.matchContext && (
-                                            <div className="mt-2 text-xs font-semibold text-teal-800 bg-teal-50 px-2 py-1 rounded inline-block border border-teal-100">
-                                                <span className="opacity-70">ⓘ </span>
-                                                {res.matchContext}
+                    {results.map((res) => {
+                        // PII masking for unauthenticated users
+                        const isAuthenticated = session?.user || document.cookie.includes('anon_user=true');
+
+                        // Partial name masking: show first 3 chars + ****
+                        const maskedName = isAuthenticated
+                            ? res.adopter.name
+                            : (res.adopter.name?.length > 3
+                                ? res.adopter.name.slice(0, 3) + '••••'
+                                : '••••');
+
+                        // Partial contact masking: show some context but hide sensitive parts
+                        const maskedContact = isAuthenticated
+                            ? res.adopter.contactInfo
+                            : res.adopter.contactInfo
+                                ?.replace(/(\d{2,3})[\d\s\-.()]{4,}/g, '$1••••••')  // Partial phone: show first 2-3 digits, mask rest
+                                ?.replace(/[a-zA-Z0-9._%+-]+@/g, '•••@');  // Email: hide username
+
+                        const handleCardClick = (e: React.MouseEvent) => {
+                            if (!isAuthenticated) {
+                                e.preventDefault();
+                                openLogin();
+                            }
+                        };
+
+                        // Format dates
+                        const addedDate = res.adopter.createdAt ? formatShortDate(res.adopter.createdAt) : null;
+                        const updatedDate = res.adopter.updatedAt ? formatShortDate(res.adopter.updatedAt) : null;
+
+                        return (
+                            <a key={res.adopter.id} href={`/adopter/${res.adopter.id}`} onClick={handleCardClick} className="block group">
+                                <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-200 group-hover:border-teal-300 group-hover:shadow-md transition-all">
+                                    {/* Top Row: Avatar + Name/Contact + Rating */}
+                                    <div className="flex items-center gap-3 mb-3">
+                                        {/* Thumbnail - larger 48px */}
+                                        <div className="w-12 h-12 rounded-full bg-stone-100 flex-shrink-0 overflow-hidden ring-2 ring-white shadow-sm">
+                                            {res.thumbnail ? (
+                                                <img src={res.thumbnail} alt="" className="w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center text-stone-400">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                                </div>
+                                            )}
+                                        </div>
+                                        {/* Name + Contact */}
+                                        <div className="flex-1 min-w-0">
+                                            <div className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate">{maskedName}</div>
+                                            <div className="text-xs text-stone-400 truncate">
+                                                {maskedContact || t('common.no_contact')}
+                                                {!isAuthenticated && maskedContact && (
+                                                    <span className="ml-1 text-teal-600 font-medium">• {t('search.login_to_view')}</span>
+                                                )}
                                             </div>
+                                        </div>
+                                        {/* Rating Badge */}
+                                        {res.avgRating !== null && (
+                                            <RatingBadge rating={String(Math.round(res.avgRating))} size="sm" />
                                         )}
                                     </div>
-                                    {/* Always use RatingBadge for consistent display */}
-                                    {res.adopter.status && (
-                                        <RatingBadge rating={res.adopter.status} size="sm" />
+
+                                    {/* Stats Row */}
+                                    <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
+                                        <span>🔍 {res.stats.searchHits} {t('stats.searches')}</span>
+                                        <span>👁 {res.stats.profileViews} {t('stats.views')}</span>
+                                        <span>📋 {res.stats.requests} {t('stats.requests')}</span>
+                                        <span>🏠 {res.stats.adoptions} {t('stats.adoptions')}</span>
+                                        {/* Flag indicators */}
+                                        <div className="flex flex-wrap gap-1 ml-auto">
+                                            {res.flags.inaccurate && (
+                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-rose-100 text-rose-700">⚠ {t('flags.inaccurate') || 'Inaccurate'}</span>
+                                            )}
+                                            {res.flags.duplicate && (
+                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-amber-100 text-amber-700">📄 {t('flags.duplicate') || 'Duplicate'}</span>
+                                            )}
+                                            {res.flags.verified_identity && (
+                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">✓ Identidad</span>
+                                            )}
+                                            {res.flags.verified_address && (
+                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">✓ Direccion</span>
+                                            )}
+                                            {res.flags.tooManyAdoptions && (
+                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">⚠ {res.flags.tooManyAdoptions.count} {t('stats.adoptions') || 'adoptions'}/{res.flags.tooManyAdoptions.periodDays}d</span>
+                                            )}
+                                            {res.flags.tooManyRequests && (
+                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">⚠ {res.flags.tooManyRequests.count} {t('stats.requests') || 'requests'}/{res.flags.tooManyRequests.periodDays}d</span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Match Context (if applicable) */}
+                                    {res.matchContext && (
+                                        <div className="mt-2 text-xs font-medium text-teal-800 bg-teal-50 px-2 py-1 rounded border border-teal-100 inline-block">
+                                            🔍 {res.matchContext}
+                                        </div>
                                     )}
+
+                                    {/* Dates Row - bottom right */}
+                                    <div className="flex justify-end gap-3 mt-2 pt-2 border-t border-stone-100 text-xs text-stone-400">
+                                        {addedDate && (
+                                            <span>📅 {addedDate}</span>
+                                        )}
+                                        {updatedDate && (
+                                            <span>✏️ {updatedDate}</span>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                        </a>
-                    ))}
+                            </a>
+                        );
+                    })}
                     {results.length === 0 && (
                         <div className="bg-stone-50 rounded-2xl p-8 text-center border border-stone-200">
                             <p className="text-stone-600 mb-4 text-lg">{t('search.no_history').replace('{query}', query)}</p>

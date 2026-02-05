@@ -1,5 +1,6 @@
 
 import { useLanguage } from '@/context/LanguageContext';
+import { getRatingColors } from '@/lib/ratingColors';
 
 interface RatingBadgeProps {
     rating: number | string; // Supports '1'-'5' or 1-5
@@ -15,11 +16,9 @@ export function RatingBadge({ rating, size = 'md' }: RatingBadgeProps) {
 
     if (!isValid) return null;
 
-    // Unified Style: Always Emerald-50 background, Emerald-900 text.
-    // Only the Label text changes, but the container style remains exactely the same.
+    // Get color based on rating (1=red, 5=green)
+    const colors = getRatingColors(numRating);
     const label = t(`ratings.${numRating}` as any) || t('ratings.unknown');
-
-    const commonStyle = "bg-emerald-50 text-emerald-900 border border-emerald-100";
 
     const sizeClasses = {
         sm: { pad: 'px-2 py-0.5', text: 'text-xs', icon: 'w-3 h-3' },
@@ -28,7 +27,7 @@ export function RatingBadge({ rating, size = 'md' }: RatingBadgeProps) {
     }[size];
 
     return (
-        <div className={`inline-flex items-center gap-1.5 rounded-full font-bold shadow-sm ${commonStyle} ${sizeClasses.pad} ${sizeClasses.text}`}>
+        <div className={`inline-flex items-center gap-1.5 rounded-full font-bold shadow-sm ${colors.bg} ${colors.text} ${colors.border} border ${sizeClasses.pad} ${sizeClasses.text}`}>
             <span>{label}</span>
         </div>
     );

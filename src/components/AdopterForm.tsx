@@ -4,10 +4,11 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { saveAdopter } from "@/app/actions";
 import { useLanguage } from "@/context/LanguageContext";
-import { RatingBadge } from '@/components/RatingBadge';
+import { ContactPills } from '@/components/ContactPills';
 import { CollapsibleSection } from '@/components/CollapsibleSection';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
+
 
 export function AdopterForm({ initialData, history = [], currentUser }: { initialData?: any, history?: any[], currentUser?: string }) {
     const router = useRouter();
@@ -66,19 +67,36 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
             if (res.success) {
                 console.log("[ADOPTER FORM] Save success! isNew:", isNew, "res.id:", res.id);
                 if (isNew) {
-                    console.log("[ADOPTER FORM] Navigating to /adopter/" + res.id);
+                    // Check if we should continue to adoption form
+                    const continueToAdoption = searchParams.get('continueToAdoption');
+                    const animalName = searchParams.get('animalName') || '';
+                    const species = searchParams.get('species') || '';
+                    const linkAnimalId = searchParams.get('linkAnimalId') || '';
+
+                    let redirectUrl = `/adopter/${res.id}`;
+                    if (continueToAdoption === 'true') {
+                        // Redirect to profile with newAdoption flag and animal data
+                        const params = new URLSearchParams();
+                        params.set('newAdoption', 'true');
+                        if (linkAnimalId) params.set('linkAnimalId', linkAnimalId);
+                        if (animalName) params.set('animalName', animalName);
+                        if (species) params.set('species', species);
+                        redirectUrl = `/adopter/${res.id}?${params.toString()}`;
+                    }
+
+                    console.log("[ADOPTER FORM] Navigating to", redirectUrl);
                     try {
-                        router.push(`/adopter/${res.id}`);
+                        router.push(redirectUrl);
                         // Fallback: Force navigation if router.push doesn't work
                         setTimeout(() => {
                             if (window.location.pathname === '/adopter/create') {
                                 console.warn("[ADOPTER FORM] router.push failed, using window.location");
-                                window.location.href = `/adopter/${res.id}`;
+                                window.location.href = redirectUrl;
                             }
                         }, 500);
                     } catch (navError) {
                         console.error("[ADOPTER FORM] Navigation error:", navError);
-                        window.location.href = `/adopter/${res.id}`;
+                        window.location.href = redirectUrl;
                     }
                 } else {
                     setIsEditing(false);
@@ -175,30 +193,8 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                         )}
                     </div>
 
-                    {/* Right: Actions & Status */}
+                    {/* Right: Actions */}
                     <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
-
-                        {/* Status Select/Badge */}
-                        {isEditing ? (
-                            <div className="relative">
-                                <select
-                                    className={`appearance-none pl-4 pr-10 py-2 text-sm font-bold rounded-full border border-emerald-200 cursor-pointer focus:ring-4 focus:ring-emerald-500/20 transition-all duration-200 shadow-sm outline-none bg-emerald-50 text-emerald-900 hover:bg-emerald-100`}
-                                    value={data.status}
-                                    onChange={(e) => setData({ ...data, status: e.target.value })}
-                                >
-                                    <option value="5">{t('ratings.5')}</option>
-                                    <option value="4">{t('ratings.4')}</option>
-                                    <option value="3">{t('ratings.3')}</option>
-                                    <option value="2">{t('ratings.2')}</option>
-                                    <option value="1">{t('ratings.1')}</option>
-                                </select>
-                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 opacity-50 text-emerald-800">
-                                    <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
-                                </div>
-                            </div>
-                        ) : (
-                            <RatingBadge rating={data.status} />
-                        )}
 
                         {/* Action Buttons */}
                         {isEditing ? (
@@ -257,8 +253,8 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                                 placeholder={t('adopter.placeholder_contact')}
                             />
                         ) : (
-                            <div className="text-emerald-900/80 leading-relaxed font-medium bg-emerald-50/30 p-4 rounded-xl border border-emerald-100/50 min-h-[80px]">
-                                {renderTextWithLinks(data.contactInfo, 'text')}
+                            <div className="bg-emerald-50/30 p-4 rounded-xl border border-emerald-100/50 min-h-[80px]">
+                                <ContactPills text={data.contactInfo} />
                             </div>
                         )}
                     </div>
