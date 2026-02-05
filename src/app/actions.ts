@@ -394,7 +394,8 @@ export async function searchAdopter(query: string): Promise<SearchResult[]> {
 
     } catch (error) {
         console.error("Search error:", error);
-        throw new Error("Failed to search adopters");
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Failed to search adopters: ${message}`);
     }
 }
 
