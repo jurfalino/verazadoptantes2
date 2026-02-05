@@ -1309,29 +1309,43 @@ export async function deleteAdopter(adopterId: string) {
         const db = await getDb();
         if (!db) throw new Error("No database");
 
+        // Get all adoption IDs for this adopter first (to delete their images)
+        const adopterAdoptions = await db.select({ id: adoptions.id })
+            .from(adoptions)
+            .where(eq(adoptions.adopterId, adopterId));
+        const adoptionIds = adopterAdoptions.map((a: { id: string }) => a.id);
+
         // Cascade Logic
-        // 1. Delete Flags
+        // 1. Delete adopter stats
+        await db.delete(adopterStats).where(eq(adopterStats.adopterId, adopterId));
+
+        // 2. Delete Flags
         await db.delete(adopterFlags).where(eq(adopterFlags.adopterId, adopterId));
 
-        // 2. Delete History
+        // 3. Delete History
         await db.delete(adopterHistory).where(eq(adopterHistory.adopterId, adopterId));
 
-        // 3. Delete Images
-        // Ideally we should delete from storage (S3/R2) too, but here we only have DB URLs.
+        // 4. Delete Adopter Images
         await db.delete(adopterImages).where(eq(adopterImages.adopterId, adopterId));
 
-        // 4. Unlink Adoptions (Set adopterId = NULL) to make animals available again
-        await db.update(adoptions)
-            .set({ adopterId: null, status: 'available' }) // Reset status too if needed
-            .where(eq(adoptions.adopterId, adopterId));
+        // 5. Delete Adoption Images (for adoptions linked to this adopter)
+        if (adoptionIds.length > 0) {
+            await db.delete(adoptionImages).where(inArray(adoptionImages.adoptionId, adoptionIds));
+        }
 
-        // 5. Delete Adopter
+        // 6. Delete linked Adoptions entirely (rather than unlinking)
+        await db.delete(adoptions).where(eq(adoptions.adopterId, adopterId));
+
+        // 7. Delete Adopter
         await db.delete(adopters).where(eq(adopters.id, adopterId));
+
+        logger.info('Adopter deleted', { adopterId, deletedBy: session.user.email });
 
         revalidatePath('/admin/adopters');
         return { success: true };
     } catch (error) {
         console.error("Delete adopter error:", error);
+        logger.error('Delete adopter failed', error, { adopterId });
         throw new Error("Failed to delete adopter");
     }
 }
