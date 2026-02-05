@@ -39,7 +39,11 @@ export async function getDb() {
         console.log("[getDb] env.DB:", env?.DB ? "exists" : "null");
         if (env && env.DB) {
             console.log("[getDb] Using D1 database");
-            return await createDb(env.DB);
+            const db = await createDb(env.DB);
+            console.log("[getDb] D1 database created successfully");
+            return db;
+        } else {
+            console.log("[getDb] D1 not available, env.DB is null");
         }
     } catch (e) {
         console.log("[getDb] getRequestContext failed:", e instanceof Error ? e.message : String(e));
@@ -47,22 +51,19 @@ export async function getDb() {
     }
 
     // Fallback for local development
-    // Environment check: Ensure we are NOT in Edge Runtime before requiring local DB
-    // Edge Runtime doesn't have `process.cwd` usually, but Next.js polyfills `process.env`.
-    // We can check `process.release.name` or similar, or just try/catch safely without crashing global scope.
-
-    // Changing approach: Only dynamic import if we know we are probably in Node.
+    console.log("[getDb] Checking local fallback...");
     if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'production') {
+        console.log("[getDb] Attempting local DB...");
         try {
-            // Use precise webpack ignore or just dynamic import
-            // Note: Next.js Middleware/Edge functions will still try to bundle this if not careful.
-            // But since we removed `runtime = edge` from layout/pages, this should run in Node.
             const { createLocalDb } = await import('@/db/local');
             return await createLocalDb('local.db');
         } catch (e) {
-            console.error("Local DB Init Error:", e);
+            console.error("[getDb] Local DB Init Error:", e);
         }
+    } else {
+        console.log("[getDb] Skipping local DB - in production without D1");
     }
+    console.log("[getDb] Returning undefined - no database available");
     return undefined;
 }
 
