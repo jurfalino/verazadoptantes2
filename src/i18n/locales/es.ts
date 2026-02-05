@@ -89,6 +89,8 @@ export const es = {
         create_new: 'Crear Nuevo Registro',
         clear: 'Limpiar Búsqueda',
         login_to_view: '(inicia sesión para ver)',
+        min_digits: 'Ingresa al menos 4 dígitos para buscar por teléfono',
+        too_many_results: 'Demasiados resultados ({count}). Mostrando los primeros 50. Por favor, refina tu búsqueda.',
     },
     home: {
         title: 'BuenAdoptante',

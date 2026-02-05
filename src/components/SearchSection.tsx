@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { searchAdopter, SearchResult } from '@/app/actions';
+import { searchAdopter, SearchResult, SearchResponse } from '@/app/actions';
 import { RatingBadge } from './RatingBadge';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
@@ -29,14 +29,26 @@ export default function SearchSection() {
     const [query, setQuery] = useState(initialQuery);
     const [results, setResults] = useState<SearchResult[] | null>(null);
     const [loading, setLoading] = useState(false);
+    const [truncatedInfo, setTruncatedInfo] = useState<{ truncated: boolean; totalCount: number } | null>(null);
+    const [validationError, setValidationError] = useState<string | null>(null);
 
     // Re-run search when returning to page with query in URL
     const runSearch = useCallback(async (searchQuery: string) => {
         if (!searchQuery.trim()) return;
         setLoading(true);
+        setValidationError(null);
+        setTruncatedInfo(null);
         try {
-            const data = await searchAdopter(searchQuery);
-            setResults(data);
+            const response = await searchAdopter(searchQuery);
+            if (response.validationError) {
+                setValidationError(response.validationError);
+                setResults([]);
+            } else {
+                setResults(response.results);
+                if (response.truncated && response.totalCount) {
+                    setTruncatedInfo({ truncated: true, totalCount: response.totalCount });
+                }
+            }
         } catch (err) {
             console.error(err);
         } finally {
@@ -87,9 +99,19 @@ export default function SearchSection() {
         window.history.replaceState({}, '', url.toString());
 
         setLoading(true);
+        setValidationError(null);
+        setTruncatedInfo(null);
         try {
-            const data = await searchAdopter(query);
-            setResults(data);
+            const response = await searchAdopter(query);
+            if (response.validationError) {
+                setValidationError(response.validationError);
+                setResults([]);
+            } else {
+                setResults(response.results);
+                if (response.truncated && response.totalCount) {
+                    setTruncatedInfo({ truncated: true, totalCount: response.totalCount });
+                }
+            }
         } catch (err) {
             console.error(err);
             alert('Search failed');
@@ -101,6 +123,8 @@ export default function SearchSection() {
     const handleClear = () => {
         setQuery('');
         setResults(null);
+        setValidationError(null);
+        setTruncatedInfo(null);
         // Clear URL param
         const url = new URL(window.location.href);
         url.searchParams.delete('q');
@@ -145,6 +169,24 @@ export default function SearchSection() {
                     </button>
                 </form>
             </div>
+
+            {/* Validation Error Banner */}
+            {validationError === 'min_digits' && (
+                <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                    <p className="text-amber-800 font-medium text-center">
+                        ⚠️ {t('search.min_digits')}
+                    </p>
+                </div>
+            )}
+
+            {/* Truncation Warning Banner */}
+            {truncatedInfo?.truncated && (
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                    <p className="text-blue-800 font-medium text-center">
+                        ℹ️ {t('search.too_many_results').replace('{count}', truncatedInfo.totalCount.toString())}
+                    </p>
+                </div>
+            )}
 
             {results && (
                 <div className="mt-8 space-y-4">

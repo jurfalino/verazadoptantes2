@@ -52,8 +52,8 @@ export default function ReportWizard() {
     const handleSearch = async (term: string) => {
         setAdopterSearch(term);
         if (term.length > 2) {
-            const results = await searchAdopter(term);
-            setSearchResults(results);
+            const response = await searchAdopter(term);
+            setSearchResults(response.results);
         } else {
             setSearchResults([]);
         }

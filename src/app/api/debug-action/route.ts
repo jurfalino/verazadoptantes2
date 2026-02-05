@@ -35,7 +35,8 @@ export async function GET(request: Request) {
     // Now test searchAdopter
     try {
         console.log("[debug-action] Calling searchAdopter with:", query);
-        const results = await searchAdopter(query);
+        const response = await searchAdopter(query);
+        const results = response.results;
         console.log("[debug-action] Got results:", results?.length);
         debug.searchSuccess = true;
         debug.resultCount = results?.length ?? 0;
@@ -43,6 +44,8 @@ export async function GET(request: Request) {
             id: results[0].adopter.id,
             name: results[0].adopter.name,
         } : null;
+        debug.truncated = response.truncated;
+        debug.validationError = response.validationError;
     } catch (e) {
         debug.searchSuccess = false;
         debug.searchError = e instanceof Error ? e.message : String(e);

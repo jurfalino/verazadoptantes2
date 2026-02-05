@@ -32,6 +32,30 @@ export interface SearchResult {
     flags: AdopterFlags;
 }
 
+export interface SearchResponse {
+    results: SearchResult[];
+    truncated?: boolean;
+    totalCount?: number;
+    validationError?: 'min_digits';
+}
+
+// Constants for search limits
+const SEARCH_RESULT_LIMIT = 50;
+const MIN_PHONE_DIGITS = 4;
+
+// Helper to detect if query looks like a phone number
+function isPhoneLikeQuery(query: string): boolean {
+    // Remove common phone separators and check if mostly digits
+    const digitsOnly = query.replace(/[\s\-\.\(\)\+]/g, '');
+    // If more than 50% of remaining chars are digits, treat as phone-like
+    const digitCount = (digitsOnly.match(/\d/g) || []).length;
+    return digitCount > 0 && digitCount / digitsOnly.length > 0.5;
+}
+
+function countDigits(query: string): number {
+    return (query.match(/\d/g) || []).length;
+}
+
 export async function getDb() {
     console.log("[getDb] Starting database connection...");
     try {
@@ -130,14 +154,19 @@ async function searchAdoptionsIds(db: any, query: string): Promise<string[]> {
     }
 }
 
-export async function searchAdopter(query: string): Promise<SearchResult[]> {
+export async function searchAdopter(query: string): Promise<SearchResponse> {
     try {
         const db = await getDb();
-        if (!db) return [];
+        if (!db) return { results: [] };
 
         // Normalize query
         const normalizedQuery = query.trim();
-        if (!normalizedQuery) return [];
+        if (!normalizedQuery) return { results: [] };
+
+        // Validate phone-like queries have minimum digits
+        if (isPhoneLikeQuery(normalizedQuery) && countDigits(normalizedQuery) < MIN_PHONE_DIGITS) {
+            return { results: [], validationError: 'min_digits' };
+        }
 
         // Log the search (fire and forget)
         (async () => {
@@ -192,7 +221,7 @@ export async function searchAdopter(query: string): Promise<SearchResult[]> {
         const allProfiles = [...directResults, ...extraProfiles];
         const adopterIds = allProfiles.map(a => a.id);
 
-        if (adopterIds.length === 0) return [];
+        if (adopterIds.length === 0) return { results: [] };
 
         // Fetch enrichment data per adopter (D1 doesn't handle IN with arrays well)
         const adoptionConfig = await getAdoptionConfig();
@@ -330,7 +359,7 @@ export async function searchAdopter(query: string): Promise<SearchResult[]> {
         })();
 
         // Map to enriched result type
-        return allProfiles.map(a => {
+        const allResults = allProfiles.map(a => {
             // Determine match context
             let context = "";
             const qLower = normalizedQuery.toLowerCase();
@@ -372,6 +401,18 @@ export async function searchAdopter(query: string): Promise<SearchResult[]> {
                 flags: flagData
             };
         });
+
+        // Apply result cap
+        const totalCount = allResults.length;
+        if (totalCount > SEARCH_RESULT_LIMIT) {
+            return {
+                results: allResults.slice(0, SEARCH_RESULT_LIMIT),
+                truncated: true,
+                totalCount
+            };
+        }
+
+        return { results: allResults };
 
     } catch (error) {
         const errorId = logger.error('Search failed', error, { query });

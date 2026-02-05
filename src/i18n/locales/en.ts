@@ -89,6 +89,8 @@ export const en = {
         create_new: 'Create New Record',
         clear: 'Clear Search',
         login_to_view: '(login to view)',
+        min_digits: 'Enter at least 4 digits to search by phone',
+        too_many_results: 'Too many results ({count}). Showing first 50. Please refine your search.',
     },
     home: {
         title: 'SafeAdoption',

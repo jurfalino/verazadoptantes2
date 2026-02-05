@@ -45,8 +45,8 @@ export function AdopterFlagging({ adopterId, adopterName, existingFlags, hasVeri
             if (searchTerm && reason === 'duplicate') {
                 setIsSearching(true);
                 try {
-                    const results = await searchAdopter(searchTerm);
-                    setSearchResults(results);
+                    const response = await searchAdopter(searchTerm);
+                    setSearchResults(response.results);
                     setHasSearched(true);
                 } catch (error) {
                     console.error("Search failed", error);
@@ -65,8 +65,8 @@ export function AdopterFlagging({ adopterId, adopterName, existingFlags, hasVeri
         if (!searchTerm) return;
         setIsSearching(true);
         try {
-            const results = await searchAdopter(searchTerm);
-            setSearchResults(results);
+            const response = await searchAdopter(searchTerm);
+            setSearchResults(response.results);
             setHasSearched(true);
         } catch (error) {
             console.error("Search failed", error);
