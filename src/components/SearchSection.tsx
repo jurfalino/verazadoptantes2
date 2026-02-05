@@ -61,7 +61,7 @@ export default function SearchSection() {
 
         const isAnon = document.cookie.includes('anon_user=true');
         if (!session?.user && !isAnon) {
-            openLogin();
+            openLogin('/adopter/create');
         } else {
             try {
                 router.push('/adopter/create');
@@ -183,7 +183,7 @@ export default function SearchSection() {
                         const handleCardClick = (e: React.MouseEvent) => {
                             if (!isAuthenticated) {
                                 e.preventDefault();
-                                openLogin();
+                                openLogin(`/adopter/${res.adopter.id}`);
                             }
                         };
 
