@@ -1,8 +1,60 @@
 export const runtime = 'edge';
-import { getDb, deleteAdopter } from "@/app/actions";
-import { adopters } from "@/db/schema";
-import { desc, like, or } from "drizzle-orm";
+import { getDb } from "@/app/actions";
+import { adopters, adopterFlags, adopterHistory, adopterImages, adopterStats, adoptions, adoptionImages } from "@/db/schema";
+import { desc, like, or, eq, inArray } from "drizzle-orm";
 import Link from "next/link";
+import { revalidatePath } from "next/cache";
+import { auth } from "@/auth";
+import { logger } from "@/lib/logger";
+
+// Admin emails - should match the ones in actions.ts
+const ADMIN_EMAILS = ['jurfalino@gmail.com'];
+
+async function handleDeleteAdopter(formData: FormData) {
+    'use server';
+
+    const adopterId = formData.get('adopterId') as string;
+    if (!adopterId) return;
+
+    try {
+        const session = await auth();
+        if (!session?.user?.email || !ADMIN_EMAILS.includes(session.user.email)) {
+            console.error("Unauthorized delete attempt");
+            return;
+        }
+
+        const db = await getDb();
+        if (!db) {
+            console.error("No database for delete");
+            return;
+        }
+
+        // Get all adoption IDs for this adopter first (to delete their images)
+        const adopterAdoptions = await db.select({ id: adoptions.id })
+            .from(adoptions)
+            .where(eq(adoptions.adopterId, adopterId));
+        const adoptionIds = adopterAdoptions.map((a: { id: string }) => a.id);
+
+        // Cascade Logic
+        await db.delete(adopterStats).where(eq(adopterStats.adopterId, adopterId));
+        await db.delete(adopterFlags).where(eq(adopterFlags.adopterId, adopterId));
+        await db.delete(adopterHistory).where(eq(adopterHistory.adopterId, adopterId));
+        await db.delete(adopterImages).where(eq(adopterImages.adopterId, adopterId));
+
+        if (adoptionIds.length > 0) {
+            await db.delete(adoptionImages).where(inArray(adoptionImages.adoptionId, adoptionIds));
+        }
+
+        await db.delete(adoptions).where(eq(adoptions.adopterId, adopterId));
+        await db.delete(adopters).where(eq(adopters.id, adopterId));
+
+        logger.info('Adopter deleted', { adopterId, deletedBy: session.user.email });
+        revalidatePath('/admin/adopters');
+    } catch (error) {
+        console.error("Delete adopter error:", error);
+        logger.error('Delete adopter failed', error, { adopterId });
+    }
+}
 
 export default async function AdminAdoptersPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
     const db = await getDb();
@@ -11,7 +63,6 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
     const { q } = await searchParams;
     const query = q || '';
 
-    // Add pagination? MVP: Limit 50
     const list = await db.select()
         .from(adopters)
         .where(
@@ -20,7 +71,7 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                 like(adopters.id, `%${query}%`)
             ) : undefined
         )
-        .orderBy(desc(adopters.updatedAt)) // Use updatedAt correctly
+        .orderBy(desc(adopters.updatedAt))
         .limit(50);
 
     return (
@@ -71,10 +122,8 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                                     >
                                         Edit
                                     </Link>
-                                    <form action={async () => {
-                                        'use server';
-                                        await deleteAdopter(adopter.id);
-                                    }} className="inline-block">
+                                    <form action={handleDeleteAdopter} className="inline-block">
+                                        <input type="hidden" name="adopterId" value={adopter.id} />
                                         <button
                                             type="submit"
                                             className="px-3 py-1.5 text-xs font-bold text-rose-600 bg-rose-100 rounded-lg hover:bg-rose-200 transition-colors"
@@ -93,5 +142,3 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
     );
 }
 
-// Fix TS error on 'adopters.updatedAt' if schema differs
-// Let's check schema.ts for 'updatedAt'.
