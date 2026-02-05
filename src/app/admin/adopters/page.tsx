@@ -1,75 +1,9 @@
 export const runtime = 'edge';
 import { getDb } from "@/app/actions";
-import { adopters, adopterFlags, adopterHistory, adopterImages, adopterStats, adoptions, adoptionImages } from "@/db/schema";
-import { desc, like, or, eq, inArray } from "drizzle-orm";
+import { adopters } from "@/db/schema";
+import { desc, like, or } from "drizzle-orm";
 import Link from "next/link";
-import { revalidatePath } from "next/cache";
-import { auth } from "@/auth";
-import { logger } from "@/lib/logger";
-
-// Admin emails - should match the ones in actions.ts
-const ADMIN_EMAILS = ['jurfalino@gmail.com'];
-
-async function handleDeleteAdopter(formData: FormData) {
-    'use server';
-
-    const adopterId = formData.get('adopterId') as string;
-    if (!adopterId) {
-        logger.warn('Delete attempt with no adopterId');
-        return;
-    }
-
-    try {
-        const session = await auth();
-
-        // Debug: log session info
-        logger.info('Delete attempt debug', {
-            adopterId,
-            hasSession: !!session,
-            userEmail: session?.user?.email || 'no-email',
-            isAdmin: session?.user?.email ? ADMIN_EMAILS.includes(session.user.email) : false
-        });
-
-        if (!session?.user?.email || !ADMIN_EMAILS.includes(session.user.email)) {
-            logger.warn('Unauthorized delete attempt', {
-                adopterId,
-                email: session?.user?.email || 'no-session'
-            });
-            return;
-        }
-
-        const db = await getDb();
-        if (!db) {
-            logger.error('No database for delete', null, { adopterId });
-            return;
-        }
-
-        // Get all adoption IDs for this adopter first (to delete their images)
-        const adopterAdoptions = await db.select({ id: adoptions.id })
-            .from(adoptions)
-            .where(eq(adoptions.adopterId, adopterId));
-        const adoptionIds = adopterAdoptions.map((a: { id: string }) => a.id);
-
-        // Cascade Logic
-        await db.delete(adopterStats).where(eq(adopterStats.adopterId, adopterId));
-        await db.delete(adopterFlags).where(eq(adopterFlags.adopterId, adopterId));
-        await db.delete(adopterHistory).where(eq(adopterHistory.adopterId, adopterId));
-        await db.delete(adopterImages).where(eq(adopterImages.adopterId, adopterId));
-
-        if (adoptionIds.length > 0) {
-            await db.delete(adoptionImages).where(inArray(adoptionImages.adoptionId, adoptionIds));
-        }
-
-        await db.delete(adoptions).where(eq(adoptions.adopterId, adopterId));
-        await db.delete(adopters).where(eq(adopters.id, adopterId));
-
-        logger.info('Adopter deleted', { adopterId, deletedBy: session.user.email });
-        revalidatePath('/admin/adopters');
-    } catch (error) {
-        console.error("Delete adopter error:", error);
-        logger.error('Delete adopter failed', error, { adopterId });
-    }
-}
+import DeleteAdopterButton from "@/components/DeleteAdopterButton";
 
 export default async function AdminAdoptersPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
     const db = await getDb();
@@ -137,16 +71,7 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                                     >
                                         Edit
                                     </Link>
-                                    <form action={handleDeleteAdopter} className="inline-block">
-                                        <input type="hidden" name="adopterId" value={adopter.id} />
-                                        <button
-                                            type="submit"
-                                            className="px-3 py-1.5 text-xs font-bold text-rose-600 bg-rose-100 rounded-lg hover:bg-rose-200 transition-colors"
-                                            title="Permanently Delete Adopter"
-                                        >
-                                            Delete
-                                        </button>
-                                    </form>
+                                    <DeleteAdopterButton adopterId={adopter.id} adopterName={adopter.name} />
                                 </td>
                             </tr>
                         ))}
@@ -156,4 +81,3 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
         </div>
     );
 }
-
