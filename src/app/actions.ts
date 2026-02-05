@@ -1303,11 +1303,11 @@ export async function deleteAdopter(adopterId: string) {
         const session = await auth();
         // Strict Admin Check
         if (!session?.user?.email || !isAdmin(session.user.email)) {
-            throw new Error("Unauthorized");
+            return { success: false, error: "Unauthorized" };
         }
 
         const db = await getDb();
-        if (!db) throw new Error("No database");
+        if (!db) return { success: false, error: "No database" };
 
         // Get all adoption IDs for this adopter first (to delete their images)
         const adopterAdoptions = await db.select({ id: adoptions.id })
@@ -1346,7 +1346,7 @@ export async function deleteAdopter(adopterId: string) {
     } catch (error) {
         console.error("Delete adopter error:", error);
         logger.error('Delete adopter failed', error, { adopterId });
-        throw new Error("Failed to delete adopter");
+        return { success: false, error: error instanceof Error ? error.message : "Failed to delete adopter" };
     }
 }
 
