@@ -1,5 +1,5 @@
 # Fly.io configuration for Facebook Scraper
-app = "scraper-dark-dawn-4033"
+app = "verazadoptantes2"
 primary_region = "gru"  # São Paulo - closest to Argentina
 
 [build]
@@ -16,6 +16,6 @@ primary_region = "gru"  # São Paulo - closest to Argentina
   min_machines_running = 0
 
 [[vm]]
-  memory = "512mb"
+  memory = "1024mb"
   cpu_kind = "shared"
   cpus = 1
