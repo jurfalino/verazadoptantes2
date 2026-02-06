@@ -1,5 +1,5 @@
 # Fly.io configuration for Facebook Scraper
-app = "fb-scraper-veraz"
+app = "scraper-dark-dawn-4033"
 primary_region = "gru"  # São Paulo - closest to Argentina
 
 [build]
