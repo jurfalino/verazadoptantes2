@@ -98,10 +98,25 @@ export async function POST(request: NextRequest) {
 
     } catch (error) {
         console.error('AI extraction error:', error);
-        logger.error('AI extraction failed', error, {});
+
+        // Debug: Check what's available in env
+        let availableEnv = [];
+        try {
+            const { env } = require('@cloudflare/next-on-pages').getRequestContext();
+            availableEnv = Object.keys(env || {});
+        } catch (e) {
+            availableEnv = ['failed-to-get-context'];
+        }
+
+        logger.error('AI extraction failed', error, { availableEnv });
 
         return NextResponse.json({
             error: error instanceof Error ? error.message : 'Extraction failed',
+            debug: {
+                message: 'This is a debug response to help diagnose the issue',
+                availableBindings: availableEnv,
+                timestamp: new Date().toISOString()
+            }
         }, { status: 500 });
     }
 }
