@@ -1,0 +1,21 @@
+# Fly.io configuration for Facebook Scraper
+app = "fb-scraper-veraz"
+primary_region = "gru"  # São Paulo - closest to Argentina
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "3001"
+
+[http_service]
+  internal_port = 3001
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
