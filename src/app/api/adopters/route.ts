@@ -180,9 +180,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, id: newId });
 
     } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        const errorStack = error instanceof Error ? error.stack?.slice(0, 300) : undefined;
-
         const loggedErrorId = logger.error('Adopter create: failed', error, {
             originalErrorId: errorId,
             name,
@@ -190,11 +187,9 @@ export async function POST(request: Request) {
             user: session.user.email
         });
 
-        // TEMPORARY: Return actual error for debugging
         return NextResponse.json({
             error: 'Failed to create adopter',
-            errorId: loggedErrorId,
-            debug: { message: errorMessage, stack: errorStack }
+            errorId: loggedErrorId
         }, { status: 500 });
     }
 }
