@@ -6,7 +6,7 @@ import { createDb } from '@/db';
 import { adopters, adopterFlags, adopterImages } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { auth } from '@/auth';
-import { logEvent } from '@/lib/axiom';
+import { logger, generateErrorId } from '@/lib/logger';
 
 export async function GET(request: Request) {
     const session = await auth();
@@ -40,7 +40,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-    const errorId = crypto.randomUUID().slice(0, 8);
+    const errorId = generateErrorId();
 
     const session = await auth();
     if (!session?.user) {
@@ -60,10 +60,8 @@ export async function POST(request: Request) {
     try {
         body = await request.json();
     } catch (parseError) {
-        await logEvent('adopter_create_error', {
+        logger.error('Adopter create: failed to parse body', parseError, {
             errorId,
-            phase: 'parse_body',
-            error: String(parseError),
             user: session.user.email
         });
         return NextResponse.json({ error: 'Invalid JSON body', errorId }, { status: 400 });
@@ -72,9 +70,8 @@ export async function POST(request: Request) {
     const { name, contactInfo, addressInfo, notes, sourceUrl, flags, images } = body;
 
     // Log the incoming request (without image data for size)
-    await logEvent('adopter_create', {
+    logger.info('Adopter create: start', {
         errorId,
-        phase: 'start',
         name,
         sourceUrl,
         hasContactInfo: !!contactInfo,
@@ -87,12 +84,7 @@ export async function POST(request: Request) {
     try {
         const { env } = getRequestContext();
         if (!env?.DB) {
-            await logEvent('adopter_create_error', {
-                errorId,
-                phase: 'db_binding',
-                error: 'Database binding not found',
-                user: session.user.email
-            });
+            logger.error('Adopter create: DB binding not found', undefined, { errorId });
             throw new Error('Database binding not found');
         }
         const db = await createDb(env.DB);
@@ -121,8 +113,6 @@ export async function POST(request: Request) {
         const newId = crypto.randomUUID();
 
         // Insert adopter record
-        await logEvent('adopter_create', { errorId, phase: 'inserting_adopter', adopterId: newId });
-
         await db.insert(adopters).values({
             id: newId,
             name,
@@ -137,8 +127,6 @@ export async function POST(request: Request) {
 
         // Add flags if any (don't pass createdAt, let DB default handle it)
         if (flags && Array.isArray(flags) && flags.length > 0) {
-            await logEvent('adopter_create', { errorId, phase: 'inserting_flags', count: flags.length });
-
             for (const flagReason of flags) {
                 await db.insert(adopterFlags).values({
                     id: crypto.randomUUID(),
@@ -151,10 +139,8 @@ export async function POST(request: Request) {
         }
 
         // Save images if any
+        let savedImageCount = 0;
         if (images && Array.isArray(images) && images.length > 0) {
-            await logEvent('adopter_create', { errorId, phase: 'inserting_images', count: images.length });
-
-            let savedCount = 0;
             for (let i = 0; i < images.length; i++) {
                 const img = images[i];
                 // Use original URL if available (from Playwright scraper), otherwise create data URL (from uploads)
@@ -162,9 +148,8 @@ export async function POST(request: Request) {
 
                 // Skip if data URL is too large (>500KB base64 = ~375KB actual) - these shouldn't be stored
                 if (imageUrl.startsWith('data:') && imageUrl.length > 500000) {
-                    await logEvent('adopter_create', {
+                    logger.warn('Adopter create: skipping oversized image', {
                         errorId,
-                        phase: 'skipping_large_image',
                         index: i,
                         size: imageUrl.length
                     });
@@ -180,39 +165,31 @@ export async function POST(request: Request) {
                     isProfilePicture: i === 0 ? 1 : 0 // First image as profile picture
                     // uploadedAt uses database default
                 });
-                savedCount++;
+                savedImageCount++;
             }
-
-            await logEvent('adopter_create', { errorId, phase: 'images_saved', count: savedCount });
         }
 
-        await logEvent('adopter_create', {
+        logger.info('Adopter create: complete', {
             errorId,
-            phase: 'complete',
             adopterId: newId,
+            flagCount: flags?.length || 0,
+            imageCount: savedImageCount,
             user: session.user.email
         });
 
         return NextResponse.json({ success: true, id: newId });
 
     } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        const errorStack = error instanceof Error ? error.stack : undefined;
-
-        await logEvent('adopter_create_error', {
-            errorId,
-            phase: 'db_operation',
-            error: errorMessage,
-            stack: errorStack?.slice(0, 500), // Truncate stack trace
+        const loggedErrorId = logger.error('Adopter create: failed', error, {
+            originalErrorId: errorId,
             name,
             sourceUrl,
             user: session.user.email
         });
 
-        console.error(`[Adopter Create] Error ${errorId}:`, error);
         return NextResponse.json({
             error: 'Failed to create adopter',
-            errorId
+            errorId: loggedErrorId
         }, { status: 500 });
     }
 }
