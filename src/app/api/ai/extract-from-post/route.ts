@@ -5,7 +5,6 @@ import { auth } from '@/auth';
 import { extractAdopterData } from '@/lib/gemini';
 import { getFeatureFlag } from '@/config/features';
 import { logger } from '@/lib/logger';
-import { getRequestContext } from '@cloudflare/next-on-pages';
 
 export async function POST(request: NextRequest) {
     try {
@@ -108,24 +107,10 @@ export async function POST(request: NextRequest) {
     } catch (error) {
         console.error('AI extraction error:', error);
 
-        // Debug: Check what's available in env
-        let availableEnv = [];
-        try {
-            const { env } = getRequestContext();
-            availableEnv = Object.keys(env || {});
-        } catch (e) {
-            availableEnv = ['failed-to-get-context'];
-        }
-
-        logger.error('AI extraction failed', error, { availableEnv });
+        logger.error('AI extraction failed', error);
 
         return NextResponse.json({
-            error: error instanceof Error ? error.message : 'Extraction failed',
-            debug: {
-                message: 'This is a debug response to help diagnose the issue',
-                availableBindings: availableEnv,
-                timestamp: new Date().toISOString()
-            }
+            error: error instanceof Error ? error.message : 'Extraction failed'
         }, { status: 500 });
     }
 }
