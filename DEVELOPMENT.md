@@ -109,3 +109,69 @@ git push origin master
 | `npm run build` | Compilation errors, missing imports |
 | `npx tsc --noEmit` | TypeScript type errors |
 | `npm run lint` | Code style issues, potential bugs |
+| D1 Migrations | Auto-applied on push to staging/master |
+
+---
+
+## 🗃️ Database Migrations
+
+Database schema changes are **automated** via Drizzle + Wrangler D1.
+
+### How It Works
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Modify schema  │ ──▶ │ Generate migration│ ──▶ │  Push to branch │
+│  (schema.ts)    │     │ (drizzle-kit)    │     │  (auto-applies) │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+```
+
+### Step-by-Step: Adding a New Column
+
+1. **Modify the schema**
+   ```typescript
+   // src/db/schema.ts
+   export const adopters = sqliteTable("adopters", {
+       // ... existing columns
+       newColumn: text("new_column"),  // Add your column
+   });
+   ```
+
+2. **Generate a migration file**
+   ```bash
+   npx drizzle-kit generate
+   ```
+   This creates a new `.sql` file in `drizzle/`
+
+3. **Commit and push**
+   ```bash
+   git add drizzle/ src/db/schema.ts
+   git commit -m "Add new_column to adopters table"
+   git push origin staging  # Migrations auto-apply!
+   ```
+
+4. **Verify**
+   Check GitHub Actions to confirm migration ran successfully.
+
+### Manual Migration (Emergency)
+
+If you need to apply migrations manually:
+```bash
+# Staging
+npx wrangler d1 migrations apply pet-adoption-db-staging --remote
+
+# Production
+npx wrangler d1 migrations apply pet-adoption-db --remote
+```
+
+### Checking Current Schema
+
+```bash
+# See what columns exist in a table
+npx wrangler d1 execute pet-adoption-db --remote --command "PRAGMA table_info(adopters);"
+
+# See which migrations have been applied
+npx wrangler d1 execute pet-adoption-db --remote --command "SELECT name FROM d1_migrations;"
+```
+
+> **Note**: The `CLOUDFLARE_API_TOKEN` GitHub secret is required for automated migrations.
