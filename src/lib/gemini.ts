@@ -1,11 +1,12 @@
 /**
- * Gemini Vision API Client
+ * Gemini Vision API Client (Official SDK)
  * 
  * Used for extracting structured data from:
  * - Facebook post text
  * - Screenshots (OCR for phone numbers, names, etc.)
  */
 
+import { GoogleGenerativeAI, Part } from "@google/generative-ai";
 import { getRequestContext } from '@cloudflare/next-on-pages';
 
 // Extracted adopter data from AI
@@ -18,22 +19,6 @@ export interface ExtractedAdopterData {
     notes?: string;
     confidence: 'high' | 'medium' | 'low';
     rawExtraction?: string;
-}
-
-interface GeminiRequest {
-    contents: Array<{
-        parts: Array<{
-            text?: string;
-            inline_data?: {
-                mime_type: string;
-                data: string; // base64
-            };
-        }>;
-    }>;
-    generationConfig?: {
-        temperature?: number;
-        maxOutputTokens?: number;
-    };
 }
 
 function getGeminiApiKey(): string {
@@ -78,7 +63,8 @@ If you cannot extract any relevant information, return:
  */
 export async function extractAdopterData(
     text?: string,
-    images?: Array<{ data: string; mimeType: string }> // base64 data and mime type
+    images?: Array<{ data: string; mimeType: string }>, // base64 data and mime type
+    modelName: string = "gemini-1.5-flash"
 ): Promise<ExtractedAdopterData> {
     const apiKey = getGeminiApiKey();
 
@@ -86,73 +72,47 @@ export async function extractAdopterData(
         throw new Error('GEMINI_API_KEY not configured');
     }
 
-    const parts: GeminiRequest['contents'][0]['parts'] = [];
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: modelName });
 
-    // Add the system prompt
+    const parts: Part[] = [];
+
+    // System prompt (as text part)
     parts.push({ text: EXTRACTION_PROMPT });
 
-    // Add user-provided text
+    // User text
     if (text?.trim()) {
         parts.push({ text: `\n\nFacebook Post Text:\n${text}` });
     }
 
-    // Add images
+    // Images
     if (images && images.length > 0) {
         parts.push({ text: '\n\nImages from the post:' });
         for (const img of images) {
             parts.push({
-                inline_data: {
-                    mime_type: img.mimeType,
+                inlineData: {
+                    mimeType: img.mimeType,
                     data: img.data,
                 },
             });
         }
     }
 
-    // Validate we have something to process
+    // Validate input
     if (!text?.trim() && (!images || images.length === 0)) {
         throw new Error('No text or images provided');
     }
 
-    const request: GeminiRequest = {
-        contents: [{ parts }],
-        generationConfig: {
-            temperature: 0.1, // Low temperature for more consistent extraction
-            maxOutputTokens: 1024,
-        },
-    };
-
-    const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-        {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(request),
-        }
-    );
-
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
-    }
-
-    const result = await response.json() as {
-        candidates?: Array<{
-            content?: {
-                parts?: Array<{ text?: string }>;
-            };
-        }>;
-    };
-
-    const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!responseText) {
-        throw new Error('No response from Gemini API');
-    }
-
-    // Parse the JSON response
     try {
-        // Extract JSON from the response (in case there's extra text)
+        const result = await model.generateContent(parts);
+        const response = await result.response;
+        const responseText = response.text();
+
+        if (!responseText) {
+            throw new Error('No text in response');
+        }
+
+        // Parse the JSON response
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {
             throw new Error('No JSON found in response');
@@ -162,12 +122,46 @@ export async function extractAdopterData(
         parsed.rawExtraction = responseText;
 
         return parsed;
-    } catch (parseError) {
-        // Return low confidence result if parsing fails
+
+    } catch (error) {
+        console.error('Gemini extraction failed:', error);
         return {
             confidence: 'low',
-            notes: 'Failed to parse AI response',
-            rawExtraction: responseText,
+            notes: `Extraction failed: ${error instanceof Error ? error.message : String(error)}`,
+            rawExtraction: String(error),
         };
+    }
+}
+
+/**
+ * Fetch list of available models from Gemini API
+ */
+export async function getAvailableModels(): Promise<Array<{ name: string; displayName: string }>> {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) return [];
+
+    try {
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
+            { method: 'GET' }
+        );
+
+        if (!response.ok) {
+            console.error('Failed to list models:', await response.text());
+            return [];
+        }
+
+        const data = await response.json() as { models: Array<{ name: string; displayName: string; supportedGenerationMethods: string[] }> };
+
+        return data.models
+            .filter(m => m.supportedGenerationMethods.includes('generateContent'))
+            .map(m => ({
+                name: m.name.replace('models/', ''),
+                displayName: m.displayName
+            }))
+            .sort((a, b) => b.name.localeCompare(a.name)); // Newest first usually
+    } catch (error) {
+        console.error('Error listing models:', error);
+        return [];
     }
 }

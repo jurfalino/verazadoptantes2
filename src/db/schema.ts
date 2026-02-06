@@ -14,6 +14,7 @@ export const adopters = sqliteTable("adopters", {
     updatedAt: integer("updated_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     status: text("status").default("5"), // Rating: 1-5 (1=Dangerous, 5=Excellent)
     addedBy: text("added_by").default("anonymous"),
+    sourceUrl: text("source_url"), // Link to original post/source
 }, (table) => ({
     nameIdx: index("name_idx").on(table.name),
 }));

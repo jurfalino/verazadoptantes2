@@ -42,7 +42,50 @@ export async function POST(request: NextRequest) {
 
         console.log('[Facebook Fetch] Fetching URL:', desktopUrl);
 
-        // Try to fetch the page content
+        // Try Playwright scraper service first (if configured)
+        const scraperUrl = process.env.SCRAPER_URL;
+        if (scraperUrl) {
+            try {
+                console.log('[Facebook Fetch] Trying Playwright scraper service...');
+                const scraperResponse = await fetch(`${scraperUrl}/scrape`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(process.env.SCRAPER_API_KEY && { 'X-API-Key': process.env.SCRAPER_API_KEY })
+                    },
+                    body: JSON.stringify({ url: desktopUrl }),
+                });
+
+                if (scraperResponse.ok) {
+                    const scraperData = await scraperResponse.json() as {
+                        success: boolean;
+                        data?: { text: string; author?: string; images: string[] };
+                        error?: string;
+                    };
+
+                    if (scraperData.success && scraperData.data) {
+                        console.log('[Facebook Fetch] Scraper success:', {
+                            textLength: scraperData.data.text?.length || 0,
+                            imagesCount: scraperData.data.images?.length || 0,
+                        });
+
+                        // Return scraper results if we got meaningful content
+                        if (scraperData.data.images.length > 0 || scraperData.data.text.length > 50) {
+                            return NextResponse.json({
+                                success: true,
+                                data: scraperData.data,
+                                source: 'playwright'
+                            });
+                        }
+                    }
+                }
+                console.log('[Facebook Fetch] Scraper did not return useful data, falling back to static parsing');
+            } catch (scraperError) {
+                console.log('[Facebook Fetch] Scraper service error, falling back to static parsing:', scraperError);
+            }
+        }
+
+        // Try to fetch the page content (static HTML fallback)
         const response = await fetch(desktopUrl, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
@@ -108,6 +151,7 @@ function extractPostData(html: string): FacebookPostData {
         text: '',
         images: [],
     };
+    const seenImages = new Set<string>();
 
     // Method 1: Look for Open Graph meta tags (most reliable for public posts)
     const ogTitleMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
@@ -125,7 +169,8 @@ function extractPostData(html: string): FacebookPostData {
     for (const match of ogImageMatches) {
         const imageUrl = match[1];
         // Filter out profile pics and icons
-        if (imageUrl && !imageUrl.includes('profile') && !imageUrl.includes('icon')) {
+        if (imageUrl && !imageUrl.includes('profile') && !imageUrl.includes('icon') && !seenImages.has(imageUrl)) {
+            seenImages.add(imageUrl);
             data.images.push(imageUrl);
         }
     }
@@ -140,9 +185,9 @@ function extractPostData(html: string): FacebookPostData {
                 author?: { name?: string };
                 image?: string | string[];
             };
-            if (jsonData.articleBody) {
+            if (jsonData.articleBody && jsonData.articleBody.length > data.text.length) {
                 data.text = jsonData.articleBody;
-            } else if (jsonData.description) {
+            } else if (jsonData.description && jsonData.description.length > data.text.length) {
                 data.text = jsonData.description;
             }
             if (jsonData.author?.name) {
@@ -150,39 +195,106 @@ function extractPostData(html: string): FacebookPostData {
             }
             if (jsonData.image) {
                 const images = Array.isArray(jsonData.image) ? jsonData.image : [jsonData.image];
-                data.images.push(...images);
+                for (const img of images) {
+                    if (!seenImages.has(img)) {
+                        seenImages.add(img);
+                        data.images.push(img);
+                    }
+                }
             }
         } catch {
             // JSON parse failed, continue with other methods
         }
     }
 
-    // Method 3: Look for data-content-id patterns (Facebook's internal structure)
+    // Method 3: Look for scontent images (Facebook CDN pattern)
+    const scontentMatches = html.matchAll(/["'](https:\/\/scontent[^"']+\.(?:jpg|jpeg|png|webp)[^"']*)/gi);
+    for (const match of scontentMatches) {
+        let imageUrl = match[1];
+        // Unescape URL encoding
+        imageUrl = imageUrl.replace(/\\u0026/g, '&').replace(/&amp;/g, '&');
+        // Filter out small thumbnails and profile pics
+        if (imageUrl &&
+            !imageUrl.includes('_s.') &&
+            !imageUrl.includes('_t.') &&
+            !imageUrl.includes('profile') &&
+            !imageUrl.includes('emoji') &&
+            !seenImages.has(imageUrl)) {
+            seenImages.add(imageUrl);
+            data.images.push(imageUrl);
+        }
+    }
+
+    // Method 4: Look for lookaside images (another Facebook CDN pattern)
+    const lookasideMatches = html.matchAll(/["'](https:\/\/lookaside[^"']+)/gi);
+    for (const match of lookasideMatches) {
+        let imageUrl = match[1];
+        imageUrl = imageUrl.replace(/\\u0026/g, '&').replace(/&amp;/g, '&');
+        if (imageUrl && !seenImages.has(imageUrl)) {
+            seenImages.add(imageUrl);
+            data.images.push(imageUrl);
+        }
+    }
+
+    // Method 5: Extract text from escaped JSON content (Facebook embeds post text in JSON)
+    const textPatterns = [
+        /text"?\s*:\s*"([^"]{50,})"/g,
+        /message"?\s*:\s*"([^"]{50,})"/g,
+        /"rawText"?\s*:\s*"([^"]{50,})"/g,
+    ];
+
+    for (const pattern of textPatterns) {
+        const matches = html.matchAll(pattern);
+        for (const match of matches) {
+            const text = decodeHtmlEntities(match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'));
+            if (text.length > data.text.length && !text.includes('<!DOCTYPE')) {
+                data.text = text;
+            }
+        }
+    }
+
+    // Method 6: Look for data-content-id patterns (Facebook's internal structure)
     const contentMatches = html.matchAll(/data-content-type="[^"]*"[^>]*>([^<]+)</gi);
     for (const match of contentMatches) {
         const content = match[1].trim();
-        if (content.length > 20 && !data.text) {
+        if (content.length > 50 && content.length > data.text.length) {
             data.text = decodeHtmlEntities(content);
         }
     }
 
-    // Method 4: Extract image URLs from various patterns
+    // Method 7: Generic image URLs from src attributes
     const imgMatches = html.matchAll(/src="(https:\/\/[^"]+\.(?:jpg|jpeg|png|webp)[^"]*)"/gi);
     for (const match of imgMatches) {
-        const imageUrl = match[1];
+        let imageUrl = match[1];
+        imageUrl = imageUrl.replace(/&amp;/g, '&');
         // Filter out small images, emojis, etc
         if (imageUrl &&
             !imageUrl.includes('emoji') &&
             !imageUrl.includes('icon') &&
             !imageUrl.includes('like') &&
             !imageUrl.includes('comment') &&
-            !data.images.includes(imageUrl)) {
+            !imageUrl.includes('static') &&
+            !imageUrl.includes('_s.') &&
+            !imageUrl.includes('_t.') &&
+            !seenImages.has(imageUrl)) {
+            seenImages.add(imageUrl);
             data.images.push(imageUrl);
         }
     }
 
-    // Limit to first 5 images
-    data.images = data.images.slice(0, 5);
+    // Deduplicate images by comparing base URLs (without query params)
+    const uniqueImages: string[] = [];
+    const baseUrlsSeen = new Set<string>();
+    for (const img of data.images) {
+        const baseUrl = img.split('?')[0];
+        if (!baseUrlsSeen.has(baseUrl)) {
+            baseUrlsSeen.add(baseUrl);
+            uniqueImages.push(img);
+        }
+    }
+
+    // Limit to first 10 images (increased from 5)
+    data.images = uniqueImages.slice(0, 10);
 
     return data;
 }

@@ -315,5 +315,7 @@ export const en = {
             medium: 'Medium confidence',
             low: 'Low confidence',
         },
+        successTitle: 'Adopter Created!',
+        viewProfile: 'View Profile',
     }
 };

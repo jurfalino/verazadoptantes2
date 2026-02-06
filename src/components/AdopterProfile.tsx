@@ -111,7 +111,19 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                             <h1 className="text-3xl md:text-4xl font-extrabold text-emerald-950 tracking-tight">
                                 {t('adopter.title_profile')}
                             </h1>
-                            {!isNew && <p className="text-emerald-600/80 font-medium mt-1 text-sm">{t('adopter.id')}: <span className="font-mono text-emerald-500/60">{id}</span></p>}
+                            {!isNew && (
+                                <div className="mt-1 space-y-1">
+                                    <p className="text-emerald-600/80 font-medium text-sm">{t('adopter.id')}: <span className="font-mono text-emerald-500/60">{id}</span></p>
+                                    {adopter.sourceUrl && (
+                                        <div className="flex items-center gap-1.5">
+                                            <svg className="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 24 24"><path d="M22 12c0-5.523-4.477-10-10-10S2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.879V14.89h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.989C18.343 21.129 22 16.99 22 12z" /></svg>
+                                            <a href={adopter.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 hover:underline text-sm font-medium transition-colors">
+                                                {t('adopter.view_source') || 'View Original Input'}
+                                            </a>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                     {/* Average Rating Badge */}
@@ -128,83 +140,87 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                 </header>
 
                 {/* Stats Table */}
-                {stats && !isNew && (
-                    <div className="bg-white rounded-2xl p-5 shadow-sm border border-stone-200">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-bold text-stone-800">📊 {t('stats.profile_stats') || 'Profile Statistics'}</h3>
-                            <div className="flex gap-1 bg-stone-100 rounded-lg p-1">
-                                {(['90d', '1y', 'all'] as const).map((period) => (
-                                    <button
-                                        key={period}
-                                        onClick={() => setSelectedPeriod(period)}
-                                        className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${selectedPeriod === period
-                                            ? 'bg-white text-stone-900 shadow-sm'
-                                            : 'text-stone-500 hover:text-stone-700'
-                                            }`}
-                                    >
-                                        {period === '90d' ? '90 Days' : period === '1y' ? '1 Year' : 'All Time'}
-                                    </button>
-                                ))}
+                {
+                    stats && !isNew && (
+                        <div className="bg-white rounded-2xl p-5 shadow-sm border border-stone-200">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="font-bold text-stone-800">📊 {t('stats.profile_stats') || 'Profile Statistics'}</h3>
+                                <div className="flex gap-1 bg-stone-100 rounded-lg p-1">
+                                    {(['90d', '1y', 'all'] as const).map((period) => (
+                                        <button
+                                            key={period}
+                                            onClick={() => setSelectedPeriod(period)}
+                                            className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${selectedPeriod === period
+                                                ? 'bg-white text-stone-900 shadow-sm'
+                                                : 'text-stone-500 hover:text-stone-700'
+                                                }`}
+                                        >
+                                            {period === '90d' ? '90 Days' : period === '1y' ? '1 Year' : 'All Time'}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div className="text-center p-3 bg-blue-50 rounded-xl">
+                                    <div className="text-2xl font-bold text-blue-600">{stats.searchHits[selectedPeriod]}</div>
+                                    <div className="text-xs text-blue-600/70">🔍 {t('stats.searches') || 'Searches'}</div>
+                                </div>
+                                <div className="text-center p-3 bg-purple-50 rounded-xl">
+                                    <div className="text-2xl font-bold text-purple-600">{stats.profileViews[selectedPeriod]}</div>
+                                    <div className="text-xs text-purple-600/70">👁 {t('stats.views') || 'Views'}</div>
+                                </div>
+                                <div className="text-center p-3 bg-orange-50 rounded-xl">
+                                    <div className="text-2xl font-bold text-orange-600">{stats.adoptionRequests[selectedPeriod]}</div>
+                                    <div className="text-xs text-orange-600/70">📝 {t('stats.requests') || 'Requests'}</div>
+                                </div>
+                                <div className="text-center p-3 bg-green-50 rounded-xl">
+                                    <div className="text-2xl font-bold text-green-600">{stats.adoptionsCompleted[selectedPeriod]}</div>
+                                    <div className="text-xs text-green-600/70">🏠 {t('stats.adoptions') || 'Adoptions'}</div>
+                                </div>
                             </div>
                         </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="text-center p-3 bg-blue-50 rounded-xl">
-                                <div className="text-2xl font-bold text-blue-600">{stats.searchHits[selectedPeriod]}</div>
-                                <div className="text-xs text-blue-600/70">🔍 {t('stats.searches') || 'Searches'}</div>
-                            </div>
-                            <div className="text-center p-3 bg-purple-50 rounded-xl">
-                                <div className="text-2xl font-bold text-purple-600">{stats.profileViews[selectedPeriod]}</div>
-                                <div className="text-xs text-purple-600/70">👁 {t('stats.views') || 'Views'}</div>
-                            </div>
-                            <div className="text-center p-3 bg-orange-50 rounded-xl">
-                                <div className="text-2xl font-bold text-orange-600">{stats.adoptionRequests[selectedPeriod]}</div>
-                                <div className="text-xs text-orange-600/70">📝 {t('stats.requests') || 'Requests'}</div>
-                            </div>
-                            <div className="text-center p-3 bg-green-50 rounded-xl">
-                                <div className="text-2xl font-bold text-green-600">{stats.adoptionsCompleted[selectedPeriod]}</div>
-                                <div className="text-xs text-green-600/70">🏠 {t('stats.adoptions') || 'Adoptions'}</div>
-                            </div>
-                        </div>
-                    </div>
-                )}
+                    )
+                }
 
                 <AdopterForm initialData={adopter} history={history} currentUser={currentUser} />
 
-                {!isNew && adopter && (
-                    <>
-                        {/* Images - Collapsible */}
-                        <CollapsibleSection title={t('adopter.images')} count={images.length} defaultOpen={true}>
-                            <ImageGallery
-                                adopterId={id}
-                                initialImages={images}
-                                onUpload={async (adopterId, url, caption) => {
-                                    return await saveImage(adopterId, url, caption);
-                                }}
-                                currentUser={currentUser}
-                                isAdmin={isAdmin}
-                            />
-                        </CollapsibleSection>
+                {
+                    !isNew && adopter && (
+                        <>
+                            {/* Images - Collapsible */}
+                            <CollapsibleSection title={t('adopter.images')} count={images.length} defaultOpen={true}>
+                                <ImageGallery
+                                    adopterId={id}
+                                    initialImages={images}
+                                    onUpload={async (adopterId, url, caption) => {
+                                        return await saveImage(adopterId, url, caption);
+                                    }}
+                                    currentUser={currentUser}
+                                    isAdmin={isAdmin}
+                                />
+                            </CollapsibleSection>
 
-                        {/* Adoptions - Collapsible */}
-                        <CollapsibleSection title={t('adoption.title')} count={adoptions.length} defaultOpen={true}>
-                            <AdoptionForm
-                                adopterId={id}
-                                availableAnimals={availableAnimals}
-                                currentUser={currentUser}
-                                adopterAddress={adopter?.addressInfo || ''}
-                            />
-                            <AdoptionHistory
-                                adoptions={adoptions}
-                                onEdit={() => { }}
-                                adopterId={id}
-                                currentUser={currentUser}
-                                isAdmin={isAdmin}
-                                adopterAddress={adopter?.addressInfo || ''}
-                            />
-                        </CollapsibleSection>
-                    </>
-                )}
-            </div>
-        </main>
+                            {/* Adoptions - Collapsible */}
+                            <CollapsibleSection title={t('adoption.title')} count={adoptions.length} defaultOpen={true}>
+                                <AdoptionForm
+                                    adopterId={id}
+                                    availableAnimals={availableAnimals}
+                                    currentUser={currentUser}
+                                    adopterAddress={adopter?.addressInfo || ''}
+                                />
+                                <AdoptionHistory
+                                    adoptions={adoptions}
+                                    onEdit={() => { }}
+                                    adopterId={id}
+                                    currentUser={currentUser}
+                                    isAdmin={isAdmin}
+                                    adopterAddress={adopter?.addressInfo || ''}
+                                />
+                            </CollapsibleSection>
+                        </>
+                    )
+                }
+            </div >
+        </main >
     );
 }

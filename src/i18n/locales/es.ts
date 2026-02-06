@@ -315,5 +315,7 @@ export const es = {
             medium: 'Confianza media',
             low: 'Baja confianza',
         },
+        successTitle: '¡Adoptante Creado!',
+        viewProfile: 'Ver Perfil',
     }
 };

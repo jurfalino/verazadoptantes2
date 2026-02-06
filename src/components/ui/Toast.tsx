@@ -12,6 +12,10 @@ interface Toast {
     message?: string;
     errorId?: string;
     duration?: number;
+    action?: {
+        label: string;
+        onClick: () => void;
+    };
 }
 
 interface ToastContextType {
@@ -35,8 +39,8 @@ export function useShowToast() {
     const { showToast } = useToast();
 
     return {
-        success: (title: string, message?: string) =>
-            showToast({ type: 'success', title, message }),
+        success: (title: string, message?: string, action?: { label: string; onClick: () => void }) =>
+            showToast({ type: 'success', title, message, action, duration: action ? 0 : 5000 }),
         error: (title: string, message?: string, errorId?: string) =>
             showToast({ type: 'error', title, message, errorId, duration: 0 }),
         warning: (title: string, message?: string) =>
@@ -97,10 +101,10 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
     };
 
     const backgrounds = {
-        success: 'bg-emerald-50 border-emerald-200',
-        error: 'bg-red-50 border-red-200',
-        warning: 'bg-amber-50 border-amber-200',
-        info: 'bg-blue-50 border-blue-200'
+        success: 'bg-emerald-50 border-emerald-300 shadow-xl',
+        error: 'bg-red-50 border-red-300 shadow-xl',
+        warning: 'bg-amber-50 border-amber-300 shadow-xl',
+        info: 'bg-blue-50 border-blue-300 shadow-xl'
     };
 
     const copyErrorId = () => {
@@ -130,6 +134,17 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
                         >
                             {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                             Error ID: {toast.errorId}
+                        </button>
+                    )}
+                    {toast.action && (
+                        <button
+                            onClick={() => {
+                                toast.action?.onClick();
+                                onDismiss();
+                            }}
+                            className="mt-3 text-sm font-medium px-3 py-1.5 bg-white border border-stone-200 rounded-md hover:bg-stone-50 transition-colors shadow-sm"
+                        >
+                            {toast.action.label}
                         </button>
                     )}
                 </div>
