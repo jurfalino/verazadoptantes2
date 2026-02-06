@@ -54,6 +54,42 @@ function getAxiomConfig() {
     }
 }
 
+// Detect environment (staging, production, local) and domain
+function getEnvironmentInfo(): { env: string; domain?: string; branch?: string } {
+    try {
+        const { env } = getRequestContext();
+        const cfEnv = env as unknown as Record<string, string | undefined>;
+        // CF_PAGES_BRANCH is set by Cloudflare Pages
+        const branch = cfEnv?.CF_PAGES_BRANCH || process.env.CF_PAGES_BRANCH;
+        // CF_PAGES_URL is the deployment URL
+        const url = cfEnv?.CF_PAGES_URL || process.env.CF_PAGES_URL;
+
+        // Determine environment from branch or URL
+        let envName = 'local';
+        if (branch === 'master' || branch === 'main') {
+            envName = 'production';
+        } else if (branch === 'staging' || url?.includes('staging')) {
+            envName = 'staging';
+        } else if (branch) {
+            envName = `preview-${branch}`;
+        }
+
+        // Extract domain from URL if available
+        let domain: string | undefined;
+        if (url) {
+            try {
+                domain = new URL(url).hostname;
+            } catch {
+                domain = url;
+            }
+        }
+
+        return { env: envName, domain, branch };
+    } catch {
+        return { env: 'local' };
+    }
+}
+
 // Send log to Axiom (using waitUntil to keep worker alive on Edge)
 async function sendToAxiom(entries: LogEntry[]) {
     const config = getAxiomConfig();
@@ -105,10 +141,12 @@ export const logger = {
     },
 
     info(message: string, data?: Record<string, unknown>) {
+        const envInfo = getEnvironmentInfo();
         const entry: LogEntry = {
             _time: new Date().toISOString(),
             level: 'info',
             message,
+            ...envInfo,
             ...data
         };
         console.log(`[INFO] ${message}`, data);
@@ -116,10 +154,12 @@ export const logger = {
     },
 
     warn(message: string, data?: Record<string, unknown>) {
+        const envInfo = getEnvironmentInfo();
         const entry: LogEntry = {
             _time: new Date().toISOString(),
             level: 'warn',
             message,
+            ...envInfo,
             ...data
         };
         console.warn(`[WARN] ${message}`, data);
@@ -128,11 +168,13 @@ export const logger = {
 
     error(message: string, error?: Error | unknown, data?: Record<string, unknown>): string {
         const errorId = generateErrorId();
+        const envInfo = getEnvironmentInfo();
         const entry: LogEntry = {
             _time: new Date().toISOString(),
             level: 'error',
             message,
             errorId,
+            ...envInfo,
             ...data
         };
 
