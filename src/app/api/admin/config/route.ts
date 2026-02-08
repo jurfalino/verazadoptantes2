@@ -43,6 +43,7 @@ export async function GET() {
             // Feature flags (from DB)
             ENABLE_FACEBOOK_IMPORT: config['ENABLE_FACEBOOK_IMPORT'] || 'false',
             ENABLE_AI_EXTRACTION: config['ENABLE_AI_EXTRACTION'] || 'false',
+            ENABLE_CONTENT_IMPORT: config['ENABLE_CONTENT_IMPORT'] || 'false',
         },
         statsCount,
         oldestStat

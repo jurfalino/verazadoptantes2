@@ -206,4 +206,45 @@ test.describe('Authenticated User', () => {
         // Should navigate to the newly created profile
         await expect(page).toHaveURL(/\/adopter\//, { timeout: 10000 });
     });
+
+    test('Import Wizard: text input flow reaches Step 2', async ({ page }) => {
+        // Navigate directly to the import page
+        await page.goto('/import');
+        await page.waitForLoadState('networkidle');
+
+        // Wizard header should be visible (bilingual)
+        await expect(page.getByRole('heading', { name: /Import Content|Importar Contenido/i })).toBeVisible({ timeout: 10000 });
+
+        // Step indicator should show 3 steps
+        const stepIndicator = page.getByText(/1/).first();
+        await expect(stepIndicator).toBeVisible();
+
+        // Switch to Text input mode
+        const textTab = page.getByRole('button', { name: /Text|Texto/i });
+        await expect(textTab).toBeVisible();
+        await textTab.click();
+
+        // Paste sample adopter text
+        const textarea = page.locator('textarea');
+        await expect(textarea).toBeVisible();
+        await textarea.fill('María González adoptó un perro llamado Luna. Teléfono: 099123456. Dirección: Av. 18 de Julio 1234.');
+
+        // Click Continue
+        const continueBtn = page.getByRole('button', { name: /Continue|Continuar/i });
+        await expect(continueBtn).toBeEnabled();
+        await continueBtn.click();
+
+        // Step 2 should show the review content heading
+        await expect(page.getByText(/Review Content|Revisar Contenido/i)).toBeVisible({ timeout: 5000 });
+
+        // Extracted text should contain our input
+        const editableTextarea = page.locator('textarea');
+        await expect(editableTextarea).toBeVisible();
+        await expect(editableTextarea).toHaveValue(/María González/);
+
+        // Extract with AI button should be present
+        const extractBtn = page.getByRole('button', { name: /Extract with AI|Extraer con IA/i });
+        await expect(extractBtn).toBeVisible();
+        await expect(extractBtn).toBeEnabled();
+    });
 });

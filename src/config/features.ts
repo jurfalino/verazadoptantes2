@@ -16,6 +16,7 @@ import { eq } from 'drizzle-orm';
 export const FEATURE_FLAGS = {
     ENABLE_FACEBOOK_IMPORT: false,
     ENABLE_AI_EXTRACTION: false,
+    ENABLE_CONTENT_IMPORT: false,
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;
@@ -95,6 +96,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
     const result: Record<FeatureFlag, boolean> = {
         ENABLE_FACEBOOK_IMPORT: false,
         ENABLE_AI_EXTRACTION: false,
+        ENABLE_CONTENT_IMPORT: false,
     };
 
     for (const flag of Object.keys(FEATURE_FLAGS) as FeatureFlag[]) {

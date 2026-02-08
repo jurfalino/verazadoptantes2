@@ -20,13 +20,12 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-        // Validate URL is from Facebook/safe source
-        const allowedDomains = ['facebook.com', 'fbcdn.net', 'fbsbx.com', 'cdn.instagram.com'];
+        // Basic SSRF protection: block private/internal IPs
         const urlObj = new URL(url);
-        const isAllowed = allowedDomains.some(domain => urlObj.hostname.endsWith(domain));
-
-        if (!isAllowed) {
-            return new NextResponse('Domain not allowed', { status: 403 });
+        const hostname = urlObj.hostname.toLowerCase();
+        const blockedPatterns = ['localhost', '127.0.0.1', '0.0.0.0', '::1', '10.', '192.168.', '172.16.', '169.254.'];
+        if (blockedPatterns.some(p => hostname.startsWith(p) || hostname === p)) {
+            return new NextResponse('URL not allowed', { status: 403 });
         }
 
         const response = await fetch(url, {
