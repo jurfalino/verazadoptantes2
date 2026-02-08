@@ -7,6 +7,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useShowToast } from '@/components/ui/Toast';
 
 // Format date as "Feb 4 '26" (3-letter month + day + year)
 function formatShortDate(input: Date | number): string {
@@ -23,6 +24,7 @@ export default function SearchSection() {
     const searchParams = useSearchParams();
     const { data: session } = useSession();
     const { openLogin } = useAuthContext();
+    const toast = useShowToast();
 
     // Initialize from URL params for back-navigation persistence
     const initialQuery = searchParams.get('q') || '';
@@ -114,7 +116,7 @@ export default function SearchSection() {
             }
         } catch (err) {
             console.error(err);
-            alert('Search failed');
+            toast.error('Search Failed', 'An error occurred while searching. Please try again.');
         } finally {
             setLoading(false);
         }

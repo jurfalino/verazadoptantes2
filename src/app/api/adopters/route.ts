@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { createDb } from '@/db';
 import { adopters, adopterFlags, adopterImages, adoptions } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, like, or, and, isNull } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
 
@@ -16,9 +16,12 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const sourceUrl = searchParams.get('sourceUrl');
+    const matchName = searchParams.get('matchName');
+    const matchPhones = searchParams.get('matchPhones'); // comma-separated
+    const matchAddresses = searchParams.get('matchAddresses'); // comma-separated
 
-    if (!sourceUrl) {
-        return NextResponse.json({ error: 'Missing sourceUrl' }, { status: 400 });
+    if (!sourceUrl && !matchName && !matchPhones) {
+        return NextResponse.json({ error: 'Missing search parameters' }, { status: 400 });
     }
 
     try {
@@ -28,14 +31,113 @@ export async function GET(request: Request) {
         }
         const db = await createDb(env.DB);
 
+        // Mode 1: Exact URL match (same-post duplicate detection)
+        if (sourceUrl) {
+            const matches = await db.select()
+                .from(adopters)
+                .where(eq(adopters.sourceUrl, sourceUrl));
+            return NextResponse.json({ matches, matchType: 'url' });
+        }
+
+        // Mode 2: Multi-field person matching (different post, same person)
+        const phones = matchPhones ? matchPhones.split(',').map(p => p.trim()).filter(Boolean) : [];
+        const addresses = matchAddresses ? matchAddresses.split(',').map(a => a.trim()).filter(Boolean) : [];
+
+        // Build OR conditions for fuzzy matching
+        const conditions = [];
+        if (matchName) {
+            conditions.push(like(adopters.name, `%${matchName}%`));
+        }
+        for (const phone of phones) {
+            // Strip non-digits for more flexible matching
+            const digitsOnly = phone.replace(/\D/g, '');
+            if (digitsOnly.length >= 4) {
+                conditions.push(like(adopters.contactInfo, `%${digitsOnly}%`));
+            }
+        }
+        for (const addr of addresses) {
+            if (addr.length >= 5) {
+                conditions.push(like(adopters.contactInfo, `%${addr}%`));
+            }
+        }
+
+        if (conditions.length === 0) {
+            return NextResponse.json({ matches: [], matchType: 'person', confidence: 'none' });
+        }
+
         const matches = await db.select()
             .from(adopters)
-            .where(eq(adopters.sourceUrl, sourceUrl));
+            .where(or(...conditions))
+            .limit(5);
 
-        return NextResponse.json({ matches });
+        if (matches.length === 0) {
+            return NextResponse.json({ matches: [], matchType: 'person', confidence: 'none' });
+        }
+
+        // Score confidence for each match
+        const scoredMatches = await Promise.all(matches.map(async (match) => {
+            let confidence: 'high' | 'medium' | 'low' = 'low';
+            const reasons: string[] = [];
+
+            // Check name match
+            const nameMatch = matchName && match.name?.toLowerCase().includes(matchName.toLowerCase());
+            if (nameMatch) reasons.push('name');
+
+            // Check phone match
+            const phoneMatch = phones.some(phone => {
+                const digits = phone.replace(/\D/g, '');
+                return digits.length >= 4 && match.contactInfo?.includes(digits);
+            });
+            if (phoneMatch) reasons.push('phone');
+
+            // Check address match
+            const addrMatch = addresses.some(addr => {
+                return addr.length >= 5 && match.contactInfo?.toLowerCase().includes(addr.toLowerCase());
+            });
+            if (addrMatch) reasons.push('address');
+
+            // Determine confidence level
+            if (phoneMatch && nameMatch) confidence = 'high';
+            else if (phoneMatch) confidence = 'high';
+            else if (nameMatch && addrMatch) confidence = 'medium';
+            else if (nameMatch) confidence = 'medium';
+            else if (addrMatch) confidence = 'low';
+
+            // Fetch thumbnail for preview
+            let thumbnail: string | null = null;
+            try {
+                const imgs = await db.select({ url: adopterImages.url })
+                    .from(adopterImages)
+                    .where(and(
+                        eq(adopterImages.adopterId, match.id),
+                        eq(adopterImages.isProfilePicture, 1),
+                        isNull(adopterImages.adoptionId)
+                    ))
+                    .limit(1);
+                if (imgs.length > 0) thumbnail = imgs[0].url;
+            } catch (e) { /* ignore */ }
+
+            return {
+                ...match,
+                thumbnail,
+                confidence,
+                matchReasons: reasons
+            };
+        }));
+
+        // Sort by confidence (high first)
+        const confidenceOrder = { high: 0, medium: 1, low: 2 };
+        scoredMatches.sort((a, b) => confidenceOrder[a.confidence] - confidenceOrder[b.confidence]);
+
+        return NextResponse.json({
+            matches: scoredMatches,
+            matchType: 'person',
+            confidence: scoredMatches[0]?.confidence || 'none'
+        });
     } catch (error) {
-        console.error('Check duplicate failed:', error);
-        return NextResponse.json({ matches: [] }); // Fail safe to empty
+        console.error('Check duplicate/match failed:', error);
+        logger.error('Adopter duplicate check failed', error, { sourceUrl: sourceUrl || undefined, matchName: matchName || undefined });
+        return NextResponse.json({ matches: [], matchType: sourceUrl ? 'url' : 'person', confidence: 'none' });
     }
 }
 
@@ -169,6 +271,11 @@ export async function POST(request: Request) {
 
         // Create adoption record if adoption data provided
         if (adoption && (adoption.animalName || adoption.species)) {
+            // Pack notes and contact info into details for searchability
+            const detailsParts: string[] = [];
+            if (notes) detailsParts.push(notes);
+            if (contactInfoStr) detailsParts.push(`Contact: ${contactInfoStr}`);
+
             await db.insert(adoptions).values({
                 id: crypto.randomUUID(),
                 adopterId: newId,
@@ -178,7 +285,9 @@ export async function POST(request: Request) {
                 rating: adoption.rating || 2,
                 addedBy: session.user.email || 'anonymous',
                 recordType: adoption.recordType || 'adoption',
-                date: adoption.date ? new Date(adoption.date) : new Date()
+                date: adoption.date ? new Date(adoption.date) : new Date(),
+                sourceUrl: sourceUrl || null,
+                details: detailsParts.length > 0 ? detailsParts.join('\n') : null
             });
             logger.info('Adopter create: adoption record created', {
                 errorId,

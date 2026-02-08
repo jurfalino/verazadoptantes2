@@ -38,4 +38,25 @@ test.describe('Smoke Tests', () => {
         // Footer visible
         await expect(page.locator('footer')).toBeVisible();
     });
+
+    test('Database schema matches expected columns', async ({ request }) => {
+        const response = await request.get('/api/health');
+        const body = await response.json();
+
+        if (body.status === 'schema_mismatch') {
+            const details = body.mismatches
+                .map((m: any) => {
+                    const parts = [`Table "${m.table}":`];
+                    if (m.missing.length) parts.push(`  missing: ${m.missing.join(', ')}`);
+                    if (m.extra.length) parts.push(`  extra: ${m.extra.join(', ')}`);
+                    return parts.join('\n');
+                })
+                .join('\n');
+            throw new Error(`Schema mismatch detected!\n${details}`);
+        }
+
+        expect(response.status()).toBe(200);
+        expect(body.status).toBe('ok');
+    });
 });
+

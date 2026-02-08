@@ -6,6 +6,7 @@ import { StarRating } from '@/components/StarRating';
 import { deleteAdoption, getAdoptionImages } from '@/app/actions';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getRecordTypeColors } from '@/lib/recordTypeColors';
+import { useShowToast } from '@/components/ui/Toast';
 
 import AdoptionForm from './AdoptionForm';
 
@@ -29,6 +30,7 @@ interface AdoptionImage {
 
 export default function AdoptionHistory({ adoptions: initialAdoptions, onEdit, adopterId, currentUser, isAdmin = false, adopterAddress = '' }: { adoptions: Adoption[], onEdit: (adoption: Adoption) => void, adopterId: string, currentUser: string, isAdmin?: boolean, adopterAddress?: string }) {
     const { t } = useLanguage();
+    const toast = useShowToast();
     const router = useRouter();
     const searchParams = useSearchParams();
     const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -87,7 +89,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, onEdit, a
             router.refresh();
         } catch (error) {
             console.error('Failed to delete adoption:', error);
-            alert('Failed to delete adoption.');
+            toast.error('Error', 'Failed to delete adoption record.');
         } finally {
             setDeletingId(null);
         }

@@ -9,6 +9,7 @@ import { useAuthContext } from '@/context/AuthContext';
 import { getRatingColors } from '@/lib/ratingColors';
 import { getRecordTypeColors } from '@/lib/recordTypeColors';
 import { StarRating } from '@/components/StarRating';
+import { useShowToast } from '@/components/ui/Toast';
 
 // Extract address-like lines from freeform contact text
 function extractAddressFromContact(contactText: string): string {
@@ -34,6 +35,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
     const { t } = useLanguage();
     const { data: session } = useSession();
     const { openLogin } = useAuthContext();
+    const toast = useShowToast();
 
     // Check if we should auto-open the form with prefilled animal data (from new adopter flow)
     const newAdoptionParam = searchParams.get('newAdoption');
@@ -179,7 +181,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
             setAdoptionImages(updatedImages);
         } catch (error) {
             console.error(error);
-            alert('Upload failed');
+            toast.error('Upload Failed', 'Could not upload the image. Please try again.');
         } finally {
             setUploading(false);
         }
@@ -216,7 +218,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
             }
         } catch (err) {
             console.error(err);
-            alert('Failed to save adoption');
+            toast.error('Error', 'Failed to save adoption record. Please try again.');
         } finally {
             setLoading(false);
         }
@@ -519,7 +521,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                                                     await deleteImage(img.id, adopterId);
                                                     setAdoptionImages(prev => prev.filter(i => i.id !== img.id));
                                                 } catch (e) {
-                                                    alert('Failed to delete image');
+                                                    toast.error('Error', 'Failed to delete image');
                                                 }
                                             }}
                                             className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"

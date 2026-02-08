@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useShowToast } from '@/components/ui/Toast';
 
 interface DeleteButtonProps {
     adopterId: string;
@@ -11,6 +12,7 @@ interface DeleteButtonProps {
 export default function DeleteAdopterButton({ adopterId, adopterName }: DeleteButtonProps) {
     const [loading, setLoading] = useState(false);
     const router = useRouter();
+    const toast = useShowToast();
 
     const handleDelete = async () => {
         if (!confirm(`Are you sure you want to permanently delete "${adopterName}" and all related data?`)) {
@@ -30,11 +32,11 @@ export default function DeleteAdopterButton({ adopterId, adopterName }: DeleteBu
             if (data.success) {
                 router.refresh();
             } else {
-                alert(`Delete failed: ${data.error || 'Unknown error'}`);
+                toast.error('Delete Failed', data.error || 'Unknown error');
             }
         } catch (error) {
             console.error('Delete error:', error);
-            alert('Delete failed - check console');
+            toast.error('Delete Failed', 'An unexpected error occurred. Check console for details.');
         } finally {
             setLoading(false);
         }

@@ -2,6 +2,7 @@
 export const runtime = 'edge';
 
 import { useState, useEffect } from 'react';
+import { useShowToast } from '@/components/ui/Toast';
 
 interface ConfigData {
     config?: {
@@ -28,6 +29,7 @@ const FEATURE_FLAGS = [
 ];
 
 export default function AdminConfigPage() {
+    const toast = useShowToast();
     const [config, setConfig] = useState({
         too_many_adoptions_threshold: '5',
         too_many_adoptions_period_days: '90',
@@ -85,13 +87,13 @@ export default function AdminConfigPage() {
                 body: JSON.stringify(config)
             });
             if (res.ok) {
-                alert('Configuration saved!');
+                toast.success('Saved', 'Configuration saved successfully.');
             } else {
-                alert('Failed to save configuration');
+                toast.error('Error', 'Failed to save configuration.');
             }
         } catch (e) {
             console.error(e);
-            alert('Error saving configuration');
+            toast.error('Error', 'Error saving configuration.');
         } finally {
             setSaving(false);
         }
@@ -108,11 +110,11 @@ export default function AdminConfigPage() {
             if (res.ok) {
                 setFeatureFlags(prev => ({ ...prev, [flagKey]: newValue }));
             } else {
-                alert('Failed to save feature flag');
+                toast.error('Error', 'Failed to save feature flag.');
             }
         } catch (e) {
             console.error(e);
-            alert('Error saving feature flag');
+            toast.error('Error', 'Error saving feature flag.');
         } finally {
             setSavingFlags(false);
         }
@@ -131,7 +133,7 @@ export default function AdminConfigPage() {
             });
             if (res.ok) {
                 const data: PurgeData = await res.json();
-                alert(`Purged ${data.deleted} stat events.`);
+                toast.success('Stats Purged', `Purged ${data.deleted} stat events.`);
                 setStatsCount(data.remaining);
                 // Refresh oldest stat
                 const configRes = await fetch('/api/admin/config');
@@ -140,11 +142,11 @@ export default function AdminConfigPage() {
                     setOldestStat(configData.oldestStat ?? null);
                 }
             } else {
-                alert('Failed to purge stats');
+                toast.error('Error', 'Failed to purge stats.');
             }
         } catch (e) {
             console.error(e);
-            alert('Error purging stats');
+            toast.error('Error', 'Error purging stats.');
         } finally {
             setPurging(false);
         }

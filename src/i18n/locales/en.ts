@@ -356,5 +356,19 @@ export const en = {
         progressLong: 'Taking longer than usual...',
         useBasicInstead: 'Use Basic Method',
         imagesToSave: 'Images to Save',
+        // Person match / merge flow
+        personMatchTitle: 'Person Match Found',
+        personMatchDesc: 'A profile with similar information already exists',
+        addToExisting: 'Add Record to This Profile',
+        createNewAnyway: 'Create New Profile Instead',
+        mergeSuccess: 'Record added to profile',
+        viewExistingProfile: 'View Full Profile',
+        matchConfidenceHigh: 'High Match',
+        matchConfidenceMedium: 'Possible Match',
+        matchConfidenceLow: 'Possible Match (Low)',
+        matchReasonName: 'name',
+        matchReasonPhone: 'phone',
+        matchReasonAddress: 'address',
+        mergingRecord: 'Adding record...',
     }
 };

@@ -59,6 +59,18 @@ export default function FacebookImportWizard({ onClose }: FacebookImportWizardPr
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [duplicateAdopter, setDuplicateAdopter] = useState<{ id: string; name: string } | null>(null);
 
+    // Person match state (different post, same person)
+    interface PersonMatch {
+        id: string;
+        name: string;
+        contactInfo?: string | null;
+        sourceUrl?: string | null;
+        thumbnail?: string | null;
+        confidence: 'high' | 'medium' | 'low';
+        matchReasons: string[];
+    }
+    const [personMatch, setPersonMatch] = useState<PersonMatch | null>(null);
+
     const resetWizardState = () => {
         // Clean up in-flight requests
         if (fetchAbortRef.current) { fetchAbortRef.current.abort(); fetchAbortRef.current = null; }
@@ -81,6 +93,7 @@ export default function FacebookImportWizard({ onClose }: FacebookImportWizardPr
         setIsSaving(false);
         setShowConfirmModal(false);
         setDuplicateAdopter(null);
+        setPersonMatch(null);
     };
 
     const handleOpen = () => {
@@ -308,20 +321,49 @@ export default function FacebookImportWizard({ onClose }: FacebookImportWizardPr
 
     const handlePreSave = async () => {
         setIsSaving(true);
-        // Check for duplicates by sourceUrl
+        setDuplicateAdopter(null);
+        setPersonMatch(null);
+
+        // Step 1: Check for exact URL duplicate
         if (postUrl) {
             try {
                 const res = await fetch(`/api/adopters?sourceUrl=${encodeURIComponent(postUrl)}`);
-                const data = await res.json() as { matches: any[] };
+                const data = await res.json() as { matches: any[]; matchType?: string };
                 if (data.matches && data.matches.length > 0) {
                     setDuplicateAdopter(data.matches[0]);
-                } else {
-                    setDuplicateAdopter(null);
+                    setIsSaving(false);
+                    setShowConfirmModal(true);
+                    return; // URL duplicate found, show warning and stop
                 }
             } catch (err) {
-                console.error('Duplicate check failed:', err);
+                console.error('URL duplicate check failed:', err);
             }
         }
+
+        // Step 2: Multi-field person matching (name, phone, address)
+        if (extractedData) {
+            try {
+                const params = new URLSearchParams();
+                if (extractedData.name) params.set('matchName', extractedData.name);
+                if (extractedData.phones?.length) params.set('matchPhones', extractedData.phones.join(','));
+                if (extractedData.addresses?.length) params.set('matchAddresses', extractedData.addresses.join(','));
+
+                if (params.toString()) {
+                    const res = await fetch(`/api/adopters?${params.toString()}`);
+                    const data = await res.json() as {
+                        matches: PersonMatch[];
+                        matchType?: string;
+                        confidence?: string;
+                    };
+                    if (data.matches && data.matches.length > 0 && data.matchType === 'person') {
+                        setPersonMatch(data.matches[0]);
+                    }
+                }
+            } catch (err) {
+                console.error('Person match check failed:', err);
+            }
+        }
+
         setIsSaving(false);
         setShowConfirmModal(true);
     };
@@ -395,6 +437,66 @@ export default function FacebookImportWizard({ onClose }: FacebookImportWizardPr
         }
     };
 
+    const handleMerge = async () => {
+        if (!extractedData || !personMatch) return;
+        setIsSaving(true);
+
+        try {
+            // Build contact info string
+            const contactParts: string[] = [];
+            if (extractedData.phones?.length) contactParts.push(`Phones: ${extractedData.phones.join(', ')}`);
+            if (extractedData.emails?.length) contactParts.push(`Emails: ${extractedData.emails.join(', ')}`);
+            if (extractedData.socialProfiles?.length) contactParts.push(`Socials: ${extractedData.socialProfiles.join(', ')}`);
+            if (extractedData.addresses?.length) contactParts.push(`Address: ${extractedData.addresses.join(', ')}`);
+
+            const payload = {
+                sourceUrl: postUrl,
+                notes: extractedData.notes,
+                contactInfo: contactParts.length > 0 ? contactParts.join('\n') : undefined,
+                adoption: {
+                    animalName: unknownAnimal ? '' : (extractedData.animalName || 'Unknown'),
+                    species: extractedData.animalSpecies,
+                    recordType: extractedData.recordType || 'observation',
+                    rating: extractedData.adoptionRating || 2,
+                    date: extractedData.adoptionDate || new Date().toISOString().split('T')[0]
+                },
+                images: processedImages.length > 0 ? processedImages : manualImages.map(img => ({ data: img.data, mimeType: img.mimeType }))
+            };
+
+            const response = await fetch(`/api/adopters/${personMatch.id}/add-record`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json() as { adoptionId?: string; adopterId?: string; adopterName?: string; error?: string };
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Failed to add record');
+            }
+
+            const adopterId = result.adopterId || personMatch.id;
+            const adopterName = result.adopterName || personMatch.name;
+
+            handleClose();
+
+            toast.success(
+                t('facebook.mergeSuccess') || 'Record added to profile',
+                adopterName,
+                {
+                    label: '→ ' + (t('facebook.viewProfile') || 'View Profile'),
+                    href: `/adopter/${adopterId}`
+                }
+            );
+
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to add record');
+            setShowConfirmModal(false);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     // Closed state - show button
     if (!isOpen) {
         return (
@@ -458,53 +560,156 @@ export default function FacebookImportWizard({ onClose }: FacebookImportWizardPr
                 {showConfirmModal ? (
                     <div className="p-6 space-y-6">
                         <div className="flex flex-col items-center text-center">
-                            <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4">
-                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                </svg>
+                            {/* Icon changes based on scenario */}
+                            <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${duplicateAdopter ? 'bg-yellow-100 text-yellow-600' :
+                                    personMatch ? 'bg-purple-100 text-purple-600' :
+                                        'bg-blue-100 text-blue-600'
+                                }`}>
+                                {personMatch && !duplicateAdopter ? (
+                                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    </svg>
+                                ) : (
+                                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                    </svg>
+                                )}
                             </div>
+
                             <h3 className="text-xl font-bold text-stone-900 mb-2">
-                                {t('facebook.confirmCreate') || 'Create New Profile?'}
+                                {duplicateAdopter
+                                    ? (t('facebook.duplicateWarning') || 'Duplicate Post Detected')
+                                    : personMatch
+                                        ? (t('facebook.personMatchTitle') || 'Person Match Found')
+                                        : (t('facebook.confirmCreate') || 'Create New Profile?')
+                                }
                             </h3>
-                            <p className="text-stone-600 mb-6">
-                                You are about to create a new profile for <strong className="text-stone-900">{extractedData?.name || 'Unknown'}</strong>.
+
+                            {/* Different subtitle per scenario */}
+                            <p className="text-stone-600 mb-4">
+                                {duplicateAdopter
+                                    ? <>This Facebook post was already imported. Existing Profile: <a href={`/adopter/${duplicateAdopter.id}`} target="_blank" className="underline font-medium text-blue-600 hover:text-blue-800">{duplicateAdopter.name}</a></>
+                                    : personMatch
+                                        ? (t('facebook.personMatchDesc') || 'A profile with similar information already exists')
+                                        : <>You are about to create a new profile for <strong className="text-stone-900">{extractedData?.name || 'Unknown'}</strong>.</>
+                                }
                             </p>
 
-                            {duplicateAdopter && (
-                                <div className="w-full bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 text-left">
+                            {/* Person Match: Profile Preview Card */}
+                            {personMatch && !duplicateAdopter && (
+                                <div className="w-full bg-stone-50 border border-stone-200 rounded-xl p-4 mb-4 text-left">
+                                    {/* Confidence badge */}
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${personMatch.confidence === 'high' ? 'bg-green-100 text-green-800' :
+                                                personMatch.confidence === 'medium' ? 'bg-amber-100 text-amber-800' :
+                                                    'bg-red-100 text-red-800'
+                                            }`}>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${personMatch.confidence === 'high' ? 'bg-green-500' :
+                                                    personMatch.confidence === 'medium' ? 'bg-amber-500' :
+                                                        'bg-red-500'
+                                                }`} />
+                                            {personMatch.confidence === 'high'
+                                                ? (t('facebook.matchConfidenceHigh') || 'High Match')
+                                                : personMatch.confidence === 'medium'
+                                                    ? (t('facebook.matchConfidenceMedium') || 'Possible Match')
+                                                    : (t('facebook.matchConfidenceLow') || 'Possible Match (Low)')
+                                            }
+                                        </span>
+                                        <span className="text-xs text-stone-500">
+                                            ({personMatch.matchReasons.map(r =>
+                                                t(`facebook.matchReason${r.charAt(0).toUpperCase() + r.slice(1)}` as any) || r
+                                            ).join(', ')})
+                                        </span>
+                                    </div>
+
+                                    {/* Profile card */}
                                     <div className="flex items-start gap-3">
-                                        <svg className="w-5 h-5 text-yellow-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                        </svg>
-                                        <div>
-                                            <p className="font-bold text-yellow-800 text-sm">
-                                                {t('facebook.duplicateWarning') || 'Duplicate Post Detected'}
-                                            </p>
-                                            <p className="text-sm text-yellow-700 mt-1">
-                                                This Facebook post was already imported on {duplicateAdopter.name ? '' : 'another profile'}.
-                                                <br />
-                                                Existing Profile: <a href={`/adopters/${duplicateAdopter.id}`} target="_blank" className="underline font-medium hover:text-yellow-900">{duplicateAdopter.name}</a>
-                                            </p>
+                                        {/* Thumbnail */}
+                                        <div className="w-14 h-14 rounded-lg bg-stone-200 flex-shrink-0 overflow-hidden">
+                                            {personMatch.thumbnail ? (
+                                                <img src={personMatch.thumbnail.startsWith('http')
+                                                    ? `/api/proxy-image?url=${encodeURIComponent(personMatch.thumbnail)}`
+                                                    : personMatch.thumbnail}
+                                                    alt="" className="w-full h-full object-cover"
+                                                />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center text-stone-400">
+                                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                    </svg>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-bold text-stone-900 text-base truncate">{personMatch.name}</p>
+                                            {personMatch.contactInfo && (
+                                                <p className="text-sm text-stone-500 mt-0.5 line-clamp-2">
+                                                    {personMatch.contactInfo.split('\n').slice(0, 2).join(' · ')}
+                                                </p>
+                                            )}
+                                            <a
+                                                href={`/adopter/${personMatch.id}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 mt-1.5 font-medium"
+                                            >
+                                                {t('facebook.viewExistingProfile') || 'View Full Profile'} →
+                                            </a>
                                         </div>
                                     </div>
                                 </div>
                             )}
 
-                            <div className="flex gap-3 w-full max-w-sm">
-                                <button
-                                    onClick={() => setShowConfirmModal(false)}
-                                    className="flex-1 px-4 py-2 border border-stone-200 rounded-lg hover:bg-stone-50 font-medium text-stone-600"
-                                >
-                                    Back
-                                </button>
-                                <button
-                                    onClick={handleConfirmSave}
-                                    disabled={isSaving}
-                                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold disabled:bg-stone-300"
-                                >
-                                    {isSaving ? 'Creating...' : 'Create Profile'}
-                                </button>
-                            </div>
+                            {/* Buttons */}
+                            {personMatch && !duplicateAdopter ? (
+                                /* Person match: two-button choice with confidence-based primary */
+                                <div className="flex flex-col gap-2 w-full max-w-sm">
+                                    <button
+                                        onClick={handleMerge}
+                                        disabled={isSaving}
+                                        className={`w-full px-4 py-2.5 rounded-lg font-bold transition-colors disabled:bg-stone-300 ${personMatch.confidence === 'high'
+                                                ? 'bg-purple-600 text-white hover:bg-purple-700'
+                                                : 'border border-purple-300 text-purple-700 hover:bg-purple-50'
+                                            }`}
+                                    >
+                                        {isSaving ? (t('facebook.mergingRecord') || 'Adding record...') : (t('facebook.addToExisting') || 'Add Record to This Profile')}
+                                    </button>
+                                    <button
+                                        onClick={handleConfirmSave}
+                                        disabled={isSaving}
+                                        className={`w-full px-4 py-2.5 rounded-lg font-bold transition-colors disabled:bg-stone-300 ${personMatch.confidence === 'high'
+                                                ? 'border border-stone-200 text-stone-600 hover:bg-stone-50'
+                                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                                            }`}
+                                    >
+                                        {isSaving ? 'Creating...' : (t('facebook.createNewAnyway') || 'Create New Profile Instead')}
+                                    </button>
+                                    <button
+                                        onClick={() => setShowConfirmModal(false)}
+                                        className="w-full px-4 py-2 text-stone-400 hover:text-stone-600 text-sm font-medium"
+                                    >
+                                        {t('common.back') || 'Back'}
+                                    </button>
+                                </div>
+                            ) : (
+                                /* URL duplicate or no match: existing two-button layout */
+                                <div className="flex gap-3 w-full max-w-sm">
+                                    <button
+                                        onClick={() => setShowConfirmModal(false)}
+                                        className="flex-1 px-4 py-2 border border-stone-200 rounded-lg hover:bg-stone-50 font-medium text-stone-600"
+                                    >
+                                        {t('common.back') || 'Back'}
+                                    </button>
+                                    <button
+                                        onClick={handleConfirmSave}
+                                        disabled={isSaving}
+                                        className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold disabled:bg-stone-300"
+                                    >
+                                        {isSaving ? 'Creating...' : 'Create Profile'}
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 ) : (

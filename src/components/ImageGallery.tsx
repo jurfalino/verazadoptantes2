@@ -5,6 +5,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { setProfilePicture } from '@/app/actions';
+import { useShowToast } from '@/components/ui/Toast';
 
 interface ImageItem {
     id?: string;
@@ -18,6 +19,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
     const { t } = useLanguage();
     const { data: session } = useSession();
     const { openLogin } = useAuthContext();
+    const toast = useShowToast();
     const [images, setImages] = useState<ImageItem[]>(initialImages);
     const [uploading, setUploading] = useState(false);
     const [settingProfile, setSettingProfile] = useState<string | null>(null);
@@ -78,7 +80,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
 
         // Check file type
         if (!file.type.startsWith('image/')) {
-            alert('Please select an image file.');
+            toast.warning('Invalid File', 'Please select an image file.');
             return;
         }
 
@@ -100,7 +102,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
             }, ...images]);
         } catch (error) {
             console.error('Image upload failed:', error);
-            alert('Failed to upload image. Please try again.');
+            toast.error('Upload Failed', 'Failed to upload image. Please try again.');
         } finally {
             setUploading(false);
         }
@@ -123,7 +125,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
             })));
         } catch (err) {
             console.error('Failed to set profile picture:', err);
-            alert('Failed to set profile picture');
+            toast.error('Error', 'Failed to set profile picture.');
         } finally {
             setSettingProfile(null);
         }
@@ -218,7 +220,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                                             }
                                         } catch (err) {
                                             console.error(err);
-                                            alert('Failed to delete');
+                                            toast.error('Error', 'Failed to delete image.');
                                         }
                                     }}
                                     className="absolute top-0 right-0 m-2 p-2 bg-white/90 hover:bg-white text-rose-600 rounded-xl shadow-md z-10 transition-all hover:scale-105 backdrop-blur-sm opacity-0 group-hover:opacity-100"

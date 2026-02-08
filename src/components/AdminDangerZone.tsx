@@ -2,10 +2,12 @@
 
 import { useState } from 'react';
 import { purgeAllData } from '@/app/actions';
+import { useShowToast } from '@/components/ui/Toast';
 import { useRouter } from 'next/navigation';
 
 export default function AdminDangerZone() {
     const router = useRouter();
+    const toast = useShowToast();
     const [showConfirm, setShowConfirm] = useState(false);
     const [step, setStep] = useState(1);
     const [confirmInput, setConfirmInput] = useState('');
@@ -28,7 +30,7 @@ export default function AdminDangerZone() {
         setError('');
         try {
             await purgeAllData(confirmInput);
-            alert('All data has been purged successfully.');
+            toast.success('Purge Complete', 'All data has been purged successfully.');
             setShowConfirm(false);
             setStep(1);
             setConfirmInput('');

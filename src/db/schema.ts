@@ -73,6 +73,7 @@ export const adoptions = sqliteTable("adoptions", {
     deliveredToHome: integer("delivered_to_home"), // 1 if pet was delivered to adopter's home
     verifiedAddress: text("verified_address"), // Snapshot of verified address at time of adoption
     identityVerified: integer("identity_verified"), // 1 if adopter identity was verified during this adoption
+    sourceUrl: text("source_url"), // Link to original post/source for this specific record
 });
 
 // Adopter Stats - Track profile events for analytics

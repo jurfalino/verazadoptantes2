@@ -445,6 +445,7 @@ export async function getAdopterStats(adopterId: string) {
         return stats;
     } catch (error) {
         console.error("Get adopter stats error:", error);
+        logger.error('Get adopter stats failed', error, { adopterId });
         return null;
     }
 }
@@ -463,6 +464,7 @@ export async function logProfileView(adopterId: string) {
         });
     } catch (error) {
         console.error("Log profile view error:", error);
+        logger.warn('Log profile view failed', { adopterId, error: error instanceof Error ? error.message : String(error) });
     }
 }
 
@@ -479,6 +481,7 @@ export async function getAverageRating(adopterId: string): Promise<number | null
         return result?.avgRating ?? null;
     } catch (error) {
         console.error("Get average rating error:", error);
+        logger.error('Get average rating failed', error, { adopterId });
         return null;
     }
 }
@@ -494,6 +497,7 @@ export async function getAdopter(id: string) {
         return await db.select().from(adopters).where(eq(adopters.id, id)).get();
     } catch (error) {
         console.error("Get adopter error:", error);
+        logger.error('Get adopter failed', error, { adopterId: id });
         return null;
     }
 }
@@ -566,7 +570,8 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
 
     } catch (error) {
         console.error("Save adopter error:", error);
-        throw new Error(`Failed to save adopter: ${error instanceof Error ? error.message : String(error)}`);
+        const errorId = logger.error('Save adopter failed', error, { adopterId: data.id });
+        throw new Error(`Failed to save adopter (Error ID: ${errorId})`);
     }
 }
 
@@ -590,7 +595,8 @@ export async function saveImage(adopterId: string, url: string, caption?: string
         return { success: true, id };
     } catch (error) {
         console.error("Save image error:", error);
-        throw new Error("Failed to save image");
+        const errorId = logger.error('Save image failed', error, { adopterId });
+        throw new Error(`Failed to save image (Error ID: ${errorId})`);
     }
 }
 
@@ -609,6 +615,7 @@ export async function getImages(adopterId: string) {
             .all();
     } catch (error) {
         console.error("Get images error:", error);
+        logger.error('Get images failed', error, { adopterId });
         return [];
     }
 }
@@ -635,7 +642,8 @@ export async function setProfilePicture(adopterId: string, imageId: string) {
         return { success: true };
     } catch (error) {
         console.error("Set profile picture error:", error);
-        throw new Error("Failed to set profile picture");
+        const errorId = logger.error('Set profile picture failed', error, { adopterId, imageId });
+        throw new Error(`Failed to set profile picture (Error ID: ${errorId})`);
     }
 }
 
@@ -649,6 +657,7 @@ export async function getAdoptionImages(adoptionId: string) {
             .all();
     } catch (error) {
         console.error("Get adoption images error:", error);
+        logger.error('Get adoption images failed', error, { adoptionId });
         return [];
     }
 }
@@ -664,6 +673,7 @@ export async function getHistory(adopterId: string) {
             .all();
     } catch (error) {
         console.error("Get history error:", error);
+        logger.error('Get history failed', error, { adopterId });
         return [];
     }
 }
@@ -678,6 +688,7 @@ export async function getAdoptions(adopterId: string) {
             .all();
     } catch (error) {
         console.error("Get adoptions error:", error);
+        logger.error('Get adoptions failed', error, { adopterId });
         return [];
     }
 }
@@ -804,7 +815,8 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
         }
     } catch (error) {
         console.error("Save adoption error:", error);
-        throw new Error("Failed to save adoption");
+        const errorId = logger.error('Save adoption failed', error, { adoptionId: data.id, adopterId: data.adopterId });
+        throw new Error(`Failed to save adoption (Error ID: ${errorId})`);
     }
 }
 
@@ -835,7 +847,8 @@ export async function deleteAdoption(adoptionId: string, adopterId: string) {
         return { success: true };
     } catch (error) {
         console.error("Delete adoption error:", error);
-        throw new Error("Failed to delete adoption");
+        const errorId = logger.error('Delete adoption failed', error, { adoptionId, adopterId });
+        throw new Error(`Failed to delete adoption (Error ID: ${errorId})`);
     }
 }
 
@@ -870,7 +883,8 @@ export async function deleteImage(imageId: string, adopterId: string) {
         return { success: true };
     } catch (error) {
         console.error("Delete image error:", error);
-        throw new Error("Failed to delete image");
+        const errorId = logger.error('Delete image failed', error, { imageId, adopterId });
+        throw new Error(`Failed to delete image (Error ID: ${errorId})`);
     }
 }
 
@@ -905,7 +919,8 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
         return { success: true, id };
     } catch (error) {
         console.error("Flag adopter error:", error);
-        throw new Error("Failed to flag adopter");
+        const errorId = logger.error('Flag adopter failed', error, { adopterId, reason });
+        throw new Error(`Failed to flag adopter (Error ID: ${errorId})`);
     }
 }
 
@@ -919,6 +934,7 @@ export async function getFlags(adopterId: string) {
             .all();
     } catch (error) {
         console.error("Get flags error:", error);
+        logger.error('Get flags failed', error, { adopterId });
         return [];
     }
 }
@@ -938,7 +954,8 @@ export async function dismissFlag(flagId: string) {
         return { success: true };
     } catch (error) {
         console.error("Dismiss flag error:", error);
-        throw new Error("Failed to dismiss flag");
+        const errorId = logger.error('Dismiss flag failed', error, { flagId });
+        throw new Error(`Failed to dismiss flag (Error ID: ${errorId})`);
     }
 }
 
@@ -983,7 +1000,8 @@ export async function removeVerification(adopterId: string, type: 'verified_iden
         return { success: true };
     } catch (error) {
         console.error("Remove verification error:", error);
-        throw new Error("Failed to remove verification");
+        const errorId = logger.error('Remove verification failed', error, { adopterId, type });
+        throw new Error(`Failed to remove verification (Error ID: ${errorId})`);
     }
 }
 
@@ -1151,6 +1169,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         return enrichedAdopters;
     } catch (error) {
         console.error("getMyAdopters error:", error);
+        logger.error('getMyAdopters failed', error);
         return [];
     }
 }
@@ -1210,6 +1229,7 @@ export async function getMyAdoptions(filter: 'all' | 'adoption' | 'adoption_requ
         return adoptionsWithDetails;
     } catch (error) {
         console.error("getMyAdoptions error:", error);
+        logger.error('getMyAdoptions failed', error);
         return [];
     }
 }
@@ -1227,6 +1247,7 @@ export async function getAvailableAnimals() {
 
     } catch (error) {
         console.error("getAvailableAnimals error:", error);
+        logger.error('getAvailableAnimals failed', error);
         return [];
     }
 }
@@ -1380,7 +1401,8 @@ export async function purgeAllData(confirmationCode: string) {
         return { success: true, message: "All data has been purged" };
     } catch (error) {
         console.error("Purge all data error:", error);
-        throw new Error("Failed to purge data: " + (error instanceof Error ? error.message : "Unknown error"));
+        const errorId = logger.error('Purge all data failed', error);
+        throw new Error(`Failed to purge data (Error ID: ${errorId})`);
     }
 }
 
@@ -1408,6 +1430,7 @@ export async function getAdoptionConfig() {
         };
     } catch (error) {
         console.error("Get adoption config error:", error);
+        logger.error('Get adoption config failed', error);
         return {
             threshold: 5,
             periodDays: 90,

@@ -8,6 +8,7 @@ import { CollapsibleSection } from '@/components/CollapsibleSection';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { StarRating } from '@/components/StarRating';
+import { useShowToast } from '@/components/ui/Toast';
 
 
 export function AdopterForm({ initialData, history = [], currentUser }: { initialData?: any, history?: any[], currentUser?: string }) {
@@ -17,6 +18,7 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
     const { t } = useLanguage();
     const { data: session } = useSession();
     const { openLogin } = useAuthContext();
+    const toast = useShowToast();
     const isNew = !initialData?.id;
 
     const [isEditing, setIsEditing] = useState(isNew);
@@ -118,11 +120,11 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                 }
             } else {
                 console.error("[ADOPTER FORM] Save failed - no success flag");
-                alert("Failed to save");
+                toast.error('Error', 'Failed to save adopter profile.');
             }
         } catch (err: any) {
             console.error("Save Error:", err);
-            alert(`An error occurred while saving: ${err?.message || JSON.stringify(err)}`);
+            toast.error('Save Error', err?.message || 'An unexpected error occurred while saving.');
         } finally {
             setLoading(false);
         }

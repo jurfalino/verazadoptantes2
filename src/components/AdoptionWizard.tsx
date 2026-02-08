@@ -6,12 +6,14 @@ import { useLanguage } from '@/context/LanguageContext';
 import { saveAdoption, searchAdopter, getAvailableAnimals } from '@/app/actions';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
+import { useShowToast } from '@/components/ui/Toast';
 
 export default function AdoptionWizard() {
     const { t } = useLanguage();
     const router = useRouter();
     const { data: session, status: sessionStatus } = useSession();
     const { openLogin } = useAuthContext();
+    const toast = useShowToast();
     const [isOpen, setIsOpen] = useState(false);
 
     // Data state
@@ -146,7 +148,7 @@ export default function AdoptionWizard() {
 
         } catch (e) {
             console.error(e);
-            alert('Error processing adoption');
+            toast.error('Error', 'Error processing adoption. Please try again.');
         } finally {
             setLoading(false);
         }

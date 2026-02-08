@@ -356,5 +356,19 @@ export const es = {
         progressLong: 'Tardando más de lo usual...',
         useBasicInstead: 'Usar Método Básico',
         imagesToSave: 'Imágenes a Guardar',
+        // Coincidencia de persona / flujo de fusión
+        personMatchTitle: 'Coincidencia Encontrada',
+        personMatchDesc: 'Ya existe un perfil con información similar',
+        addToExisting: 'Agregar Registro a Este Perfil',
+        createNewAnyway: 'Crear Perfil Nuevo',
+        mergeSuccess: 'Registro agregado al perfil',
+        viewExistingProfile: 'Ver Perfil Completo',
+        matchConfidenceHigh: 'Alta Coincidencia',
+        matchConfidenceMedium: 'Posible Coincidencia',
+        matchConfidenceLow: 'Posible Coincidencia (Baja)',
+        matchReasonName: 'nombre',
+        matchReasonPhone: 'teléfono',
+        matchReasonAddress: 'dirección',
+        mergingRecord: 'Agregando registro...',
     }
 };

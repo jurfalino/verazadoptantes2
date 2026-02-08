@@ -6,6 +6,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { saveAdoption, searchAdopter } from '@/app/actions';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
+import { useShowToast } from '@/components/ui/Toast';
 import { getRatingColors } from '@/lib/ratingColors';
 import { StarRating } from '@/components/StarRating';
 
@@ -14,6 +15,7 @@ export default function ReportWizard() {
     const router = useRouter();
     const { data: session, status: sessionStatus } = useSession();
     const { openLogin } = useAuthContext();
+    const toast = useShowToast();
     const [isOpen, setIsOpen] = useState(false);
 
     const [step, setStep] = useState(1);
@@ -89,7 +91,7 @@ export default function ReportWizard() {
 
         } catch (e) {
             console.error(e);
-            alert('Error');
+            toast.error('Error', 'Something went wrong. Please try again.');
         } finally {
             setLoading(false);
         }

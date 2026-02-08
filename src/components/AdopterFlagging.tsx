@@ -6,12 +6,14 @@ import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
+import { useShowToast } from '@/components/ui/Toast';
 
 export function AdopterFlagging({ adopterId, adopterName, existingFlags, hasVerifiedAdoption = false, hasVerifiedAddress = false, tooManyAdoptions, tooManyRequests }: { adopterId: string, adopterName: string, existingFlags: any[], hasVerifiedAdoption?: boolean, hasVerifiedAddress?: boolean, tooManyAdoptions?: { count: number; threshold: number; periodDays: number }, tooManyRequests?: { count: number; threshold: number; periodDays: number } }) {
     const router = useRouter();
     const { t } = useLanguage();
     const { data: session } = useSession();
     const { openLogin } = useAuthContext();
+    const toast = useShowToast();
     const [isOpen, setIsOpen] = useState(false);
     const [reason, setReason] = useState('duplicate');
     const [details, setDetails] = useState('');
@@ -85,7 +87,7 @@ export function AdopterFlagging({ adopterId, adopterName, existingFlags, hasVeri
             const res = await flagAdopter(adopterId, reason, details, targetId);
 
             if (res.success) {
-                alert(t('flagging.submit_success') || 'Report submitted successfully');
+                toast.success(t('flagging.submit_success') || 'Report submitted successfully');
                 setIsOpen(false);
                 setDetails('');
                 setReason('duplicate');
@@ -93,11 +95,11 @@ export function AdopterFlagging({ adopterId, adopterName, existingFlags, hasVeri
                 setSearchTerm('');
                 router.refresh();
             } else {
-                alert('Failed to submit report');
+                toast.error('Error', 'Failed to submit report.');
             }
         } catch (e) {
             console.error(e);
-            alert('Error submitting report');
+            toast.error('Error', 'Error submitting report.');
         } finally {
             setSubmitLoading(false);
         }
@@ -138,7 +140,7 @@ export function AdopterFlagging({ adopterId, adopterName, existingFlags, hasVeri
             }
         } catch (e) {
             console.error(e);
-            alert(t('flags.unverify_error') || 'Could not remove verification. You may only remove verifications you added.');
+            toast.error('Error', t('flags.unverify_error') || 'Could not remove verification. You may only remove verifications you added.');
         } finally {
             setIsUnverifying(false);
         }
