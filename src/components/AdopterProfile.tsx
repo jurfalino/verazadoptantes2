@@ -132,6 +132,7 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                         const colors = getRatingColors(avgRating);
                         return (
                             <div
+                                data-testid="rating-badge"
                                 onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
                                 className={`${colors.bg} border ${colors.border} rounded-xl px-4 py-2 text-center cursor-pointer hover:shadow-md transition-shadow`}
                             >
@@ -205,7 +206,7 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                             </CollapsibleSection>
 
                             {/* Adoptions - Collapsible */}
-                            <div id="adoptions-section">
+                            <div id="adoptions-section" data-testid="adoptions-list">
                                 <CollapsibleSection title={t('adoption.title')} count={adoptions.length} defaultOpen={true}>
                                     <AdoptionForm
                                         adopterId={id}

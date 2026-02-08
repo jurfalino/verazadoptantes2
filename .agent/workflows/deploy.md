@@ -51,7 +51,16 @@ Staging URL: https://staging.verazadoptantes2.pages.dev
 Wait for the Cloudflare build to complete (~2-3 min). CI checks (build, tsc, lint) must pass.
 Ask the user to verify the changes on the staging URL.
 
-7. **Only after user explicitly confirms staging is good**, push staging to master:
+7. **WAIT FOR EXPLICIT MASTER PUSH APPROVAL.**
+> ⚠️ The user MUST say one of these exact phrases before you push to master:
+> - "push to master"
+> - "merge to master"
+> - "deploy to production"
+> - "looks good, push it"
+>
+> Asking to "tag a version", "looks good on staging", or any other phrasing does NOT count as approval.
+> **NEVER infer push-to-master approval. When in doubt, ASK.**
+
 ```
 git push origin staging:master
 ```

@@ -399,6 +399,7 @@ export default function FacebookImportWizard({ onClose }: FacebookImportWizardPr
     if (!isOpen) {
         return (
             <button
+                data-testid="facebook-import-btn"
                 onClick={handleOpen}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
             >
@@ -575,6 +576,7 @@ export default function FacebookImportWizard({ onClose }: FacebookImportWizardPr
                                             value={postUrl}
                                             onChange={(e) => setPostUrl(e.target.value)}
                                             placeholder="https://www.facebook.com/groups/.../posts/..."
+                                            aria-label="Facebook post URL"
                                             className="w-full px-4 py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
                                         <p className="text-xs text-stone-400 mt-2">

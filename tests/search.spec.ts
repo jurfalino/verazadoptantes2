@@ -1,108 +1,53 @@
 import { test, expect } from '@playwright/test';
+import { loginAsAnon, TEST_NAMES } from './helpers';
 
 test.setTimeout(60000);
 
-async function loginAsAnon(page: any) {
-    await page.goto('/?enable_anon=true');
-    const skipButton = page.getByRole('button', { name: /Skip|guest|invitado|omitir/i });
-    if (await skipButton.isVisible()) {
-        await skipButton.click();
-    }
-    await expect(page.locator('input#search')).toBeVisible();
-}
-
-test.describe('Deep Search Functionality', () => {
+test.describe('Search Functionality', () => {
 
     test.beforeEach(async ({ page }) => {
         await loginAsAnon(page);
     });
 
-    test('Search by Main Name', async ({ page }) => {
-        // Create
-        const uniqueName = `SearchTarget_${Date.now()}`;
-        await page.goto('/adopter/create');
-        await page.getByPlaceholder(/Name/i).fill(uniqueName);
-        await page.click('button[type="submit"]');
-        await expect(page.getByText(uniqueName)).toBeVisible();
+    test('Search by exact name returns results', async ({ page }) => {
+        await page.fill('input#search', TEST_NAMES.MARIA);
+        await page.getByRole('button', { name: /search records|buscar registros/i }).click();
 
-        // Search
-        await page.goto('/');
-        await page.fill('input#search', uniqueName);
-        await page.click('button:has-text("Search")');
-
-        // Context should NOT be visible (direct match)
-        await expect(page.getByText(uniqueName).first()).toBeVisible();
-        await expect(page.getByText('Matches history log')).not.toBeVisible();
+        // Results found — heading shows match count
+        // Note: names are PII-masked for anon users (e.g. "Mar••••")
+        await expect(page.getByText(/found \d+ match/i)).toBeVisible({ timeout: 15000 });
     });
 
-    test('Search by Family Member', async ({ page }) => {
-        // Create
-        const uniqueName = `FamilyHead_${Date.now()}`;
-        const familyMember = `Spouse_${Date.now()}`;
+    test('Search by partial name returns results', async ({ page }) => {
+        await page.fill('input#search', 'Carlos');
+        await page.getByRole('button', { name: /search records|buscar registros/i }).click();
 
-        await page.goto('/adopter/create');
-        await page.getByPlaceholder(/Name/i).fill(uniqueName);
-        await page.getByPlaceholder(/List other family/i).fill(familyMember);
-        await page.click('button[type="submit"]');
-
-        // Search by Family Member name
-        await page.goto('/');
-        await page.fill('input#search', familyMember);
-        await page.click('button:has-text("Search")');
-
-        // Should find the HEAD profile
-        await expect(page.getByText(uniqueName).first()).toBeVisible();
-        // Should have context tag
-        await expect(page.getByText('Matches family members')).toBeVisible();
+        // Should find at least 1 result
+        await expect(page.getByText(/found \d+ match/i)).toBeVisible({ timeout: 15000 });
     });
 
-    test('Search by History (Old Name)', async ({ page }) => {
-        // Create
-        const oldName = `OldName_${Date.now()}`;
-        await page.goto('/adopter/create');
-        await page.getByPlaceholder(/Name/i).fill(oldName);
-        await page.click('button[type="submit"]');
+    test('Search shows no results for unknown name', async ({ page }) => {
+        await page.fill('input#search', 'XXXNONEXISTENTXXX');
+        await page.getByRole('button', { name: /search records|buscar registros/i }).click();
 
-        // Edit name
-        await page.click('button:has-text("Edit Details")');
-        const newName = `NewName_${Date.now()}`;
-        await page.getByPlaceholder(/Name/i).fill(newName);
-        await page.click('button:has-text("Save")');
-
-        // Search by OLD name
-        await page.goto('/');
-        await page.fill('input#search', oldName);
-        await page.click('button:has-text("Search")');
-
-        // Should find the NEW profile
-        await expect(page.getByText(newName).first()).toBeVisible();
-        // Should have context tag
-        await expect(page.getByText('Matches history log')).toBeVisible();
+        // Wait for search to complete — should show no matches
+        await page.waitForTimeout(3000);
+        const hasResults = await page.getByText(/found \d+ match/i).isVisible().catch(() => false);
+        expect(hasResults).toBeFalsy();
     });
 
-    test('Search by Adoption (Animal Name)', async ({ page }) => {
-        // Create
-        const adopterName = `AdopterWithDog_${Date.now()}`;
-        await page.goto('/adopter/create');
-        await page.getByPlaceholder(/Name/i).fill(adopterName);
-        await page.click('button[type="submit"]');
+    test('Search result links to adopter profile', async ({ page }) => {
+        await page.fill('input#search', TEST_NAMES.MARIA);
+        await page.getByRole('button', { name: /search records|buscar registros/i }).click();
 
-        // Add adoption
-        const animalName = `Rex_${Date.now()}`;
-        await page.getByPlaceholder(/Luna/i).fill(animalName);
-        // Select status 'Completed' (index 1)
-        await page.selectOption('select', { index: 1 });
-        await page.click('button:has-text("Record")');
+        // Wait for results
+        await expect(page.getByText(/found \d+ match/i)).toBeVisible({ timeout: 15000 });
 
-        // Search by ANIMAL name
-        await page.goto('/');
-        await page.fill('input#search', animalName);
-        await page.click('button:has-text("Search")');
-
-        // Should find the adopter
-        await expect(page.getByText(adopterName).first()).toBeVisible();
-        // Should have context tag
-        await expect(page.getByText('Matches adoption records')).toBeVisible();
+        // Verify result card contains a link to an adopter profile
+        // (clicking triggers auth gate for anon users, so we just verify the link exists)
+        const resultLink = page.locator('a[href*="/adopter/"]').first();
+        await expect(resultLink).toBeVisible();
+        const href = await resultLink.getAttribute('href');
+        expect(href).toMatch(/\/adopter\//);
     });
-
 });

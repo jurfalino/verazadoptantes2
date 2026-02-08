@@ -98,6 +98,7 @@ export default function ReportWizard() {
     if (!isOpen) {
         return (
             <div
+                data-testid="report-wizard-btn"
                 className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200 hover:shadow-md hover:border-rose-200 transition-all text-center group h-full flex flex-col items-center justify-center cursor-pointer"
                 onClick={handleStart}
             >
