@@ -71,7 +71,11 @@ git tag -a v<version> -m "<message>"
 git push origin v<version>
 ```
 
-9. Update version in package.json BEFORE committing (step 4):
+9. Update CHANGELOG.md with release notes BEFORE committing (step 4):
+   - Add a new `## [version] - YYYY-MM-DD` section at the top
+   - Group changes under `### Added`, `### Changed`, `### Fixed`, `### Removed` as appropriate
+
+10. Update version in package.json BEFORE committing (step 4):
 ```
 npm version <version> --no-git-tag-version
 ```
