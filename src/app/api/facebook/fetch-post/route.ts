@@ -2,6 +2,7 @@ export const runtime = 'edge';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { logger } from '@/lib/logger';
 
 interface FacebookPostData {
     text: string;
@@ -24,8 +25,8 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-        const body = await request.json() as { url?: string };
-        const { url } = body;
+        const body = await request.json() as { url?: string; useFallback?: boolean };
+        const { url, useFallback } = body;
 
         if (!url) {
             return NextResponse.json({ error: 'URL is required' }, { status: 400 });
@@ -40,13 +41,17 @@ export async function POST(request: NextRequest) {
         // Convert mobile URLs to desktop
         const desktopUrl = url.replace(/m\.facebook\.com/i, 'www.facebook.com');
 
-        console.log('[Facebook Fetch] Fetching URL:', desktopUrl);
+        const userId = session?.user?.email || (isAnon ? 'anon' : 'unknown');
 
-        // Try Playwright scraper service first (if configured)
+        // Try Playwright scraper service first (if configured and not explicitly using fallback)
         const scraperUrl = process.env.SCRAPER_URL;
-        if (scraperUrl) {
+        if (scraperUrl && !useFallback) {
             try {
-                console.log('[Facebook Fetch] Trying Playwright scraper service...');
+
+                // Use 120s timeout as safety net (user can bail earlier via progress UI)
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 120000);
+
                 const scraperResponse = await fetch(`${scraperUrl}/scrape`, {
                     method: 'POST',
                     headers: {
@@ -54,7 +59,10 @@ export async function POST(request: NextRequest) {
                         ...(process.env.SCRAPER_API_KEY && { 'X-API-Key': process.env.SCRAPER_API_KEY })
                     },
                     body: JSON.stringify({ url: desktopUrl }),
+                    signal: controller.signal,
                 });
+
+                clearTimeout(timeoutId);
 
                 if (scraperResponse.ok) {
                     const scraperData = await scraperResponse.json() as {
@@ -64,10 +72,6 @@ export async function POST(request: NextRequest) {
                     };
 
                     if (scraperData.success && scraperData.data) {
-                        console.log('[Facebook Fetch] Scraper success:', {
-                            textLength: scraperData.data.text?.length || 0,
-                            imagesCount: scraperData.data.images?.length || 0,
-                        });
 
                         // Return scraper results if we got meaningful content
                         if (scraperData.data.images.length > 0 || scraperData.data.text.length > 50) {
@@ -79,9 +83,38 @@ export async function POST(request: NextRequest) {
                         }
                     }
                 }
-                console.log('[Facebook Fetch] Scraper did not return useful data, falling back to static parsing');
-            } catch (scraperError) {
-                console.log('[Facebook Fetch] Scraper service error, falling back to static parsing:', scraperError);
+
+                // Scraper returned no useful data — inform the user
+                logger.warn('Facebook scraper returned no useful data', {
+                    userId,
+                    url: desktopUrl,
+                    scraperUrl,
+                    reason: 'no_data',
+                });
+                return NextResponse.json({
+                    success: false,
+                    scraperUnavailable: true,
+                    reason: 'no_data',
+                });
+            } catch (scraperError: unknown) {
+                const errorMessage = scraperError instanceof Error ? scraperError.message : String(scraperError);
+                const isTimeout = scraperError instanceof Error && scraperError.name === 'AbortError';
+                const reason = isTimeout ? 'timeout' : 'error';
+
+                logger.warn('Facebook scraper unavailable', {
+                    userId,
+                    url: desktopUrl,
+                    scraperUrl,
+                    reason,
+                    errorMessage,
+                    isTimeout,
+                });
+
+                return NextResponse.json({
+                    success: false,
+                    scraperUnavailable: true,
+                    reason,
+                });
             }
         }
 
@@ -95,28 +128,19 @@ export async function POST(request: NextRequest) {
             redirect: 'follow',
         });
 
-        console.log('[Facebook Fetch] Response status:', response.status);
 
         if (!response.ok) {
-            console.log('[Facebook Fetch] Failed with status:', response.status);
             return NextResponse.json({
                 error: `Failed to fetch post (status ${response.status})`
             }, { status: 400 });
         }
 
         const html = await response.text();
-        console.log('[Facebook Fetch] HTML length:', html.length);
 
         const postData = extractPostData(html);
-        console.log('[Facebook Fetch] Extracted data:', {
-            textLength: postData.text?.length || 0,
-            imagesCount: postData.images.length,
-            author: postData.author,
-        });
 
         // If extraction fails, still return success but allow manual input
         if (!postData.text && postData.images.length === 0) {
-            console.log('[Facebook Fetch] No content extracted, allowing manual input');
             return NextResponse.json({
                 success: true,
                 data: {

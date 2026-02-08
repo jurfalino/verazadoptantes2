@@ -34,10 +34,8 @@ export async function GET(request: Request) {
 
     // Now test searchAdopter
     try {
-        console.log("[debug-action] Calling searchAdopter with:", query);
         const response = await searchAdopter(query);
         const results = response.results;
-        console.log("[debug-action] Got results:", results?.length);
         debug.searchSuccess = true;
         debug.resultCount = results?.length ?? 0;
         debug.firstResult = results?.[0] ? {

@@ -8,6 +8,7 @@ export const adopters = sqliteTable("adopters", {
     contactInfo: text("contact_info"), // Stores phones, emails, socials, etc.
     addressInfo: text("address_info"), // Stores physical addresses
     familyMembers: text("family_members"), // Stores household members / aliases
+    notes: text("notes"), // Free-text observations, age, behavior, etc.
 
     // Metadata
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),

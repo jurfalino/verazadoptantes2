@@ -198,7 +198,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                             )}
 
                             {/* Delete Button - Top Right */}
-                            {(img.id && (isAdmin || img.addedBy === currentUser || ((!img.addedBy || img.addedBy === 'anonymous') && currentUser === 'Anon: Guest'))) && (
+                            {(img.id && (isAdmin || img.addedBy === currentUser)) && (
                                 <button
                                     onClick={async (e) => {
                                         e.preventDefault();
@@ -241,7 +241,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                                     {img.addedBy ? (
                                         <span className="flex items-center gap-1">
                                             <span className="opacity-75 font-normal">{t('common.added_by')}</span>
-                                            <span>{img.addedBy.replace('User: ', '')}</span>
+                                            <span>{img.addedBy}</span>
                                         </span>
                                     ) : img.caption}
                                 </p>

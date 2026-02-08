@@ -8,6 +8,25 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { getRatingColors } from '@/lib/ratingColors';
 import { getRecordTypeColors } from '@/lib/recordTypeColors';
+import { StarRating } from '@/components/StarRating';
+
+// Extract address-like lines from freeform contact text
+function extractAddressFromContact(contactText: string): string {
+    if (!contactText) return '';
+    const lines = contactText.split('\n');
+    const addressKeywords = /^(address|direcci[oó]n|domicilio|calle|av\.|avenida|blvd|colonia|c\.p\.|cp|barrio)\s*:?/i;
+    const addressPatterns = /\b(\d+\s+[A-Z][a-z].*(?:st|ave|blvd|dr|rd|ln|ct|way|street|avenue|drive|road))|(?:c\.p\.?|cp)\s*\d{4,5}/i;
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (addressKeywords.test(trimmed)) {
+            return trimmed.replace(/^(direcci[oó]n\s*\/\s*address|address|direcci[oó]n|domicilio)\s*:?\s*/i, '');
+        }
+        if (addressPatterns.test(trimmed) && !trimmed.match(/^(phones?|emails?|socials?)\s*:/i)) {
+            return trimmed;
+        }
+    }
+    return '';
+}
 
 export default function AdoptionForm({ adopterId, initialData, onCancel, onSuccess, onDelete, availableAnimals = [], currentUser, adopterAddress = '' }: { adopterId: string, initialData?: any, onCancel?: () => void, onSuccess?: () => void, onDelete?: () => void, availableAnimals?: any[], currentUser?: string, adopterAddress?: string }) {
     const router = useRouter();
@@ -168,7 +187,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const isAuthenticated = (currentUser && (currentUser.startsWith('User:') || currentUser.startsWith('Anon:'))) || session?.user || document.cookie.includes('anon_user=true');
+        const isAuthenticated = (currentUser && currentUser !== '') || session?.user || document.cookie.includes('anon_user=true');
         if (!isAuthenticated) { openLogin(); return; }
 
         setLoading(true);
@@ -211,7 +230,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
     if (!isOpen && !initialData) {
         return (
             <button onClick={() => {
-                const isAuthenticated = (currentUser && (currentUser.startsWith('User:') || currentUser.startsWith('Anon:'))) || session?.user || document.cookie.includes('anon_user=true');
+                const isAuthenticated = (currentUser && currentUser !== '') || session?.user || document.cookie.includes('anon_user=true');
                 if (!isAuthenticated) { openLogin(); return; }
                 setIsOpen(true);
             }} className="w-full py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 transition-all duration-300 transform active:scale-[0.99] mb-4">
@@ -400,7 +419,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                                     setFormData({
                                         ...formData,
                                         deliveredToHome: newDelivered,
-                                        verifiedAddress: newDelivered ? (formData.verifiedAddress || adopterAddress) : ''
+                                        verifiedAddress: newDelivered ? (formData.verifiedAddress || extractAddressFromContact(adopterAddress)) : ''
                                     });
                                 }}
                                 className={`relative w-12 h-6 rounded-full transition-colors ${formData.deliveredToHome ? 'bg-blue-500' : 'bg-stone-200'}`}
@@ -461,25 +480,11 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                 {/* Rating only (Status hidden/inferred) */}
                 <div>
                     <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">{t('adoption.rating')}</label>
-                    <div className="flex gap-2">
-                        {[5, 4, 3, 2, 1].map(r => {
-                            const colors = getRatingColors(r);
-                            const isSelected = formData.rating === r;
-                            return (
-                                <button
-                                    key={r}
-                                    type="button"
-                                    onClick={() => setFormData({ ...formData, rating: r })}
-                                    className={`flex-1 py-2 rounded-lg font-bold transition-all border-2 ${isSelected
-                                        ? `${colors.bg} ${colors.text} ${colors.border} shadow-sm`
-                                        : 'bg-white text-stone-400 border-stone-200 hover:border-stone-300'
-                                        }`}
-                                >
-                                    {'⭐'.repeat(r)}
-                                </button>
-                            );
-                        })}
-                    </div>
+                    <StarRating
+                        value={formData.rating}
+                        onChange={(r) => setFormData({ ...formData, rating: r })}
+                        size="lg"
+                    />
                     <p className="text-xs text-stone-400 mt-1">1 = {t('ratings.dangerous') || 'Dangerous'}, 5 = {t('ratings.excellent') || 'Excellent'}</p>
                 </div>
 

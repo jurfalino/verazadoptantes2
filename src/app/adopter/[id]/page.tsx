@@ -6,6 +6,10 @@ export default async function AdopterPage({ params }: { params: Promise<{ id: st
     const { id } = await params;
     const isNew = id === 'create';
 
+    // Batch 1: Auth + config (lightweight, no DB-heavy queries)
+    const [currentUser, isAdmin, adoptionConfig] = await Promise.all([getUser(), getIsAdmin(), getAdoptionConfig()]);
+
+    // Batch 2: All data queries in parallel (including availableAnimals to avoid a 3rd sequential await)
     let adopter = null;
     let history: any[] = [];
     let adoptions: any[] = [];
@@ -14,22 +18,21 @@ export default async function AdopterPage({ params }: { params: Promise<{ id: st
     let availableAnimals: any[] = [];
     let stats = null;
     let avgRating = null;
-    const [currentUser, isAdmin, adoptionConfig] = await Promise.all([getUser(), getIsAdmin(), getAdoptionConfig()]);
 
     if (!isNew) {
-        [adopter, history, adoptions, images, flags, stats, avgRating] = await Promise.all([
+        [adopter, history, adoptions, images, flags, stats, avgRating, availableAnimals] = await Promise.all([
             getAdopter(id),
             getHistory(id),
             getAdoptions(id),
             getImages(id),
             getFlags(id),
             getAdopterStats(id),
-            getAverageRating(id)
+            getAverageRating(id),
+            getAvailableAnimals()
         ]);
+    } else {
+        availableAnimals = await getAvailableAnimals();
     }
-
-    // Fetch available animals for authenticated users
-    availableAnimals = await getAvailableAnimals();
 
     return (
         <AdopterProfile

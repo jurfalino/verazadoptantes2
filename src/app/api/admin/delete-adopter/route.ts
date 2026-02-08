@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
         const body = await request.json() as { adopterId?: string };
         const adopterId = body.adopterId;
 
-        logger.info('Delete adopter API called', { adopterId });
+        logger.info('Delete adopter API called', { adopterId, user: 'pre-auth' });
 
         if (!adopterId) {
             return NextResponse.json({ error: 'Missing adopterId' }, { status: 400 });
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
 
         const db = await getDb();
         if (!db) {
-            logger.error('No database for delete', null, { adopterId });
+            logger.error('No database for delete', null, { adopterId, user: session.user.email });
             return NextResponse.json({ error: 'Database unavailable' }, { status: 500 });
         }
 
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true });
     } catch (error) {
         console.error("Delete adopter error:", error);
-        logger.error('Delete adopter failed', error, {});
+        logger.error('Delete adopter failed', error);
         return NextResponse.json({ error: 'Delete failed' }, { status: 500 });
     }
 }

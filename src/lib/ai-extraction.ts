@@ -53,11 +53,7 @@ If you cannot extract any relevant information, return:
 function getAI(): Ai | null {
     try {
         const { env } = getRequestContext();
-        console.log('[AI] Available env keys:', Object.keys(env || {}));
         const ai = (env as { AI?: Ai })?.AI;
-        if (!ai) {
-            console.log('[AI] AI binding not found in env. Available bindings:', JSON.stringify(Object.keys(env || {})));
-        }
         return ai || null;
     } catch (error) {
         console.error('[AI] Error accessing request context:', error);
@@ -141,7 +137,6 @@ export async function extractAdopterData(
 
     // Extract text from images using vision model
     if (images && images.length > 0) {
-        console.log('[AI] Processing', images.length, 'images with LLaVA');
 
         for (const img of images) {
             const imageText = await extractTextFromImage(ai, img.data, img.mimeType);
@@ -155,6 +150,5 @@ export async function extractAdopterData(
         return { confidence: 'low', notes: 'No content to extract from' };
     }
 
-    console.log('[AI] Extracting structured data from combined text');
     return extractStructuredData(ai, combinedText);
 }

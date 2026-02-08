@@ -2,11 +2,15 @@ import type { NextConfig } from "next";
 import path from "path";
 
 // Enable local Cloudflare D1 development
-// This must be called before the config is exported
+// Guard against repeated calls during HMR config re-evaluation
 if (process.env.NODE_ENV === 'development') {
-  import('@cloudflare/next-on-pages/next-dev').then(({ setupDevPlatform }) => {
-    setupDevPlatform();
-  });
+  const g = globalThis as any;
+  if (!g.__cfDevPlatformSetup) {
+    g.__cfDevPlatformSetup = true;
+    import('@cloudflare/next-on-pages/next-dev').then(({ setupDevPlatform }) => {
+      setupDevPlatform();
+    });
+  }
 }
 
 const nextConfig: NextConfig = {
@@ -14,7 +18,17 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
   serverExternalPackages: ["better-sqlite3"],
+  // Mitigate Next.js 15.1 dev server memory leak (known regression)
+  experimental: {
+    webpackMemoryOptimizations: true,
+  },
   webpack: (config, { nextRuntime }) => {
+    // Prevent HMR loop: D1 queries write to .wrangler/ SQLite files,
+    // which triggers webpack rebuild if not ignored
+    config.watchOptions = {
+      ...config.watchOptions,
+      ignored: ['**/.wrangler/**', '**/node_modules/**'],
+    };
     if (nextRuntime === 'edge') {
       config.resolve.alias = {
         ...config.resolve.alias,
@@ -37,3 +51,4 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+

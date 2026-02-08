@@ -7,9 +7,10 @@ import { getFeatureFlag } from '@/config/features';
 import { logger } from '@/lib/logger';
 
 export async function POST(request: NextRequest) {
+    let session: any = null;
     try {
         // Check auth (also allow anon users)
-        const session = await auth();
+        session = await auth();
         const isAnon = request.cookies.get('anon_user')?.value === 'true';
 
         if (!session?.user && !isAnon) {
@@ -27,6 +28,8 @@ export async function POST(request: NextRequest) {
             text?: string;
             images?: Array<{ data: string; mimeType: string }>;
             imageUrls?: string[];
+            model?: string;
+            language?: string;
         };
 
         const { text, images, imageUrls } = body;
@@ -46,7 +49,6 @@ export async function POST(request: NextRequest) {
 
         // Download and add URL images
         if (imageUrls && imageUrls.length > 0) {
-            console.log('[AI Extract] Downloading', imageUrls.length, 'image URLs');
             const remainingSlots = 5 - allImages.length;
             const urlsToFetch = imageUrls.slice(0, remainingSlots);
 
@@ -66,12 +68,10 @@ export async function POST(request: NextRequest) {
                         );
                         // Include original URL so it can be stored in DB instead of base64
                         allImages.push({ data: base64, mimeType: contentType, originalUrl: url });
-                        console.log('[AI Extract] Downloaded image:', url.substring(0, 50) + '...');
                     } else {
-                        console.log('[AI Extract] Failed to download image:', url.substring(0, 50), imgResponse.status);
                     }
                 } catch (err) {
-                    console.log('[AI Extract] Error downloading image:', err);
+                    // Skip failed image downloads silently
                 }
             }
         }
@@ -87,7 +87,8 @@ export async function POST(request: NextRequest) {
         const extracted = await extractAdopterData(
             text,
             allImages.length > 0 ? allImages : undefined,
-            (body as any).model
+            body.model || undefined,
+            body.language || 'es'
         );
 
         logger.info('AI extraction completed', {
@@ -107,7 +108,7 @@ export async function POST(request: NextRequest) {
     } catch (error) {
         console.error('AI extraction error:', error);
 
-        logger.error('AI extraction failed', error);
+        logger.error('AI extraction failed', error, { userEmail: session?.user?.email || 'anonymous' });
 
         return NextResponse.json({
             error: error instanceof Error ? error.message : 'Extraction failed'

@@ -4,10 +4,10 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { saveAdopter } from "@/app/actions";
 import { useLanguage } from "@/context/LanguageContext";
-import { ContactPills } from '@/components/ContactPills';
 import { CollapsibleSection } from '@/components/CollapsibleSection';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
+import { StarRating } from '@/components/StarRating';
 
 
 export function AdopterForm({ initialData, history = [], currentUser }: { initialData?: any, history?: any[], currentUser?: string }) {
@@ -22,6 +22,20 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
     const [isEditing, setIsEditing] = useState(isNew);
     const [loading, setLoading] = useState(false);
 
+    // Auth-gated click-to-edit: clicking any view field enables editing
+    const handleClickToEdit = () => {
+        if (isEditing) return;
+        const isAuthenticated =
+            (currentUser && currentUser !== '') ||
+            session?.user ||
+            document.cookie.includes('anon_user=true');
+        if (!isAuthenticated) {
+            openLogin();
+            return;
+        }
+        setIsEditing(true);
+    };
+
     // Status uses numeric values 1-5 only
     const defaultStatus = intent === 'report' ? '1' : '5';
 
@@ -30,42 +44,34 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
         name: initialData?.name || '',
         status: initialData?.status || defaultStatus,
         contactInfo: initialData?.contactInfo || '',
-        addressInfo: initialData?.addressInfo || '',
+
         familyMembers: initialData?.familyMembers || '',
+        notes: initialData?.notes || '',
     });
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
-        console.log("[ADOPTER FORM] handleSave triggered");
 
         // Trust server-side auth (currentUser prop) as primary source of truth
         // Fall back to client-side checks only if server didn't provide user info
         const isAuthenticated =
-            (currentUser && (currentUser.startsWith('User:') || currentUser.startsWith('Anon:'))) ||
+            (currentUser && currentUser !== '') ||
             session?.user ||
             document.cookie.includes('anon_user=true');
 
-        console.log("[ADOPTER FORM] Auth check:", {
-            currentUser,
-            sessionUser: session?.user?.email,
-            hasCookie: document.cookie.includes('anon_user=true'),
-            isAuthenticated
-        });
+
 
         if (!isAuthenticated) {
-            console.log("[ADOPTER FORM] Auth FAILED - calling openLogin()");
+
             openLogin();
             return;
         }
 
-        console.log("[ADOPTER FORM] Auth PASSED - proceeding with save", data);
+
         setLoading(true);
         try {
-            console.log("[ADOPTER FORM] Calling saveAdopter...");
             const res = await saveAdopter(data);
-            console.log("[ADOPTER FORM] saveAdopter response:", res);
             if (res.success) {
-                console.log("[ADOPTER FORM] Save success! isNew:", isNew, "res.id:", res.id);
                 if (isNew) {
                     // Check if we should continue to adoption form
                     const continueToAdoption = searchParams.get('continueToAdoption');
@@ -75,16 +81,24 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
 
                     let redirectUrl = `/adopter/${res.id}`;
                     if (continueToAdoption === 'true') {
-                        // Redirect to profile with newAdoption flag and animal data
+                        // Redirect to profile with all wizard params (adoption or observation)
                         const params = new URLSearchParams();
-                        params.set('newAdoption', 'true');
+                        // Forward animal-related params (AdoptionWizard)
                         if (linkAnimalId) params.set('linkAnimalId', linkAnimalId);
                         if (animalName) params.set('animalName', animalName);
                         if (species) params.set('species', species);
+                        // Forward observation params (ReportWizard)
+                        const newAdoption = searchParams.get('newAdoption');
+                        const rating = searchParams.get('rating');
+                        const details = searchParams.get('details');
+                        if (newAdoption) params.set('newAdoption', newAdoption);
+                        else params.set('newAdoption', 'true');
+                        if (rating) params.set('rating', rating);
+                        if (details) params.set('details', details);
                         redirectUrl = `/adopter/${res.id}?${params.toString()}`;
                     }
 
-                    console.log("[ADOPTER FORM] Navigating to", redirectUrl);
+
                     try {
                         router.push(redirectUrl);
                         // Fallback: Force navigation if router.push doesn't work
@@ -124,8 +138,9 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                 name: initialData?.name || '',
                 status: initialData?.status || '5',
                 contactInfo: initialData?.contactInfo || '',
-                addressInfo: initialData?.addressInfo || '',
+
                 familyMembers: initialData?.familyMembers || '',
+                notes: initialData?.notes || '',
             });
             setIsEditing(false);
         }
@@ -187,7 +202,11 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                                 autoFocus
                             />
                         ) : (
-                            <h2 className="text-3xl font-bold text-emerald-900 tracking-tight px-1 py-1 border-b-2 border-transparent">
+                            <h2
+                                className="text-3xl font-bold text-emerald-900 tracking-tight px-1 py-1 border-b-2 border-transparent cursor-pointer hover:border-emerald-300 transition-colors"
+                                onClick={handleClickToEdit}
+                                title={t('common.edit') || 'Click to edit'}
+                            >
                                 {data.name}
                             </h2>
                         )}
@@ -217,19 +236,7 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                         ) : (
                             <button
                                 type="button"
-                                onClick={() => {
-                                    // Use same auth check as handleSave
-                                    const isAuthenticated =
-                                        (currentUser && (currentUser.startsWith('User:') || currentUser.startsWith('Anon:'))) ||
-                                        session?.user ||
-                                        document.cookie.includes('anon_user=true');
-
-                                    if (!isAuthenticated) {
-                                        openLogin();
-                                        return;
-                                    }
-                                    setIsEditing(true);
-                                }}
+                                onClick={handleClickToEdit}
                                 className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
@@ -242,7 +249,7 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                 {/* SHARED CONTENT GRID */}
                 <div className={`grid md:grid-cols-2 gap-6 ${isEditing ? 'opacity-100' : 'opacity-90'}`}>
                     {/* Contact Info */}
-                    <div>
+                    <div className="md:col-span-2">
                         <h3 className="text-sm font-bold text-emerald-800 mb-3 uppercase tracking-wider">{t('adopter.contact')}</h3>
                         {isEditing ? (
                             <textarea
@@ -253,29 +260,18 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                                 placeholder={t('adopter.placeholder_contact')}
                             />
                         ) : (
-                            <div className="bg-emerald-50/30 p-4 rounded-xl border border-emerald-100/50 min-h-[80px]">
-                                <ContactPills text={data.contactInfo} />
+                            <div
+                                className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 font-medium leading-relaxed min-h-[60px] cursor-pointer hover:border-emerald-400 transition-colors"
+                                style={{ overflowWrap: 'anywhere' }}
+                                onClick={handleClickToEdit}
+                                title={t('common.edit') || 'Click to edit'}
+                            >
+                                {renderTextWithLinks(data.contactInfo, 'text')}
                             </div>
                         )}
                     </div>
 
-                    {/* Address Info */}
-                    <div>
-                        <h3 className="text-sm font-bold text-emerald-800 mb-3 uppercase tracking-wider">{t('adopter.address')}</h3>
-                        {isEditing ? (
-                            <textarea
-                                rows={3}
-                                className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none resize-y min-h-[80px]"
-                                value={data.addressInfo}
-                                onChange={e => setData({ ...data, addressInfo: e.target.value })}
-                                placeholder={t('adopter.placeholder_address')}
-                            />
-                        ) : (
-                            <div className="text-emerald-900/80 leading-relaxed font-medium bg-emerald-50/30 p-4 rounded-xl border border-emerald-100/50 min-h-[80px]">
-                                {renderTextWithLinks(data.addressInfo, 'address')}
-                            </div>
-                        )}
-                    </div>
+
 
                     {/* Family Members (Full Width) */}
                     <div className="md:col-span-2">
@@ -290,12 +286,54 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                             />
                         ) : (
                             data.familyMembers ? (
-                                <div className="text-emerald-900/80 leading-relaxed font-medium bg-emerald-50/30 p-4 rounded-xl border border-emerald-100/50 min-h-[60px]">
+                                <div
+                                    className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 font-medium leading-relaxed min-h-[60px] cursor-pointer hover:border-emerald-400 transition-colors"
+                                    style={{ overflowWrap: 'anywhere' }}
+                                    onClick={handleClickToEdit}
+                                    title={t('common.edit') || 'Click to edit'}
+                                >
                                     {renderTextWithLinks(data.familyMembers, 'text')}
                                 </div>
                             ) : (
-                                <div className="text-emerald-900/30 italic p-4 rounded-xl border border-dashed border-emerald-100/50">
+                                <div
+                                    className="text-stone-400 italic p-4 rounded-xl border border-dashed border-emerald-200 bg-white cursor-pointer hover:border-emerald-400 transition-colors"
+                                    onClick={handleClickToEdit}
+                                    title={t('common.edit') || 'Click to edit'}
+                                >
                                     {t('adopter.no_family')}
+                                </div>
+                            )
+                        )}
+                    </div>
+
+                    {/* Notes (Full Width) */}
+                    <div className="md:col-span-2">
+                        <h3 className="text-sm font-bold text-emerald-800 mb-3 uppercase tracking-wider">{t('adopter.notes') || 'Notes'}</h3>
+                        {isEditing ? (
+                            <textarea
+                                rows={3}
+                                className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none resize-y min-h-[80px]"
+                                value={data.notes}
+                                onChange={e => setData({ ...data, notes: e.target.value })}
+                                placeholder={t('adopter.placeholder_notes') || 'Additional observations, age, behavior, etc.'}
+                            />
+                        ) : (
+                            data.notes ? (
+                                <div
+                                    className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 font-medium leading-relaxed min-h-[60px] cursor-pointer hover:border-emerald-400 transition-colors"
+                                    style={{ overflowWrap: 'anywhere' }}
+                                    onClick={handleClickToEdit}
+                                    title={t('common.edit') || 'Click to edit'}
+                                >
+                                    {renderTextWithLinks(data.notes, 'text')}
+                                </div>
+                            ) : (
+                                <div
+                                    className="text-stone-400 italic p-4 rounded-xl border border-dashed border-emerald-200 bg-white cursor-pointer hover:border-emerald-400 transition-colors"
+                                    onClick={handleClickToEdit}
+                                    title={t('common.edit') || 'Click to edit'}
+                                >
+                                    {t('adopter.no_notes') || 'No notes.'}
                                 </div>
                             )
                         )}
@@ -384,7 +422,7 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                                                     <div className="space-y-1 text-emerald-800/80">
                                                         <div><span className="font-bold">{t('adoption.animal_name')}:</span> {changes.animalName} ({changes.species})</div>
                                                         <div><span className="font-bold">{t('adoption.status')}:</span> {changes.status}</div>
-                                                        <div><span className="font-bold">{t('adoption.rating')}:</span> {changes.rating}/5</div>
+                                                        <div className="flex items-center gap-1"><span className="font-bold">{t('adoption.rating')}:</span> <StarRating value={changes.rating} size="sm" showLabel /></div>
                                                         {changes.details && <div className="text-xs italic mt-1">"{changes.details}"</div>}
                                                     </div>
                                                 )}

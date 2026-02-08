@@ -25,11 +25,8 @@ export default function Home() {
     fetch('/api/admin/config')
       .then(res => res.json())
       .then((data) => {
-        console.log('[Homepage] Fetched config:', data);
         const cfg = data as { config?: Record<string, string> };
-        console.log('[Homepage] ENABLE_FACEBOOK_IMPORT value:', cfg.config?.ENABLE_FACEBOOK_IMPORT);
         if (cfg.config?.ENABLE_FACEBOOK_IMPORT === 'true') {
-          console.log('[Homepage] Enabling Facebook Import');
           setFacebookImportEnabled(true);
         }
       })

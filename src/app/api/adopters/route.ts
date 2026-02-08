@@ -3,7 +3,7 @@ export const runtime = 'edge';
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { createDb } from '@/db';
-import { adopters, adopterFlags, adopterImages } from '@/db/schema';
+import { adopters, adopterFlags, adopterImages, adoptions } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
@@ -49,12 +49,18 @@ export async function POST(request: Request) {
 
     let body: {
         name: string;
-        contactInfo?: { phones?: string[]; emails?: string[]; socialProfiles?: string[] };
-        addressInfo?: { addresses?: string[] };
+        contactInfo?: { phones?: string[]; emails?: string[]; socialProfiles?: string[]; addresses?: string[] };
         notes?: string;
         sourceUrl?: string;
         flags?: string[];
         images?: Array<{ data: string; mimeType: string; originalUrl?: string }>;
+        adoption?: {
+            animalName?: string;
+            species?: string;
+            recordType?: 'adoption' | 'returned_pet' | 'follow_up' | 'observation';
+            rating?: number;
+            date?: string; // YYYY-MM-DD format
+        };
     };
 
     try {
@@ -67,7 +73,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Invalid JSON body', errorId }, { status: 400 });
     }
 
-    const { name, contactInfo, addressInfo, notes, sourceUrl, flags, images } = body;
+    const { name, contactInfo, notes, sourceUrl, flags, images, adoption } = body;
 
     // Log the incoming request (without image data for size)
     logger.info('Adopter create: start', {
@@ -75,7 +81,6 @@ export async function POST(request: Request) {
         name,
         sourceUrl,
         hasContactInfo: !!contactInfo,
-        hasAddressInfo: !!addressInfo,
         flagCount: flags?.length || 0,
         imageCount: images?.length || 0,
         user: session.user.email
@@ -84,7 +89,7 @@ export async function POST(request: Request) {
     try {
         const { env } = getRequestContext();
         if (!env?.DB) {
-            logger.error('Adopter create: DB binding not found', undefined, { errorId });
+            logger.error('Adopter create: DB binding not found', undefined, { errorId, user: session.user.email });
             throw new Error('Database binding not found');
         }
         const db = await createDb(env.DB);
@@ -96,19 +101,11 @@ export async function POST(request: Request) {
             if (contactInfo.phones?.length) parts.push(`Phones: ${contactInfo.phones.join(', ')}`);
             if (contactInfo.emails?.length) parts.push(`Emails: ${contactInfo.emails.join(', ')}`);
             if (contactInfo.socialProfiles?.length) parts.push(`Socials: ${contactInfo.socialProfiles.join(', ')}`);
+            if (contactInfo.addresses?.length) parts.push(`Dirección / Address: ${contactInfo.addresses.join(', ')}`);
             contactInfoStr = parts.join('\n');
         }
 
-        // Append notes to contact info if present
-        if (notes) {
-            contactInfoStr = contactInfoStr ? `${contactInfoStr}\n\nNotes:\n${notes}` : `Notes:\n${notes}`;
-        }
 
-        // Format address info
-        let addressInfoStr = '';
-        if (addressInfo && addressInfo.addresses?.length) {
-            addressInfoStr = addressInfo.addresses.join('\n');
-        }
 
         const newId = crypto.randomUUID();
 
@@ -117,7 +114,7 @@ export async function POST(request: Request) {
             id: newId,
             name,
             contactInfo: contactInfoStr || null,
-            addressInfo: addressInfoStr || null,
+            notes: notes || null,
             familyMembers: null,
             status: '5', // Default neutral/good
             addedBy: session.user.email || 'anonymous',
@@ -151,7 +148,8 @@ export async function POST(request: Request) {
                     logger.warn('Adopter create: skipping oversized image', {
                         errorId,
                         index: i,
-                        size: imageUrl.length
+                        size: imageUrl.length,
+                        user: session.user.email
                     });
                     continue;
                 }
@@ -169,11 +167,32 @@ export async function POST(request: Request) {
             }
         }
 
+        // Create adoption record if adoption data provided
+        if (adoption && (adoption.animalName || adoption.species)) {
+            await db.insert(adoptions).values({
+                id: crypto.randomUUID(),
+                adopterId: newId,
+                animalName: adoption.animalName || 'Unknown',
+                species: adoption.species || 'other',
+                status: 'completed',
+                rating: adoption.rating || 2,
+                addedBy: session.user.email || 'anonymous',
+                recordType: adoption.recordType || 'adoption',
+                date: adoption.date ? new Date(adoption.date) : new Date()
+            });
+            logger.info('Adopter create: adoption record created', {
+                errorId,
+                adopterId: newId,
+                user: session.user.email
+            });
+        }
+
         logger.info('Adopter create: complete', {
             errorId,
             adopterId: newId,
             flagCount: flags?.length || 0,
             imageCount: savedImageCount,
+            hasAdoption: !!adoption,
             user: session.user.email
         });
 

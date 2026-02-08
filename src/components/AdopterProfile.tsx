@@ -12,6 +12,7 @@ import { AdopterFlagging } from '@/components/AdopterFlagging';
 import { useLanguage } from '@/context/LanguageContext';
 import { saveImage } from '@/app/actions';
 import { getRatingColors } from '@/lib/ratingColors';
+import { StarRating } from '@/components/StarRating';
 
 interface AdopterStats {
     searchHits: { '90d': number; '1y': number; 'all': number };
@@ -130,9 +131,12 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                     {avgRating !== null && avgRating !== undefined && (() => {
                         const colors = getRatingColors(avgRating);
                         return (
-                            <div className={`${colors.bg} border ${colors.border} rounded-xl px-4 py-2 text-center`}>
-                                <div className="text-2xl">{'⭐'.repeat(Math.round(avgRating))}</div>
-                                <div className={`${colors.text} font-bold text-lg`}>{avgRating.toFixed(1)}</div>
+                            <div
+                                onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
+                                className={`${colors.bg} border ${colors.border} rounded-xl px-4 py-2 text-center cursor-pointer hover:shadow-md transition-shadow`}
+                            >
+                                <StarRating value={Math.round(avgRating)} size="md" />
+                                <div className={`${colors.text} font-bold text-lg mt-1`}>{avgRating.toFixed(1)}</div>
                                 <div className={`${colors.text} opacity-70 text-xs`}>{t('stats.avg_rating') || 'Avg Rating'}</div>
                             </div>
                         );
@@ -201,22 +205,24 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                             </CollapsibleSection>
 
                             {/* Adoptions - Collapsible */}
-                            <CollapsibleSection title={t('adoption.title')} count={adoptions.length} defaultOpen={true}>
-                                <AdoptionForm
-                                    adopterId={id}
-                                    availableAnimals={availableAnimals}
-                                    currentUser={currentUser}
-                                    adopterAddress={adopter?.addressInfo || ''}
-                                />
-                                <AdoptionHistory
-                                    adoptions={adoptions}
-                                    onEdit={() => { }}
-                                    adopterId={id}
-                                    currentUser={currentUser}
-                                    isAdmin={isAdmin}
-                                    adopterAddress={adopter?.addressInfo || ''}
-                                />
-                            </CollapsibleSection>
+                            <div id="adoptions-section">
+                                <CollapsibleSection title={t('adoption.title')} count={adoptions.length} defaultOpen={true}>
+                                    <AdoptionForm
+                                        adopterId={id}
+                                        availableAnimals={availableAnimals}
+                                        currentUser={currentUser}
+                                        adopterAddress={adopter?.contactInfo || ''}
+                                    />
+                                    <AdoptionHistory
+                                        adoptions={adoptions}
+                                        onEdit={() => { }}
+                                        adopterId={id}
+                                        currentUser={currentUser}
+                                        isAdmin={isAdmin}
+                                        adopterAddress={adopter?.contactInfo || ''}
+                                    />
+                                </CollapsibleSection>
+                            </div>
                         </>
                     )
                 }

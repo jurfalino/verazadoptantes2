@@ -175,6 +175,7 @@ export default function MyAdoptersPage() {
                                     <Link
                                         key={adopter.id}
                                         href={`/adopter/${adopter.id}?ref=my-adopters`}
+                                        prefetch={false}
                                         className="grid grid-cols-12 gap-2 px-4 py-3 hover:bg-stone-50 transition-colors group items-center"
                                     >
                                         {/* Name + Thumbnail */}
@@ -238,6 +239,7 @@ export default function MyAdoptersPage() {
                                 <Link
                                     key={adopter.id}
                                     href={`/adopter/${adopter.id}?ref=my-adopters`}
+                                    prefetch={false}
                                     className="block bg-white rounded-xl p-4 shadow-sm border border-stone-200 hover:border-teal-300 hover:shadow-md transition-all"
                                 >
                                     {/* Top Row: Avatar + Name + Rating */}

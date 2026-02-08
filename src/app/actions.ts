@@ -6,7 +6,6 @@ import { revalidatePath } from 'next/cache';
 import { adopters, searches, adopterHistory, adoptions, adopterImages, adopterFlags, adopterStats, adoptionImages, appConfig } from '@/db/schema';
 import { or, like, eq, sql, and, gte, isNull, inArray } from 'drizzle-orm';
 import { auth } from '@/auth';
-import { cookies } from 'next/headers';
 import { logger, withTrace } from '@/lib/logger';
 
 export interface AdopterFlags {
@@ -57,56 +56,37 @@ function countDigits(query: string): number {
 }
 
 export async function getDb() {
-    console.log("[getDb] Starting database connection...");
     try {
         const { env } = getRequestContext();
-        console.log("[getDb] Got request context, env:", env ? "exists" : "null");
-        console.log("[getDb] env.DB:", env?.DB ? "exists" : "null");
         if (env && env.DB) {
-            console.log("[getDb] Using D1 database");
-            const db = await createDb(env.DB);
-            console.log("[getDb] D1 database created successfully");
-            return db;
-        } else {
-            console.log("[getDb] D1 not available, env.DB is null");
+            return await createDb(env.DB);
         }
     } catch (e) {
-        console.log("[getDb] getRequestContext failed:", e instanceof Error ? e.message : String(e));
-        // Ignore error - we are likely local
+        // Ignore - not in Cloudflare context
     }
 
     // Fallback for local development
-    console.log("[getDb] Checking local fallback...");
     if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'production') {
-        console.log("[getDb] Attempting local DB...");
         try {
             const { createLocalDb } = await import('@/db/local');
             return await createLocalDb('local.db');
         } catch (e) {
             console.error("[getDb] Local DB Init Error:", e);
         }
-    } else {
-        console.log("[getDb] Skipping local DB - in production without D1");
     }
-    console.log("[getDb] Returning undefined - no database available");
     return undefined;
 }
 
 export async function getUser() {
     try {
         const session = await auth();
-        console.log("getUser Session:", session?.user?.email);
-        if (session?.user?.email) return `User: ${session.user.email}`;
+        if (session?.user?.email) return session.user.email;
     } catch (e) {
         console.error("getUser Auth Error:", e);
         // Auth failed
     }
 
-    const cookieStore = await cookies();
-    const isAnon = cookieStore.get("anon_user");
-    if (isAnon) return 'Anon: Guest';
-
-    return 'Unknown';
+    return 'anonymous';
 }
 
 import { isAdmin as checkIsAdmin } from '@/config/admins';
@@ -155,8 +135,10 @@ async function searchAdoptionsIds(db: any, query: string): Promise<string[]> {
 }
 
 export async function searchAdopter(query: string): Promise<SearchResponse> {
+    let user = 'unknown';
     try {
         const db = await getDb();
+        user = await getUser();
         if (!db) return { results: [] };
 
         // Normalize query
@@ -192,7 +174,6 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
             or(
                 like(adopters.name, `%${normalizedQuery}%`),
                 like(adopters.contactInfo, `%${normalizedQuery}%`),
-                like(adopters.addressInfo, `%${normalizedQuery}%`),
                 like(adopters.familyMembers, `%${normalizedQuery}%`)
             )
         ).limit(20);
@@ -366,8 +347,7 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
 
             const basicMatch =
                 (a.name?.toLowerCase().includes(qLower)) ||
-                (a.contactInfo?.toLowerCase().includes(qLower)) ||
-                (a.addressInfo?.toLowerCase().includes(qLower));
+                (a.contactInfo?.toLowerCase().includes(qLower));
 
             if (!basicMatch) {
                 if (a.familyMembers?.toLowerCase().includes(qLower)) {
@@ -406,7 +386,7 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
         const totalCount = allResults.length;
 
         // Log search hit
-        logger.info('Search', { query, resultCount: Math.min(totalCount, SEARCH_RESULT_LIMIT), truncated: totalCount > SEARCH_RESULT_LIMIT });
+        logger.info('Search', { query, resultCount: Math.min(totalCount, SEARCH_RESULT_LIMIT), truncated: totalCount > SEARCH_RESULT_LIMIT, user });
 
         if (totalCount > SEARCH_RESULT_LIMIT) {
             return {
@@ -419,7 +399,7 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
         return { results: allResults };
 
     } catch (error) {
-        const errorId = logger.error('Search failed', error, { query });
+        const errorId = logger.error('Search failed', error, { query, user });
         throw new Error(`Search failed (ID: ${errorId})`);
     }
 }
@@ -540,7 +520,7 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
             const changes: Record<string, any> = {};
             let hasChanges = false;
 
-            const fields = ['name', 'contactInfo', 'addressInfo', 'status', 'familyMembers'] as const;
+            const fields = ['name', 'contactInfo', 'status', 'familyMembers', 'notes'] as const;
             for (const field of fields) {
                 // @ts-ignore
                 if (data[field] !== undefined && data[field] !== existing[field]) {
@@ -776,8 +756,9 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
                 if (data.deliveredToHome && data.verifiedAddress) {
                     // Update adopter's address if different
                     const adopter = await db.select().from(adopters).where(eq(adopters.id, data.adopterId)).get();
-                    if (adopter && adopter.addressInfo !== data.verifiedAddress) {
-                        await db.update(adopters).set({ addressInfo: data.verifiedAddress }).where(eq(adopters.id, data.adopterId));
+                    if (adopter && adopter.contactInfo !== data.verifiedAddress) {
+                        const addressPrefix = 'Dirección / Address';
+                        await db.update(adopters).set({ contactInfo: adopter.contactInfo ? `${adopter.contactInfo}\n${addressPrefix}: ${data.verifiedAddress}` : `${addressPrefix}: ${data.verifiedAddress}` }).where(eq(adopters.id, data.adopterId));
 
                         // Log address change in audit history
                         await db.insert(adopterHistory).values({
@@ -785,9 +766,9 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
                             adopterId: data.adopterId,
                             changedBy,
                             changes: JSON.stringify({
-                                addressInfo: {
-                                    from: adopter.addressInfo || '(empty)',
-                                    to: data.verifiedAddress,
+                                contactInfo: {
+                                    from: adopter.contactInfo || '(empty)',
+                                    to: adopter.contactInfo ? `${adopter.contactInfo}\n${addressPrefix}: ${data.verifiedAddress}` : `${addressPrefix}: ${data.verifiedAddress}`,
                                     reason: 'verified_during_pet_delivery'
                                 }
                             }),
@@ -1016,10 +997,8 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         const session = await auth();
         if (!session?.user?.email) return [];
 
-        const userIdentifier = `User: ${session.user.email}`;
-
         const query = db.select().from(adopters)
-            .where(eq(adopters.addedBy, userIdentifier));
+            .where(eq(adopters.addedBy, session.user.email));
 
         if (sort === 'name') {
             query.orderBy(adopters.name);
@@ -1029,130 +1008,145 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
 
         const adoptersList = await query.all();
 
-        // Get adoption config for threshold calculations
-        const adoptionConfig = await getAdoptionConfig();
+        if (adoptersList.length === 0) return [];
+
+        const adopterIds = adoptersList.map((a: typeof adopters.$inferSelect) => a.id);
+
+        // Batch queries: 7 queries total instead of 8 × N
+        const [adoptionConfig, allRatings, allImages, allFlags, allAdoptionCounts, allStats, allAdoptionRecords] = await Promise.all([
+            getAdoptionConfig(),
+            // Average ratings per adopter
+            db.select({
+                adopterId: adoptions.adopterId,
+                avgRating: sql<number>`AVG(${adoptions.rating})`
+            }).from(adoptions)
+                .where(and(inArray(adoptions.adopterId, adopterIds), eq(adoptions.recordType, 'adoption')))
+                .groupBy(adoptions.adopterId)
+                .all(),
+            // Profile images (all profile images for these adopters)
+            db.select({
+                adopterId: adopterImages.adopterId,
+                url: adopterImages.url,
+                isProfilePicture: adopterImages.isProfilePicture,
+                uploadedAt: adopterImages.uploadedAt
+            }).from(adopterImages)
+                .where(and(inArray(adopterImages.adopterId, adopterIds), isNull(adopterImages.adoptionId)))
+                .orderBy(sql`${adopterImages.isProfilePicture} DESC, ${adopterImages.uploadedAt} DESC`)
+                .all(),
+            // All flags
+            db.select({
+                adopterId: adopterFlags.adopterId,
+                reason: adopterFlags.reason
+            }).from(adopterFlags)
+                .where(inArray(adopterFlags.adopterId, adopterIds))
+                .all(),
+            // Adoption + request counts per adopter per recordType
+            db.select({
+                adopterId: adoptions.adopterId,
+                recordType: adoptions.recordType,
+                count: sql<number>`COUNT(*)`
+            }).from(adoptions)
+                .where(inArray(adoptions.adopterId, adopterIds))
+                .groupBy(adoptions.adopterId, adoptions.recordType)
+                .all(),
+            // Stats per adopter per eventType
+            db.select({
+                adopterId: adopterStats.adopterId,
+                eventType: adopterStats.eventType,
+                count: sql<number>`COUNT(*)`
+            }).from(adopterStats)
+                .where(inArray(adopterStats.adopterId, adopterIds))
+                .groupBy(adopterStats.adopterId, adopterStats.eventType)
+                .all(),
+            // All adoption records for period calculations
+            db.select({
+                adopterId: adoptions.adopterId,
+                recordType: adoptions.recordType,
+                date: adoptions.date
+            }).from(adoptions)
+                .where(inArray(adoptions.adopterId, adopterIds))
+                .all()
+        ]);
+
+        // Build lookup maps
+        const ratingsMap = new Map(allRatings.map((r: any) => [r.adopterId, r.avgRating]));
+
+        const imagesMap = new Map<string, string>();
+        for (const img of allImages as any[]) {
+            if (!imagesMap.has(img.adopterId)) {
+                imagesMap.set(img.adopterId, img.url); // First match wins (profile pic first due to ORDER BY)
+            }
+        }
+
+        const flagsMap = new Map<string, string[]>();
+        for (const f of allFlags as any[]) {
+            if (!flagsMap.has(f.adopterId)) flagsMap.set(f.adopterId, []);
+            flagsMap.get(f.adopterId)!.push(f.reason);
+        }
+
+        const countsMap = new Map<string, { adoptions: number; requests: number }>();
+        for (const c of allAdoptionCounts as any[]) {
+            if (!countsMap.has(c.adopterId)) countsMap.set(c.adopterId, { adoptions: 0, requests: 0 });
+            const entry = countsMap.get(c.adopterId)!;
+            if (c.recordType === 'adoption') entry.adoptions = c.count;
+            else if (c.recordType === 'adoption_request') entry.requests = c.count;
+        }
+
+        const statsMap = new Map<string, { searchHits: number; profileViews: number }>();
+        for (const s of allStats as any[]) {
+            if (!statsMap.has(s.adopterId)) statsMap.set(s.adopterId, { searchHits: 0, profileViews: 0 });
+            const entry = statsMap.get(s.adopterId)!;
+            if (s.eventType === 'search_hit') entry.searchHits = s.count;
+            else if (s.eventType === 'profile_view') entry.profileViews = s.count;
+        }
+
+        // Period calculations
         const adoptionsCutoff = new Date();
         adoptionsCutoff.setDate(adoptionsCutoff.getDate() - adoptionConfig.periodDays);
         const requestsCutoff = new Date();
         requestsCutoff.setDate(requestsCutoff.getDate() - adoptionConfig.requestsPeriodDays);
 
-        // Fetch additional data for each adopter in parallel
-        const enrichedAdopters = await Promise.all(adoptersList.map(async (adopter: typeof adopters.$inferSelect) => {
-            // Get average rating from adoptions (only completed adoptions)
-            const avgResult = await db.select({
-                avgRating: sql<number>`AVG(${adoptions.rating})`
-            }).from(adoptions).where(and(
-                eq(adoptions.adopterId, adopter.id),
-                eq(adoptions.recordType, 'adoption')
-            )).get();
+        const periodMap = new Map<string, { adoptionsInPeriod: number; requestsInPeriod: number }>();
+        for (const a of allAdoptionRecords as any[]) {
+            if (!periodMap.has(a.adopterId)) periodMap.set(a.adopterId, { adoptionsInPeriod: 0, requestsInPeriod: 0 });
+            const entry = periodMap.get(a.adopterId)!;
+            const aDate = a.date ? (typeof a.date === 'number' ? new Date(a.date * 1000) : new Date(a.date)) : null;
+            if (!aDate) continue;
+            if (a.recordType === 'adoption' && aDate >= adoptionsCutoff) entry.adoptionsInPeriod++;
+            if (a.recordType === 'adoption_request' && aDate >= requestsCutoff) entry.requestsInPeriod++;
+        }
 
-            // Get profile picture first, or fall back to most recent image
-            let profileImage = await db.select().from(adopterImages)
-                .where(and(
-                    eq(adopterImages.adopterId, adopter.id),
-                    isNull(adopterImages.adoptionId),
-                    eq(adopterImages.isProfilePicture, 1)
-                ))
-                .limit(1)
-                .all();
+        // Assemble results in memory (no more DB calls)
+        const enrichedAdopters = adoptersList.map((adopter: typeof adopters.$inferSelect) => {
+            const flags = flagsMap.get(adopter.id) || [];
+            const counts = countsMap.get(adopter.id) || { adoptions: 0, requests: 0 };
+            const stats = statsMap.get(adopter.id) || { searchHits: 0, profileViews: 0 };
+            const period = periodMap.get(adopter.id) || { adoptionsInPeriod: 0, requestsInPeriod: 0 };
 
-            // Fallback to most recent if no profile picture set
-            if (profileImage.length === 0) {
-                profileImage = await db.select().from(adopterImages)
-                    .where(and(
-                        eq(adopterImages.adopterId, adopter.id),
-                        isNull(adopterImages.adoptionId)
-                    ))
-                    .orderBy(sql`${adopterImages.uploadedAt} DESC`)
-                    .limit(1)
-                    .all();
-            }
-
-            // Get flags summary
-            const flags = await db.select({
-                reason: adopterFlags.reason
-            }).from(adopterFlags)
-                .where(eq(adopterFlags.adopterId, adopter.id))
-                .all();
-
-            // Get adoption count (recordType = 'adoption')
-            const adoptionCountResult = await db.select({
-                count: sql<number>`COUNT(*)`
-            }).from(adoptions)
-                .where(and(
-                    eq(adoptions.adopterId, adopter.id),
-                    eq(adoptions.recordType, 'adoption')
-                ))
-                .get();
-
-            // Get request count (recordType = 'adoption_request')
-            const requestCountResult = await db.select({
-                count: sql<number>`COUNT(*)`
-            }).from(adoptions)
-                .where(and(
-                    eq(adoptions.adopterId, adopter.id),
-                    eq(adoptions.recordType, 'adoption_request')
-                ))
-                .get();
-
-            // Get stats (search hits and profile views)
-            const statsResults = await db.select({
-                eventType: adopterStats.eventType,
-                count: sql<number>`COUNT(*)`
-            }).from(adopterStats)
-                .where(eq(adopterStats.adopterId, adopter.id))
-                .groupBy(adopterStats.eventType)
-                .all();
-
-            const stats = { searchHits: 0, profileViews: 0 };
-            for (const s of statsResults) {
-                if (s.eventType === 'search_hit') stats.searchHits = s.count;
-                else if (s.eventType === 'profile_view') stats.profileViews = s.count;
-            }
-
-            // Get all adoption records for this adopter (for period calculations)
-            const adopterAdoptions = await db.select({
-                recordType: adoptions.recordType,
-                date: adoptions.date
-            }).from(adoptions)
-                .where(eq(adoptions.adopterId, adopter.id))
-                .all();
-
-            // Calculate adoptions/requests in period
-            let adoptionsInPeriod = 0;
-            let requestsInPeriod = 0;
-            for (const a of adopterAdoptions) {
-                const aDate = a.date ? (typeof a.date === 'number' ? new Date(a.date * 1000) : new Date(a.date)) : null;
-                if (!aDate) continue;
-                if (a.recordType === 'adoption' && aDate >= adoptionsCutoff) adoptionsInPeriod++;
-                if (a.recordType === 'adoption_request' && aDate >= requestsCutoff) requestsInPeriod++;
-            }
-
-            // Build flags object
             const flagsObj: AdopterFlags = {
-                inaccurate: flags.some((f: { reason: string }) => f.reason === 'inaccurate_information'),
-                duplicate: flags.some((f: { reason: string }) => f.reason === 'duplicate'),
-                verified_identity: flags.some((f: { reason: string }) => f.reason === 'verified_identity'),
-                verified_address: flags.some((f: { reason: string }) => f.reason === 'verified_address'),
-                tooManyAdoptions: adoptionsInPeriod >= adoptionConfig.threshold
-                    ? { count: adoptionsInPeriod, threshold: adoptionConfig.threshold, periodDays: adoptionConfig.periodDays }
+                inaccurate: flags.includes('inaccurate_information'),
+                duplicate: flags.includes('duplicate'),
+                verified_identity: flags.includes('verified_identity'),
+                verified_address: flags.includes('verified_address'),
+                tooManyAdoptions: period.adoptionsInPeriod >= adoptionConfig.threshold
+                    ? { count: period.adoptionsInPeriod, threshold: adoptionConfig.threshold, periodDays: adoptionConfig.periodDays }
                     : null,
-                tooManyRequests: requestsInPeriod >= adoptionConfig.requestsThreshold
-                    ? { count: requestsInPeriod, threshold: adoptionConfig.requestsThreshold, periodDays: adoptionConfig.requestsPeriodDays }
+                tooManyRequests: period.requestsInPeriod >= adoptionConfig.requestsThreshold
+                    ? { count: period.requestsInPeriod, threshold: adoptionConfig.requestsThreshold, periodDays: adoptionConfig.requestsPeriodDays }
                     : null
             };
 
             return {
                 ...adopter,
-                avgRating: avgResult?.avgRating ?? null,
-                thumbnail: profileImage[0]?.url ?? null,
+                avgRating: ratingsMap.get(adopter.id) ?? null,
+                thumbnail: imagesMap.get(adopter.id) ?? null,
                 flags: flagsObj,
-                adoptionCount: adoptionCountResult?.count ?? 0,
-                requestCount: requestCountResult?.count ?? 0,
+                adoptionCount: counts.adoptions,
+                requestCount: counts.requests,
                 searchHits: stats.searchHits,
                 profileViews: stats.profileViews
             };
-        }));
+        });
 
         return enrichedAdopters;
     } catch (error) {
@@ -1168,15 +1162,13 @@ export async function getMyAdoptions(filter: 'all' | 'adoption' | 'adoption_requ
         const session = await auth();
         if (!session?.user?.email) return [];
 
-        const userIdentifier = `User: ${session.user.email}`;
-
         let query = db.select().from(adoptions);
 
         // Apply filters by recordType
         if (filter !== 'all') {
-            query.where(sql`${adoptions.addedBy} = ${userIdentifier} AND ${adoptions.recordType} = ${filter}`);
+            query.where(sql`${adoptions.addedBy} = ${session.user.email} AND ${adoptions.recordType} = ${filter}`);
         } else {
-            query.where(eq(adoptions.addedBy, userIdentifier));
+            query.where(eq(adoptions.addedBy, session.user.email));
         }
 
         if (sort === 'name') {
@@ -1229,17 +1221,8 @@ export async function getAvailableAnimals() {
         const session = await auth();
         if (!session?.user?.email) return [];
 
-        const userIdentifier = `User: ${session.user.email}`;
-
-        // Animals added by me, that are NOT yet linked to an adopter (adopterId is NULL)
-        // AND status is not 'completed' ? Or just any unlinked animal?
-        // Requirement: "list all animals under adoption that have already been added by the user and not marked as completed"
-        // Wait, "not marked as completed" usually refers to the status of the adoption process.
-        // If adopterId is NULL, it's effectively "Available".
-        // Let's also check status != 'completed' if that field is used for lifecycle.
-
         return await db.select().from(adoptions)
-            .where(sql`${adoptions.addedBy} = ${userIdentifier} AND ${adoptions.adopterId} IS NULL`);
+            .where(sql`${adoptions.addedBy} = ${session.user.email} AND ${adoptions.adopterId} IS NULL`);
         // We could add status check, but usually available animals are just unlinked.
 
     } catch (error) {
@@ -1299,8 +1282,8 @@ export async function runAdminQuery(query: string) {
 }
 
 export async function deleteAdopter(adopterId: string) {
+    const session = await auth();
     try {
-        const session = await auth();
         // Strict Admin Check
         if (!session?.user?.email || !isAdmin(session.user.email)) {
             return { success: false, error: "Unauthorized" };
@@ -1345,7 +1328,7 @@ export async function deleteAdopter(adopterId: string) {
         return { success: true };
     } catch (error) {
         console.error("Delete adopter error:", error);
-        logger.error('Delete adopter failed', error, { adopterId });
+        logger.error('Delete adopter failed', error, { adopterId, user: session?.user?.email });
         return { success: false, error: error instanceof Error ? error.message : "Failed to delete adopter" };
     }
 }

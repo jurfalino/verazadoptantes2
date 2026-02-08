@@ -7,11 +7,12 @@ import { saveAdoption, searchAdopter } from '@/app/actions';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { getRatingColors } from '@/lib/ratingColors';
+import { StarRating } from '@/components/StarRating';
 
 export default function ReportWizard() {
     const { t } = useLanguage();
     const router = useRouter();
-    const { data: session } = useSession();
+    const { data: session, status: sessionStatus } = useSession();
     const { openLogin } = useAuthContext();
     const [isOpen, setIsOpen] = useState(false);
 
@@ -31,6 +32,8 @@ export default function ReportWizard() {
     });
 
     const handleStart = () => {
+        // Don't act while session is still loading — prevents false login prompts
+        if (sessionStatus === 'loading') return;
         const isAnon = document.cookie.includes('anon_user=true');
         if (!session?.user && !isAnon) {
             openLogin();
@@ -73,8 +76,10 @@ export default function ReportWizard() {
             });
 
             if (adopterMode === 'new') {
-                // Redirect to create adopter page with observation intent and data
-                router.push(`/adopter/create?intent=observation&${params.toString()}`);
+                // Redirect to create adopter page — use continueToAdoption so AdopterForm
+                // forwards observation params (newAdoption, rating, details) after save
+                params.set('continueToAdoption', 'true');
+                router.push(`/adopter/create?${params.toString()}`);
                 return;
             }
 
@@ -190,24 +195,11 @@ export default function ReportWizard() {
                             <label className="block text-sm font-bold text-stone-700 mb-2">
                                 {t('adoption.rating') || 'Rating'}
                             </label>
-                            <div className="flex gap-2">
-                                {[1, 2, 3, 4, 5].map(r => {
-                                    const colors = getRatingColors(r);
-                                    const isSelected = observationData.rating === r;
-                                    return (
-                                        <button
-                                            key={r}
-                                            onClick={() => setObservationData({ ...observationData, rating: r })}
-                                            className={`w-10 h-10 rounded-lg font-bold transition-all border-2 ${isSelected
-                                                ? `${colors.bg} ${colors.text} ${colors.border} shadow-sm`
-                                                : 'bg-stone-100 text-stone-600 border-transparent hover:bg-stone-200'
-                                                }`}
-                                        >
-                                            {r}
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                            <StarRating
+                                value={observationData.rating}
+                                onChange={(r) => setObservationData({ ...observationData, rating: r })}
+                                size="lg"
+                            />
                             <p className="text-xs text-stone-400 mt-1">1 = {t('ratings.dangerous') || 'Dangerous'}, 5 = {t('ratings.excellent') || 'Excellent'}</p>
                         </div>
 

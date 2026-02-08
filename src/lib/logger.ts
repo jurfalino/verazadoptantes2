@@ -94,7 +94,20 @@ function getEnvironmentInfo(): { env: string; domain?: string; branch?: string }
 async function sendToAxiom(entries: LogEntry[]) {
     const config = getAxiomConfig();
     if (!config.dataset || !config.token) {
-        console.log('[Logger] Axiom not configured, logging locally:', entries);
+        // Local dev fallback: compact one-liner per entry
+        for (const entry of entries) {
+            const { level, message, _time, error: err, ...rest } = entry;
+            const tag = `[${level.toUpperCase()}]`;
+            // Only show non-empty extra data
+            const extras = Object.keys(rest).length > 0 ? rest : undefined;
+            if (level === 'error') {
+                console.error(tag, message, extras ?? '');
+            } else if (level === 'warn') {
+                console.warn(tag, message, extras ?? '');
+            } else {
+                console.log(tag, message, extras ?? '');
+            }
+        }
         return;
     }
 
@@ -130,14 +143,11 @@ async function sendToAxiom(entries: LogEntry[]) {
 // Main logger
 export const logger = {
     debug(message: string, data?: Record<string, unknown>) {
-        const entry: LogEntry = {
-            _time: new Date().toISOString(),
-            level: 'debug',
-            message,
-            ...data
-        };
-        console.log(`[DEBUG] ${message}`, data);
-        // Don't send debug to Axiom to save quota
+        // Debug: only local console, never sent to Axiom (saves quota)
+        if (process.env.NODE_ENV === 'development') {
+            const extras = data && Object.keys(data).length > 0 ? data : undefined;
+            console.log('[DEBUG]', message, extras ?? '');
+        }
     },
 
     info(message: string, data?: Record<string, unknown>) {
@@ -149,7 +159,6 @@ export const logger = {
             ...envInfo,
             ...data
         };
-        console.log(`[INFO] ${message}`, data);
         sendToAxiom([entry]);
     },
 

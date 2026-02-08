@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
-import { RatingBadge } from '@/components/RatingBadge';
+import { StarRating } from '@/components/StarRating';
 import { deleteAdoption, getAdoptionImages } from '@/app/actions';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getRecordTypeColors } from '@/lib/recordTypeColors';
@@ -140,7 +140,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, onEdit, a
                     }
 
                     const isNegative = adoption.status === 'returned' || adoption.status === 'failed';
-                    const canEdit = isAdmin || adoption.addedBy === currentUser || ((!adoption.addedBy || adoption.addedBy === 'anonymous') && currentUser === 'Anon: Guest');
+                    const canEdit = isAdmin || adoption.addedBy === currentUser;
                     const images = adoptionImages[adoption.id] || [];
 
                     return (
@@ -182,7 +182,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, onEdit, a
                                     </div>
                                     <div className="flex items-center gap-3">
                                         {adoption.rating && (
-                                            <RatingBadge rating={adoption.rating} size="sm" />
+                                            <StarRating value={adoption.rating} size="sm" />
                                         )}
 
                                         {/* Action Link - visible on hover (pointer-events-auto needed since parent is pointer-events-none) */}
@@ -238,7 +238,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, onEdit, a
                                     </span>
                                     {adoption.addedBy && (
                                         <span className="text-emerald-400 bg-emerald-50/50 px-2 py-0.5 rounded-full border border-emerald-100/30">
-                                            {t('common.added_by')} {adoption.addedBy.replace('User: ', '')}
+                                            {t('common.added_by')} {adoption.addedBy}
                                         </span>
                                     )}
                                 </div>

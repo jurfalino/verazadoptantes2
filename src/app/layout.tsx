@@ -42,6 +42,23 @@ export default async function RootLayout({
 
   return (
     <html lang="es" suppressHydrationWarning>
+      <head>
+        {/* Early theme injection to prevent FOUC and ensure theme loads before React */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var theme = localStorage.getItem('theme');
+                  if (theme && ['light', 'apple', 'dark'].includes(theme)) {
+                    document.documentElement.setAttribute('data-theme', theme);
+                  }
+                } catch (e) {}
+              })();
+            `,
+          }}
+        />
+      </head>
       <body className={inter.className}>
         <SessionProvider refetchOnWindowFocus={true} refetchInterval={5 * 60}>
           <LanguageProvider>

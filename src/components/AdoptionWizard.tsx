@@ -10,7 +10,7 @@ import { useAuthContext } from '@/context/AuthContext';
 export default function AdoptionWizard() {
     const { t } = useLanguage();
     const router = useRouter();
-    const { data: session } = useSession();
+    const { data: session, status: sessionStatus } = useSession();
     const { openLogin } = useAuthContext();
     const [isOpen, setIsOpen] = useState(false);
 
@@ -27,6 +27,8 @@ export default function AdoptionWizard() {
     }, [session]);
 
     const handleStart = () => {
+        // Don't act while session is still loading — prevents false login prompts
+        if (sessionStatus === 'loading') return;
         const isAnon = document.cookie.includes('anon_user=true');
         if (!session?.user && !isAnon) {
             openLogin();

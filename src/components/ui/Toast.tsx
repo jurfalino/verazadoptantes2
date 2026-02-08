@@ -14,7 +14,8 @@ interface Toast {
     duration?: number;
     action?: {
         label: string;
-        onClick: () => void;
+        onClick?: () => void;
+        href?: string;
     };
 }
 
@@ -39,7 +40,7 @@ export function useShowToast() {
     const { showToast } = useToast();
 
     return {
-        success: (title: string, message?: string, action?: { label: string; onClick: () => void }) =>
+        success: (title: string, message?: string, action?: { label: string; onClick?: () => void; href?: string }) =>
             showToast({ type: 'success', title, message, action, duration: action ? 0 : 5000 }),
         error: (title: string, message?: string, errorId?: string) =>
             showToast({ type: 'error', title, message, errorId, duration: 0 }),
@@ -82,7 +83,7 @@ function ToastContainer({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id
     if (toasts.length === 0) return null;
 
     return (
-        <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-md w-full">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-2 max-w-md w-full pointer-events-none">
             {toasts.map(toast => (
                 <ToastItem key={toast.id} toast={toast} onDismiss={() => onDismiss(toast.id)} />
             ))}
@@ -94,17 +95,17 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
     const [copied, setCopied] = useState(false);
 
     const icons = {
-        success: <CheckCircle className="w-5 h-5 text-emerald-500" />,
-        error: <AlertCircle className="w-5 h-5 text-red-500" />,
-        warning: <AlertTriangle className="w-5 h-5 text-amber-500" />,
-        info: <Info className="w-5 h-5 text-blue-500" />
+        success: <CheckCircle className="w-5 h-5" style={{ color: '#10b981' }} />,
+        error: <AlertCircle className="w-5 h-5" style={{ color: '#ef4444' }} />,
+        warning: <AlertTriangle className="w-5 h-5" style={{ color: '#f59e0b' }} />,
+        info: <Info className="w-5 h-5" style={{ color: '#3b82f6' }} />
     };
 
-    const backgrounds = {
-        success: 'bg-emerald-50 border-emerald-300 shadow-xl',
-        error: 'bg-red-50 border-red-300 shadow-xl',
-        warning: 'bg-amber-50 border-amber-300 shadow-xl',
-        info: 'bg-blue-50 border-blue-300 shadow-xl'
+    const accentColors = {
+        success: '#10b981',
+        error: '#ef4444',
+        warning: '#f59e0b',
+        info: '#3b82f6'
     };
 
     const copyErrorId = () => {
@@ -117,40 +118,61 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
 
     return (
         <div
-            className={`${backgrounds[toast.type]} border rounded-lg shadow-lg p-4 animate-slide-in`}
+            className="rounded-lg p-4 animate-slide-in pointer-events-auto"
             role="alert"
+            style={{
+                background: 'var(--card)',
+                color: 'var(--foreground)',
+                border: '1px solid var(--border)',
+                borderLeft: `4px solid ${accentColors[toast.type]}`,
+                boxShadow: '0 10px 25px rgba(0,0,0,0.3)'
+            }}
         >
             <div className="flex items-start gap-3">
                 {icons[toast.type]}
                 <div className="flex-1 min-w-0">
-                    <p className="font-medium text-stone-900">{toast.title}</p>
+                    <p className="font-medium" style={{ color: 'var(--foreground)' }}>{toast.title}</p>
                     {toast.message && (
-                        <p className="text-sm text-stone-600 mt-1">{toast.message}</p>
+                        <p className="text-sm mt-1" style={{ color: 'var(--muted-foreground)' }}>{toast.message}</p>
                     )}
                     {toast.errorId && (
                         <button
                             onClick={copyErrorId}
-                            className="mt-2 inline-flex items-center gap-1 text-xs text-stone-500 hover:text-stone-700 font-mono bg-stone-100 px-2 py-1 rounded"
+                            className="mt-2 inline-flex items-center gap-1 text-xs font-mono px-2 py-1 rounded"
+                            style={{ color: 'var(--muted-foreground)', background: 'var(--muted)' }}
                         >
                             {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                             Error ID: {toast.errorId}
                         </button>
                     )}
                     {toast.action && (
-                        <button
-                            onClick={() => {
-                                toast.action?.onClick();
-                                onDismiss();
-                            }}
-                            className="mt-3 text-sm font-medium px-3 py-1.5 bg-white border border-stone-200 rounded-md hover:bg-stone-50 transition-colors shadow-sm"
-                        >
-                            {toast.action.label}
-                        </button>
+                        toast.action.href ? (
+                            <a
+                                href={toast.action.href}
+                                className="mt-3 inline-block text-sm font-bold px-4 py-2 rounded-lg transition-opacity hover:opacity-80 no-underline"
+                                style={{ background: accentColors[toast.type], color: '#ffffff' }}
+                                onClick={() => onDismiss()}
+                            >
+                                {toast.action.label}
+                            </a>
+                        ) : (
+                            <button
+                                onClick={() => {
+                                    toast.action?.onClick?.();
+                                    onDismiss();
+                                }}
+                                className="mt-3 text-sm font-bold px-4 py-2 rounded-lg transition-opacity hover:opacity-80"
+                                style={{ background: accentColors[toast.type], color: '#ffffff' }}
+                            >
+                                {toast.action.label}
+                            </button>
+                        )
                     )}
                 </div>
                 <button
                     onClick={onDismiss}
-                    className="text-stone-400 hover:text-stone-600"
+                    className="hover:opacity-70"
+                    style={{ color: 'var(--muted-foreground)' }}
                 >
                     <X className="w-4 h-4" />
                 </button>
