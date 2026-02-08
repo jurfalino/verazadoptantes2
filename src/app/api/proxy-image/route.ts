@@ -2,6 +2,7 @@ export const runtime = 'edge';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { logger } from '@/lib/logger';
 
 export async function GET(request: NextRequest) {
     // Basic auth check
@@ -46,7 +47,7 @@ export async function GET(request: NextRequest) {
             headers,
         });
     } catch (error) {
-        console.error('Proxy error:', error);
+        logger.error('Proxy image fetch failed', error);
         return new NextResponse('Internal Server Error', { status: 500 });
     }
 }

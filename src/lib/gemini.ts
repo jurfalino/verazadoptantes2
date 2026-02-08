@@ -8,6 +8,7 @@
 
 import { GoogleGenerativeAI, Part } from "@google/generative-ai";
 import { getRequestContext } from '@cloudflare/next-on-pages';
+import { logger } from '@/lib/logger';
 
 // Extracted adopter data from AI
 export interface ExtractedAdopterData {
@@ -159,7 +160,7 @@ export async function extractAdopterData(
         return parsed;
 
     } catch (error) {
-        console.error('Gemini extraction failed:', error);
+        logger.error('Gemini extraction failed', error);
         return {
             confidence: 'low',
             notes: `Extraction failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -182,7 +183,7 @@ export async function getAvailableModels(): Promise<Array<{ name: string; displa
         );
 
         if (!response.ok) {
-            console.error('Failed to list models:', await response.text());
+            logger.warn('Failed to list Gemini models', { status: response.status });
             return [];
         }
 
@@ -196,7 +197,7 @@ export async function getAvailableModels(): Promise<Array<{ name: string; displa
             }))
             .sort((a, b) => b.name.localeCompare(a.name)); // Newest first usually
     } catch (error) {
-        console.error('Error listing models:', error);
+        logger.error('Error listing Gemini models', error);
         return [];
     }
 }

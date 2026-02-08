@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({ success: true });
     } catch (error) {
-        console.error("Delete adopter error:", error);
+        // logger.error already called below
         logger.error('Delete adopter failed', error);
         return NextResponse.json({ error: 'Delete failed' }, { status: 500 });
     }

@@ -6,6 +6,7 @@
  */
 
 import { getRequestContext } from '@cloudflare/next-on-pages';
+import { logger } from '@/lib/logger';
 
 // Extracted adopter data from AI
 export interface ExtractedAdopterData {
@@ -56,7 +57,7 @@ function getAI(): Ai | null {
         const ai = (env as { AI?: Ai })?.AI;
         return ai || null;
     } catch (error) {
-        console.error('[AI] Error accessing request context:', error);
+        logger.warn('AI binding not available', { error: error instanceof Error ? error.message : String(error) });
         return null;
     }
 }
@@ -81,7 +82,7 @@ async function extractTextFromImage(ai: Ai, imageData: string, mimeType: string)
 
         return (response as { description?: string }).description || '';
     } catch (error) {
-        console.error('[AI] LLaVA extraction failed:', error);
+        logger.error('LLaVA image extraction failed', error);
         return '';
     }
 }
@@ -115,7 +116,7 @@ async function extractStructuredData(ai: Ai, text: string): Promise<ExtractedAdo
         parsed.rawExtraction = responseText;
         return parsed;
     } catch (error) {
-        console.error('[AI] Llama extraction failed:', error);
+        logger.error('Llama text extraction failed', error);
         return { confidence: 'low', notes: 'Extraction failed', rawExtraction: String(error) };
     }
 }

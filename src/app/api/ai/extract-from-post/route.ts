@@ -106,12 +106,12 @@ export async function POST(request: NextRequest) {
         });
 
     } catch (error) {
-        console.error('AI extraction error:', error);
+        // logger.error already called below
 
         logger.error('AI extraction failed', error, { userEmail: session?.user?.email || 'anonymous' });
 
         return NextResponse.json({
-            error: error instanceof Error ? error.message : 'Extraction failed'
+            error: 'Extraction failed. Please try again.'
         }, { status: 500 });
     }
 }

@@ -1,9 +1,18 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import { getMyAdoptions } from '@/app/actions';
+import { auth } from '@/auth';
+import { logger } from '@/lib/logger';
 
 export const runtime = 'edge';
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+    const session = await auth();
+    const isAnon = request.cookies.get('anon_user')?.value === 'true';
+
+    if (!session?.user && !isAnon) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     try {
         const { searchParams } = new URL(request.url);
         const filterParam = searchParams.get('filter') || 'all';
@@ -12,7 +21,7 @@ export async function GET(request: Request) {
         const adoptions = await getMyAdoptions(filter as any, 'date');
         return NextResponse.json(adoptions);
     } catch (error) {
-        console.error('API my-adoptions error:', error);
+        logger.error('API my-adoptions error', error);
         return NextResponse.json([], { status: 500 });
     }
 }

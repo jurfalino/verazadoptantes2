@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
         });
 
     } catch (error) {
-        console.error('[Facebook Fetch] Error:', error);
+        logger.error('Facebook fetch failed', error);
         return NextResponse.json({
             error: 'Failed to fetch Facebook post',
             requiresManualInput: true

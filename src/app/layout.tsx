@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import { logger } from "@/lib/logger";
 import { cookies } from "next/headers";
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
@@ -34,7 +35,7 @@ export default async function RootLayout({
   try {
     session = await auth();
   } catch (e) {
-    console.error("Layout Auth Error:", e);
+    logger.warn('Layout auth check failed', { error: e instanceof Error ? e.message : String(e) });
   }
 
   const cookieStore = await cookies();
