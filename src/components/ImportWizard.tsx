@@ -19,8 +19,6 @@ interface PersonMatch {
     matchReasons: string[];
 }
 
-type InputMode = 'url' | 'text' | 'image';
-
 export default function ImportWizard() {
     const { t, locale } = useLanguage();
     const { data: session } = useSession();
@@ -32,14 +30,13 @@ export default function ImportWizard() {
 
     // Steps: 1=Input, 2=Content/Extract, 3=Review, 4=Confirm
     const [step, setStep] = useState(1);
-    const [inputMode, setInputMode] = useState<InputMode>('url');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Input state
-    const [inputUrl, setInputUrl] = useState('');
-    const [inputText, setInputText] = useState('');
+    // Unified input state (single smart field)
+    const [inputContent, setInputContent] = useState('');
     const [manualImages, setManualImages] = useState<Array<{ data: string; mimeType: string; preview: string }>>([]);
+    const [sharedFrom, setSharedFrom] = useState<string | null>(null);
 
     // Extracted/fetched state
     const [fetchedText, setFetchedText] = useState('');
@@ -69,19 +66,28 @@ export default function ImportWizard() {
         const sharedText = searchParams.get('shared_text') || searchParams.get('text');
 
         if (sharedUrl) {
-            setInputUrl(sharedUrl);
-            setInputMode('url');
-            // Auto-fetch if URL is provided
-            handleFetchUrl(sharedUrl);
+            // Share intent with URL: skip Step 1, auto-fetch
+            setSharedFrom(sharedUrl);
+            setLoading(true);
+            setStep(2);
+            handleFetchUrl(sharedUrl).catch(() => {
+                // Fetch failed — fall back to Step 1 with pre-filled content
+                setStep(1);
+                setInputContent(sharedUrl);
+                setSharedFrom(null);
+            });
         } else if (sharedText) {
-            setInputText(sharedText);
-            setInputMode('text');
+            // Share intent with text: skip Step 1, go to content review
+            setSharedFrom('shared');
+            setFetchedText(sharedText);
+            setEditableText(sharedText);
+            setStep(2);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const handleFetchUrl = async (url?: string) => {
-        const targetUrl = url || inputUrl;
+        const targetUrl = url || inputContent;
         if (!targetUrl.trim()) return;
 
         setLoading(true);
@@ -145,11 +151,24 @@ export default function ImportWizard() {
         }
     };
 
-    const handleTextSubmit = () => {
-        if (!inputText.trim()) return;
-        setFetchedText(inputText.trim());
-        setEditableText(inputText.trim());
-        setStep(2);
+    // Smart submit: auto-detect URL vs text
+    const handleSmartSubmit = () => {
+        const content = inputContent.trim();
+        if (!content && manualImages.length === 0) return;
+
+        // Auto-detect: if content looks like a URL, fetch it
+        const urlPattern = /^https?:\/\/\S+$/i;
+        if (urlPattern.test(content)) {
+            handleFetchUrl(content);
+        } else if (content) {
+            // Plain text — go directly to content review
+            setFetchedText(content);
+            setEditableText(content);
+            setStep(2);
+        } else {
+            // Images only — go to content review
+            setStep(2);
+        }
     };
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -173,11 +192,6 @@ export default function ImportWizard() {
 
     const removeImage = (index: number) => {
         setManualImages(prev => prev.filter((_, i) => i !== index));
-    };
-
-    const handleImagesSubmit = () => {
-        if (manualImages.length === 0) return;
-        setStep(2);
     };
 
     // AI Extraction
@@ -439,154 +453,108 @@ export default function ImportWizard() {
                 </div>
             )}
 
-            {/* === STEP 1: Input === */}
+            {/* === STEP 1: Smart Input === */}
             {step === 1 && !showConfirmModal && (
                 <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-6">
-                    {/* Input Mode Tabs */}
-                    <div className="flex gap-2 p-1 bg-stone-100 rounded-xl">
-                        {([
-                            { key: 'url' as InputMode, label: t('import.tabUrl') || '🔗 URL', icon: '' },
-                            { key: 'text' as InputMode, label: t('import.tabText') || '📝 Text', icon: '' },
-                            { key: 'image' as InputMode, label: t('import.tabImages') || '📷 Images', icon: '' },
-                        ]).map(tab => (
-                            <button
-                                key={tab.key}
-                                onClick={() => setInputMode(tab.key)}
-                                className={`flex-1 py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${inputMode === tab.key
-                                    ? 'bg-white text-stone-900 shadow-sm'
-                                    : 'text-stone-500 hover:text-stone-700'
-                                    }`}
-                            >
-                                {tab.label}
-                            </button>
-                        ))}
+                    {/* Smart textarea */}
+                    <div>
+                        <label className="block text-sm font-medium text-stone-700 mb-2">
+                            {t('import.smartLabel') || 'Paste a link or text about an adopter'}
+                        </label>
+                        <textarea
+                            value={inputContent}
+                            onChange={e => setInputContent(e.target.value)}
+                            placeholder={t('import.smartPlaceholder') || 'Paste a URL, Instagram post, WhatsApp message, or any text with adopter info...'}
+                            className="w-full px-4 py-3 border border-stone-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm min-h-[120px] resize-y"
+                            autoFocus
+                        />
+                        <p className="text-xs text-stone-400 mt-1">
+                            {t('import.smartHint') || 'Links are fetched automatically. Text is sent directly to AI extraction.'}
+                        </p>
                     </div>
 
-                    {/* URL Input */}
-                    {inputMode === 'url' && (
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-stone-700 mb-2">
-                                    {t('import.urlLabel') || 'Paste any URL'}
-                                </label>
-                                <input
-                                    type="url"
-                                    value={inputUrl}
-                                    onChange={e => setInputUrl(e.target.value)}
-                                    placeholder={t('import.urlPlaceholder') || 'https://facebook.com/... or any website'}
-                                    className="w-full px-4 py-3 border border-stone-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                                    autoFocus
-                                />
-                                <p className="text-xs text-stone-400 mt-1">
-                                    {t('import.urlHint') || 'Works with Facebook posts, Instagram, news articles, or any web page'}
-                                </p>
-                            </div>
-                            <button
-                                onClick={() => handleFetchUrl()}
-                                disabled={!inputUrl.trim() || loading}
-                                className="w-full py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-                            >
-                                {loading ? (
-                                    <>
-                                        <span className="animate-spin">⏳</span>
-                                        {t('import.fetching') || 'Fetching content...'}
-                                    </>
-                                ) : (
-                                    <>
-                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                        </svg>
-                                        {t('import.fetchButton') || 'Fetch & Extract'}
-                                    </>
-                                )}
-                            </button>
+                    {/* Photo upload - always visible */}
+                    <div>
+                        <label className="block text-sm font-medium text-stone-700 mb-2">
+                            {t('import.photoUploadLabel') || '📎 Add photos (optional)'}
+                        </label>
+                        <div
+                            onClick={() => fileInputRef.current?.click()}
+                            className="border-2 border-dashed border-stone-300 rounded-xl p-6 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-colors"
+                        >
+                            <svg className="w-8 h-8 mx-auto text-stone-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            <p className="text-sm text-stone-500">{t('import.imageDropzone') || 'Click to upload images'}</p>
+                            <p className="text-xs text-stone-400 mt-0.5">{t('import.imageHint') || 'Screenshots of posts, chat messages, etc.'}</p>
                         </div>
-                    )}
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={handleImageUpload}
+                            className="hidden"
+                        />
 
-                    {/* Text Input */}
-                    {inputMode === 'text' && (
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-stone-700 mb-2">
-                                    {t('import.textLabel') || 'Paste text content'}
-                                </label>
-                                <textarea
-                                    value={inputText}
-                                    onChange={e => setInputText(e.target.value)}
-                                    placeholder={t('import.textPlaceholder') || 'Paste the adoption announcement, WhatsApp message, or any text with adopter information...'}
-                                    className="w-full px-4 py-3 border border-stone-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm min-h-[200px] resize-y"
-                                    autoFocus
-                                />
+                        {/* Image previews */}
+                        {manualImages.length > 0 && (
+                            <div className="grid grid-cols-4 gap-2 mt-3">
+                                {manualImages.map((img, i) => (
+                                    <div key={i} className="relative group">
+                                        <img src={img.preview} alt="" className="w-full h-20 object-cover rounded-lg" />
+                                        <button
+                                            onClick={() => removeImage(i)}
+                                            className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+                                ))}
                             </div>
-                            <button
-                                onClick={handleTextSubmit}
-                                disabled={!inputText.trim()}
-                                className="w-full py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                            >
+                        )}
+                    </div>
+
+                    {/* Submit button */}
+                    <button
+                        onClick={handleSmartSubmit}
+                        disabled={(!inputContent.trim() && manualImages.length === 0) || loading}
+                        className="w-full py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                    >
+                        {loading ? (
+                            <>
+                                <span className="animate-spin">⏳</span>
+                                {t('import.fetching') || 'Fetching content...'}
+                            </>
+                        ) : (
+                            <>
                                 {t('import.continueBtn') || 'Continue'} →
-                            </button>
-                        </div>
-                    )}
-
-                    {/* Image Input */}
-                    {inputMode === 'image' && (
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-stone-700 mb-2">
-                                    {t('import.imageLabel') || 'Upload screenshots or photos'}
-                                </label>
-                                <div
-                                    onClick={() => fileInputRef.current?.click()}
-                                    className="border-2 border-dashed border-stone-300 rounded-xl p-8 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-colors"
-                                >
-                                    <svg className="w-10 h-10 mx-auto text-stone-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                    </svg>
-                                    <p className="text-sm text-stone-500">{t('import.imageDropzone') || 'Click to upload images'}</p>
-                                    <p className="text-xs text-stone-400 mt-1">{t('import.imageHint') || 'Screenshots of posts, chat messages, etc.'}</p>
-                                </div>
-                                <input
-                                    ref={fileInputRef}
-                                    type="file"
-                                    accept="image/*"
-                                    multiple
-                                    onChange={handleImageUpload}
-                                    className="hidden"
-                                />
-                            </div>
-
-                            {/* Image Previews */}
-                            {manualImages.length > 0 && (
-                                <div className="grid grid-cols-3 gap-2">
-                                    {manualImages.map((img, i) => (
-                                        <div key={i} className="relative group">
-                                            <img src={img.preview} alt="" className="w-full h-24 object-cover rounded-lg" />
-                                            <button
-                                                onClick={() => removeImage(i)}
-                                                className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                                            >
-                                                ✕
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-
-                            <button
-                                onClick={handleImagesSubmit}
-                                disabled={manualImages.length === 0}
-                                className="w-full py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                            >
-                                {t('import.continueWithImages') || 'Continue with'} {manualImages.length} {manualImages.length !== 1 ? (t('import.images') || 'images') : (t('import.image') || 'image')} →
-                            </button>
-                        </div>
-                    )}
+                            </>
+                        )}
+                    </button>
                 </div>
             )}
 
             {/* === STEP 2: Content Review + Extract === */}
             {step === 2 && !showConfirmModal && (
                 <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
+                    {/* Shared from badge */}
+                    {sharedFrom && sharedFrom !== 'shared' && (
+                        <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+                            <span>📤</span>
+                            <span className="font-medium">{t('import.sharedFrom') || 'Shared from'}:</span>
+                            <span className="truncate text-blue-600">{(() => { try { return new URL(sharedFrom).hostname; } catch { return sharedFrom; } })()}</span>
+                        </div>
+                    )}
+
+                    {/* Loading state for share intent auto-fetch */}
+                    {loading && !editableText && (
+                        <div className="flex flex-col items-center gap-3 py-8 text-stone-500">
+                            <span className="animate-spin text-2xl">⏳</span>
+                            <p className="text-sm">{t('import.fetchingShared') || 'Fetching shared content...'}</p>
+                        </div>
+                    )}
+
                     <h3 className="text-lg font-semibold text-stone-900">{t('import.reviewTitle') || 'Review Content'}</h3>
 
                     {/* Editable text */}
