@@ -954,10 +954,10 @@ export default function ImportWizard() {
 
                         <p className="text-stone-600 mb-4">
                             {duplicateAdopter
-                                ? <>This URL was already imported. Existing profile: <a href={`/adopter/${duplicateAdopter.id}`} target="_blank" className="underline font-medium text-blue-600">{duplicateAdopter.name}</a></>
+                                ? <>{t('import.duplicateUrl') || 'This URL was already imported. Existing profile:'} <a href={`/adopter/${duplicateAdopter.id}`} target="_blank" className="underline font-medium text-blue-600">{duplicateAdopter.name}</a></>
                                 : personMatch
                                     ? (t('import.personMatchDesc') || 'A profile with similar information already exists')
-                                    : <>You are about to create a new profile for <strong className="text-stone-900">{extractedData?.name || 'Unknown'}</strong>.</>
+                                    : <>{t('import.aboutToCreate') || 'You are about to create a new profile for'} <strong className="text-stone-900">{extractedData?.name || (t('import.unknownName') || 'Unknown')}</strong>.</>
                             }
                         </p>
 

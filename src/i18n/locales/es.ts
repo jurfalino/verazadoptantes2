@@ -413,6 +413,8 @@ export const es = {
         matchReasonPhone: 'teléfono',
         matchReasonAddress: 'dirección',
         mergingRecord: 'Agregando registro...',
+        aboutToCreate: 'Estás por crear un nuevo perfil para',
+        duplicateUrl: 'Este post de Facebook ya fue importado. Perfil existente:',
     },
     import: {
         // Botón en página principal
@@ -495,6 +497,8 @@ export const es = {
         createProfile: '✓ Crear Perfil',
         creating: 'Creando...',
         backToReview: '← Volver a Revisar',
+        aboutToCreate: 'Estás por crear un nuevo perfil para',
+        duplicateUrl: 'Esta URL ya fue importada. Perfil existente:',
         // Botón volver
         back: 'Volver',
     },
@@ -509,3 +513,4 @@ export const es = {
         sharedContent: 'Contenido compartido recibido',
     }
 };
+

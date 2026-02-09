@@ -413,6 +413,8 @@ export const en = {
         matchReasonPhone: 'phone',
         matchReasonAddress: 'address',
         mergingRecord: 'Adding record...',
+        aboutToCreate: 'You are about to create a new profile for',
+        duplicateUrl: 'This Facebook post was already imported. Existing Profile:',
     },
     import: {
         // Home page button
@@ -495,6 +497,8 @@ export const en = {
         createProfile: '✓ Create Profile',
         creating: 'Creating...',
         backToReview: '← Back to Review',
+        aboutToCreate: 'You are about to create a new profile for',
+        duplicateUrl: 'This URL was already imported. Existing profile:',
         // Back button
         back: 'Back',
     },

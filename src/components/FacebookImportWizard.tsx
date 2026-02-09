@@ -589,10 +589,10 @@ export default function FacebookImportWizard({ onClose }: FacebookImportWizardPr
                             {/* Different subtitle per scenario */}
                             <p className="text-stone-600 mb-4">
                                 {duplicateAdopter
-                                    ? <>This Facebook post was already imported. Existing Profile: <a href={`/adopter/${duplicateAdopter.id}`} target="_blank" className="underline font-medium text-blue-600 hover:text-blue-800">{duplicateAdopter.name}</a></>
+                                    ? <>{t('facebook.duplicateUrl') || 'This Facebook post was already imported. Existing Profile:'} <a href={`/adopter/${duplicateAdopter.id}`} target="_blank" className="underline font-medium text-blue-600 hover:text-blue-800">{duplicateAdopter.name}</a></>
                                     : personMatch
                                         ? (t('facebook.personMatchDesc') || 'A profile with similar information already exists')
-                                        : <>You are about to create a new profile for <strong className="text-stone-900">{extractedData?.name || 'Unknown'}</strong>.</>
+                                        : <>{t('facebook.aboutToCreate') || 'You are about to create a new profile for'} <strong className="text-stone-900">{extractedData?.name || (t('common.unknown') || 'Unknown')}</strong>.</>
                                 }
                             </p>
 
