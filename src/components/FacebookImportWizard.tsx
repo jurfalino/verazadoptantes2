@@ -444,10 +444,11 @@ export default function FacebookImportWizard({ onClose }: FacebookImportWizardPr
         try {
             // Build contact info string
             const contactParts: string[] = [];
-            if (extractedData.phones?.length) contactParts.push(`Phones: ${extractedData.phones.join(', ')}`);
-            if (extractedData.emails?.length) contactParts.push(`Emails: ${extractedData.emails.join(', ')}`);
-            if (extractedData.socialProfiles?.length) contactParts.push(`Socials: ${extractedData.socialProfiles.join(', ')}`);
-            if (extractedData.addresses?.length) contactParts.push(`Address: ${extractedData.addresses.join(', ')}`);
+            const isEs = locale === 'es';
+            if (extractedData.phones?.length) contactParts.push(`${isEs ? 'Teléfonos' : 'Phones'}: ${extractedData.phones.join(', ')}`);
+            if (extractedData.emails?.length) contactParts.push(`${isEs ? 'Correos' : 'Emails'}: ${extractedData.emails.join(', ')}`);
+            if (extractedData.socialProfiles?.length) contactParts.push(`${isEs ? 'Redes sociales' : 'Socials'}: ${extractedData.socialProfiles.join(', ')}`);
+            if (extractedData.addresses?.length) contactParts.push(`${isEs ? 'Dirección' : 'Address'}: ${extractedData.addresses.join(', ')}`);
 
             const payload = {
                 sourceUrl: postUrl,

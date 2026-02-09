@@ -202,10 +202,10 @@ export async function POST(request: Request) {
             contactInfoStr = contactInfo;
         } else if (contactInfo) {
             const parts = [];
-            if (contactInfo.phones?.length) parts.push(`Phones: ${contactInfo.phones.join(', ')}`);
-            if (contactInfo.emails?.length) parts.push(`Emails: ${contactInfo.emails.join(', ')}`);
-            if (contactInfo.socialProfiles?.length) parts.push(`Socials: ${contactInfo.socialProfiles.join(', ')}`);
-            if (contactInfo.addresses?.length) parts.push(`Dirección / Address: ${contactInfo.addresses.join(', ')}`);
+            if (contactInfo.phones?.length) parts.push(`Teléfonos: ${contactInfo.phones.join(', ')}`);
+            if (contactInfo.emails?.length) parts.push(`Correos: ${contactInfo.emails.join(', ')}`);
+            if (contactInfo.socialProfiles?.length) parts.push(`Redes sociales: ${contactInfo.socialProfiles.join(', ')}`);
+            if (contactInfo.addresses?.length) parts.push(`Dirección: ${contactInfo.addresses.join(', ')}`);
             contactInfoStr = parts.join('\n');
         }
 

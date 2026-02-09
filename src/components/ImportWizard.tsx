@@ -255,10 +255,11 @@ export default function ImportWizard() {
             // Build contact info text from extracted arrays
             if (result.data) {
                 const parts: string[] = [];
-                if (result.data.phones?.length) parts.push(`Phones: ${result.data.phones.join(', ')}`);
-                if (result.data.emails?.length) parts.push(`Emails: ${result.data.emails.join(', ')}`);
-                if (result.data.socialProfiles?.length) parts.push(`Socials: ${result.data.socialProfiles.join(', ')}`);
-                if (result.data.addresses?.length) parts.push(`Address: ${result.data.addresses.join(', ')}`);
+                const isEs = locale === 'es';
+                if (result.data.phones?.length) parts.push(`${isEs ? 'Teléfonos' : 'Phones'}: ${result.data.phones.join(', ')}`);
+                if (result.data.emails?.length) parts.push(`${isEs ? 'Correos' : 'Emails'}: ${result.data.emails.join(', ')}`);
+                if (result.data.socialProfiles?.length) parts.push(`${isEs ? 'Redes sociales' : 'Socials'}: ${result.data.socialProfiles.join(', ')}`);
+                if (result.data.addresses?.length) parts.push(`${isEs ? 'Dirección' : 'Address'}: ${result.data.addresses.join(', ')}`);
                 setContactInfoText(parts.join('\n'));
             }
             setCustomSpecies(false);
