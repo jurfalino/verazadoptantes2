@@ -67,6 +67,7 @@ export default function ImportWizard() {
 
     // AI extraction state
     const [extractedData, setExtractedData] = useState<ExtractedAdopterData | null>(null);
+    const [contactInfoText, setContactInfoText] = useState('');
     const [processedImages, setProcessedImages] = useState<Array<{ data: string; mimeType: string; originalUrl?: string }>>([]);
     const [selectedModel, setSelectedModel] = useState<string>('');
     const [unknownAnimal, setUnknownAnimal] = useState(false);
@@ -250,6 +251,15 @@ export default function ImportWizard() {
             }
 
             setExtractedData(result.data || null);
+            // Build contact info text from extracted arrays
+            if (result.data) {
+                const parts: string[] = [];
+                if (result.data.phones?.length) parts.push(`Phones: ${result.data.phones.join(', ')}`);
+                if (result.data.emails?.length) parts.push(`Emails: ${result.data.emails.join(', ')}`);
+                if (result.data.socialProfiles?.length) parts.push(`Socials: ${result.data.socialProfiles.join(', ')}`);
+                if (result.data.addresses?.length) parts.push(`Address: ${result.data.addresses.join(', ')}`);
+                setContactInfoText(parts.join('\n'));
+            }
             setCustomSpecies(false);
             setUnknownAnimal(!result.data?.animalName);
             if (result.processedImages) {
@@ -319,12 +329,7 @@ export default function ImportWizard() {
 
             const payload = {
                 name: extractedData.name,
-                contactInfo: {
-                    phones: extractedData.phones,
-                    emails: extractedData.emails,
-                    socialProfiles: extractedData.socialProfiles,
-                    addresses: extractedData.addresses,
-                },
+                contactInfo: contactInfoText || undefined,
                 notes: extractedData.notes,
                 sourceUrl,
                 flags,
@@ -375,16 +380,11 @@ export default function ImportWizard() {
         setIsSaving(true);
 
         try {
-            const contactParts: string[] = [];
-            if (extractedData.phones?.length) contactParts.push(`Phones: ${extractedData.phones.join(', ')}`);
-            if (extractedData.emails?.length) contactParts.push(`Emails: ${extractedData.emails.join(', ')}`);
-            if (extractedData.socialProfiles?.length) contactParts.push(`Socials: ${extractedData.socialProfiles.join(', ')}`);
-            if (extractedData.addresses?.length) contactParts.push(`Address: ${extractedData.addresses.join(', ')}`);
 
             const payload = {
                 sourceUrl,
                 notes: extractedData.notes,
-                contactInfo: contactParts.length > 0 ? contactParts.join('\n') : undefined,
+                contactInfo: contactInfoText || undefined,
                 adoption: {
                     animalName: unknownAnimal ? '' : (extractedData.animalName || 'Unknown'),
                     species: extractedData.animalSpecies,
@@ -747,48 +747,16 @@ export default function ImportWizard() {
                         />
                     </div>
 
-                    {/* Contact Info */}
-                    <div className="grid grid-cols-2 gap-3">
-                        <div>
-                            <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.phones') || 'Phones'}</label>
-                            <input
-                                value={extractedData.phones?.join(', ') || ''}
-                                onChange={e => setExtractedData({ ...extractedData, phones: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
-                                className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                                placeholder={t('import.commaSeparated') || 'Comma separated'}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.emails') || 'Emails'}</label>
-                            <input
-                                value={extractedData.emails?.join(', ') || ''}
-                                onChange={e => setExtractedData({ ...extractedData, emails: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
-                                className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                                placeholder={t('import.commaSeparated') || 'Comma separated'}
-                            />
-                        </div>
-                    </div>
-
-                    {/* Addresses */}
+                    {/* Contact Info — single textarea, stored as-is */}
                     <div>
-                        <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.addresses') || 'Addresses'}</label>
-                        <input
-                            value={extractedData.addresses?.join(', ') || ''}
-                            onChange={e => setExtractedData({ ...extractedData, addresses: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
-                            className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                            placeholder={t('import.commaSeparated') || 'Comma separated'}
+                        <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.contactInfo') || 'Contact Info'}</label>
+                        <textarea
+                            value={contactInfoText}
+                            onChange={e => setContactInfoText(e.target.value)}
+                            className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm min-h-[80px] resize-y focus:ring-2 focus:ring-blue-500"
+                            placeholder={t('import.contactPlaceholder') || 'Phones, emails, addresses, social profiles...'}
                         />
-                    </div>
-
-                    {/* Social Profiles */}
-                    <div>
-                        <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.socialProfiles') || 'Social Profiles'}</label>
-                        <input
-                            value={extractedData.socialProfiles?.join(', ') || ''}
-                            onChange={e => setExtractedData({ ...extractedData, socialProfiles: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
-                            className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                            placeholder={t('import.socialPlaceholder') || 'Instagram, Facebook, etc.'}
-                        />
+                        <p className="text-xs text-stone-400 mt-0.5">{t('import.contactHint') || 'Edit freely — this is stored exactly as shown.'}</p>
                     </div>
 
                     {/* Notes */}

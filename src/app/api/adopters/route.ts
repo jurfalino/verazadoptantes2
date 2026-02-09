@@ -151,7 +151,7 @@ export async function POST(request: Request) {
 
     let body: {
         name: string;
-        contactInfo?: { phones?: string[]; emails?: string[]; socialProfiles?: string[]; addresses?: string[] };
+        contactInfo?: string | { phones?: string[]; emails?: string[]; socialProfiles?: string[]; addresses?: string[] };
         notes?: string;
         sourceUrl?: string;
         flags?: string[];
@@ -196,9 +196,11 @@ export async function POST(request: Request) {
         }
         const db = await createDb(env.DB);
 
-        // Format contact info as a readable string since schema stores it as text blob
+        // Format contact info — accept raw string or structured object
         let contactInfoStr = '';
-        if (contactInfo) {
+        if (typeof contactInfo === 'string') {
+            contactInfoStr = contactInfo;
+        } else if (contactInfo) {
             const parts = [];
             if (contactInfo.phones?.length) parts.push(`Phones: ${contactInfo.phones.join(', ')}`);
             if (contactInfo.emails?.length) parts.push(`Emails: ${contactInfo.emails.join(', ')}`);
