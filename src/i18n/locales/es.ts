@@ -94,7 +94,7 @@ export const es = {
     },
     search: {
         title: 'Verificar Adoptante',
-        placeholder: 'Nombre, Teléfono o Email',
+        placeholder: 'Nombre, Teléfono ó Dirección',
         hint: 'Probá buscando un teléfono o nombre para ver cómo funciona.',
         button: 'Buscar Registros',
         searching: 'Buscando...',
@@ -515,7 +515,7 @@ export const es = {
         ctaSubtitle: 'Instalala en segundos — sin tienda de apps',
         ctaBenefitShare: 'Compartí perfiles de adoptantes desde WhatsApp, Instagram y más',
         ctaBenefitSpeed: 'Acceso con un toque — sin abrir el navegador',
-        ctaBenefitOffline: 'Consultá registros incluso sin internet',
+        ctaBenefitHomeScreen: 'Siempre en tu pantalla de inicio, como una app nativa',
         ctaInstallButton: 'Instalar App',
         ctaIOSHint: 'Tocá',
         ctaIOSAction: 'y luego "Agregar a inicio"',

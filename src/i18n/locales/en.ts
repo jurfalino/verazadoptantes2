@@ -94,7 +94,7 @@ export const en = {
     },
     search: {
         title: 'Vet an Adopter',
-        placeholder: 'Name, Phone, or Email',
+        placeholder: 'Name, Phone, or Address',
         hint: 'Try searching a phone number or name to see how it works.',
         button: 'Search Records',
         searching: 'Searching...',
@@ -515,7 +515,7 @@ export const en = {
         ctaSubtitle: 'Install it in seconds — no app store required',
         ctaBenefitShare: 'Share adopter profiles directly from WhatsApp, Instagram & more',
         ctaBenefitSpeed: 'One tap access — no browser needed',
-        ctaBenefitOffline: 'Check records even without internet',
+        ctaBenefitHomeScreen: 'Always on your home screen, like a native app',
         ctaInstallButton: 'Install App',
         ctaIOSHint: 'Tap',
         ctaIOSAction: 'then "Add to Home Screen"',

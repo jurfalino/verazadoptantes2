@@ -13,7 +13,6 @@ export default function InstallCTA() {
     const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
     const [isInstalled, setIsInstalled] = useState(false);
     const [isIOS, setIsIOS] = useState(false);
-    const [dismissed, setDismissed] = useState(false);
 
     useEffect(() => {
         // Already installed — hide everything
@@ -26,11 +25,6 @@ export default function InstallCTA() {
         const ua = navigator.userAgent;
         const iOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         setIsIOS(iOS);
-
-        // CTA dismissed permanently by user
-        if (localStorage.getItem('pwa-cta-dismissed') === '1') {
-            setDismissed(true);
-        }
 
         // Capture the install prompt for non-iOS
         const handler = (e: Event) => {
@@ -50,13 +44,8 @@ export default function InstallCTA() {
         }
     };
 
-    const handleDismiss = () => {
-        setDismissed(true);
-        localStorage.setItem('pwa-cta-dismissed', '1');
-    };
-
-    // Don't show if installed or permanently dismissed
-    if (isInstalled || dismissed) return null;
+    // Don't show if installed
+    if (isInstalled) return null;
 
     // Don't show on desktop browsers that don't support install
     if (!isIOS && !installPrompt) return null;
@@ -64,21 +53,12 @@ export default function InstallCTA() {
     const benefits = [
         { icon: '📤', text: t('pwa.ctaBenefitShare') || 'Share profiles directly from other apps' },
         { icon: '⚡', text: t('pwa.ctaBenefitSpeed') || 'One tap access — no browser needed' },
-        { icon: '📶', text: t('pwa.ctaBenefitOffline') || 'Check records even without internet' },
+        { icon: '🏠', text: t('pwa.ctaBenefitHomeScreen') || 'Always on your home screen, like a native app' },
     ];
 
     return (
         <div className="mt-10 mx-auto max-w-md">
-            <div className="relative bg-gradient-to-br from-stone-50 to-stone-100 rounded-2xl border border-stone-200/80 p-5 text-center">
-                {/* Dismiss button */}
-                <button
-                    onClick={handleDismiss}
-                    className="absolute top-2.5 right-3 text-stone-300 hover:text-stone-500 text-lg transition-colors"
-                    aria-label="Dismiss"
-                >
-                    ×
-                </button>
-
+            <div className="bg-gradient-to-br from-stone-50 to-stone-100 rounded-2xl border border-stone-200/80 p-5 text-center">
                 <div className="text-2xl mb-2">🐾</div>
                 <h3 className="text-sm font-bold text-stone-800">
                     {t('pwa.ctaTitle') || 'Get the BuenAdoptante App'}
@@ -114,3 +94,4 @@ export default function InstallCTA() {
         </div>
     );
 }
+
