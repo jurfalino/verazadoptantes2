@@ -14,8 +14,6 @@ import { eq } from 'drizzle-orm';
 
 // Define all feature flags with their defaults
 export const FEATURE_FLAGS = {
-    ENABLE_FACEBOOK_IMPORT: false,
-    ENABLE_AI_EXTRACTION: false,
     ENABLE_CONTENT_IMPORT: false,
 } as const;
 
@@ -94,8 +92,6 @@ export async function setFeatureFlag(flag: FeatureFlag, value: boolean, updatedB
  */
 export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>> {
     const result: Record<FeatureFlag, boolean> = {
-        ENABLE_FACEBOOK_IMPORT: false,
-        ENABLE_AI_EXTRACTION: false,
         ENABLE_CONTENT_IMPORT: false,
     };
 

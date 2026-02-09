@@ -41,8 +41,6 @@ export async function GET() {
             too_many_requests_threshold: config['too_many_requests_threshold'] || '3',
             too_many_requests_period_days: config['too_many_requests_period_days'] || '30',
             // Feature flags (from DB)
-            ENABLE_FACEBOOK_IMPORT: config['ENABLE_FACEBOOK_IMPORT'] || 'false',
-            ENABLE_AI_EXTRACTION: config['ENABLE_AI_EXTRACTION'] || 'false',
             ENABLE_CONTENT_IMPORT: config['ENABLE_CONTENT_IMPORT'] || 'false',
         },
         statsCount,

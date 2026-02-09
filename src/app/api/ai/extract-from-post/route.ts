@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Check feature flag
-        const isEnabled = await getFeatureFlag('ENABLE_FACEBOOK_IMPORT');
+        const isEnabled = await getFeatureFlag('ENABLE_CONTENT_IMPORT');
         if (!isEnabled) {
             return NextResponse.json({ error: 'Feature not enabled' }, { status: 403 });
         }

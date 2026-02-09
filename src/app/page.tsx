@@ -18,7 +18,6 @@ export default function Home() {
   const router = useRouter();
   const { data: session } = useSession();
   const { openLogin } = useAuthContext();
-  const [facebookImportEnabled, setFacebookImportEnabled] = useState(false);
   const [contentImportEnabled, setContentImportEnabled] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
 
@@ -28,9 +27,6 @@ export default function Home() {
       .then(res => res.json())
       .then((data) => {
         const cfg = data as { config?: Record<string, string> };
-        if (cfg.config?.ENABLE_FACEBOOK_IMPORT === 'true') {
-          setFacebookImportEnabled(true);
-        }
         if (cfg.config?.ENABLE_CONTENT_IMPORT === 'true') {
           setContentImportEnabled(true);
         }

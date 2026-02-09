@@ -10,8 +10,6 @@ interface ConfigData {
         too_many_adoptions_period_days?: string;
         too_many_requests_threshold?: string;
         too_many_requests_period_days?: string;
-        ENABLE_FACEBOOK_IMPORT?: string;
-        ENABLE_AI_EXTRACTION?: string;
         ENABLE_CONTENT_IMPORT?: string;
     };
     statsCount?: number;
@@ -25,9 +23,7 @@ interface PurgeData {
 
 // Feature flags definition
 const FEATURE_FLAGS = [
-    { key: 'ENABLE_FACEBOOK_IMPORT', label: 'Facebook Import', description: 'Allow users to import adopter data from Facebook posts using AI' },
-    { key: 'ENABLE_AI_EXTRACTION', label: 'AI Data Extraction', description: 'Enable AI-powered data extraction from images and text' },
-    { key: 'ENABLE_CONTENT_IMPORT', label: 'Content Import', description: 'Show the Import Content button on the home page for importing from any URL, text, or images' },
+    { key: 'ENABLE_CONTENT_IMPORT', label: 'Content Import', description: 'Show the Import Content button on the home page for importing from any URL, text, or images using AI' },
 ];
 
 export default function AdminConfigPage() {
@@ -39,8 +35,6 @@ export default function AdminConfigPage() {
         too_many_requests_period_days: '30'
     });
     const [featureFlags, setFeatureFlags] = useState<Record<string, boolean>>({
-        ENABLE_FACEBOOK_IMPORT: false,
-        ENABLE_AI_EXTRACTION: false,
         ENABLE_CONTENT_IMPORT: false,
     });
     const [statsCount, setStatsCount] = useState<number | null>(null);
@@ -66,8 +60,6 @@ export default function AdminConfigPage() {
                     });
                     // Set feature flags from config
                     setFeatureFlags({
-                        ENABLE_FACEBOOK_IMPORT: data.config?.ENABLE_FACEBOOK_IMPORT === 'true',
-                        ENABLE_AI_EXTRACTION: data.config?.ENABLE_AI_EXTRACTION === 'true',
                         ENABLE_CONTENT_IMPORT: data.config?.ENABLE_CONTENT_IMPORT === 'true',
                     });
                     setStatsCount(data.statsCount ?? null);
