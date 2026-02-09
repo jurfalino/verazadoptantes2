@@ -14,9 +14,20 @@ export async function POST(request: NextRequest) {
     try {
         const formData = await request.formData();
 
-        const sharedUrl = formData.get('url') as string || '';
-        const sharedText = formData.get('text') as string || '';
+        let sharedUrl = formData.get('url') as string || '';
+        let sharedText = formData.get('text') as string || '';
         const sharedTitle = formData.get('title') as string || '';
+
+        // Many Android apps (Instagram, WhatsApp, etc.) put URLs in the text
+        // field instead of the url field. Detect and extract URLs from text.
+        if (!sharedUrl && sharedText) {
+            const urlMatch = sharedText.match(/https?:\/\/[^\s]+/i);
+            if (urlMatch) {
+                sharedUrl = urlMatch[0];
+                // Remove the URL from text, keep any surrounding context
+                sharedText = sharedText.replace(urlMatch[0], '').trim();
+            }
+        }
 
         // Build redirect URL with shared content as query params
         const params = new URLSearchParams();
