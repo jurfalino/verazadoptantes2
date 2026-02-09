@@ -412,7 +412,7 @@ export const en = {
         name: 'Name',
         contactInfo: 'Contact Info',
         contactPlaceholder: 'Phones, emails, addresses, social profiles...',
-        contactHint: 'Edit freely — this is stored exactly as shown.',
+        attachedImages: 'Attached Images',
         notes: 'Notes',
         commaSeparated: 'Comma separated',
         confidence: 'confidence',

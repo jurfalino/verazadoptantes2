@@ -412,7 +412,7 @@ export const es = {
         name: 'Nombre',
         contactInfo: 'Info de Contacto',
         contactPlaceholder: 'Teléfonos, emails, direcciones, redes sociales...',
-        contactHint: 'Editá libremente — se guarda exactamente como se muestra.',
+        attachedImages: 'Imágenes adjuntas',
         notes: 'Notas',
         commaSeparated: 'Separados por comas',
         confidence: 'confianza',

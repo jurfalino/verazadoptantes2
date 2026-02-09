@@ -756,7 +756,6 @@ export default function ImportWizard() {
                             className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm min-h-[80px] resize-y focus:ring-2 focus:ring-blue-500"
                             placeholder={t('import.contactPlaceholder') || 'Phones, emails, addresses, social profiles...'}
                         />
-                        <p className="text-xs text-stone-400 mt-0.5">{t('import.contactHint') || 'Edit freely — this is stored exactly as shown.'}</p>
                     </div>
 
                     {/* Notes */}
@@ -870,6 +869,35 @@ export default function ImportWizard() {
                             </p>
                         </div>
                     )}
+
+                    {/* Image preview — show all images that will be saved */}
+                    {(() => {
+                        const allImages: { src: string; label?: string }[] = [];
+                        // Processed images from fetch (base64)
+                        processedImages.forEach((img, i) => allImages.push({ src: `data:${img.mimeType};base64,${img.data}`, label: img.originalUrl ? new URL(img.originalUrl).pathname.split('/').pop() : undefined }));
+                        // Manually uploaded images
+                        manualImages.forEach((img) => allImages.push({ src: img.preview }));
+                        if (allImages.length === 0) return null;
+                        return (
+                            <div>
+                                <label className="block text-xs font-medium text-stone-500 mb-1.5">
+                                    {t('import.attachedImages') || 'Attached Images'} ({allImages.length})
+                                </label>
+                                <div className="flex flex-wrap gap-2">
+                                    {allImages.map((img, i) => (
+                                        <div key={i} className="relative group">
+                                            <img
+                                                src={img.src}
+                                                alt={img.label || `Image ${i + 1}`}
+                                                className="w-16 h-16 object-cover rounded-lg border border-stone-200 cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all"
+                                                onClick={() => setExpandedImage(img.src)}
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        );
+                    })()}
 
                     <div className="flex gap-3 pt-2">
                         <button
