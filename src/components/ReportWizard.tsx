@@ -21,7 +21,6 @@ export default function ReportWizard() {
 
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
-    const [legalConsent, setLegalConsent] = useState(false);
 
     // Step 1: Adopter Data
     const [adopterMode, setAdopterMode] = useState<'existing' | 'new'>('existing');
@@ -222,7 +221,7 @@ export default function ReportWizard() {
                         </div>
 
 
-                        <LegalConsent accepted={legalConsent} onChange={setLegalConsent} />
+                        <LegalConsent />
 
                         <div className="flex justify-between pt-4">
                             <button
@@ -233,7 +232,7 @@ export default function ReportWizard() {
                             </button>
                             <button
                                 onClick={handleFinish}
-                                disabled={loading || !legalConsent}
+                                disabled={loading}
                                 className="px-6 py-2 bg-rose-600 text-white font-bold rounded-xl hover:bg-rose-700 disabled:opacity-50"
                             >
                                 {loading ? (t('common.processing') || 'Processing...') : (t('wizard.submit_observation') || 'Submit Observation')}

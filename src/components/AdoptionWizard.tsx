@@ -22,7 +22,6 @@ export default function AdoptionWizard() {
 
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
-    const [legalConsent, setLegalConsent] = useState(false);
 
     useEffect(() => {
         if (session?.user) {
@@ -326,7 +325,7 @@ export default function AdoptionWizard() {
                             </div>
                         )}
 
-                        <LegalConsent accepted={legalConsent} onChange={setLegalConsent} />
+                        <LegalConsent />
 
                         <div className="flex justify-between pt-4">
                             <button
@@ -337,7 +336,7 @@ export default function AdoptionWizard() {
                             </button>
                             <button
                                 onClick={handleFinish}
-                                disabled={loading || !legalConsent || (adopterMode === 'existing' && !selectedAdopterId)}
+                                disabled={loading || (adopterMode === 'existing' && !selectedAdopterId)}
                                 className="px-6 py-2 bg-teal-600 text-white font-bold rounded-xl hover:bg-teal-700 disabled:opacity-50"
                             >
                                 {loading ? 'Processing...' : 'Complete Adoption'}

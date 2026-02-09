@@ -135,7 +135,7 @@ export const en = {
         sample_record: 'See an example profile',
     },
     legal: {
-        consent_checkbox: 'I declare that the information is truthful and I accept the',
+        consent_checkbox: 'By saving, you agree to the',
         terms_link: 'Terms of Use',
         and: 'and the',
         privacy_link: 'Privacy Policy',
