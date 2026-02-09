@@ -104,9 +104,6 @@ function PrivacyES() {
             <p>
                 Si considerás que tus derechos no han sido debidamente atendidos, podés presentar una denuncia ante la{' '}
                 <strong>Agencia de Acceso a la Información Pública (AAIP)</strong> —{' '}
-                <a href="https://www.argentina.gob.ar/aaip" target="_blank" rel="noopener noreferrer" className="text-teal-600 hover:underline">
-                    www.argentina.gob.ar/aaip
-                </a>
             </p>
         </>
     );
@@ -185,9 +182,6 @@ function PrivacyEN() {
             <p>
                 If you believe your rights have not been adequately addressed, you may file a complaint with the{' '}
                 <strong>Agencia de Acceso a la Información Pública (AAIP)</strong> —{' '}
-                <a href="https://www.argentina.gob.ar/aaip" target="_blank" rel="noopener noreferrer" className="text-teal-600 hover:underline">
-                    www.argentina.gob.ar/aaip
-                </a>
             </p>
         </>
     );
