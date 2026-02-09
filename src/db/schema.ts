@@ -95,6 +95,20 @@ export const appConfig = sqliteTable("app_config", {
     updatedBy: text("updated_by"),
 });
 
+// Data Requests - Track ARCO rights requests and inaccuracy reports
+export const dataRequests = sqliteTable("data_requests", {
+    id: text("id").primaryKey(),
+    adopterId: text("adopter_id"), // Nullable — may be a general request
+    requesterName: text("requester_name").notNull(),
+    requesterEmail: text("requester_email"),
+    requestType: text("request_type").notNull().default("inaccuracy"), // inaccuracy, access, rectification, deletion
+    details: text("details"),
+    status: text("status").notNull().default("pending"), // pending, resolved, rejected
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    resolvedAt: integer("resolved_at", { mode: "timestamp" }),
+    resolvedBy: text("resolved_by"),
+});
+
 // Adoption Images - Photos attached to adoption/observation records
 export const adoptionImages = sqliteTable("adoption_images", {
     id: text("id").primaryKey(),

@@ -145,6 +145,12 @@ export const es = {
         privacy: 'Privacidad',
         terms: 'Términos',
         contact: 'Contacto',
+        report_submitted: 'Reporte enviado. Lo revisaremos dentro de los próximos 10 días hábiles.',
+        report_desc: 'Si este perfil contiene información incorrecta sobre vos, contános:',
+        your_name: 'Tu nombre *',
+        your_email: 'Tu email (opcional)',
+        report_details: '¿Qué información es incorrecta? *',
+        send_report: 'Enviar Reporte',
     },
     adopter: {
         title_new: 'Nuevo Adoptante',

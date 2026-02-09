@@ -13,6 +13,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { saveImage } from '@/app/actions';
 import { getRatingColors } from '@/lib/ratingColors';
 import { StarRating } from '@/components/StarRating';
+import ReportInaccuracyForm from '@/components/ReportInaccuracyForm';
 
 interface AdopterStats {
     searchHits: { '90d': number; '1y': number; 'all': number };
@@ -85,16 +86,9 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                     </a>
                 </div>
 
-                {/* Community data disclaimer */}
+                {/* Community data disclaimer + report form */}
                 {!isNew && adopter && (
-                    <div className="bg-stone-50 border border-stone-200 rounded-xl px-4 py-2.5 flex items-center justify-between">
-                        <p className="text-stone-500 text-xs">
-                            ℹ️ {t('legal.disclaimer')}
-                        </p>
-                        <a href="/terms#disputes" className="text-teal-600 hover:text-teal-800 text-xs underline underline-offset-2 whitespace-nowrap ml-3">
-                            {t('legal.report_error')}
-                        </a>
-                    </div>
+                    <ReportInaccuracyForm adopterId={id} adopterName={adopter.name} />
                 )}
 
                 {!isNew && adopter && (

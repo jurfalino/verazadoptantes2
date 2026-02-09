@@ -145,6 +145,12 @@ export const en = {
         privacy: 'Privacy',
         terms: 'Terms',
         contact: 'Contact',
+        report_submitted: 'Report submitted. We will review it within 10 business days.',
+        report_desc: 'If this profile contains incorrect information about you, let us know:',
+        your_name: 'Your name *',
+        your_email: 'Your email (optional)',
+        report_details: 'What information is incorrect? *',
+        send_report: 'Send Report',
     },
     adopter: {
         title_new: 'New Adopter',
