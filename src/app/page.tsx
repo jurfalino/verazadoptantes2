@@ -10,6 +10,7 @@ import { useAuthContext } from '@/context/AuthContext';
 import AdoptionWizard from '@/components/AdoptionWizard';
 import ReportWizard from '@/components/ReportWizard';
 import FacebookImportWizard from '@/components/FacebookImportWizard';
+import { ShieldPawIcon } from '@/components/Logo';
 import packageJson from '../../package.json';
 import { useEffect, useState } from 'react';
 
@@ -61,6 +62,7 @@ export default function Home() {
     <main className="min-h-screen bg-stone-50 py-12 px-4 relative">
       <div className="max-w-3xl mx-auto space-y-8">
         <header className="text-center mb-12">
+          <ShieldPawIcon className="w-16 h-16 mx-auto mb-4" />
           <h1 className="text-4xl md:text-5xl font-extrabold text-stone-900 mb-4 tracking-tight">
             {t('home.title')}
           </h1>

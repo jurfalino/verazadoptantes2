@@ -1,27 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <defs>
-    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#44403c;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#292524;stop-opacity:1" />
-    </linearGradient>
-    <linearGradient id="checkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#14b8a6;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#0d9488;stop-opacity:1" />
-    </linearGradient>
-  </defs>
-  <!-- Background -->
-  <rect width="512" height="512" rx="96" fill="#fafaf9"/>
   <!-- Shield -->
-  <path d="M256 56 L416 120 L416 260 C416 340 350 410 256 456 C162 410 96 340 96 260 L96 120 Z" fill="url(#shieldGrad)" stroke="#1c1917" stroke-width="4"/>
-  <!-- Paw print - center pad -->
-  <ellipse cx="256" cy="290" rx="40" ry="35" fill="#fafaf9" opacity="0.9"/>
-  <!-- Paw print - top pads -->
-  <ellipse cx="210" cy="230" rx="22" ry="26" fill="#fafaf9" opacity="0.9" transform="rotate(-15 210 230)"/>
-  <ellipse cx="302" cy="230" rx="22" ry="26" fill="#fafaf9" opacity="0.9" transform="rotate(15 302 230)"/>
-  <ellipse cx="176" cy="262" rx="18" ry="22" fill="#fafaf9" opacity="0.9" transform="rotate(-30 176 262)"/>
-  <ellipse cx="336" cy="262" rx="18" ry="22" fill="#fafaf9" opacity="0.9" transform="rotate(30 336 262)"/>
-  <!-- Checkmark circle -->
-  <circle cx="370" cy="390" r="48" fill="url(#checkGrad)" stroke="#fafaf9" stroke-width="6"/>
-  <!-- Checkmark -->
-  <polyline points="345,390 362,408 395,372" fill="none" stroke="#fafaf9" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M256 38 C256 38 432 100 432 100 C432 100 432 270 432 270 C432 362 354 432 256 478 C158 432 80 362 80 270 C80 270 80 100 80 100 C80 100 256 38 256 38 Z" fill="#14b8a6"/>
+  <!-- Paw - main pad -->
+  <ellipse cx="256" cy="310" rx="52" ry="46" fill="#ffffff"/>
+  <!-- Paw - top toes -->
+  <ellipse cx="198" cy="238" rx="28" ry="34" fill="#ffffff" transform="rotate(-12 198 238)"/>
+  <ellipse cx="314" cy="238" rx="28" ry="34" fill="#ffffff" transform="rotate(12 314 238)"/>
+  <!-- Paw - side toes -->
+  <ellipse cx="158" cy="278" rx="22" ry="28" fill="#ffffff" transform="rotate(-28 158 278)"/>
+  <ellipse cx="354" cy="278" rx="22" ry="28" fill="#ffffff" transform="rotate(28 354 278)"/>
 </svg>
