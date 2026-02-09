@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { formatDateTimeFull } from '@/lib/dates';
 
 interface AuditEntry {
     id: string;
@@ -92,9 +93,7 @@ export default function AdminAuditPage() {
     };
 
     const formatDate = (epoch: number) => {
-        return new Date(epoch * 1000).toLocaleDateString('es-AR', {
-            day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'
-        });
+        return formatDateTimeFull(epoch);
     };
 
     const parseDetails = (details: string | null): Record<string, unknown> | null => {

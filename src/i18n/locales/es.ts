@@ -501,6 +501,8 @@ export const es = {
         duplicateUrl: 'Esta URL ya fue importada. Perfil existente:',
         // Botón volver
         back: 'Volver',
+        // Validación IA
+        aiValidationWarning: 'Los datos extraídos por IA pueden contener errores. Verificá todos los campos antes de guardar.',
     },
     pwa: {
         installTitle: 'Instalar BuenAdoptante',

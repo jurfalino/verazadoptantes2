@@ -8,15 +8,7 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useShowToast } from '@/components/ui/Toast';
-
-// Format date as "Feb 4 '26" (3-letter month + day + year)
-function formatShortDate(input: Date | number): string {
-    const date = input instanceof Date ? input : new Date(input);
-    const month = date.toLocaleDateString('en-US', { month: 'short' });
-    const day = date.getDate();
-    const year = date.getFullYear().toString().slice(-2);
-    return `${month} ${day} '${year}`;
-}
+import { formatShortDate } from '@/lib/dates';
 
 export default function SearchSection() {
     const { t } = useLanguage();

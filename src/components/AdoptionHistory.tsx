@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { getRecordTypeColors } from '@/lib/recordTypeColors';
 import { useShowToast } from '@/components/ui/Toast';
 import { getSourceIcon, getSourceName } from '@/lib/sourceIcons';
+import { formatShortDate } from '@/lib/dates';
 import { isAdmin as isAdminEmail } from '@/config/admins';
 
 import AdoptionForm from './AdoptionForm';
@@ -243,7 +244,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, onEdit, a
 
                                 <div className="mt-3 flex items-center justify-between text-xs font-medium">
                                     <span className="text-emerald-500">
-                                        {adoption.date ? new Date(adoption.date).toLocaleDateString() : t('adoption.date_unknown')}
+                                        {adoption.date ? formatShortDate(new Date(adoption.date)) : t('adoption.date_unknown')}
                                     </span>
                                     <div className="flex items-center gap-2">
                                         {/* Source URL link */}

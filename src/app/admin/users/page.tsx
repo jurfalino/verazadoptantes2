@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { formatDateTime } from '@/lib/dates';
 
 interface UserProfile {
     id: string;
@@ -67,9 +68,7 @@ export default function AdminUsersPage() {
 
     const formatDate = (epoch: number | null) => {
         if (!epoch) return '—';
-        return new Date(epoch * 1000).toLocaleDateString('es-AR', {
-            day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
-        });
+        return formatDateTime(epoch);
     };
 
     const filteredUsers = users.filter(u => {

@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.4.2] - 2026-02-09
+
+### Changed
+- **Date formatting standardized** — all date displays now use 3-letter month abbreviations (e.g. "Feb 4 '26") via shared `dates.ts` utility; removed 5 duplicated local format functions across 12 files
+- **AI extraction prompt hardened** — dedicated `SOCIAL PROFILES — CRITICAL` section ensures Instagram handles and @mentions are always captured; lists common IG patterns (ig:, insta:, 📷)
+
+### Fixed
+- **Instagram handle extraction** — AI was skipping @handles due to overly aggressive anti-hallucination rules; now correctly extracts all social profiles
+- **500 error on save to existing adopter** — added missing `source_url` column to local D1 adoptions table
+
+### Removed
+- **FacebookImportWizard** — removed unused legacy component
+
+---
+
 ## [2.4.0] - 2026-02-09
 
 ### Added

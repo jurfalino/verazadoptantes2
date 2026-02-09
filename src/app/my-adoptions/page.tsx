@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { RatingBadge } from '@/components/RatingBadge';
+import { formatShortDate } from '@/lib/dates';
 
 interface AdoptionImage {
     id: string;
@@ -27,15 +28,6 @@ interface Adoption {
 
 const RECORD_TYPES = ['all', 'adoption', 'adoption_request', 'observation', 'follow_up', 'returned_pet'] as const;
 type RecordTypeFilter = typeof RECORD_TYPES[number];
-
-// Format date as "Feb 4 '26" (3-letter month + day + year)
-function formatShortDate(timestamp: number): string {
-    const date = new Date(timestamp);
-    const month = date.toLocaleDateString('en-US', { month: 'short' });
-    const day = date.getDate();
-    const year = date.getFullYear().toString().slice(-2);
-    return `${month} ${day} '${year}`;
-}
 
 export default function MyAdoptionsPage() {
     const { t } = useLanguage();

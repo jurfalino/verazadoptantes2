@@ -5,6 +5,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { RatingBadge } from '@/components/RatingBadge';
+import { formatShortDate } from '@/lib/dates';
 
 interface AdopterFlags {
     inaccurate: boolean;
@@ -29,15 +30,6 @@ interface Adopter {
     requestCount: number;
     searchHits: number;
     profileViews: number;
-}
-
-// Format date as "Feb 4 '26" (3-letter month + day + year)
-function formatShortDate(timestamp: number): string {
-    const date = new Date(timestamp);
-    const month = date.toLocaleDateString('en-US', { month: 'short' });
-    const day = date.getDate();
-    const year = date.getFullYear().toString().slice(-2);
-    return `${month} ${day} '${year}`;
 }
 
 // Flag badges component for displaying all flags

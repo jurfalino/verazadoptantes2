@@ -215,7 +215,7 @@ export default function ImportWizard() {
         setManualImages(prev => prev.filter((_, i) => i !== index));
     };
 
-    // AI Extraction
+    // AI Extraction — text + images sent together; hardened prompt prevents hallucination
     const handleExtract = async () => {
         setLoading(true);
         setError(null);
@@ -251,19 +251,27 @@ export default function ImportWizard() {
                 throw new Error(result.error || 'Extraction failed');
             }
 
-            setExtractedData(result.data || null);
+            const aiData = result.data || { confidence: 'low' as const };
+
+            // Preserve original post text untouched, append any AI-extracted notes after
+            if (editableText?.trim()) {
+                const aiNotes = aiData.notes?.trim();
+                aiData.notes = editableText + (aiNotes ? '\n\n---\n' + aiNotes : '');
+            }
+
+            setExtractedData(aiData);
             // Build contact info text from extracted arrays
-            if (result.data) {
+            if (aiData) {
                 const parts: string[] = [];
                 const isEs = locale === 'es';
-                if (result.data.phones?.length) parts.push(`${isEs ? 'Teléfonos' : 'Phones'}: ${result.data.phones.join(', ')}`);
-                if (result.data.emails?.length) parts.push(`${isEs ? 'Correos' : 'Emails'}: ${result.data.emails.join(', ')}`);
-                if (result.data.socialProfiles?.length) parts.push(`${isEs ? 'Redes sociales' : 'Socials'}: ${result.data.socialProfiles.join(', ')}`);
-                if (result.data.addresses?.length) parts.push(`${isEs ? 'Dirección' : 'Address'}: ${result.data.addresses.join(', ')}`);
+                if (aiData.phones?.length) parts.push(`${isEs ? 'Teléfonos' : 'Phones'}: ${aiData.phones.join(', ')}`);
+                if (aiData.emails?.length) parts.push(`${isEs ? 'Correos' : 'Emails'}: ${aiData.emails.join(', ')}`);
+                if (aiData.socialProfiles?.length) parts.push(`${isEs ? 'Redes sociales' : 'Socials'}: ${aiData.socialProfiles.join(', ')}`);
+                if (aiData.addresses?.length) parts.push(`${isEs ? 'Dirección' : 'Address'}: ${aiData.addresses.join(', ')}`);
                 setContactInfoText(parts.join('\n'));
             }
             setCustomSpecies(false);
-            setUnknownAnimal(!result.data?.animalName);
+            setUnknownAnimal(!aiData.animalName);
             if (result.processedImages) {
                 setProcessedImages(result.processedImages);
             }
@@ -737,6 +745,12 @@ export default function ImportWizard() {
                             }`}>
                             {extractedData.confidence} {t('import.confidence') || 'confidence'}
                         </span>
+                    </div>
+
+                    {/* Validation warning */}
+                    <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                        <span className="mt-0.5">⚠️</span>
+                        <span>{t('import.aiValidationWarning') || 'AI-extracted data may contain errors. Please verify all fields before saving.'}</span>
                     </div>
 
                     {/* Name */}

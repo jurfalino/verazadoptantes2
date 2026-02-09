@@ -3,6 +3,7 @@ import { getDb } from "@/app/actions";
 import { dataRequests, adopters } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { formatShortDate } from '@/lib/dates';
 
 async function handleResolve(formData: FormData) {
     'use server';
@@ -106,7 +107,7 @@ export default async function AdminDataRequestsPage() {
                                             <div className="truncate" title={r.details || ''}>{r.details || '-'}</div>
                                         </td>
                                         <td className="p-4 text-xs text-stone-500">
-                                            {r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '-'}
+                                            {r.createdAt ? formatShortDate(new Date(r.createdAt)) : '-'}
                                         </td>
                                         <td className="p-4 text-right space-x-2">
                                             <form action={handleResolve} className="inline-flex gap-2">
@@ -178,7 +179,7 @@ export default async function AdminDataRequestsPage() {
                                             </span>
                                         </td>
                                         <td className="p-4 text-xs text-stone-500">
-                                            {r.resolvedAt ? new Date(r.resolvedAt).toLocaleDateString() : '-'}
+                                            {r.resolvedAt ? formatShortDate(new Date(r.resolvedAt)) : '-'}
                                         </td>
                                     </tr>
                                 ))}

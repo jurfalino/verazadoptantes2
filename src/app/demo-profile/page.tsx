@@ -5,6 +5,7 @@ export const runtime = 'edge';
 import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import { useRouter } from 'next/navigation';
+import { formatShortDate } from '@/lib/dates';
 
 export default function DemoProfilePage() {
     const { t } = useLanguage();
@@ -68,7 +69,7 @@ export default function DemoProfilePage() {
                         <div className="flex-1">
                             <h1 className="text-2xl font-bold text-stone-900">{adopter.name}</h1>
                             <p className="text-sm text-stone-500">
-                                📅 Registered: {adopter.createdAt.toLocaleDateString()}
+                                📅 Registered: {formatShortDate(adopter.createdAt)}
                             </p>
                         </div>
                         <RatingBadge rating={adopter.status} size="lg" />

@@ -10,6 +10,7 @@ import { getRatingColors } from '@/lib/ratingColors';
 import { getRecordTypeColors } from '@/lib/recordTypeColors';
 import { StarRating } from '@/components/StarRating';
 import { useShowToast } from '@/components/ui/Toast';
+import { formatShortDate } from '@/lib/dates';
 
 // Extract address-like lines from freeform contact text
 function extractAddressFromContact(contactText: string): string {
@@ -283,7 +284,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                         <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">Select Animal</label>
                         <select className="w-full h-10 pl-4 pr-10 rounded-lg border border-emerald-200 bg-emerald-50/50 text-emerald-950 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none appearance-none text-sm" onChange={(e) => handleSelectExisting(e.target.value)} value={formData.id || ''}>
                             <option value="">-- Choose an animal --</option>
-                            {availableAnimals.map(a => (<option key={a.id} value={a.id}>{a.animalName} ({a.species}) - {new Date(a.date).toLocaleDateString()}</option>))}
+                            {availableAnimals.map(a => (<option key={a.id} value={a.id}>{a.animalName} ({a.species}) - {formatShortDate(new Date(a.date))}</option>))}
                         </select>
                     </div>
                 )}

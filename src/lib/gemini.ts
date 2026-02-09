@@ -45,14 +45,28 @@ function getExtractionPrompt(language: string = 'es'): string {
         : 'IMPORTANTE: Devuelve TODOS los campos de texto (notas, direcciones, etc.) en Español. Los nombres propios deben permanecer como están.';
 
     return `You are a data extraction assistant for a pet adoption vetting system. 
-Extract contact information from the following content (text and/or images from a Facebook post).
+Extract contact information from the following content (text and/or images from a social media post).
 
-Extract the following if present:
+CRITICAL ACCURACY RULES:
+- ONLY extract information that is EXPLICITLY written in the text or CLEARLY VISIBLE in the images.
+- NEVER infer, guess, or construct data that is not directly present.
+- Do NOT construct URLs from usernames. If you see "@user123", return EXACTLY "@user123" as-is, do NOT turn it into "instagram.com/user123" or "facebook.com/user123".
+- Prefer returning null or empty arrays over guessing. Empty fields are ALWAYS better than incorrect data.
+
+SOCIAL PROFILES — CRITICAL:
+- ALWAYS extract any @handles, usernames, or profile links you see in the text or images into socialProfiles.
+- Include ALL @handles (e.g. "@rescuepets", "@maria.lopez.22") — these are valuable contact data even if the platform is unknown.
+- Common Instagram patterns: "ig: @handle", "insta: @handle", "instagram: @handle", "📷 @handle", "IG @handle", or just a standalone "@handle" in a bio/post.
+- If a full URL is present (e.g. "instagram.com/user"), return the full URL as-is.
+- If only a @handle is present, return it as-is (e.g. "@maria.lopez").
+- Do NOT skip or omit @handles. When in doubt, INCLUDE the handle.
+
+Extract the following if EXPLICITLY present:
 - Full name (of the person being reported, not the poster)
-- Phone numbers (any format)
-- Email addresses
+- Phone numbers (must be clearly written or visible — do NOT guess or construct phone numbers)
+- Email addresses (must contain @ and a domain — do NOT fabricate)
 - Physical addresses
-- Social media profiles (Facebook, Instagram, etc.)
+- Social media profiles (see SOCIAL PROFILES rules above — extract ALL @handles and profile links)
 - Any other relevant notes about the person
 
 ADOPTION DETECTION:
@@ -77,7 +91,7 @@ Respond ONLY with valid JSON in this exact format:
   "phones": ["array of phone strings"],
   "emails": ["array of email strings"],
   "addresses": ["array of address strings"],
-  "socialProfiles": ["array of social profile URLs or usernames"],
+  "socialProfiles": ["MUST include ALL @handles and profile links found — never omit them"],
   "notes": "any other relevant information as a string",
   "confidence": "high" | "medium" | "low",
   "adoptionDetected": true | false,
@@ -118,7 +132,7 @@ export async function extractAdopterData(
 
     // User text
     if (text?.trim()) {
-        parts.push({ text: `\n\nFacebook Post Text:\n${text}` });
+        parts.push({ text: `\n\nPost content:\n${text}` });
     }
 
     // Images

@@ -9,6 +9,7 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { StarRating } from '@/components/StarRating';
 import { useShowToast } from '@/components/ui/Toast';
+import { formatDateTime, formatShortDate } from '@/lib/dates';
 
 
 export function AdopterForm({ initialData, history = [], currentUser }: { initialData?: any, history?: any[], currentUser?: string }) {
@@ -381,7 +382,7 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                                     <div className="flex justify-between items-start mb-2">
                                         <div className="flex items-center gap-2">
                                             <span className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">
-                                                {new Date(h.changedAt).toLocaleString()}
+                                                {formatDateTime(new Date(h.changedAt))}
                                             </span>
                                             {/* Badge for event type */}
                                             {eventType === 'adoption_added' && <span className="bg-emerald-100 text-emerald-700 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase">{t('audit.event_adoption_added')}</span>}
@@ -432,7 +433,7 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                                                 {/* Deleted Image */}
                                                 {eventType === 'image_deleted' && (
                                                     <div className="text-emerald-800">
-                                                        {t('audit.desc_image_deleted')} <span className="italic opacity-75">"{changes.caption || t('common.untitled')}"</span> ({t('audit.by')} {new Date(changes.uploadedAt).toLocaleDateString()})
+                                                        {t('audit.desc_image_deleted')} <span className="italic opacity-75">"{changes.caption || t('common.untitled')}"</span> ({t('audit.by')} {formatShortDate(new Date(changes.uploadedAt))})
                                                     </div>
                                                 )}
                                             </>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import { formatDateTime } from '@/lib/dates';
 
 interface ImportSummary {
     success: boolean;
@@ -222,7 +223,7 @@ export default function DataMigrationPage() {
                     <div className="mt-4 bg-stone-50 rounded-xl border border-stone-200 p-4">
                         <h3 className="font-semibold text-stone-800 text-sm mb-1">📋 File Preview</h3>
                         <p className="text-xs text-stone-500 mb-3">
-                            Exported {new Date(preview.exportedAt).toLocaleString()} by {preview.exportedBy}
+                            Exported {formatDateTime(new Date(preview.exportedAt))} by {preview.exportedBy}
                         </p>
 
                         <div className="grid grid-cols-2 gap-2">
@@ -285,7 +286,7 @@ export default function DataMigrationPage() {
                     <div className="mt-4 bg-emerald-50 rounded-xl border border-emerald-200 p-4">
                         <h3 className="font-semibold text-emerald-800 text-sm mb-1">✅ Import Complete</h3>
                         <p className="text-xs text-emerald-600 mb-3">
-                            Mode: {importResult.mode} • {new Date(importResult.importedAt).toLocaleString()}
+                            Mode: {importResult.mode} • {formatDateTime(new Date(importResult.importedAt))}
                         </p>
                         <div className="grid grid-cols-2 gap-2">
                             {Object.entries(importResult.summary).map(([table, count]) => (

@@ -3,6 +3,7 @@ export const runtime = 'edge';
 
 import { useState, useEffect } from 'react';
 import { useShowToast } from '@/components/ui/Toast';
+import { formatShortDate } from '@/lib/dates';
 
 interface ConfigData {
     config?: {
@@ -283,7 +284,7 @@ export default function AdminConfigPage() {
                     <div>
                         <span className="text-sm text-stone-500">Oldest Event</span>
                         <p className="text-lg font-semibold text-stone-700">
-                            {oldestStat ? new Date(oldestStat).toLocaleDateString() : '—'}
+                            {oldestStat ? formatShortDate(new Date(oldestStat)) : '—'}
                         </p>
                     </div>
                 </div>

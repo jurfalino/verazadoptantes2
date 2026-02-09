@@ -3,6 +3,7 @@ import { getDb, dismissFlag } from "@/app/actions";
 import { adopterFlags, adopters } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { formatShortDate } from '@/lib/dates';
 
 // Server Actions for this page
 async function handleDismiss(formData: FormData) {
@@ -67,7 +68,7 @@ export default async function AdminFlagsPage() {
                                     <td className="p-4 text-xs text-stone-500">
                                         {flag.flaggedBy}
                                         <br />
-                                        {flag.createdAt ? new Date(flag.createdAt).toLocaleDateString() : ''}
+                                        {flag.createdAt ? formatShortDate(new Date(flag.createdAt)) : ''}
                                     </td>
                                     <td className="p-4 text-right space-x-2">
                                         <a
