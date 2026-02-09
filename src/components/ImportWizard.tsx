@@ -32,6 +32,25 @@ export default function ImportWizard() {
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [fetchProgress, setFetchProgress] = useState(0);
+
+    // Fake progress bar: non-linear ease-out curve over ~110s
+    useEffect(() => {
+        if (!loading) {
+            setFetchProgress(0);
+            return;
+        }
+        const startTime = Date.now();
+        const duration = 110_000; // 110 seconds
+        const timer = setInterval(() => {
+            const elapsed = Date.now() - startTime;
+            const linear = Math.min(elapsed / duration, 1);
+            // Ease-out: fast start, slow finish — caps at 95%
+            const eased = 1 - Math.pow(1 - linear, 2.5);
+            setFetchProgress(Math.round(eased * 95));
+        }, 500);
+        return () => clearInterval(timer);
+    }, [loading]);
 
     // Unified input state (single smart field)
     const [inputContent, setInputContent] = useState('');
@@ -524,7 +543,7 @@ export default function ImportWizard() {
                         {loading ? (
                             <>
                                 <span className="animate-spin">⏳</span>
-                                {t('import.fetching') || 'Fetching content...'}
+                                {t('import.fetching') || 'Fetching content...'} {fetchProgress > 0 && <span className="tabular-nums">{fetchProgress}%</span>}
                             </>
                         ) : (
                             <>
@@ -551,7 +570,16 @@ export default function ImportWizard() {
                     {loading && !editableText && (
                         <div className="flex flex-col items-center gap-3 py-8 text-stone-500">
                             <span className="animate-spin text-2xl">⏳</span>
-                            <p className="text-sm">{t('import.fetchingShared') || 'Fetching shared content...'}</p>
+                            <p className="text-sm">
+                                {t('import.fetchingShared') || 'Fetching shared content...'} {fetchProgress > 0 && <span className="tabular-nums font-medium">{fetchProgress}%</span>}
+                            </p>
+                            {/* Progress bar */}
+                            <div className="w-48 h-1.5 bg-stone-200 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full bg-blue-500 rounded-full transition-all duration-500 ease-out"
+                                    style={{ width: `${fetchProgress}%` }}
+                                />
+                            </div>
                         </div>
                     )}
 
