@@ -7,6 +7,7 @@ import { adopters, searches, adopterHistory, adoptions, adopterImages, adopterFl
 import { or, like, eq, sql, and, gte, isNull, inArray } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger, withTrace } from '@/lib/logger';
+import { logAudit } from '@/lib/audit';
 
 export interface AdopterFlags {
     inaccurate: boolean;
@@ -387,6 +388,7 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
 
         // Log search hit
         logger.info('Search', { query, resultCount: Math.min(totalCount, SEARCH_RESULT_LIMIT), truncated: totalCount > SEARCH_RESULT_LIMIT, user });
+        logAudit({ userEmail: user, action: 'search', details: { query, resultCount: Math.min(totalCount, SEARCH_RESULT_LIMIT) } });
 
         if (totalCount > SEARCH_RESULT_LIMIT) {
             return {
@@ -551,6 +553,7 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
                 });
 
                 logger.info('Adopter updated', { adopterId: data.id, changedBy });
+                logAudit({ userEmail: changedBy, action: 'adopter_updated', target: data.id as string, details: changes });
             }
             return { success: true, id: data.id };
         } else {
@@ -565,6 +568,7 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
             });
 
             logger.info('Adopter created', { adopterId: newId, changedBy });
+            logAudit({ userEmail: changedBy, action: 'adopter_created', target: newId, details: { name: data.name } });
             return { success: true, id: newId };
         }
 
@@ -735,6 +739,7 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
                 }
             }
             logger.info('Adoption updated', { adoptionId: data.id, adopterId: data.adopterId, changedBy });
+            logAudit({ userEmail: changedBy, action: 'adoption_updated', target: data.id as string, details: { adopterId: data.adopterId } });
             return { success: true, id: data.id };
         } else {
             // Create new
@@ -811,6 +816,7 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
             }
 
             logger.info('Adoption created', { adoptionId: id, adopterId: data.adopterId, species: data.species, changedBy });
+            logAudit({ userEmail: changedBy, action: 'adoption_created', target: id, details: { adopterId: data.adopterId, species: data.species, animalName: data.animalName } });
             return { success: true, id };
         }
     } catch (error) {
@@ -843,6 +849,7 @@ export async function deleteAdoption(adoptionId: string, adopterId: string) {
             changedAt: new Date()
         });
 
+        logAudit({ action: 'adoption_deleted', target: adoptionId, details: { adopterId } });
         revalidatePath(`/adopter/${adopterId}`);
         return { success: true };
     } catch (error) {
@@ -916,6 +923,7 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
             changedAt: new Date()
         });
 
+        logAudit({ userEmail: flaggedBy, action: 'flag_created', target: adopterId, details: { reason, details } });
         return { success: true, id };
     } catch (error) {
         console.error("Flag adopter error:", error);
@@ -1344,6 +1352,7 @@ export async function deleteAdopter(adopterId: string) {
         await db.delete(adopters).where(eq(adopters.id, adopterId));
 
         logger.info('Adopter deleted', { adopterId, deletedBy: session.user.email });
+        logAudit({ userEmail: session.user.email || undefined, action: 'adopter_deleted', target: adopterId });
 
         revalidatePath('/admin/adopters');
         return { success: true };

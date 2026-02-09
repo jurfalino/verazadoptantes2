@@ -36,6 +36,13 @@
       "when": 1770383694333,
       "tag": "0004_cute_sunfire",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1770900000000,
+      "tag": "0012_user_profiles_audit_log",
+      "breakpoints": true
     }
   ]
 }

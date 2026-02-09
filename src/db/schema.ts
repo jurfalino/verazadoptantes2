@@ -178,3 +178,30 @@ export const verificationTokens = sqliteTable(
         compoundKey: primaryKey({ columns: [vt.identifier, vt.token] }),
     })
 );
+
+export const userProfiles = sqliteTable("user_profiles", {
+    userId: text("user_id").primaryKey(),
+    organization: text("organization"),
+    role: text("role").default("viewer"), // viewer, contributor, admin
+    notes: text("notes"),
+    commsOptIn: integer("comms_opt_in").default(0),
+    lastActiveAt: integer("last_active_at", { mode: "timestamp" }),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+});
+
+export const auditLog = sqliteTable("audit_log", {
+    id: text("id").primaryKey(),
+    userId: text("user_id"),
+    userEmail: text("user_email"),
+    action: text("action").notNull(),
+    target: text("target"),
+    details: text("details"), // JSON string
+    device: text("device"),
+    isPWA: integer("is_pwa").default(0),
+    ipAddress: text("ip_address"),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+    userIdx: index("idx_audit_user").on(table.userId),
+    actionIdx: index("idx_audit_action").on(table.action),
+    createdIdx: index("idx_audit_created").on(table.createdAt),
+}));

@@ -1,6 +1,7 @@
 import type { NextAuthConfig } from "next-auth"
 import Google from "next-auth/providers/google"
 import { logger } from "@/lib/logger"
+import { logAudit, ensureUserProfile } from "@/lib/audit"
 
 export const authConfig = {
     providers: [Google],
@@ -14,6 +15,17 @@ export const authConfig = {
                 userId: user.id,
                 email: user.email,
                 provider: account?.provider
+            });
+            // Track user profile (first sign date + last activity)
+            if (user.id) {
+                ensureUserProfile(user.id, user.email || undefined);
+            }
+            // Audit log
+            logAudit({
+                userId: user.id,
+                userEmail: user.email || undefined,
+                action: 'sign_in',
+                details: { provider: account?.provider }
             });
             return true;
         },

@@ -61,6 +61,18 @@ export default async function AdminLayout({
                         📬 Data Requests
                     </Link>
                     <Link
+                        href="/admin/users"
+                        className="block px-4 py-2 rounded-lg hover:bg-stone-800 hover:text-white transition-colors"
+                    >
+                        👥 Users
+                    </Link>
+                    <Link
+                        href="/admin/audit"
+                        className="block px-4 py-2 rounded-lg hover:bg-stone-800 hover:text-white transition-colors"
+                    >
+                        📋 Audit Log
+                    </Link>
+                    <Link
                         href="/admin/data"
                         className="block px-4 py-2 rounded-lg hover:bg-stone-800 hover:text-white transition-colors"
                     >
