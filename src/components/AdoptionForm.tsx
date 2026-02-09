@@ -51,6 +51,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [adoptionImages, setAdoptionImages] = useState<any[]>([]);
+    const [pendingImages, setPendingImages] = useState<string[]>([]);
     const [unknownAnimal, setUnknownAnimal] = useState(!initialData?.animalName && initialData?.id ? true : false);
     const [customSpecies, setCustomSpecies] = useState(() => {
         // Check if initial species is not a preset
@@ -169,16 +170,22 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (!file || !formData.id) return;
+        if (!file) return;
 
         setUploading(true);
         try {
             const base64 = await compressImage(file);
-            const { saveImage } = await import('@/app/actions');
-            await saveImage(adopterId, base64, `Photo for ${formData.animalName}`, formData.id);
-            // Refresh adoption images
-            const updatedImages = await getAdoptionImages(formData.id);
-            setAdoptionImages(updatedImages);
+
+            if (formData.id) {
+                // Record already saved — upload immediately
+                const { saveImage } = await import('@/app/actions');
+                await saveImage(adopterId, base64, `Photo for ${formData.animalName}`, formData.id);
+                const updatedImages = await getAdoptionImages(formData.id);
+                setAdoptionImages(updatedImages);
+            } else {
+                // Record not yet saved — queue locally
+                setPendingImages(prev => [...prev, base64]);
+            }
         } catch (error) {
             console.error(error);
             toast.error('Upload Failed', 'Could not upload the image. Please try again.');
@@ -198,7 +205,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
             const [year, month, day] = formData.date.split('-').map(Number);
             const localDate = new Date(year, month - 1, day, 12, 0, 0);
 
-            await saveAdoption({
+            const result = await saveAdoption({
                 ...formData,
                 adopterId: adopterId,
                 rating: Number(formData.rating),
@@ -209,10 +216,20 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                 identityVerified: formData.identityVerified ? 1 : 0
             } as any);
 
+            // Upload any pending images now that we have the adoption ID
+            if (pendingImages.length > 0 && result?.id) {
+                const { saveImage } = await import('@/app/actions');
+                for (const base64 of pendingImages) {
+                    await saveImage(adopterId, base64, `Photo for ${formData.animalName}`, result.id);
+                }
+                setPendingImages([]);
+            }
+
             if (onSuccess) onSuccess();
             else {
                 setIsOpen(false);
                 setFormData({ id: undefined, animalName: '', details: '', status: 'completed', rating: 5, comments: '', species: '', adopterId, recordType: 'adoption', date: new Date().toISOString().split('T')[0], onBehalfOf: '', deliveredToHome: false, verifiedAddress: '', identityVerified: false });
+                setPendingImages([]);
                 await new Promise(resolve => setTimeout(resolve, 100));
                 router.refresh();
             }
@@ -495,54 +512,76 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                     <textarea className="w-full p-3 rounded-lg border border-emerald-200 bg-white text-emerald-950 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none resize-none text-sm" rows={3} value={formData.details} onChange={e => setFormData({ ...formData, details: e.target.value })} placeholder={t('adoption.notes_placeholder')} />
                 </div>
 
-                {/* Photo Upload - Only for existing/saved records */}
-                {formData.id && (
-                    <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-100/50">
-                        <label className="block text-xs font-bold text-emerald-800 mb-2 uppercase tracking-wider flex items-center gap-2">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                            {t('adopter.upload_image') || 'Upload Photo'}
-                        </label>
+                {/* Photo Upload */}
+                <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-100/50">
+                    <label className="block text-xs font-bold text-emerald-800 mb-2 uppercase tracking-wider flex items-center gap-2">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                        {t('adopter.upload_image') || 'Upload Photo'}
+                    </label>
 
-                        {/* Display existing adoption images */}
-                        {adoptionImages.length > 0 && (
-                            <div className="flex flex-wrap gap-2 mb-3">
-                                {adoptionImages.map((img) => (
-                                    <div key={img.id} className="relative group">
-                                        <img
-                                            src={img.url}
-                                            alt={img.caption || 'Adoption photo'}
-                                            className="w-16 h-16 object-cover rounded-lg border border-emerald-200"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={async () => {
-                                                if (!confirm('Delete this photo?')) return;
-                                                try {
-                                                    await deleteImage(img.id, adopterId);
-                                                    setAdoptionImages(prev => prev.filter(i => i.id !== img.id));
-                                                } catch (e) {
-                                                    toast.error('Error', 'Failed to delete image');
-                                                }
-                                            }}
-                                            className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
-                                            title="Delete photo"
-                                        >
-                                            ×
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        <div className="flex items-center gap-3">
-                            <label className={`px-4 py-2 bg-white border border-emerald-200 text-emerald-600 rounded-lg text-sm font-bold cursor-pointer hover:bg-emerald-50 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-                                {uploading ? 'Uploading...' : '+ Add Photo'}
-                                <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={uploading} />
-                            </label>
-                            <span className="text-xs text-emerald-600/60">{adoptionImages.length} photo(s) attached</span>
+                    {/* Display existing adoption images (saved records) */}
+                    {adoptionImages.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-3">
+                            {adoptionImages.map((img) => (
+                                <div key={img.id} className="relative group">
+                                    <img
+                                        src={img.url}
+                                        alt={img.caption || 'Adoption photo'}
+                                        className="w-16 h-16 object-cover rounded-lg border border-emerald-200"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={async () => {
+                                            if (!confirm('Delete this photo?')) return;
+                                            try {
+                                                await deleteImage(img.id, adopterId);
+                                                setAdoptionImages(prev => prev.filter(i => i.id !== img.id));
+                                            } catch (e) {
+                                                toast.error('Error', 'Failed to delete image');
+                                            }
+                                        }}
+                                        className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
+                                        title="Delete photo"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                            ))}
                         </div>
+                    )}
+
+                    {/* Display pending images (not yet saved) */}
+                    {pendingImages.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-3">
+                            {pendingImages.map((base64, idx) => (
+                                <div key={idx} className="relative group">
+                                    <img
+                                        src={base64}
+                                        alt={`Pending photo ${idx + 1}`}
+                                        className="w-16 h-16 object-cover rounded-lg border border-amber-300 ring-2 ring-amber-200"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setPendingImages(prev => prev.filter((_, i) => i !== idx))}
+                                        className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
+                                        title="Remove photo"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                            ))}
+                            <p className="w-full text-xs text-amber-600 mt-1">📎 {pendingImages.length} photo(s) will be uploaded when you save</p>
+                        </div>
+                    )}
+
+                    <div className="flex items-center gap-3">
+                        <label className={`px-4 py-2 bg-white border border-emerald-200 text-emerald-600 rounded-lg text-sm font-bold cursor-pointer hover:bg-emerald-50 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                            {uploading ? 'Uploading...' : '+ Add Photo'}
+                            <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={uploading} />
+                        </label>
+                        <span className="text-xs text-emerald-600/60">{adoptionImages.length + pendingImages.length} photo(s) attached</span>
                     </div>
-                )}
+                </div>
 
                 <div className="flex justify-between items-center pt-4 border-t border-emerald-100/50">
                     {onDelete && initialData && (
