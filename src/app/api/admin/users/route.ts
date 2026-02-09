@@ -14,24 +14,15 @@ export async function GET(request: Request) {
         const { env } = getRequestContext();
         if (!env?.DB) return NextResponse.json({ error: "No database" }, { status: 500 });
 
-        // Derive users from audit_log (guaranteed to exist) and join with user_profiles
-        // The NextAuth 'user' table does not exist in production D1 (Cloudflare uses KV)
+        // Get all users joined with their profiles
         const users = await env.DB.prepare(`
             SELECT 
-                a.user_id as id, 
-                a.user_email as email,
-                a.user_email as name,
-                NULL as image,
+                u.id, u.name, u.email, u.image,
                 p.organization, p.role, p.notes, p.comms_opt_in,
                 p.last_active_at, p.created_at as first_sign_in
-            FROM (
-                SELECT user_id, user_email, MAX(created_at) as last_seen
-                FROM audit_log 
-                WHERE user_id IS NOT NULL
-                GROUP BY user_id
-            ) a
-            LEFT JOIN user_profiles p ON a.user_id = p.user_id
-            ORDER BY COALESCE(p.last_active_at, a.last_seen, 0) DESC
+            FROM user u
+            LEFT JOIN user_profiles p ON u.id = p.user_id
+            ORDER BY COALESCE(p.last_active_at, 0) DESC
         `).all();
 
         return NextResponse.json({ users: users.results || [] });
