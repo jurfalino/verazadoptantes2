@@ -37,11 +37,11 @@ INSERT OR REPLACE INTO adoptions (id, adopter_id, animal_name, species, details,
 ('test-adoption-3', 'test-adopter-2', NULL, NULL, 'Se observó condiciones inadecuadas en la vivienda', NULL, 1, 'observation', strftime('%s','now','-15 days'), 'test-seed');
 
 -- Roberto: 3 adoptions
-INSERT OR REPLACE INTO adoptions (id, adopter_id, animal_name, species, details, status, rating, record_type, date, added_by) VALUES
-('test-adoption-4', 'test-adopter-4', 'Firulais', 'dog', 'Golden retriever adulto', 'completed', 4, 'adoption', strftime('%s','now','-90 days'), 'test-seed');
+INSERT OR REPLACE INTO adoptions (id, adopter_id, animal_name, species, details, status, rating, record_type, date, added_by, source_url) VALUES
+('test-adoption-4', 'test-adopter-4', 'Firulais', 'dog', 'Golden retriever adulto', 'completed', 4, 'adoption', strftime('%s','now','-90 days'), 'test-seed', 'https://www.facebook.com/groups/123/posts/456');
 
 INSERT OR REPLACE INTO adoptions (id, adopter_id, animal_name, species, details, status, rating, record_type, date, added_by) VALUES
-('test-adoption-5', 'test-adopter-4', 'Pelusa', 'cat', 'Gata siamesa', 'completed', 5, 'adoption', strftime('%s','now','-45 days'), 'test-seed');
+('test-adoption-5', 'test-adopter-4', 'Pelusa', 'cat', 'Gata siamesa', 'completed', 5, 'adoption', strftime('%s','now','-45 days'), 'gatitosolivos@gmail.com');
 
 INSERT OR REPLACE INTO adoptions (id, adopter_id, animal_name, species, details, status, rating, record_type, date, added_by) VALUES
 ('test-adoption-6', 'test-adopter-4', 'Rocky', 'dog', 'Cachorro bulldog francés', 'completed', 4, 'follow_up', strftime('%s','now','-10 days'), 'test-seed');

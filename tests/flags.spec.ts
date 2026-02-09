@@ -34,5 +34,17 @@ test.describe('Flags and Adoption History', () => {
         await expect(page.getByText(TEST_ANIMALS.FIRULAIS)).toBeVisible();
         await expect(page.getByText(TEST_ANIMALS.PELUSA)).toBeVisible();
         await expect(page.getByText(TEST_ANIMALS.ROCKY)).toBeVisible();
+
+        // Species labels should be translated (app defaults to Spanish)
+        // 'dog' → 'Perro', 'cat' → 'Gato'
+        await expect(page.getByText('Perro').first()).toBeVisible();
+        await expect(page.getByText('Gato').first()).toBeVisible();
+
+        // Source URL: Firulais record has a Facebook source_url — link should be present
+        const sourceLink = page.locator('a[href="https://www.facebook.com/groups/123/posts/456"]');
+        await expect(sourceLink).toBeVisible();
+
+        // Admin email hiding: Pelusa was added by admin (gatitosolivos@gmail.com) — should NOT appear
+        await expect(page.getByText('gatitosolivos@gmail.com')).not.toBeVisible();
     });
 });
