@@ -2,6 +2,40 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.4.0] - 2026-02-09
+
+### Added
+- **PWA support** — installable Android/iOS app with offline caching, share target (receive from WhatsApp/Instagram), install CTA on homepage
+- **New brand logo** — green shield + white paw icon in nav and home page
+- **Import wizard i18n** — full EN/ES translation, image selection/lightbox, proxy-image universal
+- **Smart import flow** — single input with auto URL detection, share intent integration, progress percentage, address/social/record type support
+- **UX onboarding** — how-it-works guide, search hints, import action card, flag legend, sample record
+- **Legal compliance** — privacy policy, terms of service, consent notice, profile disclaimer
+- **Data request tracking** — inline report form and admin panel for ARCO rights requests
+- **User registry** — `user_profiles` table, admin page with inline editing, mailto links, first sign-in tracking
+- **System audit log** — `audit_log` table with filtering, pagination, device/PWA badges, configurable retention
+- **Session version check** — middleware-enforced JWT versioning to force re-authentication on deploy
+- **Admin data import/export** — environment migration tool for moving data between staging and production
+- **Photo upload** — image upload during adoption creation with queue and upload on save
+- **Dynamic social icons** — source URL icons on adoption cards (Instagram, Facebook, WhatsApp, etc.)
+
+### Changed
+- **Unified import flow** — consolidated Facebook/URL/text import into single smart input
+- **Contact fields** — consolidated into single WYSIWYG textarea
+- **Feature flags** — consolidated into single `ENABLE_CONTENT_IMPORT` flag
+- **Search placeholder** — updated to "Name, Phone, or Address" (EN/ES)
+- **Install CTA** — removed dismiss button, replaced misleading offline benefit with home screen benefit
+
+### Fixed
+- **Session management** — added `middleware.ts` for proper NextAuth v5 auth enforcement
+- **Species labels** — locale-aware translation on adoption cards
+- **AI contact labels** — locale-aware labels for extracted contact info
+- **ESLint config** — rewrote to use FlatCompat, downgraded noisy rules to unblock CI
+- **D1 compatibility** — `COALESCE` instead of `NULLS LAST` in user queries
+- **Edge sign-in** — populate user table when adapter is disabled on Cloudflare Edge
+
+---
+
 ## [2.1.0] - 2026-02-08
 
 ### Added
