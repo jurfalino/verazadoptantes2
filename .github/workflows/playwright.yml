@@ -1,9 +1,17 @@
-name: Playwright Tests
+# Playwright E2E tests require a local Cloudflare D1 database with seeded data.
+# These tests cannot run in GitHub Actions — they are meant for local development only.
+# Run locally with: npx playwright test
+#
+# To re-enable in CI, you would need to:
+#   1. Add wrangler D1 setup steps
+#   2. Seed the local D1 database
+#   3. Run `npm run dev` with Cloudflare bindings
+#
+# For now, CI only runs: type-check, lint, and build (see ci.yml)
+
+name: Playwright Tests (Local Only)
 on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+  workflow_dispatch: # Manual trigger only
 jobs:
   test:
     timeout-minutes: 60
