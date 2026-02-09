@@ -60,6 +60,12 @@ export default async function AdminLayout({
                     >
                         📬 Data Requests
                     </Link>
+                    <Link
+                        href="/admin/data"
+                        className="block px-4 py-2 rounded-lg hover:bg-stone-800 hover:text-white transition-colors"
+                    >
+                        📦 Data Migration
+                    </Link>
 
                     <div className="pt-8 mt-8 border-t border-stone-800">
                         <Link
