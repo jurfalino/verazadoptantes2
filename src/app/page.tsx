@@ -92,17 +92,26 @@ export default function Home() {
               {t('home.how_title')}
             </h2>
             <div className="grid grid-cols-3 gap-4 text-center">
-              <div>
+              <div
+                className="cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={() => { dismissGuide(); document.getElementById('search-section')?.scrollIntoView({ behavior: 'smooth' }); }}
+              >
                 <div className="text-2xl mb-1">🔍</div>
                 <p className="font-bold text-stone-800 text-sm">{t('home.how_step1_title')}</p>
                 <p className="text-stone-500 text-xs mt-0.5">{t('home.how_step1_desc')}</p>
               </div>
-              <div>
+              <div
+                className="cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={() => { dismissGuide(); handleAuthNavigation('/import'); }}
+              >
                 <div className="text-2xl mb-1">📤</div>
                 <p className="font-bold text-stone-800 text-sm">{t('home.how_step2_title')}</p>
                 <p className="text-stone-500 text-xs mt-0.5">{t('home.how_step2_desc')}</p>
               </div>
-              <div>
+              <div
+                className="cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={() => { dismissGuide(); document.getElementById('action-cards')?.scrollIntoView({ behavior: 'smooth' }); }}
+              >
                 <div className="text-2xl mb-1">⭐</div>
                 <p className="font-bold text-stone-800 text-sm">{t('home.how_step3_title')}</p>
                 <p className="text-stone-500 text-xs mt-0.5">{t('home.how_step3_desc')}</p>
@@ -113,10 +122,12 @@ export default function Home() {
 
         {/* Facebook Import removed — unified Import Wizard handles all imports */}
 
-        <SearchSection />
+        <div id="search-section">
+          <SearchSection />
+        </div>
 
         {/* Action Cards — 3-column grid */}
-        <div className={`grid gap-6 mt-12 ${contentImportEnabled ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+        <div id="action-cards" className={`grid gap-6 mt-12 ${contentImportEnabled ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
           {/* Import from post — promoted to full card */}
           {contentImportEnabled && (
             <div
