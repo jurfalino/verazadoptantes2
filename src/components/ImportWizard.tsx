@@ -769,6 +769,28 @@ export default function ImportWizard() {
                         </div>
                     </div>
 
+                    {/* Addresses */}
+                    <div>
+                        <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.addresses') || 'Addresses'}</label>
+                        <input
+                            value={extractedData.addresses?.join(', ') || ''}
+                            onChange={e => setExtractedData({ ...extractedData, addresses: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                            className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                            placeholder={t('import.commaSeparated') || 'Comma separated'}
+                        />
+                    </div>
+
+                    {/* Social Profiles */}
+                    <div>
+                        <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.socialProfiles') || 'Social Profiles'}</label>
+                        <input
+                            value={extractedData.socialProfiles?.join(', ') || ''}
+                            onChange={e => setExtractedData({ ...extractedData, socialProfiles: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                            className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                            placeholder={t('import.socialPlaceholder') || 'Instagram, Facebook, etc.'}
+                        />
+                    </div>
+
                     {/* Notes */}
                     <div>
                         <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.notes') || 'Notes'}</label>
@@ -779,7 +801,7 @@ export default function ImportWizard() {
                         />
                     </div>
 
-                    {/* Adoption Detection */}
+                    {/* Adoption / Record Detection */}
                     {extractedData.adoptionDetected && (
                         <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
                             <div className="flex items-center gap-2 text-green-700 font-medium text-sm">
@@ -791,6 +813,38 @@ export default function ImportWizard() {
                                     }`}>
                                     {extractedData.adoptionConfidence}
                                 </span>
+                            </div>
+
+                            {/* Record Type Pills */}
+                            <div>
+                                <label className="block text-xs font-medium text-green-700 mb-1.5">
+                                    {t('import.recordType') || 'Record Type'}
+                                </label>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {[
+                                        { value: 'adoption', icon: '🏠', label: t('import.typeAdoption') || 'Adoption' },
+                                        { value: 'adoption_request', icon: '📝', label: t('import.typeRequest') || 'Request' },
+                                        { value: 'returned_pet', icon: '↩️', label: t('import.typeReturned') || 'Returned' },
+                                        { value: 'follow_up', icon: '📞', label: t('import.typeFollowUp') || 'Follow-up' },
+                                        { value: 'observation', icon: '👁️', label: t('import.typeObservation') || 'Note' }
+                                    ].map(type => {
+                                        const isSelected = (extractedData.recordType || 'adoption') === type.value;
+                                        return (
+                                            <button
+                                                key={type.value}
+                                                type="button"
+                                                onClick={() => setExtractedData({ ...extractedData, recordType: type.value as any })}
+                                                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${isSelected
+                                                    ? 'bg-green-200 border-green-400 text-green-800'
+                                                    : 'bg-white border-green-200 text-green-600 hover:border-green-300'
+                                                    }`}
+                                            >
+                                                <span>{type.icon}</span>
+                                                <span>{type.label}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-3">
@@ -829,7 +883,23 @@ export default function ImportWizard() {
                                     onChange={(r: number) => setExtractedData({ ...extractedData, adoptionRating: r })}
                                     size="md"
                                 />
+                                <p className="text-xs text-stone-400 mt-0.5">1 = {t('import.ratingLow') || 'Concerning'}, 5 = {t('import.ratingHigh') || 'Excellent'}</p>
                             </div>
+
+                            {/* Adoption Date */}
+                            <div>
+                                <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.adoptionDate') || 'Date'}</label>
+                                <input
+                                    type="date"
+                                    value={extractedData.adoptionDate || new Date().toISOString().split('T')[0]}
+                                    onChange={e => setExtractedData({ ...extractedData, adoptionDate: e.target.value })}
+                                    className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500"
+                                />
+                            </div>
+
+                            <p className="text-xs text-green-600">
+                                {t('import.adoptionNote') || 'A record will be created automatically.'}
+                            </p>
                         </div>
                     )}
 
