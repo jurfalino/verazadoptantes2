@@ -120,18 +120,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             if (trigger === 'signIn') {
                 token.sessionVersion = REQUIRED_SESSION_VERSION;
             }
+            // Invalidate tokens with outdated or missing version
+            // Clearing sub/email/name causes auth() to return null → clean sign-out
+            if (!token.sessionVersion || (token.sessionVersion as number) < REQUIRED_SESSION_VERSION) {
+                return { ...token, sub: undefined, email: undefined, name: undefined, expired: true };
+            }
             return token;
-        },
-        authorized: async ({ auth: session }) => {
-            if (!session) return false;
-            // Reject tokens without a version or with an outdated version
-            const tokenVersion = (session as unknown as { sessionVersion?: number }).sessionVersion;
-            if (!tokenVersion || tokenVersion < REQUIRED_SESSION_VERSION) return false;
-            return true;
-        },
-        session: async ({ session, token }) => {
-            (session as unknown as { sessionVersion: number }).sessionVersion = token.sessionVersion as number;
-            return session;
         },
     },
     adapter: getAdapter(),
