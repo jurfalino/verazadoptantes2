@@ -511,5 +511,13 @@ export const en = {
         offlineMessage: 'Recently visited pages may still be available.',
         tryAgain: 'Try Again',
         sharedContent: 'Shared content received',
+        ctaTitle: 'Get the BuenAdoptante App',
+        ctaSubtitle: 'Install it in seconds — no app store required',
+        ctaBenefitShare: 'Share adopter profiles directly from WhatsApp, Instagram & more',
+        ctaBenefitSpeed: 'One tap access — no browser needed',
+        ctaBenefitOffline: 'Check records even without internet',
+        ctaInstallButton: 'Install App',
+        ctaIOSHint: 'Tap',
+        ctaIOSAction: 'then "Add to Home Screen"',
     }
 };

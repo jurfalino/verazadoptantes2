@@ -511,6 +511,14 @@ export const es = {
         offlineMessage: 'Las páginas visitadas recientemente pueden estar disponibles.',
         tryAgain: 'Reintentar',
         sharedContent: 'Contenido compartido recibido',
+        ctaTitle: 'Obtené la App de BuenAdoptante',
+        ctaSubtitle: 'Instalala en segundos — sin tienda de apps',
+        ctaBenefitShare: 'Compartí perfiles de adoptantes desde WhatsApp, Instagram y más',
+        ctaBenefitSpeed: 'Acceso con un toque — sin abrir el navegador',
+        ctaBenefitOffline: 'Consultá registros incluso sin internet',
+        ctaInstallButton: 'Instalar App',
+        ctaIOSHint: 'Tocá',
+        ctaIOSAction: 'y luego "Agregar a inicio"',
     }
 };
 

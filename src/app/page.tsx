@@ -12,6 +12,7 @@ import ReportWizard from '@/components/ReportWizard';
 import { ShieldPawIcon } from '@/components/Logo';
 import packageJson from '../../package.json';
 import { useEffect, useState } from 'react';
+import InstallCTA from '@/components/InstallCTA';
 
 export default function Home() {
   const { t } = useLanguage();
@@ -139,8 +140,10 @@ export default function Home() {
           {/* Report / Observation */}
           <ReportWizard />
         </div>
+        {/* PWA Install CTA — shown to users who dismissed the floating banner */}
+        <InstallCTA />
 
-        <footer className="mt-20 text-center text-stone-400 text-sm space-y-2">
+        <footer className="mt-10 text-center text-stone-400 text-sm space-y-2">
           {/* How it works toggle — for returning users who dismissed the guide */}
           {!showGuide && (
             <button
