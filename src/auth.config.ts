@@ -3,12 +3,21 @@ import Google from "next-auth/providers/google"
 import { logger } from "@/lib/logger"
 import { logAudit, ensureUserProfile } from "@/lib/audit"
 
+// Bump this number and deploy to force all users to re-authenticate.
+// Exported so auth.ts can use the same value.
+export const REQUIRED_SESSION_VERSION = 3;
+
 export const authConfig = {
     providers: [Google],
     callbacks: {
         authorized: async ({ auth }) => {
-            // Logged in users are authenticated, otherwise false
-            return !!auth
+            if (!auth) return true; // Allow unauthenticated browsing
+            // Reject stale sessions (missing or outdated version)
+            const ver = (auth as unknown as { sessionVersion?: number }).sessionVersion;
+            if (!ver || ver < REQUIRED_SESSION_VERSION) {
+                return false; // Middleware will redirect to sign-in
+            }
+            return true;
         },
         signIn: async ({ user, account }) => {
             logger.info('User signed in', {

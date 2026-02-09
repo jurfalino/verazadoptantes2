@@ -61,9 +61,7 @@ function getAdapter() {
     return undefined;
 }
 
-// Bump this number and deploy to force all users to re-authenticate.
-// Old JWT tokens with a lower version will be rejected — zero runtime cost.
-const REQUIRED_SESSION_VERSION = 3;
+import { REQUIRED_SESSION_VERSION } from "./auth.config";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
     ...authConfig,
@@ -116,16 +114,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     callbacks: {
         ...authConfig.callbacks,
         jwt: async ({ token, trigger }) => {
-            // Stamp new tokens with the current required version
+            // Stamp new tokens with the current required version on sign-in
             if (trigger === 'signIn') {
                 token.sessionVersion = REQUIRED_SESSION_VERSION;
             }
-            // Invalidate tokens with outdated or missing version
-            // Clearing sub/email/name causes auth() to return null → clean sign-out
-            if (!token.sessionVersion || (token.sessionVersion as number) < REQUIRED_SESSION_VERSION) {
-                return { ...token, sub: undefined, email: undefined, name: undefined, expired: true };
-            }
             return token;
+        },
+        session: async ({ session, token }) => {
+            // Expose sessionVersion so the authorized middleware callback can check it
+            (session as unknown as { sessionVersion: number }).sessionVersion = (token.sessionVersion as number) || 0;
+            return session;
         },
     },
     adapter: getAdapter(),
