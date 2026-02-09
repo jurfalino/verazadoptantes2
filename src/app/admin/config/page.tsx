@@ -44,10 +44,6 @@ export default function AdminConfigPage() {
     const [saving, setSaving] = useState(false);
     const [savingFlags, setSavingFlags] = useState(false);
     const [purging, setPurging] = useState(false);
-    const [sessionVersion, setSessionVersion] = useState<number>(1);
-    const [sessionUpdatedAt, setSessionUpdatedAt] = useState<number | null>(null);
-    const [sessionUpdatedBy, setSessionUpdatedBy] = useState<string | null>(null);
-    const [invalidating, setInvalidating] = useState(false);
 
     // Fetch current config and stats info
     useEffect(() => {
@@ -76,12 +72,6 @@ export default function AdminConfigPage() {
             }
         }
         fetchData();
-        // Fetch session version
-        fetch('/api/admin/sessions').then(r => r.json() as Promise<{ version: number; updatedAt: number | null; updatedBy: string | null }>).then(data => {
-            setSessionVersion(data.version || 1);
-            setSessionUpdatedAt(data.updatedAt || null);
-            setSessionUpdatedBy(data.updatedBy || null);
-        }).catch(console.error);
     }, []);
 
     const handleSaveConfig = async () => {
@@ -158,29 +148,6 @@ export default function AdminConfigPage() {
         }
     };
 
-    const handleInvalidateSessions = async () => {
-        if (!confirm('This will force ALL users (including you) to sign in again. Continue?')) return;
-        setInvalidating(true);
-        try {
-            const res = await fetch('/api/admin/sessions', { method: 'POST' });
-            const data = await res.json() as { success: boolean; newVersion: number };
-            if (data.success) {
-                setSessionVersion(data.newVersion);
-                setSessionUpdatedAt(Date.now() / 1000);
-                toast.success('Sessions Invalidated', 'All users must sign in again. You will be redirected shortly.');
-                // Current admin will also be kicked out after a moment
-                setTimeout(() => window.location.reload(), 3000);
-            } else {
-                toast.error('Error', 'Failed to invalidate sessions.');
-            }
-        } catch (e) {
-            console.error(e);
-            toast.error('Error', 'Error invalidating sessions.');
-        } finally {
-            setInvalidating(false);
-        }
-    };
-
     if (loading) {
         return <div className="text-stone-500">Loading configuration...</div>;
     }
@@ -222,38 +189,6 @@ export default function AdminConfigPage() {
                         </div>
                     ))}
                 </div>
-            </div>
-
-            {/* Session Management */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200">
-                <h3 className="text-lg font-bold text-stone-900 mb-4 flex items-center gap-2">
-                    <span className="text-xl">🔐</span>
-                    Session Management
-                </h3>
-                <p className="text-sm text-stone-500 mb-4">
-                    Force all users to sign in again. This invalidates every active session.
-                </p>
-                <div className="flex items-center justify-between p-4 bg-stone-50 rounded-xl">
-                    <div>
-                        <p className="text-sm font-medium text-stone-700">Current Session Version: <span className="font-bold text-stone-900">{sessionVersion}</span></p>
-                        {sessionUpdatedAt && (
-                            <p className="text-xs text-stone-400 mt-0.5">
-                                Last bumped {new Date(sessionUpdatedAt * 1000).toLocaleString()}
-                                {sessionUpdatedBy && ` by ${sessionUpdatedBy}`}
-                            </p>
-                        )}
-                    </div>
-                    <button
-                        onClick={handleInvalidateSessions}
-                        disabled={invalidating}
-                        className="px-4 py-2 bg-amber-500 text-white font-bold text-sm rounded-lg hover:bg-amber-600 disabled:opacity-50 transition-colors"
-                    >
-                        {invalidating ? 'Invalidating...' : '⚠️ Invalidate All Sessions'}
-                    </button>
-                </div>
-                <p className="text-xs text-stone-400 mt-2">
-                    ⚠️ You will also be signed out. Everyone must sign in again.
-                </p>
             </div>
 
             {/* Threshold Configuration */}

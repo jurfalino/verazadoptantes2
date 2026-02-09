@@ -61,20 +61,9 @@ function getAdapter() {
     return undefined;
 }
 
-// Read the required session version from D1's app_config table.
-// Falls back to "1" if D1 unavailable or key missing.
-async function getRequiredSessionVersion(): Promise<number> {
-    try {
-        const { env } = getRequestContext();
-        if (!env?.DB) return 1;
-        const row = await env.DB.prepare(
-            `SELECT value FROM app_config WHERE key = 'session_version'`
-        ).first<{ value: string }>();
-        return row ? parseInt(row.value, 10) : 1;
-    } catch {
-        return 1; // Dev or build time — allow all
-    }
-}
+// Bump this number and deploy to force all users to re-authenticate.
+// Old JWT tokens with a lower version will be rejected — zero runtime cost.
+const REQUIRED_SESSION_VERSION = 2;
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
     ...authConfig,
@@ -127,20 +116,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     callbacks: {
         ...authConfig.callbacks,
         jwt: async ({ token, trigger }) => {
-            // Stamp token with current session version on sign-in
+            // Stamp new tokens with the current required version
             if (trigger === 'signIn') {
-                const ver = await getRequiredSessionVersion();
-                token.sessionVersion = ver;
+                token.sessionVersion = REQUIRED_SESSION_VERSION;
             }
             return token;
         },
         authorized: async ({ auth: session }) => {
             if (!session) return false;
-            // Read the required version from D1
-            const requiredVersion = await getRequiredSessionVersion();
+            // Reject tokens without a version or with an outdated version
             const tokenVersion = (session as unknown as { sessionVersion?: number }).sessionVersion;
-            // Tokens without a version or with an old version are rejected
-            if (!tokenVersion || tokenVersion < requiredVersion) return false;
+            if (!tokenVersion || tokenVersion < REQUIRED_SESSION_VERSION) return false;
             return true;
         },
         session: async ({ session, token }) => {
@@ -154,3 +140,4 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         maxAge: 315360000, // 10 years (effectively "never" expire)
     },
 })
+
