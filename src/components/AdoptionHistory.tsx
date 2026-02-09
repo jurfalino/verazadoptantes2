@@ -7,6 +7,8 @@ import { deleteAdoption, getAdoptionImages } from '@/app/actions';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getRecordTypeColors } from '@/lib/recordTypeColors';
 import { useShowToast } from '@/components/ui/Toast';
+import { getSourceIcon, getSourceName } from '@/lib/sourceIcons';
+import { isAdmin as isAdminEmail } from '@/config/admins';
 
 import AdoptionForm from './AdoptionForm';
 
@@ -19,6 +21,7 @@ interface Adoption {
     date: Date | null;
     addedBy: string | null;
     recordType?: string;
+    sourceUrl?: string | null;
     images?: { id: string; url: string; caption?: string | null }[];
 }
 
@@ -238,11 +241,26 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, onEdit, a
                                     <span className="text-emerald-500">
                                         {adoption.date ? new Date(adoption.date).toLocaleDateString() : t('adoption.date_unknown')}
                                     </span>
-                                    {adoption.addedBy && (
-                                        <span className="text-emerald-400 bg-emerald-50/50 px-2 py-0.5 rounded-full border border-emerald-100/30">
-                                            {t('common.added_by')} {adoption.addedBy}
-                                        </span>
-                                    )}
+                                    <div className="flex items-center gap-2">
+                                        {/* Source URL link */}
+                                        {adoption.sourceUrl && (
+                                            <a
+                                                href={adoption.sourceUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex items-center gap-1 text-emerald-500 hover:text-emerald-600 transition-colors"
+                                                title={getSourceName(adoption.sourceUrl)}
+                                            >
+                                                {getSourceIcon(adoption.sourceUrl, 'w-3.5 h-3.5')}
+                                            </a>
+                                        )}
+                                        {/* Added by - hide admin emails */}
+                                        {adoption.addedBy && !isAdminEmail(adoption.addedBy) && (
+                                            <span className="text-emerald-400 bg-emerald-50/50 px-2 py-0.5 rounded-full border border-emerald-100/30">
+                                                {t('common.added_by')} {adoption.addedBy}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>

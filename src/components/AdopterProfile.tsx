@@ -12,6 +12,7 @@ import { AdopterFlagging } from '@/components/AdopterFlagging';
 import { useLanguage } from '@/context/LanguageContext';
 import { saveImage } from '@/app/actions';
 import { getRatingColors } from '@/lib/ratingColors';
+import { getSourceIcon } from '@/lib/sourceIcons'; // Added this import
 import { StarRating } from '@/components/StarRating';
 import ReportInaccuracyForm from '@/components/ReportInaccuracyForm';
 
@@ -123,7 +124,7 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                                     <p className="text-emerald-600/80 font-medium text-sm">{t('adopter.id')}: <span className="font-mono text-emerald-500/60">{id}</span></p>
                                     {adopter.sourceUrl && (
                                         <div className="flex items-center gap-1.5">
-                                            <svg className="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 24 24"><path d="M22 12c0-5.523-4.477-10-10-10S2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.879V14.89h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.989C18.343 21.129 22 16.99 22 12z" /></svg>
+                                            <span className="text-blue-600">{getSourceIcon(adopter.sourceUrl, 'w-4 h-4')}</span>
                                             <a href={adopter.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 hover:underline text-sm font-medium transition-colors">
                                                 {t('adopter.view_source') || 'View Original Input'}
                                             </a>
