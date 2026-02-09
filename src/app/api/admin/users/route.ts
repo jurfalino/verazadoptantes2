@@ -22,13 +22,13 @@ export async function GET(request: Request) {
                 p.last_active_at, p.created_at as first_sign_in
             FROM user u
             LEFT JOIN user_profiles p ON u.id = p.user_id
-            ORDER BY p.last_active_at DESC NULLS LAST
+            ORDER BY COALESCE(p.last_active_at, 0) DESC
         `).all();
 
         return NextResponse.json({ users: users.results || [] });
     } catch (error) {
         console.error("Get users error:", error);
-        return NextResponse.json({ error: "Failed to fetch users" }, { status: 500 });
+        return NextResponse.json({ error: "Failed to fetch users", detail: String(error) }, { status: 500 });
     }
 }
 
