@@ -154,14 +154,6 @@ export default function Home() {
               {t('home.how_title')}
             </button>
           )}
-          <div>
-            <a
-              href="/demo-profile"
-              className="text-stone-400 hover:text-stone-600 text-xs underline underline-offset-2 transition-colors"
-            >
-              👤 {t('home.sample_record')}
-            </a>
-          </div>
           <p>{t('home.footer')}</p>
           <p className="text-stone-300 text-xs">v{packageJson.version}</p>
         </footer>

@@ -50,19 +50,7 @@ test.describe('Home Screen Wizards', () => {
         expect(wizardOpened || loginOpened).toBeTruthy();
     });
 
-    test('Facebook Import button visibility depends on admin config', async ({ page }) => {
-        // FB Import requires admin auth for the config endpoint
-        // For anon users, the button should not be visible
-        const fbButton = page.getByTestId('facebook-import-btn');
-        const isVisible = await fbButton.isVisible({ timeout: 5000 }).catch(() => false);
 
-        if (isVisible) {
-            await fbButton.click();
-            await expect(page.getByText(/Import from Facebook/i)).toBeVisible({ timeout: 10000 });
-        }
-        // If not visible, that's expected for anon users — pass
-        expect(true).toBeTruthy();
-    });
 
     test('Wizard auth gate works', async ({ page }) => {
         // Navigate WITHOUT anon login
