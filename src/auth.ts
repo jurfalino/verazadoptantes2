@@ -63,7 +63,7 @@ function getAdapter() {
 
 // Bump this number and deploy to force all users to re-authenticate.
 // Old JWT tokens with a lower version will be rejected — zero runtime cost.
-const REQUIRED_SESSION_VERSION = 2;
+const REQUIRED_SESSION_VERSION = 3;
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
     ...authConfig,
