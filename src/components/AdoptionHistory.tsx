@@ -32,7 +32,7 @@ interface AdoptionImage {
 }
 
 export default function AdoptionHistory({ adoptions: initialAdoptions, onEdit, adopterId, currentUser, isAdmin = false, adopterAddress = '' }: { adoptions: Adoption[], onEdit: (adoption: Adoption) => void, adopterId: string, currentUser: string, isAdmin?: boolean, adopterAddress?: string }) {
-    const { t, locale } = useLanguage();
+    const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -171,13 +171,11 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, onEdit, a
                                         <div className="flex items-center gap-2">
                                             <h4 className="font-bold text-base text-emerald-950">{adoption.animalName}</h4>
                                             {(adoption as any).species && (() => {
-                                                const speciesMap: Record<string, string> = locale === 'es'
-                                                    ? { cat: 'Gato', dog: 'Perro', bird: 'Ave', rabbit: 'Conejo', other: 'Otro' }
-                                                    : { cat: 'Cat', dog: 'Dog', bird: 'Bird', rabbit: 'Rabbit', other: 'Other' };
                                                 const raw = (adoption as any).species.toLowerCase();
+                                                const label = t(`species.${raw}`) || (adoption as any).species;
                                                 return (
                                                     <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
-                                                        {speciesMap[raw] || (adoption as any).species}
+                                                        {label}
                                                     </span>
                                                 );
                                             })()}
