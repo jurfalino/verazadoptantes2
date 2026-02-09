@@ -18,7 +18,7 @@ export const authConfig = {
             });
             // Track user profile (first sign date + last activity)
             if (user.id) {
-                ensureUserProfile(user.id, user.email || undefined);
+                ensureUserProfile(user.id, user.email || undefined, user.name || undefined, user.image || undefined);
             }
             // Audit log
             logAudit({

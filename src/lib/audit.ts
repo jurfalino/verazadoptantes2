@@ -65,16 +65,29 @@ export function logAudit(entry: AuditEntry) {
 }
 
 /**
- * Ensure a user_profiles row exists for the given user.
- * Called on sign-in to track first sign date and last activity.
+ * Ensure both a NextAuth `user` row and a `user_profiles` row exist.
+ * Called on sign-in. NextAuth's DrizzleAdapter is disabled on Edge,
+ * so we must insert the user ourselves via raw D1.
  */
-export function ensureUserProfile(userId: string, email?: string) {
+export function ensureUserProfile(userId: string, email?: string, name?: string, image?: string) {
     const doUpsert = async () => {
         try {
             const { env } = getRequestContext();
             if (!env?.DB) return;
 
-            // INSERT OR IGNORE keeps the original created_at (first sign date)
+            // 1. Ensure NextAuth user row exists (adapter doesn't run on Edge)
+            await env.DB.prepare(
+                `INSERT OR IGNORE INTO user (id, email, name, image) VALUES (?, ?, ?, ?)`
+            ).bind(userId, email || null, name || null, image || null).run();
+
+            // Update name/image if they changed (Google profile updates)
+            if (name || image) {
+                await env.DB.prepare(
+                    `UPDATE user SET name = COALESCE(?, name), image = COALESCE(?, image) WHERE id = ?`
+                ).bind(name || null, image || null, userId).run();
+            }
+
+            // 2. Ensure user_profiles row (INSERT OR IGNORE keeps original created_at)
             await env.DB.prepare(
                 `INSERT OR IGNORE INTO user_profiles (user_id, created_at) VALUES (?, strftime('%s','now'))`
             ).bind(userId).run();
