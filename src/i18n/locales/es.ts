@@ -24,6 +24,9 @@ export const es = {
         photos: 'fotos',
         processing: 'Procesando...',
     },
+    demo: {
+        not_real: 'esta no es una persona real',
+    },
     flags: {
         verified: 'Verificado',
         warning: 'Tiene advertencias',
@@ -46,6 +49,11 @@ export const es = {
         unverify_error: 'No se pudo quitar la verificación. Solo puedes quitar verificaciones que hayas agregado.',
         too_many_adoptions: '{count} adopciones en {days}d',
         too_many_requests: '{count} solicitudes en {days}d',
+        // Legend descriptions
+        legend_title: '¿Qué significan estas insignias?',
+        legend_verified: 'Confirmamos que esta persona es quien dice ser.',
+        legend_warning: 'Otros rescatistas reportaron problemas (falta de seguimiento, abandono, etc.).',
+        legend_duplicate: 'Este perfil podría ser un duplicado de otro adoptante.',
     },
     stats: {
         searches: 'búsquedas',

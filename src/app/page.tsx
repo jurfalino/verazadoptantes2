@@ -9,7 +9,6 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import AdoptionWizard from '@/components/AdoptionWizard';
 import ReportWizard from '@/components/ReportWizard';
-import FacebookImportWizard from '@/components/FacebookImportWizard';
 import { ShieldPawIcon } from '@/components/Logo';
 import packageJson from '../../package.json';
 import { useEffect, useState } from 'react';
@@ -115,12 +114,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* Facebook Import (legacy) */}
-        {facebookImportEnabled && (
-          <div className="flex justify-center">
-            <FacebookImportWizard />
-          </div>
-        )}
+        {/* Facebook Import removed — unified Import Wizard handles all imports */}
 
         <SearchSection />
 
@@ -160,6 +154,14 @@ export default function Home() {
               {t('home.how_title')}
             </button>
           )}
+          <div>
+            <a
+              href="/demo-profile"
+              className="text-stone-400 hover:text-stone-600 text-xs underline underline-offset-2 transition-colors"
+            >
+              👤 {t('home.sample_record')}
+            </a>
+          </div>
           <p>{t('home.footer')}</p>
           <p className="text-stone-300 text-xs">v{packageJson.version}</p>
         </footer>

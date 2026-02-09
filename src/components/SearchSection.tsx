@@ -33,6 +33,7 @@ export default function SearchSection() {
     const [loading, setLoading] = useState(false);
     const [truncatedInfo, setTruncatedInfo] = useState<{ truncated: boolean; totalCount: number } | null>(null);
     const [validationError, setValidationError] = useState<string | null>(null);
+    const [showLegend, setShowLegend] = useState(false);
 
     // Re-run search when returning to page with query in URL
     const runSearch = useCallback(async (searchQuery: string) => {
@@ -211,6 +212,43 @@ export default function SearchSection() {
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                                 {t('search.create_new')}
                             </button>
+                        </div>
+                    )}
+
+                    {/* Protected info banner for unauthenticated users */}
+                    {results.length > 0 && !(session?.user || document.cookie.includes('anon_user=true')) && (
+                        <div className="bg-teal-50 border border-teal-200 rounded-xl px-4 py-3 text-center">
+                            <p className="text-teal-800 text-sm font-medium">
+                                🔒 {t('search.protected_info')}
+                            </p>
+                        </div>
+                    )}
+
+                    {/* Flag legend toggle */}
+                    {results.length > 0 && (
+                        <div className="text-center">
+                            <button
+                                onClick={() => setShowLegend(!showLegend)}
+                                className="text-xs text-stone-400 hover:text-stone-600 transition-colors underline underline-offset-2"
+                            >
+                                ℹ️ {t('flags.legend_title')}
+                            </button>
+                            {showLegend && (
+                                <div className="mt-2 bg-stone-50 border border-stone-200 rounded-xl p-4 text-left text-xs text-stone-600 space-y-2">
+                                    <div className="flex items-start gap-2">
+                                        <span className="px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700 flex-shrink-0">✓</span>
+                                        <span>{t('flags.legend_verified')}</span>
+                                    </div>
+                                    <div className="flex items-start gap-2">
+                                        <span className="px-1.5 py-0.5 rounded font-medium bg-rose-100 text-rose-700 flex-shrink-0">⚠</span>
+                                        <span>{t('flags.legend_warning')}</span>
+                                    </div>
+                                    <div className="flex items-start gap-2">
+                                        <span className="px-1.5 py-0.5 rounded font-medium bg-amber-100 text-amber-700 flex-shrink-0">📄</span>
+                                        <span>{t('flags.legend_duplicate')}</span>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                     {results.map((res) => {
