@@ -7,6 +7,7 @@ import { saveAdoption, searchAdopter, getAvailableAnimals } from '@/app/actions'
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
+import LegalConsent from '@/components/LegalConsent';
 
 export default function AdoptionWizard() {
     const { t } = useLanguage();
@@ -21,6 +22,7 @@ export default function AdoptionWizard() {
 
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
+    const [legalConsent, setLegalConsent] = useState(false);
 
     useEffect(() => {
         if (session?.user) {
@@ -324,6 +326,8 @@ export default function AdoptionWizard() {
                             </div>
                         )}
 
+                        <LegalConsent accepted={legalConsent} onChange={setLegalConsent} />
+
                         <div className="flex justify-between pt-4">
                             <button
                                 onClick={handleBack}
@@ -333,7 +337,7 @@ export default function AdoptionWizard() {
                             </button>
                             <button
                                 onClick={handleFinish}
-                                disabled={loading || (adopterMode === 'existing' && !selectedAdopterId)}
+                                disabled={loading || !legalConsent || (adopterMode === 'existing' && !selectedAdopterId)}
                                 className="px-6 py-2 bg-teal-600 text-white font-bold rounded-xl hover:bg-teal-700 disabled:opacity-50"
                             >
                                 {loading ? 'Processing...' : 'Complete Adoption'}

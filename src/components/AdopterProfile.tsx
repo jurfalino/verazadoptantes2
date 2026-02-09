@@ -85,6 +85,18 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                     </a>
                 </div>
 
+                {/* Community data disclaimer */}
+                {!isNew && adopter && (
+                    <div className="bg-stone-50 border border-stone-200 rounded-xl px-4 py-2.5 flex items-center justify-between">
+                        <p className="text-stone-500 text-xs">
+                            ℹ️ {t('legal.disclaimer')}
+                        </p>
+                        <a href="/terms#disputes" className="text-teal-600 hover:text-teal-800 text-xs underline underline-offset-2 whitespace-nowrap ml-3">
+                            {t('legal.report_error')}
+                        </a>
+                    </div>
+                )}
+
                 {!isNew && adopter && (
                     <AdopterFlagging
                         adopterId={id}

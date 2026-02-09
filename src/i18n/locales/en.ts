@@ -134,6 +134,18 @@ export const en = {
         // Sample record
         sample_record: 'See an example profile',
     },
+    legal: {
+        consent_checkbox: 'I declare that the information is truthful and I accept the',
+        terms_link: 'Terms of Use',
+        and: 'and the',
+        privacy_link: 'Privacy Policy',
+        disclaimer: 'Information is provided by community users. BuenAdoptante does not verify its accuracy.',
+        report_error: 'Report an error',
+        last_updated: 'Last updated',
+        privacy: 'Privacy',
+        terms: 'Terms',
+        contact: 'Contact',
+    },
     adopter: {
         title_new: 'New Adopter',
         title_profile: 'Adopter Profile',

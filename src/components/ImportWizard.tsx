@@ -7,6 +7,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
+import LegalConsent from '@/components/LegalConsent';
 import type { ExtractedAdopterData } from '@/lib/gemini';
 
 interface PersonMatch {
@@ -32,6 +33,7 @@ export default function ImportWizard() {
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [legalConsent, setLegalConsent] = useState(false);
     const [fetchProgress, setFetchProgress] = useState(0);
 
     // Fake progress bar: non-linear ease-out curve over ~110s
@@ -899,6 +901,8 @@ export default function ImportWizard() {
                         );
                     })()}
 
+                    <LegalConsent accepted={legalConsent} onChange={setLegalConsent} />
+
                     <div className="flex gap-3 pt-2">
                         <button
                             onClick={() => setStep(2)}
@@ -908,7 +912,7 @@ export default function ImportWizard() {
                         </button>
                         <button
                             onClick={handlePreSave}
-                            disabled={!extractedData.name?.trim() || isSaving}
+                            disabled={!extractedData.name?.trim() || isSaving || !legalConsent}
                             className="flex-1 py-2.5 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                         >
                             {isSaving ? (

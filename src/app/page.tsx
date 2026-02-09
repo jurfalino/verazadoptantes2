@@ -154,6 +154,19 @@ export default function Home() {
               {t('home.how_title')}
             </button>
           )}
+          <div className="flex items-center justify-center gap-3 text-xs">
+            <a href="/privacy" className="text-stone-400 hover:text-stone-600 underline underline-offset-2 transition-colors">
+              {t('legal.privacy')}
+            </a>
+            <span className="text-stone-300">·</span>
+            <a href="/terms" className="text-stone-400 hover:text-stone-600 underline underline-offset-2 transition-colors">
+              {t('legal.terms')}
+            </a>
+            <span className="text-stone-300">·</span>
+            <a href="mailto:privacidad@buenadoptante.com" className="text-stone-400 hover:text-stone-600 underline underline-offset-2 transition-colors">
+              {t('legal.contact')}
+            </a>
+          </div>
           <p>{t('home.footer')}</p>
           <p className="text-stone-300 text-xs">v{packageJson.version}</p>
         </footer>
