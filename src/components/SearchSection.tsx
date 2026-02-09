@@ -170,6 +170,13 @@ export default function SearchSection() {
                         {loading ? t('search.searching') : t('search.button')}
                     </button>
                 </form>
+
+                {/* Hint for first-time users — shown when nothing has been searched */}
+                {!results && !loading && !query && (
+                    <p className="text-center text-stone-400 text-sm mt-3">
+                        💡 {t('search.hint')}
+                    </p>
+                )}
             </div>
 
             {/* Validation Error Banner */}
@@ -317,9 +324,11 @@ export default function SearchSection() {
                     })}
                     {results.length === 0 && (
                         <div className="bg-stone-50 rounded-2xl p-8 text-center border border-stone-200">
-                            <p className="text-stone-600 mb-4 text-lg">{t('search.no_history').replace('{query}', query)}</p>
-                            <button onClick={handleCreateNew} className="inline-block px-5 py-2.5 bg-white border border-stone-200 rounded-xl text-stone-800 font-bold hover:border-stone-300 hover:bg-stone-50 transition-all shadow-sm">
-                                {t('search.create_new')}
+                            <div className="text-4xl mb-3">🔍</div>
+                            <p className="text-stone-600 mb-1 text-lg">{t('search.no_history').replace('{query}', query)}</p>
+                            <p className="text-stone-400 text-sm mb-4">{t('search.no_history_cta')}</p>
+                            <button onClick={handleCreateNew} className="inline-block px-5 py-2.5 bg-teal-600 text-white rounded-xl font-bold hover:bg-teal-700 transition-all shadow-sm">
+                                + {t('search.create_new')}
                             </button>
                         </div>
                     )}

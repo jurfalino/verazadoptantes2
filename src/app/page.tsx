@@ -21,6 +21,7 @@ export default function Home() {
   const { openLogin } = useAuthContext();
   const [facebookImportEnabled, setFacebookImportEnabled] = useState(false);
   const [contentImportEnabled, setContentImportEnabled] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
 
   // Check feature flag on client side
   useEffect(() => {
@@ -36,7 +37,17 @@ export default function Home() {
         }
       })
       .catch((e) => { console.error('[Homepage] Config fetch error:', e); });
+
+    // Show guide for first-time users
+    if (!localStorage.getItem('guide_dismissed')) {
+      setShowGuide(true);
+    }
   }, []);
+
+  const dismissGuide = () => {
+    setShowGuide(false);
+    localStorage.setItem('guide_dismissed', '1');
+  };
 
   const handleAuthNavigation = (url: string) => {
     // Check if user is logged in or anonymous
@@ -71,38 +82,86 @@ export default function Home() {
           </p>
         </header>
 
-        {/* Import Actions */}
-        {(facebookImportEnabled || contentImportEnabled) && (
-          <div className="flex justify-center gap-3 flex-wrap">
-            {facebookImportEnabled && <FacebookImportWizard />}
-            {contentImportEnabled && (
-              <button
-                data-testid="import-content-btn"
-                onClick={() => handleAuthNavigation('/import')}
-                className="flex items-center gap-2 px-4 py-2 bg-stone-800 text-white rounded-lg hover:bg-stone-900 transition-colors font-medium text-sm"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-                {t('import.button') || 'Import Content'}
-              </button>
-            )}
+        {/* How it works — collapsible guide for first-time users */}
+        {showGuide && (
+          <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-5 relative">
+            <button
+              onClick={dismissGuide}
+              className="absolute top-3 right-3 text-stone-400 hover:text-stone-600 transition-colors text-lg leading-none"
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
+            <h2 className="text-sm font-bold text-stone-500 uppercase tracking-wider mb-4 text-center">
+              {t('home.how_title')}
+            </h2>
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <div className="text-2xl mb-1">🔍</div>
+                <p className="font-bold text-stone-800 text-sm">{t('home.how_step1_title')}</p>
+                <p className="text-stone-500 text-xs mt-0.5">{t('home.how_step1_desc')}</p>
+              </div>
+              <div>
+                <div className="text-2xl mb-1">📤</div>
+                <p className="font-bold text-stone-800 text-sm">{t('home.how_step2_title')}</p>
+                <p className="text-stone-500 text-xs mt-0.5">{t('home.how_step2_desc')}</p>
+              </div>
+              <div>
+                <div className="text-2xl mb-1">⭐</div>
+                <p className="font-bold text-stone-800 text-sm">{t('home.how_step3_title')}</p>
+                <p className="text-stone-500 text-xs mt-0.5">{t('home.how_step3_desc')}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Facebook Import (legacy) */}
+        {facebookImportEnabled && (
+          <div className="flex justify-center">
+            <FacebookImportWizard />
           </div>
         )}
 
         <SearchSection />
 
-        <div className="grid md:grid-cols-2 gap-6 mt-12">
-          {/* Action 1: Register Adoption (Wizard) */}
+        {/* Action Cards — 3-column grid */}
+        <div className={`grid gap-6 mt-12 ${contentImportEnabled ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+          {/* Import from post — promoted to full card */}
+          {contentImportEnabled && (
+            <div
+              data-testid="import-content-btn"
+              className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200 hover:shadow-md hover:border-teal-200 transition-all text-center group h-full flex flex-col items-center justify-center cursor-pointer"
+              onClick={() => handleAuthNavigation('/import')}
+            >
+              <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4 text-teal-700 group-hover:scale-110 transition-transform">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-bold text-stone-900 mb-1">{t('home.action_import_title')}</h3>
+              <p className="text-stone-500 text-sm">{t('home.action_import_desc')}</p>
+            </div>
+          )}
+
+          {/* Register Adoption */}
           <AdoptionWizard />
 
-          {/* Action 2: Report Bad Adopter (Wizard) */}
+          {/* Report / Observation */}
           <ReportWizard />
         </div>
 
-        <footer className="mt-20 text-center text-stone-400 text-sm">
+        <footer className="mt-20 text-center text-stone-400 text-sm space-y-2">
+          {/* How it works toggle — for returning users who dismissed the guide */}
+          {!showGuide && (
+            <button
+              onClick={() => setShowGuide(true)}
+              className="text-stone-400 hover:text-stone-600 text-xs underline underline-offset-2 transition-colors"
+            >
+              {t('home.how_title')}
+            </button>
+          )}
           <p>{t('home.footer')}</p>
-          <p className="mt-1 text-stone-300 text-xs">v{packageJson.version}</p>
+          <p className="text-stone-300 text-xs">v{packageJson.version}</p>
         </footer>
       </div>
     </main>
