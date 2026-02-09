@@ -14,6 +14,7 @@ import { SessionProvider } from 'next-auth/react';
 import { AuthProvider } from '@/context/AuthContext';
 import LoginModal from '@/components/LoginModal';
 import { ToastProvider } from '@/components/ui/Toast';
+import InstallPrompt from '@/components/InstallPrompt';
 
 export const runtime = "edge";
 export const dynamic = 'force-dynamic';
@@ -59,6 +60,12 @@ export default async function RootLayout({
             `,
           }}
         />
+        {/* PWA */}
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#292524" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
       <body className={inter.className}>
         <SessionProvider refetchOnWindowFocus={true} refetchInterval={5 * 60}>
@@ -79,6 +86,7 @@ export default async function RootLayout({
                       </div>
                     </nav>
                     <LoginModal />
+                    <InstallPrompt />
                     {children}
                   </div>
                 </AuthProvider>
@@ -86,6 +94,18 @@ export default async function RootLayout({
             </ThemeProvider>
           </LanguageProvider>
         </SessionProvider>
+        {/* Service Worker Registration */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js');
+                });
+              }
+            `,
+          }}
+        />
       </body>
     </html>
   );

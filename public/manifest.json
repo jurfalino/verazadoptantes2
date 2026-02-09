@@ -1,0 +1,54 @@
+{
+    "name": "BuenAdoptante",
+    "short_name": "BuenAdoptante",
+    "description": "Pet adoption vetting platform — verify adopters and ensure safe homes",
+    "start_url": "/",
+    "display": "standalone",
+    "orientation": "portrait-primary",
+    "theme_color": "#292524",
+    "background_color": "#fafaf9",
+    "icons": [
+        {
+            "src": "/icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any"
+        },
+        {
+            "src": "/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "share_target": {
+        "action": "/import?shared=true",
+        "method": "POST",
+        "enctype": "multipart/form-data",
+        "params": {
+            "title": "title",
+            "text": "text",
+            "url": "url",
+            "files": [
+                {
+                    "name": "images",
+                    "accept": [
+                        "image/*"
+                    ]
+                }
+            ]
+        }
+    },
+    "categories": [
+        "lifestyle",
+        "utilities"
+    ],
+    "lang": "es",
+    "dir": "ltr"
+}

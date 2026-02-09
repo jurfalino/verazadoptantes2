@@ -562,8 +562,8 @@ export default function FacebookImportWizard({ onClose }: FacebookImportWizardPr
                         <div className="flex flex-col items-center text-center">
                             {/* Icon changes based on scenario */}
                             <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${duplicateAdopter ? 'bg-yellow-100 text-yellow-600' :
-                                    personMatch ? 'bg-purple-100 text-purple-600' :
-                                        'bg-blue-100 text-blue-600'
+                                personMatch ? 'bg-purple-100 text-purple-600' :
+                                    'bg-blue-100 text-blue-600'
                                 }`}>
                                 {personMatch && !duplicateAdopter ? (
                                     <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -601,12 +601,12 @@ export default function FacebookImportWizard({ onClose }: FacebookImportWizardPr
                                     {/* Confidence badge */}
                                     <div className="flex items-center gap-2 mb-3">
                                         <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${personMatch.confidence === 'high' ? 'bg-green-100 text-green-800' :
-                                                personMatch.confidence === 'medium' ? 'bg-amber-100 text-amber-800' :
-                                                    'bg-red-100 text-red-800'
+                                            personMatch.confidence === 'medium' ? 'bg-amber-100 text-amber-800' :
+                                                'bg-red-100 text-red-800'
                                             }`}>
                                             <span className={`w-1.5 h-1.5 rounded-full ${personMatch.confidence === 'high' ? 'bg-green-500' :
-                                                    personMatch.confidence === 'medium' ? 'bg-amber-500' :
-                                                        'bg-red-500'
+                                                personMatch.confidence === 'medium' ? 'bg-amber-500' :
+                                                    'bg-red-500'
                                                 }`} />
                                             {personMatch.confidence === 'high'
                                                 ? (t('facebook.matchConfidenceHigh') || 'High Match')
@@ -669,8 +669,8 @@ export default function FacebookImportWizard({ onClose }: FacebookImportWizardPr
                                         onClick={handleMerge}
                                         disabled={isSaving}
                                         className={`w-full px-4 py-2.5 rounded-lg font-bold transition-colors disabled:bg-stone-300 ${personMatch.confidence === 'high'
-                                                ? 'bg-purple-600 text-white hover:bg-purple-700'
-                                                : 'border border-purple-300 text-purple-700 hover:bg-purple-50'
+                                            ? 'bg-purple-600 text-white hover:bg-purple-700'
+                                            : 'border border-purple-300 text-purple-700 hover:bg-purple-50'
                                             }`}
                                     >
                                         {isSaving ? (t('facebook.mergingRecord') || 'Adding record...') : (t('facebook.addToExisting') || 'Add Record to This Profile')}
@@ -679,8 +679,8 @@ export default function FacebookImportWizard({ onClose }: FacebookImportWizardPr
                                         onClick={handleConfirmSave}
                                         disabled={isSaving}
                                         className={`w-full px-4 py-2.5 rounded-lg font-bold transition-colors disabled:bg-stone-300 ${personMatch.confidence === 'high'
-                                                ? 'border border-stone-200 text-stone-600 hover:bg-stone-50'
-                                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                                            ? 'border border-stone-200 text-stone-600 hover:bg-stone-50'
+                                            : 'bg-blue-600 text-white hover:bg-blue-700'
                                             }`}
                                     >
                                         {isSaving ? 'Creating...' : (t('facebook.createNewAnyway') || 'Create New Profile Instead')}
@@ -813,7 +813,7 @@ export default function FacebookImportWizard({ onClose }: FacebookImportWizardPr
                                         <div id="model-dropdown" className="hidden absolute top-full left-0 mt-1 bg-white border border-stone-200 rounded-lg shadow-lg z-50 min-w-[200px] max-h-48 overflow-y-auto">
                                             {(models.length > 0 ? models : [
                                                 { name: 'gemini-2.5-pro-preview-05-06', displayName: 'Gemini 2.5 Pro' },
-                                                { name: 'gemini-1.5-flash', displayName: 'Gemini 1.5 Flash' }
+                                                { name: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash' }
                                             ]).map(model => (
                                                 <button
                                                     key={model.name}

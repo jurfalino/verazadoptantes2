@@ -63,10 +63,10 @@ export default function ImportWizard() {
     const [personMatch, setPersonMatch] = useState<PersonMatch | null>(null);
     const [expandedImage, setExpandedImage] = useState<string | null>(null);
 
-    // Pre-fill from URL params (for Share Intent)
+    // Pre-fill from URL params (for Share Intent / Web Share Target)
     useEffect(() => {
-        const sharedUrl = searchParams.get('url');
-        const sharedText = searchParams.get('text');
+        const sharedUrl = searchParams.get('shared_url') || searchParams.get('url');
+        const sharedText = searchParams.get('shared_text') || searchParams.get('text');
 
         if (sharedUrl) {
             setInputUrl(sharedUrl);

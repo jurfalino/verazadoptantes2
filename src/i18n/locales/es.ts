@@ -447,5 +447,15 @@ export const es = {
         backToReview: '← Volver a Revisar',
         // Botón volver
         back: 'Volver',
+    },
+    pwa: {
+        installTitle: 'Instalar BuenAdoptante',
+        installMessage: 'Acceso rápido desde tu pantalla de inicio',
+        installButton: 'Instalar',
+        dismiss: 'Después',
+        offlineTitle: 'Sin conexión',
+        offlineMessage: 'Las páginas visitadas recientemente pueden estar disponibles.',
+        tryAgain: 'Reintentar',
+        sharedContent: 'Contenido compartido recibido',
     }
 };

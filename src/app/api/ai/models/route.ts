@@ -16,9 +16,9 @@ export async function GET() {
         // Fallback list if API fails
         return NextResponse.json({
             models: [
-                { name: 'gemini-1.5-flash', displayName: 'Gemini 1.5 Flash (Default)' },
-                { name: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro' },
-                { name: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash' }
+                { name: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash (Default)' },
+                { name: 'gemini-2.5-pro-preview-05-06', displayName: 'Gemini 2.5 Pro' },
+                { name: 'gemini-2.0-flash-lite', displayName: 'Gemini 2.0 Flash Lite' }
             ]
         });
     }

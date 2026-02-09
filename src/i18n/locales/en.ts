@@ -447,5 +447,15 @@ export const en = {
         backToReview: '← Back to Review',
         // Back button
         back: 'Back',
+    },
+    pwa: {
+        installTitle: 'Install BuenAdoptante',
+        installMessage: 'Quick access from your home screen',
+        installButton: 'Install',
+        dismiss: 'Later',
+        offlineTitle: 'You are offline',
+        offlineMessage: 'Recently visited pages may still be available.',
+        tryAgain: 'Try Again',
+        sharedContent: 'Shared content received',
     }
 };

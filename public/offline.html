@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BuenAdoptante — Offline</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #fafaf9;
+      color: #292524;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    .container {
+      text-align: center;
+      max-width: 400px;
+    }
+    .icon {
+      font-size: 4rem;
+      margin-bottom: 1.5rem;
+      opacity: 0.6;
+    }
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      color: #1c1917;
+    }
+    p {
+      color: #78716c;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      margin-bottom: 1.5rem;
+    }
+    .subtitle {
+      color: #a8a29e;
+      font-size: 0.85rem;
+    }
+    button {
+      background: #292524;
+      color: white;
+      border: none;
+      padding: 0.75rem 2rem;
+      border-radius: 0.75rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover { background: #1c1917; }
+    button:active { transform: scale(0.98); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">📡</div>
+    <h1>Sin conexión</h1>
+    <p>No hay conexión a internet. Las páginas que visitaste recientemente pueden estar disponibles.</p>
+    <button onclick="window.location.reload()">Reintentar</button>
+    <p class="subtitle" style="margin-top: 1.5rem;">
+      No internet connection. Recently visited pages may still be available.
+    </p>
+  </div>
+</body>
+</html>

@@ -99,7 +99,7 @@ If you cannot extract any relevant information, return:
 export async function extractAdopterData(
     text?: string,
     images?: Array<{ data: string; mimeType: string }>, // base64 data and mime type
-    modelName: string = "gemini-1.5-flash",
+    modelName: string = "gemini-2.0-flash",
     language: string = "es"
 ): Promise<ExtractedAdopterData> {
     const apiKey = getGeminiApiKey();
