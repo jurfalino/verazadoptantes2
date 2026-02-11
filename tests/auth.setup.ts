@@ -1,43 +1,53 @@
 import { test as setup, expect } from '@playwright/test';
+import { encode } from 'next-auth/jwt';
 
 const ADMIN_EMAIL = 'gatitosolivos@gmail.com';
 const AUTH_FILE = '.auth/admin.json';
 
 /**
- * Authenticate as admin via the Credentials provider.
- * Saves the session cookie to .auth/admin.json for reuse by authed tests.
+ * Authenticate as admin by injecting a signed session JWT cookie.
+ * Works with Google-only OAuth (no Credentials provider needed).
+ *
+ * Requires AUTH_SECRET env var to sign the JWT.
  */
-setup('authenticate as admin', async ({ page }) => {
-    // Navigate to the NextAuth credentials sign-in page
-    await page.goto('/api/auth/signin');
+setup('authenticate as admin', async ({ page, context }) => {
+    const secret = process.env.AUTH_SECRET;
+    if (!secret) {
+        throw new Error(
+            'AUTH_SECRET env var is required for auth setup. ' +
+            'Set it in .env.local (local) or GitHub Actions secrets (CI).'
+        );
+    }
+
+    // Create a valid NextAuth session JWT
+    const token = await encode({
+        secret,
+        token: {
+            email: ADMIN_EMAIL,
+            name: 'Test Admin',
+            sub: 'test-admin-id',
+            sessionVersion: 3, // Must match REQUIRED_SESSION_VERSION
+        },
+        salt: 'authjs.session-token',
+    });
+
+    // Set the session cookie
+    await context.addCookies([{
+        name: 'authjs.session-token',
+        value: token,
+        domain: 'localhost',
+        path: '/',
+        httpOnly: true,
+        sameSite: 'Lax',
+    }]);
+
+    // Verify the session works
+    await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    // Find the credentials sign-in form (the "Direct Login" provider)
-    // NextAuth renders a form per provider — look for the email input
-    const emailInput = page.locator('input[name="email"]');
+    // The admin email should appear in the nav (session is valid)
+    await expect(page.getByRole('button', { name: /gatitosolivos/i })).toBeVisible({ timeout: 15000 });
 
-    // If multiple forms exist (Google + Credentials), find the Credentials one
-    if (await emailInput.count() > 1) {
-        // Use the last email input (Credentials is listed after Google)
-        await emailInput.last().fill(ADMIN_EMAIL);
-    } else {
-        await emailInput.fill(ADMIN_EMAIL);
-    }
-
-    // Submit the credentials form
-    const submitBtn = page.locator('button[type="submit"]');
-    if (await submitBtn.count() > 1) {
-        await submitBtn.last().click();
-    } else {
-        await submitBtn.click();
-    }
-
-    // Wait for authentication to complete — should redirect to home
-    await page.waitForURL('/', { timeout: 15000 });
-
-    // Verify we're logged in — search input should be visible (no login modal)
-    await expect(page.locator('input#search')).toBeVisible({ timeout: 10000 });
-
-    // Save the authenticated state
+    // Save the authenticated state for reuse by authed tests
     await page.context().storageState({ path: AUTH_FILE });
 });
