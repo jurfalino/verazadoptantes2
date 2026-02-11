@@ -97,23 +97,27 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
     }
 }
 
-// Fetch adopter stats for different time periods
+// Fetch adopter stats for different time periods (aggregated in SQL)
 export async function getAdopterStats(adopterId: string) {
     try {
         const db = await getDb();
         if (!db) return null;
 
-        const now = Date.now() / 1000; // Unix timestamp in seconds
+        const now = Math.floor(Date.now() / 1000); // Unix timestamp in seconds
         const ninetyDaysAgo = now - (90 * 24 * 60 * 60);
         const oneYearAgo = now - (365 * 24 * 60 * 60);
 
-        // Fetch all stats for this adopter
-        const allStats = await db.select({
+        // Aggregate in SQL: returns at most 4 rows (one per event type)
+        const rows = await db.select({
             eventType: adopterStats.eventType,
-            createdAt: adopterStats.createdAt
-        }).from(adopterStats).where(eq(adopterStats.adopterId, adopterId));
+            total: sql<number>`COUNT(*)`,
+            last90d: sql<number>`SUM(CASE WHEN CAST(strftime('%s', ${adopterStats.createdAt}) AS INTEGER) >= ${ninetyDaysAgo} THEN 1 ELSE 0 END)`,
+            last1y: sql<number>`SUM(CASE WHEN CAST(strftime('%s', ${adopterStats.createdAt}) AS INTEGER) >= ${oneYearAgo} THEN 1 ELSE 0 END)`,
+        }).from(adopterStats)
+            .where(eq(adopterStats.adopterId, adopterId))
+            .groupBy(adopterStats.eventType);
 
-        // Aggregate by time period
+        // Map SQL results to the expected shape
         const stats = {
             searchHits: { '90d': 0, '1y': 0, 'all': 0 },
             profileViews: { '90d': 0, '1y': 0, 'all': 0 },
@@ -121,17 +125,19 @@ export async function getAdopterStats(adopterId: string) {
             adoptionsCompleted: { '90d': 0, '1y': 0, 'all': 0 }
         };
 
-        for (const s of allStats) {
-            const ts = s.createdAt ? new Date(s.createdAt).getTime() / 1000 : 0;
-            const bucket = s.eventType === 'search_hit' ? 'searchHits' :
-                s.eventType === 'profile_view' ? 'profileViews' :
-                    s.eventType === 'adoption_request' ? 'adoptionRequests' :
-                        s.eventType === 'adoption_completed' ? 'adoptionsCompleted' : null;
+        const bucketMap: Record<string, keyof typeof stats> = {
+            'search_hit': 'searchHits',
+            'profile_view': 'profileViews',
+            'adoption_request': 'adoptionRequests',
+            'adoption_completed': 'adoptionsCompleted'
+        };
 
+        for (const row of rows) {
+            const bucket = row.eventType ? bucketMap[row.eventType] : undefined;
             if (bucket) {
-                stats[bucket].all++;
-                if (ts >= oneYearAgo) stats[bucket]['1y']++;
-                if (ts >= ninetyDaysAgo) stats[bucket]['90d']++;
+                stats[bucket].all = row.total || 0;
+                stats[bucket]['1y'] = row.last1y || 0;
+                stats[bucket]['90d'] = row.last90d || 0;
             }
         }
 
