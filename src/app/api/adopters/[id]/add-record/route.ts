@@ -1,8 +1,7 @@
 export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
-import { getRequestContext } from '@cloudflare/next-on-pages';
-import { createDb } from '@/db';
+import { getDb } from '@/lib/db';
 import { adopters, adopterImages, adoptions } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { auth } from '@/auth';
@@ -56,11 +55,8 @@ export async function POST(
     });
 
     try {
-        const { env } = getRequestContext();
-        if (!env?.DB) {
-            throw new Error('Database binding not found');
-        }
-        const db = await createDb(env.DB);
+        const db = await getDb();
+        if (!db) throw new Error('Database not available');
 
         // Verify adopter exists
         const existingAdopter = await db.select({ id: adopters.id, name: adopters.name })

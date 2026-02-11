@@ -38,7 +38,7 @@ export async function getFeatureFlag(flag: FeatureFlag): Promise<boolean> {
     // Try DB (only works in production/Cloudflare environment)
     try {
         // Dynamic import to avoid Edge runtime issues in local dev
-        const { getDb } = await import('@/app/actions');
+        const { getDb } = await import('@/lib/db');
         const db = await getDb();
         if (db) {
             const row = await db.select()
@@ -63,7 +63,7 @@ export async function getFeatureFlag(flag: FeatureFlag): Promise<boolean> {
  */
 export async function setFeatureFlag(flag: FeatureFlag, value: boolean, updatedBy?: string): Promise<boolean> {
     try {
-        const { getDb } = await import('@/app/actions');
+        const { getDb } = await import('@/lib/db');
         const db = await getDb();
         if (!db) return false;
 

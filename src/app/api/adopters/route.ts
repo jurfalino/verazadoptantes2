@@ -1,10 +1,9 @@
 export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
-import { getRequestContext } from '@cloudflare/next-on-pages';
-import { createDb } from '@/db';
+import { getDb } from '@/lib/db';
 import { adopters, adopterFlags, adopterImages, adoptions } from '@/db/schema';
-import { eq, like, or, and, isNull } from 'drizzle-orm';
+import { eq, like, or, and, isNull, type InferSelectModel } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
 
@@ -25,11 +24,8 @@ export async function GET(request: Request) {
     }
 
     try {
-        const { env } = getRequestContext();
-        if (!env?.DB) {
-            throw new Error('Database binding not found');
-        }
-        const db = await createDb(env.DB);
+        const db = await getDb();
+        if (!db) throw new Error('Database not available');
 
         // Mode 1: Exact URL match (same-post duplicate detection)
         if (sourceUrl) {
@@ -75,7 +71,7 @@ export async function GET(request: Request) {
         }
 
         // Score confidence for each match
-        const scoredMatches = await Promise.all(matches.map(async (match) => {
+        const scoredMatches = await Promise.all(matches.map(async (match: InferSelectModel<typeof adopters>) => {
             let confidence: 'high' | 'medium' | 'low' = 'low';
             const reasons: string[] = [];
 
@@ -126,8 +122,8 @@ export async function GET(request: Request) {
         }));
 
         // Sort by confidence (high first)
-        const confidenceOrder = { high: 0, medium: 1, low: 2 };
-        scoredMatches.sort((a, b) => confidenceOrder[a.confidence] - confidenceOrder[b.confidence]);
+        const confidenceOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+        scoredMatches.sort((a: { confidence: string }, b: { confidence: string }) => confidenceOrder[a.confidence] - confidenceOrder[b.confidence]);
 
         return NextResponse.json({
             matches: scoredMatches,
@@ -189,12 +185,11 @@ export async function POST(request: Request) {
     });
 
     try {
-        const { env } = getRequestContext();
-        if (!env?.DB) {
-            logger.error('Adopter create: DB binding not found', undefined, { errorId, user: session.user.email });
-            throw new Error('Database binding not found');
+        const db = await getDb();
+        if (!db) {
+            logger.error('Adopter create: DB not available', undefined, { errorId, user: session.user.email });
+            throw new Error('Database not available');
         }
-        const db = await createDb(env.DB);
 
         // Format contact info — accept raw string or structured object
         let contactInfoStr = '';
