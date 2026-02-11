@@ -6,10 +6,9 @@ import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { getAdoptionConfig } from './config';
+import { SEARCH_RESULT_LIMIT, SEARCH_ENRICHMENT_LIMIT } from '@/config/constants';
 import type { AdopterFlags, SearchResult, SearchResponse } from './types';
 
-// Constants for search limits
-const SEARCH_RESULT_LIMIT = 50;
 const MIN_PHONE_DIGITS = 4;
 
 // Helper to detect if query looks like a phone number
@@ -33,7 +32,7 @@ async function searchHistoryIds(db: any, query: string): Promise<string[]> {
         const logs = await db.select({ adopterId: adopterHistory.adopterId })
             .from(adopterHistory)
             .where(like(adopterHistory.changes, `%${query}%`))
-            .limit(50);
+            .limit(SEARCH_RESULT_LIMIT);
         return logs.map((l: any) => l.adopterId);
     } catch (e) {
         console.error("History search error", e);
@@ -49,7 +48,7 @@ async function searchAdoptionsIds(db: any, query: string): Promise<string[]> {
                 like(adoptions.animalName, `%${query}%`),
                 like(adoptions.details, `%${query}%`)
             ))
-            .limit(50);
+            .limit(SEARCH_RESULT_LIMIT);
         return adoptionLogs.map((l: any) => l.adopterId);
     } catch (e) {
         console.error("Adoption search error", e);
@@ -99,7 +98,7 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
                 like(adopters.contactInfo, `%${normalizedQuery}%`),
                 like(adopters.familyMembers, `%${normalizedQuery}%`)
             )
-        ).limit(20);
+        ).limit(SEARCH_ENRICHMENT_LIMIT);
 
         // 2. Parallel Deep Search (History & Adoptions)
         const [directResults, historyIds, adoptionIds] = await Promise.all([

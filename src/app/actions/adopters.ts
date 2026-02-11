@@ -5,6 +5,7 @@ import { eq, sql } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
+import { NINETY_DAYS_IN_SECONDS, ONE_YEAR_IN_SECONDS } from '@/config/constants';
 
 export async function getAdopter(id: string) {
     try {
@@ -104,8 +105,8 @@ export async function getAdopterStats(adopterId: string) {
         if (!db) return null;
 
         const now = Math.floor(Date.now() / 1000); // Unix timestamp in seconds
-        const ninetyDaysAgo = now - (90 * 24 * 60 * 60);
-        const oneYearAgo = now - (365 * 24 * 60 * 60);
+        const ninetyDaysAgo = now - NINETY_DAYS_IN_SECONDS;
+        const oneYearAgo = now - ONE_YEAR_IN_SECONDS;
 
         // Aggregate in SQL: returns at most 4 rows (one per event type)
         const rows = await db.select({

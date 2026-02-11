@@ -1,6 +1,7 @@
 import NextAuth from "next-auth"
 import { authConfig } from "./auth.config"
 import { REQUIRED_SESSION_VERSION } from "./auth.config";
+import { SESSION_MAX_AGE_SECONDS } from "./config/constants";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
     ...authConfig,
@@ -21,6 +22,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
     session: {
         strategy: "jwt",
-        maxAge: 315360000, // 10 years (effectively "never" expire)
+        maxAge: SESSION_MAX_AGE_SECONDS,
     },
 })

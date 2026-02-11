@@ -6,6 +6,7 @@ import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { getDb } from './_db';
 import { getAdoptionConfig } from './config';
+import { DASHBOARD_RECENT_ACTIVITY_LIMIT } from '@/config/constants';
 import type { AdopterFlags } from './types';
 
 export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
@@ -210,7 +211,7 @@ export async function getMyAdoptions(filter: 'all' | 'adoption' | 'adoption_requ
                 })
                     .from(adopterImages)
                     .where(eq(adopterImages.adoptionId, adoption.id))
-                    .limit(4)
+                    .limit(DASHBOARD_RECENT_ACTIVITY_LIMIT)
                     .all();
 
                 // Fetch adopter name if linked
