@@ -96,7 +96,7 @@ async function sendToAxiom(entries: LogEntry[]) {
     if (!config.dataset || !config.token) {
         // Local dev fallback: compact one-liner per entry
         for (const entry of entries) {
-            const { level, message, _time, error: err, ...rest } = entry;
+            const { level, message, _time, error: _err, ...rest } = entry;
             const tag = `[${level.toUpperCase()}]`;
             // Only show non-empty extra data
             const extras = Object.keys(rest).length > 0 ? rest : undefined;

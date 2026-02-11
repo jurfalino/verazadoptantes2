@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { isAdminAsync } from "@/config/admins";
 import { getDb } from "@/app/actions";
 import { appConfig, adopterStats } from "@/db/schema";
-import { eq, sql, asc } from "drizzle-orm";
+import { sql, asc } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 export async function GET() {

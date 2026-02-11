@@ -34,7 +34,7 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
     const [locale, setLocaleState] = useState<Locale>(DEFAULT_LOCALE);
-    const [isHydrated, setIsHydrated] = useState(false);
+    const [_isHydrated, setIsHydrated] = useState(false);
 
     // Hydrate from localStorage on mount (client-side only)
     useEffect(() => {

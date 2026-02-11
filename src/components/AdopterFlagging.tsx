@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { flagAdopter, searchAdopter, removeVerification } from '@/app/actions';
+import { flagAdopter, searchAdopter } from '@/app/actions';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
@@ -36,8 +36,9 @@ export function AdopterFlagging({ adopterId, adopterName, existingFlags, hasVeri
     const addressVerifiedFlag = existingFlags.find(f => f.reason === 'verified_address');
     const addressVerified = addressVerifiedFlag || hasVerifiedAddress;
 
-    const [isVerifying, setIsVerifying] = useState(false);
-    const [isUnverifying, setIsUnverifying] = useState(false);
+
+
+
 
 
 
@@ -105,46 +106,8 @@ export function AdopterFlagging({ adopterId, adopterName, existingFlags, hasVeri
         }
     };
 
-    const handleVerify = async (type: 'verified_identity' | 'verified_address') => {
-        const isAnon = document.cookie.includes('anon_user=true');
-        if (!session?.user && !isAnon) {
-            openLogin();
-            return;
-        }
-        setIsVerifying(true);
-        try {
-            const res = await flagAdopter(adopterId, type, `Verified by user`);
-            if (res.success) {
-                router.refresh();
-            }
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setIsVerifying(false);
-        }
-    };
 
-    const handleUnverify = async (type: 'verified_identity' | 'verified_address') => {
-        const isAnon = document.cookie.includes('anon_user=true');
-        if (!session?.user && !isAnon) {
-            openLogin();
-            return;
-        }
-        if (!confirm(t('flags.confirm_unverify') || 'Remove this verification?')) return;
 
-        setIsUnverifying(true);
-        try {
-            const res = await removeVerification(adopterId, type);
-            if (res.success) {
-                router.refresh();
-            }
-        } catch (e) {
-            console.error(e);
-            toast.error('Error', t('flags.unverify_error') || 'Could not remove verification. You may only remove verifications you added.');
-        } finally {
-            setIsUnverifying(false);
-        }
-    };
 
     const [showDuplicateModal, setShowDuplicateModal] = useState(false);
 

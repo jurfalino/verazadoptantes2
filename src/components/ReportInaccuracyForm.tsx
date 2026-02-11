@@ -8,7 +8,7 @@ interface ReportFormProps {
     adopterName: string;
 }
 
-export default function ReportInaccuracyForm({ adopterId, adopterName }: ReportFormProps) {
+export default function ReportInaccuracyForm({ adopterId, adopterName: _adopterName }: ReportFormProps) {
     const { t } = useLanguage();
     const [isOpen, setIsOpen] = useState(false);
     const [name, setName] = useState('');

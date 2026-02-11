@@ -7,7 +7,7 @@ import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { getAdoptionConfig } from './config';
 import { SEARCH_RESULT_LIMIT, SEARCH_ENRICHMENT_LIMIT } from '@/config/constants';
-import type { AdopterFlags, SearchResult, SearchResponse } from './types';
+import type { AdopterFlags, SearchResponse } from './types';
 
 const MIN_PHONE_DIGITS = 4;
 
@@ -238,7 +238,7 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
         }
 
         // Clear tooMany flags if below threshold
-        for (const [adopterId, flags] of flagsMap) {
+        for (const [_adopterId, flags] of flagsMap) {
             if (flags.tooManyAdoptions && flags.tooManyAdoptions.count < flags.tooManyAdoptions.threshold) {
                 flags.tooManyAdoptions = null;
             }

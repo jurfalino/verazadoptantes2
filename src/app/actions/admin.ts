@@ -80,10 +80,9 @@ export async function deleteAdopter(adopterId: string) {
         if (!db) return { success: false, error: "No database" };
 
         // Get all adoption IDs for this adopter first (to delete their images)
-        const adopterAdoptions = await db.select({ id: adoptions.id })
+        const _adopterAdoptions = await db.select({ id: adoptions.id })
             .from(adoptions)
             .where(eq(adoptions.adopterId, adopterId));
-        const adoptionIds = adopterAdoptions.map((a: { id: string }) => a.id);
 
         // Cascade Logic
         // 1. Delete adopter stats

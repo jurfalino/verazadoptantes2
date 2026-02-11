@@ -20,7 +20,7 @@ export const FEATURE_FLAGS = {
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;
 
 // Cache for feature flag values (refreshed on each request in Edge)
-let flagCache: Map<FeatureFlag, boolean> | null = null;
+const _flagCache: Map<FeatureFlag, boolean> | null = null;
 
 /**
  * Get a feature flag value

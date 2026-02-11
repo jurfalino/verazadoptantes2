@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { searchAdopter, SearchResult, SearchResponse } from '@/app/actions';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { searchAdopter, SearchResult } from '@/app/actions';
 import { RatingBadge } from './RatingBadge';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
@@ -149,8 +149,8 @@ export default function SearchSection() {
                             id="search"
                             placeholder={t('search.placeholder')}
                             className={`w-full border border-stone-200 focus:border-teal-400 focus:ring-4 focus:ring-teal-100 transition-all outline-none text-stone-900 placeholder:text-stone-400 font-medium bg-stone-50 ${hasResults
-                                    ? 'px-4 py-3 pr-10 rounded-xl text-sm md:px-5 md:py-4 md:pr-12 md:rounded-2xl md:text-base'
-                                    : 'px-5 py-4 pr-12 rounded-2xl'
+                                ? 'px-4 py-3 pr-10 rounded-xl text-sm md:px-5 md:py-4 md:pr-12 md:rounded-2xl md:text-base'
+                                : 'px-5 py-4 pr-12 rounded-2xl'
                                 }`}
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
@@ -173,8 +173,8 @@ export default function SearchSection() {
                         type="submit"
                         disabled={loading}
                         className={`bg-teal-200 text-teal-900 font-bold shadow-sm hover:bg-teal-300 hover:shadow-md transition-all disabled:opacity-70 transform active:scale-[0.98] ${hasResults
-                                ? 'px-4 py-3 rounded-xl text-sm md:w-full md:py-4 md:px-6 md:rounded-2xl md:text-lg'
-                                : 'w-full py-4 px-6 rounded-2xl text-lg'
+                            ? 'px-4 py-3 rounded-xl text-sm md:w-full md:py-4 md:px-6 md:rounded-2xl md:text-lg'
+                            : 'w-full py-4 px-6 rounded-2xl text-lg'
                             }`}
                     >
                         {loading ? t('search.searching') : t('search.button')}

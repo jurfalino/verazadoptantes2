@@ -183,7 +183,7 @@ export async function getMyAdoptions(filter: 'all' | 'adoption' | 'adoption_requ
         const session = await auth();
         if (!session?.user?.email) return [];
 
-        let query = db.select().from(adoptions);
+        const query = db.select().from(adoptions);
 
         // Apply filters by recordType
         if (filter !== 'all') {

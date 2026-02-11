@@ -1,6 +1,6 @@
 'use server';
 
-import { adopters, adoptions, adopterHistory, adopterFlags, adopterImages } from '@/db/schema';
+import { adopters, adoptions, adopterHistory, adopterFlags } from '@/db/schema';
 import { eq, sql, and } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { logger } from '@/lib/logger';

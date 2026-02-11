@@ -3,11 +3,10 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
-import { saveAdoption, searchAdopter } from '@/app/actions';
+import { searchAdopter } from '@/app/actions';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { getRatingColors } from '@/lib/ratingColors';
 import { StarRating } from '@/components/StarRating';
 import LegalConsent from '@/components/LegalConsent';
 

@@ -1,8 +1,7 @@
 export const runtime = 'edge';
-import { auth } from "@/auth";
-import { getDb } from "@/app/actions"; // Or use direct DB access in Server Component
+import { getDb } from "@/app/actions";
 import { adopters, adoptions, adopterFlags } from "@/db/schema";
-import { count, eq, isNull } from "drizzle-orm";
+import { count } from "drizzle-orm";
 import AdminDangerZone from "@/components/AdminDangerZone";
 
 export default async function AdminOverviewPage() {

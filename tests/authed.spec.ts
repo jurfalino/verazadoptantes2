@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { TEST_NAMES } from './helpers';
 
-const FB_POST_URL = 'https://www.facebook.com/share/p/18GsEQLz3P/';
+const _FB_POST_URL = 'https://www.facebook.com/share/p/18GsEQLz3P/';
 
 test.describe('Authenticated User', () => {
     test.beforeEach(async ({ page }) => {

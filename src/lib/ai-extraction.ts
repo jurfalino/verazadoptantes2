@@ -65,7 +65,7 @@ function getAI(): Ai | null {
 /**
  * Extract text from an image using LLaVA vision model
  */
-async function extractTextFromImage(ai: Ai, imageData: string, mimeType: string): Promise<string> {
+async function extractTextFromImage(ai: Ai, imageData: string, _mimeType: string): Promise<string> {
     try {
         // Convert base64 to Uint8Array
         const binaryString = atob(imageData);

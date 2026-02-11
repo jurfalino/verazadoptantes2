@@ -43,11 +43,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Database unavailable' }, { status: 500 });
         }
 
-        // Get all adoption IDs for this adopter first (to delete their images)
-        const adopterAdoptions = await db.select({ id: adoptions.id })
-            .from(adoptions)
-            .where(eq(adoptions.adopterId, adopterId));
-        const adoptionIds = adopterAdoptions.map((a: { id: string }) => a.id);
+        // Cascade Delete (images are also deleted by adopterId)
 
         // Cascade Delete
         await db.delete(adopterStats).where(eq(adopterStats.adopterId, adopterId));

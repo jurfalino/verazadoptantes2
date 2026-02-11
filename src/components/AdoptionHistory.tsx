@@ -32,12 +32,12 @@ interface AdoptionImage {
     caption?: string | null;
 }
 
-export default function AdoptionHistory({ adoptions: initialAdoptions, onEdit, adopterId, currentUser, isAdmin = false, adopterAddress = '' }: { adoptions: Adoption[], onEdit: (adoption: Adoption) => void, adopterId: string, currentUser: string, isAdmin?: boolean, adopterAddress?: string }) {
+export default function AdoptionHistory({ adoptions: initialAdoptions, onEdit: _onEdit, adopterId, currentUser, isAdmin = false, adopterAddress = '' }: { adoptions: Adoption[], onEdit: (adoption: Adoption) => void, adopterId: string, currentUser: string, isAdmin?: boolean, adopterAddress?: string }) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
     const searchParams = useSearchParams();
-    const [deletingId, setDeletingId] = useState<string | null>(null);
+    const [_deletingId, setDeletingId] = useState<string | null>(null);
     const [lightboxImage, setLightboxImage] = useState<string | null>(null);
     const [adoptionImages, setAdoptionImages] = useState<Record<string, AdoptionImage[]>>({});
 

@@ -22,8 +22,8 @@ interface PersonMatch {
 
 export default function ImportWizard() {
     const { t, locale } = useLanguage();
-    const { data: session } = useSession();
-    const { openLogin } = useAuthContext();
+    const { data: _session } = useSession();
+    const { openLogin: _openLogin } = useAuthContext();
     const router = useRouter();
     const searchParams = useSearchParams();
     const toast = useShowToast();
@@ -59,12 +59,12 @@ export default function ImportWizard() {
     const [sharedFrom, setSharedFrom] = useState<string | null>(null);
 
     // Extracted/fetched state
-    const [fetchedText, setFetchedText] = useState('');
+    const [_fetchedText, setFetchedText] = useState('');
     const [editableText, setEditableText] = useState('');
     const [fetchedImages, setFetchedImages] = useState<string[]>([]);
     const [selectedFetchedImages, setSelectedFetchedImages] = useState<Set<number>>(new Set());
     const [sourceUrl, setSourceUrl] = useState('');
-    const [sourceType, setSourceType] = useState<string>('');
+    const [_sourceType, setSourceType] = useState<string>('');
     const [isVideoPost, setIsVideoPost] = useState(false);
     const [retryCountdown, setRetryCountdown] = useState(0);
 
@@ -87,9 +87,10 @@ export default function ImportWizard() {
     const [extractedData, setExtractedData] = useState<ExtractedAdopterData | null>(null);
     const [contactInfoText, setContactInfoText] = useState('');
     const [processedImages, setProcessedImages] = useState<Array<{ data: string; mimeType: string; originalUrl?: string }>>([]);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [selectedModel, setSelectedModel] = useState<string>('');
     const [unknownAnimal, setUnknownAnimal] = useState(false);
-    const [customSpecies, setCustomSpecies] = useState(false);
+    const [_customSpecies, setCustomSpecies] = useState(false);
 
     // Save state
     const [isSaving, setIsSaving] = useState(false);
@@ -976,7 +977,7 @@ export default function ImportWizard() {
                     {(() => {
                         const allImages: { src: string; label?: string }[] = [];
                         // Processed images from fetch (base64)
-                        processedImages.forEach((img, i) => allImages.push({ src: `data:${img.mimeType};base64,${img.data}`, label: img.originalUrl ? new URL(img.originalUrl).pathname.split('/').pop() : undefined }));
+                        processedImages.forEach((img, _i) => allImages.push({ src: `data:${img.mimeType};base64,${img.data}`, label: img.originalUrl ? new URL(img.originalUrl).pathname.split('/').pop() : undefined }));
                         // Manually uploaded images
                         manualImages.forEach((img) => allImages.push({ src: img.preview }));
                         if (allImages.length === 0) return null;

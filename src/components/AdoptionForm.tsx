@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
-import { getRatingColors } from '@/lib/ratingColors';
 import { getRecordTypeColors } from '@/lib/recordTypeColors';
 import { StarRating } from '@/components/StarRating';
 import { useShowToast } from '@/components/ui/Toast';
