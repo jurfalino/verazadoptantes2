@@ -74,6 +74,8 @@ export const es = {
         or: 'O',
         skip_anon: 'Saltar y continuar anónimamente',
         anon_disclaimer: '*Las ediciones anónimas se rastrean por dirección IP y huella digital para evitar abusos.',
+        session_expired_title: 'Sesión Expirada',
+        session_expired_desc: 'Por favor, iniciá sesión nuevamente para continuar.',
     },
     nav: {
         sign_out: 'Cerrar Sesión',

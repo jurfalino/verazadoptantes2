@@ -13,12 +13,14 @@ import { ShieldPawIcon } from '@/components/Logo';
 import packageJson from '../../package.json';
 import { useEffect, useState } from 'react';
 import InstallCTA from '@/components/InstallCTA';
+import { useShowToast } from '@/components/ui/Toast';
 
 export default function Home() {
   const { t } = useLanguage();
   const router = useRouter();
   const { data: session } = useSession();
   const { openLogin } = useAuthContext();
+  const toast = useShowToast();
   const [contentImportEnabled, setContentImportEnabled] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
 
@@ -38,6 +40,32 @@ export default function Home() {
     if (!localStorage.getItem('guide_dismissed')) {
       setShowGuide(true);
     }
+  }, []);
+
+  // Auto-open LoginModal when redirected from NextAuth (stale session)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const callbackUrl = params.get('callbackUrl');
+    if (callbackUrl && !session?.user) {
+      // Extract the pathname from the callbackUrl for redirect after login
+      try {
+        const url = new URL(callbackUrl);
+        openLogin(url.pathname || '/');
+      } catch {
+        openLogin(callbackUrl);
+      }
+      // Show session expired toast
+      toast.info(
+        t('auth.session_expired_title'),
+        t('auth.session_expired_desc')
+      );
+      // Clean up URL to remove NextAuth params
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete('callbackUrl');
+      cleanUrl.searchParams.delete('error');
+      window.history.replaceState({}, '', cleanUrl.toString());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const dismissGuide = () => {

@@ -74,6 +74,8 @@ export const en = {
         or: 'Or',
         skip_anon: 'Skip and continue anonymously',
         anon_disclaimer: '*Anonymous edits are tracked by IP address and device fingerprint to prevent abuse.',
+        session_expired_title: 'Session Expired',
+        session_expired_desc: 'Please sign in again to continue.',
     },
     nav: {
         sign_out: 'Sign Out',
