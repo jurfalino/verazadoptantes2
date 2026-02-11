@@ -1,8 +1,9 @@
 name: Playwright E2E Tests
 
 on:
+  workflow_dispatch:
   push:
-    branches: [master, staging]
+    branches: [master, staging, e2e_tests]
   pull_request:
     branches: [master, staging]
 
