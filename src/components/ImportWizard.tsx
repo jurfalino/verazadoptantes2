@@ -65,6 +65,23 @@ export default function ImportWizard() {
     const [selectedFetchedImages, setSelectedFetchedImages] = useState<Set<number>>(new Set());
     const [sourceUrl, setSourceUrl] = useState('');
     const [sourceType, setSourceType] = useState<string>('');
+    const [isVideoPost, setIsVideoPost] = useState(false);
+    const [retryCountdown, setRetryCountdown] = useState(0);
+
+    // Retry countdown timer
+    useEffect(() => {
+        if (retryCountdown <= 0) return;
+        const timer = setInterval(() => {
+            setRetryCountdown(prev => {
+                if (prev <= 1) {
+                    clearInterval(timer);
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [retryCountdown]);
 
     // AI extraction state
     const [extractedData, setExtractedData] = useState<ExtractedAdopterData | null>(null);
@@ -139,6 +156,29 @@ export default function ImportWizard() {
                     const imgs = responseData.data.images || [];
                     setFetchedImages(imgs);
                     setSelectedFetchedImages(new Set(imgs.map((_: string, i: number) => i)));
+
+                    // Video post detection: inject thumbnail for OCR
+                    if (responseData.isVideo || responseData.data.isVideo) {
+                        setIsVideoPost(true);
+                        if (responseData.data.videoThumbnailBase64) {
+                            const dataUrl = responseData.data.videoThumbnailBase64 as string;
+                            const [header, base64Data] = dataUrl.split(',');
+                            const mimeType = header?.match(/data:([^;]+)/)?.[1] || 'image/jpeg';
+                            setManualImages(prev => [...prev, {
+                                data: base64Data,
+                                mimeType,
+                                preview: dataUrl,
+                            }]);
+                        }
+                    }
+                } else if (responseData.extractionFailed) {
+                    // Extraction failed — start 30s retry countdown
+                    setRetryCountdown(30);
+                    throw new Error(
+                        responseData.error || (locale === 'es'
+                            ? 'No se pudo extraer contenido de esta publicación.'
+                            : 'Could not extract content from this post.')
+                    );
                 }
             } else {
                 const res = await fetch('/api/import/fetch-content', {
@@ -300,7 +340,7 @@ export default function ImportWizard() {
                     setShowConfirmModal(true);
                     return;
                 }
-            } catch { /* continue */ }
+            } catch (e) { console.warn('[ImportWizard] URL duplicate check failed', e); }
         }
 
         // Check for person match
@@ -322,7 +362,7 @@ export default function ImportWizard() {
                         setPersonMatch(data.matches[0]);
                     }
                 }
-            } catch { /* continue */ }
+            } catch (e) { console.warn('[ImportWizard] Person match check failed', e); }
         }
 
         setIsSaving(false);
@@ -476,9 +516,40 @@ export default function ImportWizard() {
 
             {/* Error Display */}
             {error && (
-                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
-                    {error}
-                    <button onClick={() => setError(null)} className="ml-2 text-red-500 hover:text-red-700">✕</button>
+                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-sm">
+                    <div className="flex items-start gap-3">
+                        <span className="text-red-500 text-lg flex-shrink-0">⚠️</span>
+                        <div className="flex-1">
+                            <p className="text-red-700 font-medium">{error}</p>
+                            {retryCountdown > 0 && (
+                                <p className="text-red-500 mt-1">
+                                    {locale === 'es'
+                                        ? `Podés reintentar en ${retryCountdown}s`
+                                        : `You can retry in ${retryCountdown}s`}
+                                </p>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                            {retryCountdown > 0 ? (
+                                <span className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-red-100 text-red-400 font-bold text-sm tabular-nums">
+                                    {retryCountdown}
+                                </span>
+                            ) : retryCountdown === 0 && error && inputContent.trim() ? (
+                                <button
+                                    onClick={() => {
+                                        setError(null);
+                                        handleSmartSubmit();
+                                    }}
+                                    className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium hover:bg-red-700 transition-colors"
+                                >
+                                    {locale === 'es' ? 'Reintentar' : 'Retry'}
+                                </button>
+                            ) : null}
+                            <button onClick={() => { setError(null); setRetryCountdown(0); }} className="text-red-400 hover:text-red-600">
+                                ✕
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -594,6 +665,21 @@ export default function ImportWizard() {
                     )}
 
                     <h3 className="text-lg font-semibold text-stone-900">{t('import.reviewTitle') || 'Review Content'}</h3>
+
+                    {/* Video post warning */}
+                    {isVideoPost && (
+                        <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+                            <span className="text-lg flex-shrink-0">📹</span>
+                            <div>
+                                <p className="font-medium">{locale === 'es' ? 'Este enlace contiene un video' : 'This link contains a video'}</p>
+                                <p className="mt-0.5 text-amber-700">
+                                    {locale === 'es'
+                                        ? 'La información puede estar en el video. Adjuntá capturas de pantalla del video para que las analicemos mejor.'
+                                        : 'The information may be in the video. Attach screenshots from the video for better extraction.'}
+                                </p>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Editable text */}
                     <div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { searchAdopter, SearchResult, SearchResponse } from '@/app/actions';
 import { RatingBadge } from './RatingBadge';
 import { useLanguage } from '@/context/LanguageContext';
@@ -26,6 +26,7 @@ export default function SearchSection() {
     const [truncatedInfo, setTruncatedInfo] = useState<{ truncated: boolean; totalCount: number } | null>(null);
     const [validationError, setValidationError] = useState<string | null>(null);
     const [showLegend, setShowLegend] = useState(false);
+    const resultsRef = useRef<HTMLDivElement>(null);
 
     // Re-run search when returning to page with query in URL
     const runSearch = useCallback(async (searchQuery: string) => {
@@ -43,6 +44,8 @@ export default function SearchSection() {
                 if (response.truncated && response.totalCount) {
                     setTruncatedInfo({ truncated: true, totalCount: response.totalCount });
                 }
+                // Auto-scroll to results on mobile
+                setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
             }
         } catch (err) {
             console.error(err);
@@ -106,6 +109,8 @@ export default function SearchSection() {
                 if (response.truncated && response.totalCount) {
                     setTruncatedInfo({ truncated: true, totalCount: response.totalCount });
                 }
+                // Auto-scroll to results on mobile
+                setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
             }
         } catch (err) {
             console.error(err);
@@ -126,18 +131,27 @@ export default function SearchSection() {
         window.history.replaceState({}, '', url.toString());
     };
 
+    // On mobile, make search form sticky when results are visible
+    const hasResults = results !== null;
+
     return (
         <div className="w-full">
-            <div className="bg-white rounded-3xl p-6 shadow-sm border border-stone-200">
-                <h2 className="text-2xl font-bold text-stone-900 mb-5 text-center tracking-tight">{t('search.title')}</h2>
-                <form onSubmit={handleSearch} className="space-y-4">
-                    <div className="relative">
+            <div className={`bg-white rounded-3xl p-6 shadow-sm border border-stone-200 transition-all ${hasResults ? 'md:static sticky top-0 z-30 rounded-b-xl md:rounded-3xl shadow-md md:shadow-sm' : ''
+                }`}>
+                {/* Full title — hidden on mobile when results are showing to save space */}
+                <h2 className={`text-2xl font-bold text-stone-900 mb-5 text-center tracking-tight ${hasResults ? 'hidden md:block' : ''
+                    }`}>{t('search.title')}</h2>
+                <form onSubmit={handleSearch} className={hasResults ? 'flex gap-2 items-center md:block md:space-y-4' : 'space-y-4'}>
+                    <div className="relative flex-1">
                         <label htmlFor="search" className="sr-only">{t('common.search')}</label>
                         <input
                             type="text"
                             id="search"
                             placeholder={t('search.placeholder')}
-                            className="w-full px-5 py-4 pr-12 rounded-2xl bg-stone-50 border border-stone-200 focus:border-teal-400 focus:ring-4 focus:ring-teal-100 transition-all outline-none text-stone-900 placeholder:text-stone-400 font-medium"
+                            className={`w-full border border-stone-200 focus:border-teal-400 focus:ring-4 focus:ring-teal-100 transition-all outline-none text-stone-900 placeholder:text-stone-400 font-medium bg-stone-50 ${hasResults
+                                    ? 'px-4 py-3 pr-10 rounded-xl text-sm md:px-5 md:py-4 md:pr-12 md:rounded-2xl md:text-base'
+                                    : 'px-5 py-4 pr-12 rounded-2xl'
+                                }`}
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                         />
@@ -158,7 +172,10 @@ export default function SearchSection() {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full py-4 px-6 bg-teal-200 text-teal-900 font-bold rounded-2xl shadow-sm hover:bg-teal-300 hover:shadow-md transition-all disabled:opacity-70 transform active:scale-[0.98] text-lg"
+                        className={`bg-teal-200 text-teal-900 font-bold shadow-sm hover:bg-teal-300 hover:shadow-md transition-all disabled:opacity-70 transform active:scale-[0.98] ${hasResults
+                                ? 'px-4 py-3 rounded-xl text-sm md:w-full md:py-4 md:px-6 md:rounded-2xl md:text-lg'
+                                : 'w-full py-4 px-6 rounded-2xl text-lg'
+                            }`}
                     >
                         {loading ? t('search.searching') : t('search.button')}
                     </button>
@@ -191,7 +208,7 @@ export default function SearchSection() {
             )}
 
             {results && (
-                <div className="mt-8 space-y-4">
+                <div ref={resultsRef} className="mt-8 space-y-4 scroll-mt-4">
                     {results.length > 0 && (
                         <div className="flex justify-between items-center px-2">
                             <h3 className="text-lg font-semibold text-stone-800">
@@ -199,7 +216,7 @@ export default function SearchSection() {
                             </h3>
                             <button
                                 onClick={handleCreateNew}
-                                className="flex items-center gap-2 px-3 py-1.5 text-sm font-bold text-teal-800 bg-teal-100 hover:bg-teal-200 rounded-lg transition-colors"
+                                className="flex items-center gap-2 px-3 py-1.5 text-sm font-bold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 rounded-lg transition-colors"
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                                 {t('search.create_new')}

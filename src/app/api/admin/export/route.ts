@@ -1,13 +1,13 @@
 export const runtime = 'edge';
 import { auth } from "@/auth";
-import { isAdmin } from "@/config/admins";
+import { isAdminAsync } from "@/config/admins";
 import { getDb } from "@/app/actions";
-import { adopters, adoptions, adopterImages, adoptionImages, adopterFlags, adopterHistory, appConfig } from "@/db/schema";
+import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, appConfig } from "@/db/schema";
 import { NextResponse } from "next/server";
 
 export async function GET() {
     const session = await auth();
-    if (!session?.user?.email || !isAdmin(session.user.email)) {
+    if (!session?.user?.email || !await isAdminAsync(session.user.email)) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -19,7 +19,6 @@ export async function GET() {
         adoptersData,
         adoptionsData,
         adopterImagesData,
-        adoptionImagesData,
         adopterFlagsData,
         adopterHistoryData,
         appConfigData,
@@ -27,7 +26,6 @@ export async function GET() {
         db.select().from(adopters).all(),
         db.select().from(adoptions).all(),
         db.select().from(adopterImages).all(),
-        db.select().from(adoptionImages).all(),
         db.select().from(adopterFlags).all(),
         db.select().from(adopterHistory).all(),
         db.select().from(appConfig).all(),
@@ -41,7 +39,6 @@ export async function GET() {
             adopters: adoptersData,
             adoptions: adoptionsData,
             adopter_images: adopterImagesData,
-            adoption_images: adoptionImagesData,
             adopter_flags: adopterFlagsData,
             adopter_history: adopterHistoryData,
             app_config: appConfigData,

@@ -1,13 +1,13 @@
 export const runtime = 'edge';
 
 import { getDb } from "@/app/actions";
-import { adopters, adopterFlags, adopterHistory, adopterImages, adopterStats, adoptions, adoptionImages } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { adopters, adopterFlags, adopterHistory, adopterImages, adopterStats, adoptions } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { logger } from "@/lib/logger";
 import { NextRequest, NextResponse } from "next/server";
 
-import { isAdmin } from "@/config/admins";
+import { isAdminAsync } from "@/config/admins";
 
 export async function POST(request: NextRequest) {
     try {
@@ -26,10 +26,10 @@ export async function POST(request: NextRequest) {
             adopterId,
             hasSession: !!session,
             userEmail: session?.user?.email || 'no-email',
-            isAdminUser: isAdmin(session?.user?.email)
+            isAdminUser: await isAdminAsync(session?.user?.email)
         });
 
-        if (!session?.user?.email || !isAdmin(session.user.email)) {
+        if (!session?.user?.email || !await isAdminAsync(session.user.email)) {
             logger.warn('Unauthorized delete attempt', {
                 adopterId,
                 email: session?.user?.email || 'no-session'
@@ -55,9 +55,6 @@ export async function POST(request: NextRequest) {
         await db.delete(adopterHistory).where(eq(adopterHistory.adopterId, adopterId));
         await db.delete(adopterImages).where(eq(adopterImages.adopterId, adopterId));
 
-        if (adoptionIds.length > 0) {
-            await db.delete(adoptionImages).where(inArray(adoptionImages.adoptionId, adoptionIds));
-        }
 
         await db.delete(adoptions).where(eq(adoptions.adopterId, adopterId));
         await db.delete(adopters).where(eq(adopters.id, adopterId));

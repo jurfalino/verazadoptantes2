@@ -1,8 +1,8 @@
 export const runtime = 'edge';
 import { auth } from "@/auth";
-import { isAdmin } from "@/config/admins";
+import { isAdminAsync } from "@/config/admins";
 import { getDb } from "@/app/actions";
-import { adopters, adoptions, adopterImages, adoptionImages, adopterFlags, adopterHistory, appConfig } from "@/db/schema";
+import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, appConfig } from "@/db/schema";
 import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 
@@ -11,7 +11,6 @@ const TABLE_MAP = {
     adopters: { ref: adopters, name: 'adopters' },
     adoptions: { ref: adoptions, name: 'adoptions' },
     adopter_images: { ref: adopterImages, name: 'adopter_images' },
-    adoption_images: { ref: adoptionImages, name: 'adoption_images' },
     adopter_flags: { ref: adopterFlags, name: 'adopter_flags' },
     adopter_history: { ref: adopterHistory, name: 'adopter_history' },
     app_config: { ref: appConfig, name: 'app_config' },
@@ -21,7 +20,6 @@ type TableKey = keyof typeof TABLE_MAP;
 
 // Ordered for FK safety: children first, parents last (for replace mode deletion)
 const DELETE_ORDER: TableKey[] = [
-    'adoption_images',
     'adopter_images',
     'adopter_flags',
     'adopter_history',
@@ -38,12 +36,11 @@ const INSERT_ORDER: TableKey[] = [
     'adopter_flags',
     'adopter_history',
     'adopter_images',
-    'adoption_images',
 ];
 
 export async function POST(request: Request) {
     const session = await auth();
-    if (!session?.user?.email || !isAdmin(session.user.email)) {
+    if (!session?.user?.email || !await isAdminAsync(session.user.email)) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

@@ -98,12 +98,26 @@ export default function AdminAuditPage() {
 
     const parseDetails = (details: string | null): Record<string, unknown> | null => {
         if (!details) return null;
-        try { return JSON.parse(details); } catch { return null; }
+        try { return JSON.parse(details); } catch (e) { console.warn('[audit] Failed to parse details JSON', e); return null; }
     };
 
     const getActionDisplay = (action: string) => {
         const config = ACTION_LABELS[action];
         return config || { label: action, icon: '📌', color: 'bg-stone-100 text-stone-600' };
+    };
+
+    const getTargetUrl = (action: string, target: string | null, details: Record<string, unknown> | null): string | null => {
+        if (!target) return null;
+        // Adopter-level actions: target IS the adopter ID
+        if (['adopter_created', 'adopter_updated', 'adopter_deleted', 'flag_created'].includes(action)) {
+            return `/adopter/${target}`;
+        }
+        // Adoption-level actions: target is adoption ID, adopterId lives in details
+        if (['adoption_created', 'adoption_updated', 'adoption_deleted'].includes(action)) {
+            const adopterId = details?.adopterId as string | undefined;
+            return adopterId ? `/adopter/${adopterId}` : null;
+        }
+        return null;
     };
 
     const parseDevice = (device: string | null) => {
@@ -181,6 +195,7 @@ export default function AdminAuditPage() {
                                 const device = parseDevice(entry.device);
                                 const details = parseDetails(entry.details);
                                 const isExpanded = expandedId === entry.id;
+                                const targetUrl = getTargetUrl(entry.action, entry.target, details);
 
                                 return (
                                     <tr key={entry.id} className="hover:bg-stone-50/50 transition-colors group">
@@ -201,8 +216,14 @@ export default function AdminAuditPage() {
                                                 {actionDisplay.icon} {actionDisplay.label}
                                             </span>
                                         </td>
-                                        <td className="px-4 py-3 text-xs text-stone-500 font-mono truncate max-w-[200px]" title={entry.target || ''}>
-                                            {entry.target ? entry.target.substring(0, 12) + '...' : '—'}
+                                        <td className="px-4 py-3 text-xs font-mono truncate max-w-[200px]" title={entry.target || ''}>
+                                            {targetUrl ? (
+                                                <a href={targetUrl} className="text-blue-600 hover:underline">
+                                                    {entry.target!.substring(0, 12)}…
+                                                </a>
+                                            ) : (
+                                                <span className="text-stone-500">{entry.target ? entry.target.substring(0, 12) + '...' : '—'}</span>
+                                            )}
                                         </td>
                                         <td className="px-4 py-3 text-xs text-stone-400 whitespace-nowrap">
                                             {device && (

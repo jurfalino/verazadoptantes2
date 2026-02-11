@@ -1,6 +1,6 @@
 export const runtime = 'edge';
 import { auth } from "@/auth";
-import { isAdmin } from "@/config/admins";
+import { isAdminAsync } from "@/config/admins";
 import { getDb } from "@/app/actions";
 import { adopterStats } from "@/db/schema";
 import { sql, lt } from "drizzle-orm";
@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
     const session = await auth();
-    if (!session?.user?.email || !isAdmin(session.user.email)) {
+    if (!session?.user?.email || !await isAdminAsync(session.user.email)) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

@@ -57,3 +57,6 @@ node_modules/
 cookies.txt
 debug_*.js
 test-db.js
+
+# internal audits & notes
+docs/code_quality_audit.md

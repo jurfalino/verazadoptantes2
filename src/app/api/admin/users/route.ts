@@ -1,12 +1,12 @@
 export const runtime = 'edge';
 import { auth } from "@/auth";
-import { isAdmin } from "@/config/admins";
+import { isAdminAsync } from "@/config/admins";
 import { NextResponse } from "next/server";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 
 export async function GET(request: Request) {
     const session = await auth();
-    if (!session?.user?.email || !isAdmin(session.user.email)) {
+    if (!session?.user?.email || !await isAdminAsync(session.user.email)) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -34,7 +34,7 @@ export async function GET(request: Request) {
 
 export async function PUT(request: Request) {
     const session = await auth();
-    if (!session?.user?.email || !isAdmin(session.user.email)) {
+    if (!session?.user?.email || !await isAdminAsync(session.user.email)) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

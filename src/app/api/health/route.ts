@@ -2,44 +2,30 @@ export const runtime = 'edge';
 
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { NextResponse } from 'next/server';
+import { getTableName, getTableColumns } from 'drizzle-orm';
+import {
+    adopters, adoptions, adopterImages, adopterFlags,
+    adopterHistory, adopterStats, searches, appConfig
+} from '@/db/schema';
 
 /**
- * Schema definition: expected columns for each table.
- * This MUST stay in sync with src/db/schema.ts.
- * If you add a column to the schema, add it here too.
+ * Derive expected column names from a Drizzle table definition.
+ * Uses drizzle-orm's getTableColumns() which returns { columnKey: Column } where each Column has a `.name` property.
  */
-const EXPECTED_SCHEMA: Record<string, string[]> = {
-    adopters: [
-        'id', 'name', 'contact_info', 'address_info', 'family_members', 'notes',
-        'created_at', 'updated_at', 'status', 'added_by', 'source_url',
-    ],
-    adoptions: [
-        'id', 'adopter_id', 'animal_name', 'species', 'details', 'status', 'rating',
-        'comments', 'date', 'added_by', 'on_behalf_of', 'record_type',
-        'delivered_to_home', 'verified_address', 'identity_verified', 'source_url',
-    ],
-    adopter_images: [
-        'id', 'adopter_id', 'adoption_id', 'url', 'caption', 'uploaded_at', 'added_by', 'is_profile_picture',
-    ],
-    adopter_flags: [
-        'id', 'adopter_id', 'flagged_by', 'reason', 'target_adopter_id', 'details', 'created_at',
-    ],
-    adopter_history: [
-        'id', 'adopter_id', 'changed_by', 'changes', 'changed_at',
-    ],
-    adopter_stats: [
-        'id', 'adopter_id', 'event_type', 'created_at',
-    ],
-    adoption_images: [
-        'id', 'adoption_id', 'url', 'caption', 'uploaded_at', 'added_by',
-    ],
-    searches: [
-        'id', 'query', 'type', 'count', 'last_searched_at',
-    ],
-    app_config: [
-        'key', 'value', 'updated_at', 'updated_by',
-    ],
-};
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getColumnNames(table: any): string[] {
+    const columns = getTableColumns(table);
+    return Object.values(columns).map((col: any) => col.name as string);
+}
+
+/**
+ * Schema generated from Drizzle table definitions — always in sync with src/db/schema.ts.
+ * No manual maintenance needed: adding a column to the schema automatically updates this check.
+ */
+const SCHEMA_TABLES = [
+    adopters, adoptions, adopterImages, adopterFlags,
+    adopterHistory, adopterStats, searches, appConfig
+];
 
 export async function GET() {
     const mismatches: Array<{
@@ -57,15 +43,17 @@ export async function GET() {
             );
         }
 
-        for (const [table, expectedColumns] of Object.entries(EXPECTED_SCHEMA)) {
-            const result = await env.DB.prepare(`PRAGMA table_info(${table})`).all();
+        for (const table of SCHEMA_TABLES) {
+            const tableName = getTableName(table);
+            const expectedColumns = getColumnNames(table);
+            const result = await env.DB.prepare(`PRAGMA table_info(${tableName})`).all();
             const actualColumns = (result.results || []).map((row: any) => row.name as string);
 
             const missing = expectedColumns.filter(col => !actualColumns.includes(col));
             const extra = actualColumns.filter(col => !expectedColumns.includes(col));
 
             if (missing.length > 0 || extra.length > 0) {
-                mismatches.push({ table, missing, extra });
+                mismatches.push({ table: tableName, missing, extra });
             }
         }
 
@@ -82,7 +70,7 @@ export async function GET() {
 
         return NextResponse.json({
             status: 'ok',
-            tables: Object.keys(EXPECTED_SCHEMA).length,
+            tables: SCHEMA_TABLES.length,
             message: 'All tables match expected schema',
         });
 

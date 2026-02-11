@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
         // Generic URL fetching
         const response = await fetch(url, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'es-AR,es;q=0.9,en;q=0.5',
             },
@@ -182,7 +182,7 @@ function extractFromHtml(html: string, sourceUrl: string): FetchedContent {
                     if (!seenImages.has(img)) { seenImages.add(img); data.images.push(img); }
                 }
             }
-        } catch { /* skip */ }
+        } catch (e) { console.warn('[fetch-content] JSON-LD parse failed', e); }
     }
 
     // --- Fallback: <title> tag ---
@@ -239,5 +239,19 @@ function decodeEntities(text: string): string {
         .replace(/&#x27;/g, "'")
         .replace(/&#39;/g, "'")
         .replace(/&nbsp;/g, ' ')
+        .replace(/&aacute;/g, 'á')
+        .replace(/&eacute;/g, 'é')
+        .replace(/&iacute;/g, 'í')
+        .replace(/&oacute;/g, 'ó')
+        .replace(/&uacute;/g, 'ú')
+        .replace(/&ntilde;/g, 'ñ')
+        .replace(/&Aacute;/g, 'Á')
+        .replace(/&Eacute;/g, 'É')
+        .replace(/&Iacute;/g, 'Í')
+        .replace(/&Oacute;/g, 'Ó')
+        .replace(/&Uacute;/g, 'Ú')
+        .replace(/&Ntilde;/g, 'Ñ')
+        .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+        .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
         .replace(/\\n/g, '\n');
 }

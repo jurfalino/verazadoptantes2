@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.4.3] - 2026-02-11
+
+### Changed
+- **Refactored `actions.ts`** — split 1,463-line monolith into 10 domain-specific modules under `src/app/actions/` with barrel re-exports (zero breaking changes to consumers)
+
+### Removed
+- **Dropped `adoption_images` table** — unused table (empty in production); all adoption images are stored in `adopter_images` via the `adoption_id` column
+
+---
+
 ## [2.4.2] - 2026-02-09
 
 ### Changed

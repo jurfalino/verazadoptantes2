@@ -375,7 +375,7 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                                     // Fallback for old/direct profile updates
                                     changes = parsed;
                                 }
-                            } catch (e) { }
+                            } catch (e) { console.warn('[AdopterForm] Failed to parse history changes', e); }
 
                             return (
                                 <div key={h.id} className="text-sm border-l-4 border-emerald-200 pl-4 py-3 bg-emerald-50/30 rounded-r-lg mb-2">

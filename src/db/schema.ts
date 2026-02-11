@@ -109,17 +109,7 @@ export const dataRequests = sqliteTable("data_requests", {
     resolvedBy: text("resolved_by"),
 });
 
-// Adoption Images - Photos attached to adoption/observation records
-export const adoptionImages = sqliteTable("adoption_images", {
-    id: text("id").primaryKey(),
-    adoptionId: text("adoption_id").notNull(),
-    url: text("url").notNull(),
-    caption: text("caption"),
-    uploadedAt: integer("uploaded_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
-    addedBy: text("added_by"),
-}, (table) => ({
-    adoptionIdx: index("idx_adoption_images").on(table.adoptionId),
-}));
+
 
 // Auth.js Tables
 import type { AdapterAccount } from "next-auth/adapters";

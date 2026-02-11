@@ -9,7 +9,7 @@ import { getRecordTypeColors } from '@/lib/recordTypeColors';
 import { useShowToast } from '@/components/ui/Toast';
 import { getSourceIcon, getSourceName } from '@/lib/sourceIcons';
 import { formatShortDate } from '@/lib/dates';
-import { isAdmin as isAdminEmail } from '@/config/admins';
+import { isAdmin as isAdminEmail } from '@/config/admins-shared';
 
 import AdoptionForm from './AdoptionForm';
 

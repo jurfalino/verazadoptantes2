@@ -115,7 +115,7 @@ export async function GET(request: Request) {
                     ))
                     .limit(1);
                 if (imgs.length > 0) thumbnail = imgs[0].url;
-            } catch (e) { /* ignore */ }
+            } catch (e) { console.warn('[adopters/route] Thumbnail fetch failed for', match.id, e); }
 
             return {
                 ...match,

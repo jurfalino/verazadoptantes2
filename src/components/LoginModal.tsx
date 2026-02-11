@@ -8,7 +8,6 @@ import { useAuthContext } from '@/context/AuthContext';
 export default function LoginModal() {
     const { isLoginOpen, closeLogin, redirectPath } = useAuthContext();
     const { t } = useLanguage();
-    const [email, setEmail] = useState('');
     const [loading, setLoading] = useState(false);
 
     if (!isLoginOpen) return null;
@@ -16,13 +15,6 @@ export default function LoginModal() {
     const handleGoogleLogin = async () => {
         setLoading(true);
         await signIn('google', { redirectTo: redirectPath || window.location.pathname });
-    };
-
-    const handleEmailLogin = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        // Direct login (Credentials) - simpler, no Magic Link
-        await signIn('credentials', { email, redirectTo: redirectPath || window.location.pathname });
     };
 
     return (
@@ -45,39 +37,13 @@ export default function LoginModal() {
                     <button
                         onClick={handleGoogleLogin}
                         disabled={loading}
-                        className="flex items-center justify-center gap-3 px-6 py-3 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:bg-gray-50 transition-all w-full group"
+                        className="flex items-center justify-center gap-3 px-6 py-3 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:bg-gray-50 transition-all w-full group disabled:opacity-70"
                     >
                         <img src="https://authjs.dev/img/providers/google.svg" className="w-5 h-5" alt="Google" />
-                        <span className="font-semibold text-gray-700 group-hover:text-gray-900">{t('auth.continue_google')}</span>
+                        <span className="font-semibold text-gray-700 group-hover:text-gray-900">
+                            {loading ? t('auth.signing_in') || 'Signing in...' : t('auth.continue_google')}
+                        </span>
                     </button>
-
-                    <div className="relative">
-                        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200"></div></div>
-                        <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-gray-400">{t('auth.or')}</span></div>
-                    </div>
-
-                    {/* Email Login */}
-                    <form onSubmit={handleEmailLogin} className="space-y-3">
-                        <div>
-                            <label htmlFor="email" className="sr-only">Email</label>
-                            <input
-                                type="email"
-                                id="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                placeholder="name@example.com"
-                                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all text-sm"
-                                required
-                            />
-                        </div>
-                        <button
-                            type="submit"
-                            disabled={loading || !email}
-                            className="w-full py-3 px-4 bg-emerald-600 text-white font-bold rounded-xl shadow-md hover:bg-emerald-700 hover:shadow-lg transition-all disabled:opacity-70 disabled:shadow-none text-sm"
-                        >
-                            {loading ? t('auth.signing_in') || 'Signing in...' : t('auth.continue_email') || 'Continue with Email'}
-                        </button>
-                    </form>
                 </div>
             </div>
         </div>

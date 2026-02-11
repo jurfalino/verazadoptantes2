@@ -298,6 +298,26 @@ button {
   color: #93c5fd !important;
 }
 
+[data-theme="dark"] .text-teal-900 {
+  color: #dbeafe !important;
+}
+
+[data-theme="dark"] .bg-teal-100 {
+  background-color: rgba(96, 165, 250, 0.15) !important;
+}
+
+[data-theme="dark"] .bg-teal-200 {
+  background-color: rgba(96, 165, 250, 0.25) !important;
+}
+
+[data-theme="dark"] .bg-teal-300 {
+  background-color: rgba(96, 165, 250, 0.35) !important;
+}
+
+[data-theme="dark"] .bg-emerald-200 {
+  background-color: rgba(96, 165, 250, 0.25) !important;
+}
+
 [data-theme="dark"] .border-teal-200 {
   border-color: rgba(96, 165, 250, 0.3) !important;
 }

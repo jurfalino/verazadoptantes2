@@ -9,6 +9,8 @@ interface FacebookPostData {
     author?: string;
     images: string[];
     error?: string;
+    isVideo?: boolean;
+    videoThumbnailBase64?: string;
 }
 
 /**
@@ -75,25 +77,26 @@ export async function POST(request: NextRequest) {
 
                         // Return scraper results if we got meaningful content
                         if (scraperData.data.images.length > 0 || scraperData.data.text.length > 50) {
+                            // Detect video posts from URL patterns (Reels, /r/, /reel/)
+                            const isVideoUrl = /\/(reel|r)\//.test(desktopUrl);
                             return NextResponse.json({
                                 success: true,
-                                data: scraperData.data,
-                                source: 'playwright'
+                                data: {
+                                    ...scraperData.data,
+                                    ...(isVideoUrl && { isVideo: true }),
+                                },
+                                source: 'playwright',
+                                ...(isVideoUrl && { isVideo: true }),
                             });
                         }
                     }
                 }
 
-                // Scraper returned no useful data — inform the user
-                logger.warn('Facebook scraper returned no useful data', {
+                // Scraper returned no useful data — fall through to HTML fallback
+                logger.warn('Facebook scraper returned no useful data, falling through to HTML fallback', {
                     userId,
                     url: desktopUrl,
                     scraperUrl,
-                    reason: 'no_data',
-                });
-                return NextResponse.json({
-                    success: false,
-                    scraperUnavailable: true,
                     reason: 'no_data',
                 });
             } catch (scraperError: unknown) {
@@ -101,7 +104,7 @@ export async function POST(request: NextRequest) {
                 const isTimeout = scraperError instanceof Error && scraperError.name === 'AbortError';
                 const reason = isTimeout ? 'timeout' : 'error';
 
-                logger.warn('Facebook scraper unavailable', {
+                logger.warn('Facebook scraper unavailable, falling through to HTML fallback', {
                     userId,
                     url: desktopUrl,
                     scraperUrl,
@@ -109,19 +112,13 @@ export async function POST(request: NextRequest) {
                     errorMessage,
                     isTimeout,
                 });
-
-                return NextResponse.json({
-                    success: false,
-                    scraperUnavailable: true,
-                    reason,
-                });
             }
         }
 
         // Try to fetch the page content (static HTML fallback)
         const response = await fetch(desktopUrl, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.5',
             },
@@ -139,22 +136,54 @@ export async function POST(request: NextRequest) {
 
         const postData = extractPostData(html);
 
-        // If extraction fails, still return success but allow manual input
+        // For video posts, try to fetch the thumbnail and convert to base64 for OCR
+        if (postData.isVideo && postData.images.length > 0) {
+            try {
+                const thumbnailUrl = postData.images[0];
+                const thumbController = new AbortController();
+                const thumbTimeout = setTimeout(() => thumbController.abort(), 5000);
+                const thumbResponse = await fetch(thumbnailUrl, {
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' },
+                    signal: thumbController.signal,
+                });
+                clearTimeout(thumbTimeout);
+                if (thumbResponse.ok) {
+                    const contentType = thumbResponse.headers.get('content-type') || 'image/jpeg';
+                    const buffer = await thumbResponse.arrayBuffer();
+                    const base64 = btoa(
+                        new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+                    );
+                    postData.videoThumbnailBase64 = `data:${contentType};base64,${base64}`;
+                    logger.info('Video thumbnail fetched for OCR', {
+                        thumbnailSize: buffer.byteLength,
+                        contentType,
+                    });
+                } else {
+                    logger.warn('Video thumbnail fetch returned non-OK status', {
+                        status: thumbResponse.status,
+                        thumbnailUrl,
+                    });
+                }
+            } catch (e) {
+                logger.warn('Failed to fetch video thumbnail for OCR', {
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            }
+        }
+
+        // If extraction fails, return failure so the UI can show an error with retry
         if (!postData.text && postData.images.length === 0) {
             return NextResponse.json({
-                success: true,
-                data: {
-                    text: '',
-                    images: [],
-                    author: undefined,
-                },
-                message: 'Could not extract content automatically. Please enter the content manually.'
+                success: false,
+                extractionFailed: true,
+                error: 'No se pudo extraer contenido de esta publicación. Facebook puede estar bloqueando la solicitud temporalmente.',
             });
         }
 
         return NextResponse.json({
             success: true,
-            data: postData
+            data: postData,
+            ...(postData.isVideo && { isVideo: true }),
         });
 
     } catch (error) {
@@ -177,6 +206,12 @@ function extractPostData(html: string): FacebookPostData {
     };
     const seenImages = new Set<string>();
 
+    // Detect video posts via og:type
+    const ogTypeMatch = html.match(/<meta\s+property="og:type"\s+content="([^"]+)"/i);
+    if (ogTypeMatch && ogTypeMatch[1].startsWith('video')) {
+        data.isVideo = true;
+    }
+
     // Method 1: Look for Open Graph meta tags (most reliable for public posts)
     const ogTitleMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
     const ogDescMatch = html.match(/<meta\s+property="og:description"\s+content="([^"]+)"/i);
@@ -191,7 +226,7 @@ function extractPostData(html: string): FacebookPostData {
     }
 
     for (const match of ogImageMatches) {
-        const imageUrl = match[1];
+        const imageUrl = decodeHtmlEntities(match[1]);
         // Filter out profile pics and icons
         if (imageUrl && !imageUrl.includes('profile') && !imageUrl.includes('icon') && !seenImages.has(imageUrl)) {
             seenImages.add(imageUrl);
