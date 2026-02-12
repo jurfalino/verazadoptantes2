@@ -136,7 +136,7 @@ export default function SearchSection() {
 
     return (
         <div className="w-full">
-            <div className={`bg-white rounded-3xl p-6 shadow-sm border border-stone-200 transition-all ${hasResults ? 'md:static sticky top-0 z-30 rounded-b-xl md:rounded-3xl shadow-md md:shadow-sm' : ''
+            <div className={`bg-white rounded-3xl p-6 shadow-sm border border-stone-200 transition-all ${hasResults ? 'md:static sticky top-16 z-30 rounded-b-xl md:rounded-3xl shadow-md md:shadow-sm' : ''
                 }`}>
                 {/* Full title — hidden on mobile when results are showing to save space */}
                 <h2 className={`text-2xl font-bold text-stone-900 mb-5 text-center tracking-tight ${hasResults ? 'hidden md:block' : ''
