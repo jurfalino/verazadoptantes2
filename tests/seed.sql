@@ -72,3 +72,10 @@ INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES
 
 INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES
 ('ENABLE_AI_EXTRACTION', 'false', strftime('%s','now'), 'test-seed');
+
+-- ============================================================
+-- USER (admin account for authenticated tests)
+-- ============================================================
+
+INSERT OR REPLACE INTO user (id, name, email, emailVerified, image) VALUES
+('test-admin-id', 'Test Admin', 'gatitosolivos@gmail.com', strftime('%s','now'), NULL);

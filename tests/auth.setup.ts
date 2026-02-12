@@ -46,7 +46,7 @@ setup('authenticate as admin', async ({ page, context }) => {
     await page.waitForLoadState('networkidle');
 
     // The admin email should appear in the nav (session is valid)
-    await expect(page.getByRole('button', { name: /gatitosolivos/i })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Test Admin')).toBeVisible({ timeout: 15000 });
 
     // Save the authenticated state for reuse by authed tests
     await page.context().storageState({ path: AUTH_FILE });
