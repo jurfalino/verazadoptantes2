@@ -3,9 +3,15 @@ export const runtime = 'edge';
 import { getDb } from '@/app/actions';
 import { dataRequests } from '@/db/schema';
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/auth';
 
 export async function POST(req: NextRequest) {
     try {
+        const session = await auth();
+        if (!session?.user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         const body = await req.json() as { adopterId?: string; requesterName?: string; requesterEmail?: string; requestType?: string; details?: string };
         const { adopterId, requesterName, requesterEmail, requestType, details } = body;
 
