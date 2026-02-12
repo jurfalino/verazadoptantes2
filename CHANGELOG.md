@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.5.1] - 2026-02-12
+
+### Fixed
+- **Duplicate user accounts** — `ensureUserProfile` now looks up users by email instead of random JWT `user.id`, preventing new rows on every sign-in
+- **40 ESLint warnings** — cleaned up `no-unused-vars`, `prefer-const`, and `alt-text` across the codebase
+
+### Changed
+- **E2E tests rewritten** — replaced shallow tests with real user journeys (search-to-decision, full adoption record CRUD, import wizard flow); fixed auth setup for CI
+- **Stats aggregation pushed to SQL** — `COUNT + CASE WHEN` replaces JS-side filtering for profile statistics
+- **Consolidated `getDb()`** — removed duplicate database helper; canonical version in `src/lib/db.ts`
+- **Extracted business constants** — inline magic numbers moved to `src/config/constants.ts`
+- **LoginModal overlay** — sign-in redirects to homepage with modal instead of blank page; session expired toast (EN/ES)
+
+### Added
+- **CI lint ratchet** — ESLint warning count enforced in CI pipeline
+- **E2E tests in CI** — Playwright tests run on push with JWT-based auth and D1 seeding
+- **`workflow_dispatch` trigger** — CI can be triggered manually and on `e2e_tests` branch
+
+---
+
 ## [2.4.3] - 2026-02-11
 
 ### Changed
