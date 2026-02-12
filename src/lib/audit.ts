@@ -68,6 +68,9 @@ export function logAudit(entry: AuditEntry) {
  * Ensure both a NextAuth `user` row and a `user_profiles` row exist.
  * Called on sign-in. NextAuth's DrizzleAdapter is disabled on Edge,
  * so we must insert the user ourselves via raw D1.
+ *
+ * IMPORTANT: JWT strategy gives a new random user.id per sign-in,
+ * so we look up users by EMAIL to prevent duplicate rows.
  */
 export function ensureUserProfile(userId: string, email?: string, name?: string, image?: string) {
     const doUpsert = async () => {
@@ -75,27 +78,42 @@ export function ensureUserProfile(userId: string, email?: string, name?: string,
             const { env } = getRequestContext();
             if (!env?.DB) return;
 
-            // 1. Ensure NextAuth user row exists (adapter doesn't run on Edge)
-            await env.DB.prepare(
-                `INSERT OR IGNORE INTO user (id, email, name, image) VALUES (?, ?, ?, ?)`
-            ).bind(userId, email || null, name || null, image || null).run();
+            // Resolve the canonical user ID by looking up email first
+            let resolvedId = userId;
 
-            // Update name/image if they changed (Google profile updates)
-            if (name || image) {
+            if (email) {
+                const existing = await env.DB.prepare(
+                    `SELECT id FROM user WHERE email = ? LIMIT 1`
+                ).bind(email).first<{ id: string }>();
+
+                if (existing) {
+                    // User exists — reuse their original id, update name/image
+                    resolvedId = existing.id;
+                    await env.DB.prepare(
+                        `UPDATE user SET name = COALESCE(?, name), image = COALESCE(?, image) WHERE id = ?`
+                    ).bind(name || null, image || null, resolvedId).run();
+                } else {
+                    // First time — insert new row
+                    await env.DB.prepare(
+                        `INSERT INTO user (id, email, name, image) VALUES (?, ?, ?, ?)`
+                    ).bind(resolvedId, email, name || null, image || null).run();
+                }
+            } else {
+                // No email (shouldn't happen with Google) — fallback to INSERT OR IGNORE by id
                 await env.DB.prepare(
-                    `UPDATE user SET name = COALESCE(?, name), image = COALESCE(?, image) WHERE id = ?`
-                ).bind(name || null, image || null, userId).run();
+                    `INSERT OR IGNORE INTO user (id, email, name, image) VALUES (?, ?, ?, ?)`
+                ).bind(resolvedId, email || null, name || null, image || null).run();
             }
 
             // 2. Ensure user_profiles row (INSERT OR IGNORE keeps original created_at)
             await env.DB.prepare(
                 `INSERT OR IGNORE INTO user_profiles (user_id, created_at) VALUES (?, strftime('%s','now'))`
-            ).bind(userId).run();
+            ).bind(resolvedId).run();
 
             // Always update last_active_at
             await env.DB.prepare(
                 `UPDATE user_profiles SET last_active_at = strftime('%s','now') WHERE user_id = ?`
-            ).bind(userId).run();
+            ).bind(resolvedId).run();
         } catch (e) {
             console.error('[Audit] Failed to upsert user profile:', e);
         }
