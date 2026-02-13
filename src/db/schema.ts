@@ -55,7 +55,7 @@ export const adopterHistory = sqliteTable("adopter_history", {
 
 export const searches = sqliteTable("searches", {
     id: text("id").primaryKey(),
-    query: text("query").notNull(),
+    query: text("query").notNull().unique(),
     type: text("type").default("general"), // name, phone, etc
     count: integer("count").default(1),
     lastSearchedAt: integer("last_searched_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),

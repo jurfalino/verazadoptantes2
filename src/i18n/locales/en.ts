@@ -131,8 +131,8 @@ export const en = {
         how_title: 'How does it work?',
         how_step1_title: 'Search',
         how_step1_desc: 'Check if an adopter is already registered.',
-        how_step2_title: 'Import or Add',
-        how_step2_desc: 'Create a profile from a post or manually.',
+        how_step2_title: 'Add',
+        how_step2_desc: 'Create a profile.',
         how_step3_title: 'Rate & Share',
         how_step3_desc: 'Share your experience with the community.',
         // Import action card

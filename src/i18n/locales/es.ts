@@ -131,8 +131,8 @@ export const es = {
         how_title: '¿Cómo funciona?',
         how_step1_title: 'Buscá',
         how_step1_desc: 'Verificá si un adoptante ya está registrado.',
-        how_step2_title: 'Importá o Agregá',
-        how_step2_desc: 'Creá un perfil desde un post o manualmente.',
+        how_step2_title: 'Agregá',
+        how_step2_desc: 'Creá un perfil.',
         how_step3_title: 'Calificá y Compartí',
         how_step3_desc: 'Compartí tu experiencia con la comunidad.',
         // Import action card

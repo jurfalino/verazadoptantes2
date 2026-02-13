@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.5.5] - 2026-02-13
+
+### Fixed
+- **Favicon missing in staging** — added explicit `<link rel="icon">` tag in layout pointing to `/icon.svg`
+- **Search query logging failing in production** — added missing unique constraint on `searches.query` column required by `onConflictDoUpdate` upsert; every search was silently failing to log
+
+---
+
 ## [2.5.3.1] - 2026-02-13
 
 ### Added
