@@ -24,25 +24,32 @@ export interface AuditEntry {
  * Non-blocking: uses waitUntil on Edge, fire-and-forget otherwise.
  */
 export function logAudit(entry: AuditEntry) {
+    // Capture IP and User-Agent SYNCHRONOUSLY from request headers
+    // Must happen before waitUntil, because headers() requires active request context
+    let resolvedIp = entry.ipAddress || null;
+    let resolvedDevice = entry.device || null;
+    try {
+        // headers() is sync in Next.js 14, returns ReadonlyHeaders directly in the request phase
+        // In Next.js 15 it returns a Promise, but we need the values NOW before waitUntil runs
+        const h = headers();
+        // Handle both sync (Next 14) and async (Next 15) cases
+        if (h && typeof (h as any).get === 'function') {
+            // Sync headers (Next 14 style)
+            if (!resolvedIp) {
+                resolvedIp = (h as any).get('cf-connecting-ip') || (h as any).get('x-forwarded-for')?.split(',')[0]?.trim() || (h as any).get('x-real-ip') || null;
+            }
+            if (!resolvedDevice) {
+                resolvedDevice = (h as any).get('user-agent') || null;
+            }
+        }
+    } catch {
+        // headers() unavailable outside server request context — skip
+    }
+
     const doInsert = async () => {
         try {
             const { env } = getRequestContext();
             if (!env?.DB) return;
-
-            // Auto-capture IP and User-Agent from request headers if not provided
-            let resolvedIp = entry.ipAddress || null;
-            let resolvedDevice = entry.device || null;
-            try {
-                const h = await headers();
-                if (!resolvedIp) {
-                    resolvedIp = h.get('cf-connecting-ip') || h.get('x-forwarded-for')?.split(',')[0]?.trim() || h.get('x-real-ip') || null;
-                }
-                if (!resolvedDevice) {
-                    resolvedDevice = h.get('user-agent') || null;
-                }
-            } catch {
-                // headers() unavailable outside server request context — skip
-            }
 
             const id = crypto.randomUUID();
             const details = entry.details ? JSON.stringify(entry.details) : null;
