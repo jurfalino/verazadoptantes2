@@ -20,9 +20,8 @@ interface FacebookPostData {
 export async function POST(request: NextRequest) {
     // Require authentication
     const session = await auth();
-    const isAnon = request.cookies.get('anon_user')?.value === 'true';
 
-    if (!session?.user && !isAnon) {
+    if (!session?.user) {
         return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
 
@@ -43,7 +42,7 @@ export async function POST(request: NextRequest) {
         // Convert mobile URLs to desktop
         const desktopUrl = url.replace(/m\.facebook\.com/i, 'www.facebook.com');
 
-        const userId = session?.user?.email || (isAnon ? 'anon' : 'unknown');
+        const userId = session?.user?.email || 'unknown';
 
         // Try Playwright scraper service first (if configured and not explicitly using fallback)
         const scraperUrl = process.env.SCRAPER_URL;

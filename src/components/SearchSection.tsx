@@ -36,11 +36,12 @@ export default function SearchSection() {
         setTruncatedInfo(null);
         try {
             const response = await searchAdopter(searchQuery);
+            if (!response) return;
             if (response.validationError) {
                 setValidationError(response.validationError);
                 setResults([]);
             } else {
-                setResults(response.results);
+                setResults(response.results || []);
                 if (response.truncated && response.totalCount) {
                     setTruncatedInfo({ truncated: true, totalCount: response.totalCount });
                 }
@@ -62,15 +63,7 @@ export default function SearchSection() {
 
     const handleCreateNew = (e: React.MouseEvent) => {
         e.preventDefault();
-        // Check both session and anon cookie (anon cookie handling in client is via document.cookie usually, but layout handles session hydration)
-        // Since we wrapped SessionProvider, session should be active for anon users if the backend returns it?
-        // Actually, our RootLayout manual check `isAuthenticated` doesn't automatically sync with `useSession` if next-auth doesn't know about anon cookie.
-        // However, UserMenu uses `isAnon` prop.
-        // Let's check if session.user exists. If not, check "anon_user" cookie manually or just use a helper.
-        // For simplicity, if !session?.user && !document.cookie.includes('anon_user'), open login.
-
-        const isAnon = document.cookie.includes('anon_user=true');
-        if (!session?.user && !isAnon) {
+        if (!session?.user) {
             openLogin('/adopter/create');
         } else {
             try {
@@ -101,11 +94,12 @@ export default function SearchSection() {
         setTruncatedInfo(null);
         try {
             const response = await searchAdopter(query);
+            if (!response) throw new Error('No response from search');
             if (response.validationError) {
                 setValidationError(response.validationError);
                 setResults([]);
             } else {
-                setResults(response.results);
+                setResults(response.results || []);
                 if (response.truncated && response.totalCount) {
                     setTruncatedInfo({ truncated: true, totalCount: response.totalCount });
                 }
@@ -225,7 +219,7 @@ export default function SearchSection() {
                     )}
 
                     {/* Protected info banner for unauthenticated users */}
-                    {results.length > 0 && !(session?.user || document.cookie.includes('anon_user=true')) && (
+                    {results.length > 0 && !session?.user && (
                         <div className="bg-teal-50 border border-teal-200 rounded-xl px-4 py-3 text-center">
                             <p className="text-teal-800 text-sm font-medium">
                                 🔒 {t('search.protected_info')}
@@ -262,7 +256,7 @@ export default function SearchSection() {
                     )}
                     {results.map((res) => {
                         // PII masking for unauthenticated users
-                        const isAuthenticated = session?.user || document.cookie.includes('anon_user=true');
+                        const isAuthenticated = !!session?.user;
 
                         // Partial name masking: show first 3 chars + ****
                         const maskedName = isAuthenticated
@@ -333,6 +327,9 @@ export default function SearchSection() {
                                             )}
                                             {res.flags.duplicate && (
                                                 <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-amber-100 text-amber-700">📄 {t('flags.duplicate') || 'Duplicate'}</span>
+                                            )}
+                                            {res.flags.systemDuplicate && !res.flags.duplicate && (
+                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-stone-100 text-stone-500">🔗 {t('flags.possible_duplicate') || 'Possible duplicate'}</span>
                                             )}
                                             {res.flags.verified_identity && (
                                                 <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">✓ Identidad</span>

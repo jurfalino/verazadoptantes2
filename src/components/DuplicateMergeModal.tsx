@@ -92,7 +92,6 @@ export default function DuplicateMergeModal({
                             <li><strong>&quot;{secondary.name}&quot;</strong> will be soft-deleted</li>
                             <li>All adoptions, images, flags, and history will move to the primary</li>
                             <li>Contact info and notes will be merged</li>
-                            <li>The more conservative rating will be kept</li>
                         </ul>
                     </div>
                 </div>

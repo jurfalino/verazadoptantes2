@@ -3,6 +3,7 @@ import { adopters } from '@/db/schema';
 export interface AdopterFlags {
     inaccurate: boolean;
     duplicate: boolean;
+    systemDuplicate: boolean;
     verified_identity: boolean;
     verified_address: boolean;
     tooManyAdoptions: { count: number; threshold: number; periodDays: number } | null;

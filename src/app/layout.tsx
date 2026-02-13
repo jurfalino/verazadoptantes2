@@ -1,6 +1,5 @@
 import { auth } from "@/auth";
 import { logger } from "@/lib/logger";
-import { cookies } from "next/headers";
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
@@ -39,8 +38,6 @@ export default async function RootLayout({
     logger.warn('Layout auth check failed', { error: e instanceof Error ? e.message : String(e) });
   }
 
-  const cookieStore = await cookies();
-  const isAnon = cookieStore.get("anon_user");
 
   return (
     <html lang="es" suppressHydrationWarning>
@@ -81,7 +78,7 @@ export default async function RootLayout({
                           <ThemeSelector />
                           <LanguageSwitcher />
                           <div className="h-6 w-px bg-stone-200" />
-                          <UserMenu user={session?.user} isAnon={!!isAnon} />
+                          <UserMenu user={session?.user} />
                         </div>
                       </div>
                     </nav>

@@ -80,11 +80,12 @@ export const adoptions = sqliteTable("adoptions", {
     sourceUrl: text("source_url"), // Link to original post/source for this specific record
 });
 
-// Adopter Stats - Track profile events for analytics
+// Adopter Stats - Track analytics events (search hits, profile views)
+// Note: adoption/request counts come from the adoptions table, not from stats events
 export const adopterStats = sqliteTable("adopter_stats", {
     id: text("id").primaryKey(),
     adopterId: text("adopter_id").notNull(),
-    eventType: text("event_type").notNull(), // search_hit, profile_view, adoption_request, adoption_completed
+    eventType: text("event_type").notNull(), // search_hit, profile_view
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
     adopterIdx: index("idx_stats_adopter").on(table.adopterId),

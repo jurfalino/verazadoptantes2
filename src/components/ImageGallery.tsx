@@ -109,8 +109,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
     };
 
     const handleSetProfilePicture = async (imageId: string) => {
-        const isAnon = document.cookie.includes('anon_user=true');
-        if (!session?.user && !isAnon) {
+        if (!session?.user) {
             openLogin();
             return;
         }
@@ -205,8 +204,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                                     onClick={async (e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
-                                        const isAnon = document.cookie.includes('anon_user=true');
-                                        if (!session?.user && !isAnon) {
+                                        if (!session?.user) {
                                             openLogin();
                                             return;
                                         }
@@ -253,8 +251,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
 
                     <label
                         onClick={(e) => {
-                            const isAnon = document.cookie.includes('anon_user=true');
-                            if (!session?.user && !isAnon) {
+                            if (!session?.user) {
                                 e.preventDefault();
                                 openLogin();
                             }

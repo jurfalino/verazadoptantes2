@@ -79,3 +79,27 @@ INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES
 
 INSERT OR REPLACE INTO user (id, name, email, emailVerified, image) VALUES
 ('test-admin-id', 'Test Admin', 'gatitosolivos@gmail.com', strftime('%s','now'), NULL);
+
+-- ============================================================
+-- DUPLICATE DETECTION SEED DATA
+-- ============================================================
+
+-- Candidate pair: María (test-adopter-1) ↔ Ana (test-adopter-3)
+-- Medium confidence, pending status — should appear in profile banner, search badge, flagging suggestions
+INSERT OR REPLACE INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at) VALUES
+('test-dup-candidate-1', 'test-adopter-1', 'test-adopter-3', '["phone","name_word"]', '{"phone":"5555555","name_word":["garcia"]}', 4, 'medium', 'pending', strftime('%s','now'));
+
+-- Candidate pair: Roberto (test-adopter-4) ↔ Carlos (test-adopter-2)
+-- Low confidence, pending — should NOT appear in search badge (filtered out)
+INSERT OR REPLACE INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at) VALUES
+('test-dup-candidate-2', 'test-adopter-4', 'test-adopter-2', '["name_word"]', '{"name_word":["fernandez"]}', 1, 'low', 'pending', strftime('%s','now'));
+
+-- Tokens: María's phone (shared with Ana's profile contact info)
+INSERT OR REPLACE INTO duplicate_tokens (id, adopter_id, token_type, token_value) VALUES
+('test-token-1', 'test-adopter-1', 'phone', '5551234');
+INSERT OR REPLACE INTO duplicate_tokens (id, adopter_id, token_type, token_value) VALUES
+('test-token-2', 'test-adopter-3', 'phone', '5555555');
+INSERT OR REPLACE INTO duplicate_tokens (id, adopter_id, token_type, token_value) VALUES
+('test-token-3', 'test-adopter-1', 'name_word', 'garcia');
+INSERT OR REPLACE INTO duplicate_tokens (id, adopter_id, token_type, token_value) VALUES
+('test-token-4', 'test-adopter-3', 'name_word', 'martinez');

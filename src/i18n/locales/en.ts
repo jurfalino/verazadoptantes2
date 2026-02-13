@@ -54,6 +54,12 @@ export const en = {
         legend_verified: 'Confirmed that this person is who they say they are.',
         legend_warning: 'Other rescuers reported problems (lack of follow-up, abandonment, etc.).',
         legend_duplicate: 'This profile may be a duplicate of another adopter.',
+        possible_duplicate: 'Possible duplicate',
+    },
+    duplicates: {
+        possible_match: 'Possible duplicate of',
+        view_profile: 'View →',
+        dismiss: 'Dismiss',
     },
     stats: {
         searches: 'searches',
@@ -184,9 +190,9 @@ export const en = {
         view_source: 'View Original',
     },
     adoption: {
-        title: 'Adoptions',
+        title: 'Interactions',
         history_title: 'Adoption History',
-        record_new: 'Record New Adoption',
+        record_new: 'New Interaction',
         record_edit: 'Edit Adoption Record',
         animal_name: 'Animal Name',
         animal_placeholder: 'e.g. Luna',
@@ -234,6 +240,13 @@ export const en = {
         identity_verified: 'Did you verify their identity?',
         identity_verified_note: 'This will mark the adopter profile as ID verified.',
         unnamed: 'Unnamed',
+        // Card summary verbs
+        verb_adopted: 'adopted',
+        verb_requested: 'requested',
+        verb_noted: 'noted about',
+        verb_followed_up: 'followed up on',
+        verb_returned: 'returned',
+        word_adoption: 'adoption',
     },
     species: {
         cat: 'Cat',
@@ -259,6 +272,7 @@ export const en = {
         banner_check: 'Check if this profile is the original.',
         check_link: 'this profile',
         banner_inaccurate: 'This profile has been flagged for inaccurate information.',
+        system_suggestions: 'System-suggested matches',
     },
     audit: {
         log_title: 'History Log',

@@ -9,11 +9,10 @@ import { logger } from '@/lib/logger';
 export async function POST(request: NextRequest) {
     let session: any = null;
     try {
-        // Check auth (also allow anon users)
+        // Check auth
         session = await auth();
-        const isAnon = request.cookies.get('anon_user')?.value === 'true';
 
-        if (!session?.user && !isAnon) {
+        if (!session?.user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 

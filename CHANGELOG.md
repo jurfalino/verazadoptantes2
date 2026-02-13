@@ -2,6 +2,25 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.5.3] - 2026-02-13
+
+### Added
+- **Custom DatePicker component** — day/month(3-letter)/year dropdowns replacing native `<input type="date">` to avoid DD/MM vs MM/DD ambiguity
+- **Adoption card verb translations** — `verb_adopted`, `verb_requested`, `verb_noted`, `verb_followed_up`, `verb_returned` in EN/ES
+- **Missing i18n keys** — `duplicates.view_profile`, `duplicates.dismiss` added to both locales
+- **Theme overrides for record-type borders** — dark and apple theme support for `border-l-sky-400`, `border-l-amber-400`, `border-l-violet-400`, `border-l-rose-400`
+
+### Changed
+- **Redesigned adoption record cards** — one-line summary format (`{date} — {verb} {animal} ({species})`), colored left border by record type, neutral notes background, star ratings inline
+- **Section renamed** — "Adopciones"/"Adoptions" → "Interacciones"/"Interactions" to reflect all record types
+- **CTA button renamed** — "Registrar Nueva Adopción" → "Nueva Interacción" for clarity
+
+### Fixed
+- **Search crash on back-navigation** — added null guard on `searchAdopter` response preventing `Cannot read properties of undefined` errors
+- **Spanish "adoption" leak** — fixed `|| 'adoption'` fallback treating empty Spanish `word_adoption` as falsy, changed to `??` operator
+
+---
+
 ## [2.5.1] - 2026-02-12
 
 ### Fixed

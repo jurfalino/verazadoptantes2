@@ -12,10 +12,9 @@ interface UserMenuProps {
         email?: string | null;
         image?: string | null;
     };
-    isAnon: boolean;
 }
 
-export default function UserMenu({ user, isAnon }: UserMenuProps) {
+export default function UserMenu({ user }: UserMenuProps) {
     const { t } = useLanguage();
     const { openLogin } = useAuthContext();
     const [isOpen, setIsOpen] = useState(false);
@@ -35,30 +34,8 @@ export default function UserMenu({ user, isAnon }: UserMenuProps) {
     }, []);
 
     const handleSignOut = async () => {
-        if (isAnon) {
-            // Clear the cookie
-            document.cookie = "anon_user=; path=/; max-age=0";
-            window.location.reload();
-        } else {
-            await signOut({ redirectTo: '/' });
-        }
+        await signOut({ redirectTo: '/' });
     };
-
-    if (isAnon) {
-        return (
-            <div className="flex items-center gap-3">
-                <span className="text-xs font-mono bg-emerald-50 text-emerald-600 px-2 py-1 rounded">
-                    {t('nav.anon_mode')}
-                </span>
-                <button
-                    onClick={handleSignOut}
-                    className="text-xs text-rose-400 hover:text-rose-600 font-medium px-2 py-1 hover:bg-rose-50 rounded transition-colors"
-                >
-                    {t('nav.sign_out')}
-                </button>
-            </div>
-        );
-    }
 
     if (!user) {
         return (

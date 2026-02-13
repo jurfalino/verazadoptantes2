@@ -146,6 +146,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             const flagsObj: AdopterFlags = {
                 inaccurate: flags.includes('inaccurate_information'),
                 duplicate: flags.includes('duplicate'),
+                systemDuplicate: false,
                 verified_identity: flags.includes('verified_identity'),
                 verified_address: flags.includes('verified_address'),
                 tooManyAdoptions: period.adoptionsInPeriod >= adoptionConfig.threshold

@@ -44,11 +44,15 @@ export default defineConfig({
       testMatch: /auth\.setup\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
-    // Anonymous tests — no auth state
+    // Anonymous/regular user tests — use non-admin JWT session
     {
       name: 'anon',
       testIgnore: /auth\.setup\.ts|authed\.spec\.ts/,
-      use: { ...devices['Desktop Chrome'] },
+      dependencies: ['setup'],
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: '.auth/user.json',
+      },
     },
     // Authenticated tests — depend on setup, load saved session
     {

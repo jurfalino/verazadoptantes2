@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test';
-import { loginAsAnon, TEST_ADOPTERS, TEST_NAMES, TEST_ANIMALS } from './helpers';
+import { TEST_ADOPTERS, TEST_NAMES, TEST_ANIMALS } from './helpers';
 
 test.setTimeout(60000);
 
 test.describe('Flags and Adoption History', () => {
 
     test.beforeEach(async ({ page }) => {
-        await loginAsAnon(page);
+        await page.goto('/');
     });
 
     test('Duplicate flag banner is displayed', async ({ page }) => {

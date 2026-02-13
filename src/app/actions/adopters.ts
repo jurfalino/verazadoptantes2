@@ -116,7 +116,8 @@ export async function getAdopterStats(adopterId: string) {
         const ninetyDaysAgo = now - NINETY_DAYS_IN_SECONDS;
         const oneYearAgo = now - ONE_YEAR_IN_SECONDS;
 
-        // Aggregate in SQL: returns at most 4 rows (one per event type)
+        // Aggregate in SQL: returns at most 2 rows (one per event type: search_hit, profile_view)
+        // Note: adoption/request counts come from the adoptions table, not from stats events
         const rows = await db.select({
             eventType: adopterStats.eventType,
             total: sql<number>`COUNT(*)`,
@@ -130,15 +131,11 @@ export async function getAdopterStats(adopterId: string) {
         const stats = {
             searchHits: { '90d': 0, '1y': 0, 'all': 0 },
             profileViews: { '90d': 0, '1y': 0, 'all': 0 },
-            adoptionRequests: { '90d': 0, '1y': 0, 'all': 0 },
-            adoptionsCompleted: { '90d': 0, '1y': 0, 'all': 0 }
         };
 
         const bucketMap: Record<string, keyof typeof stats> = {
             'search_hit': 'searchHits',
             'profile_view': 'profileViews',
-            'adoption_request': 'adoptionRequests',
-            'adoption_completed': 'adoptionsCompleted'
         };
 
         for (const row of rows) {

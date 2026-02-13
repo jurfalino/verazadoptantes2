@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test';
-import { loginAsAnon, TEST_ADOPTERS, TEST_NAMES } from './helpers';
+import { TEST_ADOPTERS, TEST_NAMES } from './helpers';
 
 test.setTimeout(60000);
 
 test.describe('Adopter Profile', () => {
 
     test.beforeEach(async ({ page }) => {
-        await loginAsAnon(page);
+        await page.goto('/');
     });
 
     test('View full adopter profile', async ({ page }) => {

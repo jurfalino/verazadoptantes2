@@ -8,6 +8,7 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
 import LegalConsent from '@/components/LegalConsent';
+import DatePicker from '@/components/ui/DatePicker';
 
 export default function AdoptionWizard() {
     const { t } = useLanguage();
@@ -32,8 +33,7 @@ export default function AdoptionWizard() {
     const handleStart = () => {
         // Don't act while session is still loading — prevents false login prompts
         if (sessionStatus === 'loading') return;
-        const isAnon = document.cookie.includes('anon_user=true');
-        if (!session?.user && !isAnon) {
+        if (!session?.user) {
             openLogin();
             return;
         }
@@ -57,6 +57,14 @@ export default function AdoptionWizard() {
         rating: 5,
         comments: ''
     });
+    const [adoptionDate, setAdoptionDate] = useState('');
+
+    // Set default date on client to avoid SSR hydration mismatch
+    useEffect(() => {
+        if (!adoptionDate) {
+            setAdoptionDate(new Date().toISOString().split('T')[0]);
+        }
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Track if user selected "Other" for species
     const [customSpecies, setCustomSpecies] = useState(false);
@@ -110,6 +118,7 @@ export default function AdoptionWizard() {
                 // Pass animal data to create adopter page so it can continue to adoption form after save
                 const query = new URLSearchParams();
                 query.set('continueToAdoption', 'true');
+                query.set('date', adoptionDate);
                 if (animalMode === 'existing') {
                     query.set('linkAnimalId', selectedAnimalId);
                 } else {
@@ -124,21 +133,26 @@ export default function AdoptionWizard() {
             // Existing Adopter mode
             let newAdoptionId: string | undefined;
 
+            // Parse date as local noon to avoid timezone issues
+            const [year, month, day] = adoptionDate.split('-').map(Number);
+            const localDate = new Date(year, month - 1, day, 12, 0, 0);
+
             if (animalMode === 'existing') {
                 // Update existing adoption
                 const result = await saveAdoption({
                     id: selectedAnimalId,
                     adopterId: selectedAdopterId,
                     status: animalData.status,
-                    rating: animalData.rating
-                    // details? comments?
+                    rating: animalData.rating,
+                    date: localDate
                 } as any);
                 newAdoptionId = result.id;
             } else {
                 // Create new adoption for existing adopter
                 const result = await saveAdoption({
                     adopterId: selectedAdopterId,
-                    ...animalData
+                    ...animalData,
+                    date: localDate
                 } as any);
                 newAdoptionId = result.id;
             }
@@ -268,6 +282,18 @@ export default function AdoptionWizard() {
                                 )}
                             </div>
                         )}
+
+                        {/* Adoption Date */}
+                        <div>
+                            <label className="block text-sm font-bold text-stone-700 mb-1">
+                                {t('adoption.date') || 'Date'}
+                            </label>
+                            <DatePicker
+                                value={adoptionDate}
+                                onChange={setAdoptionDate}
+                                maxDate={new Date().toISOString().split('T')[0]}
+                            />
+                        </div>
 
                         <div className="flex justify-end pt-4">
                             <button

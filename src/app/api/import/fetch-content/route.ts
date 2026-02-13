@@ -18,9 +18,8 @@ interface FetchedContent {
  */
 export async function POST(request: NextRequest) {
     const session = await auth();
-    const isAnon = request.cookies.get('anon_user')?.value === 'true';
 
-    if (!session?.user && !isAnon) {
+    if (!session?.user) {
         return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
 

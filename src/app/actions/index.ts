@@ -30,3 +30,7 @@ export { getMyAdopters, getMyAdoptions } from './dashboard';
 
 // Admin
 export { runAdminQuery, deleteAdopter, purgeAllData } from './admin';
+
+// Duplicates
+export { getDuplicateCandidates, checkTokenDuplicates } from './duplicates';
+export type { DuplicateCandidate, TokenMatchResult } from './duplicates';

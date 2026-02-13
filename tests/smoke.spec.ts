@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginAsAnon } from './helpers';
+
 
 test.setTimeout(60000);
 
@@ -13,16 +13,16 @@ test.describe('Smoke Tests', () => {
         await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 15000 });
     });
 
-    test('Anonymous login grants access', async ({ page }) => {
-        await loginAsAnon(page);
-        // After anon login, search input should be visible
-        await expect(page.locator('input#search')).toBeVisible();
+    test('Authenticated user has access', async ({ page }) => {
+        await page.goto('/');
+        // After JWT auth, search input should be visible
+        await expect(page.locator('input#search')).toBeVisible({ timeout: 15000 });
         // Footer with version badge
         await expect(page.locator('footer')).toBeVisible();
     });
 
     test('Navigation between pages works', async ({ page }) => {
-        await loginAsAnon(page);
+        await page.goto('/');
 
         // Home page has search
         await expect(page.locator('input#search')).toBeVisible();

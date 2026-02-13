@@ -803,6 +803,52 @@ button {
   color: rgba(0, 113, 227, 0.8) !important;
 }
 
+/* ========================================
+   DARK THEME - Record Type Border Colors
+   ======================================== */
+[data-theme="dark"] .border-l-emerald-400 {
+  border-left-color: #60a5fa !important;
+}
+
+[data-theme="dark"] .border-l-sky-400 {
+  border-left-color: #38bdf8 !important;
+}
+
+[data-theme="dark"] .border-l-amber-400 {
+  border-left-color: #fbbf24 !important;
+}
+
+[data-theme="dark"] .border-l-violet-400 {
+  border-left-color: #a78bfa !important;
+}
+
+[data-theme="dark"] .border-l-rose-400 {
+  border-left-color: #fb7185 !important;
+}
+
+/* ========================================
+   APPLE THEME - Record Type Border Colors
+   ======================================== */
+[data-theme="apple"] .border-l-emerald-400 {
+  border-left-color: #0071e3 !important;
+}
+
+[data-theme="apple"] .border-l-sky-400 {
+  border-left-color: #0a84ff !important;
+}
+
+[data-theme="apple"] .border-l-amber-400 {
+  border-left-color: #ff9f0a !important;
+}
+
+[data-theme="apple"] .border-l-violet-400 {
+  border-left-color: #5856d6 !important;
+}
+
+[data-theme="apple"] .border-l-rose-400 {
+  border-left-color: #ff3b30 !important;
+}
+
 /* Toast Animation */
 @keyframes slide-in {
   from {

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { flagAdopter, searchAdopter } from '@/app/actions';
+import { flagAdopter, searchAdopter, getDuplicateCandidates } from '@/app/actions';
+import type { DuplicateCandidate } from '@/app/actions';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
@@ -23,6 +24,12 @@ export function AdopterFlagging({ adopterId, adopterName, existingFlags, hasVeri
     const [isSearching, setIsSearching] = useState(false);
     const [hasSearched, setHasSearched] = useState(false);
     const [submitLoading, setSubmitLoading] = useState(false);
+    const [systemSuggestions, setSystemSuggestions] = useState<DuplicateCandidate[]>([]);
+
+    // Fetch system-detected duplicate candidates on mount
+    useEffect(() => {
+        getDuplicateCandidates(adopterId).then(setSystemSuggestions).catch(() => { });
+    }, [adopterId]);
 
     const duplicateFlags = existingFlags.filter(f => f.reason === 'duplicate');
     const isFlaggedAsDuplicate = duplicateFlags.length > 0;
@@ -243,8 +250,7 @@ export function AdopterFlagging({ adopterId, adopterName, existingFlags, hasVeri
             <div className="absolute top-0 right-0 mt-4 mr-4">
                 <button
                     onClick={() => {
-                        const isAnon = document.cookie.includes('anon_user=true');
-                        if (!session?.user && !isAnon) {
+                        if (!session?.user) {
                             openLogin();
                             return;
                         }
@@ -309,6 +315,35 @@ export function AdopterFlagging({ adopterId, adopterName, existingFlags, hasVeri
                                             </div>
                                         </div>
                                     </div>
+
+                                    {/* System-suggested matches */}
+                                    {systemSuggestions.length > 0 && !searchTerm && (
+                                        <div className="mb-3">
+                                            <p className="text-xs font-medium text-stone-500 mb-1.5">🤖 {t('flagging.system_suggestions') || 'System-suggested matches'}</p>
+                                            <div className="space-y-1.5">
+                                                {systemSuggestions.map(sug => (
+                                                    <div
+                                                        key={sug.id}
+                                                        className={`p-3 border rounded-lg cursor-pointer text-sm transition-all ${targetAdopter?.id === sug.otherAdopterId
+                                                            ? 'bg-emerald-100 border-emerald-500 ring-1 ring-emerald-500'
+                                                            : 'bg-blue-50 border-blue-200 hover:border-blue-400 hover:shadow-sm'
+                                                            }`}
+                                                        onClick={() => setTargetAdopter({ id: sug.otherAdopterId, name: sug.otherAdopterName })}
+                                                    >
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="font-bold text-stone-900">{sug.otherAdopterName}</span>
+                                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600 font-medium">🤖 auto</span>
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-1 mt-1">
+                                                            {sug.matchTypes.map(type => (
+                                                                <span key={type} className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-600">{type.replace('_', ' ')}</span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {searchTerm && !isSearching && searchResults.length === 0 && hasSearched && (
                                         <div className="text-center py-4 bg-white/50 rounded-lg border border-dashed border-emerald-200/50">

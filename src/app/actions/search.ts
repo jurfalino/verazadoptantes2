@@ -1,7 +1,7 @@
 'use server';
 
-import { adopters, searches, adopterHistory, adoptions, adopterImages, adopterFlags, adopterStats } from '@/db/schema';
-import { or, like, eq, sql, and, isNull, inArray } from 'drizzle-orm';
+import { adopters, searches, adopterHistory, adoptions, adopterImages, adopterFlags, adopterStats, duplicateCandidates } from '@/db/schema';
+import { or, like, eq, sql, and, isNull, inArray, ne } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
@@ -133,7 +133,7 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
         const adoptionConfig = await getAdoptionConfig();
 
         // Initialize maps for enrichment data
-        const adoptionMap = new Map<string, { avgRating: number | null; count: number }>();
+        const adoptionMap = new Map<string, { avgRating: number | null; count: number; adoptionCount: number; requestCount: number }>();
         const flagsMap = new Map<string, AdopterFlags>();
         const statsMap = new Map<string, { searchHits: number; profileViews: number; requests: number; adoptions: number }>();
         const thumbnailMap = new Map<string, string>();
@@ -144,7 +144,7 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
             const adopterId = adopter.id;
 
             // Run all 4 enrichment queries in parallel for this adopter
-            const [adopterAdoptions, adopterFlagRecords, adopterStatRecords, adopterImagesResult] = await Promise.all([
+            const [adopterAdoptions, adopterFlagRecords, adopterStatRecords, adopterImagesResult, systemDupCount] = await Promise.all([
                 // Adoptions
                 db.select({
                     rating: adoptions.rating,
@@ -173,13 +173,27 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
                         isNull(adopterImages.adoptionId)
                     ))
                     .orderBy(sql`${adopterImages.isProfilePicture} DESC, ${adopterImages.uploadedAt} DESC`)
-                    .limit(1).catch(() => [])
+                    .limit(1).catch(() => []),
+
+                // System-detected duplicates (medium/high confidence only)
+                db.select({ count: sql<number>`COUNT(*)` })
+                    .from(duplicateCandidates)
+                    .where(and(
+                        eq(duplicateCandidates.status, 'pending'),
+                        ne(duplicateCandidates.confidence, 'low'),
+                        or(
+                            eq(duplicateCandidates.adopter1Id, adopterId),
+                            eq(duplicateCandidates.adopter2Id, adopterId),
+                        ),
+                    )).catch(() => [{ count: 0 }])
             ]);
 
             // Process adoptions
             if (adopterAdoptions.length > 0) {
                 const avgRating = adopterAdoptions.reduce((sum: number, a: { rating: number | null }) => sum + (a.rating || 0), 0) / adopterAdoptions.length;
-                adoptionMap.set(adopterId, { avgRating, count: adopterAdoptions.length });
+                const adoptionCount = adopterAdoptions.filter((a: { recordType: string | null }) => a.recordType === 'adoption').length;
+                const requestCount = adopterAdoptions.filter((a: { recordType: string | null }) => a.recordType === 'adoption_request').length;
+                adoptionMap.set(adopterId, { avgRating, count: adopterAdoptions.length, adoptionCount, requestCount });
                 for (const rec of adopterAdoptions) {
                     allAdoptionRecords.push({ adopterId, recordType: rec.recordType, date: rec.date });
                 }
@@ -189,6 +203,7 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
             const flags: AdopterFlags = {
                 inaccurate: false,
                 duplicate: false,
+                systemDuplicate: (systemDupCount[0]?.count ?? 0) > 0,
                 verified_identity: false,
                 verified_address: false,
                 tooManyAdoptions: null,
@@ -202,13 +217,11 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
             }
             flagsMap.set(adopterId, flags);
 
-            // Process stats
+            // Process stats (only search_hit and profile_view — adoption/request counts come from adoptionMap)
             const stats = { searchHits: 0, profileViews: 0, requests: 0, adoptions: 0 };
             for (const s of adopterStatRecords) {
                 if (s.eventType === 'search_hit') stats.searchHits++;
                 else if (s.eventType === 'profile_view') stats.profileViews++;
-                else if (s.eventType === 'adoption_request') stats.requests++;
-                else if (s.eventType === 'adoption_completed') stats.adoptions++;
             }
             statsMap.set(adopterId, stats);
 
@@ -223,7 +236,7 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
         for (const rec of allAdoptionRecords) {
             if (!rec.date || rec.date < periodCutoff) continue;
             const flags = flagsMap.get(rec.adopterId) || {
-                inaccurate: false, duplicate: false, verified_identity: false, verified_address: false,
+                inaccurate: false, duplicate: false, systemDuplicate: false, verified_identity: false, verified_address: false,
                 tooManyAdoptions: null, tooManyRequests: null
             };
             if (rec.recordType === 'adoption') {
@@ -288,6 +301,7 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
             const defaultFlags: AdopterFlags = {
                 inaccurate: false,
                 duplicate: false,
+                systemDuplicate: false,
                 verified_identity: false,
                 verified_address: false,
                 tooManyAdoptions: null,
@@ -296,6 +310,10 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
             const flagData = flagsMap.get(a.id) || defaultFlags;
             const statData = statsMap.get(a.id) || { searchHits: 0, profileViews: 0, requests: 0, adoptions: 0 };
             const thumbnail = thumbnailMap.get(a.id) || null;
+
+            // Use real counts from adoptions table, not empty analytics events
+            statData.adoptions = adoptionData?.adoptionCount ?? 0;
+            statData.requests = adoptionData?.requestCount ?? 0;
 
             return {
                 adopter: a,

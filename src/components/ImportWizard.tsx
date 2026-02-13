@@ -8,6 +8,8 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
 import LegalConsent from '@/components/LegalConsent';
+import { checkTokenDuplicates } from '@/app/actions';
+import type { TokenMatchResult } from '@/app/actions';
 import type { ExtractedAdopterData } from '@/lib/gemini';
 
 interface PersonMatch {
@@ -98,6 +100,7 @@ export default function ImportWizard() {
     const [duplicateAdopter, setDuplicateAdopter] = useState<any>(null);
     const [personMatch, setPersonMatch] = useState<PersonMatch | null>(null);
     const [expandedImage, setExpandedImage] = useState<string | null>(null);
+    const [fieldOverlapHints, setFieldOverlapHints] = useState<TokenMatchResult[]>([]);
 
     // Pre-fill from URL params (for Share Intent / Web Share Target)
     useEffect(() => {
@@ -324,6 +327,23 @@ export default function ImportWizard() {
         }
     };
 
+    // Debounced field overlap check for Step 3
+    useEffect(() => {
+        if (step !== 3 || !extractedData) return;
+        const timer = setTimeout(async () => {
+            try {
+                const results = await checkTokenDuplicates({
+                    name: extractedData.name,
+                    contactInfo: contactInfoText,
+                });
+                setFieldOverlapHints(results);
+            } catch {
+                setFieldOverlapHints([]);
+            }
+        }, 600);
+        return () => clearTimeout(timer);
+    }, [step, extractedData?.name, contactInfoText]);
+
     // Pre-save duplicate check
     const handlePreSave = async () => {
         setIsSaving(true);
@@ -344,26 +364,27 @@ export default function ImportWizard() {
             } catch (e) { console.warn('[ImportWizard] URL duplicate check failed', e); }
         }
 
-        // Check for person match
+        // Check for person match via token index
         if (extractedData) {
             try {
-                const params = new URLSearchParams();
-                if (extractedData.name) params.set('matchName', extractedData.name);
-                if (extractedData.phones?.length) params.set('matchPhones', extractedData.phones.join(','));
-                if (extractedData.addresses?.length) params.set('matchAddresses', extractedData.addresses.join(','));
-
-                if (params.toString()) {
-                    const res = await fetch(`/api/adopters?${params.toString()}`);
-                    const data = await res.json() as {
-                        matches: PersonMatch[];
-                        matchType?: string;
-                        confidence?: string;
-                    };
-                    if (data.matches && data.matches.length > 0 && data.matchType === 'person') {
-                        setPersonMatch(data.matches[0]);
-                    }
+                const tokenResults = await checkTokenDuplicates({
+                    name: extractedData.name,
+                    contactInfo: contactInfoText,
+                    phones: extractedData.phones,
+                    emails: extractedData.emails,
+                    socials: extractedData.socialProfiles,
+                    addresses: extractedData.addresses,
+                });
+                if (tokenResults.length > 0) {
+                    const best = tokenResults[0];
+                    setPersonMatch({
+                        id: best.adopterId,
+                        name: best.adopterName,
+                        confidence: best.confidence,
+                        matchReasons: best.matchTypes.map(t => getMatchLabel(t)),
+                    });
                 }
-            } catch (e) { console.warn('[ImportWizard] Person match check failed', e); }
+            } catch (e) { console.warn('[ImportWizard] Token match check failed', e); }
         }
 
         setIsSaving(false);
@@ -859,6 +880,20 @@ export default function ImportWizard() {
                             className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm min-h-[80px] resize-y focus:ring-2 focus:ring-blue-500"
                             placeholder={t('import.contactPlaceholder') || 'Phones, emails, addresses, social profiles...'}
                         />
+                        {/* Field overlap hints */}
+                        {fieldOverlapHints.length > 0 && (
+                            <div className="mt-1.5 space-y-1">
+                                {fieldOverlapHints.slice(0, 2).map(hint => (
+                                    <p key={hint.adopterId} className="text-xs text-amber-700 flex items-center gap-1">
+                                        <span>⚠️</span>
+                                        <span>
+                                            {hint.matchTypes.map(t => getMatchLabel(t)).join(', ')} {t('import.overlap_match') || 'matches'}{' '}
+                                            <a href={`/adopter/${hint.adopterId}`} target="_blank" className="underline font-medium">{hint.adopterName}</a>
+                                        </span>
+                                    </p>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     {/* Notes */}
@@ -1156,4 +1191,14 @@ export default function ImportWizard() {
             )}
         </div>
     );
+}
+
+function getMatchLabel(type: string): string {
+    const labels: Record<string, string> = {
+        phone: '📞 Phone', phone_suffix: '📞 Phone',
+        email: '✉️ Email', social: '🌐 Social',
+        name_full: '📛 Full Name', name_word: '📝 Name',
+        address_word: '🏠 Address', source_url: '🔗 Source URL',
+    };
+    return labels[type] || type;
 }

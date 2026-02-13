@@ -74,9 +74,8 @@ export default function Home() {
   };
 
   const handleAuthNavigation = (url: string) => {
-    // Check if user is logged in or anonymous
-    const isAnon = document.cookie.includes('anon_user=true');
-    if (!session?.user && !isAnon) {
+    // Check if user is logged in
+    if (!session?.user) {
       openLogin(url);
       return;
     }

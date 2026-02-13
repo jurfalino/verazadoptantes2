@@ -36,8 +36,7 @@ export default function ReportWizard() {
     const handleStart = () => {
         // Don't act while session is still loading — prevents false login prompts
         if (sessionStatus === 'loading') return;
-        const isAnon = document.cookie.includes('anon_user=true');
-        if (!session?.user && !isAnon) {
+        if (!session?.user) {
             openLogin();
             return;
         }

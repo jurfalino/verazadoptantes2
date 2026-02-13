@@ -10,6 +10,7 @@ import { getRecordTypeColors } from '@/lib/recordTypeColors';
 import { StarRating } from '@/components/StarRating';
 import { useShowToast } from '@/components/ui/Toast';
 import { formatShortDate } from '@/lib/dates';
+import DatePicker from '@/components/ui/DatePicker';
 
 // Extract address-like lines from freeform contact text
 function extractAddressFromContact(contactText: string): string {
@@ -46,6 +47,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
     // Read rating and details from URL (from observation wizard)
     const prefillRating = searchParams.get('rating');
     const prefillDetails = searchParams.get('details') || '';
+    const prefillDate = searchParams.get('date') || '';
 
     const [isOpen, setIsOpen] = useState(!!initialData || !!newAdoptionParam);
     const [loading, setLoading] = useState(false);
@@ -73,12 +75,19 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
         species: initialData?.species || prefillSpecies,
         adopterId: initialData?.adopterId || adopterId,
         recordType: prefillRecordType,
-        date: initialData?.date ? new Date(initialData.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        date: initialData?.date ? new Date(initialData.date).toISOString().split('T')[0] : (prefillDate || ''),
         onBehalfOf: initialData?.onBehalfOf || '',
         deliveredToHome: initialData?.deliveredToHome || false,
         verifiedAddress: initialData?.verifiedAddress || '',
         identityVerified: initialData?.identityVerified || false
     });
+
+    // Set default date on client to avoid SSR hydration mismatch
+    useEffect(() => {
+        if (!formData.date) {
+            setFormData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
+        }
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Update form data when initialData changes
     if (initialData && formData.id !== initialData.id) {
@@ -196,7 +205,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const isAuthenticated = (currentUser && currentUser !== '') || session?.user || document.cookie.includes('anon_user=true');
+        const isAuthenticated = (currentUser && currentUser !== '') || !!session?.user;
         if (!isAuthenticated) { openLogin(); return; }
 
         setLoading(true);
@@ -249,7 +258,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
     if (!isOpen && !initialData) {
         return (
             <button onClick={() => {
-                const isAuthenticated = (currentUser && currentUser !== '') || session?.user || document.cookie.includes('anon_user=true');
+                const isAuthenticated = (currentUser && currentUser !== '') || !!session?.user;
                 if (!isAuthenticated) { openLogin(); return; }
                 setIsOpen(true);
             }} className="w-full py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 transition-all duration-300 transform active:scale-[0.99] mb-4">
@@ -400,12 +409,10 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                         <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">
                             {t('adoption.date') || 'Date'}
                         </label>
-                        <input
-                            type="date"
-                            max={new Date().toISOString().split('T')[0]}
-                            className="w-full h-10 px-4 rounded-lg border border-emerald-200 bg-white text-emerald-950 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none text-sm"
+                        <DatePicker
                             value={formData.date}
-                            onChange={e => setFormData({ ...formData, date: e.target.value })}
+                            onChange={date => setFormData({ ...formData, date })}
+                            maxDate={new Date().toISOString().split('T')[0]}
                         />
                     </div>
                     <div>

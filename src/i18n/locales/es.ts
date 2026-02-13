@@ -54,6 +54,12 @@ export const es = {
         legend_verified: 'Confirmamos que esta persona es quien dice ser.',
         legend_warning: 'Otros rescatistas reportaron problemas (falta de seguimiento, abandono, etc.).',
         legend_duplicate: 'Este perfil podría ser un duplicado de otro adoptante.',
+        possible_duplicate: 'Posible duplicado',
+    },
+    duplicates: {
+        possible_match: 'Posible duplicado de',
+        view_profile: 'Ver →',
+        dismiss: 'Descartar',
     },
     stats: {
         searches: 'búsquedas',
@@ -184,9 +190,9 @@ export const es = {
         view_source: 'Ver Fuente Original',
     },
     adoption: {
-        title: 'Adopciones',
+        title: 'Interacciones',
         history_title: 'Historial de Adopciones',
-        record_new: 'Registrar Nueva Adopción',
+        record_new: 'Nueva Interacción',
         record_edit: 'Editar Registro',
         animal_name: 'Nombre del Animal',
         animal_placeholder: 'ej. Luna',
@@ -234,6 +240,13 @@ export const es = {
         identity_verified: '¿Verificaste su identidad?',
         identity_verified_note: 'Esto marcará el perfil como ID verificada.',
         unnamed: 'Sin nombre',
+        // Card summary verbs
+        verb_adopted: 'adoptó',
+        verb_requested: 'solicitó adopción de',
+        verb_noted: 'nota sobre',
+        verb_followed_up: 'seguimiento de',
+        verb_returned: 'devolvió',
+        word_adoption: '',
     },
     species: {
         cat: 'Gato',
@@ -259,6 +272,7 @@ export const es = {
         banner_check: 'Verifica si este perfil es el original.',
         check_link: 'este perfil',
         banner_inaccurate: 'Este perfil ha sido marcado por información inexacta.',
+        system_suggestions: 'Coincidencias sugeridas por el sistema',
     },
     audit: {
         log_title: 'Registro de Cambios',

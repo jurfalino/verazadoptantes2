@@ -30,8 +30,7 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
         if (isEditing) return;
         const isAuthenticated =
             (currentUser && currentUser !== '') ||
-            session?.user ||
-            document.cookie.includes('anon_user=true');
+            !!session?.user;
         if (!isAuthenticated) {
             openLogin();
             return;
@@ -59,8 +58,7 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
         // Fall back to client-side checks only if server didn't provide user info
         const isAuthenticated =
             (currentUser && currentUser !== '') ||
-            session?.user ||
-            document.cookie.includes('anon_user=true');
+            !!session?.user;
 
 
 

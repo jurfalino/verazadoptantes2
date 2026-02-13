@@ -5,11 +5,10 @@ import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 
 export async function GET(request: NextRequest) {
-    // Auth check — signed-in users OR legitimate anonymous users
+    // Auth check — signed-in users only
     const session = await auth();
-    const isAnon = request.cookies.get('anon_user')?.value === 'true';
 
-    if (!session?.user && !isAnon) {
+    if (!session?.user) {
         return new NextResponse('Unauthorized', { status: 401 });
     }
 

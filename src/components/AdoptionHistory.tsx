@@ -5,7 +5,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { StarRating } from '@/components/StarRating';
 import { deleteAdoption, getAdoptionImages } from '@/app/actions';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { getRecordTypeColors } from '@/lib/recordTypeColors';
+import { getRecordTypeIcon } from '@/lib/recordTypeColors';
 import { useShowToast } from '@/components/ui/Toast';
 import { getSourceIcon, getSourceName } from '@/lib/sourceIcons';
 import { formatShortDate } from '@/lib/dates';
@@ -145,18 +145,62 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, onEdit: _
                         );
                     }
 
-                    const isNegative = adoption.status === 'returned' || adoption.status === 'failed';
                     const canEdit = isAdmin || adoption.addedBy === currentUser;
                     const images = adoptionImages[adoption.id] || [];
+                    const recordType = adoption.recordType || 'adoption';
+                    const species = (adoption as any).species || '';
+                    const speciesLabel = species ? (t(`species.${species.toLowerCase()}`) || species) : '';
+
+                    // Build one-line summary: "{icon} {date} — {verb} {animal} ({species})"
+                    const icon = getRecordTypeIcon(recordType);
+                    const dateStr = adoption.date ? formatShortDate(new Date(adoption.date)) : '';
+                    const animalName = adoption.animalName || '';
+
+                    let summary = '';
+                    switch (recordType) {
+                        case 'adoption':
+                            summary = animalName
+                                ? `${t('adoption.verb_adopted') || 'adopted'} ${animalName}${speciesLabel ? ` (${speciesLabel})` : ''}`
+                                : `${t('adoption.verb_adopted') || 'adopted'} ${speciesLabel}`;
+                            break;
+                        case 'adoption_request':
+                            summary = `${t('adoption.verb_requested') || 'requested'} ${speciesLabel || animalName} ${t('adoption.word_adoption') ?? 'adoption'}`.trim();
+                            break;
+                        case 'observation':
+                            summary = animalName
+                                ? `${t('adoption.verb_noted') || 'noted about'} ${animalName}${speciesLabel ? ` (${speciesLabel})` : ''}`
+                                : `${t('adoption.verb_noted') || 'noted about'} ${speciesLabel}`;
+                            break;
+                        case 'follow_up':
+                            summary = animalName
+                                ? `${t('adoption.verb_followed_up') || 'followed up on'} ${animalName}${speciesLabel ? ` (${speciesLabel})` : ''}`
+                                : `${t('adoption.verb_followed_up') || 'followed up on'} ${speciesLabel}`;
+                            break;
+                        case 'returned_pet':
+                            summary = animalName
+                                ? `${t('adoption.verb_returned') || 'returned'} ${animalName}${speciesLabel ? ` (${speciesLabel})` : ''}`
+                                : `${t('adoption.verb_returned') || 'returned'} ${speciesLabel}`;
+                            break;
+                        default:
+                            summary = animalName || speciesLabel || recordType;
+                    }
+
+                    // Border-left color class based on record type
+                    const borderLeftMap: Record<string, string> = {
+                        adoption: 'border-l-emerald-400',
+                        adoption_request: 'border-l-sky-400',
+                        observation: 'border-l-amber-400',
+                        follow_up: 'border-l-violet-400',
+                        returned_pet: 'border-l-rose-400',
+                    };
+                    const borderLeftClass = borderLeftMap[recordType] || 'border-l-emerald-400';
 
                     return (
                         <div
                             key={adoption.id}
                             id={`adoption-${adoption.id}`}
-                            className="bg-white rounded-xl p-5 shadow-sm border border-emerald-100 relative overflow-hidden transition-all hover:shadow-md group"
+                            className={`bg-white rounded-xl p-4 shadow-sm border border-stone-200 border-l-4 ${borderLeftClass} relative overflow-hidden transition-all hover:shadow-md group`}
                         >
-                            <div className={`absolute left-0 top-0 bottom-0 w-1 ${isNegative ? 'bg-rose-400' : 'bg-emerald-400'}`} />
-
                             {/* Whole card clickable for edit */}
                             {canEdit && (
                                 <div
@@ -167,52 +211,33 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, onEdit: _
                             )}
 
                             <div className="relative z-10 pointer-events-none">
-                                <div className="flex justify-between items-start mb-2">
-                                    <div>
-                                        <div className="flex items-center gap-2">
-                                            <h4 className="font-bold text-base text-emerald-950">{adoption.animalName}</h4>
-                                            {(adoption as any).species && (() => {
-                                                const raw = (adoption as any).species.toLowerCase();
-                                                const label = t(`species.${raw}`) || (adoption as any).species;
-                                                return (
-                                                    <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
-                                                        {label}
-                                                    </span>
-                                                );
-                                            })()}
-                                        </div>
-                                        {(() => {
-                                            const typeColors = getRecordTypeColors(adoption.recordType || 'adoption');
-                                            return (
-                                                <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full mt-1 ${typeColors.bg} ${typeColors.text}`}>
-                                                    {t('adoption.record_types.' + (adoption.recordType || 'adoption'))}
-                                                </span>
-                                            );
-                                        })()}
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        {adoption.rating && (
+                                {/* Header: icon + date + summary + stars */}
+                                <div className="flex items-start justify-between gap-2">
+                                    <p className="text-sm font-semibold text-stone-800 leading-snug">
+                                        {icon} {dateStr}{dateStr ? ' — ' : ''}{summary}
+                                    </p>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        {adoption.rating != null && adoption.rating > 0 && (
                                             <StarRating value={adoption.rating} size="sm" />
                                         )}
-
-                                        {/* Action Link - visible on hover (pointer-events-auto needed since parent is pointer-events-none) */}
                                         {canEdit && (
-                                            <span className="text-emerald-600/60 text-xs font-medium underline opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <span className="text-stone-400 text-xs font-medium underline opacity-0 group-hover:opacity-100 transition-opacity">
                                                 {t('common.edit')}
                                             </span>
                                         )}
                                     </div>
                                 </div>
 
+                                {/* Notes - consistent neutral color */}
                                 {adoption.details && (
-                                    <p className="text-emerald-800/80 text-sm mt-3 leading-relaxed bg-emerald-50/50 p-3 rounded-lg border border-emerald-100/50">
+                                    <p className="text-stone-800 text-sm mt-2.5 leading-relaxed bg-stone-100 p-2.5 rounded-lg">
                                         {adoption.details}
                                     </p>
                                 )}
 
-                                {/* Adoption Images */}
+                                {/* Image Thumbnails */}
                                 {images.length > 0 && (
-                                    <div className="mt-3 flex flex-wrap gap-2 pointer-events-auto">
+                                    <div className="mt-2.5 flex flex-wrap gap-2 pointer-events-auto">
                                         {images.slice(0, 4).map((img) => (
                                             <button
                                                 key={img.id}
@@ -225,47 +250,39 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, onEdit: _
                                                 <img
                                                     src={img.url}
                                                     alt={img.caption || 'Adoption photo'}
-                                                    className="w-14 h-14 object-cover rounded-lg border border-emerald-200 hover:border-emerald-400 transition-colors"
+                                                    className="w-12 h-12 object-cover rounded-lg border border-stone-200 hover:border-stone-400 transition-colors"
                                                 />
                                                 <div className="absolute inset-0 bg-black/0 hover:bg-black/20 rounded-lg transition-colors flex items-center justify-center">
-                                                    <svg className="w-4 h-4 text-white opacity-0 group-hover/img:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <svg className="w-3.5 h-3.5 text-white opacity-0 group-hover/img:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
                                                     </svg>
                                                 </div>
                                             </button>
                                         ))}
                                         {images.length > 4 && (
-                                            <div className="w-14 h-14 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 text-xs font-bold">
+                                            <div className="w-12 h-12 rounded-lg bg-stone-50 border border-stone-200 flex items-center justify-center text-stone-500 text-xs font-bold">
                                                 +{images.length - 4}
                                             </div>
                                         )}
                                     </div>
                                 )}
 
-                                <div className="mt-3 flex items-center justify-between text-xs font-medium">
-                                    <span className="text-emerald-500">
-                                        {adoption.date ? formatShortDate(new Date(adoption.date)) : t('adoption.date_unknown')}
-                                    </span>
-                                    <div className="flex items-center gap-2">
-                                        {/* Source URL link */}
-                                        {adoption.sourceUrl && (
-                                            <a
-                                                href={adoption.sourceUrl}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="flex items-center gap-1 text-emerald-500 hover:text-emerald-600 transition-colors"
-                                                title={getSourceName(adoption.sourceUrl)}
-                                            >
-                                                {getSourceIcon(adoption.sourceUrl, 'w-3.5 h-3.5')}
-                                            </a>
-                                        )}
-                                        {/* Added by - hide admin emails */}
-                                        {adoption.addedBy && !isAdminEmail(adoption.addedBy) && (
-                                            <span className="text-emerald-400 bg-emerald-50/50 px-2 py-0.5 rounded-full border border-emerald-100/30">
-                                                {t('common.added_by')} {adoption.addedBy}
-                                            </span>
-                                        )}
-                                    </div>
+                                {/* Footer: source link + addedBy */}
+                                <div className="mt-2.5 flex items-center gap-2 text-xs text-stone-400 font-medium">
+                                    {adoption.sourceUrl && (
+                                        <a
+                                            href={adoption.sourceUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-1 text-stone-400 hover:text-stone-600 transition-colors pointer-events-auto"
+                                            title={getSourceName(adoption.sourceUrl)}
+                                        >
+                                            {getSourceIcon(adoption.sourceUrl, 'w-3.5 h-3.5')}
+                                        </a>
+                                    )}
+                                    {adoption.addedBy && !isAdminEmail(adoption.addedBy) && (
+                                        <span>{t('common.added_by')} {adoption.addedBy}</span>
+                                    )}
                                 </div>
                             </div>
                         </div>

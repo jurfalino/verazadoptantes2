@@ -101,13 +101,6 @@ export async function POST(request: Request) {
                 : secondary.notes;
         }
 
-        // Rating: keep the more conservative (lower) value
-        const primaryRating = parseInt(primary.status || '5');
-        const secondaryRating = parseInt(secondary.status || '5');
-        if (secondaryRating < primaryRating) {
-            updates.status = secondary.status;
-        }
-
         // Source URL: keep if primary doesn't have one
         if (secondary.sourceUrl && !primary.sourceUrl) {
             updates.sourceUrl = secondary.sourceUrl;

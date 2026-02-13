@@ -19,8 +19,15 @@ import ReportInaccuracyForm from '@/components/ReportInaccuracyForm';
 interface AdopterStats {
     searchHits: { '90d': number; '1y': number; 'all': number };
     profileViews: { '90d': number; '1y': number; 'all': number };
-    adoptionRequests: { '90d': number; '1y': number; 'all': number };
-    adoptionsCompleted: { '90d': number; '1y': number; 'all': number };
+}
+
+interface DuplicateCandidateInfo {
+    id: string;
+    otherAdopterId: string;
+    otherAdopterName: string;
+    matchTypes: string[];
+    score: number;
+    confidence: string;
 }
 
 interface AdopterProfileProps {
@@ -37,12 +44,15 @@ interface AdopterProfileProps {
     avgRating?: number | null;
     isAdmin?: boolean;
     adoptionConfig?: { threshold: number; periodDays: number; requestsThreshold: number; requestsPeriodDays: number };
+    duplicateCandidates?: DuplicateCandidateInfo[];
 }
 
-export function AdopterProfile({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig }: AdopterProfileProps) {
+export function AdopterProfile({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [] }: AdopterProfileProps) {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const [selectedPeriod, setSelectedPeriod] = useState<'90d' | '1y' | 'all'>('all');
+    const [dismissedDuplicates, setDismissedDuplicates] = useState<Set<string>>(new Set());
+    const visibleDuplicates = duplicateCandidates.filter(c => !dismissedDuplicates.has(c.id));
 
     // Calculate adoptions in configured period for "too many adoptions" warning
     const periodDays = adoptionConfig?.periodDays || 90;
@@ -67,6 +77,23 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
         const requestDate = typeof a.date === 'number' ? new Date(a.date * 1000) : new Date(a.date);
         return requestDate >= requestsCutoffDate;
     }).length;
+
+    // Period-filtered counts for the stats header
+    const periodDaysMap = { '90d': 90, '1y': 365, 'all': Infinity };
+    const filterByPeriod = (type: string) => {
+        const days = periodDaysMap[selectedPeriod];
+        return adoptions.filter((a: { date?: Date | number; recordType?: string }) => {
+            if (a.recordType !== type) return false;
+            if (days === Infinity) return true;
+            if (!a.date) return false;
+            const d = typeof a.date === 'number' ? new Date(a.date * 1000) : new Date(a.date);
+            const cutoff = new Date();
+            cutoff.setDate(cutoff.getDate() - days);
+            return d >= cutoff;
+        }).length;
+    };
+    const adoptionCountForPeriod = filterByPeriod('adoption');
+    const requestCountForPeriod = filterByPeriod('adoption_request');
 
     // Determine back link based on referrer
     const ref = searchParams.get('ref');
@@ -103,6 +130,54 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                         tooManyRequests={requestsInPeriod >= requestsThreshold ? { count: requestsInPeriod, threshold: requestsThreshold, periodDays: requestsPeriodDays } : undefined}
                     />
                 )}
+
+                {/* Duplicate Detection Banner */}
+                {!isNew && visibleDuplicates.length > 0 && (
+                    <div className="space-y-2">
+                        {visibleDuplicates.map(dup => (
+                            <div key={dup.id} className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 shadow-sm">
+                                <span className="text-xl mt-0.5">⚠️</span>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold text-amber-900">
+                                        {t('duplicates.possible_match') || 'Possible duplicate of'}{' '}
+                                        <a href={`/adopter/${dup.otherAdopterId}`} className="underline text-blue-700 hover:text-blue-800">
+                                            {dup.otherAdopterName}
+                                        </a>
+                                    </p>
+                                    <div className="flex flex-wrap gap-1 mt-1.5">
+                                        {dup.matchTypes.map(type => (
+                                            <span key={type} className={`text-xs px-2 py-0.5 rounded-full font-medium ${getMatchBadgeStyle(type)}`}>
+                                                {getMatchLabel(type)}
+                                            </span>
+                                        ))}
+                                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${dup.confidence === 'high' ? 'bg-red-100 text-red-700' :
+                                            dup.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                                                'bg-stone-100 text-stone-600'
+                                            }`}>
+                                            {dup.confidence}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                    <a
+                                        href={`/adopter/${dup.otherAdopterId}`}
+                                        className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+                                    >
+                                        {t('duplicates.view_profile') || 'View →'}
+                                    </a>
+                                    <button
+                                        onClick={() => setDismissedDuplicates(prev => new Set(prev).add(dup.id))}
+                                        className="text-stone-400 hover:text-stone-600 p-1 transition-colors"
+                                        title={t('duplicates.dismiss') || 'Dismiss'}
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
 
                 <header className="flex flex-wrap justify-between items-end px-2 gap-4">
                     <div className="flex items-center gap-4">
@@ -182,11 +257,11 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                                     <div className="text-xs text-purple-600/70">👁 {t('stats.views') || 'Views'}</div>
                                 </div>
                                 <div className="text-center p-3 bg-orange-50 rounded-xl">
-                                    <div className="text-2xl font-bold text-orange-600">{stats.adoptionRequests[selectedPeriod]}</div>
+                                    <div className="text-2xl font-bold text-orange-600">{requestCountForPeriod}</div>
                                     <div className="text-xs text-orange-600/70">📝 {t('stats.requests') || 'Requests'}</div>
                                 </div>
                                 <div className="text-center p-3 bg-green-50 rounded-xl">
-                                    <div className="text-2xl font-bold text-green-600">{stats.adoptionsCompleted[selectedPeriod]}</div>
+                                    <div className="text-2xl font-bold text-green-600">{adoptionCountForPeriod}</div>
                                     <div className="text-xs text-green-600/70">🏠 {t('stats.adoptions') || 'Adoptions'}</div>
                                 </div>
                             </div>
@@ -237,4 +312,24 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
             </div >
         </main >
     );
+}
+
+function getMatchLabel(type: string): string {
+    const labels: Record<string, string> = {
+        phone: '📞 Phone', phone_suffix: '📞 Phone',
+        email: '✉️ Email', social: '🌐 Social',
+        name_full: '📛 Full Name', name_word: '📝 Name',
+        address_word: '🏠 Address', source_url: '🔗 Source URL',
+    };
+    return labels[type] || type;
+}
+
+function getMatchBadgeStyle(type: string): string {
+    const styles: Record<string, string> = {
+        phone: 'bg-blue-100 text-blue-700', phone_suffix: 'bg-blue-100 text-blue-700',
+        email: 'bg-purple-100 text-purple-700', social: 'bg-cyan-100 text-cyan-700',
+        name_full: 'bg-amber-100 text-amber-700', name_word: 'bg-orange-100 text-orange-700',
+        address_word: 'bg-green-100 text-green-700', source_url: 'bg-rose-100 text-rose-700',
+    };
+    return styles[type] || 'bg-stone-100 text-stone-700';
 }

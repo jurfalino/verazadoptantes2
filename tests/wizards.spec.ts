@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test';
-import { loginAsAnon } from './helpers';
+
 
 test.setTimeout(120000); // Extended timeout for wizard interactions
 
 test.describe('Home Screen Wizards', () => {
 
     test.beforeEach(async ({ page }) => {
-        await loginAsAnon(page);
+        await page.goto('/');
         await page.waitForLoadState('networkidle');
         // Wait for session status to resolve
         await page.waitForTimeout(3000);
