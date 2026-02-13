@@ -41,9 +41,11 @@ export default function UserMenu({ user }: UserMenuProps) {
         return (
             <button
                 onClick={() => openLogin()}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-teal-900 bg-teal-200 hover:bg-teal-300 rounded-xl shadow-sm transition-all"
+                className="flex items-center gap-2 px-3 py-2 sm:px-4 text-sm font-bold text-teal-900 bg-teal-200 hover:bg-teal-300 rounded-xl shadow-sm transition-all"
             >
-                {t('nav.sign_in') || 'Sign In'}
+                <svg className="w-4 h-4 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                <span className="hidden sm:inline">{t('nav.sign_in') || 'Sign In'}</span>
+                <span className="sm:hidden text-xs">Log in</span>
             </button>
         );
     }

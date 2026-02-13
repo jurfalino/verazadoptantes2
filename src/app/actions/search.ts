@@ -156,11 +156,11 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
 
             if (!basicMatch) {
                 if (a.familyMembers?.toLowerCase().includes(qLower)) {
-                    context = "Matches family members";
+                    context = "match_family";
                 } else if (historyIds.includes(a.id)) {
-                    context = "Matches history log";
+                    context = "match_history";
                 } else if (adoptionIds.includes(a.id)) {
-                    context = "Matches adoption records";
+                    context = "match_adoption";
                 }
             }
 

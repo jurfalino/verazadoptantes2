@@ -74,10 +74,9 @@ export default async function RootLayout({
                     <nav className="bg-white/80 border-b border-stone-200 sticky top-0 z-50 backdrop-blur-md">
                       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
                         <Logo />
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1 sm:gap-2">
                           <ThemeSelector />
                           <LanguageSwitcher />
-                          <div className="h-6 w-px bg-stone-200" />
                           <UserMenu user={session?.user} />
                         </div>
                       </div>

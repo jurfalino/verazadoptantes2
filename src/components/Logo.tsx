@@ -26,7 +26,7 @@ export function Logo() {
     return (
         <Link href="/" className="font-bold text-xl text-teal-800 tracking-tight flex items-center gap-2">
             <ShieldPawIcon className="w-8 h-8" />
-            {t('home.title') || 'BuenAdoptante'}
+            <span className="hidden sm:inline">{t('home.title') || 'BuenAdoptante'}</span>
         </Link>
     );
 }

@@ -349,7 +349,7 @@ export default function SearchSection() {
                                     {/* Match Context (if applicable) */}
                                     {res.matchContext && (
                                         <div className="mt-2 text-xs font-medium text-teal-800 bg-teal-50 px-2 py-1 rounded border border-teal-100 inline-block">
-                                            🔍 {res.matchContext}
+                                            🔍 {t(`wizard.${res.matchContext}`) || res.matchContext}
                                         </div>
                                     )}
 

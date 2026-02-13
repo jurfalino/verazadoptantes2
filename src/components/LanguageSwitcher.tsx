@@ -1,25 +1,62 @@
 'use client';
 
 import { useLanguage } from '@/context/LanguageContext';
+import { useState, useRef, useEffect } from 'react';
+
+const languages = [
+    { id: 'en' as const, label: 'English', flag: '🇺🇸' },
+    { id: 'es' as const, label: 'Español', flag: '🇦🇷' },
+];
 
 export function LanguageSwitcher() {
     const { locale, setLocale } = useLanguage();
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    const currentLang = languages.find(l => l.id === locale) || languages[1];
+
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     return (
-        <div className="flex items-center gap-2 text-sm font-medium">
+        <div className="relative" ref={dropdownRef}>
             <button
-                onClick={() => setLocale('en')}
-                className={`px-2 py-1 rounded transition-colors ${locale === 'en' ? 'bg-emerald-100 text-emerald-700 font-bold' : 'text-emerald-600/60 hover:text-emerald-800'}`}
+                onClick={() => setIsOpen(!isOpen)}
+                className="p-2 rounded-xl hover:bg-stone-200/50 transition-colors flex items-center gap-1"
+                title="Change language"
+                aria-label="Change language"
             >
-                EN
+                <span className="text-lg">{currentLang.flag}</span>
+                <span className="text-xs font-bold text-stone-500 uppercase">{currentLang.id}</span>
             </button>
-            <span className="text-emerald-200">|</span>
-            <button
-                onClick={() => setLocale('es')}
-                className={`px-2 py-1 rounded transition-colors ${locale === 'es' ? 'bg-emerald-100 text-emerald-700 font-bold' : 'text-emerald-600/60 hover:text-emerald-800'}`}
-            >
-                ES
-            </button>
+
+            {isOpen && (
+                <div className="absolute right-0 top-full mt-2 bg-white rounded-xl shadow-lg border border-stone-200 overflow-hidden z-50 min-w-[140px]">
+                    {languages.map((lang) => (
+                        <button
+                            key={lang.id}
+                            onClick={() => {
+                                setLocale(lang.id);
+                                setIsOpen(false);
+                            }}
+                            className={`w-full px-4 py-2.5 flex items-center gap-3 hover:bg-stone-100 transition-colors text-left ${locale === lang.id ? 'bg-stone-100' : ''}`}
+                        >
+                            <span className="text-lg">{lang.flag}</span>
+                            <span className="text-sm font-medium text-stone-700">{lang.label}</span>
+                            {locale === lang.id && (
+                                <span className="ml-auto text-teal-500">✓</span>
+                            )}
+                        </button>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }
