@@ -1,7 +1,7 @@
 export const runtime = 'edge';
 import { getDb } from "@/app/actions";
 import { adopters, adoptions, adopterFlags } from "@/db/schema";
-import { count } from "drizzle-orm";
+import { count, isNull } from "drizzle-orm";
 import AdminDangerZone from "@/components/AdminDangerZone";
 
 export default async function AdminOverviewPage() {
@@ -14,7 +14,7 @@ export default async function AdminOverviewPage() {
         adoptionCount,
         activeFlagsCount
     ] = await Promise.all([
-        db.select({ count: count() }).from(adopters),
+        db.select({ count: count() }).from(adopters).where(isNull(adopters.deletedAt)),
         db.select({ count: count() }).from(adoptions),
         db.select({ count: count() }).from(adopterFlags),
     ]);

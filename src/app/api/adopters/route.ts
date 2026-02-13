@@ -6,6 +6,7 @@ import { adopters, adopterFlags, adopterImages, adoptions } from '@/db/schema';
 import { eq, like, or, and, isNull, type InferSelectModel } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
+import { tokenizeAdopter } from '@/app/actions/duplicates';
 
 export async function GET(request: Request) {
     const session = await auth();
@@ -31,7 +32,7 @@ export async function GET(request: Request) {
         if (sourceUrl) {
             const matches = await db.select()
                 .from(adopters)
-                .where(eq(adopters.sourceUrl, sourceUrl));
+                .where(and(isNull(adopters.deletedAt), eq(adopters.sourceUrl, sourceUrl)));
             return NextResponse.json({ matches, matchType: 'url' });
         }
 
@@ -63,7 +64,7 @@ export async function GET(request: Request) {
 
         const matches = await db.select()
             .from(adopters)
-            .where(or(...conditions))
+            .where(and(isNull(adopters.deletedAt), or(...conditions)))
             .limit(5);
 
         if (matches.length === 0) {
@@ -301,6 +302,9 @@ export async function POST(request: Request) {
             hasAdoption: !!adoption,
             user: session.user.email
         });
+
+        // Fire-and-forget: generate duplicate detection tokens
+        tokenizeAdopter(newId).catch(() => { });
 
         return NextResponse.json({ success: true, id: newId });
 

@@ -37,6 +37,12 @@ export default async function AdminLayout({
                         Flagged Content
                     </Link>
                     <Link
+                        href="/admin/duplicates"
+                        className="block px-4 py-2 rounded-lg hover:bg-stone-800 hover:text-white transition-colors"
+                    >
+                        🔍 Duplicates
+                    </Link>
+                    <Link
                         href="/admin/adopters"
                         className="block px-4 py-2 rounded-lg hover:bg-stone-800 hover:text-white transition-colors"
                     >

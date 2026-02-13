@@ -16,6 +16,10 @@ export const adopters = sqliteTable("adopters", {
     status: text("status").default("5"), // Rating: 1-5 (1=Dangerous, 5=Excellent)
     addedBy: text("added_by").default("anonymous"),
     sourceUrl: text("source_url"), // Link to original post/source
+
+    // Duplicate detection
+    tokenHash: text("token_hash"), // Hash of tokenizable fields, null = needs tokenization
+    deletedAt: integer("deleted_at", { mode: "timestamp" }), // Soft-delete for merged profiles
 }, (table) => ({
     nameIdx: index("name_idx").on(table.name),
 }));
@@ -93,6 +97,32 @@ export const appConfig = sqliteTable("app_config", {
     value: text("value").notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     updatedBy: text("updated_by"),
+});
+
+// Duplicate Detection - Token index for finding duplicate adopters
+export const duplicateTokens = sqliteTable("duplicate_tokens", {
+    id: text("id").primaryKey(),
+    adopterId: text("adopter_id").notNull(),
+    tokenType: text("token_type").notNull(), // name_full, name_word, phone, phone_suffix, email, social, address_word, source_url
+    tokenValue: text("token_value").notNull(),
+}, (table) => ({
+    tokenIdx: index("idx_dup_token").on(table.tokenType, table.tokenValue),
+    adopterIdx: index("idx_dup_adopter").on(table.adopterId),
+}));
+
+// Duplicate Detection - Pre-computed candidate pairs
+export const duplicateCandidates = sqliteTable("duplicate_candidates", {
+    id: text("id").primaryKey(),
+    adopter1Id: text("adopter1_id").notNull(),
+    adopter2Id: text("adopter2_id").notNull(),
+    matchTypes: text("match_types").notNull(), // JSON array: ["phone","name_word"]
+    matchValues: text("match_values"),          // JSON: {"phone":"1155234567","name_word":["garcia"]}
+    score: integer("score").notNull(),
+    confidence: text("confidence").notNull(),   // high, medium, low
+    status: text("status").default("pending"),  // pending, dismissed, merged
+    detectedAt: integer("detected_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    resolvedAt: integer("resolved_at", { mode: "timestamp" }),
+    resolvedBy: text("resolved_by"),
 });
 
 // Data Requests - Track ARCO rights requests and inaccuracy reports

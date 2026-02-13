@@ -1,7 +1,7 @@
 export const runtime = 'edge';
 import { getDb } from "@/app/actions";
 import { adopters } from "@/db/schema";
-import { desc, like, or } from "drizzle-orm";
+import { desc, like, or, and, isNull } from "drizzle-orm";
 import Link from "next/link";
 import DeleteAdopterButton from "@/components/DeleteAdopterButton";
 
@@ -15,10 +15,13 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
     const list = await db.select()
         .from(adopters)
         .where(
-            query ? or(
-                like(adopters.name, `%${query}%`),
-                like(adopters.id, `%${query}%`)
-            ) : undefined
+            and(
+                isNull(adopters.deletedAt),
+                query ? or(
+                    like(adopters.name, `%${query}%`),
+                    like(adopters.id, `%${query}%`)
+                ) : undefined
+            )
         )
         .orderBy(desc(adopters.updatedAt))
         .limit(50);

@@ -93,10 +93,13 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
 
         // 1. Search Main Profile (Name, Contact, Address, Family)
         const profileQuery = db.select().from(adopters).where(
-            or(
-                like(adopters.name, `%${normalizedQuery}%`),
-                like(adopters.contactInfo, `%${normalizedQuery}%`),
-                like(adopters.familyMembers, `%${normalizedQuery}%`)
+            and(
+                isNull(adopters.deletedAt),
+                or(
+                    like(adopters.name, `%${normalizedQuery}%`),
+                    like(adopters.contactInfo, `%${normalizedQuery}%`),
+                    like(adopters.familyMembers, `%${normalizedQuery}%`)
+                )
             )
         ).limit(SEARCH_ENRICHMENT_LIMIT);
 

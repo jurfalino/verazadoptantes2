@@ -6,6 +6,7 @@ import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { NINETY_DAYS_IN_SECONDS, ONE_YEAR_IN_SECONDS } from '@/config/constants';
+import { tokenizeAdopter } from './duplicates';
 
 export async function getAdopter(id: string) {
     try {
@@ -73,6 +74,9 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
 
                 logger.info('Adopter updated', { adopterId: data.id, changedBy });
                 logAudit({ userEmail: changedBy, action: 'adopter_updated', target: data.id as string, details: changes });
+
+                // Fire-and-forget: update duplicate detection tokens
+                tokenizeAdopter(data.id as string).catch(() => { });
             }
             return { success: true, id: data.id };
         } else {
@@ -88,6 +92,10 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
 
             logger.info('Adopter created', { adopterId: newId, changedBy });
             logAudit({ userEmail: changedBy, action: 'adopter_created', target: newId, details: { name: data.name } });
+
+            // Fire-and-forget: generate duplicate detection tokens
+            tokenizeAdopter(newId).catch(() => { });
+
             return { success: true, id: newId };
         }
 

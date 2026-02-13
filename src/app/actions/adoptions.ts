@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
+import { tokenizeAdopter } from './duplicates';
 
 export async function saveAdoption(data: typeof adoptions.$inferInsert) {
     try {
@@ -50,6 +51,13 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
             }
             logger.info('Adoption updated', { adoptionId: data.id, adopterId: data.adopterId, changedBy });
             logAudit({ userEmail: changedBy, action: 'adoption_updated', target: data.id as string, details: { adopterId: data.adopterId } });
+
+            // Re-tokenize adopter if onBehalfOf changed (cross-field name tokens)
+            const targetAdopterId2 = data.adopterId || existing.adopterId;
+            if (targetAdopterId2 && data.onBehalfOf !== undefined) {
+                tokenizeAdopter(targetAdopterId2).catch(() => { });
+            }
+
             return { success: true, id: data.id };
         } else {
             // Create new
@@ -127,6 +135,12 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
 
             logger.info('Adoption created', { adoptionId: id, adopterId: data.adopterId, species: data.species, changedBy });
             logAudit({ userEmail: changedBy, action: 'adoption_created', target: id, details: { adopterId: data.adopterId, species: data.species, animalName: data.animalName } });
+
+            // Re-tokenize adopter if onBehalfOf is set (cross-field name tokens)
+            if (data.adopterId && data.onBehalfOf) {
+                tokenizeAdopter(data.adopterId).catch(() => { });
+            }
+
             return { success: true, id };
         }
     } catch (error) {

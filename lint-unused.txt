@@ -1,0 +1,34 @@
+C:\dev\test\src\app\actions\admin.ts:86 'adoptionIds' is assigned a value but never used
+C:\dev\test\src\app\actions\adoptions.ts:3 'adopterImages' is defined but never used
+C:\dev\test\src\app\actions\search.ts:10 'SearchResult' is defined but never used
+C:\dev\test\src\app\actions\search.ts:241 'adopterId' is assigned a value but never used
+C:\dev\test\src\app\admin\page.tsx:2 'auth' is defined but never used
+C:\dev\test\src\app\admin\page.tsx:5 'eq' is defined but never used
+C:\dev\test\src\app\admin\page.tsx:5 'isNull' is defined but never used
+C:\dev\test\src\app\api\admin\config\route.ts:6 'eq' is defined but never used
+C:\dev\test\src\app\api\admin\delete-adopter\route.ts:50 'adoptionIds' is assigned a value but never used
+C:\dev\test\src\app\api\admin\users\route.ts:7 'request' is defined but never used
+C:\dev\test\src\components\AdopterFlagging.tsx:39 'isVerifying' is assigned a value but never used
+C:\dev\test\src\components\AdopterFlagging.tsx:40 'isUnverifying' is assigned a value but never used
+C:\dev\test\src\components\AdopterFlagging.tsx:108 'handleVerify' is assigned a value but never used
+C:\dev\test\src\components\AdopterFlagging.tsx:127 'handleUnverify' is assigned a value but never used
+C:\dev\test\src\components\AdoptionForm.tsx:9 'getRatingColors' is defined but never used
+C:\dev\test\src\components\AdoptionHistory.tsx:35 'onEdit' is defined but never used
+C:\dev\test\src\components\AdoptionHistory.tsx:40 'deletingId' is assigned a value but never used
+C:\dev\test\src\components\ImportWizard.tsx:25 'session' is assigned a value but never used
+C:\dev\test\src\components\ImportWizard.tsx:26 'openLogin' is assigned a value but never used
+C:\dev\test\src\components\ImportWizard.tsx:62 'fetchedText' is assigned a value but never used
+C:\dev\test\src\components\ImportWizard.tsx:67 'sourceType' is assigned a value but never used
+C:\dev\test\src\components\ImportWizard.tsx:90 'setSelectedModel' is assigned a value but never used
+C:\dev\test\src\components\ImportWizard.tsx:92 'customSpecies' is assigned a value but never used
+C:\dev\test\src\components\ImportWizard.tsx:979 'i' is defined but never used
+C:\dev\test\src\components\ReportInaccuracyForm.tsx:11 'adopterName' is defined but never used
+C:\dev\test\src\components\ReportWizard.tsx:6 'saveAdoption' is defined but never used
+C:\dev\test\src\components\ReportWizard.tsx:10 'getRatingColors' is defined but never used
+C:\dev\test\src\components\SearchSection.tsx:3 'useMemo' is defined but never used
+C:\dev\test\src\components\SearchSection.tsx:4 'SearchResponse' is defined but never used
+C:\dev\test\src\config\features.ts:23 'flagCache' is assigned a value but never used
+C:\dev\test\src\context\LanguageContext.tsx:37 'isHydrated' is assigned a value but never used
+C:\dev\test\src\lib\ai-extraction.ts:68 'mimeType' is defined but never used
+C:\dev\test\src\lib\logger.ts:99 'err' is assigned a value but never used
+C:\dev\test\tests\authed.spec.ts:4 'FB_POST_URL' is assigned a value but never used
