@@ -34,3 +34,7 @@ export { runAdminQuery, deleteAdopter, purgeAllData } from './admin';
 // Duplicates
 export { getDuplicateCandidates, checkTokenDuplicates } from './duplicates';
 export type { DuplicateCandidate, TokenMatchResult } from './duplicates';
+
+// Enrichment
+export { enrichAdopters } from './enrichAdopters';
+export type { EnrichmentResult } from './enrichAdopters';

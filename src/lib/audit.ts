@@ -6,6 +6,7 @@
  */
 
 import { getRequestContext } from '@cloudflare/next-on-pages';
+import { headers } from 'next/headers';
 
 export interface AuditEntry {
     userId?: string;
@@ -28,6 +29,21 @@ export function logAudit(entry: AuditEntry) {
             const { env } = getRequestContext();
             if (!env?.DB) return;
 
+            // Auto-capture IP and User-Agent from request headers if not provided
+            let resolvedIp = entry.ipAddress || null;
+            let resolvedDevice = entry.device || null;
+            try {
+                const h = await headers();
+                if (!resolvedIp) {
+                    resolvedIp = h.get('cf-connecting-ip') || h.get('x-forwarded-for')?.split(',')[0]?.trim() || h.get('x-real-ip') || null;
+                }
+                if (!resolvedDevice) {
+                    resolvedDevice = h.get('user-agent') || null;
+                }
+            } catch {
+                // headers() unavailable outside server request context — skip
+            }
+
             const id = crypto.randomUUID();
             const details = entry.details ? JSON.stringify(entry.details) : null;
 
@@ -41,9 +57,9 @@ export function logAudit(entry: AuditEntry) {
                 entry.action,
                 entry.target || null,
                 details,
-                entry.device || null,
+                resolvedDevice,
                 entry.isPWA ? 1 : 0,
-                entry.ipAddress || null
+                resolvedIp
             ).run();
         } catch (e) {
             // Never let audit logging break the main flow

@@ -144,7 +144,7 @@ export default function AdminAuditPage() {
             </div>
 
             {/* Filters */}
-            <div className="flex items-center gap-3 mb-4">
+            <div className="flex flex-wrap items-center gap-3 mb-4">
                 <select
                     value={filterAction}
                     onChange={e => { setFilterAction(e.target.value); setPage(1); }}
@@ -161,7 +161,7 @@ export default function AdminAuditPage() {
                     placeholder="Filter by user ID or email..."
                     value={filterUser}
                     onChange={e => { setFilterUser(e.target.value); setPage(1); }}
-                    className="px-3 py-2 border border-stone-200 rounded-lg text-sm w-64 focus:ring-2 focus:ring-stone-500/20 focus:border-stone-400 outline-none"
+                    className="px-3 py-2 border border-stone-200 rounded-lg text-sm w-full sm:w-64 focus:ring-2 focus:ring-stone-500/20 focus:border-stone-400 outline-none"
                 />
                 {(filterAction || filterUser) && (
                     <button
@@ -177,8 +177,8 @@ export default function AdminAuditPage() {
             {loading ? (
                 <div className="p-8 text-center text-stone-400">Loading...</div>
             ) : (
-                <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                    <table className="w-full text-sm">
+                <div className="bg-white rounded-xl border border-stone-200 overflow-x-auto">
+                    <table className="w-full text-sm min-w-[800px]">
                         <thead className="bg-stone-50 text-stone-600 text-xs uppercase tracking-wider">
                             <tr>
                                 <th className="px-4 py-3 text-left">Time</th>
@@ -186,6 +186,7 @@ export default function AdminAuditPage() {
                                 <th className="px-4 py-3 text-left">Action</th>
                                 <th className="px-4 py-3 text-left">Target</th>
                                 <th className="px-4 py-3 text-left">Device</th>
+                                <th className="px-4 py-3 text-left">IP</th>
                                 <th className="px-4 py-3 text-left w-8"></th>
                             </tr>
                         </thead>
@@ -234,6 +235,19 @@ export default function AdminAuditPage() {
                                             )}
                                             {!device && '—'}
                                         </td>
+                                        <td className="px-4 py-3 text-xs text-stone-400 whitespace-nowrap">
+                                            {entry.ip_address ? (
+                                                <a
+                                                    href={`https://ipinfo.io/${entry.ip_address}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-blue-500 hover:text-blue-700 hover:underline font-mono"
+                                                    title="View geolocation"
+                                                >
+                                                    {entry.ip_address}
+                                                </a>
+                                            ) : '—'}
+                                        </td>
                                         <td className="px-4 py-3">
                                             {details && (
                                                 <button
@@ -254,7 +268,7 @@ export default function AdminAuditPage() {
                                 if (!details) return null;
                                 return (
                                     <tr key={`${entry.id}-details`} className="bg-stone-50">
-                                        <td colSpan={6} className="px-6 py-3">
+                                        <td colSpan={7} className="px-6 py-3">
                                             <pre className="text-xs text-stone-600 whitespace-pre-wrap font-mono bg-white p-3 rounded-lg border border-stone-200">
                                                 {JSON.stringify(details, null, 2)}
                                             </pre>
@@ -264,7 +278,7 @@ export default function AdminAuditPage() {
                             })}
                             {entries.length === 0 && (
                                 <tr>
-                                    <td colSpan={6} className="px-4 py-8 text-center text-stone-400">
+                                    <td colSpan={7} className="px-4 py-8 text-center text-stone-400">
                                         No audit entries found
                                     </td>
                                 </tr>

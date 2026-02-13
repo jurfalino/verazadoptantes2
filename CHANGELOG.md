@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.5.3.1] - 2026-02-13
+
+### Added
+- **Enriched admin adopters list** — card layout with thumbnails, server-rendered rating badges, stats (searches, views, requests, adoptions), flags, and dates replacing basic table
+- **Reusable enrichment module** — `enrichAdopters.ts` extracts shared logic from search pipeline for consistent data across search and admin views
+- **Audit log IP & device capture** — `logAudit()` auto-captures IP address (`CF-Connecting-IP`) and User-Agent from request headers; all callers get data for free
+- **Audit log IP geolocation links** — IP column links to `ipinfo.io` for free geolocation lookup
+- **Mobile-responsive admin layout** — sidebar converts to slide-in drawer on mobile with hamburger menu, active route highlighting
+- **Logo favicon** — replaced default Next.js triangle with teal shield+paw SVG matching the app logo
+
+### Changed
+- **Admin sidebar** — extracted to `AdminSidebar.tsx` client component with responsive behavior
+- **Audit table** — horizontally scrollable on mobile (`overflow-x-auto`), filters wrap on small screens
+- **Search action refactored** — removed ~130 lines of inline enrichment code in favor of shared module
+
+---
+
 ## [2.5.3] - 2026-02-13
 
 ### Added
