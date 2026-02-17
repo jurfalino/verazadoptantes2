@@ -159,7 +159,10 @@ export async function checkTokenDuplicates(data: {
 }): Promise<TokenMatchResult[]> {
     try {
         const db = await getDb();
-        if (!db) return [];
+        if (!db) {
+            logger.warn('checkTokenDuplicates: DB not available');
+            return [];
+        }
 
         // Build tokens from the raw data
         const tokens: { type: string; value: string }[] = [];
@@ -194,7 +197,10 @@ export async function checkTokenDuplicates(data: {
             tokens.push({ type: 'social', value: social.toLowerCase().trim() });
         }
 
-        if (tokens.length === 0) return [];
+        if (tokens.length === 0) {
+            logger.info('checkTokenDuplicates: no tokens extracted', { name: data.name, hasContactInfo: !!data.contactInfo });
+            return [];
+        }
 
         // Query the token index for matches
         // D1 doesn't support IN with large lists well, so query one at a time
@@ -209,7 +215,7 @@ export async function checkTokenDuplicates(data: {
                     eq(duplicateTokens.tokenType, token.type),
                     eq(duplicateTokens.tokenValue, token.value),
                 ))
-                .limit(10);
+                .limit(20);
 
             for (const m of matches) {
                 if (!matchMap.has(m.adopterId)) {
@@ -219,7 +225,10 @@ export async function checkTokenDuplicates(data: {
             }
         }
 
-        if (matchMap.size === 0) return [];
+        if (matchMap.size === 0) {
+            logger.info('checkTokenDuplicates: no matches found', { tokenCount: tokens.length, name: data.name });
+            return [];
+        }
 
         // Fetch adopter names
         const matchedIds = Array.from(matchMap.keys());

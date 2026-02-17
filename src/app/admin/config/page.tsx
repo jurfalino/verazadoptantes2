@@ -201,7 +201,7 @@ export default function AdminConfigPage() {
                 <p className="text-sm text-stone-500 mb-4">
                     Configure the threshold for flagging adopters with "too many adoptions".
                 </p>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm font-bold text-stone-700 mb-1">Max Adoptions</label>
                         <input
@@ -235,7 +235,7 @@ export default function AdminConfigPage() {
                     <p className="text-sm text-stone-500 mb-4">
                         Configure the threshold for flagging adopters with too many adoption requests.
                     </p>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-bold text-stone-700 mb-1">Max Requests</label>
                             <input
@@ -276,7 +276,7 @@ export default function AdminConfigPage() {
                     <span className="text-xl">📊</span>
                     Stats Cleanup
                 </h3>
-                <div className="grid grid-cols-2 gap-4 mb-4 p-4 bg-stone-50 rounded-lg">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4 p-4 bg-stone-50 rounded-lg">
                     <div>
                         <span className="text-sm text-stone-500">Total Events</span>
                         <p className="text-2xl font-bold text-stone-900">{statsCount?.toLocaleString() ?? '—'}</p>
@@ -288,7 +288,7 @@ export default function AdminConfigPage() {
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                     <div className="flex-1">
                         <label className="block text-sm font-bold text-stone-700 mb-1">Purge events older than</label>
                         <div className="flex items-center gap-2">

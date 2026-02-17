@@ -83,7 +83,7 @@ export default function AdminUsersPage() {
 
     return (
         <div>
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
                 <div>
                     <h2 className="text-2xl font-bold text-stone-900">👥 User Registry</h2>
                     <p className="text-stone-500 text-sm mt-1">{users.length} registered user{users.length !== 1 ? 's' : ''}</p>
@@ -93,11 +93,12 @@ export default function AdminUsersPage() {
                     placeholder="Filter by name, email, org..."
                     value={filter}
                     onChange={e => setFilter(e.target.value)}
-                    className="px-3 py-2 border border-stone-200 rounded-lg text-sm w-64 focus:ring-2 focus:ring-stone-500/20 focus:border-stone-400 outline-none"
+                    className="px-3 py-2 border border-stone-200 rounded-lg text-sm w-full sm:w-64 focus:ring-2 focus:ring-stone-500/20 focus:border-stone-400 outline-none"
                 />
             </div>
 
-            <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+            {/* Desktop table */}
+            <div className="hidden md:block bg-white rounded-xl border border-stone-200 overflow-hidden">
                 <table className="w-full text-sm">
                     <thead className="bg-stone-50 text-stone-600 text-xs uppercase tracking-wider">
                         <tr>
@@ -205,6 +206,107 @@ export default function AdminUsersPage() {
                         )}
                     </tbody>
                 </table>
+            </div>
+
+            {/* Mobile cards */}
+            <div className="md:hidden space-y-3">
+                {filteredUsers.map(user => (
+                    <div key={user.id} className="bg-white rounded-xl p-4 shadow-sm border border-stone-200">
+                        <div className="flex items-center gap-3 mb-3">
+                            {user.image ? (
+                                <img src={user.image} alt="" className="w-10 h-10 rounded-full" />
+                            ) : (
+                                <div className="w-10 h-10 rounded-full bg-stone-200 flex items-center justify-center text-stone-500 text-sm font-bold">
+                                    {(user.name || user.email || '?')[0].toUpperCase()}
+                                </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                                <div className="font-medium text-stone-900 truncate">{user.name || 'Unknown'}</div>
+                                <a href={`mailto:${user.email}`} className="text-xs text-blue-600 hover:underline truncate block">
+                                    {user.email}
+                                </a>
+                            </div>
+                            {editingId !== user.id && (
+                                <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${user.role === 'admin' ? 'bg-purple-100 text-purple-700' :
+                                    user.role === 'contributor' ? 'bg-blue-100 text-blue-700' :
+                                        'bg-stone-100 text-stone-600'
+                                    }`}>
+                                    {user.role || 'viewer'}
+                                </span>
+                            )}
+                        </div>
+
+                        {editingId === user.id ? (
+                            <div className="space-y-3 bg-stone-50 rounded-lg p-3 mb-3">
+                                <div>
+                                    <label className="text-xs text-stone-500 font-medium block mb-1">Organization</label>
+                                    <input
+                                        type="text"
+                                        value={editForm.organization}
+                                        onChange={e => setEditForm({ ...editForm, organization: e.target.value })}
+                                        placeholder="Organization name"
+                                        className="px-3 py-2 border border-stone-200 rounded-lg text-sm w-full"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs text-stone-500 font-medium block mb-1">Role</label>
+                                    <select
+                                        value={editForm.role}
+                                        onChange={e => setEditForm({ ...editForm, role: e.target.value })}
+                                        className="px-3 py-2 border border-stone-200 rounded-lg text-sm w-full"
+                                    >
+                                        <option value="viewer">Viewer</option>
+                                        <option value="contributor">Contributor</option>
+                                        <option value="admin">Admin</option>
+                                    </select>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => saveProfile(user.id)}
+                                        disabled={saving}
+                                        className="flex-1 px-3 py-2 bg-stone-900 text-white text-xs font-bold rounded-lg hover:bg-stone-800 disabled:opacity-50"
+                                    >
+                                        {saving ? '...' : 'Save'}
+                                    </button>
+                                    <button
+                                        onClick={() => setEditingId(null)}
+                                        className="flex-1 px-3 py-2 text-stone-500 text-xs font-bold bg-stone-100 rounded-lg hover:bg-stone-200"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                                    <div>
+                                        <span className="text-stone-400">Org: </span>
+                                        <span className="text-stone-600">{user.organization || '—'}</span>
+                                    </div>
+                                    <div>
+                                        <span className="text-stone-400">First: </span>
+                                        <span className="text-stone-500">{formatDate(user.first_sign_in)}</span>
+                                    </div>
+                                    <div className="col-span-2">
+                                        <span className="text-stone-400">Active: </span>
+                                        <span className="text-stone-500">{formatDate(user.last_active_at)}</span>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => startEdit(user)}
+                                    className="w-full py-2 text-xs font-bold text-stone-500 bg-stone-50 rounded-lg hover:bg-stone-100"
+                                >
+                                    Edit
+                                </button>
+                            </>
+                        )}
+                    </div>
+                ))}
+                {filteredUsers.length === 0 && (
+                    <div className="text-center py-8 text-stone-400 text-sm">
+                        {filter ? 'No users match your filter' : 'No users found'}
+                    </div>
+                )}
             </div>
         </div>
     );

@@ -150,7 +150,7 @@ export default function DuplicatesPage() {
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
                     <h1 className="text-2xl font-bold text-stone-900">🔍 Duplicate Detection</h1>
                     <p className="text-sm text-stone-500 mt-1">Find and merge duplicate adopter profiles</p>
@@ -158,7 +158,7 @@ export default function DuplicatesPage() {
                 <button
                     onClick={handleScan}
                     disabled={scanning}
-                    className="px-5 py-2.5 text-sm font-bold text-white bg-teal-600 rounded-xl hover:bg-teal-700 disabled:opacity-50 transition-colors"
+                    className="px-5 py-2.5 text-sm font-bold text-white bg-teal-600 rounded-xl hover:bg-teal-700 disabled:opacity-50 transition-colors self-start sm:self-auto"
                 >
                     {scanning ? '⏳ Scanning...' : '🔄 Scan Now'}
                 </button>
@@ -175,7 +175,7 @@ export default function DuplicatesPage() {
             )}
 
             {/* Stats */}
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <StatCard label="Pending" value={counts.pending} color="amber" active={statusFilter === 'pending'} onClick={() => setStatusFilter('pending')} />
                 <StatCard label="User Flagged" value={counts.userFlagged} color="rose" />
                 <StatCard label="Dismissed" value={counts.dismissed} color="stone" active={statusFilter === 'dismissed'} onClick={() => setStatusFilter('dismissed')} />

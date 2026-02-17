@@ -35,16 +35,16 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
 
     return (
         <div className="max-w-6xl mx-auto space-y-6">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                 <h2 className="text-2xl font-bold text-stone-900">Manage Adopters</h2>
                 <form className="flex gap-2">
                     <input
                         name="q"
                         defaultValue={query}
                         placeholder="Search name or ID..."
-                        className="px-4 py-2 rounded-lg border border-stone-200 text-sm w-64"
+                        className="px-4 py-2 rounded-lg border border-stone-200 text-sm w-full sm:w-64"
                     />
-                    <button type="submit" className="px-4 py-2 bg-stone-900 text-white rounded-lg text-sm font-bold">Search</button>
+                    <button type="submit" className="px-4 py-2 bg-stone-900 text-white rounded-lg text-sm font-bold flex-shrink-0">Search</button>
                 </form>
             </div>
 

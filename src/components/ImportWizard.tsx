@@ -98,9 +98,11 @@ export default function ImportWizard() {
     const [isSaving, setIsSaving] = useState(false);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [duplicateAdopter, setDuplicateAdopter] = useState<any>(null);
-    const [personMatch, setPersonMatch] = useState<PersonMatch | null>(null);
+    const [personMatches, setPersonMatches] = useState<PersonMatch[]>([]);
+    const [selectedMatch, setSelectedMatch] = useState<PersonMatch | null>(null);
     const [expandedImage, setExpandedImage] = useState<string | null>(null);
     const [fieldOverlapHints, setFieldOverlapHints] = useState<TokenMatchResult[]>([]);
+    const [duplicateCheckFailed, setDuplicateCheckFailed] = useState(false);
 
     // Pre-fill from URL params (for Share Intent / Web Share Target)
     useEffect(() => {
@@ -348,7 +350,9 @@ export default function ImportWizard() {
     const handlePreSave = async () => {
         setIsSaving(true);
         setDuplicateAdopter(null);
-        setPersonMatch(null);
+        setPersonMatches([]);
+        setSelectedMatch(null);
+        setDuplicateCheckFailed(false);
 
         // Check for URL duplicate
         if (sourceUrl) {
@@ -361,7 +365,10 @@ export default function ImportWizard() {
                     setShowConfirmModal(true);
                     return;
                 }
-            } catch (e) { console.warn('[ImportWizard] URL duplicate check failed', e); }
+            } catch (e) {
+                console.warn('[ImportWizard] URL duplicate check failed', e);
+                setDuplicateCheckFailed(true);
+            }
         }
 
         // Check for person match via token index
@@ -376,15 +383,19 @@ export default function ImportWizard() {
                     addresses: extractedData.addresses,
                 });
                 if (tokenResults.length > 0) {
-                    const best = tokenResults[0];
-                    setPersonMatch({
-                        id: best.adopterId,
-                        name: best.adopterName,
-                        confidence: best.confidence,
-                        matchReasons: best.matchTypes.map(t => getMatchLabel(t)),
-                    });
+                    const matches: PersonMatch[] = tokenResults.map(r => ({
+                        id: r.adopterId,
+                        name: r.adopterName,
+                        confidence: r.confidence,
+                        matchReasons: r.matchTypes.map(mt => getMatchLabel(mt)),
+                    }));
+                    setPersonMatches(matches);
+                    setSelectedMatch(matches[0]); // Pre-select best match
                 }
-            } catch (e) { console.warn('[ImportWizard] Token match check failed', e); }
+            } catch (e) {
+                console.error('[ImportWizard] Token match check failed', e);
+                setDuplicateCheckFailed(true);
+            }
         }
 
         setIsSaving(false);
@@ -448,7 +459,7 @@ export default function ImportWizard() {
 
     // Merge into existing profile
     const handleMerge = async () => {
-        if (!extractedData || !personMatch) return;
+        if (!extractedData || !selectedMatch) return;
         setIsSaving(true);
 
         try {
@@ -467,7 +478,7 @@ export default function ImportWizard() {
                 images: processedImages.length > 0 ? processedImages : manualImages.map(img => ({ data: img.data, mimeType: img.mimeType })),
             };
 
-            const response = await fetch(`/api/adopters/${personMatch.id}/add-record`, {
+            const response = await fetch(`/api/adopters/${selectedMatch.id}/add-record`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
@@ -479,8 +490,8 @@ export default function ImportWizard() {
                 throw new Error(result.error || 'Failed to add record');
             }
 
-            const adopterId = result.adopterId || personMatch.id;
-            const adopterName = result.adopterName || personMatch.name;
+            const adopterId = result.adopterId || selectedMatch.id;
+            const adopterName = result.adopterName || selectedMatch.name;
 
             toast.success('Record added to profile', adopterName, {
                 label: '→ Ver Perfil',
@@ -887,7 +898,7 @@ export default function ImportWizard() {
                                     <p key={hint.adopterId} className="text-xs text-amber-700 flex items-center gap-1">
                                         <span>⚠️</span>
                                         <span>
-                                            {hint.matchTypes.map(t => getMatchLabel(t)).join(', ')} {t('import.overlap_match') || 'matches'}{' '}
+                                            {hint.matchTypes.map(mt => getMatchLabel(mt)).join(', ')} {t('import.overlap_match') || 'matches'}{' '}
                                             <a href={`/adopter/${hint.adopterId}`} target="_blank" className="underline font-medium">{hint.adopterName}</a>
                                         </span>
                                     </p>
@@ -1066,10 +1077,10 @@ export default function ImportWizard() {
                 <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-6">
                     <div className="flex flex-col items-center text-center">
                         <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${duplicateAdopter ? 'bg-yellow-100 text-yellow-600' :
-                            personMatch ? 'bg-purple-100 text-purple-600' :
+                            personMatches.length > 0 ? 'bg-purple-100 text-purple-600' :
                                 'bg-blue-100 text-blue-600'
                             }`}>
-                            {personMatch && !duplicateAdopter ? (
+                            {personMatches.length > 0 && !duplicateAdopter ? (
                                 <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
                                 </svg>
@@ -1083,27 +1094,74 @@ export default function ImportWizard() {
                         <h3 className="text-xl font-bold text-stone-900 mb-2">
                             {duplicateAdopter
                                 ? (t('import.duplicateWarning') || '⚠️ Duplicate Post Detected')
-                                : personMatch
-                                    ? (t('import.personMatchTitle') || 'Person Match Found')
+                                : personMatches.length > 0
+                                    ? (t('import.personMatchTitle') || 'Existing Profiles Found')
                                     : (t('import.confirmCreate') || 'Create New Profile?')}
                         </h3>
 
                         <p className="text-stone-600 mb-4">
                             {duplicateAdopter
                                 ? <>{t('import.duplicateUrl') || 'This URL was already imported. Existing profile:'} <a href={`/adopter/${duplicateAdopter.id}`} target="_blank" className="underline font-medium text-blue-600">{duplicateAdopter.name}</a></>
-                                : personMatch
-                                    ? (t('import.personMatchDesc') || 'A profile with similar information already exists')
+                                : personMatches.length > 0
+                                    ? (t('import.personMatchDesc') || 'Select a profile to add this record to, or create a new one')
                                     : <>{t('import.aboutToCreate') || 'You are about to create a new profile for'} <strong className="text-stone-900">{extractedData?.name || (t('import.unknownName') || 'Unknown')}</strong>.</>
                             }
                         </p>
 
-                        {/* Person Match Card */}
-                        {personMatch && !duplicateAdopter && (
-                            <div className="w-full bg-stone-50 border border-stone-200 rounded-xl p-4 mb-4 text-left">
-                                <p className="font-semibold text-stone-900">{personMatch.name}</p>
-                                {personMatch.matchReasons?.map((reason, i) => (
-                                    <p key={i} className="text-xs text-stone-500">• {reason}</p>
-                                ))}
+                        {/* Warning when duplicate check failed */}
+                        {duplicateCheckFailed && !duplicateAdopter && personMatches.length === 0 && (
+                            <div className="w-full px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 text-left flex items-start gap-2 mb-2">
+                                <span className="mt-0.5">⚠️</span>
+                                <span>{t('import.duplicateCheckFailed') || 'Could not verify if this person already exists. Please check manually before saving.'}</span>
+                            </div>
+                        )}
+
+                        {/* Person Match Cards — selectable list */}
+                        {personMatches.length > 0 && !duplicateAdopter && (
+                            <div className="w-full space-y-2 mb-2">
+                                {personMatches.map((match) => {
+                                    const isSelected = selectedMatch?.id === match.id;
+                                    return (
+                                        <button
+                                            key={match.id}
+                                            type="button"
+                                            onClick={() => setSelectedMatch(isSelected ? null : match)}
+                                            className={`w-full text-left rounded-xl p-4 border-2 transition-all ${isSelected
+                                                ? 'border-purple-500 bg-purple-50 ring-1 ring-purple-200'
+                                                : 'border-stone-200 bg-stone-50 hover:border-stone-300'
+                                                }`}
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${isSelected ? 'border-purple-500 bg-purple-500' : 'border-stone-300'
+                                                        }`}>
+                                                        {isSelected && <span className="text-white text-xs">✓</span>}
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-semibold text-stone-900">{match.name}</p>
+                                                        <div className="flex flex-wrap gap-1 mt-1">
+                                                            {match.matchReasons?.map((reason, i) => (
+                                                                <span key={i} className="text-xs px-1.5 py-0.5 rounded bg-stone-200 text-stone-600">{reason}</span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${match.confidence === 'high' ? 'bg-green-100 text-green-700' :
+                                                        match.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                                                            'bg-stone-100 text-stone-600'
+                                                        }`}>{match.confidence}</span>
+                                                    <a
+                                                        href={`/adopter/${match.id}`}
+                                                        target="_blank"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        className="text-blue-500 hover:text-blue-700 text-xs underline"
+                                                    >{t('import.viewProfile') || 'View'}</a>
+                                                </div>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
@@ -1125,14 +1183,14 @@ export default function ImportWizard() {
                                     {t('import.backToReview') || '← Back to Review'}
                                 </button>
                             </>
-                        ) : personMatch ? (
+                        ) : personMatches.length > 0 ? (
                             <>
                                 <button
                                     onClick={handleMerge}
-                                    disabled={isSaving}
-                                    className="py-2.5 px-4 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                                    disabled={isSaving || !selectedMatch}
+                                    className="py-2.5 px-4 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                 >
-                                    {isSaving ? <><span className="animate-spin">⏳</span> {t('import.addingRecord') || 'Adding record...'}</> : <>{t('import.addToExisting') || 'Add Record to This Profile'}</>}
+                                    {isSaving ? <><span className="animate-spin">⏳</span> {t('import.addingRecord') || 'Adding record...'}</> : <>{t('import.addToExisting') || 'Add Record to Selected Profile'}</>}
                                 </button>
                                 <button
                                     onClick={handleConfirmSave}
@@ -1142,7 +1200,7 @@ export default function ImportWizard() {
                                     {t('import.createNewAnyway') || 'Create New Profile Instead'}
                                 </button>
                                 <button
-                                    onClick={() => { setPersonMatch(null); setShowConfirmModal(false); }}
+                                    onClick={() => { setPersonMatches([]); setSelectedMatch(null); setShowConfirmModal(false); }}
                                     className="py-2.5 px-4 border border-stone-300 rounded-xl text-sm font-medium text-stone-600 hover:bg-stone-50"
                                 >
                                     {t('import.backToReview') || '← Back to Review'}
