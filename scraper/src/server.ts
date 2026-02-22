@@ -147,45 +147,59 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
             }
         }
 
-        // Fallback: extract OG meta tags from page source
-        // OG tags are embedded in the HTML head and are always available,
-        // even when JS-rendered content produces nothing useful
+        // Fallback: fetch raw HTML with facebookexternalhit UA
+        // Facebook strips OG tags from the rendered DOM (login wall),
+        // but ALWAYS serves them via plain HTTP to its own crawler UA
         if (!text || images.length === 0) {
-            console.log('[Scraper] DOM extraction sparse, trying OG meta tags...');
-            const pageContent = await page.content();
+            console.log('[Scraper] DOM extraction sparse, trying HTTP fetch with facebookexternalhit UA...');
+            try {
+                const ogResponse = await fetch(url, {
+                    headers: {
+                        'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+                        'Accept': 'text/html',
+                    },
+                    redirect: 'follow',
+                });
 
-            // OG title → author
-            if (!author) {
-                const ogTitle = pageContent.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
-                if (ogTitle) {
-                    author = ogTitle[1]
-                        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-                        .replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&#39;/g, "'")
-                        .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)));
-                }
-            }
+                if (ogResponse.ok) {
+                    const rawHtml = await ogResponse.text();
 
-            // OG description → text (if we don't have any)
-            if (!text) {
-                const ogDesc = pageContent.match(/<meta\s+property="og:description"\s+content="([^"]+)"/i);
-                if (ogDesc) {
-                    text = ogDesc[1]
-                        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-                        .replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&#39;/g, "'")
-                        .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)));
-                }
-            }
+                    // OG title → author
+                    if (!author) {
+                        const ogTitle = rawHtml.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
+                        if (ogTitle) {
+                            author = ogTitle[1]
+                                .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+                                .replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&#39;/g, "'")
+                                .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)));
+                        }
+                    }
 
-            // OG image → images
-            if (images.length === 0) {
-                const ogImageMatches = pageContent.matchAll(/<meta\s+property="og:image"\s+content="([^"]+)"/gi);
-                for (const match of ogImageMatches) {
-                    let imgUrl = match[1]
-                        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-                    if (!images.includes(imgUrl)) {
-                        images.push(imgUrl);
+                    // OG description → text
+                    if (!text) {
+                        const ogDesc = rawHtml.match(/<meta\s+property="og:description"\s+content="([^"]+)"/i);
+                        if (ogDesc) {
+                            text = ogDesc[1]
+                                .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+                                .replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&#39;/g, "'")
+                                .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)));
+                        }
+                    }
+
+                    // OG image → images
+                    if (images.length === 0) {
+                        const ogImageMatches = rawHtml.matchAll(/<meta\s+property="og:image"\s+content="([^"]+)"/gi);
+                        for (const match of ogImageMatches) {
+                            let imgUrl = match[1]
+                                .replace(/&amp;/g, '&');
+                            if (!images.includes(imgUrl)) {
+                                images.push(imgUrl);
+                            }
+                        }
                     }
                 }
+            } catch (fetchErr) {
+                console.error('[Scraper] HTTP OG fallback failed:', fetchErr);
             }
 
             console.log(`[Scraper] OG fallback: author="${author}", text="${text.substring(0, 50)}", images=${images.length}`);
