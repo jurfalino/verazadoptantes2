@@ -27,8 +27,11 @@ interface ScrapeResult {
 async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
     let browser: Browser | null = null;
 
+    // Detect video/reel URLs — these need different extraction strategy
+    const isVideoUrl = /\/(reel|r|share\/r)\//.test(url) || /\/videos\//.test(url);
+
     try {
-        console.log(`[Scraper] Starting scrape for: ${url}`);
+        console.log(`[Scraper] Starting scrape for: ${url} (isVideo: ${isVideoUrl})`);
 
         browser = await chromium.launch({
             headless: true,
@@ -67,11 +70,14 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
             'div[dir="auto"]',
         ];
 
+        // For video posts, accept shorter text (reel captions are often brief)
+        const minTextLength = isVideoUrl ? 5 : 50;
+
         for (const selector of textSelectors) {
             const elements = await page.$$(selector);
             for (const el of elements) {
                 const content = await el.textContent();
-                if (content && content.length > text.length && content.length > 50) {
+                if (content && content.length > text.length && content.length > minTextLength) {
                     text = content;
                 }
             }
@@ -95,7 +101,7 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
             }
         }
 
-        // Extract all images with 'scontent' in src (Facebook CDN)
+        // Extract images from <img> elements with 'scontent' in src (Facebook CDN)
         const images: string[] = [];
         const imgElements = await page.$$('img');
 
@@ -120,7 +126,72 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
             }
         }
 
-        console.log(`[Scraper] Found ${images.length} images, text length: ${text.length}`);
+        // For video posts: also look for video poster/thumbnail images
+        if (isVideoUrl || images.length === 0) {
+            // Check <video> poster attributes
+            const videoElements = await page.$$('video');
+            for (const video of videoElements) {
+                const poster = await video.getAttribute('poster');
+                if (poster && !images.includes(poster)) {
+                    images.push(poster);
+                }
+            }
+
+            // Check for lookaside CDN images (common for video thumbnails)
+            const allImgs = await page.$$('img');
+            for (const img of allImgs) {
+                const src = await img.getAttribute('src');
+                if (src && src.includes('lookaside') && !images.includes(src)) {
+                    images.push(src);
+                }
+            }
+        }
+
+        // Fallback: extract OG meta tags from page source
+        // OG tags are embedded in the HTML head and are always available,
+        // even when JS-rendered content produces nothing useful
+        if (!text || images.length === 0) {
+            console.log('[Scraper] DOM extraction sparse, trying OG meta tags...');
+            const pageContent = await page.content();
+
+            // OG title → author
+            if (!author) {
+                const ogTitle = pageContent.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
+                if (ogTitle) {
+                    author = ogTitle[1]
+                        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+                        .replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&#39;/g, "'")
+                        .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)));
+                }
+            }
+
+            // OG description → text (if we don't have any)
+            if (!text) {
+                const ogDesc = pageContent.match(/<meta\s+property="og:description"\s+content="([^"]+)"/i);
+                if (ogDesc) {
+                    text = ogDesc[1]
+                        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+                        .replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&#39;/g, "'")
+                        .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)));
+                }
+            }
+
+            // OG image → images
+            if (images.length === 0) {
+                const ogImageMatches = pageContent.matchAll(/<meta\s+property="og:image"\s+content="([^"]+)"/gi);
+                for (const match of ogImageMatches) {
+                    let imgUrl = match[1]
+                        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+                    if (!images.includes(imgUrl)) {
+                        images.push(imgUrl);
+                    }
+                }
+            }
+
+            console.log(`[Scraper] OG fallback: author="${author}", text="${text.substring(0, 50)}", images=${images.length}`);
+        }
+
+        console.log(`[Scraper] Found ${images.length} images, text length: ${text.length}, author: "${author}"`);
 
         await browser.close();
 
