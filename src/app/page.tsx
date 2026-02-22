@@ -140,7 +140,7 @@ export default function Home() {
                 className="cursor-pointer hover:opacity-80 transition-opacity"
                 onClick={() => { dismissGuide(); handleAuthNavigation('/import'); }}
               >
-                <div className="text-2xl mb-1">📤</div>
+                <div className="text-2xl mb-1">📝</div>
                 <p className="font-bold text-stone-800 text-sm">{t('home.how_step2_title')}</p>
                 <p className="text-stone-500 text-xs mt-0.5">{t('home.how_step2_desc')}</p>
               </div>
