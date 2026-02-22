@@ -178,7 +178,16 @@ export default function ImportWizard() {
                         }
                     }
                 } else if (responseData.extractionFailed) {
-                    // Extraction failed — start 30s retry countdown
+                    if (responseData.requiresManualInput) {
+                        // Private group post or restricted content — skip to manual input
+                        setSourceUrl(targetUrl);
+                        setError(responseData.error || (locale === 'es'
+                            ? 'No se pudo extraer contenido. Pegá el texto manualmente.'
+                            : 'Could not extract content. Please paste text manually.'));
+                        setStep(2);
+                        return;
+                    }
+                    // Temporary extraction failure — start 30s retry countdown
                     setRetryCountdown(30);
                     throw new Error(
                         responseData.error || (locale === 'es'

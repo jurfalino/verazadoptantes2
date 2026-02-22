@@ -190,10 +190,13 @@ export async function POST(request: NextRequest) {
         // For regular posts, require at least text or images
         const hasAnyContent = postData.text || postData.images.length > 0 || postData.author;
         if (!hasAnyContent) {
+            // Private group posts and some reels can't be scraped — 
+            // tell the UI to skip to manual input instead of retrying
             return NextResponse.json({
                 success: false,
                 extractionFailed: true,
-                error: 'No se pudo extraer contenido de esta publicación. Facebook puede estar bloqueando la solicitud temporalmente.',
+                requiresManualInput: true,
+                error: 'Esta publicación es de un grupo privado o tiene restricciones. Pegá el texto y/o capturas de pantalla manualmente.',
             });
         }
 
