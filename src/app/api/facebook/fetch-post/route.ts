@@ -115,9 +115,10 @@ export async function POST(request: NextRequest) {
         }
 
         // Try to fetch the page content (static HTML fallback)
+        // Use Googlebot UA — Facebook serves OG meta tags to crawlers but shows login walls to browser UAs
         const response = await fetch(desktopUrl, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.5',
             },
@@ -142,7 +143,7 @@ export async function POST(request: NextRequest) {
                 const thumbController = new AbortController();
                 const thumbTimeout = setTimeout(() => thumbController.abort(), 5000);
                 const thumbResponse = await fetch(thumbnailUrl, {
-                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' },
+                    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' },
                     signal: thumbController.signal,
                 });
                 clearTimeout(thumbTimeout);
