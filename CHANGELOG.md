@@ -2,6 +2,28 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.6.0] - 2026-02-22
+
+### Added
+- **Private profiles** — adopter profiles now require authentication; unauthenticated visitors are redirected to login with a "Sign In Required" toast, then returned to the profile after sign-in
+- **Shared type system** — new `types/adopter.ts` with typed interfaces (`Adopter`, `AdoptionRecord`, `AdopterImage`, etc.) replacing `any` throughout adopter components
+- **Shared adoption filter utility** — `lib/adoptionFilters.ts` with `countRecordsInPeriod()` used by both `AdopterForm` and `AdopterProfile`
+- **Extracted text utilities** — `lib/textUtils.ts` with reusable `renderTextWithLinks()` for clickable URLs, emails, and phone numbers
+
+### Changed
+- **Code quality refactor** — addressed 14 of 15 audit findings across `AdopterForm.tsx` and `AdopterProfile.tsx`:
+  - Hydration-safe date computations via `useMemo` reference date
+  - Deduplicated auth check to single `useMemo`-based `isAuthenticated`
+  - Removed pointless `adopter = initialData` alias
+  - Simplified country name IIFE to closure
+  - Forwarded `isAdmin` prop to `AdopterForm`
+  - Removed dead `onEdit` callback from `AdoptionHistory`
+  - Removed `as any` cast on translation key
+  - Cleaned up trailing spaces and empty blank lines
+- **Internationalized labels** — period labels (90 Days, 1 Year, All Time) and duplicate match type labels now use i18n keys in both EN/ES
+
+---
+
 ## [2.5.5-1] - 2026-02-22
 
 ### Fixed

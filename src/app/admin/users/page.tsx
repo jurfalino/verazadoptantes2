@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { formatDateTime } from '@/lib/dates';
+import { getCountryByCode } from '@/config/countries';
 
 interface UserProfile {
     id: string;
@@ -14,6 +15,7 @@ interface UserProfile {
     comms_opt_in: number;
     last_active_at: number | null;
     first_sign_in: number | null;
+    country: string | null;
 }
 
 export default function AdminUsersPage() {
@@ -23,6 +25,17 @@ export default function AdminUsersPage() {
     const [editForm, setEditForm] = useState({ organization: '', role: 'viewer', notes: '', commsOptIn: false });
     const [saving, setSaving] = useState(false);
     const [filter, setFilter] = useState('');
+    const [countryFilter, setCountryFilter] = useState('');
+
+    // Derive unique countries from user data for the filter dropdown
+    const availableCountries = useMemo(() => {
+        const codes = new Set<string>();
+        users.forEach(u => { if (u.country) codes.add(u.country); });
+        return Array.from(codes).sort().map(code => {
+            const c = getCountryByCode(code);
+            return { code, label: c ? `${c.flag} ${c.name}` : code };
+        });
+    }, [users]);
 
     useEffect(() => {
         fetch('/api/admin/users')
@@ -72,6 +85,7 @@ export default function AdminUsersPage() {
     };
 
     const filteredUsers = users.filter(u => {
+        if (countryFilter && u.country !== countryFilter) return false;
         if (!filter) return true;
         const q = filter.toLowerCase();
         return u.name?.toLowerCase().includes(q) ||
@@ -88,13 +102,27 @@ export default function AdminUsersPage() {
                     <h2 className="text-2xl font-bold text-stone-900">👥 User Registry</h2>
                     <p className="text-stone-500 text-sm mt-1">{users.length} registered user{users.length !== 1 ? 's' : ''}</p>
                 </div>
-                <input
-                    type="text"
-                    placeholder="Filter by name, email, org..."
-                    value={filter}
-                    onChange={e => setFilter(e.target.value)}
-                    className="px-3 py-2 border border-stone-200 rounded-lg text-sm w-full sm:w-64 focus:ring-2 focus:ring-stone-500/20 focus:border-stone-400 outline-none"
-                />
+                <div className="flex gap-2 w-full sm:w-auto">
+                    {availableCountries.length > 1 && (
+                        <select
+                            value={countryFilter}
+                            onChange={e => setCountryFilter(e.target.value)}
+                            className="px-2 py-2 border border-stone-200 rounded-lg text-sm focus:ring-2 focus:ring-stone-500/20 focus:border-stone-400 outline-none"
+                        >
+                            <option value="">All countries</option>
+                            {availableCountries.map(c => (
+                                <option key={c.code} value={c.code}>{c.label}</option>
+                            ))}
+                        </select>
+                    )}
+                    <input
+                        type="text"
+                        placeholder="Filter by name, email, org..."
+                        value={filter}
+                        onChange={e => setFilter(e.target.value)}
+                        className="px-3 py-2 border border-stone-200 rounded-lg text-sm flex-1 sm:w-52 focus:ring-2 focus:ring-stone-500/20 focus:border-stone-400 outline-none"
+                    />
+                </div>
             </div>
 
             {/* Desktop table */}
@@ -105,6 +133,7 @@ export default function AdminUsersPage() {
                             <th className="px-4 py-3 text-left">User</th>
                             <th className="px-4 py-3 text-left">Organization</th>
                             <th className="px-4 py-3 text-left">Role</th>
+                            <th className="px-4 py-3 text-left">Country</th>
                             <th className="px-4 py-3 text-left">First Sign In</th>
                             <th className="px-4 py-3 text-left">Last Active</th>
                             <th className="px-4 py-3 text-left">Actions</th>
@@ -163,6 +192,12 @@ export default function AdminUsersPage() {
                                         </span>
                                     )}
                                 </td>
+                                <td className="px-4 py-3">
+                                    {user.country ? (() => {
+                                        const c = getCountryByCode(user.country);
+                                        return c ? <span title={c.name}>{c.flag} {c.code}</span> : <span className="text-stone-400">{user.country}</span>;
+                                    })() : <span className="text-stone-300">—</span>}
+                                </td>
                                 <td className="px-4 py-3 text-stone-500 text-xs">
                                     {formatDate(user.first_sign_in)}
                                 </td>
@@ -199,7 +234,7 @@ export default function AdminUsersPage() {
                         ))}
                         {filteredUsers.length === 0 && (
                             <tr>
-                                <td colSpan={6} className="px-4 py-8 text-center text-stone-400">
+                                <td colSpan={7} className="px-4 py-8 text-center text-stone-400">
                                     {filter ? 'No users match your filter' : 'No users found'}
                                 </td>
                             </tr>
@@ -286,6 +321,13 @@ export default function AdminUsersPage() {
                                     <div>
                                         <span className="text-stone-400">First: </span>
                                         <span className="text-stone-500">{formatDate(user.first_sign_in)}</span>
+                                    </div>
+                                    <div>
+                                        <span className="text-stone-400">Country: </span>
+                                        <span className="text-stone-600">{user.country ? (() => {
+                                            const c = getCountryByCode(user.country);
+                                            return c ? `${c.flag} ${c.code}` : user.country;
+                                        })() : '—'}</span>
                                     </div>
                                     <div className="col-span-2">
                                         <span className="text-stone-400">Active: </span>

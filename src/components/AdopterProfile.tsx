@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 import { AdopterForm } from '@/components/AdopterForm';
@@ -8,42 +8,26 @@ import { CollapsibleSection } from '@/components/CollapsibleSection';
 import AdoptionHistory from '@/components/AdoptionHistory';
 import AdoptionForm from '@/components/AdoptionForm';
 import { ImageGallery } from '@/components/ImageGallery';
-import { AdopterFlagging } from '@/components/AdopterFlagging';
 import { useLanguage } from '@/context/LanguageContext';
 import { saveImage } from '@/app/actions';
-import { getRatingColors } from '@/lib/ratingColors';
-import { getSourceIcon } from '@/lib/sourceIcons'; // Added this import
-import { StarRating } from '@/components/StarRating';
 import ReportInaccuracyForm from '@/components/ReportInaccuracyForm';
-
-interface AdopterStats {
-    searchHits: { '90d': number; '1y': number; 'all': number };
-    profileViews: { '90d': number; '1y': number; 'all': number };
-}
-
-interface DuplicateCandidateInfo {
-    id: string;
-    otherAdopterId: string;
-    otherAdopterName: string;
-    matchTypes: string[];
-    score: number;
-    confidence: string;
-}
+import { countRecordsInPeriod } from '@/lib/adoptionFilters';
+import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, HistoryEntry, AdopterStats, AdoptionConfig, DuplicateCandidateInfo } from '@/types/adopter';
 
 interface AdopterProfileProps {
     id: string;
     isNew: boolean;
-    adopter: any;
-    history: any[];
-    adoptions: any[];
-    images: any[];
-    flags: any[];
+    adopter: Adopter | null;
+    history: HistoryEntry[];
+    adoptions: AdoptionRecord[];
+    images: AdopterImage[];
+    flags: AdopterFlag[];
     currentUser: string;
-    availableAnimals: any[];
+    availableAnimals: { id: string; animalName: string; species: string }[];
     stats?: AdopterStats | null;
     avgRating?: number | null;
     isAdmin?: boolean;
-    adoptionConfig?: { threshold: number; periodDays: number; requestsThreshold: number; requestsPeriodDays: number };
+    adoptionConfig?: AdoptionConfig;
     duplicateCandidates?: DuplicateCandidateInfo[];
 }
 
@@ -54,46 +38,12 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
     const [dismissedDuplicates, setDismissedDuplicates] = useState<Set<string>>(new Set());
     const visibleDuplicates = duplicateCandidates.filter(c => !dismissedDuplicates.has(c.id));
 
-    // Calculate adoptions in configured period for "too many adoptions" warning
-    const periodDays = adoptionConfig?.periodDays || 90;
-    const threshold = adoptionConfig?.threshold || 5;
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - periodDays);
-    const adoptionsInPeriod = adoptions.filter((a: { date?: Date | number; recordType?: string }) => {
-        if (a.recordType !== 'adoption') return false;
-        if (!a.date) return false;
-        const adoptionDate = typeof a.date === 'number' ? new Date(a.date * 1000) : new Date(a.date);
-        return adoptionDate >= cutoffDate;
-    }).length;
-
-    // Calculate requests in configured period for "too many requests" warning
-    const requestsPeriodDays = adoptionConfig?.requestsPeriodDays || 30;
-    const requestsThreshold = adoptionConfig?.requestsThreshold || 3;
-    const requestsCutoffDate = new Date();
-    requestsCutoffDate.setDate(requestsCutoffDate.getDate() - requestsPeriodDays);
-    const requestsInPeriod = adoptions.filter((a: { date?: Date | number; recordType?: string }) => {
-        if (a.recordType !== 'adoption_request') return false;
-        if (!a.date) return false;
-        const requestDate = typeof a.date === 'number' ? new Date(a.date * 1000) : new Date(a.date);
-        return requestDate >= requestsCutoffDate;
-    }).length;
-
-    // Period-filtered counts for the stats header
+    // Stable reference date for period filtering (avoids hydration mismatch)
+    const referenceDate = useMemo(() => new Date(), []);
     const periodDaysMap = { '90d': 90, '1y': 365, 'all': Infinity };
-    const filterByPeriod = (type: string) => {
-        const days = periodDaysMap[selectedPeriod];
-        return adoptions.filter((a: { date?: Date | number; recordType?: string }) => {
-            if (a.recordType !== type) return false;
-            if (days === Infinity) return true;
-            if (!a.date) return false;
-            const d = typeof a.date === 'number' ? new Date(a.date * 1000) : new Date(a.date);
-            const cutoff = new Date();
-            cutoff.setDate(cutoff.getDate() - days);
-            return d >= cutoff;
-        }).length;
-    };
-    const adoptionCountForPeriod = filterByPeriod('adoption');
-    const requestCountForPeriod = filterByPeriod('adoption_request');
+    const days = periodDaysMap[selectedPeriod];
+    const adoptionCountForPeriod = countRecordsInPeriod(adoptions, 'adoption', days, referenceDate);
+    const requestCountForPeriod = countRecordsInPeriod(adoptions, 'adoption_request', days, referenceDate);
 
     // Determine back link based on referrer
     const ref = searchParams.get('ref');
@@ -104,7 +54,7 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
 
     return (
         <main className="min-h-screen bg-emerald-50/30 py-12 px-4 relative">
-            <div className="max-w-3xl mx-auto space-y-8">
+            <div className="max-w-3xl mx-auto space-y-5">
 
                 {/* Back Navigation */}
                 <div className="mb-2">
@@ -114,21 +64,8 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                     </a>
                 </div>
 
-                {/* Community data disclaimer + report form */}
                 {!isNew && adopter && (
                     <ReportInaccuracyForm adopterId={id} adopterName={adopter.name} />
-                )}
-
-                {!isNew && adopter && (
-                    <AdopterFlagging
-                        adopterId={id}
-                        adopterName={adopter.name}
-                        existingFlags={flags}
-                        hasVerifiedAdoption={adoptions.some((a: { identityVerified?: number }) => a.identityVerified === 1)}
-                        hasVerifiedAddress={adoptions.some((a: { verifiedAddress?: string }) => a.verifiedAddress && a.verifiedAddress.trim() !== '')}
-                        tooManyAdoptions={adoptionsInPeriod >= threshold ? { count: adoptionsInPeriod, threshold, periodDays } : undefined}
-                        tooManyRequests={requestsInPeriod >= requestsThreshold ? { count: requestsInPeriod, threshold: requestsThreshold, periodDays: requestsPeriodDays } : undefined}
-                    />
                 )}
 
                 {/* Duplicate Detection Banner */}
@@ -179,53 +116,6 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                 )}
 
 
-                <header className="flex flex-wrap justify-between items-end px-2 gap-4">
-                    <div className="flex items-center gap-4">
-                        {/* Profile Picture Thumbnail */}
-                        {!isNew && images.length > 0 && (() => {
-                            const profilePic = images.find((img: { isProfilePicture?: number }) => img.isProfilePicture === 1) || images[0];
-                            return (
-                                <div className="w-16 h-16 rounded-2xl bg-emerald-100 overflow-hidden ring-2 ring-emerald-200 shadow-md flex-shrink-0">
-                                    <img src={profilePic.url} alt="" className="w-full h-full object-cover" />
-                                </div>
-                            );
-                        })()}
-                        <div>
-                            <h1 className="text-3xl md:text-4xl font-extrabold text-emerald-950 tracking-tight">
-                                {t('adopter.title_profile')}
-                            </h1>
-                            {!isNew && (
-                                <div className="mt-1 space-y-1">
-                                    <p className="text-emerald-600/80 font-medium text-sm">{t('adopter.id')}: <span className="font-mono text-emerald-500/60">{id}</span></p>
-                                    {adopter.sourceUrl && (
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="text-blue-600">{getSourceIcon(adopter.sourceUrl, 'w-4 h-4')}</span>
-                                            <a href={adopter.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 hover:underline text-sm font-medium transition-colors">
-                                                {t('adopter.view_source') || 'View Original Input'}
-                                            </a>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                    {/* Average Rating Badge */}
-                    {avgRating !== null && avgRating !== undefined && (() => {
-                        const colors = getRatingColors(avgRating);
-                        return (
-                            <div
-                                data-testid="rating-badge"
-                                onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
-                                className={`${colors.bg} border ${colors.border} rounded-xl px-4 py-2 text-center cursor-pointer hover:shadow-md transition-shadow`}
-                            >
-                                <StarRating value={Math.round(avgRating)} size="md" />
-                                <div className={`${colors.text} font-bold text-lg mt-1`}>{avgRating.toFixed(1)}</div>
-                                <div className={`${colors.text} opacity-70 text-xs`}>{t('stats.avg_rating') || 'Avg Rating'}</div>
-                            </div>
-                        );
-                    })()}
-                </header>
-
                 {/* Stats Table */}
                 {
                     stats && !isNew && (
@@ -242,34 +132,45 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                                                 : 'text-stone-500 hover:text-stone-700'
                                                 }`}
                                         >
-                                            {period === '90d' ? '90 Days' : period === '1y' ? '1 Year' : 'All Time'}
+                                            {period === '90d' ? t('stats.period_90d') : period === '1y' ? t('stats.period_1y') : t('stats.period_all')}
                                         </button>
                                     ))}
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <div className="text-center p-3 bg-blue-50 rounded-xl">
-                                    <div className="text-2xl font-bold text-blue-600">{stats.searchHits[selectedPeriod]}</div>
-                                    <div className="text-xs text-blue-600/70">🔍 {t('stats.searches') || 'Searches'}</div>
+                                <div className={`text-center p-3 rounded-xl ${stats.searchHits[selectedPeriod] > 0 ? 'bg-blue-50' : 'bg-stone-50'}`}>
+                                    <div className={`text-2xl font-bold ${stats.searchHits[selectedPeriod] > 0 ? 'text-blue-600' : 'text-stone-400'}`}>{stats.searchHits[selectedPeriod]}</div>
+                                    <div className={`text-xs ${stats.searchHits[selectedPeriod] > 0 ? 'text-blue-600/70' : 'text-stone-400'}`}>🔍 {t('stats.searches') || 'Searches'}</div>
                                 </div>
-                                <div className="text-center p-3 bg-purple-50 rounded-xl">
-                                    <div className="text-2xl font-bold text-purple-600">{stats.profileViews[selectedPeriod]}</div>
-                                    <div className="text-xs text-purple-600/70">👁 {t('stats.views') || 'Views'}</div>
+                                <div className={`text-center p-3 rounded-xl ${stats.profileViews[selectedPeriod] > 0 ? 'bg-purple-50' : 'bg-stone-50'}`}>
+                                    <div className={`text-2xl font-bold ${stats.profileViews[selectedPeriod] > 0 ? 'text-purple-600' : 'text-stone-400'}`}>{stats.profileViews[selectedPeriod]}</div>
+                                    <div className={`text-xs ${stats.profileViews[selectedPeriod] > 0 ? 'text-purple-600/70' : 'text-stone-400'}`}>👁 {t('stats.views') || 'Views'}</div>
                                 </div>
-                                <div className="text-center p-3 bg-orange-50 rounded-xl">
-                                    <div className="text-2xl font-bold text-orange-600">{requestCountForPeriod}</div>
-                                    <div className="text-xs text-orange-600/70">📝 {t('stats.requests') || 'Requests'}</div>
+                                <div className={`text-center p-3 rounded-xl ${requestCountForPeriod > 0 ? 'bg-orange-50' : 'bg-stone-50'}`}>
+                                    <div className={`text-2xl font-bold ${requestCountForPeriod > 0 ? 'text-orange-600' : 'text-stone-400'}`}>{requestCountForPeriod}</div>
+                                    <div className={`text-xs ${requestCountForPeriod > 0 ? 'text-orange-600/70' : 'text-stone-400'}`}>📝 {t('stats.requests') || 'Requests'}</div>
                                 </div>
-                                <div className="text-center p-3 bg-green-50 rounded-xl">
-                                    <div className="text-2xl font-bold text-green-600">{adoptionCountForPeriod}</div>
-                                    <div className="text-xs text-green-600/70">🏠 {t('stats.adoptions') || 'Adoptions'}</div>
+                                <div className={`text-center p-3 rounded-xl ${adoptionCountForPeriod > 0 ? 'bg-green-50' : 'bg-stone-50'}`}>
+                                    <div className={`text-2xl font-bold ${adoptionCountForPeriod > 0 ? 'text-green-600' : 'text-stone-400'}`}>{adoptionCountForPeriod}</div>
+                                    <div className={`text-xs ${adoptionCountForPeriod > 0 ? 'text-green-600/70' : 'text-stone-400'}`}>🏠 {t('stats.adoptions') || 'Adoptions'}</div>
                                 </div>
                             </div>
                         </div>
                     )
                 }
 
-                <AdopterForm initialData={adopter} history={history} currentUser={currentUser} />
+                <AdopterForm
+                    initialData={adopter}
+                    history={history}
+                    currentUser={currentUser}
+                    images={images}
+                    adopterId={id}
+                    avgRating={avgRating}
+                    flags={flags}
+                    adoptions={adoptions}
+                    adoptionConfig={adoptionConfig}
+                    isAdmin={isAdmin}
+                />
 
                 {
                     !isNew && adopter && (
@@ -278,7 +179,7 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                             <CollapsibleSection title={t('adopter.images')} count={images.length} defaultOpen={true}>
                                 <ImageGallery
                                     adopterId={id}
-                                    initialImages={images}
+                                    initialImages={images as any}
                                     onUpload={async (adopterId, url, caption) => {
                                         return await saveImage(adopterId, url, caption);
                                     }}
@@ -297,8 +198,7 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                                         adopterAddress={adopter?.contactInfo || ''}
                                     />
                                     <AdoptionHistory
-                                        adoptions={adoptions}
-                                        onEdit={() => { }}
+                                        adoptions={adoptions as any}
                                         adopterId={id}
                                         currentUser={currentUser}
                                         isAdmin={isAdmin}
@@ -309,8 +209,8 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                         </>
                     )
                 }
-            </div >
-        </main >
+            </div>
+        </main>
     );
 }
 

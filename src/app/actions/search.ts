@@ -1,7 +1,7 @@
 'use server';
 
 import { adopters, searches, adopterHistory, adoptions, adopterStats } from '@/db/schema';
-import { or, like, sql, and, isNull, inArray } from 'drizzle-orm';
+import { or, like, sql, and, isNull, inArray, eq } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
@@ -70,6 +70,18 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
             return { results: [], validationError: 'min_digits' };
         }
 
+        // Look up current user's country for geo-filtering
+        let userCountry: string | null = null;
+        try {
+            const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+            if (env?.DB) {
+                const row = await env.DB.prepare(
+                    `SELECT up.country FROM user_profiles up JOIN user u ON u.id = up.user_id WHERE u.email = ? LIMIT 1`
+                ).bind(user).first<{ country: string | null }>();
+                userCountry = row?.country || null;
+            }
+        } catch { /* country lookup is best-effort */ }
+
         // Log the search (fire and forget)
         (async () => {
             try {
@@ -90,15 +102,20 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
         })();
 
         // 1. Search Main Profile (Name, Contact, Address, Family)
-        const profileQuery = db.select().from(adopters).where(
-            and(
-                isNull(adopters.deletedAt),
-                or(
-                    like(adopters.name, `%${normalizedQuery}%`),
-                    like(adopters.contactInfo, `%${normalizedQuery}%`),
-                    like(adopters.familyMembers, `%${normalizedQuery}%`)
-                )
+        const profileConditions = [
+            isNull(adopters.deletedAt),
+            or(
+                like(adopters.name, `%${normalizedQuery}%`),
+                like(adopters.contactInfo, `%${normalizedQuery}%`),
+                like(adopters.familyMembers, `%${normalizedQuery}%`)
             )
+        ];
+        // Apply country filter if user has a country set
+        if (userCountry) {
+            profileConditions.push(eq(adopters.country, userCountry));
+        }
+        const profileQuery = db.select().from(adopters).where(
+            and(...profileConditions)
         ).limit(SEARCH_ENRICHMENT_LIMIT);
 
         // 2. Parallel Deep Search (History & Adoptions)
@@ -117,8 +134,12 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
         // Fetch profiles for extra IDs
         let extraProfiles: typeof adopters.$inferSelect[] = [];
         if (extraIds.size > 0) {
+            const extraConditions = [inArray(adopters.id, Array.from(extraIds))];
+            if (userCountry) {
+                extraConditions.push(eq(adopters.country, userCountry));
+            }
             extraProfiles = await db.select().from(adopters)
-                .where(inArray(adopters.id, Array.from(extraIds)));
+                .where(and(...extraConditions));
         }
 
         // Combine Results

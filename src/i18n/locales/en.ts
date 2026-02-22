@@ -23,6 +23,7 @@ export const en = {
         details: 'Details',
         photos: 'photos',
         processing: 'Processing...',
+        more: 'More',
     },
     demo: {
         not_real: 'this is not a real person',
@@ -60,6 +61,13 @@ export const en = {
         possible_match: 'Possible duplicate of',
         view_profile: 'View →',
         dismiss: 'Dismiss',
+        match_phone: 'Phone',
+        match_email: 'Email',
+        match_social: 'Social',
+        match_name_full: 'Full Name',
+        match_name_word: 'Name',
+        match_address: 'Address',
+        match_source_url: 'Source URL',
     },
     stats: {
         searches: 'searches',
@@ -68,6 +76,9 @@ export const en = {
         requests: 'requests',
         profile_stats: 'Profile Statistics',
         avg_rating: 'Average Rating',
+        period_90d: '90 Days',
+        period_1y: '1 Year',
+        period_all: 'All Time',
     },
     auth: {
         welcome: 'Welcome to SafeAdoption',
@@ -82,6 +93,8 @@ export const en = {
         anon_disclaimer: '*Anonymous edits are tracked by IP address and device fingerprint to prevent abuse.',
         session_expired_title: 'Session Expired',
         session_expired_desc: 'Please sign in again to continue.',
+        auth_required_title: 'Sign In Required',
+        auth_required_desc: 'Please sign in to view adopter profiles.',
     },
     nav: {
         sign_out: 'Sign Out',
@@ -188,6 +201,7 @@ export const en = {
         set_profile: 'Set Profile',
         set_as_profile: 'Set as Profile Picture',
         view_source: 'View Original',
+        profile_data: 'Profile Data',
     },
     adoption: {
         title: 'Interactions',
@@ -255,6 +269,19 @@ export const en = {
         other: 'Other...',
     },
     flagging: {
+        report_actions: 'Report',
+        // Menu items
+        menu_duplicate: 'Report Duplicate',
+        menu_duplicate_desc: 'Flag as duplicate of another profile',
+        menu_inaccuracy: 'Report Inaccuracy',
+        menu_inaccuracy_desc: 'Information about me is wrong',
+        menu_deletion: 'Request Removal',
+        menu_deletion_desc: 'Remove my data from this platform',
+        // Modal titles
+        title_duplicate: 'Report Duplicate',
+        title_inaccuracy: 'Report Inaccuracy',
+        title_deletion: 'Request Removal',
+        // Legacy keys (still used)
         report_merge: 'Report / Merge',
         report_title: 'Report',
         reason: 'Reason',
@@ -264,8 +291,10 @@ export const en = {
         search_placeholder: 'Search by name or email...',
         selected_original: 'Selected Original',
         details: 'Details (Optional)',
+        details_required: 'Details *',
         details_placeholder: 'Any additional context...',
         submit: 'Submit Report',
+        submit_deletion: 'Submit Removal Request',
         submitting: 'Submitting...',
         submit_success: 'Report submitted successfully',
         banner_duplicate: 'This profile has been flagged as a potential duplicate.',
@@ -273,6 +302,15 @@ export const en = {
         check_link: 'this profile',
         banner_inaccurate: 'This profile has been flagged for inaccurate information.',
         system_suggestions: 'System-suggested matches',
+        // Data-request form
+        your_name: 'Your name *',
+        your_email: 'Your email (optional)',
+        inaccuracy_desc: 'If this profile contains incorrect information about you, let us know:',
+        inaccuracy_placeholder: 'What information is incorrect?',
+        deletion_desc: 'To request removal of your data from this platform, please provide your details:',
+        deletion_placeholder: 'Why should this data be removed?',
+        request_received: 'Request received',
+        request_review_time: 'We will review your request within 10 business days.',
     },
     audit: {
         log_title: 'History Log',
@@ -296,6 +334,9 @@ export const en = {
         '1': '⭐',
         unknown: 'Unknown',
         dangerous: 'Dangerous',
+        poor: 'Poor',
+        average: 'Average',
+        good: 'Good',
         excellent: 'Excellent',
     },
     dashboard: {
@@ -554,5 +595,19 @@ export const en = {
         ctaInstallButton: 'Install App',
         ctaIOSHint: 'Tap',
         ctaIOSAction: 'then "Add to Home Screen"',
-    }
+    },
+    settings: {
+        title: 'Settings',
+        country: 'Country',
+        country_description: 'Your country determines which adopter records you see in search results.',
+        country_select: 'Select country',
+        country_detected: 'Auto-detected',
+        country_confirm: 'We detected your country',
+        country_confirm_yes: 'Yes, confirm',
+        country_confirm_change: 'Change country',
+        language: 'Language',
+        theme: 'Theme',
+        save: 'Save',
+        saved: 'Saved!',
+    },
 };

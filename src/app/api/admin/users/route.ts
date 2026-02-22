@@ -19,7 +19,8 @@ export async function GET(_request: Request) {
             SELECT 
                 u.id, u.name, u.email, u.image,
                 p.organization, p.role, p.notes, p.comms_opt_in,
-                p.last_active_at, p.created_at as first_sign_in
+                p.last_active_at, p.created_at as first_sign_in,
+                p.country
             FROM user u
             LEFT JOIN user_profiles p ON u.id = p.user_id
             ORDER BY COALESCE(p.last_active_at, 0) DESC

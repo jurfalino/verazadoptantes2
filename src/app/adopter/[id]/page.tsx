@@ -1,4 +1,5 @@
 export const runtime = 'edge';
+import { redirect } from 'next/navigation';
 import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getAdoptionConfig, getDuplicateCandidates } from '@/app/actions';
 import { AdopterProfile } from '@/components/AdopterProfile';
 
@@ -8,6 +9,11 @@ export default async function AdopterPage({ params }: { params: Promise<{ id: st
 
     // Batch 1: Auth + config (lightweight, no DB-heavy queries)
     const [currentUser, isAdmin, adoptionConfig] = await Promise.all([getUser(), getIsAdmin(), getAdoptionConfig()]);
+
+    // Profiles are private — redirect unauthenticated visitors to login
+    if (!currentUser || currentUser === 'anonymous') {
+        redirect(`/?authRequired=1&callbackUrl=${encodeURIComponent(`/adopter/${id}`)}`);
+    }
 
     // Batch 2: All data queries in parallel (including availableAnimals to avoid a 3rd sequential await)
     let adopter = null;

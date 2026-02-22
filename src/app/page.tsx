@@ -42,27 +42,36 @@ export default function Home() {
     }
   }, []);
 
-  // Auto-open LoginModal when redirected from NextAuth (stale session)
+  // Auto-open LoginModal when redirected (session expired or auth required)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const callbackUrl = params.get('callbackUrl');
+    const authRequired = params.get('authRequired');
     if (callbackUrl && !session?.user) {
       // Extract the pathname from the callbackUrl for redirect after login
       try {
-        const url = new URL(callbackUrl);
+        const url = new URL(callbackUrl, window.location.origin);
         openLogin(url.pathname || '/');
       } catch {
         openLogin(callbackUrl);
       }
-      // Show session expired toast
-      toast.info(
-        t('auth.session_expired_title'),
-        t('auth.session_expired_desc')
-      );
-      // Clean up URL to remove NextAuth params
+      // Show appropriate toast based on context
+      if (authRequired) {
+        toast.info(
+          t('auth.auth_required_title'),
+          t('auth.auth_required_desc')
+        );
+      } else {
+        toast.info(
+          t('auth.session_expired_title'),
+          t('auth.session_expired_desc')
+        );
+      }
+      // Clean up URL to remove auth params
       const cleanUrl = new URL(window.location.href);
       cleanUrl.searchParams.delete('callbackUrl');
       cleanUrl.searchParams.delete('error');
+      cleanUrl.searchParams.delete('authRequired');
       window.history.replaceState({}, '', cleanUrl.toString());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

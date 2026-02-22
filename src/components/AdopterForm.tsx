@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useRef, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { saveAdopter } from "@/app/actions";
 import { useLanguage } from "@/context/LanguageContext";
@@ -10,17 +10,56 @@ import { useAuthContext } from '@/context/AuthContext';
 import { StarRating } from '@/components/StarRating';
 import { useShowToast } from '@/components/ui/Toast';
 import { formatDateTime, formatShortDate } from '@/lib/dates';
+import { getRatingColors, getRatingDescription } from '@/lib/ratingColors';
+import { getSourceIcon } from '@/lib/sourceIcons';
+import { getCountryByCode } from '@/config/countries';
+import { countRecordsInPeriod } from '@/lib/adoptionFilters';
+import { renderTextWithLinks } from '@/lib/textUtils';
+import { AdopterFlagging } from '@/components/AdopterFlagging';
+import type { AdopterFlaggingHandle } from '@/components/AdopterFlagging';
+import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, HistoryEntry, AdoptionConfig } from '@/types/adopter';
 
 
-export function AdopterForm({ initialData, history = [], currentUser }: { initialData?: any, history?: any[], currentUser?: string }) {
+interface AdopterFormProps {
+    initialData?: Adopter | null;
+    history?: HistoryEntry[];
+    currentUser?: string;
+    images?: AdopterImage[];
+    adopterId?: string;
+    avgRating?: number | null;
+    flags?: AdopterFlag[];
+    adoptions?: AdoptionRecord[];
+    adoptionConfig?: AdoptionConfig;
+    isAdmin?: boolean;
+}
+
+export function AdopterForm({ initialData, history = [], currentUser, images = [], adopterId, avgRating, flags = [], adoptions = [], adoptionConfig, isAdmin = false }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
-    const { t } = useLanguage();
+    const { t, locale: currentLocale } = useLanguage();
     const { data: session } = useSession();
     const { openLogin } = useAuthContext();
     const toast = useShowToast();
     const isNew = !initialData?.id;
+    const id = adopterId || initialData?.id || '';
+    const [showReportMenu, setShowReportMenu] = useState(false);
+    const flaggingRef = useRef<AdopterFlaggingHandle>(null);
+
+    // Auth check — single source of truth for both click-to-edit and save
+    const isAuthenticated = useMemo(
+        () => (currentUser && currentUser !== '') || !!session?.user,
+        [currentUser, session]
+    );
+
+    // Stable reference date for period filtering (avoids hydration mismatch)
+    const referenceDate = useMemo(() => new Date(), []);
+    const periodDays = adoptionConfig?.periodDays || 90;
+    const threshold = adoptionConfig?.threshold || 5;
+    const adoptionsInPeriod = countRecordsInPeriod(adoptions, 'adoption', periodDays, referenceDate);
+    const requestsPeriodDays = adoptionConfig?.requestsPeriodDays || 30;
+    const requestsThreshold = adoptionConfig?.requestsThreshold || 3;
+    const requestsInPeriod = countRecordsInPeriod(adoptions, 'adoption_request', requestsPeriodDays, referenceDate);
 
     const [isEditing, setIsEditing] = useState(isNew);
     const [loading, setLoading] = useState(false);
@@ -28,9 +67,6 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
     // Auth-gated click-to-edit: clicking any view field enables editing
     const handleClickToEdit = () => {
         if (isEditing) return;
-        const isAuthenticated =
-            (currentUser && currentUser !== '') ||
-            !!session?.user;
         if (!isAuthenticated) {
             openLogin();
             return;
@@ -53,17 +89,7 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
-
-        // Trust server-side auth (currentUser prop) as primary source of truth
-        // Fall back to client-side checks only if server didn't provide user info
-        const isAuthenticated =
-            (currentUser && currentUser !== '') ||
-            !!session?.user;
-
-
-
         if (!isAuthenticated) {
-
             openLogin();
             return;
         }
@@ -147,105 +173,204 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
         }
     };
 
-    // Helper to render clickable links in text
-    const renderTextWithLinks = (text: string, type: 'text' | 'address' = 'text') => {
-        if (!text) return <span className="text-emerald-900/40 italic">{t('audit.empty_val')}</span>;
-
-        if (type === 'address') {
-            const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(text.replace(/\n/g, ', '))}`;
-            return (
-                <a href={mapUrl} target="_blank" rel="noopener noreferrer" className="flex items-start gap-2 text-emerald-700 hover:text-emerald-900 group transition-colors">
-                    <svg className="w-5 h-5 shrink-0 mt-0.5 text-emerald-500 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                    <span className="whitespace-pre-line group-hover:underline decoration-emerald-500/50 underline-offset-4">{text}</span>
-                </a>
-            );
-        }
-
-        return text.split('\n').map((line, i) => (
-            <div key={i} className="min-h-[1.5em] mb-1 last:mb-0">
-                {line.split(' ').map((word, j) => {
-                    // URL
-                    if (word.match(/^(http|https):\/\//) || word.match(/^www\./)) {
-                        const href = word.startsWith('www') ? `https://${word}` : word;
-                        return <a key={j} href={href} target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:text-emerald-800 hover:underline mr-1 font-medium">{word}</a>;
-                    }
-                    // Email
-                    if (word.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
-                        return <a key={j} href={`mailto:${word}`} className="text-emerald-600 hover:text-emerald-800 hover:underline mr-1 font-medium">{word}</a>;
-                    }
-                    // Phone (Simple detection: 7+ digits, maybe dashes/dots)
-                    if (word.match(/^(\+?\d{1,3}[-.]?)?\(?\d{3}\)?[-.]?\d{3}[-.]?\d{4}$/)) {
-                        return <a key={j} href={`tel:${word}`} className="text-emerald-600 hover:text-emerald-800 hover:underline mr-1 font-medium bg-emerald-50 px-1 rounded">{word}</a>;
-                    }
-                    return <span key={j} className="mr-1">{word}</span>;
-                })}
-            </div>
-        ));
-    };
-
     return (
-        <div className={`bg-white rounded-2xl shadow-sm border border-emerald-100/60 relative group transition-all duration-300 overflow-hidden ${isEditing ? 'ring-4 ring-emerald-50/50' : ''}`}>
+        <div className={`bg-white rounded-2xl shadow-sm border border-stone-200 relative group transition-all duration-300 overflow-hidden ${isEditing ? 'ring-4 ring-emerald-50/50' : ''}`}>
 
             <form onSubmit={handleSave} className="p-5">
-                {/* UNIFIED HEADER */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-emerald-100/60 pb-6 mb-10 gap-6">
-                    {/* ... (keep header content: Name, Status, Buttons) ... */}
-                    {/* Left: Name (Identity) */}
-                    <div className="w-full md:w-auto">
+                {/* ═══ IDENTITY HEADER ═══ */}
+                <div className="flex flex-col gap-3 mb-4">
+                    {/* Top row: actions (right-aligned) */}
+                    <div className="flex items-center justify-end gap-2">
                         {isEditing ? (
-                            <input
-                                type="text"
-                                required
-                                className="w-full text-3xl font-bold text-emerald-900 bg-transparent border-b-2 border-emerald-200 focus:border-emerald-500 outline-none px-1 py-1 placeholder-emerald-900/30 transition-all"
-                                value={data.name}
-                                onChange={e => setData({ ...data, name: e.target.value })}
-                                placeholder={t('adopter.placeholder_name_aliases')}
-                                autoFocus
-                            />
-                        ) : (
-                            <h2
-                                className="text-3xl font-bold text-emerald-900 tracking-tight px-1 py-1 border-b-2 border-transparent cursor-pointer hover:border-emerald-300 transition-colors"
-                                onClick={handleClickToEdit}
-                                title={t('common.edit') || 'Click to edit'}
-                            >
-                                {data.name}
-                            </h2>
-                        )}
-                    </div>
-
-                    {/* Right: Actions */}
-                    <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
-
-                        {/* Action Buttons */}
-                        {isEditing ? (
-                            <div className="flex items-center gap-2">
+                            <>
                                 <button
                                     type="button"
                                     onClick={handleCancel}
-                                    className="px-4 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
+                                    className="px-3 py-1.5 text-sm font-bold text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
                                 >
                                     {t('common.cancel')}
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={loading}
-                                    className="px-6 py-2 text-sm font-bold text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 focus:ring-4 focus:ring-emerald-200 disabled:opacity-70 disabled:cursor-not-allowed transition-all shadow-lg shadow-emerald-500/30 transform active:scale-95"
+                                    className="px-4 py-1.5 text-sm font-bold text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 focus:ring-4 focus:ring-emerald-200 disabled:opacity-70 disabled:cursor-not-allowed transition-all shadow-lg shadow-emerald-500/30 transform active:scale-95"
                                 >
                                     {loading ? t('common.loading') : t('common.save')}
                                 </button>
-                            </div>
+                            </>
                         ) : (
-                            <button
-                                type="button"
-                                onClick={handleClickToEdit}
-                                className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                                {t('common.edit')}
-                            </button>
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={handleClickToEdit}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                    {t('common.edit')}
+                                </button>
+                                {/* Overflow menu */}
+                                {!isNew && initialData && (
+                                    <div className="relative">
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowReportMenu(!showReportMenu)}
+                                            className="flex items-center gap-1 p-1.5 rounded-lg text-stone-400 bg-stone-50 hover:text-stone-600 hover:bg-stone-100 transition-all duration-150"
+                                            title={t('flagging.report_actions') || 'Report'}
+                                        >
+                                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                                <circle cx="5" cy="12" r="2" />
+                                                <circle cx="12" cy="12" r="2" />
+                                                <circle cx="19" cy="12" r="2" />
+                                            </svg>
+                                        </button>
+                                        {showReportMenu && (
+                                            <>
+                                                <div className="fixed inset-0 z-40" onClick={() => setShowReportMenu(false)} />
+                                                <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-stone-200 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            if (!session?.user) { openLogin(); setShowReportMenu(false); return; }
+                                                            setShowReportMenu(false);
+                                                            flaggingRef.current?.openAction('duplicate');
+                                                        }}
+                                                        className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left"
+                                                    >
+                                                        <span className="text-lg mt-0.5">🔀</span>
+                                                        <div>
+                                                            <div className="text-sm font-semibold text-stone-900">{t('flagging.menu_duplicate') || 'Report Duplicate'}</div>
+                                                            <div className="text-xs text-stone-500 mt-0.5">{t('flagging.menu_duplicate_desc') || 'Flag as duplicate of another profile'}</div>
+                                                        </div>
+                                                    </button>
+                                                    <div className="border-t border-stone-100" />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setShowReportMenu(false); flaggingRef.current?.openAction('inaccuracy'); }}
+                                                        className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left"
+                                                    >
+                                                        <span className="text-lg mt-0.5">✏️</span>
+                                                        <div>
+                                                            <div className="text-sm font-semibold text-stone-900">{t('flagging.menu_inaccuracy') || 'Report Inaccuracy'}</div>
+                                                            <div className="text-xs text-stone-500 mt-0.5">{t('flagging.menu_inaccuracy_desc') || 'Information about me is wrong'}</div>
+                                                        </div>
+                                                    </button>
+                                                    <div className="border-t border-stone-100" />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setShowReportMenu(false); flaggingRef.current?.openAction('deletion'); }}
+                                                        className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left"
+                                                    >
+                                                        <span className="text-lg mt-0.5">🗑️</span>
+                                                        <div>
+                                                            <div className="text-sm font-semibold text-rose-700">{t('flagging.menu_deletion') || 'Request Removal'}</div>
+                                                            <div className="text-xs text-stone-500 mt-0.5">{t('flagging.menu_deletion_desc') || 'Remove my data from this platform'}</div>
+                                                        </div>
+                                                    </button>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                            </>
                         )}
                     </div>
+
+                    {/* Identity row: avatar + name + metadata */}
+                    <div className="flex items-center gap-3">
+                        {/* Avatar */}
+                        {!isNew && (() => {
+                            const profilePic = images.length > 0
+                                ? (images.find(img => img.isProfilePicture === 1) || images[0])
+                                : null;
+                            if (profilePic) {
+                                return (
+                                    <div className="w-11 h-11 md:w-14 md:h-14 rounded-xl bg-emerald-100 overflow-hidden ring-2 ring-emerald-200 shadow-sm flex-shrink-0">
+                                        <img src={profilePic.url} alt="" className="w-full h-full object-cover" />
+                                    </div>
+                                );
+                            }
+                            const name = initialData?.name || '';
+                            const initials = name.split(' ').filter(Boolean).map((w: string) => w[0]).slice(0, 2).join('').toUpperCase();
+                            return (
+                                <div className="w-11 h-11 md:w-14 md:h-14 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center flex-shrink-0 shadow-sm">
+                                    <span className="text-white font-bold text-sm md:text-lg">{initials || '?'}</span>
+                                </div>
+                            );
+                        })()}
+                        <div className="min-w-0 flex-1">
+                            {/* Inline-editable name */}
+                            {isEditing ? (
+                                <input
+                                    type="text"
+                                    required
+                                    className="w-full text-xl md:text-2xl font-extrabold text-emerald-950 tracking-tight bg-transparent border-b-2 border-emerald-300 focus:border-emerald-500 outline-none py-0.5 placeholder-emerald-900/30 transition-all"
+                                    value={data.name}
+                                    onChange={e => setData({ ...data, name: e.target.value })}
+                                    placeholder={t('adopter.placeholder_name_aliases')}
+                                    autoFocus
+                                />
+                            ) : (
+                                <h1 className="text-xl md:text-2xl font-extrabold text-emerald-950 tracking-tight truncate">
+                                    {!isNew && initialData ? initialData.name : t('adopter.title_new')}
+                                </h1>
+                            )}
+                            {/* Metadata row */}
+                            {!isNew && (
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-xs">
+                                    <span className="text-emerald-600/50 font-mono break-all">ID: {id}</span>
+                                    {initialData?.country && (() => {
+                                        const c = getCountryByCode(initialData.country!);
+                                        if (!c) return null;
+                                        return <span className="text-stone-500">{currentLocale === 'es' ? c.nameEs : c.name}</span>;
+                                    })()}
+                                    {initialData?.sourceUrl && (
+                                        <a href={initialData.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 hover:underline font-medium transition-colors">
+                                            {getSourceIcon(initialData.sourceUrl, 'w-3 h-3')}
+                                            <span>{t('adopter.view_source') || 'Source'}</span>
+                                        </a>
+                                    )}
+                                    {/* Rating badge */}
+                                    {avgRating !== null && avgRating !== undefined && (() => {
+                                        const colors = getRatingColors(avgRating);
+                                        const descKey = getRatingDescription(Math.round(avgRating));
+                                        return (
+                                            <div
+                                                role="button"
+                                                tabIndex={0}
+                                                data-testid="rating-badge"
+                                                onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
+                                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 ${colors.bg} border ${colors.border} rounded-full cursor-pointer hover:shadow-sm transition-shadow`}
+                                            >
+                                                <StarRating value={Math.round(avgRating)} size="sm" />
+                                                <span className={`${colors.text} font-bold text-xs`}>{avgRating.toFixed(1)}</span>
+                                                <span className={`${colors.text} text-[10px] font-medium opacity-75`}>{t(`ratings.${descKey}` as any)}</span>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </div>
+
+                {/* ═══ FLAG PILLS ═══ */}
+                {!isNew && initialData && (
+                    <div className="mb-4">
+                        <AdopterFlagging
+                            ref={flaggingRef}
+                            adopterId={id}
+                            adopterName={initialData.name}
+                            existingFlags={flags}
+                            hasVerifiedAdoption={adoptions.some(a => a.identityVerified === 1)}
+                            hasVerifiedAddress={adoptions.some(a => a.verifiedAddress && a.verifiedAddress.trim() !== '')}
+                            tooManyAdoptions={adoptionsInPeriod >= threshold ? { count: adoptionsInPeriod, threshold, periodDays } : undefined}
+                            tooManyRequests={requestsInPeriod >= requestsThreshold ? { count: requestsInPeriod, threshold: requestsThreshold, periodDays: requestsPeriodDays } : undefined}
+                        />
+                    </div>
+                )}
+
+                {/* ═══ DIVIDER ═══ */}
+                <div className="border-b border-emerald-100/60 mb-6" />
 
                 {/* SHARED CONTENT GRID */}
                 <div className={`grid md:grid-cols-2 gap-6 ${isEditing ? 'opacity-100' : 'opacity-90'}`}>
@@ -267,7 +392,7 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                                 onClick={handleClickToEdit}
                                 title={t('common.edit') || 'Click to edit'}
                             >
-                                {renderTextWithLinks(data.contactInfo, 'text')}
+                                {renderTextWithLinks(data.contactInfo, { emptyLabel: t('audit.empty_val'), type: 'text' })}
                             </div>
                         )}
                     </div>
@@ -293,7 +418,7 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                                     onClick={handleClickToEdit}
                                     title={t('common.edit') || 'Click to edit'}
                                 >
-                                    {renderTextWithLinks(data.familyMembers, 'text')}
+                                    {renderTextWithLinks(data.familyMembers, { emptyLabel: t('audit.empty_val') })}
                                 </div>
                             ) : (
                                 <div
@@ -326,7 +451,7 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                                     onClick={handleClickToEdit}
                                     title={t('common.edit') || 'Click to edit'}
                                 >
-                                    {renderTextWithLinks(data.notes, 'text')}
+                                    {renderTextWithLinks(data.notes, { emptyLabel: t('audit.empty_val') })}
                                 </div>
                             ) : (
                                 <div
@@ -380,7 +505,7 @@ export function AdopterForm({ initialData, history = [], currentUser }: { initia
                                     <div className="flex justify-between items-start mb-2">
                                         <div className="flex items-center gap-2">
                                             <span className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">
-                                                {formatDateTime(new Date(h.changedAt))}
+                                                {formatDateTime(new Date(h.changedAt as string | number))}
                                             </span>
                                             {/* Badge for event type */}
                                             {eventType === 'adoption_added' && <span className="bg-emerald-100 text-emerald-700 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase">{t('audit.event_adoption_added')}</span>}

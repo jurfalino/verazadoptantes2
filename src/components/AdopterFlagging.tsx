@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { flagAdopter, searchAdopter, getDuplicateCandidates } from '@/app/actions';
 import type { DuplicateCandidate } from '@/app/actions';
 import { useRouter } from 'next/navigation';
@@ -9,7 +9,11 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
 
-export function AdopterFlagging({ adopterId, adopterName, existingFlags, hasVerifiedAdoption = false, hasVerifiedAddress = false, tooManyAdoptions, tooManyRequests }: { adopterId: string, adopterName: string, existingFlags: any[], hasVerifiedAdoption?: boolean, hasVerifiedAddress?: boolean, tooManyAdoptions?: { count: number; threshold: number; periodDays: number }, tooManyRequests?: { count: number; threshold: number; periodDays: number } }) {
+export interface AdopterFlaggingHandle {
+    openAction: (action: string) => void;
+}
+
+export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], hasVerifiedAdoption?: boolean, hasVerifiedAddress?: boolean, tooManyAdoptions?: { count: number; threshold: number; periodDays: number }, tooManyRequests?: { count: number; threshold: number; periodDays: number } }>(function AdopterFlagging({ adopterId, adopterName, existingFlags, hasVerifiedAdoption = false, hasVerifiedAddress = false, tooManyAdoptions, tooManyRequests }, ref) {
     const router = useRouter();
     const { t } = useLanguage();
     const { data: session } = useSession();
@@ -25,6 +29,10 @@ export function AdopterFlagging({ adopterId, adopterName, existingFlags, hasVeri
     const [hasSearched, setHasSearched] = useState(false);
     const [submitLoading, setSubmitLoading] = useState(false);
     const [systemSuggestions, setSystemSuggestions] = useState<DuplicateCandidate[]>([]);
+    // Data-request form fields (for inaccuracy/deletion — open to anyone)
+    const [requesterName, setRequesterName] = useState('');
+    const [requesterEmail, setRequesterEmail] = useState('');
+    const [dataRequestSubmitted, setDataRequestSubmitted] = useState(false);
 
     // Fetch system-detected duplicate candidates on mount
     useEffect(() => {
@@ -87,20 +95,65 @@ export function AdopterFlagging({ adopterId, adopterName, existingFlags, hasVeri
 
     const handleSubmit = async () => {
         if (!reason) return;
-        if (reason === 'duplicate' && !targetAdopter) return;
 
+        // Duplicate flow — uses flagAdopter (auth required)
+        if (reason === 'duplicate') {
+            if (!targetAdopter) return;
+            setSubmitLoading(true);
+            try {
+                const res = await flagAdopter(adopterId, reason, details, targetAdopter.id);
+                if (res.success) {
+                    toast.success(t('flagging.submit_success') || 'Report submitted successfully');
+                    resetAndClose();
+                    router.refresh();
+                } else {
+                    toast.error('Error', 'Failed to submit report.');
+                }
+            } catch (e) {
+                console.error(e);
+                toast.error('Error', 'Error submitting report.');
+            } finally {
+                setSubmitLoading(false);
+            }
+            return;
+        }
+
+        // Inaccuracy / Deletion flow — uses data-request API (no auth needed)
+        if (reason === 'inaccuracy' || reason === 'deletion') {
+            if (!requesterName.trim() || !details.trim()) return;
+            setSubmitLoading(true);
+            try {
+                const res = await fetch('/api/data-request', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        adopterId,
+                        requesterName: requesterName.trim(),
+                        requesterEmail: requesterEmail.trim() || null,
+                        requestType: reason,
+                        details: details.trim(),
+                    }),
+                });
+                if (res.ok) {
+                    setDataRequestSubmitted(true);
+                } else {
+                    toast.error('Error', 'Failed to submit request.');
+                }
+            } catch {
+                toast.error('Error', 'Error submitting request.');
+            } finally {
+                setSubmitLoading(false);
+            }
+            return;
+        }
+
+        // Inaccurate information flag (legacy — auth flow)
         setSubmitLoading(true);
         try {
-            const targetId = reason === 'duplicate' ? targetAdopter?.id : undefined;
-            const res = await flagAdopter(adopterId, reason, details, targetId);
-
+            const res = await flagAdopter(adopterId, reason, details);
             if (res.success) {
                 toast.success(t('flagging.submit_success') || 'Report submitted successfully');
-                setIsOpen(false);
-                setDetails('');
-                setReason('duplicate');
-                setTargetAdopter(null);
-                setSearchTerm('');
+                resetAndClose();
                 router.refresh();
             } else {
                 toast.error('Error', 'Failed to submit report.');
@@ -112,6 +165,27 @@ export function AdopterFlagging({ adopterId, adopterName, existingFlags, hasVeri
             setSubmitLoading(false);
         }
     };
+
+    const resetAndClose = () => {
+        setIsOpen(false);
+        setDetails('');
+        setReason('duplicate');
+        setTargetAdopter(null);
+        setSearchTerm('');
+        setRequesterName('');
+        setRequesterEmail('');
+        setDataRequestSubmitted(false);
+    };
+
+    const openAction = (action: string) => {
+        setReason(action);
+        setDataRequestSubmitted(false);
+        setIsOpen(true);
+    };
+
+    useImperativeHandle(ref, () => ({
+        openAction,
+    }));
 
 
 
@@ -246,24 +320,6 @@ export function AdopterFlagging({ adopterId, adopterName, existingFlags, hasVeri
                 </div>
             )}
 
-            {/* Header Button */}
-            <div className="absolute top-0 right-0 mt-4 mr-4">
-                <button
-                    onClick={() => {
-                        if (!session?.user) {
-                            openLogin();
-                            return;
-                        }
-                        setIsOpen(true);
-                    }}
-                    className="group flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-all duration-200"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 transition-transform group-hover:scale-110" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-8a2 2 0 012-2h10a2 2 0 012 2v6l-3-2-3 2-3-2-3 2zm4-8V5a2 2 0 012-2h6a2 2 0 012 2v2m-6 9l2-2 2 2" />
-                    </svg>
-                    <span className="text-sm font-semibold tracking-wide">{t('flagging.report_merge')}</span>
-                </button>
-            </div>
 
             {/* Modal */}
             {isOpen && (
@@ -271,142 +327,197 @@ export function AdopterFlagging({ adopterId, adopterName, existingFlags, hasVeri
                     <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-8 max-h-[90vh] overflow-y-auto transform transition-all scale-100 border border-emerald-100">
                         <div className="flex justify-between items-start mb-6">
                             <h3 className="text-2xl font-bold text-emerald-900 tracking-tight">
-                                {t('flagging.report_title')} <span className="text-emerald-500">{adopterName}</span>
+                                {reason === 'duplicate' && (t('flagging.title_duplicate') || 'Report Duplicate')}
+                                {reason === 'inaccuracy' && (t('flagging.title_inaccuracy') || 'Report Inaccuracy')}
+                                {reason === 'deletion' && (t('flagging.title_deletion') || 'Request Removal')}
                             </h3>
-                            <button onClick={() => setIsOpen(false)} className="text-emerald-900/40 hover:text-emerald-700 transition-colors">
+                            <button onClick={resetAndClose} className="text-emerald-900/40 hover:text-emerald-700 transition-colors">
                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                             </button>
                         </div>
 
-                        <div className="space-y-6">
-                            <div>
-                                <label className="block text-sm font-bold text-emerald-800 mb-2 uppercase tracking-wider">{t('flagging.reason')}</label>
-                                <select
-                                    className="w-full h-12 px-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none"
-                                    value={reason}
-                                    onChange={e => setReason(e.target.value)}
+                        {/* Success state for data requests */}
+                        {dataRequestSubmitted ? (
+                            <div className="text-center py-6">
+                                <div className="text-4xl mb-3">✅</div>
+                                <p className="text-lg font-semibold text-emerald-800 mb-2">
+                                    {t('flagging.request_received') || 'Request received'}
+                                </p>
+                                <p className="text-sm text-stone-500 mb-6">
+                                    {t('flagging.request_review_time') || 'We will review your request within 10 business days.'}
+                                </p>
+                                <button
+                                    onClick={resetAndClose}
+                                    className="px-6 py-2.5 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700 transition-colors"
                                 >
-                                    <option value="duplicate">{t('flagging.reason_duplicate')}</option>
-                                    <option value="inaccurate_information">{t('flagging.reason_inaccurate')}</option>
-                                </select>
+                                    {t('common.close') || 'Close'}
+                                </button>
                             </div>
-
-                            {reason === 'duplicate' && (
-                                <div className="p-5 bg-emerald-50 rounded-xl border border-emerald-100">
-                                    <label className="block text-sm font-bold text-emerald-800 mb-3">{t('flagging.find_original')}</label>
-                                    <div className="flex gap-2 mb-3">
-                                        <div className="relative flex-1">
-                                            <input
-                                                className="w-full h-10 px-3 pl-10 rounded-lg border border-emerald-200 bg-white text-emerald-900 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none transition-shadow"
-                                                placeholder={t('flagging.search_placeholder')}
-                                                value={searchTerm}
-                                                onChange={e => setSearchTerm(e.target.value)}
-                                                onKeyDown={e => e.key === 'Enter' && handleManualSearch()}
-                                            />
-                                            <div className="absolute left-3 top-2.5 text-emerald-400">
-                                                {isSearching ? (
-                                                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                    </svg>
-                                                ) : (
-                                                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                                                )}
+                        ) : (
+                            <div className="space-y-6">
+                                {/* Duplicate flow — search for original profile */}
+                                {reason === 'duplicate' && (
+                                    <div className="p-5 bg-emerald-50 rounded-xl border border-emerald-100">
+                                        <label className="block text-sm font-bold text-emerald-800 mb-3">{t('flagging.find_original')}</label>
+                                        <div className="flex gap-2 mb-3">
+                                            <div className="relative flex-1">
+                                                <input
+                                                    className="w-full h-10 px-3 pl-10 rounded-lg border border-emerald-200 bg-white text-emerald-900 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none transition-shadow"
+                                                    placeholder={t('flagging.search_placeholder')}
+                                                    value={searchTerm}
+                                                    onChange={e => setSearchTerm(e.target.value)}
+                                                    onKeyDown={e => e.key === 'Enter' && handleManualSearch()}
+                                                />
+                                                <div className="absolute left-3 top-2.5 text-emerald-400">
+                                                    {isSearching ? (
+                                                        <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                        </svg>
+                                                    ) : (
+                                                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
 
-                                    {/* System-suggested matches */}
-                                    {systemSuggestions.length > 0 && !searchTerm && (
-                                        <div className="mb-3">
-                                            <p className="text-xs font-medium text-stone-500 mb-1.5">🤖 {t('flagging.system_suggestions') || 'System-suggested matches'}</p>
-                                            <div className="space-y-1.5">
-                                                {systemSuggestions.map(sug => (
+                                        {/* System-suggested matches */}
+                                        {systemSuggestions.length > 0 && !searchTerm && (
+                                            <div className="mb-3">
+                                                <p className="text-xs font-medium text-stone-500 mb-1.5">🤖 {t('flagging.system_suggestions') || 'System-suggested matches'}</p>
+                                                <div className="space-y-1.5">
+                                                    {systemSuggestions.map(sug => (
+                                                        <div
+                                                            key={sug.id}
+                                                            className={`p-3 border rounded-lg cursor-pointer text-sm transition-all ${targetAdopter?.id === sug.otherAdopterId
+                                                                ? 'bg-emerald-100 border-emerald-500 ring-1 ring-emerald-500'
+                                                                : 'bg-blue-50 border-blue-200 hover:border-blue-400 hover:shadow-sm'
+                                                                }`}
+                                                            onClick={() => setTargetAdopter({ id: sug.otherAdopterId, name: sug.otherAdopterName })}
+                                                        >
+                                                            <div className="flex items-center justify-between">
+                                                                <span className="font-bold text-stone-900">{sug.otherAdopterName}</span>
+                                                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600 font-medium">🤖 auto</span>
+                                                            </div>
+                                                            <div className="flex flex-wrap gap-1 mt-1">
+                                                                {sug.matchTypes.map(type => (
+                                                                    <span key={type} className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-600">{type.replace('_', ' ')}</span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {searchTerm && !isSearching && searchResults.length === 0 && hasSearched && (
+                                            <div className="text-center py-4 bg-white/50 rounded-lg border border-dashed border-emerald-200/50">
+                                                <p className="text-sm text-emerald-600/60">No matching profiles found.</p>
+                                            </div>
+                                        )}
+
+                                        {searchResults.length > 0 && (
+                                            <div className="max-h-48 overflow-y-auto space-y-2 mb-3 custom-scrollbar">
+                                                {searchResults.map(res => (
                                                     <div
-                                                        key={sug.id}
-                                                        className={`p-3 border rounded-lg cursor-pointer text-sm transition-all ${targetAdopter?.id === sug.otherAdopterId
+                                                        key={res.adopter.id}
+                                                        className={`p-3 border rounded-lg cursor-pointer text-sm transition-all ${targetAdopter?.id === res.adopter.id
                                                             ? 'bg-emerald-100 border-emerald-500 ring-1 ring-emerald-500'
-                                                            : 'bg-blue-50 border-blue-200 hover:border-blue-400 hover:shadow-sm'
-                                                            }`}
-                                                        onClick={() => setTargetAdopter({ id: sug.otherAdopterId, name: sug.otherAdopterName })}
+                                                            : 'bg-white border-emerald-100 hover:border-emerald-300 hover:shadow-sm'}`}
+                                                        onClick={() => setTargetAdopter(res.adopter)}
                                                     >
-                                                        <div className="flex items-center justify-between">
-                                                            <span className="font-bold text-stone-900">{sug.otherAdopterName}</span>
-                                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600 font-medium">🤖 auto</span>
-                                                        </div>
-                                                        <div className="flex flex-wrap gap-1 mt-1">
-                                                            {sug.matchTypes.map(type => (
-                                                                <span key={type} className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-600">{type.replace('_', ' ')}</span>
-                                                            ))}
-                                                        </div>
+                                                        <div className="font-bold text-emerald-900">{res.adopter.name}</div>
+                                                        <div className="text-emerald-600 truncate">{res.adopter.email || res.adopter.phone}</div>
                                                     </div>
                                                 ))}
                                             </div>
-                                        </div>
-                                    )}
+                                        )}
 
-                                    {searchTerm && !isSearching && searchResults.length === 0 && hasSearched && (
-                                        <div className="text-center py-4 bg-white/50 rounded-lg border border-dashed border-emerald-200/50">
-                                            <p className="text-sm text-emerald-600/60">No matching profiles found.</p>
-                                        </div>
-                                    )}
+                                        {targetAdopter && (
+                                            <div className="flex items-center gap-2 text-sm text-emerald-800 bg-white px-3 py-2 rounded-lg border border-emerald-200 shadow-sm">
+                                                <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                                <span className="font-bold">{t('flagging.selected_original')}: {targetAdopter.name}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
-                                    {searchResults.length > 0 && (
-                                        <div className="max-h-48 overflow-y-auto space-y-2 mb-3 custom-scrollbar">
-                                            {searchResults.map(res => (
-                                                <div
-                                                    key={res.adopter.id}
-                                                    className={`p-3 border rounded-lg cursor-pointer text-sm transition-all ${targetAdopter?.id === res.adopter.id
-                                                        ? 'bg-emerald-100 border-emerald-500 ring-1 ring-emerald-500'
-                                                        : 'bg-white border-emerald-100 hover:border-emerald-300 hover:shadow-sm'}`}
-                                                    onClick={() => setTargetAdopter(res.adopter)}
-                                                >
-                                                    <div className="font-bold text-emerald-900">{res.adopter.name}</div>
-                                                    <div className="text-emerald-600 truncate">{res.adopter.email || res.adopter.phone}</div>
-                                                </div>
-                                            ))}
+                                {/* Inaccuracy / Deletion — contact info form */}
+                                {(reason === 'inaccuracy' || reason === 'deletion') && (
+                                    <div className="space-y-4">
+                                        <p className="text-sm text-stone-600">
+                                            {reason === 'inaccuracy'
+                                                ? (t('flagging.inaccuracy_desc') || 'If this profile contains incorrect information about you, let us know:')
+                                                : (t('flagging.deletion_desc') || 'To request removal of your data from this platform, please provide your details:')}
+                                        </p>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <input
+                                                type="text"
+                                                placeholder={t('flagging.your_name') || 'Your name *'}
+                                                value={requesterName}
+                                                onChange={e => setRequesterName(e.target.value)}
+                                                className="px-3 py-2.5 text-sm border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 outline-none"
+                                            />
+                                            <input
+                                                type="email"
+                                                placeholder={t('flagging.your_email') || 'Your email (optional)'}
+                                                value={requesterEmail}
+                                                onChange={e => setRequesterEmail(e.target.value)}
+                                                className="px-3 py-2.5 text-sm border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 outline-none"
+                                            />
                                         </div>
-                                    )}
+                                    </div>
+                                )}
 
-                                    {targetAdopter && (
-                                        <div className="flex items-center gap-2 text-sm text-emerald-800 bg-white px-3 py-2 rounded-lg border border-emerald-200 shadow-sm">
-                                            <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                                            <span className="font-bold">{t('flagging.selected_original')}: {targetAdopter.name}</span>
-                                        </div>
-                                    )}
+                                {/* Details field — shown for all reason types */}
+                                <div>
+                                    <label className="block text-sm font-bold text-emerald-800 mb-2 uppercase tracking-wider">
+                                        {reason === 'duplicate'
+                                            ? (t('flagging.details') || 'Details (Optional)')
+                                            : (t('flagging.details_required') || 'Details *')}
+                                    </label>
+                                    <textarea
+                                        className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 placeholder-emerald-800/40 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none resize-none"
+                                        rows={4}
+                                        value={details}
+                                        onChange={e => setDetails(e.target.value)}
+                                        placeholder={
+                                            reason === 'inaccuracy'
+                                                ? (t('flagging.inaccuracy_placeholder') || 'What information is incorrect?')
+                                                : reason === 'deletion'
+                                                    ? (t('flagging.deletion_placeholder') || 'Why should this data be removed?')
+                                                    : t('flagging.details_placeholder')
+                                        }
+                                    />
                                 </div>
-                            )}
 
-                            <div>
-                                <label className="block text-sm font-bold text-emerald-800 mb-2 uppercase tracking-wider">{t('flagging.details')}</label>
-                                <textarea
-                                    className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 placeholder-emerald-800/40 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none resize-none"
-                                    rows={4}
-                                    value={details}
-                                    onChange={e => setDetails(e.target.value)}
-                                    placeholder={t('flagging.details_placeholder')}
-                                />
+                                <div className="flex justify-end gap-3 pt-4 border-t border-emerald-100">
+                                    <button
+                                        onClick={resetAndClose}
+                                        className="px-5 py-2.5 text-emerald-700 font-semibold hover:bg-emerald-50 rounded-xl transition-colors"
+                                    >
+                                        {t('common.cancel')}
+                                    </button>
+                                    <button
+                                        onClick={handleSubmit}
+                                        disabled={submitLoading || (reason === 'duplicate' && !targetAdopter) || ((reason === 'inaccuracy' || reason === 'deletion') && (!requesterName.trim() || !details.trim()))}
+                                        className={`px-6 py-2.5 font-semibold rounded-xl shadow-lg disabled:opacity-50 disabled:shadow-none transition-all ${reason === 'deletion'
+                                            ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/30'
+                                            : 'bg-rose-500 hover:bg-rose-600 text-white shadow-rose-500/30'
+                                            }`}
+                                    >
+                                        {submitLoading
+                                            ? (t('flagging.submitting') || 'Submitting...')
+                                            : reason === 'deletion'
+                                                ? (t('flagging.submit_deletion') || 'Submit Removal Request')
+                                                : (t('flagging.submit') || 'Submit Report')}
+                                    </button>
+                                </div>
                             </div>
-
-                            <div className="flex justify-end gap-3 pt-4 border-t border-emerald-100">
-                                <button
-                                    onClick={() => setIsOpen(false)}
-                                    className="px-5 py-2.5 text-emerald-700 font-semibold hover:bg-emerald-50 rounded-xl transition-colors"
-                                >
-                                    {t('common.cancel')}
-                                </button>
-                                <button
-                                    onClick={handleSubmit}
-                                    disabled={submitLoading || (reason === 'duplicate' && !targetAdopter)}
-                                    className="px-6 py-2.5 bg-rose-500 hover:bg-rose-600 text-white font-semibold rounded-xl shadow-lg shadow-rose-500/30 disabled:opacity-50 disabled:shadow-none transition-all"
-                                >
-                                    {submitLoading ? t('flagging.submitting') : t('flagging.submit')}
-                                </button>
-                            </div>
-                        </div>
+                        )}
                     </div>
                 </div>
             )}
         </>
     );
-}
+});

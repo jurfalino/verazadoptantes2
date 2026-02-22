@@ -16,6 +16,7 @@ export const adopters = sqliteTable("adopters", {
     status: text("status").default("5"), // Rating: 1-5 (1=Dangerous, 5=Excellent)
     addedBy: text("added_by").default("anonymous"),
     sourceUrl: text("source_url"), // Link to original post/source
+    country: text("country"), // ISO 3166-1 alpha-2 country code (e.g. AR, US, MX)
 
     // Duplicate detection
     tokenHash: text("token_hash"), // Hash of tokenizable fields, null = needs tokenization
@@ -206,6 +207,8 @@ export const userProfiles = sqliteTable("user_profiles", {
     role: text("role").default("viewer"), // viewer, contributor, admin
     notes: text("notes"),
     commsOptIn: integer("comms_opt_in").default(0),
+    country: text("country"), // ISO 3166-1 alpha-2 (e.g. AR, US, MX) — auto-detected via CF-IPCountry
+    countryConfirmed: integer("country_confirmed").default(0), // 1 if user has confirmed their country
     lastActiveAt: integer("last_active_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
 });

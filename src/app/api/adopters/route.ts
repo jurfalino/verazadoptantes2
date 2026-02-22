@@ -209,6 +209,18 @@ export async function POST(request: Request) {
 
         const newId = crypto.randomUUID();
 
+        // Look up the user's country to stamp on the adopter
+        let userCountry: string | null = null;
+        try {
+            const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+            if (env?.DB) {
+                const row = await env.DB.prepare(
+                    `SELECT up.country FROM user_profiles up JOIN user u ON u.id = up.user_id WHERE u.email = ? LIMIT 1`
+                ).bind(session.user.email).first<{ country: string | null }>();
+                userCountry = row?.country || null;
+            }
+        } catch { /* best-effort */ }
+
         // Insert adopter record
         await db.insert(adopters).values({
             id: newId,
@@ -218,7 +230,8 @@ export async function POST(request: Request) {
             familyMembers: null,
             status: '5', // Default neutral/good
             addedBy: session.user.email || 'anonymous',
-            sourceUrl: sourceUrl || null
+            sourceUrl: sourceUrl || null,
+            country: userCountry,
             // createdAt and updatedAt use database defaults
         });
 

@@ -82,10 +82,24 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
         } else {
             // Create
             const newId = data.id || crypto.randomUUID();
+
+            // Look up the user's country to stamp on the adopter
+            let userCountry: string | null = null;
+            try {
+                const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+                if (env?.DB) {
+                    const row = await env.DB.prepare(
+                        `SELECT up.country FROM user_profiles up JOIN user u ON u.id = up.user_id WHERE u.email = ? LIMIT 1`
+                    ).bind(changedBy).first<{ country: string | null }>();
+                    userCountry = row?.country || null;
+                }
+            } catch { /* best-effort */ }
+
             await db.insert(adopters).values({
                 ...data,
                 id: newId,
                 addedBy: changedBy, // Added this line
+                country: userCountry,
                 createdAt: new Date(),
                 updatedAt: new Date()
             });

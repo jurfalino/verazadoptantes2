@@ -23,6 +23,7 @@ export const es = {
         details: 'Detalles',
         photos: 'fotos',
         processing: 'Procesando...',
+        more: 'Más',
     },
     demo: {
         not_real: 'esta no es una persona real',
@@ -60,6 +61,13 @@ export const es = {
         possible_match: 'Posible duplicado de',
         view_profile: 'Ver →',
         dismiss: 'Descartar',
+        match_phone: 'Teléfono',
+        match_email: 'Email',
+        match_social: 'Red Social',
+        match_name_full: 'Nombre Completo',
+        match_name_word: 'Nombre',
+        match_address: 'Dirección',
+        match_source_url: 'URL Fuente',
     },
     stats: {
         searches: 'búsquedas',
@@ -68,6 +76,9 @@ export const es = {
         requests: 'solicitudes',
         profile_stats: 'Estadísticas del Perfil',
         avg_rating: 'Calificación Promedio',
+        period_90d: '90 Días',
+        period_1y: '1 Año',
+        period_all: 'Todo',
     },
     auth: {
         welcome: 'Bienvenido a BuenAdoptante',
@@ -82,6 +93,8 @@ export const es = {
         anon_disclaimer: '*Las ediciones anónimas se rastrean por dirección IP y huella digital para evitar abusos.',
         session_expired_title: 'Sesión Expirada',
         session_expired_desc: 'Por favor, iniciá sesión nuevamente para continuar.',
+        auth_required_title: 'Inicio de Sesión Requerido',
+        auth_required_desc: 'Por favor, iniciá sesión para ver perfiles de adoptantes.',
     },
     nav: {
         sign_out: 'Cerrar Sesión',
@@ -188,6 +201,7 @@ export const es = {
         set_profile: 'Establecer',
         set_as_profile: 'Establecer como foto de perfil',
         view_source: 'Ver Fuente Original',
+        profile_data: 'Datos del Perfil',
     },
     adoption: {
         title: 'Interacciones',
@@ -255,6 +269,19 @@ export const es = {
         other: 'Otro...',
     },
     flagging: {
+        report_actions: 'Reportar',
+        // Menu items
+        menu_duplicate: 'Reportar Duplicado',
+        menu_duplicate_desc: 'Marcar como duplicado de otro perfil',
+        menu_inaccuracy: 'Reportar Inexactitud',
+        menu_inaccuracy_desc: 'La información sobre mí es incorrecta',
+        menu_deletion: 'Solicitar Eliminación',
+        menu_deletion_desc: 'Eliminar mis datos de esta plataforma',
+        // Modal titles
+        title_duplicate: 'Reportar Duplicado',
+        title_inaccuracy: 'Reportar Inexactitud',
+        title_deletion: 'Solicitar Eliminación',
+        // Legacy keys (still used)
         report_merge: 'Reportar / Unir',
         report_title: 'Reportar',
         reason: 'Razón',
@@ -264,8 +291,10 @@ export const es = {
         search_placeholder: 'Buscar por nombre o email...',
         selected_original: 'Original Seleccionado',
         details: 'Detalles (Opcional)',
+        details_required: 'Detalles *',
         details_placeholder: 'Contexto adicional...',
         submit: 'Enviar Reporte',
+        submit_deletion: 'Enviar Solicitud de Eliminación',
         submitting: 'Enviando...',
         submit_success: 'Reporte enviado exitosamente',
         banner_duplicate: 'Este perfil ha sido marcado como posible duplicado.',
@@ -273,6 +302,15 @@ export const es = {
         check_link: 'este perfil',
         banner_inaccurate: 'Este perfil ha sido marcado por información inexacta.',
         system_suggestions: 'Coincidencias sugeridas por el sistema',
+        // Data-request form
+        your_name: 'Tu nombre *',
+        your_email: 'Tu email (opcional)',
+        inaccuracy_desc: 'Si este perfil contiene información incorrecta sobre vos, avisanos:',
+        inaccuracy_placeholder: '¿Qué información es incorrecta?',
+        deletion_desc: 'Para solicitar la eliminación de tus datos de esta plataforma, proporcioná tus datos:',
+        deletion_placeholder: '¿Por qué deberían eliminarse estos datos?',
+        request_received: 'Solicitud recibida',
+        request_review_time: 'Revisaremos tu solicitud en un plazo de 10 días hábiles.',
     },
     audit: {
         log_title: 'Registro de Cambios',
@@ -296,6 +334,9 @@ export const es = {
         '1': '⭐',
         unknown: 'Desconocido',
         dangerous: 'Peligroso',
+        poor: 'Malo',
+        average: 'Promedio',
+        good: 'Bueno',
         excellent: 'Excelente',
     },
     dashboard: {
@@ -554,6 +595,20 @@ export const es = {
         ctaInstallButton: 'Instalar App',
         ctaIOSHint: 'Tocá',
         ctaIOSAction: 'y luego "Agregar a inicio"',
-    }
+    },
+    settings: {
+        title: 'Configuración',
+        country: 'País',
+        country_description: 'Tu país determina qué registros de adoptantes ves en los resultados de búsqueda.',
+        country_select: 'Seleccionar país',
+        country_detected: 'Auto-detectado',
+        country_confirm: 'Detectamos tu país',
+        country_confirm_yes: 'Sí, confirmar',
+        country_confirm_change: 'Cambiar país',
+        language: 'Idioma',
+        theme: 'Tema',
+        save: 'Guardar',
+        saved: '¡Guardado!',
+    },
 };
 

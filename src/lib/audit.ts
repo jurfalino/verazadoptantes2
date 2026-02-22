@@ -94,12 +94,27 @@ export function logAudit(entry: AuditEntry) {
  *
  * IMPORTANT: JWT strategy gives a new random user.id per sign-in,
  * so we look up users by EMAIL to prevent duplicate rows.
+ *
+ * Country detection: reads CF-IPCountry header on first sign-in and
+ * stores it. Does NOT overwrite on subsequent sign-ins so user
+ * changes via settings are preserved.
  */
 export function ensureUserProfile(userId: string, email?: string, name?: string, image?: string) {
+    // Read CF-IPCountry header SYNCHRONOUSLY before waitUntil
+    // Same pattern as logAudit uses for cf-connecting-ip
+    let detectedCountry: string | null = null;
+    try {
+        const h = headers();
+        if (h && typeof (h as any).get === 'function') {
+            detectedCountry = (h as any).get('cf-ipcountry') || null;
+        }
+    } catch { /* headers() unavailable outside server request context */ }
+
     const doUpsert = async () => {
         try {
             const { env } = getRequestContext();
             if (!env?.DB) return;
+
 
             // Resolve the canonical user ID by looking up email first
             let resolvedId = userId;
@@ -129,11 +144,18 @@ export function ensureUserProfile(userId: string, email?: string, name?: string,
             }
 
             // 2. Ensure user_profiles row (INSERT OR IGNORE keeps original created_at)
-            await env.DB.prepare(
-                `INSERT OR IGNORE INTO user_profiles (user_id, created_at) VALUES (?, strftime('%s','now'))`
-            ).bind(resolvedId).run();
+            //    On first sign-in, also store the detected country
+            if (detectedCountry) {
+                await env.DB.prepare(
+                    `INSERT OR IGNORE INTO user_profiles (user_id, country, created_at) VALUES (?, ?, strftime('%s','now'))`
+                ).bind(resolvedId, detectedCountry).run();
+            } else {
+                await env.DB.prepare(
+                    `INSERT OR IGNORE INTO user_profiles (user_id, created_at) VALUES (?, strftime('%s','now'))`
+                ).bind(resolvedId).run();
+            }
 
-            // Always update last_active_at
+            // Always update last_active_at (but NOT country — respect user overrides)
             await env.DB.prepare(
                 `UPDATE user_profiles SET last_active_at = strftime('%s','now') WHERE user_id = ?`
             ).bind(resolvedId).run();
