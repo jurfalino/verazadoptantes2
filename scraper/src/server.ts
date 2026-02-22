@@ -39,14 +39,68 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
         });
 
         const context = await browser.newContext({
-            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            viewport: { width: 1280, height: 800 }
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            viewport: { width: 1280, height: 800 },
+            locale: 'es-AR',
+            timezoneId: 'America/Argentina/Buenos_Aires',
         });
 
         const page: Page = await context.newPage();
 
         // Navigate to the URL
         await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+
+        // Dismiss cookie consent dialog if present
+        try {
+            const cookieBtn = await page.$('button[data-cookiebanner="accept_button"], button[data-testid="cookie-policy-manage-dialog-accept-button"]');
+            if (cookieBtn) {
+                await cookieBtn.click();
+                console.log('[Scraper] Dismissed cookie consent');
+                await page.waitForTimeout(1000);
+            }
+        } catch { /* no cookie dialog */ }
+
+        // Dismiss Facebook login modal/overlay if present
+        // Facebook now shows a login wall overlay on public group posts — content is behind it
+        try {
+            // Strategy 1: Click close button on the login modal
+            const closeSelectors = [
+                'div[role="dialog"] div[aria-label="Close"]',
+                'div[role="dialog"] div[aria-label="Cerrar"]',
+                'div[role="dialog"] [aria-label="Close"]',
+                'div[role="dialog"] [aria-label="Cerrar"]',
+            ];
+            let dismissed = false;
+            for (const sel of closeSelectors) {
+                const closeBtn = await page.$(sel);
+                if (closeBtn) {
+                    await closeBtn.click();
+                    console.log(`[Scraper] Dismissed login modal via: ${sel}`);
+                    dismissed = true;
+                    await page.waitForTimeout(1000);
+                    break;
+                }
+            }
+
+            // Strategy 2: Press Escape to close any modal
+            if (!dismissed) {
+                await page.keyboard.press('Escape');
+                console.log('[Scraper] Pressed Escape to dismiss modal');
+                await page.waitForTimeout(1000);
+            }
+
+            // Strategy 3: Remove login overlay from DOM so we can access content behind it
+            await page.evaluate(() => {
+                // Remove login modals/overlays
+                document.querySelectorAll('div[role="dialog"]').forEach(el => el.remove());
+                // Remove backdrop/overlay
+                document.querySelectorAll('div[data-visualcompletion="ignore"]').forEach(el => {
+                    if (el instanceof HTMLElement && el.style.position === 'fixed') el.remove();
+                });
+            });
+        } catch (e) {
+            console.log('[Scraper] Login modal dismissal error (may not be present):', e instanceof Error ? e.message : e);
+        }
 
         // Wait for content to load - Facebook posts are in article elements
         try {
@@ -58,6 +112,11 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
 
         // Extra wait for images to load
         await page.waitForTimeout(2000);
+
+        // Log page state for debugging
+        const pageTitle = await page.title();
+        const articleCount = await page.$$eval('div[role="article"]', els => els.length);
+        console.log(`[Scraper] Page title: "${pageTitle}", articles found: ${articleCount}`);
 
         // Extract text content
         let text = '';
