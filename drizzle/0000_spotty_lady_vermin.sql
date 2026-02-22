@@ -1,4 +1,4 @@
-CREATE TABLE `adopter_flags` (
+CREATE TABLE IF NOT EXISTS `adopter_flags` (
 	`id` text PRIMARY KEY NOT NULL,
 	`adopter_id` text NOT NULL,
 	`flagged_by` text DEFAULT 'anonymous',
@@ -8,7 +8,7 @@ CREATE TABLE `adopter_flags` (
 	`created_at` integer DEFAULT (strftime('%s', 'now'))
 );
 --> statement-breakpoint
-CREATE TABLE `adopter_history` (
+CREATE TABLE IF NOT EXISTS `adopter_history` (
 	`id` text PRIMARY KEY NOT NULL,
 	`adopter_id` text NOT NULL,
 	`changed_by` text DEFAULT 'anonymous',
@@ -16,7 +16,7 @@ CREATE TABLE `adopter_history` (
 	`changed_at` integer DEFAULT (strftime('%s', 'now'))
 );
 --> statement-breakpoint
-CREATE TABLE `adopter_images` (
+CREATE TABLE IF NOT EXISTS `adopter_images` (
 	`id` text PRIMARY KEY NOT NULL,
 	`adopter_id` text NOT NULL,
 	`url` text NOT NULL,
@@ -25,7 +25,7 @@ CREATE TABLE `adopter_images` (
 	`added_by` text DEFAULT 'anonymous'
 );
 --> statement-breakpoint
-CREATE TABLE `adopters` (
+CREATE TABLE IF NOT EXISTS `adopters` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
 	`contact_info` text,
@@ -35,8 +35,8 @@ CREATE TABLE `adopters` (
 	`status` text DEFAULT 'good'
 );
 --> statement-breakpoint
-CREATE INDEX `name_idx` ON `adopters` (`name`);--> statement-breakpoint
-CREATE TABLE `adoptions` (
+CREATE INDEX IF NOT EXISTS `name_idx` ON `adopters` (`name`);--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `adoptions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`adopter_id` text NOT NULL,
 	`animal_name` text,
@@ -49,7 +49,7 @@ CREATE TABLE `adoptions` (
 	`added_by` text DEFAULT 'anonymous'
 );
 --> statement-breakpoint
-CREATE TABLE `searches` (
+CREATE TABLE IF NOT EXISTS `searches` (
 	`id` text PRIMARY KEY NOT NULL,
 	`query` text NOT NULL,
 	`type` text DEFAULT 'general',
