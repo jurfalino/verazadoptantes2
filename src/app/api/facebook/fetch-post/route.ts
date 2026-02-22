@@ -44,9 +44,13 @@ export async function POST(request: NextRequest) {
 
         const userId = session?.user?.email || 'unknown';
 
-        // Try Playwright scraper service first (if configured and not explicitly using fallback)
+        // Detect video/reel URLs early — skip Playwright scraper for these
+        // (Playwright can't extract video content and wastes ~8s returning empty data)
+        const isVideoUrl = /\/(reel|r|share\/r)\//.test(desktopUrl) || /\/videos\//.test(desktopUrl);
+
+        // Try Playwright scraper service first (if configured, not fallback, and NOT a video URL)
         const scraperUrl = process.env.SCRAPER_URL;
-        if (scraperUrl && !useFallback) {
+        if (scraperUrl && !useFallback && !isVideoUrl) {
             try {
 
                 // Use 120s timeout as safety net (user can bail earlier via progress UI)
@@ -76,16 +80,14 @@ export async function POST(request: NextRequest) {
 
                         // Return scraper results if we got meaningful content
                         if (scraperData.data.images.length > 0 || scraperData.data.text.length > 50) {
-                            // Detect video posts from URL patterns (Reels, /r/, /reel/)
-                            const isVideoUrl = /\/(reel|r)\//.test(desktopUrl);
                             return NextResponse.json({
                                 success: true,
                                 data: {
                                     ...scraperData.data,
-                                    ...(isVideoUrl && { isVideo: true }),
+                                    ...(isVideoUrl ? { isVideo: true as const } : {}),
                                 },
                                 source: 'playwright',
-                                ...(isVideoUrl && { isVideo: true }),
+                                ...(isVideoUrl ? { isVideo: true as const } : {}),
                             });
                         }
                     }
@@ -114,16 +116,29 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        // Try to fetch the page content (static HTML fallback)
-        // Use Googlebot UA — Facebook serves OG meta tags to crawlers but shows login walls to browser UAs
-        const response = await fetch(desktopUrl, {
+        // Fetch page HTML for OG-tag extraction
+        // Use facebookexternalhit UA — this is Facebook's own crawler identity,
+        // guaranteed to receive OG meta tags (unlike Googlebot which FB may block from CDN IPs)
+        let response = await fetch(desktopUrl, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+                'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.5',
             },
             redirect: 'follow',
         });
+
+        // If facebookexternalhit fails, try Googlebot UA as fallback
+        if (!response.ok) {
+            response = await fetch(desktopUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                },
+                redirect: 'follow',
+            });
+        }
 
 
         if (!response.ok) {
@@ -171,13 +186,20 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        // If extraction fails, return failure so the UI can show an error with retry
-        if (!postData.text && postData.images.length === 0) {
+        // For video posts, be lenient — any data at all is enough (user will add screenshots)
+        // For regular posts, require at least text or images
+        const hasAnyContent = postData.text || postData.images.length > 0 || postData.author;
+        if (!hasAnyContent) {
             return NextResponse.json({
                 success: false,
                 extractionFailed: true,
                 error: 'No se pudo extraer contenido de esta publicación. Facebook puede estar bloqueando la solicitud temporalmente.',
             });
+        }
+
+        // For video posts with minimal text, prepend the author/group name for context
+        if (postData.isVideo && postData.author && (!postData.text || postData.text.length < 20)) {
+            postData.text = `[${postData.author}]\n${postData.text || ''}`;
         }
 
         return NextResponse.json({
