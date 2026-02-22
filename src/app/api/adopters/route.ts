@@ -7,6 +7,7 @@ import { eq, like, or, and, isNull, type InferSelectModel } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
 import { tokenizeAdopter } from '@/app/actions/duplicates';
+import { processImageForStorage } from '@/lib/r2';
 
 export async function GET(request: Request) {
     const session = await auth();
@@ -267,10 +268,15 @@ export async function POST(request: Request) {
                     continue;
                 }
 
+                const imageId = crypto.randomUUID();
+
+                // Persist external URLs (Facebook CDN etc.) to R2
+                const persistedUrl = await processImageForStorage(imageUrl, newId, imageId);
+
                 await db.insert(adopterImages).values({
-                    id: crypto.randomUUID(),
+                    id: imageId,
                     adopterId: newId,
-                    url: imageUrl,
+                    url: persistedUrl,
                     caption: `Imported from Facebook (${i + 1})`,
                     addedBy: session.user.email || 'anonymous',
                     isProfilePicture: i === 0 ? 1 : 0 // First image as profile picture

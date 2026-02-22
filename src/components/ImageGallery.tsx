@@ -161,11 +161,28 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                             className={`aspect-square bg-emerald-50 rounded-xl overflow-hidden relative group border-2 ${img.isProfilePicture ? 'border-teal-400 ring-2 ring-teal-200' : 'border-emerald-100/50'
                                 }`}
                         >
-                            <img
-                                src={img.url}
-                                className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                                onClick={() => setLightboxImage(img.url)}
-                            />
+                            {img.url.startsWith('broken:') ? (
+                                <div className="w-full h-full flex items-center justify-center bg-stone-100 text-stone-400">
+                                    <div className="text-center p-4">
+                                        <span className="text-2xl">📷</span>
+                                        <p className="text-xs mt-1">{t('adopter.image_expired') || 'Image expired'}</p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <img
+                                    src={img.url}
+                                    className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                                    onClick={() => setLightboxImage(img.url)}
+                                    onError={(e) => {
+                                        const target = e.currentTarget;
+                                        target.style.display = 'none';
+                                        const placeholder = document.createElement('div');
+                                        placeholder.className = 'w-full h-full flex items-center justify-center bg-stone-100 text-stone-400 absolute inset-0';
+                                        placeholder.innerHTML = '<div class="text-center p-4"><span class="text-2xl">📷</span><p class="text-xs mt-1">Image unavailable</p></div>';
+                                        target.parentElement?.appendChild(placeholder);
+                                    }}
+                                />
+                            )}
 
                             {/* Profile Picture Badge - Top Left */}
                             {img.isProfilePicture ? (

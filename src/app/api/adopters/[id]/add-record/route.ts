@@ -6,6 +6,7 @@ import { adopters, adopterImages, adoptions } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
+import { processImageForStorage } from '@/lib/r2';
 
 export async function POST(
     request: Request,
@@ -105,11 +106,16 @@ export async function POST(
                     continue;
                 }
 
+                const imageId = crypto.randomUUID();
+
+                // Persist external URLs (Facebook CDN etc.) to R2
+                const persistedUrl = await processImageForStorage(imageUrl, adopterId, imageId);
+
                 await db.insert(adopterImages).values({
-                    id: crypto.randomUUID(),
+                    id: imageId,
                     adopterId,
                     adoptionId,
-                    url: imageUrl,
+                    url: persistedUrl,
                     caption: `Imported from Facebook (${i + 1})`,
                     addedBy: session.user.email || 'anonymous',
                     isProfilePicture: 0

@@ -5,6 +5,7 @@ import { eq, sql, and, isNull } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { logger } from '@/lib/logger';
 import { getDb, getUser } from './_db';
+import { processImageForStorage } from '@/lib/r2';
 
 export async function saveImage(adopterId: string, url: string, caption?: string, adoptionId?: string) {
     try {
@@ -13,11 +14,15 @@ export async function saveImage(adopterId: string, url: string, caption?: string
         const addedBy = await getUser();
 
         const id = crypto.randomUUID();
+
+        // Persist external URLs (Facebook CDN etc.) to R2 for permanent storage
+        const persistedUrl = await processImageForStorage(url, adopterId, id);
+
         await db.insert(adopterImages).values({
             id,
             adopterId,
             adoptionId: adoptionId || null,
-            url,
+            url: persistedUrl,
             caption: caption || null,
             uploadedAt: new Date(),
             addedBy
