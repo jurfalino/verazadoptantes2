@@ -29,7 +29,7 @@ export default function AdminSidebar() {
     return (
         <>
             {/* Mobile Header Bar */}
-            <div className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-stone-900 text-white flex items-center justify-between px-4 py-3 shadow-lg">
+            <div className="lg:hidden fixed top-16 left-0 right-0 z-40 bg-stone-900 text-white flex items-center justify-between px-4 py-3 shadow-lg">
                 <div className="flex items-center gap-2">
                     <button
                         onClick={() => setOpen(true)}
@@ -48,17 +48,17 @@ export default function AdminSidebar() {
             {/* Mobile overlay */}
             {open && (
                 <div
-                    className="lg:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+                    className="lg:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-sm mt-16"
                     onClick={() => setOpen(false)}
                 />
             )}
 
             {/* Sidebar — desktop: always visible, mobile: slide-in drawer */}
             <aside className={`
-                fixed top-0 left-0 z-50 h-full w-64 bg-stone-900 text-stone-300 flex-shrink-0
+                fixed top-16 left-0 z-50 h-[calc(100%-4rem)] w-64 bg-stone-900 text-stone-300 flex-shrink-0
                 transition-transform duration-300 ease-in-out
                 ${open ? 'translate-x-0' : '-translate-x-full'}
-                lg:translate-x-0 lg:static lg:z-auto
+                lg:top-0 lg:h-full lg:translate-x-0 lg:static lg:z-auto
             `}>
                 <div className="p-6 flex items-center justify-between">
                     <div>

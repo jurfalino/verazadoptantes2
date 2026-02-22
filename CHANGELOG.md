@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.5.5-1] - 2026-02-22
+
+### Fixed
+- **Admin sidebar mobile layout** — improved mobile nav responsiveness in admin layout and sidebar component
+
+---
+
 ## [2.5.5] - 2026-02-13
 
 ### Fixed

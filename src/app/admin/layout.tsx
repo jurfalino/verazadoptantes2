@@ -21,7 +21,7 @@ export default async function AdminLayout({
             <AdminSidebar />
 
             {/* Main Content — top padding on mobile for the fixed header bar */}
-            <main className="flex-1 overflow-y-auto lg:h-screen p-4 pt-16 lg:p-8 lg:pt-8">
+            <main className="flex-1 overflow-y-auto lg:h-screen p-4 pt-28 lg:p-8 lg:pt-8">
                 {children}
             </main>
         </div>

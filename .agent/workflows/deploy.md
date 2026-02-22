@@ -14,6 +14,20 @@ description: How to commit, tag, and deploy changes. MUST be followed for ANY gi
 | `staging` | `staging.verazadoptantes2.pages.dev` | ✅ |
 | `feature/*` | `<hash>.verazadoptantes2.pages.dev` | ❌ |
 
+## Version Increment (MANDATORY)
+
+> **🚨 Every deployment MUST increment the version. No exceptions.**
+
+| Change Type | Version Part | Example |
+|-------------|-------------|---------|
+| New features, significant changes | Minor (`x.Y.z`) | `2.5.3` → `2.6.0` |
+| Small fixes, tweaks, config changes | Build suffix (`x.y.z-BUILD`) | `2.6.0` → `2.6.0-1`, or `2.6.0-1` → `2.6.0-2` |
+
+Run this BEFORE committing (step 4):
+```
+npm version <version> --no-git-tag-version
+```
+
 ## Steps
 
 1. Run TypeScript type check to verify zero errors:
@@ -75,10 +89,7 @@ git push origin v<version>
    - Add a new `## [version] - YYYY-MM-DD` section at the top
    - Group changes under `### Added`, `### Changed`, `### Fixed`, `### Removed` as appropriate
 
-10. Update version in package.json BEFORE committing (step 4):
-```
-npm version <version> --no-git-tag-version
-```
+
 
 ## 🗃️ Database Migrations
 
