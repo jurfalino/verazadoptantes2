@@ -24,6 +24,7 @@ export default function AdminUsersPage() {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editForm, setEditForm] = useState({ organization: '', role: 'viewer', notes: '', commsOptIn: false });
     const [saving, setSaving] = useState(false);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
     const [filter, setFilter] = useState('');
     const [countryFilter, setCountryFilter] = useState('');
 
@@ -76,6 +77,26 @@ export default function AdminUsersPage() {
             console.error(e);
         } finally {
             setSaving(false);
+        }
+    };
+
+    const deleteUser = async (userId: string, userName: string) => {
+        try {
+            const res = await fetch('/api/admin/users', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId }),
+            });
+            const data = await res.json() as { error?: string };
+            if (!res.ok) {
+                alert(data.error || 'Failed to delete user');
+                return;
+            }
+            setUsers(prev => prev.filter(u => u.id !== userId));
+            setDeletingId(null);
+        } catch (e) {
+            console.error(e);
+            alert('Failed to delete user');
         }
     };
 
@@ -222,12 +243,38 @@ export default function AdminUsersPage() {
                                             </button>
                                         </div>
                                     ) : (
-                                        <button
-                                            onClick={() => startEdit(user)}
-                                            className="text-stone-400 hover:text-stone-700 text-xs underline underline-offset-2"
-                                        >
-                                            Edit
-                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() => startEdit(user)}
+                                                className="text-stone-400 hover:text-stone-700 text-xs underline underline-offset-2"
+                                            >
+                                                Edit
+                                            </button>
+                                            {deletingId === user.id ? (
+                                                <>
+                                                    <button
+                                                        onClick={() => deleteUser(user.id, user.name || user.email)}
+                                                        className="text-red-600 hover:text-red-800 text-xs font-bold"
+                                                    >
+                                                        Confirm?
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setDeletingId(null)}
+                                                        className="text-stone-400 hover:text-stone-600 text-xs"
+                                                    >
+                                                        No
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <button
+                                                    onClick={() => setDeletingId(user.id)}
+                                                    className="text-stone-300 hover:text-red-500 text-xs transition-colors"
+                                                    title="Delete user"
+                                                >
+                                                    🗑️
+                                                </button>
+                                            )}
+                                        </div>
                                     )}
                                 </td>
                             </tr>
@@ -334,12 +381,38 @@ export default function AdminUsersPage() {
                                         <span className="text-stone-500">{formatDate(user.last_active_at)}</span>
                                     </div>
                                 </div>
-                                <button
-                                    onClick={() => startEdit(user)}
-                                    className="w-full py-2 text-xs font-bold text-stone-500 bg-stone-50 rounded-lg hover:bg-stone-100"
-                                >
-                                    Edit
-                                </button>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => startEdit(user)}
+                                        className="flex-1 py-2 text-xs font-bold text-stone-500 bg-stone-50 rounded-lg hover:bg-stone-100"
+                                    >
+                                        Edit
+                                    </button>
+                                    {deletingId === user.id ? (
+                                        <>
+                                            <button
+                                                onClick={() => deleteUser(user.id, user.name || user.email)}
+                                                className="flex-1 py-2 text-xs font-bold text-white bg-red-500 rounded-lg hover:bg-red-600"
+                                            >
+                                                Confirm Delete?
+                                            </button>
+                                            <button
+                                                onClick={() => setDeletingId(null)}
+                                                className="px-3 py-2 text-xs font-bold text-stone-500 bg-stone-50 rounded-lg hover:bg-stone-100"
+                                            >
+                                                No
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <button
+                                            onClick={() => setDeletingId(user.id)}
+                                            className="px-3 py-2 text-xs text-stone-300 bg-stone-50 rounded-lg hover:bg-red-50 hover:text-red-500 transition-colors"
+                                            title="Delete user"
+                                        >
+                                            🗑️
+                                        </button>
+                                    )}
+                                </div>
                             </>
                         )}
                     </div>

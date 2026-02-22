@@ -75,3 +75,40 @@ export async function PUT(request: Request) {
         return NextResponse.json({ error: "Failed to update profile" }, { status: 500 });
     }
 }
+
+export async function DELETE(request: Request) {
+    const session = await auth();
+    if (!session?.user?.email || !await isAdminAsync(session.user.email)) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    try {
+        const { env } = getRequestContext();
+        if (!env?.DB) return NextResponse.json({ error: "No database" }, { status: 500 });
+
+        const body = await request.json() as { userId: string };
+        if (!body.userId) {
+            return NextResponse.json({ error: "Missing userId" }, { status: 400 });
+        }
+
+        // Safety: prevent self-deletion
+        const targetUser = await env.DB.prepare(
+            `SELECT email FROM user WHERE id = ?`
+        ).bind(body.userId).first<{ email: string }>();
+
+        if (targetUser?.email === session.user.email) {
+            return NextResponse.json({ error: "Cannot delete your own account" }, { status: 400 });
+        }
+
+        // Delete user profile first (FK dependency), then user record
+        await env.DB.prepare(`DELETE FROM user_profiles WHERE user_id = ?`).bind(body.userId).run();
+        await env.DB.prepare(`DELETE FROM account WHERE "userId" = ?`).bind(body.userId).run();
+        await env.DB.prepare(`DELETE FROM session WHERE "userId" = ?`).bind(body.userId).run();
+        await env.DB.prepare(`DELETE FROM user WHERE id = ?`).bind(body.userId).run();
+
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        console.error("Delete user error:", error);
+        return NextResponse.json({ error: "Failed to delete user", detail: String(error) }, { status: 500 });
+    }
+}
