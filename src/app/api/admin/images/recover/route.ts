@@ -21,6 +21,12 @@ export async function GET() {
     const { env } = getRequestContext();
     if (!env?.DB) return NextResponse.json({ error: 'No database' }, { status: 500 });
 
+    // First, undo any 'unrecoverable:' marks from previous runs so we can retry
+    await env.DB.prepare(`
+        UPDATE adopter_images SET url = REPLACE(url, 'unrecoverable:', '')
+        WHERE url LIKE 'unrecoverable:%'
+    `).run();
+
     const recoverable = await env.DB.prepare(`
         SELECT DISTINCT 
             ai.adopter_id,
@@ -227,6 +233,13 @@ export async function POST(request: Request) {
 
     const sourceUrl = adopter.source_urls.split(',').filter(Boolean)[0];
     const ogImages = await extractOgImages(sourceUrl);
+
+    // If no OG images found, try the next source URL
+    if (ogImages.length === 0 && adopter.source_urls.split(',').filter(Boolean).length > 1) {
+        const altUrl = adopter.source_urls.split(',').filter(Boolean)[1];
+        const altImages = await extractOgImages(altUrl);
+        ogImages.push(...altImages);
+    }
 
     let savedToR2 = 0;
     let savedFreshUrl = 0;
