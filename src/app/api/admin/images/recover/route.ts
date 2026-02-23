@@ -4,17 +4,15 @@ import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { auth } from '@/auth';
 import { isAdminAsync } from '@/config/admins';
-import { persistImageToR2 } from '@/lib/r2';
+import { uploadToR2 } from '@/lib/r2';
 
 /**
  * Recovery endpoint for expired Facebook images.
- * 
- * Uses facebookexternalhit user agent to fetch OG meta images directly from
- * Facebook posts — no Playwright/scraper needed. Facebook always serves
- * og:image tags to its own crawler UA.
- * 
- * GET  - Returns adopters with broken images and recoverable source URLs
- * POST - Recovers one adopter: fetches Facebook post HTML, extracts og:image, downloads to R2
+ * Uses facebookexternalhit UA to get OG images, downloads them with same UA, uploads to R2.
+ * Processes ONE adopter per call. If download fails, marks images as unrecoverable and moves on.
+ *
+ * GET  - Stats on broken images
+ * POST - Recover one adopter
  */
 
 export async function GET() {
@@ -35,8 +33,9 @@ export async function GET() {
         FROM adopter_images ai
         JOIN adopters a ON a.id = ai.adopter_id
         LEFT JOIN adoptions ad ON ad.adopter_id = ai.adopter_id AND ad.source_url IS NOT NULL AND ad.source_url != ''
-        WHERE (ai.url LIKE 'broken:%' OR (ai.url LIKE '%scontent%' OR ai.url LIKE '%fbcdn%' OR ai.url LIKE '%fbsbx%' OR ai.url LIKE '%lookaside%'))
-          AND ai.url NOT LIKE '%r2.dev%'
+        WHERE ai.url NOT LIKE '%r2.dev%'
+          AND ai.url NOT LIKE 'unrecoverable:%'
+          AND (ai.url LIKE 'broken:%' OR ai.url LIKE '%scontent%' OR ai.url LIKE '%fbcdn%' OR ai.url LIKE '%fbsbx%' OR ai.url LIKE '%lookaside%')
         GROUP BY ai.adopter_id
     `).all<{
         adopter_id: string;
@@ -57,48 +56,90 @@ export async function GET() {
     });
 }
 
-/**
- * Fetch a Facebook post using facebookexternalhit UA and extract og:image URLs.
- * Facebook always serves OG tags to its own crawler — no login wall, no Playwright.
- */
+const FB_UA = 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)';
+
+/** Fetch a Facebook post and extract og:image URLs */
 async function extractOgImages(fbUrl: string): Promise<string[]> {
     const response = await fetch(fbUrl, {
-        headers: {
-            'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
-            'Accept': 'text/html',
-        },
+        headers: { 'User-Agent': FB_UA, 'Accept': 'text/html' },
         redirect: 'follow',
     });
 
-    if (!response.ok) {
-        console.log(`[Recovery] Facebook returned ${response.status} for ${fbUrl}`);
-        return [];
-    }
+    if (!response.ok) return [];
 
     const html = await response.text();
     const images: string[] = [];
 
-    // Extract all og:image meta tags
-    const ogImageRegex = /<meta\s+property="og:image"\s+content="([^"]+)"/gi;
-    let match;
-    while ((match = ogImageRegex.exec(html)) !== null) {
-        let imgUrl = match[1].replace(/&amp;/g, '&');
-        if (imgUrl && !images.includes(imgUrl)) {
-            images.push(imgUrl);
+    // Match og:image in both attribute orders
+    const patterns = [
+        /<meta\s+property="og:image"\s+content="([^"]+)"/gi,
+        /<meta\s+content="([^"]+)"\s+property="og:image"/gi,
+    ];
+    for (const regex of patterns) {
+        let match;
+        while ((match = regex.exec(html)) !== null) {
+            const imgUrl = match[1].replace(/&amp;/g, '&');
+            if (imgUrl && !images.includes(imgUrl)) {
+                images.push(imgUrl);
+            }
         }
     }
 
-    // Also try content before property (Facebook sometimes reverses attribute order)
-    const altRegex = /<meta\s+content="([^"]+)"\s+property="og:image"/gi;
-    while ((match = altRegex.exec(html)) !== null) {
-        let imgUrl = match[1].replace(/&amp;/g, '&');
-        if (imgUrl && !images.includes(imgUrl)) {
-            images.push(imgUrl);
-        }
-    }
-
-    console.log(`[Recovery] Extracted ${images.length} OG images from ${fbUrl}`);
     return images;
+}
+
+/** Download an image and upload to R2. Returns { r2Url, error } */
+async function downloadAndUpload(imgUrl: string, adopterId: string): Promise<{ r2Url?: string; error?: string; status?: number; contentType?: string; size?: number }> {
+    try {
+        // Try downloading with facebookexternalhit UA first (same UA that got the URL)
+        let response = await fetch(imgUrl, {
+            headers: { 'User-Agent': FB_UA, 'Accept': 'image/*,*/*' },
+            redirect: 'follow',
+        });
+
+        // If Facebook blocks it, try with browser UA
+        if (!response.ok) {
+            response = await fetch(imgUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': 'image/*,*/*',
+                },
+                redirect: 'follow',
+            });
+        }
+
+        if (!response.ok) {
+            return { error: `HTTP ${response.status}`, status: response.status };
+        }
+
+        const contentType = response.headers.get('content-type') || 'image/jpeg';
+
+        // If we got HTML back instead of an image, it's a login page
+        if (contentType.includes('text/html')) {
+            return { error: 'Got HTML instead of image (login wall)', contentType };
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+        const size = arrayBuffer.byteLength;
+
+        if (size < 500) {
+            return { error: `Too small (${size} bytes)`, size };
+        }
+
+        // Determine extension
+        let ext = 'jpg';
+        if (contentType.includes('png')) ext = 'png';
+        else if (contentType.includes('webp')) ext = 'webp';
+        else if (contentType.includes('gif')) ext = 'gif';
+
+        const imageId = crypto.randomUUID();
+        const key = `adopters/${adopterId}/${imageId}.${ext}`;
+        const r2Url = await uploadToR2(key, arrayBuffer, contentType);
+
+        return { r2Url, size, contentType };
+    } catch (error) {
+        return { error: String(error) };
+    }
 }
 
 export async function POST(request: Request) {
@@ -112,7 +153,7 @@ export async function POST(request: Request) {
 
     const body = await request.json() as { adopterId?: string };
 
-    // Get ONE adopter to recover
+    // Get ONE adopter to recover (exclude already-marked unrecoverable)
     let stmt;
     if (body.adopterId) {
         stmt = env.DB.prepare(`
@@ -121,10 +162,9 @@ export async function POST(request: Request) {
             JOIN adopters a ON a.id = ai.adopter_id
             LEFT JOIN adoptions ad ON ad.adopter_id = ai.adopter_id AND ad.source_url IS NOT NULL AND ad.source_url != ''
             WHERE ai.adopter_id = ?
+              AND ai.url NOT LIKE '%r2.dev%' AND ai.url NOT LIKE 'unrecoverable:%'
               AND (ai.url LIKE 'broken:%' OR ai.url LIKE '%scontent%' OR ai.url LIKE '%fbcdn%' OR ai.url LIKE '%fbsbx%')
-              AND ai.url NOT LIKE '%r2.dev%'
-            GROUP BY ai.adopter_id
-            LIMIT 1
+            GROUP BY ai.adopter_id LIMIT 1
         `).bind(body.adopterId);
     } else {
         stmt = env.DB.prepare(`
@@ -132,73 +172,89 @@ export async function POST(request: Request) {
             FROM adopter_images ai
             JOIN adopters a ON a.id = ai.adopter_id
             LEFT JOIN adoptions ad ON ad.adopter_id = ai.adopter_id AND ad.source_url IS NOT NULL AND ad.source_url != ''
-            WHERE (ai.url LIKE 'broken:%' OR ai.url LIKE '%scontent%' OR ai.url LIKE '%fbcdn%' OR ai.url LIKE '%fbsbx%')
-              AND ai.url NOT LIKE '%r2.dev%'
+            WHERE ai.url NOT LIKE '%r2.dev%' AND ai.url NOT LIKE 'unrecoverable:%'
+              AND (ai.url LIKE 'broken:%' OR ai.url LIKE '%scontent%' OR ai.url LIKE '%fbcdn%' OR ai.url LIKE '%fbsbx%')
             GROUP BY ai.adopter_id
             HAVING source_urls IS NOT NULL
             LIMIT 1
         `);
     }
 
-    const result = await stmt.first<{
+    const adopter = await stmt.first<{
         adopter_id: string;
         adopter_name: string;
         source_urls: string | null;
     }>();
 
-    if (!result) {
-        return NextResponse.json({ message: 'No more adopters to recover', done: true });
+    if (!adopter) {
+        return NextResponse.json({ done: true, message: 'No more adopters to recover' });
     }
 
-    if (!result.source_urls) {
+    if (!adopter.source_urls) {
         return NextResponse.json({
-            adopterId: result.adopter_id,
-            adopterName: result.adopter_name,
+            adopterId: adopter.adopter_id,
+            adopterName: adopter.adopter_name,
             error: 'No source URL',
             imagesFound: 0,
             imagesSaved: 0,
         });
     }
 
-    const urls = [...new Set(result.source_urls.split(',').filter(Boolean))];
-    let totalFound = 0;
-    let totalSaved = 0;
-    const imageResults: Array<{ source: string; found: number; saved: number }> = [];
+    const sourceUrl = adopter.source_urls.split(',').filter(Boolean)[0];
+    const ogImages = await extractOgImages(sourceUrl);
+    const downloadResults: Array<{ imgUrl: string; result: Awaited<ReturnType<typeof downloadAndUpload>> }> = [];
 
-    for (const sourceUrl of urls) {
-        // Fetch OG images directly via HTTP (no Playwright!)
-        const ogImages = await extractOgImages(sourceUrl);
-        totalFound += ogImages.length;
+    let savedCount = 0;
 
-        let saved = 0;
-        for (const imgUrl of ogImages) {
-            const imageId = crypto.randomUUID();
-            const r2Url = await persistImageToR2(imgUrl, result.adopter_id, imageId);
+    for (const imgUrl of ogImages) {
+        const result = await downloadAndUpload(imgUrl, adopter.adopter_id);
+        downloadResults.push({ imgUrl: imgUrl.substring(0, 100), result });
 
-            if (r2Url) {
-                const brokenImage = await env.DB.prepare(`
-                    SELECT id FROM adopter_images 
-                    WHERE adopter_id = ? 
-                      AND (url LIKE 'broken:%' OR url LIKE '%scontent%' OR url LIKE '%fbcdn%' OR url LIKE '%fbsbx%')
-                      AND url NOT LIKE '%r2.dev%'
-                    LIMIT 1
-                `).bind(result.adopter_id).first<{ id: string }>();
+        if (result.r2Url) {
+            // Update a broken image record
+            const brokenImage = await env.DB.prepare(`
+                SELECT id FROM adopter_images 
+                WHERE adopter_id = ? 
+                  AND url NOT LIKE '%r2.dev%' AND url NOT LIKE 'unrecoverable:%'
+                  AND (url LIKE 'broken:%' OR url LIKE '%scontent%' OR url LIKE '%fbcdn%' OR url LIKE '%fbsbx%')
+                LIMIT 1
+            `).bind(adopter.adopter_id).first<{ id: string }>();
 
-                if (brokenImage) {
-                    await env.DB.prepare(
-                        `UPDATE adopter_images SET url = ?, caption = REPLACE(COALESCE(caption, ''), ' [broken: original expired]', '') WHERE id = ?`
-                    ).bind(r2Url, brokenImage.id).run();
-                } else {
-                    await env.DB.prepare(`
-                        INSERT INTO adopter_images (id, adopter_id, url, caption, added_by)
-                        VALUES (?, ?, ?, 'Recovered from Facebook', ?)
-                    `).bind(imageId, result.adopter_id, r2Url, session.user.email).run();
-                }
-                saved++;
+            if (brokenImage) {
+                await env.DB.prepare(
+                    `UPDATE adopter_images SET url = ? WHERE id = ?`
+                ).bind(result.r2Url, brokenImage.id).run();
+            } else {
+                const newId = crypto.randomUUID();
+                await env.DB.prepare(
+                    `INSERT INTO adopter_images (id, adopter_id, url, caption, added_by) VALUES (?, ?, ?, 'Recovered', ?)`
+                ).bind(newId, adopter.adopter_id, result.r2Url, session.user.email).run();
             }
+            savedCount++;
         }
-        totalSaved += saved;
-        imageResults.push({ source: sourceUrl, found: ogImages.length, saved });
+    }
+
+    // If we found images but couldn't save ANY, mark all broken images for this adopter
+    // as unrecoverable so we don't loop on them forever
+    if (ogImages.length > 0 && savedCount === 0) {
+        await env.DB.prepare(`
+            UPDATE adopter_images 
+            SET url = 'unrecoverable:' || url
+            WHERE adopter_id = ?
+              AND url NOT LIKE '%r2.dev%' AND url NOT LIKE 'unrecoverable:%'
+              AND (url LIKE 'broken:%' OR url LIKE '%scontent%' OR url LIKE '%fbcdn%' OR url LIKE '%fbsbx%')
+        `).bind(adopter.adopter_id).run();
+    }
+
+    // Also if no OG images found at all, mark as unrecoverable
+    if (ogImages.length === 0) {
+        await env.DB.prepare(`
+            UPDATE adopter_images 
+            SET url = 'unrecoverable:' || url
+            WHERE adopter_id = ?
+              AND url NOT LIKE '%r2.dev%' AND url NOT LIKE 'unrecoverable:%'
+              AND (url LIKE 'broken:%' OR url LIKE '%scontent%' OR url LIKE '%fbcdn%' OR url LIKE '%fbsbx%')
+        `).bind(adopter.adopter_id).run();
     }
 
     // Count remaining
@@ -206,16 +262,17 @@ export async function POST(request: Request) {
         SELECT COUNT(DISTINCT ai.adopter_id) as count
         FROM adopter_images ai
         JOIN adoptions ad ON ad.adopter_id = ai.adopter_id AND ad.source_url IS NOT NULL AND ad.source_url != ''
-        WHERE (ai.url LIKE 'broken:%' OR ai.url LIKE '%scontent%' OR ai.url LIKE '%fbcdn%' OR ai.url LIKE '%fbsbx%')
-          AND ai.url NOT LIKE '%r2.dev%'
+        WHERE ai.url NOT LIKE '%r2.dev%' AND ai.url NOT LIKE 'unrecoverable:%'
+          AND (ai.url LIKE 'broken:%' OR ai.url LIKE '%scontent%' OR ai.url LIKE '%fbcdn%' OR ai.url LIKE '%fbsbx%')
     `).first<{ count: number }>();
 
     return NextResponse.json({
-        adopterId: result.adopter_id,
-        adopterName: result.adopter_name,
-        imagesFound: totalFound,
-        imagesSaved: totalSaved,
-        imageResults,
+        adopterId: adopter.adopter_id,
+        adopterName: adopter.adopter_name,
+        sourceUrl,
+        imagesFound: ogImages.length,
+        imagesSaved: savedCount,
         remaining: remaining?.count || 0,
+        downloadResults, // Full debugging details
     });
 }
