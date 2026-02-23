@@ -155,11 +155,14 @@ export async function POST(request: Request) {
 
                 const scrapeData = await scrapeResponse.json() as {
                     success: boolean;
-                    images?: string[];
+                    data?: { text?: string; author?: string; images?: string[] };
+                    images?: string[]; // fallback in case scraper sends flat
                     error?: string;
                 };
 
-                if (!scrapeData.success || !scrapeData.images?.length) {
+                const scrapedImages = scrapeData.data?.images || scrapeData.images || [];
+
+                if (!scrapeData.success || scrapedImages.length === 0) {
                     results.push({
                         adopterId: adopter.adopter_id,
                         sourceUrl,
@@ -173,7 +176,7 @@ export async function POST(request: Request) {
 
                 // Download each fresh image and upload to R2
                 let savedCount = 0;
-                for (const imgUrl of scrapeData.images) {
+                for (const imgUrl of scrapedImages) {
                     const imageId = crypto.randomUUID();
                     const r2Url = await persistImageToR2(imgUrl, adopter.adopter_id, imageId);
 
@@ -207,7 +210,7 @@ export async function POST(request: Request) {
                     adopterId: adopter.adopter_id,
                     sourceUrl,
                     scraped: true,
-                    imagesFound: scrapeData.images.length,
+                    imagesFound: scrapedImages.length,
                     imagesSaved: savedCount,
                 });
             } catch (error) {
