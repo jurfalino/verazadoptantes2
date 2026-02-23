@@ -8,11 +8,8 @@ import { uploadToR2 } from '@/lib/r2';
 
 /**
  * Recovery endpoint for expired Facebook images.
- * Uses facebookexternalhit UA to get OG images, downloads them with same UA, uploads to R2.
- * Processes ONE adopter per call. If download fails, marks images as unrecoverable and moves on.
- *
- * GET  - Stats on broken images
- * POST - Recover one adopter
+ * Uses facebookexternalhit UA to get OG images, downloads to R2.
+ * If R2 download fails, saves the fresh OG URL directly (still better than the expired one).
  */
 
 export async function GET() {
@@ -34,7 +31,6 @@ export async function GET() {
         JOIN adopters a ON a.id = ai.adopter_id
         LEFT JOIN adoptions ad ON ad.adopter_id = ai.adopter_id AND ad.source_url IS NOT NULL AND ad.source_url != ''
         WHERE ai.url NOT LIKE '%r2.dev%'
-          AND ai.url NOT LIKE 'unrecoverable:%'
           AND (ai.url LIKE 'broken:%' OR ai.url LIKE '%scontent%' OR ai.url LIKE '%fbcdn%' OR ai.url LIKE '%fbsbx%' OR ai.url LIKE '%lookaside%')
         GROUP BY ai.adopter_id
     `).all<{
@@ -70,7 +66,6 @@ async function extractOgImages(fbUrl: string): Promise<string[]> {
     const html = await response.text();
     const images: string[] = [];
 
-    // Match og:image in both attribute orders
     const patterns = [
         /<meta\s+property="og:image"\s+content="([^"]+)"/gi,
         /<meta\s+content="([^"]+)"\s+property="og:image"/gi,
@@ -88,57 +83,85 @@ async function extractOgImages(fbUrl: string): Promise<string[]> {
     return images;
 }
 
-/** Download an image and upload to R2. Returns { r2Url, error } */
-async function downloadAndUpload(imgUrl: string, adopterId: string): Promise<{ r2Url?: string; error?: string; status?: number; contentType?: string; size?: number }> {
-    try {
-        // Try downloading with facebookexternalhit UA first (same UA that got the URL)
-        let response = await fetch(imgUrl, {
-            headers: { 'User-Agent': FB_UA, 'Accept': 'image/*,*/*' },
-            redirect: 'follow',
-        });
+/** Try downloading image with multiple UA/header combos */
+async function tryDownloadImage(imgUrl: string): Promise<{ data?: ArrayBuffer; contentType?: string; error?: string; status?: number; finalUrl?: string }> {
+    // Try multiple header combinations
+    const attempts: Array<{ name: string; headers: Record<string, string> }> = [
+        {
+            name: 'facebookexternalhit+referer',
+            headers: {
+                'User-Agent': FB_UA,
+                'Accept': 'image/*,*/*',
+                'Referer': 'https://www.facebook.com/',
+            }
+        },
+        {
+            name: 'browser+referer',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                'Referer': 'https://www.facebook.com/',
+                'Sec-Fetch-Dest': 'image',
+                'Sec-Fetch-Mode': 'no-cors',
+                'Sec-Fetch-Site': 'cross-site',
+            }
+        },
+        {
+            name: 'googlebot',
+            headers: {
+                'User-Agent': 'Googlebot-Image/1.0',
+                'Accept': 'image/*,*/*',
+            }
+        },
+    ];
 
-        // If Facebook blocks it, try with browser UA
-        if (!response.ok) {
-            response = await fetch(imgUrl, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Accept': 'image/*,*/*',
-                },
+    for (const attempt of attempts) {
+        try {
+            const response = await fetch(imgUrl, {
+                headers: attempt.headers,
                 redirect: 'follow',
             });
+
+            const contentType = response.headers.get('content-type') || '';
+
+            if (!response.ok) {
+                continue; // Try next attempt
+            }
+
+            // If we got HTML (login page), skip
+            if (contentType.includes('text/html')) {
+                continue;
+            }
+
+            const data = await response.arrayBuffer();
+
+            // Skip tiny responses (error pages, 1x1 pixels)
+            if (data.byteLength < 500) {
+                continue;
+            }
+
+            return {
+                data,
+                contentType: contentType || 'image/jpeg',
+                finalUrl: response.url,
+            };
+        } catch {
+            continue;
         }
+    }
 
-        if (!response.ok) {
-            return { error: `HTTP ${response.status}`, status: response.status };
-        }
-
-        const contentType = response.headers.get('content-type') || 'image/jpeg';
-
-        // If we got HTML back instead of an image, it's a login page
-        if (contentType.includes('text/html')) {
-            return { error: 'Got HTML instead of image (login wall)', contentType };
-        }
-
-        const arrayBuffer = await response.arrayBuffer();
-        const size = arrayBuffer.byteLength;
-
-        if (size < 500) {
-            return { error: `Too small (${size} bytes)`, size };
-        }
-
-        // Determine extension
-        let ext = 'jpg';
-        if (contentType.includes('png')) ext = 'png';
-        else if (contentType.includes('webp')) ext = 'webp';
-        else if (contentType.includes('gif')) ext = 'gif';
-
-        const imageId = crypto.randomUUID();
-        const key = `adopters/${adopterId}/${imageId}.${ext}`;
-        const r2Url = await uploadToR2(key, arrayBuffer, contentType);
-
-        return { r2Url, size, contentType };
-    } catch (error) {
-        return { error: String(error) };
+    // All attempts failed — try one more time just to get error details
+    try {
+        const lastResponse = await fetch(imgUrl, {
+            headers: { 'User-Agent': FB_UA, 'Referer': 'https://www.facebook.com/' },
+            redirect: 'follow',
+        });
+        return {
+            error: `All download attempts failed. Last: HTTP ${lastResponse.status}, type=${lastResponse.headers.get('content-type')}, url=${lastResponse.url.substring(0, 80)}`,
+            status: lastResponse.status,
+        };
+    } catch (e) {
+        return { error: `All download attempts failed: ${String(e)}` };
     }
 }
 
@@ -151,9 +174,10 @@ export async function POST(request: Request) {
     const { env } = getRequestContext();
     if (!env?.DB) return NextResponse.json({ error: 'No database' }, { status: 500 });
 
-    const body = await request.json() as { adopterId?: string };
+    const body = await request.json() as { adopterId?: string; offset?: number };
+    const offset = body.offset || 0;
 
-    // Get ONE adopter to recover (exclude already-marked unrecoverable)
+    // Get ONE adopter, using offset to skip already-processed ones
     let stmt;
     if (body.adopterId) {
         stmt = env.DB.prepare(`
@@ -162,7 +186,7 @@ export async function POST(request: Request) {
             JOIN adopters a ON a.id = ai.adopter_id
             LEFT JOIN adoptions ad ON ad.adopter_id = ai.adopter_id AND ad.source_url IS NOT NULL AND ad.source_url != ''
             WHERE ai.adopter_id = ?
-              AND ai.url NOT LIKE '%r2.dev%' AND ai.url NOT LIKE 'unrecoverable:%'
+              AND ai.url NOT LIKE '%r2.dev%'
               AND (ai.url LIKE 'broken:%' OR ai.url LIKE '%scontent%' OR ai.url LIKE '%fbcdn%' OR ai.url LIKE '%fbsbx%')
             GROUP BY ai.adopter_id LIMIT 1
         `).bind(body.adopterId);
@@ -172,12 +196,12 @@ export async function POST(request: Request) {
             FROM adopter_images ai
             JOIN adopters a ON a.id = ai.adopter_id
             LEFT JOIN adoptions ad ON ad.adopter_id = ai.adopter_id AND ad.source_url IS NOT NULL AND ad.source_url != ''
-            WHERE ai.url NOT LIKE '%r2.dev%' AND ai.url NOT LIKE 'unrecoverable:%'
+            WHERE ai.url NOT LIKE '%r2.dev%'
               AND (ai.url LIKE 'broken:%' OR ai.url LIKE '%scontent%' OR ai.url LIKE '%fbcdn%' OR ai.url LIKE '%fbsbx%')
             GROUP BY ai.adopter_id
             HAVING source_urls IS NOT NULL
-            LIMIT 1
-        `);
+            LIMIT 1 OFFSET ?
+        `).bind(offset);
     }
 
     const adopter = await stmt.first<{
@@ -197,64 +221,62 @@ export async function POST(request: Request) {
             error: 'No source URL',
             imagesFound: 0,
             imagesSaved: 0,
+            nextOffset: offset + 1,
         });
     }
 
     const sourceUrl = adopter.source_urls.split(',').filter(Boolean)[0];
     const ogImages = await extractOgImages(sourceUrl);
-    const downloadResults: Array<{ imgUrl: string; result: Awaited<ReturnType<typeof downloadAndUpload>> }> = [];
 
-    let savedCount = 0;
+    let savedToR2 = 0;
+    let savedFreshUrl = 0;
+    const details: unknown[] = [];
 
     for (const imgUrl of ogImages) {
-        const result = await downloadAndUpload(imgUrl, adopter.adopter_id);
-        downloadResults.push({ imgUrl: imgUrl.substring(0, 100), result });
+        const download = await tryDownloadImage(imgUrl);
 
-        if (result.r2Url) {
-            // Update a broken image record
+        if (download.data) {
+            // Successfully downloaded — upload to R2!
+            try {
+                let ext = 'jpg';
+                if (download.contentType?.includes('png')) ext = 'png';
+                else if (download.contentType?.includes('webp')) ext = 'webp';
+
+                const imageId = crypto.randomUUID();
+                const key = `adopters/${adopter.adopter_id}/${imageId}.${ext}`;
+                const r2Url = await uploadToR2(key, download.data, download.contentType || 'image/jpeg');
+
+                // Update a broken DB record
+                const brokenImage = await env.DB.prepare(`
+                    SELECT id FROM adopter_images 
+                    WHERE adopter_id = ? AND url NOT LIKE '%r2.dev%'
+                      AND (url LIKE 'broken:%' OR url LIKE '%scontent%' OR url LIKE '%fbcdn%' OR url LIKE '%fbsbx%')
+                    LIMIT 1
+                `).bind(adopter.adopter_id).first<{ id: string }>();
+
+                if (brokenImage) {
+                    await env.DB.prepare(`UPDATE adopter_images SET url = ? WHERE id = ?`).bind(r2Url, brokenImage.id).run();
+                }
+                savedToR2++;
+                details.push({ imgUrl: imgUrl.substring(0, 80), status: 'r2', size: download.data.byteLength, r2Url });
+            } catch (e) {
+                details.push({ imgUrl: imgUrl.substring(0, 80), status: 'r2_upload_failed', error: String(e) });
+            }
+        } else {
+            // Download failed — save fresh OG URL directly (better than expired)
             const brokenImage = await env.DB.prepare(`
                 SELECT id FROM adopter_images 
-                WHERE adopter_id = ? 
-                  AND url NOT LIKE '%r2.dev%' AND url NOT LIKE 'unrecoverable:%'
+                WHERE adopter_id = ? AND url NOT LIKE '%r2.dev%'
                   AND (url LIKE 'broken:%' OR url LIKE '%scontent%' OR url LIKE '%fbcdn%' OR url LIKE '%fbsbx%')
                 LIMIT 1
             `).bind(adopter.adopter_id).first<{ id: string }>();
 
             if (brokenImage) {
-                await env.DB.prepare(
-                    `UPDATE adopter_images SET url = ? WHERE id = ?`
-                ).bind(result.r2Url, brokenImage.id).run();
-            } else {
-                const newId = crypto.randomUUID();
-                await env.DB.prepare(
-                    `INSERT INTO adopter_images (id, adopter_id, url, caption, added_by) VALUES (?, ?, ?, 'Recovered', ?)`
-                ).bind(newId, adopter.adopter_id, result.r2Url, session.user.email).run();
+                await env.DB.prepare(`UPDATE adopter_images SET url = ? WHERE id = ?`).bind(imgUrl, brokenImage.id).run();
+                savedFreshUrl++;
             }
-            savedCount++;
+            details.push({ imgUrl: imgUrl.substring(0, 80), status: 'fresh_url_fallback', downloadError: download.error });
         }
-    }
-
-    // If we found images but couldn't save ANY, mark all broken images for this adopter
-    // as unrecoverable so we don't loop on them forever
-    if (ogImages.length > 0 && savedCount === 0) {
-        await env.DB.prepare(`
-            UPDATE adopter_images 
-            SET url = 'unrecoverable:' || url
-            WHERE adopter_id = ?
-              AND url NOT LIKE '%r2.dev%' AND url NOT LIKE 'unrecoverable:%'
-              AND (url LIKE 'broken:%' OR url LIKE '%scontent%' OR url LIKE '%fbcdn%' OR url LIKE '%fbsbx%')
-        `).bind(adopter.adopter_id).run();
-    }
-
-    // Also if no OG images found at all, mark as unrecoverable
-    if (ogImages.length === 0) {
-        await env.DB.prepare(`
-            UPDATE adopter_images 
-            SET url = 'unrecoverable:' || url
-            WHERE adopter_id = ?
-              AND url NOT LIKE '%r2.dev%' AND url NOT LIKE 'unrecoverable:%'
-              AND (url LIKE 'broken:%' OR url LIKE '%scontent%' OR url LIKE '%fbcdn%' OR url LIKE '%fbsbx%')
-        `).bind(adopter.adopter_id).run();
     }
 
     // Count remaining
@@ -262,7 +284,7 @@ export async function POST(request: Request) {
         SELECT COUNT(DISTINCT ai.adopter_id) as count
         FROM adopter_images ai
         JOIN adoptions ad ON ad.adopter_id = ai.adopter_id AND ad.source_url IS NOT NULL AND ad.source_url != ''
-        WHERE ai.url NOT LIKE '%r2.dev%' AND ai.url NOT LIKE 'unrecoverable:%'
+        WHERE ai.url NOT LIKE '%r2.dev%'
           AND (ai.url LIKE 'broken:%' OR ai.url LIKE '%scontent%' OR ai.url LIKE '%fbcdn%' OR ai.url LIKE '%fbsbx%')
     `).first<{ count: number }>();
 
@@ -270,9 +292,11 @@ export async function POST(request: Request) {
         adopterId: adopter.adopter_id,
         adopterName: adopter.adopter_name,
         sourceUrl,
-        imagesFound: ogImages.length,
-        imagesSaved: savedCount,
+        ogImagesFound: ogImages.length,
+        savedToR2,
+        savedFreshUrl,
         remaining: remaining?.count || 0,
-        downloadResults, // Full debugging details
+        nextOffset: (savedToR2 === 0 && savedFreshUrl === 0) ? offset + 1 : 0,
+        details,
     });
 }
