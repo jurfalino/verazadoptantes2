@@ -14,7 +14,7 @@ import { persistImageToR2 } from '@/lib/r2';
  * fresh CDN URLs, then immediately download and upload to R2.
  * 
  * GET  - Returns adopters that have broken images and recoverable source URLs
- * POST - Runs recovery for a batch of adopters
+ * POST - Recovers ONE adopter at a time (to avoid Cloudflare edge timeouts)
  */
 
 const SCRAPER_URL = process.env.SCRAPER_URL || 'https://facebook-scraper.fly.dev';
@@ -69,12 +69,11 @@ export async function POST(request: Request) {
     const { env } = getRequestContext();
     if (!env?.DB) return NextResponse.json({ error: 'No database' }, { status: 500 });
 
-    const body = await request.json() as { adopterId?: string; batchSize?: number };
-    const batchSize = Math.min(body.batchSize || 5, 20);
+    const body = await request.json() as { adopterId?: string };
 
-    // Get adopters to recover
+    // Process ONE adopter at a time to stay within Cloudflare edge timeout
     let query: string;
-    let binds: string[];
+    let bindValue: string | undefined;
 
     if (body.adopterId) {
         query = `
@@ -85,8 +84,9 @@ export async function POST(request: Request) {
               AND (ai.url LIKE 'broken:%' OR (ai.url LIKE '%scontent%' OR ai.url LIKE '%fbcdn%' OR ai.url LIKE '%fbsbx%'))
               AND ai.url NOT LIKE '%r2.dev%'
             GROUP BY ai.adopter_id
+            LIMIT 1
         `;
-        binds = [body.adopterId];
+        bindValue = body.adopterId;
     } else {
         query = `
             SELECT DISTINCT ai.adopter_id, GROUP_CONCAT(DISTINCT ad.source_url) as source_urls
@@ -96,144 +96,149 @@ export async function POST(request: Request) {
               AND ai.url NOT LIKE '%r2.dev%'
             GROUP BY ai.adopter_id
             HAVING source_urls IS NOT NULL
-            LIMIT ?
+            LIMIT 1
         `;
-        binds = [String(batchSize)];
     }
 
-    const stmt = env.DB.prepare(query);
-    const adopters = await (binds.length === 1 ? stmt.bind(binds[0]) : stmt).all<{
+    const stmt = bindValue ? env.DB.prepare(query).bind(bindValue) : env.DB.prepare(query);
+    const adopters = await stmt.all<{
         adopter_id: string;
         source_urls: string | null;
     }>();
 
-    const results: Array<{
-        adopterId: string;
-        sourceUrl: string;
-        scraped: boolean;
-        imagesFound: number;
-        imagesSaved: number;
-        error?: string;
-    }> = [];
-
-    for (const adopter of adopters.results) {
-        if (!adopter.source_urls) {
-            results.push({
-                adopterId: adopter.adopter_id,
-                sourceUrl: '',
-                scraped: false,
-                imagesFound: 0,
-                imagesSaved: 0,
-                error: 'No source URL available'
-            });
-            continue;
-        }
-
-        // Process each unique source URL for this adopter
-        const urls = [...new Set(adopter.source_urls.split(',').filter(Boolean))];
-
-        for (const sourceUrl of urls) {
-            try {
-                // Re-scrape the Facebook post via the Playwright scraper
-                const scrapeResponse = await fetch(`${SCRAPER_URL}/scrape`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: sourceUrl }),
-                });
-
-                if (!scrapeResponse.ok) {
-                    results.push({
-                        adopterId: adopter.adopter_id,
-                        sourceUrl,
-                        scraped: false,
-                        imagesFound: 0,
-                        imagesSaved: 0,
-                        error: `Scraper returned ${scrapeResponse.status}`
-                    });
-                    continue;
-                }
-
-                const scrapeData = await scrapeResponse.json() as {
-                    success: boolean;
-                    data?: { text?: string; author?: string; images?: string[] };
-                    images?: string[]; // fallback in case scraper sends flat
-                    error?: string;
-                };
-
-                const scrapedImages = scrapeData.data?.images || scrapeData.images || [];
-
-                if (!scrapeData.success || scrapedImages.length === 0) {
-                    results.push({
-                        adopterId: adopter.adopter_id,
-                        sourceUrl,
-                        scraped: true,
-                        imagesFound: 0,
-                        imagesSaved: 0,
-                        error: scrapeData.error || 'No images found in post'
-                    });
-                    continue;
-                }
-
-                // Download each fresh image and upload to R2
-                let savedCount = 0;
-                for (const imgUrl of scrapedImages) {
-                    const imageId = crypto.randomUUID();
-                    const r2Url = await persistImageToR2(imgUrl, adopter.adopter_id, imageId);
-
-                    if (r2Url) {
-                        // Find a broken image record for this adopter and update it
-                        const brokenImage = await env.DB.prepare(`
-                            SELECT id FROM adopter_images 
-                            WHERE adopter_id = ? 
-                              AND (url LIKE 'broken:%' OR (url LIKE '%scontent%' OR url LIKE '%fbcdn%' OR url LIKE '%fbsbx%'))
-                              AND url NOT LIKE '%r2.dev%'
-                            LIMIT 1
-                        `).bind(adopter.adopter_id).first<{ id: string }>();
-
-                        if (brokenImage) {
-                            // Update existing broken record with the new R2 URL
-                            await env.DB.prepare(
-                                `UPDATE adopter_images SET url = ?, caption = REPLACE(COALESCE(caption, ''), ' [broken: original expired]', '') WHERE id = ?`
-                            ).bind(r2Url, brokenImage.id).run();
-                        } else {
-                            // All broken records already recovered — insert as new
-                            await env.DB.prepare(`
-                                INSERT INTO adopter_images (id, adopter_id, url, caption, added_by)
-                                VALUES (?, ?, ?, 'Recovered from Facebook', ?)
-                            `).bind(imageId, adopter.adopter_id, r2Url, session.user.email).run();
-                        }
-                        savedCount++;
-                    }
-                }
-
-                results.push({
-                    adopterId: adopter.adopter_id,
-                    sourceUrl,
-                    scraped: true,
-                    imagesFound: scrapedImages.length,
-                    imagesSaved: savedCount,
-                });
-            } catch (error) {
-                results.push({
-                    adopterId: adopter.adopter_id,
-                    sourceUrl,
-                    scraped: false,
-                    imagesFound: 0,
-                    imagesSaved: 0,
-                    error: String(error)
-                });
-            }
-        }
+    if (adopters.results.length === 0) {
+        return NextResponse.json({
+            message: 'No more adopters to recover',
+            processed: 0,
+            total_images_found: 0,
+            total_images_recovered: 0,
+        });
     }
 
-    const totalRecovered = results.reduce((sum, r) => sum + r.imagesSaved, 0);
-    const totalFound = results.reduce((sum, r) => sum + r.imagesFound, 0);
+    const adopter = adopters.results[0];
 
-    return NextResponse.json({
-        processed: adopters.results.length,
-        total_images_found: totalFound,
-        total_images_recovered: totalRecovered,
-        results,
-        hasMore: adopters.results.length === batchSize
-    });
+    if (!adopter.source_urls) {
+        return NextResponse.json({
+            message: 'Adopter has no source URL for recovery',
+            adopterId: adopter.adopter_id,
+            processed: 1,
+            total_images_found: 0,
+            total_images_recovered: 0,
+        });
+    }
+
+    // Use only the FIRST source URL to keep request fast
+    const sourceUrl = adopter.source_urls.split(',').filter(Boolean)[0];
+
+    try {
+        // Re-scrape the Facebook post via the Playwright scraper (with 25s timeout)
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 25000);
+
+        const scrapeResponse = await fetch(`${SCRAPER_URL}/scrape`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: sourceUrl }),
+            signal: controller.signal,
+        });
+        clearTimeout(timeout);
+
+        if (!scrapeResponse.ok) {
+            return NextResponse.json({
+                adopterId: adopter.adopter_id,
+                sourceUrl,
+                error: `Scraper returned ${scrapeResponse.status}`,
+                processed: 1,
+                total_images_found: 0,
+                total_images_recovered: 0,
+            });
+        }
+
+        const scrapeData = await scrapeResponse.json() as {
+            success: boolean;
+            data?: { text?: string; author?: string; images?: string[] };
+            images?: string[];
+            error?: string;
+        };
+
+        const scrapedImages = scrapeData.data?.images || scrapeData.images || [];
+
+        if (!scrapeData.success || scrapedImages.length === 0) {
+            return NextResponse.json({
+                adopterId: adopter.adopter_id,
+                sourceUrl,
+                scraped: true,
+                error: scrapeData.error || 'No images found in post',
+                processed: 1,
+                total_images_found: 0,
+                total_images_recovered: 0,
+            });
+        }
+
+        // Download each fresh image and upload to R2
+        let savedCount = 0;
+        const imageResults: Array<{ url: string; status: string; r2Url?: string }> = [];
+
+        for (const imgUrl of scrapedImages) {
+            const imageId = crypto.randomUUID();
+            const r2Url = await persistImageToR2(imgUrl, adopter.adopter_id, imageId);
+
+            if (r2Url) {
+                // Find a broken image record for this adopter and update it
+                const brokenImage = await env.DB.prepare(`
+                    SELECT id FROM adopter_images 
+                    WHERE adopter_id = ? 
+                      AND (url LIKE 'broken:%' OR (url LIKE '%scontent%' OR url LIKE '%fbcdn%' OR url LIKE '%fbsbx%'))
+                      AND url NOT LIKE '%r2.dev%'
+                    LIMIT 1
+                `).bind(adopter.adopter_id).first<{ id: string }>();
+
+                if (brokenImage) {
+                    await env.DB.prepare(
+                        `UPDATE adopter_images SET url = ?, caption = REPLACE(COALESCE(caption, ''), ' [broken: original expired]', '') WHERE id = ?`
+                    ).bind(r2Url, brokenImage.id).run();
+                } else {
+                    await env.DB.prepare(`
+                        INSERT INTO adopter_images (id, adopter_id, url, caption, added_by)
+                        VALUES (?, ?, ?, 'Recovered from Facebook', ?)
+                    `).bind(imageId, adopter.adopter_id, r2Url, session.user.email).run();
+                }
+                savedCount++;
+                imageResults.push({ url: imgUrl.substring(0, 60), status: 'saved', r2Url });
+            } else {
+                imageResults.push({ url: imgUrl.substring(0, 60), status: 'download_failed' });
+            }
+        }
+
+        // Count remaining
+        const remaining = await env.DB.prepare(`
+            SELECT COUNT(DISTINCT ai.adopter_id) as count
+            FROM adopter_images ai
+            LEFT JOIN adoptions ad ON ad.adopter_id = ai.adopter_id AND ad.source_url IS NOT NULL
+            WHERE (ai.url LIKE 'broken:%' OR (ai.url LIKE '%scontent%' OR ai.url LIKE '%fbcdn%' OR ai.url LIKE '%fbsbx%'))
+              AND ai.url NOT LIKE '%r2.dev%'
+              AND ad.source_url IS NOT NULL
+        `).first<{ count: number }>();
+
+        return NextResponse.json({
+            adopterId: adopter.adopter_id,
+            sourceUrl,
+            scraped: true,
+            processed: 1,
+            total_images_found: scrapedImages.length,
+            total_images_recovered: savedCount,
+            imageResults,
+            remaining_adopters: remaining?.count || 0,
+        });
+    } catch (error) {
+        const isTimeout = error instanceof Error && error.name === 'AbortError';
+        return NextResponse.json({
+            adopterId: adopter.adopter_id,
+            sourceUrl,
+            error: isTimeout ? 'Scraper timed out (25s limit)' : String(error),
+            processed: 1,
+            total_images_found: 0,
+            total_images_recovered: 0,
+        }, { status: isTimeout ? 504 : 500 });
+    }
 }
