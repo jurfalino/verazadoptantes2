@@ -26,9 +26,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Missing adopterId or imageUrls' }, { status: 400 });
     }
 
-    // Delete ALL existing images for this adopter — we're replacing with fresh ones
-    await env.DB.prepare(`DELETE FROM adopter_images WHERE adopter_id = ?`).bind(body.adopterId).run();
-
     let saved = 0;
     const errors: string[] = [];
 
