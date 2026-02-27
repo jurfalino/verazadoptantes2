@@ -7,8 +7,14 @@ import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser, checkIsAdminAsync } from './_db';
+import { flagAdopterSchema, dismissFlagSchema, removeVerificationSchema } from './validation';
 
 export async function flagAdopter(adopterId: string, reason: string, details?: string, targetAdopterId?: string) {
+    const parsed = flagAdopterSchema.safeParse({ adopterId, reason, details, targetAdopterId });
+    if (!parsed.success) {
+        throw new Error(`Invalid flag data: ${parsed.error.issues.map(i => i.message).join(', ')}`);
+    }
+
     try {
         const db = await getDb();
         if (!db) throw new Error("No database");
@@ -61,6 +67,11 @@ export async function getFlags(adopterId: string) {
 }
 
 export async function dismissFlag(flagId: string) {
+    const parsed = dismissFlagSchema.safeParse({ flagId });
+    if (!parsed.success) {
+        throw new Error(`Invalid flag ID: ${parsed.error.issues.map(i => i.message).join(', ')}`);
+    }
+
     try {
         const session = await auth();
         if (!session?.user?.email || !await checkIsAdminAsync(session.user.email)) {
@@ -81,6 +92,11 @@ export async function dismissFlag(flagId: string) {
 }
 
 export async function removeVerification(adopterId: string, type: 'verified_identity' | 'verified_address') {
+    const parsed = removeVerificationSchema.safeParse({ adopterId, type });
+    if (!parsed.success) {
+        throw new Error(`Invalid verification data: ${parsed.error.issues.map(i => i.message).join(', ')}`);
+    }
+
     try {
         const db = await getDb();
         if (!db) throw new Error("No database");

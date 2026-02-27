@@ -1,5 +1,5 @@
 import { auth } from "@/auth";
-import { isAdmin } from "@/config/admins";
+import { isAdminAsync } from "@/config/admins";
 import { redirect } from 'next/navigation';
 import AdminSidebar from "@/components/AdminSidebar";
 
@@ -11,7 +11,7 @@ export default async function AdminLayout({
     const session = await auth();
 
     // Secure Admin Area
-    if (!session?.user?.email || !isAdmin(session.user.email)) {
+    if (!session?.user?.email || !await isAdminAsync(session.user.email)) {
         redirect('/');
     }
 

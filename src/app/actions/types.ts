@@ -28,5 +28,5 @@ export interface SearchResponse {
     results: SearchResult[];
     truncated?: boolean;
     totalCount?: number;
-    validationError?: 'min_digits';
+    validationError?: 'min_digits' | 'invalid_query';
 }

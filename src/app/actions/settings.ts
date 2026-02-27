@@ -4,6 +4,7 @@ import { getDb, getUser } from './_db';
 import { userProfiles } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
+import { updateCountrySchema } from './validation';
 
 export interface UserSettings {
     country: string | null;
@@ -59,6 +60,11 @@ export async function getUserSettings(): Promise<UserSettings | null> {
  * Update the current user's country and mark it as confirmed.
  */
 export async function updateUserCountry(country: string): Promise<{ success: boolean }> {
+    const parsed = updateCountrySchema.safeParse({ country });
+    if (!parsed.success) {
+        throw new Error(`Invalid country: ${parsed.error.issues.map(i => i.message).join(', ')}`);
+    }
+
     try {
         const db = await getDb();
         const userEmail = await getUser();

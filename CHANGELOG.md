@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.6.0-5] - 2026-02-27
+
+### Added
+- **Zod input validation** — all server actions now validate inputs via Zod schemas (`validation.ts`) before any DB operation
+- **Content-Security-Policy header** — XSS protection with allowlists for Google, Axiom, Gemini, Cloudflare
+
+### Fixed
+- **Admin access for DB-granted admins** — `admin/layout.tsx` now uses `isAdminAsync()` to check DB roles, not just the hardcoded bootstrap list
+- **Country modal per-user** — `country_confirmed` localStorage key is now user-specific; switching accounts correctly triggers the modal
+- **Google sign-in icon** — replaced external `authjs.dev` image (blocked by CSP) with inline SVG
+
+### Changed
+- **NextAuth pinned** — locked to exact `5.0.0-beta.30` (removed `^` range) to prevent silent breakage
+- **ESLint re-enabled in builds** — removed `ignoreDuringBuilds: true` (0 errors, 82 warnings)
+
+---
+
 ## [2.6.0-4] - 2026-02-27
 
 ### Added

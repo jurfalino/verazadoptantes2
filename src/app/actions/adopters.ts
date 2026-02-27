@@ -7,6 +7,7 @@ import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { NINETY_DAYS_IN_SECONDS, ONE_YEAR_IN_SECONDS } from '@/config/constants';
 import { tokenizeAdopter } from './duplicates';
+import { saveAdopterSchema } from './validation';
 
 export async function getAdopter(id: string) {
     try {
@@ -25,6 +26,12 @@ export async function getAdopter(id: string) {
 }
 
 export async function saveAdopter(data: typeof adopters.$inferInsert) {
+    // Validate input
+    const parsed = saveAdopterSchema.safeParse(data);
+    if (!parsed.success) {
+        throw new Error(`Invalid adopter data: ${parsed.error.issues.map(i => i.message).join(', ')}`);
+    }
+
     try {
         const db = await getDb();
         if (!db) {

@@ -7,8 +7,15 @@ import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { tokenizeAdopter } from './duplicates';
+import { saveAdoptionSchema } from './validation';
 
 export async function saveAdoption(data: typeof adoptions.$inferInsert) {
+    // Validate input
+    const parsed = saveAdoptionSchema.safeParse(data);
+    if (!parsed.success) {
+        throw new Error(`Invalid adoption data: ${parsed.error.issues.map(i => i.message).join(', ')}`);
+    }
+
     try {
         const db = await getDb();
         if (!db) throw new Error("No database");

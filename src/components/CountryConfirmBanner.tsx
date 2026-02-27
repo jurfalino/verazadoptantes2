@@ -23,8 +23,9 @@ export function CountryConfirmBanner() {
     useEffect(() => {
         if (!session?.user) return;
 
-        // Check localStorage first to avoid repeated DB calls
-        const stored = localStorage.getItem('country_confirmed');
+        // Check localStorage first to avoid repeated DB calls (key is per-user)
+        const storageKey = `country_confirmed_${session.user.email}`;
+        const stored = localStorage.getItem(storageKey);
         if (stored === '1') {
             setDismissed(true);
             setLoaded(true);
@@ -36,7 +37,7 @@ export function CountryConfirmBanner() {
                 setSettings(s);
                 // If country was already confirmed in the DB, sync localStorage
                 if (s.countryConfirmed) {
-                    localStorage.setItem('country_confirmed', '1');
+                    localStorage.setItem(`country_confirmed_${session.user?.email}`, '1');
                 }
             }
             setLoaded(true);
@@ -57,7 +58,7 @@ export function CountryConfirmBanner() {
         setSaving(true);
         const result = await updateUserCountry(code);
         if (result.success) {
-            localStorage.setItem('country_confirmed', '1');
+            localStorage.setItem(`country_confirmed_${session?.user?.email}`, '1');
             if (typeof document !== 'undefined') {
                 document.body.style.overflow = '';
             }
