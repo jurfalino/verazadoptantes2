@@ -27,7 +27,7 @@ export const saveAdopterSchema = z.object({
     sourceUrl: z.string().url().max(2_000).optional().nullable().or(z.literal('')),
     country: z.string().length(2).optional().nullable(),
     tokenHash: z.string().max(256).optional().nullable(),
-    deletedAt: z.date().optional().nullable(),
+    deletedAt: z.coerce.date().optional().nullable(),
 });
 
 // ── Adoption / Interaction ───────────────────────────────────────
@@ -41,7 +41,7 @@ export const saveAdoptionSchema = z.object({
     status: z.string().max(100).optional().nullable(),
     rating: z.number().int().min(1).max(5).optional().nullable(),
     comments: optionalText,
-    date: z.date().optional().nullable(),
+    date: z.union([z.coerce.date(), z.string().max(50)]).optional().nullable(),
     onBehalfOf: z.string().max(500).optional().nullable(),
     recordType: z.enum(['adoption', 'adoption_request', 'observation', 'follow_up', 'returned_pet']).optional().nullable(),
     deliveredToHome: z.number().int().min(0).max(1).optional().nullable(),

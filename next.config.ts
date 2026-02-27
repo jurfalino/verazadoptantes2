@@ -38,7 +38,7 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: blob: https://lh3.googleusercontent.com https://*.googleusercontent.com https://*.fbsbx.com https://*.fbcdn.net",
-              "connect-src 'self' https://accounts.google.com https://api.axiom.co https://generativelanguage.googleapis.com https://*.cloudflarestorage.com",
+              "connect-src 'self' https://accounts.google.com https://api.axiom.co https://generativelanguage.googleapis.com https://*.cloudflarestorage.com https://lh3.googleusercontent.com",
               "frame-src 'self' https://accounts.google.com",
               "frame-ancestors 'none'",
             ].join('; '),

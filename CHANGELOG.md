@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.6.0-6] - 2026-02-27
+
+### Fixed
+- **Zod date validation** — adoption date field now accepts both Date objects and ISO date strings (was rejecting all form submissions)
+- **CSP connect-src for Google avatars** — service worker avatar caching no longer blocked
+- **Second Google icon (Login.tsx)** — replaced external authjs.dev reference with inline SVG
+
+---
+
 ## [2.6.0-5] - 2026-02-27
 
 ### Added
