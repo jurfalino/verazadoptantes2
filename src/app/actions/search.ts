@@ -8,7 +8,6 @@ import { getDb, getUser } from './_db';
 import { SEARCH_RESULT_LIMIT, SEARCH_ENRICHMENT_LIMIT } from '@/config/constants';
 import type { SearchResponse } from './types';
 import { enrichAdopters } from './enrichAdopters';
-import { searchSchema } from './validation';
 
 const MIN_PHONE_DIGITS = 4;
 
@@ -56,12 +55,6 @@ async function searchAdoptionsIds(db: any, query: string): Promise<string[]> {
 }
 
 export async function searchAdopter(query: string): Promise<SearchResponse> {
-    // Validate input
-    const parsed = searchSchema.safeParse({ query });
-    if (!parsed.success) {
-        return { results: [], validationError: 'invalid_query' };
-    }
-
     let user = 'unknown';
     try {
         const db = await getDb();
