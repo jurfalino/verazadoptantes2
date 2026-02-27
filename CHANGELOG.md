@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.6.0-4] - 2026-02-27
+
+### Added
+- **Blocking country selection modal** — new users must select their country before using the app; replaces the dismissable banner with a full-screen modal (no close button)
+- **Header language toggle** — globe icon + EN/ES text toggle visible to all users (authenticated and unauthenticated)
+
+### Fixed
+- **Next.js 15 headers() compatibility** — `headers()` in `audit.ts` now properly awaited (was causing sign-in errors)
+- **Language persistence** — auto-detected browser language now saved to localStorage so it survives page refreshes
+- **Post-country-selection refresh** — `router.refresh()` after country selection updates the header to show user menu
+
+### Changed
+- **Country modal UX** — detected country shows confirm/change flow; no detection shows quick-picks (AR, UY, CL, MX) + full searchable dropdown
+
+---
+
 ## [2.6.0] - 2026-02-22
 
 ### Added

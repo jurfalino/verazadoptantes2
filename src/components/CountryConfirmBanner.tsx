@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useLanguage } from '@/context/LanguageContext';
-import { getCountryByCode, countries } from '@/config/countries';
+import { getCountryByCode, countries, type Country } from '@/config/countries';
 import { getUserSettings, updateUserCountry } from '@/app/actions/settings';
+import { CountrySelector } from '@/components/CountrySelector';
 import { useRouter } from 'next/navigation';
 
 export function CountryConfirmBanner() {
@@ -15,6 +16,9 @@ export function CountryConfirmBanner() {
     const [dismissed, setDismissed] = useState(false);
     const [saving, setSaving] = useState(false);
     const [loaded, setLoaded] = useState(false);
+    // For "change country" mode within the detected-country flow
+    const [showSelector, setShowSelector] = useState(false);
+    const [selectedCountry, setSelectedCountry] = useState('');
 
     useEffect(() => {
         if (!session?.user) return;
@@ -28,7 +32,13 @@ export function CountryConfirmBanner() {
         }
 
         getUserSettings().then(s => {
-            if (s) setSettings(s);
+            if (s) {
+                setSettings(s);
+                // If country was already confirmed in the DB, sync localStorage
+                if (s.countryConfirmed) {
+                    localStorage.setItem('country_confirmed', '1');
+                }
+            }
             setLoaded(true);
         });
     }, [session]);
@@ -38,51 +48,76 @@ export function CountryConfirmBanner() {
         return null;
     }
 
-    // Case 1: Country detected — show confirm/change banner
-    if (settings.country) {
+    // Lock body scroll while modal is open
+    if (typeof document !== 'undefined') {
+        document.body.style.overflow = 'hidden';
+    }
+
+    const handleSaveCountry = async (code: string) => {
+        setSaving(true);
+        const result = await updateUserCountry(code);
+        if (result.success) {
+            localStorage.setItem('country_confirmed', '1');
+            if (typeof document !== 'undefined') {
+                document.body.style.overflow = '';
+            }
+            setDismissed(true);
+            // Force server re-render so the layout picks up the session
+            router.refresh();
+        }
+        setSaving(false);
+    };
+
+    // Quick-pick countries
+    const quickCountries = countries.filter(c =>
+        ['AR', 'UY', 'CL', 'MX'].includes(c.code)
+    );
+
+    const getName = (c: Country) => locale === 'es' ? c.nameEs : c.name;
+
+    // Case 1: Country detected — show confirm/change
+    if (settings.country && !showSelector) {
         const country = getCountryByCode(settings.country);
         if (!country) return null;
 
-        const countryName = locale === 'es' ? country.nameEs : country.name;
-
-        const handleConfirm = async () => {
-            setSaving(true);
-            const result = await updateUserCountry(settings.country!);
-            if (result.success) {
-                localStorage.setItem('country_confirmed', '1');
-                setDismissed(true);
-            }
-            setSaving(false);
-        };
-
-        const handleChange = () => {
-            router.push('/settings');
-            setDismissed(true);
-        };
-
         return (
-            <div className="bg-teal-50 dark:bg-teal-900/20 border-b border-teal-200 dark:border-teal-800">
-                <div className="container mx-auto px-4 py-3 flex flex-col sm:flex-row items-center gap-3 sm:gap-4">
-                    <span className="text-sm text-teal-800 dark:text-teal-200 flex items-center gap-2">
-                        <span className="text-lg">{country.flag}</span>
-                        {locale === 'es'
-                            ? `Detectamos que estás en ${countryName}. ¿Es correcto?`
-                            : `We detected you're in ${countryName}. Is this correct?`
-                        }
-                    </span>
-                    <div className="flex gap-2 flex-shrink-0">
+            <div className="fixed inset-0 bg-stone-950/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+                <div className="bg-white dark:bg-stone-800 rounded-2xl shadow-2xl max-w-sm w-full p-8 border border-stone-200 dark:border-stone-700">
+                    <div className="text-center mb-6">
+                        <span className="text-5xl block mb-4">{country.flag}</span>
+                        <h2 className="text-xl font-bold text-stone-800 dark:text-stone-100 tracking-tight">
+                            {locale === 'es' ? 'Confirmá tu país' : 'Confirm your country'}
+                        </h2>
+                        <p className="text-stone-500 dark:text-stone-400 text-sm mt-2">
+                            {locale === 'es'
+                                ? `Detectamos que estás en ${getName(country)}. ¿Es correcto?`
+                                : `We detected you're in ${getName(country)}. Is this correct?`
+                            }
+                        </p>
+                        <p className="text-stone-400 dark:text-stone-500 text-xs mt-1.5">
+                            {locale === 'es'
+                                ? 'Tu país determina qué registros ves en las búsquedas.'
+                                : 'Your country determines which records you see in searches.'
+                            }
+                        </p>
+                    </div>
+
+                    <div className="space-y-3">
                         <button
-                            onClick={handleConfirm}
+                            onClick={() => handleSaveCountry(settings.country!)}
                             disabled={saving}
-                            className="px-4 py-1.5 text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors disabled:opacity-50"
+                            className="w-full px-4 py-3 text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl transition-colors disabled:opacity-50"
                         >
-                            {saving ? '...' : (locale === 'es' ? 'Sí, confirmar' : 'Yes, confirm')}
+                            {saving ? '...' : (locale === 'es'
+                                ? `Sí, estoy en ${getName(country)}`
+                                : `Yes, I'm in ${getName(country)}`
+                            )}
                         </button>
                         <button
-                            onClick={handleChange}
-                            className="px-4 py-1.5 text-sm font-medium text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-800/30 rounded-lg transition-colors"
+                            onClick={() => setShowSelector(true)}
+                            className="w-full px-4 py-2.5 text-sm font-medium text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-700/50 rounded-xl transition-colors"
                         >
-                            {locale === 'es' ? 'Cambiar país' : 'Change country'}
+                            {locale === 'es' ? 'No, elegir otro país' : 'No, choose a different country'}
                         </button>
                     </div>
                 </div>
@@ -90,55 +125,62 @@ export function CountryConfirmBanner() {
         );
     }
 
-    // Case 2: No country detected — prompt user to select one
-    const handleSelectCountry = async (code: string) => {
-        setSaving(true);
-        const result = await updateUserCountry(code);
-        if (result.success) {
-            localStorage.setItem('country_confirmed', '1');
-            setDismissed(true);
-        }
-        setSaving(false);
-    };
-
-    const handleGoToSettings = () => {
-        router.push('/settings');
-        setDismissed(true);
-    };
-
-    // Show top 4 most common countries as quick-pick buttons, plus "Other"
-    const quickCountries = countries.filter(c =>
-        ['AR', 'UY', 'CL', 'MX'].includes(c.code)
-    );
-
+    // Case 2: No country detected, OR user clicked "change" from Case 1
     return (
-        <div className="bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800">
-            <div className="container mx-auto px-4 py-3 flex flex-col sm:flex-row items-center gap-3 sm:gap-4">
-                <span className="text-sm text-amber-800 dark:text-amber-200 flex items-center gap-2">
-                    <span className="text-lg">🌎</span>
-                    {locale === 'es'
-                        ? '¿De qué país sos?'
-                        : 'What country are you from?'
-                    }
-                </span>
-                <div className="flex gap-2 flex-shrink-0 flex-wrap">
+        <div className="fixed inset-0 bg-stone-950/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-stone-800 rounded-2xl shadow-2xl max-w-sm w-full p-8 border border-stone-200 dark:border-stone-700">
+                <div className="text-center mb-6">
+                    <span className="text-5xl block mb-4">🌎</span>
+                    <h2 className="text-xl font-bold text-stone-800 dark:text-stone-100 tracking-tight">
+                        {locale === 'es' ? 'Seleccioná tu país' : 'Select your country'}
+                    </h2>
+                    <p className="text-stone-500 dark:text-stone-400 text-sm mt-2">
+                        {locale === 'es'
+                            ? 'Tu país determina qué registros de adoptantes ves en las búsquedas.'
+                            : 'Your country determines which adopter records you see in searches.'
+                        }
+                    </p>
+                </div>
+
+                {/* Quick-pick buttons */}
+                <div className="grid grid-cols-2 gap-2 mb-4">
                     {quickCountries.map(c => (
                         <button
                             key={c.code}
-                            onClick={() => handleSelectCountry(c.code)}
+                            onClick={() => handleSaveCountry(c.code)}
                             disabled={saving}
-                            className="px-3 py-1.5 text-sm font-medium text-amber-800 dark:text-amber-200 bg-white dark:bg-amber-800/30 border border-amber-200 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-800/50 rounded-lg transition-colors disabled:opacity-50"
+                            className="flex items-center gap-2 px-3 py-2.5 text-sm font-medium text-stone-700 dark:text-stone-200 bg-stone-50 dark:bg-stone-700/50 border border-stone-200 dark:border-stone-600 hover:bg-teal-50 hover:border-teal-300 dark:hover:bg-teal-900/20 dark:hover:border-teal-700 rounded-xl transition-colors disabled:opacity-50"
                         >
-                            {c.flag} {locale === 'es' ? c.nameEs : c.name}
+                            <span className="text-lg">{c.flag}</span>
+                            {getName(c)}
                         </button>
                     ))}
-                    <button
-                        onClick={handleGoToSettings}
-                        className="px-3 py-1.5 text-sm font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-800/30 rounded-lg transition-colors underline underline-offset-2"
-                    >
-                        {locale === 'es' ? 'Otro país' : 'Other'}
-                    </button>
                 </div>
+
+                {/* Divider */}
+                <div className="flex items-center gap-3 my-4">
+                    <div className="flex-1 h-px bg-stone-200 dark:bg-stone-600" />
+                    <span className="text-xs text-stone-400 dark:text-stone-500 uppercase tracking-wider">
+                        {locale === 'es' ? 'u otro país' : 'or another country'}
+                    </span>
+                    <div className="flex-1 h-px bg-stone-200 dark:bg-stone-600" />
+                </div>
+
+                {/* Full country selector dropdown */}
+                <CountrySelector
+                    value={selectedCountry}
+                    onChange={setSelectedCountry}
+                />
+
+                {selectedCountry && (
+                    <button
+                        onClick={() => handleSaveCountry(selectedCountry)}
+                        disabled={saving}
+                        className="w-full mt-4 px-4 py-3 text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl transition-colors disabled:opacity-50"
+                    >
+                        {saving ? '...' : (locale === 'es' ? 'Continuar' : 'Continue')}
+                    </button>
+                )}
             </div>
         </div>
     );

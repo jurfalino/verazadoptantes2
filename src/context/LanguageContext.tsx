@@ -21,7 +21,10 @@ function getInitialLocale(): Locale {
 
     // Auto-detect from browser, default to Spanish
     const browserLang = navigator.language.split('-')[0];
-    return browserLang === 'en' ? 'en' : DEFAULT_LOCALE;
+    const detected: Locale = browserLang === 'en' ? 'en' : DEFAULT_LOCALE;
+    // Persist so it survives refreshes and re-renders
+    localStorage.setItem('app-locale', detected);
+    return detected;
 }
 
 interface LanguageContextType {

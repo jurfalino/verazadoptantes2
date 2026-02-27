@@ -23,23 +23,19 @@ export interface AuditEntry {
  * Log an audit event to the audit_log table.
  * Non-blocking: uses waitUntil on Edge, fire-and-forget otherwise.
  */
-export function logAudit(entry: AuditEntry) {
-    // Capture IP and User-Agent SYNCHRONOUSLY from request headers
+export async function logAudit(entry: AuditEntry) {
+    // Capture IP and User-Agent from request headers
     // Must happen before waitUntil, because headers() requires active request context
     let resolvedIp = entry.ipAddress || null;
     let resolvedDevice = entry.device || null;
     try {
-        // headers() is sync in Next.js 14, returns ReadonlyHeaders directly in the request phase
-        // In Next.js 15 it returns a Promise, but we need the values NOW before waitUntil runs
-        const h = headers();
-        // Handle both sync (Next 14) and async (Next 15) cases
-        if (h && typeof (h as any).get === 'function') {
-            // Sync headers (Next 14 style)
+        const h = await headers();
+        if (h && typeof h.get === 'function') {
             if (!resolvedIp) {
-                resolvedIp = (h as any).get('cf-connecting-ip') || (h as any).get('x-forwarded-for')?.split(',')[0]?.trim() || (h as any).get('x-real-ip') || null;
+                resolvedIp = h.get('cf-connecting-ip') || h.get('x-forwarded-for')?.split(',')[0]?.trim() || h.get('x-real-ip') || null;
             }
             if (!resolvedDevice) {
-                resolvedDevice = (h as any).get('user-agent') || null;
+                resolvedDevice = h.get('user-agent') || null;
             }
         }
     } catch {
@@ -99,14 +95,13 @@ export function logAudit(entry: AuditEntry) {
  * stores it. Does NOT overwrite on subsequent sign-ins so user
  * changes via settings are preserved.
  */
-export function ensureUserProfile(userId: string, email?: string, name?: string, image?: string) {
-    // Read CF-IPCountry header SYNCHRONOUSLY before waitUntil
-    // Same pattern as logAudit uses for cf-connecting-ip
+export async function ensureUserProfile(userId: string, email?: string, name?: string, image?: string) {
+    // Read CF-IPCountry header before waitUntil
     let detectedCountry: string | null = null;
     try {
-        const h = headers();
-        if (h && typeof (h as any).get === 'function') {
-            detectedCountry = (h as any).get('cf-ipcountry') || null;
+        const h = await headers();
+        if (h && typeof h.get === 'function') {
+            detectedCountry = h.get('cf-ipcountry') || null;
         }
     } catch { /* headers() unavailable outside server request context */ }
 

@@ -27,10 +27,10 @@ export const authConfig = {
             });
             // Track user profile (first sign date + last activity)
             if (user.id) {
-                ensureUserProfile(user.id, user.email || undefined, user.name || undefined, user.image || undefined);
+                await ensureUserProfile(user.id, user.email || undefined, user.name || undefined, user.image || undefined);
             }
             // Audit log
-            logAudit({
+            await logAudit({
                 userId: user.id,
                 userEmail: user.email || undefined,
                 action: 'sign_in',
