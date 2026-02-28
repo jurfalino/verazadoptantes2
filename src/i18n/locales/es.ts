@@ -154,6 +154,7 @@ export const es = {
         action_import_btn: 'Importar Ahora',
         // Sample record
         sample_record: 'Ver un perfil de ejemplo',
+        process_guide: 'Guía del Proceso de Adopción',
     },
     legal: {
         consent_checkbox: 'Al guardar, aceptás los',

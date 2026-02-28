@@ -47,6 +47,11 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async rewrites() {
+    return [
+      { source: '/guide', destination: '/guia' },
+    ];
+  },
   webpack: (config, { nextRuntime }) => {
     // Prevent HMR loop: D1 queries write to .wrangler/ SQLite files,
     // which triggers webpack rebuild if not ignored

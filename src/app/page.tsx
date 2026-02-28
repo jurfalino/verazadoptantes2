@@ -16,7 +16,7 @@ import InstallCTA from '@/components/InstallCTA';
 import { useShowToast } from '@/components/ui/Toast';
 
 export default function Home() {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const router = useRouter();
   const { data: session } = useSession();
   const { openLogin } = useAuthContext();
@@ -200,6 +200,14 @@ export default function Home() {
               {t('home.how_title')}
             </button>
           )}
+          <div className="flex items-center justify-center">
+            <a
+              href={locale === 'en' ? '/guide' : '/guia'}
+              className="text-teal-600 hover:text-teal-700 font-medium text-xs underline underline-offset-2 transition-colors"
+            >
+              📖 {t('home.process_guide')}
+            </a>
+          </div>
           <div className="flex items-center justify-center gap-3 text-xs">
             <a href="/privacy" className="text-stone-400 hover:text-stone-600 underline underline-offset-2 transition-colors">
               {t('legal.privacy')}
@@ -220,3 +228,4 @@ export default function Home() {
     </main>
   );
 }
+

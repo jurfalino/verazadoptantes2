@@ -154,6 +154,7 @@ export const en = {
         action_import_btn: 'Import Now',
         // Sample record
         sample_record: 'See an example profile',
+        process_guide: 'Adoption Process Guide',
     },
     legal: {
         consent_checkbox: 'By saving, you agree to the',

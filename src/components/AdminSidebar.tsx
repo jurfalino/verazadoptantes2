@@ -95,7 +95,14 @@ export default function AdminSidebar() {
                         </Link>
                     ))}
 
-                    <div className="pt-6 mt-6 border-t border-stone-800">
+                    <div className="pt-6 mt-6 border-t border-stone-800 space-y-1">
+                        <Link
+                            href="/keystatic"
+                            target="_blank"
+                            className="block px-4 py-2 rounded-lg hover:bg-stone-800 hover:text-white transition-colors text-sm text-teal-400/80 hover:text-teal-300"
+                        >
+                            ✏️ CMS Editor ↗
+                        </Link>
                         <Link
                             href="/"
                             className="block px-4 py-2 rounded-lg hover:bg-stone-800 hover:text-white transition-colors text-sm"
