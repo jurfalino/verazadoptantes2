@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.8.0-7] - 2026-03-03
+
+### Fixed
+- **Video lightbox playback** — replaced unreliable URL-extension regex detection with `expandedIsVideo` boolean state; lightbox now always renders `<video>` when a video thumbnail is clicked, regardless of URL format
+- **Consistent thumbnail sizes** — standardized media thumbnails to `w-14 h-14` (56px) in ImportWizard step 3 and AdoptionHistory interaction records
+
+---
+
 ## [2.8.0-6] - 2026-03-03
 
 ### Fixed

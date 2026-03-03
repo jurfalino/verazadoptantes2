@@ -102,6 +102,7 @@ export default function ImportWizard() {
     const [personMatches, setPersonMatches] = useState<PersonMatch[]>([]);
     const [selectedMatch, setSelectedMatch] = useState<PersonMatch | null>(null);
     const [expandedImage, setExpandedImage] = useState<string | null>(null);
+    const [expandedIsVideo, setExpandedIsVideo] = useState(false);
     const [fieldOverlapHints, setFieldOverlapHints] = useState<TokenMatchResult[]>([]);
     const [duplicateCheckFailed, setDuplicateCheckFailed] = useState(false);
 
@@ -859,6 +860,7 @@ export default function ImportWizard() {
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     setExpandedImage(`/api/proxy-image?url=${encodeURIComponent(url)}`);
+                                                    setExpandedIsVideo(false);
                                                 }}
                                                 className="absolute bottom-1 left-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 hover:bg-black/80 transition-opacity cursor-pointer"
                                                 title="Expand image"
@@ -883,7 +885,7 @@ export default function ImportWizard() {
                                     <div
                                         key={i}
                                         className="relative rounded-xl overflow-hidden border-2 border-teal-300 bg-black aspect-video cursor-pointer group"
-                                        onClick={() => setExpandedImage(`/api/proxy-image?url=${encodeURIComponent(url)}`)}
+                                        onClick={() => { setExpandedImage(`/api/proxy-image?url=${encodeURIComponent(url)}`); setExpandedIsVideo(true); }}
                                     >
                                         <video
                                             src={`/api/proxy-image?url=${encodeURIComponent(url)}`}
@@ -1148,14 +1150,14 @@ export default function ImportWizard() {
                                             <img
                                                 src={img.src}
                                                 alt={img.label || `Image ${i + 1}`}
-                                                className="w-16 h-16 object-cover rounded-lg border border-stone-200 cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all"
-                                                onClick={() => setExpandedImage(img.src)}
+                                                className="w-14 h-14 object-cover rounded-lg border border-stone-200 cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all"
+                                                onClick={() => { setExpandedImage(img.src); setExpandedIsVideo(false); }}
                                             />
                                         </div>
                                     ))}
                                     {fetchedVideos.map((url: string, i: number) => (
-                                        <div key={`vid-${i}`} className="relative group w-16 h-16 rounded-lg overflow-hidden border border-teal-300 bg-black cursor-pointer"
-                                            onClick={() => setExpandedImage(`/api/proxy-image?url=${encodeURIComponent(url)}`)}
+                                        <div key={`vid-${i}`} className="relative group w-14 h-14 rounded-lg overflow-hidden border border-teal-300 bg-black cursor-pointer"
+                                            onClick={() => { setExpandedImage(`/api/proxy-image?url=${encodeURIComponent(url)}`); setExpandedIsVideo(true); }}
                                         >
                                             <video
                                                 src={`/api/proxy-image?url=${encodeURIComponent(url)}`}
@@ -1370,15 +1372,15 @@ export default function ImportWizard() {
             {expandedImage && (
                 <div
                     className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
-                    onClick={() => setExpandedImage(null)}
+                    onClick={() => { setExpandedImage(null); setExpandedIsVideo(false); }}
                 >
                     <button
-                        onClick={() => setExpandedImage(null)}
+                        onClick={() => { setExpandedImage(null); setExpandedIsVideo(false); }}
                         className="absolute top-4 right-4 w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full text-white text-xl flex items-center justify-center transition-colors z-10"
                     >
                         ✕
                     </button>
-                    {(/\.(mp4|webm|mov)(\?|$)/i.test(expandedImage) || (expandedImage.includes('proxy-image') && /\.(mp4|webm|mov)/i.test(decodeURIComponent(expandedImage)))) ? (
+                    {expandedIsVideo ? (
                         <video
                             src={expandedImage}
                             controls

@@ -267,7 +267,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                                     <>
                                                         <video
                                                             src={img.url}
-                                                            className="w-12 h-12 object-cover rounded-lg border border-stone-200 hover:border-stone-400 transition-colors"
+                                                            className="w-14 h-14 object-cover rounded-lg border border-stone-200 hover:border-stone-400 transition-colors"
                                                             preload="metadata"
                                                             muted
                                                             playsInline
@@ -285,7 +285,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                                         <img
                                                             src={img.url}
                                                             alt={img.caption || 'Adoption photo'}
-                                                            className="w-12 h-12 object-cover rounded-lg border border-stone-200 hover:border-stone-400 transition-colors"
+                                                            className="w-14 h-14 object-cover rounded-lg border border-stone-200 hover:border-stone-400 transition-colors"
                                                         />
                                                         <div className="absolute inset-0 bg-black/0 hover:bg-black/20 rounded-lg transition-colors flex items-center justify-center">
                                                             <svg className="w-3.5 h-3.5 text-white opacity-0 group-hover/img:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -297,7 +297,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                             </button>
                                         ))}
                                         {images.length > 4 && (
-                                            <div className="w-12 h-12 rounded-lg bg-stone-50 border border-stone-200 flex items-center justify-center text-stone-500 text-xs font-bold">
+                                            <div className="w-14 h-14 rounded-lg bg-stone-50 border border-stone-200 flex items-center justify-center text-stone-500 text-xs font-bold">
                                                 +{images.length - 4}
                                             </div>
                                         )}
