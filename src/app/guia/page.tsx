@@ -48,7 +48,6 @@ export default function GuiaPage() {
     const { data: session } = useSession();
 
     const isEnglish = pathname.startsWith('/guide') || locale === 'en';
-    const [isAdmin, setIsAdmin] = useState(false);
 
     const [steps, setSteps] = useState<GuideStep[]>([]);
     const [faq, setFaq] = useState<FaqItem[]>([]);
@@ -66,13 +65,6 @@ export default function GuiaPage() {
                 setHero(d.hero);
             })
             .catch((err) => console.error('[Guide] Failed to load content:', err));
-
-        // Check admin status
-        if (session?.user?.email) {
-            fetch('/api/admin/config')
-                .then(res => { if (res.ok) setIsAdmin(true); })
-                .catch(() => { });
-        }
     }, [session]);
 
     const pick = <T,>(es: T, en: T) => (isEnglish ? en : es);
@@ -82,14 +74,6 @@ export default function GuiaPage() {
             <div className="max-w-3xl mx-auto space-y-12">
                 {/* Hero Section */}
                 <header className="text-center space-y-4">
-                    {isAdmin && (
-                        <Link
-                            href="/admin"
-                            className="inline-flex items-center gap-1 text-xs font-medium text-teal-600 bg-teal-50 px-3 py-1 rounded-full hover:bg-teal-100 transition-colors mb-2"
-                        >
-                            ⚙️ Admin
-                        </Link>
-                    )}
                     <ShieldPawIcon className="w-14 h-14 mx-auto mb-2" />
                     <h1 className="text-4xl md:text-5xl font-extrabold text-stone-900 tracking-tight">
                         {hero ? pick(hero.titleEs, hero.titleEn) : (isEnglish ? 'Adoption Process Guide' : 'Guía del Proceso de Adopción')}
