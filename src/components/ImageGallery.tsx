@@ -155,6 +155,8 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                             src={lightboxImage}
                             controls
                             autoPlay
+                            muted
+                            playsInline
                             className="max-w-full max-h-full rounded-lg"
                             onClick={(e) => e.stopPropagation()}
                         />

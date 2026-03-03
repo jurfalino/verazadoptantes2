@@ -27,25 +27,44 @@ export async function GET(request: NextRequest) {
             return new NextResponse('URL not allowed', { status: 403 });
         }
 
-        const response = await fetch(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-            }
-        });
-
-        if (!response.ok) {
-            return new NextResponse('Failed to fetch image', { status: response.status });
+        // Build upstream request headers — forward Range for video streaming
+        const upstreamHeaders: Record<string, string> = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        };
+        const rangeHeader = request.headers.get('Range');
+        if (rangeHeader) {
+            upstreamHeaders['Range'] = rangeHeader;
         }
 
-        const headers = new Headers(response.headers);
-        headers.set('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+        const response = await fetch(url, { headers: upstreamHeaders });
+
+        if (!response.ok && response.status !== 206) {
+            return new NextResponse('Failed to fetch media', { status: response.status });
+        }
+
+        // Build response headers — pass through content headers for proper media streaming
+        const headers = new Headers();
+        headers.set('Cache-Control', 'public, max-age=3600');
+
+        // Forward essential content headers for media playback
+        const contentType = response.headers.get('Content-Type');
+        if (contentType) headers.set('Content-Type', contentType);
+
+        const contentLength = response.headers.get('Content-Length');
+        if (contentLength) headers.set('Content-Length', contentLength);
+
+        const contentRange = response.headers.get('Content-Range');
+        if (contentRange) headers.set('Content-Range', contentRange);
+
+        // Always signal that we accept Range requests
+        headers.set('Accept-Ranges', 'bytes');
 
         return new NextResponse(response.body, {
-            status: 200,
+            status: response.status, // 200 for full content, 206 for partial
             headers,
         });
     } catch (error) {
-        logger.error('Proxy image fetch failed', error);
+        logger.error('Proxy media fetch failed', error);
         return new NextResponse('Internal Server Error', { status: 500 });
     }
 }

@@ -126,6 +126,8 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                             src={lightboxImage}
                             controls
                             autoPlay
+                            muted
+                            playsInline
                             className="max-w-full max-h-full rounded-lg"
                             onClick={(e) => e.stopPropagation()}
                         />

@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.8.0-8] - 2026-03-03
+
+### Fixed
+- **Video playback through proxy** — proxy-image API now forwards Range headers from the browser to upstream servers and returns 206 Partial Content responses with Content-Range, enabling HTML5 `<video>` element streaming (previously the proxy silently ignored Range requests, causing most browsers to refuse to play video content)
+- **Video autoPlay in lightbox** — all three lightbox components (ImportWizard, AdoptionHistory, ImageGallery) now include `muted` and `playsInline` attributes, which are required by browsers for autoPlay to work without user gesture
+
+---
+
 ## [2.8.0-7] - 2026-03-03
 
 ### Fixed

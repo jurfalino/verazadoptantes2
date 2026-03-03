@@ -1385,6 +1385,8 @@ export default function ImportWizard() {
                             src={expandedImage}
                             controls
                             autoPlay
+                            muted
+                            playsInline
                             className="max-w-full max-h-[90vh] rounded-lg shadow-2xl"
                             onClick={(e) => e.stopPropagation()}
                         />
