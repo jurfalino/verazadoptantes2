@@ -482,13 +482,13 @@ export default function ImportWizard() {
                 sourceUrl,
                 flags,
                 images: processedImages.length > 0 ? processedImages : manualImages.map(img => ({ data: img.data, mimeType: img.mimeType })),
-                adoption: extractedData.adoptionDetected && extractedData.adoptionConfidence !== 'low' ? {
-                    animalName: unknownAnimal ? '' : (extractedData.animalName || 'Unknown'),
+                adoption: {
+                    animalName: unknownAnimal ? '' : (extractedData.animalName || ''),
                     species: extractedData.animalSpecies,
-                    recordType: extractedData.recordType || 'adoption',
+                    recordType: extractedData.recordType || 'observation',
                     rating: extractedData.adoptionRating || 2,
                     date: extractedData.adoptionDate || new Date().toISOString().split('T')[0],
-                } : undefined,
+                },
             };
 
             const response = await fetch('/api/adopters', {

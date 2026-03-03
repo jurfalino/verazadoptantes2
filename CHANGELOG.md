@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.8.0-3] - 2026-03-03
+
+### Changed
+- **Always create interaction record on import** — AI prompt now classifies every post into a record type (adoption, adoption_request, follow_up, observation, returned_pet); denunciations/cruelty posts become observations
+- Removed `adoptionDetected` guard — import wizard always creates an interaction record alongside the adopter profile
+
+---
+
 ## [2.8.0-2] - 2026-03-03
 
 ### Added

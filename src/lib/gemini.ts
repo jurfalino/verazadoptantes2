@@ -25,7 +25,7 @@ export interface ExtractedAdopterData {
     animalName?: string;
     animalSpecies?: string;
     adoptionConfidence?: 'high' | 'medium' | 'low';
-    recordType?: 'adoption' | 'returned_pet' | 'follow_up' | 'observation';
+    recordType?: 'adoption' | 'adoption_request' | 'returned_pet' | 'follow_up' | 'observation';
     adoptionRating?: number; // 1-5 rating for the adoption
     adoptionDate?: string; // YYYY-MM-DD format if mentioned in the post
 }
@@ -83,6 +83,17 @@ RATING: If an adoption is detected, assign a rating from 1 to 5 based on your as
 - 5 = Excellent (verified, thorough process)
 For most adoption announcements from rescue groups where you have minimal information about the adopter, default to rating 2 (low confidence).
 
+RECORD TYPE CLASSIFICATION — CRITICAL:
+You MUST ALWAYS classify the post into one of these record types:
+- "adoption" = The post announces a COMPLETED adoption (animal has been placed with someone).
+- "adoption_request" = Someone is REQUESTING to adopt, looking for a pet, or asking about availability.
+- "follow_up" = A post about an animal that was PREVIOUSLY adopted (update, how the pet is doing, photos after adoption).
+- "observation" = Any other relevant interaction — includes denunciations, cruelty reports, animal abuse, missing pets, rescue requests, or general notes about a person. When in doubt, use "observation".
+- "returned_pet" = An adopted animal was RETURNED to the rescue/shelter.
+The recordType must NEVER be null. Default to "observation" if uncertain.
+
+Set "adoptionDetected" to true if recordType is "adoption", otherwise false.
+
 ${langInstruction}
 
 Respond ONLY with valid JSON in this exact format:
@@ -95,7 +106,8 @@ Respond ONLY with valid JSON in this exact format:
   "notes": "any other relevant information as a string",
   "confidence": "high" | "medium" | "low",
   "adoptionDetected": true | false,
-  "animalName": "name of the adopted animal or null",
+  "recordType": "adoption" | "adoption_request" | "follow_up" | "observation" | "returned_pet",
+  "animalName": "name of the animal or null",
   "animalSpecies": "dog" | "cat" | "bird" | "other" | null,
   "adoptionConfidence": "high" | "medium" | "low" | null,
   "adoptionRating": 1-5 or null,
@@ -103,7 +115,7 @@ Respond ONLY with valid JSON in this exact format:
 }
 
 If you cannot extract any relevant information, return:
-{"name": null, "phones": [], "emails": [], "addresses": [], "socialProfiles": [], "notes": "", "confidence": "low", "adoptionDetected": false, "animalName": null, "animalSpecies": null, "adoptionConfidence": null, "adoptionRating": null, "adoptionDate": null}
+{"name": null, "phones": [], "emails": [], "addresses": [], "socialProfiles": [], "notes": "", "confidence": "low", "adoptionDetected": false, "recordType": "observation", "animalName": null, "animalSpecies": null, "adoptionConfidence": null, "adoptionRating": null, "adoptionDate": null}
 `;
 }
 

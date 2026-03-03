@@ -157,7 +157,7 @@ export async function POST(request: Request) {
         adoption?: {
             animalName?: string;
             species?: string;
-            recordType?: 'adoption' | 'returned_pet' | 'follow_up' | 'observation';
+            recordType?: 'adoption' | 'adoption_request' | 'returned_pet' | 'follow_up' | 'observation';
             rating?: number;
             date?: string; // YYYY-MM-DD format
         };
@@ -286,8 +286,8 @@ export async function POST(request: Request) {
             }
         }
 
-        // Create adoption record if adoption data provided
-        if (adoption && (adoption.animalName || adoption.species)) {
+        // Create interaction record if adoption data provided
+        if (adoption) {
             // Pack notes and contact info into details for searchability
             const detailsParts: string[] = [];
             if (notes) detailsParts.push(notes);
