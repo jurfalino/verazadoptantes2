@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.8.0-6] - 2026-03-03
+
+### Fixed
+- **Images/videos not loading (CSP + 503)** — service worker was intercepting cross-origin R2 requests, causing CSP `connect-src` violations; the SW's catch block then returned a fake 503 response. Fixed by skipping R2 domains in SW fetch handler. Bumped SW cache version to v2 to force re-registration.
+
+---
+
 ## [2.8.0-5] - 2026-03-03
 
 ### Fixed

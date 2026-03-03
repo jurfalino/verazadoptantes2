@@ -1,7 +1,7 @@
 // BuenAdoptante Service Worker
 // Strategy: Cache-first for static assets, Network-first for pages/API with offline fallback
 
-const CACHE_VERSION = 'buenaadoptante-v1';
+const CACHE_VERSION = 'buenaadoptante-v2';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const SHARE_CACHE = 'share-target-media';
@@ -50,6 +50,10 @@ self.addEventListener('fetch', (event) => {
 
     // Skip non-GET requests
     if (request.method !== 'GET') return;
+
+    // Skip cross-origin R2/storage requests — let the browser handle them natively
+    // (SW fetch violates CSP connect-src when intercepting cross-origin requests)
+    if (url.hostname.includes('r2.dev') || url.hostname.includes('cloudflarestorage.com')) return;
 
     // Skip auth-related requests (never cache)
     if (url.pathname.startsWith('/api/auth')) return;
