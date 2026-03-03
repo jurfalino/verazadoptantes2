@@ -45,6 +45,8 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
     const searchParams = useSearchParams();
     const [_deletingId, setDeletingId] = useState<string | null>(null);
     const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+    const [lightboxIsVideo, setLightboxIsVideo] = useState(false);
+    const [videoLoading, setVideoLoading] = useState(false);
     const [adoptionImages, setAdoptionImages] = useState<Record<string, AdoptionImage[]>>({});
 
     // Check for editAdoption query param to auto-expand
@@ -110,30 +112,40 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
     return (
         <>
             {/* Lightbox Modal */}
-            {lightboxImage && (
+            {(lightboxImage || videoLoading) && (
                 <div
                     className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-                    onClick={() => setLightboxImage(null)}
+                    onClick={() => {
+                        if (lightboxImage?.startsWith('blob:')) URL.revokeObjectURL(lightboxImage);
+                        setLightboxImage(null); setLightboxIsVideo(false);
+                    }}
                 >
                     <button
                         className="absolute top-4 right-4 text-white text-3xl hover:text-gray-300 z-10"
-                        onClick={() => setLightboxImage(null)}
+                        onClick={() => {
+                            if (lightboxImage?.startsWith('blob:')) URL.revokeObjectURL(lightboxImage);
+                            setLightboxImage(null); setLightboxIsVideo(false);
+                        }}
                     >
                         ×
                     </button>
-                    {isVideoUrl(lightboxImage) ? (
+                    {videoLoading ? (
+                        <div className="flex flex-col items-center gap-4">
+                            <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin" />
+                            <span className="text-white/80 text-sm">Loading video…</span>
+                        </div>
+                    ) : lightboxIsVideo ? (
                         <video
-                            src={lightboxImage}
+                            src={lightboxImage || undefined}
                             controls
                             autoPlay
-                            muted
                             playsInline
                             className="max-w-full max-h-full rounded-lg"
                             onClick={(e) => e.stopPropagation()}
                         />
                     ) : (
                         <img
-                            src={lightboxImage}
+                            src={lightboxImage || undefined}
                             alt="Full size"
                             className="max-w-full max-h-full object-contain rounded-lg"
                             onClick={(e) => e.stopPropagation()}
@@ -255,27 +267,43 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
 
                                 {/* Image Thumbnails */}
                                 {images.length > 0 && (
-                                    <div className="mt-2.5 flex flex-wrap gap-2 pointer-events-auto">
+                                    <div className="mt-2.5 flex flex-wrap gap-2 pointer-events-auto relative z-20">
                                         {images.slice(0, 4).map((img) => (
                                             <button
                                                 key={img.id}
-                                                onClick={(e) => {
+                                                onClick={async (e) => {
                                                     e.stopPropagation();
-                                                    setLightboxImage(img.url);
+                                                    e.preventDefault();
+                                                    if (isVideoUrl(img.url)) {
+                                                        // Blob-based video loading
+                                                        setVideoLoading(true);
+                                                        setLightboxIsVideo(true);
+                                                        setLightboxImage(null);
+                                                        try {
+                                                            const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(img.url)}`);
+                                                            if (!res.ok) throw new Error('Failed to load video');
+                                                            const blob = await res.blob();
+                                                            const blobUrl = URL.createObjectURL(blob);
+                                                            setLightboxImage(blobUrl);
+                                                        } catch {
+                                                            setLightboxImage(null);
+                                                            setLightboxIsVideo(false);
+                                                            toast.error('Error', 'Failed to load video');
+                                                        } finally {
+                                                            setVideoLoading(false);
+                                                        }
+                                                    } else {
+                                                        setLightboxIsVideo(false);
+                                                        setLightboxImage(img.url);
+                                                    }
                                                 }}
-                                                className="relative group/img"
+                                                className="relative group/img pointer-events-auto cursor-pointer"
                                             >
                                                 {isVideoUrl(img.url) ? (
                                                     <>
-                                                        <video
-                                                            src={img.url}
-                                                            className="w-14 h-14 object-cover rounded-lg border border-stone-200 hover:border-stone-400 transition-colors pointer-events-none"
-                                                            preload="metadata"
-                                                            muted
-                                                            playsInline
-                                                        />
-                                                        <div className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/30 rounded-lg transition-colors pointer-events-none">
-                                                            <div className="w-6 h-6 rounded-full bg-teal-500/90 flex items-center justify-center shadow">
+                                                        <div className="w-14 h-14 rounded-lg border border-stone-200 bg-gradient-to-br from-teal-600 to-teal-800" />
+                                                        <div className="absolute inset-0 flex items-center justify-center rounded-lg pointer-events-none">
+                                                            <div className="w-6 h-6 rounded-full bg-white/25 flex items-center justify-center shadow">
                                                                 <svg className="w-3 h-3 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
                                                                     <path d="M8 5v14l11-7z" />
                                                                 </svg>
@@ -289,7 +317,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                                             alt={img.caption || 'Adoption photo'}
                                                             className="w-14 h-14 object-cover rounded-lg border border-stone-200 hover:border-stone-400 transition-colors"
                                                         />
-                                                        <div className="absolute inset-0 bg-black/0 hover:bg-black/20 rounded-lg transition-colors flex items-center justify-center">
+                                                        <div className="absolute inset-0 bg-black/0 hover:bg-black/20 rounded-lg transition-colors flex items-center justify-center pointer-events-none">
                                                             <svg className="w-3.5 h-3.5 text-white opacity-0 group-hover/img:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
                                                             </svg>
