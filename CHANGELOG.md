@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.8.0-4] - 2026-03-03
+
+### Added
+- **Video storage and playback** — scraper extracts video URLs from `<video>` elements and `og:video` tags across all platforms; videos are downloaded and stored in R2; ImageGallery renders `<video>` with play overlay and lightbox player
+- R2 helper supports video content types (mp4, webm, mov)
+- Adopters API handles video items with proper captions and profile picture logic
+
+---
+
 ## [2.8.0-3] - 2026-03-03
 
 ### Changed

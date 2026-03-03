@@ -1,8 +1,8 @@
 /**
- * R2 Image Storage Helper
+ * R2 Media Storage Helper
  * 
- * Downloads external images and uploads them to Cloudflare R2 for permanent storage.
- * This solves the problem of Facebook CDN URLs expiring after a few days/weeks.
+ * Downloads external images and videos and uploads them to Cloudflare R2 for permanent storage.
+ * This solves the problem of social media CDN URLs expiring after a few days/weeks.
  */
 
 import { getRequestContext } from '@cloudflare/next-on-pages';
@@ -33,14 +33,16 @@ function getExtension(url: string, contentType?: string | null): string {
         if (contentType.includes('webp')) return 'webp';
         if (contentType.includes('gif')) return 'gif';
         if (contentType.includes('mp4')) return 'mp4';
+        if (contentType.includes('webm')) return 'webm';
+        if (contentType.includes('quicktime') || contentType.includes('mov')) return 'mov';
     }
     // Try extracting from URL path (before query string)
     const path = url.split('?')[0];
     const ext = path.split('.').pop()?.toLowerCase();
-    if (ext && ['jpg', 'jpeg', 'png', 'webp', 'gif', 'mp4'].includes(ext)) {
+    if (ext && ['jpg', 'jpeg', 'png', 'webp', 'gif', 'mp4', 'webm', 'mov'].includes(ext)) {
         return ext === 'jpeg' ? 'jpg' : ext;
     }
-    return 'jpg'; // Default assumption for Facebook images
+    return 'jpg'; // Default assumption
 }
 
 /**
@@ -84,7 +86,7 @@ export async function persistImageToR2(
         const response = await fetch(externalUrl, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-                'Accept': 'image/*,*/*',
+                'Accept': 'image/*,video/*,*/*',
             },
             redirect: 'follow',
         });
@@ -95,20 +97,21 @@ export async function persistImageToR2(
         }
 
         const contentType = response.headers.get('content-type') || 'image/jpeg';
+        const isVideo = contentType.startsWith('video/');
         const ext = getExtension(externalUrl, contentType);
         const id = imageId || crypto.randomUUID();
         const key = `adopters/${adopterId}/${id}.${ext}`;
 
         const arrayBuffer = await response.arrayBuffer();
 
-        // Skip if too small (likely a 1x1 pixel or error response)
-        if (arrayBuffer.byteLength < 1000) {
+        // Skip if too small (likely a 1x1 pixel or error response) — but not for videos
+        if (!isVideo && arrayBuffer.byteLength < 1000) {
             console.warn(`[R2] Image too small (${arrayBuffer.byteLength} bytes), skipping: ${externalUrl.substring(0, 80)}`);
             return null;
         }
 
         const r2Url = await uploadToR2(key, arrayBuffer, contentType);
-        console.log(`[R2] Persisted image: ${externalUrl.substring(0, 60)} → ${key} (${Math.round(arrayBuffer.byteLength / 1024)}KB)`);
+        console.log(`[R2] Persisted media: ${externalUrl.substring(0, 60)} → ${key} (${Math.round(arrayBuffer.byteLength / 1024)}KB)`);
         return r2Url;
     } catch (error) {
         console.error(`[R2] Error persisting image:`, error);

@@ -21,6 +21,7 @@ interface ScrapeResult {
     text: string;
     author?: string;
     images: string[];
+    videos: string[];
     platform: string;
     error?: string;
 }
@@ -93,19 +94,22 @@ async function dismissModals(page: Page): Promise<void> {
 }
 
 /** Extract OG tags from a Playwright page */
-async function extractOgTags(page: Page): Promise<{ title?: string; description?: string; images: string[] }> {
+async function extractOgTags(page: Page): Promise<{ title?: string; description?: string; images: string[]; videos: string[] }> {
     return page.evaluate(() => {
         const title = document.querySelector('meta[property="og:title"]')?.getAttribute('content') || undefined;
         const description = document.querySelector('meta[property="og:description"]')?.getAttribute('content') || undefined;
         const images = Array.from(document.querySelectorAll('meta[property="og:image"]'))
             .map(el => el.getAttribute('content'))
             .filter(Boolean) as string[];
-        return { title, description, images };
+        const videos = Array.from(document.querySelectorAll('meta[property="og:video"], meta[property="og:video:url"]'))
+            .map(el => el.getAttribute('content'))
+            .filter(Boolean) as string[];
+        return { title, description, images, videos };
     });
 }
 
 /** Fetch OG tags via HTTP with a bot User-Agent (no Playwright needed) */
-async function fetchOgTagsHttp(url: string, userAgent: string): Promise<{ title?: string; description?: string; images: string[]; text?: string }> {
+async function fetchOgTagsHttp(url: string, userAgent: string): Promise<{ title?: string; description?: string; images: string[]; videos: string[]; text?: string }> {
     try {
         const response = await fetch(url, {
             headers: {
@@ -115,13 +119,14 @@ async function fetchOgTagsHttp(url: string, userAgent: string): Promise<{ title?
             },
             redirect: 'follow',
         });
-        if (!response.ok) return { images: [] };
+        if (!response.ok) return { images: [], videos: [] };
 
         const html = await response.text();
 
         const titleMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
         const descMatch = html.match(/<meta\s+property="og:description"\s+content="([^"]+)"/i);
         const imageMatches = [...html.matchAll(/<meta\s+property="og:image"\s+content="([^"]+)"/gi)];
+        const videoMatches = [...html.matchAll(/<meta\s+property="og:video(?::url)?"\s+content="([^"]+)"/gi)];
 
         // Also try JSON-LD
         let jsonLdText = '';
@@ -149,10 +154,11 @@ async function fetchOgTagsHttp(url: string, userAgent: string): Promise<{ title?
             description: descMatch ? decodeEntities(descMatch[1]) : undefined,
             text: jsonLdText || undefined,
             images: imageMatches.map(m => decodeEntities(m[1])),
+            videos: videoMatches.map(m => decodeEntities(m[1])),
         };
     } catch (e) {
         console.error(`[Scraper] HTTP OG fetch failed for ${url}:`, e instanceof Error ? e.message : e);
-        return { images: [] };
+        return { images: [], videos: [] };
     }
 }
 
@@ -366,6 +372,7 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
             text: text.trim(),
             author: author.trim() || undefined,
             images,
+            videos: [],
             platform: 'facebook',
         };
 
@@ -376,6 +383,7 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
         return {
             text: '',
             images: [],
+            videos: [],
             platform: 'facebook',
             error: error instanceof Error ? error.message : 'Scraping failed'
         };
@@ -400,6 +408,7 @@ async function scrapeInstagramPost(url: string): Promise<ScrapeResult> {
         let text = ogData.description || ogData.text || '';
         let author = ogData.title || '';
         const images: string[] = [...ogData.images];
+        const videos: string[] = [...(ogData.videos || [])];
 
         // Clean up Instagram OG title (usually "Author on Instagram: 'caption...'")
         if (author) {
@@ -418,6 +427,7 @@ async function scrapeInstagramPost(url: string): Promise<ScrapeResult> {
                 text: text.trim(),
                 author: author.trim() || undefined,
                 images: images.slice(0, 10),
+                videos: videos.slice(0, 5),
                 platform: 'instagram',
             };
         }
@@ -451,6 +461,9 @@ async function scrapeInstagramPost(url: string): Promise<ScrapeResult> {
         }
         for (const img of pageOg.images) {
             if (!images.includes(img)) images.push(img);
+        }
+        for (const vid of pageOg.videos) {
+            if (!videos.includes(vid)) videos.push(vid);
         }
 
         // Extract text from article or main content
@@ -497,17 +510,26 @@ async function scrapeInstagramPost(url: string): Promise<ScrapeResult> {
             if (!images.includes(img)) images.push(img);
         }
 
-        // Extract video thumbnails
-        const videoPosterImages = await page.evaluate(() => {
+        // Extract video thumbnails and video source URLs
+        const videoData = await page.evaluate(() => {
             const posters: string[] = [];
+            const srcs: string[] = [];
             document.querySelectorAll('video').forEach(v => {
                 if (v.poster) posters.push(v.poster);
+                if (v.src) srcs.push(v.src);
+                // Check source elements inside video
+                v.querySelectorAll('source').forEach(s => {
+                    if (s.src) srcs.push(s.src);
+                });
             });
-            return posters;
+            return { posters, srcs };
         });
 
-        for (const img of videoPosterImages) {
+        for (const img of videoData.posters) {
             if (!images.includes(img)) images.push(img);
+        }
+        for (const vid of videoData.srcs) {
+            if (!videos.includes(vid)) videos.push(vid);
         }
 
         console.log(`[Scraper] Instagram result: text=${text.length}, author="${author}", images=${images.length}`);
@@ -518,6 +540,7 @@ async function scrapeInstagramPost(url: string): Promise<ScrapeResult> {
             text: text.trim(),
             author: author.trim() || undefined,
             images: images.slice(0, 10),
+            videos: videos.slice(0, 5),
             platform: 'instagram',
         };
 
@@ -527,6 +550,7 @@ async function scrapeInstagramPost(url: string): Promise<ScrapeResult> {
         return {
             text: '',
             images: [],
+            videos: [],
             platform: 'instagram',
             error: error instanceof Error ? error.message : 'Instagram scraping failed'
         };
@@ -556,6 +580,7 @@ async function scrapeTwitterPost(url: string): Promise<ScrapeResult> {
         let text = vxData.description || vxData.text || '';
         let author = vxData.title || '';
         const images: string[] = [...vxData.images];
+        const videos: string[] = [...(vxData.videos || [])];
 
         // Clean up author — vxtwitter title is usually "Author (@handle)"
         if (author) {
@@ -569,6 +594,7 @@ async function scrapeTwitterPost(url: string): Promise<ScrapeResult> {
                 text: text.trim(),
                 author: author.trim() || undefined,
                 images: images.slice(0, 10),
+                videos: videos.slice(0, 5),
                 platform: 'twitter',
             };
         }
@@ -590,6 +616,9 @@ async function scrapeTwitterPost(url: string): Promise<ScrapeResult> {
         for (const img of fxData.images) {
             if (!images.includes(img)) images.push(img);
         }
+        for (const vid of (fxData.videos || [])) {
+            if (!videos.includes(vid)) videos.push(vid);
+        }
 
         if (text.length > 10 || images.length > 0) {
             console.log(`[Scraper] fxtwitter success: text=${text.length}, images=${images.length}`);
@@ -597,6 +626,7 @@ async function scrapeTwitterPost(url: string): Promise<ScrapeResult> {
                 text: text.trim(),
                 author: author.trim() || undefined,
                 images: images.slice(0, 10),
+                videos: videos.slice(0, 5),
                 platform: 'twitter',
             };
         }
@@ -624,6 +654,9 @@ async function scrapeTwitterPost(url: string): Promise<ScrapeResult> {
         if (!author && pageOg.title) author = pageOg.title;
         for (const img of pageOg.images) {
             if (!images.includes(img)) images.push(img);
+        }
+        for (const vid of pageOg.videos) {
+            if (!videos.includes(vid)) videos.push(vid);
         }
 
         // Try to get tweet text from the page
@@ -666,6 +699,7 @@ async function scrapeTwitterPost(url: string): Promise<ScrapeResult> {
             text: text.trim(),
             author: author.trim() || undefined,
             images: images.slice(0, 10),
+            videos: videos.slice(0, 5),
             platform: 'twitter',
         };
 
@@ -675,6 +709,7 @@ async function scrapeTwitterPost(url: string): Promise<ScrapeResult> {
         return {
             text: '',
             images: [],
+            videos: [],
             platform: 'twitter',
             error: error instanceof Error ? error.message : 'Twitter scraping failed'
         };
@@ -698,6 +733,7 @@ async function scrapeTikTokPost(url: string): Promise<ScrapeResult> {
         let text = ogData.description || ogData.text || '';
         let author = ogData.title || '';
         const images: string[] = [...ogData.images];
+        const videos: string[] = [...(ogData.videos || [])];
 
         // Clean up title — TikTok format: "Author on TikTok"
         if (author) {
@@ -711,6 +747,7 @@ async function scrapeTikTokPost(url: string): Promise<ScrapeResult> {
                 text: text.trim(),
                 author: author.trim() || undefined,
                 images: images.slice(0, 10),
+                videos: videos.slice(0, 5),
                 platform: 'tiktok',
             };
         }
@@ -739,6 +776,9 @@ async function scrapeTikTokPost(url: string): Promise<ScrapeResult> {
         for (const img of pageOg.images) {
             if (!images.includes(img)) images.push(img);
         }
+        for (const vid of pageOg.videos) {
+            if (!videos.includes(vid)) videos.push(vid);
+        }
 
         // Try to get description from page content
         const pageText = await page.evaluate(() => {
@@ -752,11 +792,16 @@ async function scrapeTikTokPost(url: string): Promise<ScrapeResult> {
             text = pageText;
         }
 
-        // Extract video poster images
-        const videoPosterImages = await page.evaluate(() => {
+        // Extract video poster images and video source URLs
+        const videoData = await page.evaluate(() => {
             const posters: string[] = [];
+            const srcs: string[] = [];
             document.querySelectorAll('video').forEach(v => {
                 if (v.poster) posters.push(v.poster);
+                if (v.src) srcs.push(v.src);
+                v.querySelectorAll('source').forEach(s => {
+                    if (s.src) srcs.push(s.src);
+                });
             });
             // Also check for large cover images
             document.querySelectorAll('img').forEach(img => {
@@ -765,11 +810,14 @@ async function scrapeTikTokPost(url: string): Promise<ScrapeResult> {
                     posters.push(src);
                 }
             });
-            return posters;
+            return { posters, srcs };
         });
 
-        for (const img of videoPosterImages) {
+        for (const img of videoData.posters) {
             if (!images.includes(img)) images.push(img);
+        }
+        for (const vid of videoData.srcs) {
+            if (!videos.includes(vid)) videos.push(vid);
         }
 
         console.log(`[Scraper] TikTok result: text=${text.length}, author="${author}", images=${images.length}`);
@@ -780,6 +828,7 @@ async function scrapeTikTokPost(url: string): Promise<ScrapeResult> {
             text: text.trim(),
             author: author.trim() || undefined,
             images: images.slice(0, 10),
+            videos: videos.slice(0, 5),
             platform: 'tiktok',
         };
 
@@ -789,6 +838,7 @@ async function scrapeTikTokPost(url: string): Promise<ScrapeResult> {
         return {
             text: '',
             images: [],
+            videos: [],
             platform: 'tiktok',
             error: error instanceof Error ? error.message : 'TikTok scraping failed'
         };
@@ -808,6 +858,7 @@ async function scrapeGenericPost(url: string): Promise<ScrapeResult> {
             text: (ogData.description || ogData.text || '').trim(),
             author: ogData.title?.trim() || undefined,
             images: ogData.images.slice(0, 10),
+            videos: (ogData.videos || []).slice(0, 5),
             platform: 'unknown',
         };
     } catch (error) {
@@ -815,6 +866,7 @@ async function scrapeGenericPost(url: string): Promise<ScrapeResult> {
         return {
             text: '',
             images: [],
+            videos: [],
             platform: 'unknown',
             error: error instanceof Error ? error.message : 'Scraping failed'
         };
@@ -888,6 +940,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
                 text: result.text,
                 author: result.author,
                 images: result.images,
+                videos: result.videos,
             },
             platform,
         });

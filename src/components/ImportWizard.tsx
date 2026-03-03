@@ -68,6 +68,7 @@ export default function ImportWizard() {
     const [sourceUrl, setSourceUrl] = useState('');
     const [_sourceType, setSourceType] = useState<string>('');
     const [isVideoPost, setIsVideoPost] = useState(false);
+    const [fetchedVideos, setFetchedVideos] = useState<string[]>([]);
     const [retryCountdown, setRetryCountdown] = useState(0);
 
     // Retry countdown timer
@@ -270,6 +271,8 @@ export default function ImportWizard() {
                     const imgs = responseData.data.images || [];
                     setFetchedImages(imgs);
                     setSelectedFetchedImages(new Set(imgs.map((_: string, i: number) => i)));
+                    setFetchedVideos(responseData.data.videos || []);
+                    if ((responseData.data.videos || []).length > 0) setIsVideoPost(true);
                     setSourceType(responseData.data.sourceType || 'web');
                 }
             }
@@ -481,7 +484,10 @@ export default function ImportWizard() {
                 notes: extractedData.notes,
                 sourceUrl,
                 flags,
-                images: processedImages.length > 0 ? processedImages : manualImages.map(img => ({ data: img.data, mimeType: img.mimeType })),
+                images: [
+                    ...(processedImages.length > 0 ? processedImages : manualImages.map(img => ({ data: img.data, mimeType: img.mimeType }))),
+                    ...fetchedVideos.map(videoUrl => ({ data: '', mimeType: 'video/mp4', originalUrl: videoUrl })),
+                ],
                 adoption: {
                     animalName: unknownAnimal ? '' : (extractedData.animalName || ''),
                     species: extractedData.animalSpecies,

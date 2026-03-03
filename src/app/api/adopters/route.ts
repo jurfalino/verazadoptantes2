@@ -249,20 +249,30 @@ export async function POST(request: Request) {
             }
         }
 
-        // Save images if any
+        // Save media (images + videos) if any
         let savedImageCount = 0;
         if (images && Array.isArray(images) && images.length > 0) {
             for (let i = 0; i < images.length; i++) {
                 const img = images[i];
+                const isVideo = img.mimeType?.startsWith('video/');
+
                 // Use original URL if available (from Playwright scraper), otherwise create data URL (from uploads)
-                const imageUrl = img.originalUrl || `data:${img.mimeType};base64,${img.data}`;
+                const mediaUrl = img.originalUrl || (img.data ? `data:${img.mimeType};base64,${img.data}` : null);
+
+                // Skip items with no usable URL
+                if (!mediaUrl) {
+                    logger.warn('Adopter create: skipping media item with no URL or data', {
+                        errorId, index: i, mimeType: img.mimeType, user: session.user.email
+                    });
+                    continue;
+                }
 
                 // Skip if data URL is too large (>500KB base64 = ~375KB actual) - these shouldn't be stored
-                if (imageUrl.startsWith('data:') && imageUrl.length > 500000) {
+                if (mediaUrl.startsWith('data:') && mediaUrl.length > 500000) {
                     logger.warn('Adopter create: skipping oversized image', {
                         errorId,
                         index: i,
-                        size: imageUrl.length,
+                        size: mediaUrl.length,
                         user: session.user.email
                     });
                     continue;
@@ -270,16 +280,16 @@ export async function POST(request: Request) {
 
                 const imageId = crypto.randomUUID();
 
-                // Persist external URLs (Facebook CDN etc.) to R2
-                const persistedUrl = await processImageForStorage(imageUrl, newId, imageId);
+                // Persist external URLs (social media CDN etc.) to R2
+                const persistedUrl = await processImageForStorage(mediaUrl, newId, imageId);
 
                 await db.insert(adopterImages).values({
                     id: imageId,
                     adopterId: newId,
                     url: persistedUrl,
-                    caption: `Imported from Facebook (${i + 1})`,
+                    caption: isVideo ? `Imported video (${i + 1})` : `Imported image (${i + 1})`,
                     addedBy: session.user.email || 'anonymous',
-                    isProfilePicture: i === 0 ? 1 : 0 // First image as profile picture
+                    isProfilePicture: (!isVideo && savedImageCount === 0) ? 1 : 0 // First image (not video) as profile picture
                     // uploadedAt uses database default
                 });
                 savedImageCount++;

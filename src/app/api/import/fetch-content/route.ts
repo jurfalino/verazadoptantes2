@@ -8,6 +8,7 @@ interface FetchedContent {
     title?: string;
     text: string;
     images: string[];
+    videos?: string[];
     sourceUrl: string;
     sourceType: 'facebook' | 'instagram' | 'twitter' | 'tiktok' | 'web' | 'unknown';
 }
@@ -86,7 +87,7 @@ export async function POST(request: NextRequest) {
                     if (scraperResponse.ok) {
                         const scraperData = await scraperResponse.json() as {
                             success: boolean;
-                            data?: { text: string; author?: string; images: string[] };
+                            data?: { text: string; author?: string; images: string[]; videos?: string[] };
                             platform?: string;
                             error?: string;
                         };
@@ -108,6 +109,7 @@ export async function POST(request: NextRequest) {
                                     title: scraperData.data.author,
                                     text: scraperData.data.text,
                                     images: scraperData.data.images,
+                                    videos: scraperData.data.videos || [],
                                     sourceUrl: url,
                                     sourceType,
                                 } satisfies FetchedContent,
