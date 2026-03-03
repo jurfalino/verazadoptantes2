@@ -21,8 +21,145 @@ interface ScrapeResult {
     text: string;
     author?: string;
     images: string[];
+    platform: string;
     error?: string;
 }
+
+// ─── Platform Detection ─────────────────────────────────────────────────────
+
+type Platform = 'facebook' | 'instagram' | 'twitter' | 'tiktok' | 'unknown';
+
+function detectPlatform(url: string): Platform {
+    const lower = url.toLowerCase();
+    if (/facebook\.com|fb\.com|fb\.watch/.test(lower)) return 'facebook';
+    if (/instagram\.com|instagr\.am/.test(lower)) return 'instagram';
+    if (/twitter\.com|x\.com|t\.co/.test(lower)) return 'twitter';
+    if (/tiktok\.com/.test(lower)) return 'tiktok';
+    return 'unknown';
+}
+
+// Supported social networks for URL validation
+const SUPPORTED_PLATFORMS: Platform[] = ['facebook', 'instagram', 'twitter', 'tiktok'];
+
+// ─── Shared Browser Helpers ─────────────────────────────────────────────────
+
+async function launchBrowser(): Promise<Browser> {
+    return chromium.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+}
+
+async function dismissModals(page: Page): Promise<void> {
+    try {
+        // Strategy 1: Click close button on dialogs
+        const closeSelectors = [
+            'div[role="dialog"] div[aria-label="Close"]',
+            'div[role="dialog"] div[aria-label="Cerrar"]',
+            'div[role="dialog"] [aria-label="Close"]',
+            'div[role="dialog"] [aria-label="Cerrar"]',
+            'button[aria-label="Close"]',
+            'button[aria-label="Cerrar"]',
+        ];
+        let dismissed = false;
+        for (const sel of closeSelectors) {
+            const closeBtn = await page.$(sel);
+            if (closeBtn) {
+                await closeBtn.click();
+                console.log(`[Scraper] Dismissed modal via: ${sel}`);
+                dismissed = true;
+                await page.waitForTimeout(1000);
+                break;
+            }
+        }
+
+        // Strategy 2: Press Escape
+        if (!dismissed) {
+            await page.keyboard.press('Escape');
+            console.log('[Scraper] Pressed Escape to dismiss modal');
+            await page.waitForTimeout(1000);
+        }
+
+        // Strategy 3: Remove overlay elements from DOM
+        await page.evaluate(() => {
+            document.querySelectorAll('div[role="dialog"]').forEach(el => el.remove());
+            document.querySelectorAll('div[data-visualcompletion="ignore"]').forEach(el => {
+                if (el instanceof HTMLElement && el.style.position === 'fixed') el.remove();
+            });
+        });
+    } catch (e) {
+        console.log('[Scraper] Modal dismissal (may not be present):', e instanceof Error ? e.message : e);
+    }
+}
+
+/** Extract OG tags from a Playwright page */
+async function extractOgTags(page: Page): Promise<{ title?: string; description?: string; images: string[] }> {
+    return page.evaluate(() => {
+        const title = document.querySelector('meta[property="og:title"]')?.getAttribute('content') || undefined;
+        const description = document.querySelector('meta[property="og:description"]')?.getAttribute('content') || undefined;
+        const images = Array.from(document.querySelectorAll('meta[property="og:image"]'))
+            .map(el => el.getAttribute('content'))
+            .filter(Boolean) as string[];
+        return { title, description, images };
+    });
+}
+
+/** Fetch OG tags via HTTP with a bot User-Agent (no Playwright needed) */
+async function fetchOgTagsHttp(url: string, userAgent: string): Promise<{ title?: string; description?: string; images: string[]; text?: string }> {
+    try {
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': userAgent,
+                'Accept': 'text/html,application/xhtml+xml',
+                'Accept-Language': 'es-AR,es;q=0.9,en;q=0.5',
+            },
+            redirect: 'follow',
+        });
+        if (!response.ok) return { images: [] };
+
+        const html = await response.text();
+
+        const titleMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
+        const descMatch = html.match(/<meta\s+property="og:description"\s+content="([^"]+)"/i);
+        const imageMatches = [...html.matchAll(/<meta\s+property="og:image"\s+content="([^"]+)"/gi)];
+
+        // Also try JSON-LD
+        let jsonLdText = '';
+        const jsonLdMatch = html.match(/<script\s+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i);
+        if (jsonLdMatch) {
+            try {
+                const ld = JSON.parse(jsonLdMatch[1]) as {
+                    articleBody?: string;
+                    description?: string;
+                    name?: string;
+                };
+                jsonLdText = ld.articleBody || ld.description || '';
+            } catch { /* ignore */ }
+        }
+
+        const decodeEntities = (s: string) => s
+            .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&#39;/g, "'")
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+            .replace(/&#x([0-9a-fA-F]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+
+        return {
+            title: titleMatch ? decodeEntities(titleMatch[1]) : undefined,
+            description: descMatch ? decodeEntities(descMatch[1]) : undefined,
+            text: jsonLdText || undefined,
+            images: imageMatches.map(m => decodeEntities(m[1])),
+        };
+    } catch (e) {
+        console.error(`[Scraper] HTTP OG fetch failed for ${url}:`, e instanceof Error ? e.message : e);
+        return { images: [] };
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FACEBOOK SCRAPER (existing, proven logic — unchanged)
+// ═══════════════════════════════════════════════════════════════════════════════
 
 async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
     let browser: Browser | null = null;
@@ -31,12 +168,9 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
     const isVideoUrl = /\/(reel|r|share\/r)\//.test(url) || /\/videos\//.test(url);
 
     try {
-        console.log(`[Scraper] Starting scrape for: ${url} (isVideo: ${isVideoUrl})`);
+        console.log(`[Scraper] Starting Facebook scrape for: ${url} (isVideo: ${isVideoUrl})`);
 
-        browser = await chromium.launch({
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-        });
+        browser = await launchBrowser();
 
         const context = await browser.newContext({
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -61,46 +195,7 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
         } catch { /* no cookie dialog */ }
 
         // Dismiss Facebook login modal/overlay if present
-        // Facebook now shows a login wall overlay on public group posts — content is behind it
-        try {
-            // Strategy 1: Click close button on the login modal
-            const closeSelectors = [
-                'div[role="dialog"] div[aria-label="Close"]',
-                'div[role="dialog"] div[aria-label="Cerrar"]',
-                'div[role="dialog"] [aria-label="Close"]',
-                'div[role="dialog"] [aria-label="Cerrar"]',
-            ];
-            let dismissed = false;
-            for (const sel of closeSelectors) {
-                const closeBtn = await page.$(sel);
-                if (closeBtn) {
-                    await closeBtn.click();
-                    console.log(`[Scraper] Dismissed login modal via: ${sel}`);
-                    dismissed = true;
-                    await page.waitForTimeout(1000);
-                    break;
-                }
-            }
-
-            // Strategy 2: Press Escape to close any modal
-            if (!dismissed) {
-                await page.keyboard.press('Escape');
-                console.log('[Scraper] Pressed Escape to dismiss modal');
-                await page.waitForTimeout(1000);
-            }
-
-            // Strategy 3: Remove login overlay from DOM so we can access content behind it
-            await page.evaluate(() => {
-                // Remove login modals/overlays
-                document.querySelectorAll('div[role="dialog"]').forEach(el => el.remove());
-                // Remove backdrop/overlay
-                document.querySelectorAll('div[data-visualcompletion="ignore"]').forEach(el => {
-                    if (el instanceof HTMLElement && el.style.position === 'fixed') el.remove();
-                });
-            });
-        } catch (e) {
-            console.log('[Scraper] Login modal dismissal error (may not be present):', e instanceof Error ? e.message : e);
-        }
+        await dismissModals(page);
 
         // Wait for content to load - Facebook posts are in article elements
         try {
@@ -132,8 +227,6 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
             ).catch(() => null);
 
             if (ogTitle) {
-                // OG title often contains "Group Name | Post snippet | Facebook"
-                // Extract the group/author name (first segment)
                 const parts = ogTitle.split('|').map((s: string) => s.trim());
                 if (parts.length > 1) {
                     author = parts[0];
@@ -217,18 +310,11 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
         for (const img of imgElements) {
             const src = await img.getAttribute('src');
             if (src && src.includes('scontent')) {
-                // Filter out small images (profile pics, icons)
                 const width = await img.getAttribute('width');
                 const height = await img.getAttribute('height');
-
-                // Skip tiny images
                 if (width && parseInt(width) < 50) continue;
                 if (height && parseInt(height) < 50) continue;
-
-                // Skip profile pictures and emojis
                 if (src.includes('_s.') || src.includes('_t.') || src.includes('emoji')) continue;
-
-                // Deduplicate
                 if (!images.includes(src)) {
                     images.push(src);
                 }
@@ -237,7 +323,6 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
 
         // For video posts: also look for video poster/thumbnail images
         if (isVideoUrl || images.length === 0) {
-            // Check <video> poster attributes
             const videoElements = await page.$$('video');
             for (const video of videoElements) {
                 const poster = await video.getAttribute('poster');
@@ -246,7 +331,6 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
                 }
             }
 
-            // Check for lookaside CDN images (common for video thumbnails)
             const allImgs = await page.$$('img');
             for (const img of allImgs) {
                 const src = await img.getAttribute('src');
@@ -257,60 +341,20 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
         }
 
         // Fallback: fetch raw HTML with facebookexternalhit UA
-        // Facebook strips OG tags from the rendered DOM (login wall),
-        // but ALWAYS serves them via plain HTTP to its own crawler UA
         if (!text || images.length === 0) {
             console.log('[Scraper] DOM extraction sparse, trying HTTP fetch with facebookexternalhit UA...');
-            try {
-                const ogResponse = await fetch(url, {
-                    headers: {
-                        'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
-                        'Accept': 'text/html',
-                    },
-                    redirect: 'follow',
-                });
-
-                if (ogResponse.ok) {
-                    const rawHtml = await ogResponse.text();
-
-                    // OG title → author
-                    if (!author) {
-                        const ogTitle = rawHtml.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
-                        if (ogTitle) {
-                            author = ogTitle[1]
-                                .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-                                .replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&#39;/g, "'")
-                                .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)));
-                        }
-                    }
-
-                    // OG description → text
-                    if (!text) {
-                        const ogDesc = rawHtml.match(/<meta\s+property="og:description"\s+content="([^"]+)"/i);
-                        if (ogDesc) {
-                            text = ogDesc[1]
-                                .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-                                .replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&#39;/g, "'")
-                                .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)));
-                        }
-                    }
-
-                    // OG image → images
-                    if (images.length === 0) {
-                        const ogImageMatches = rawHtml.matchAll(/<meta\s+property="og:image"\s+content="([^"]+)"/gi);
-                        for (const match of ogImageMatches) {
-                            let imgUrl = match[1]
-                                .replace(/&amp;/g, '&');
-                            if (!images.includes(imgUrl)) {
-                                images.push(imgUrl);
-                            }
-                        }
-                    }
-                }
-            } catch (fetchErr) {
-                console.error('[Scraper] HTTP OG fallback failed:', fetchErr);
+            const ogData = await fetchOgTagsHttp(url, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)');
+            if (!author && ogData.title) {
+                author = ogData.title.replace(/&amp;/g, '&');
             }
-
+            if (!text && ogData.description) {
+                text = ogData.description;
+            }
+            if (images.length === 0) {
+                for (const img of ogData.images) {
+                    if (!images.includes(img)) images.push(img);
+                }
+            }
             console.log(`[Scraper] OG fallback: author="${author}", text="${text.substring(0, 50)}", images=${images.length}`);
         }
 
@@ -321,27 +365,495 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
         return {
             text: text.trim(),
             author: author.trim() || undefined,
-            images
+            images,
+            platform: 'facebook',
         };
 
     } catch (error) {
-        console.error('[Scraper] Error:', error);
+        console.error('[Scraper] Facebook error:', error);
         if (browser) await browser.close();
 
         return {
             text: '',
             images: [],
+            platform: 'facebook',
             error: error instanceof Error ? error.message : 'Scraping failed'
         };
     }
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INSTAGRAM SCRAPER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function scrapeInstagramPost(url: string): Promise<ScrapeResult> {
+    let browser: Browser | null = null;
+
+    try {
+        console.log(`[Scraper] Starting Instagram scrape for: ${url}`);
+
+        // Step 1: Try HTTP OG fetch first (fast, no browser needed)
+        // Instagram serves OG tags to certain bots
+        const ogData = await fetchOgTagsHttp(url, 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)');
+
+        let text = ogData.description || ogData.text || '';
+        let author = ogData.title || '';
+        const images: string[] = [...ogData.images];
+
+        // Clean up Instagram OG title (usually "Author on Instagram: 'caption...'")
+        if (author) {
+            const igAuthorMatch = author.match(/^(.+?)\s+on\s+Instagram/i)
+                || author.match(/^(.+?)\s+en\s+Instagram/i)
+                || author.match(/^(.+?)\s*[@|]/);
+            if (igAuthorMatch) {
+                author = igAuthorMatch[1].trim();
+            }
+        }
+
+        // If we got good data from OG, we can skip Playwright
+        if (text.length > 30 && images.length > 0) {
+            console.log(`[Scraper] Instagram OG extraction success: text=${text.length}, images=${images.length}`);
+            return {
+                text: text.trim(),
+                author: author.trim() || undefined,
+                images: images.slice(0, 10),
+                platform: 'instagram',
+            };
+        }
+
+        // Step 2: Playwright fallback for when OG tags are insufficient
+        console.log('[Scraper] Instagram OG insufficient, launching Playwright...');
+        browser = await launchBrowser();
+
+        const context = await browser.newContext({
+            // Use mobile viewport — Instagram serves a lighter page to mobile
+            userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+            viewport: { width: 390, height: 844 },
+            locale: 'es-AR',
+            isMobile: true,
+        });
+
+        const page = await context.newPage();
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForTimeout(3000);
+
+        // Dismiss login prompts
+        await dismissModals(page);
+
+        // Try to extract OG tags from the rendered page
+        const pageOg = await extractOgTags(page);
+        if (!text && pageOg.description) text = pageOg.description;
+        if (!author && pageOg.title) {
+            author = pageOg.title;
+            const igMatch = author.match(/^(.+?)\s+on\s+Instagram/i) || author.match(/^(.+?)\s+en\s+Instagram/i);
+            if (igMatch) author = igMatch[1].trim();
+        }
+        for (const img of pageOg.images) {
+            if (!images.includes(img)) images.push(img);
+        }
+
+        // Extract text from article or main content
+        const articleText = await page.evaluate(() => {
+            // Try article elements
+            const article = document.querySelector('article');
+            if (article) {
+                // Get spans within article with text content
+                const spans = article.querySelectorAll('span');
+                let longest = '';
+                spans.forEach(s => {
+                    const t = s.textContent || '';
+                    if (t.length > longest.length && t.length > 10) longest = t;
+                });
+                return longest;
+            }
+            return '';
+        });
+
+        if (articleText && articleText.length > text.length) {
+            text = articleText;
+        }
+
+        // Extract images from rendered page
+        const pageImages = await page.evaluate(() => {
+            const imgs: string[] = [];
+            document.querySelectorAll('img').forEach(img => {
+                const src = img.src;
+                if (src && (src.includes('cdninstagram') || src.includes('scontent') || src.includes('fbcdn'))) {
+                    // Filter out tiny images (profile pics, icons)
+                    const w = img.naturalWidth || img.width || 0;
+                    const h = img.naturalHeight || img.height || 0;
+                    if (w > 100 || h > 100 || (!w && !h)) {
+                        if (!src.includes('profile') && !src.includes('150x150') && !src.includes('s150x150')) {
+                            imgs.push(src);
+                        }
+                    }
+                }
+            });
+            return imgs;
+        });
+
+        for (const img of pageImages) {
+            if (!images.includes(img)) images.push(img);
+        }
+
+        // Extract video thumbnails
+        const videoPosterImages = await page.evaluate(() => {
+            const posters: string[] = [];
+            document.querySelectorAll('video').forEach(v => {
+                if (v.poster) posters.push(v.poster);
+            });
+            return posters;
+        });
+
+        for (const img of videoPosterImages) {
+            if (!images.includes(img)) images.push(img);
+        }
+
+        console.log(`[Scraper] Instagram result: text=${text.length}, author="${author}", images=${images.length}`);
+
+        await browser.close();
+
+        return {
+            text: text.trim(),
+            author: author.trim() || undefined,
+            images: images.slice(0, 10),
+            platform: 'instagram',
+        };
+
+    } catch (error) {
+        console.error('[Scraper] Instagram error:', error);
+        if (browser) await browser.close();
+        return {
+            text: '',
+            images: [],
+            platform: 'instagram',
+            error: error instanceof Error ? error.message : 'Instagram scraping failed'
+        };
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TWITTER / X SCRAPER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function scrapeTwitterPost(url: string): Promise<ScrapeResult> {
+    let browser: Browser | null = null;
+
+    try {
+        console.log(`[Scraper] Starting Twitter/X scrape for: ${url}`);
+
+        // Step 1: Use vxtwitter.com / fxtwitter.com proxy (most reliable)
+        // These services rewrite Twitter URLs to serve full OG tags
+        const vxUrl = url
+            .replace(/\/(twitter|x)\.com\//i, '/vxtwitter.com/')
+            .replace(/\?.*$/, ''); // strip query params
+
+        console.log(`[Scraper] Trying vxtwitter proxy: ${vxUrl}`);
+        const vxData = await fetchOgTagsHttp(vxUrl, 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)');
+
+        let text = vxData.description || vxData.text || '';
+        let author = vxData.title || '';
+        const images: string[] = [...vxData.images];
+
+        // Clean up author — vxtwitter title is usually "Author (@handle)"
+        if (author) {
+            const handleMatch = author.match(/^(.+?)\s*\(@/);
+            if (handleMatch) author = handleMatch[1].trim();
+        }
+
+        if (text.length > 10 || images.length > 0) {
+            console.log(`[Scraper] vxtwitter success: text=${text.length}, images=${images.length}`);
+            return {
+                text: text.trim(),
+                author: author.trim() || undefined,
+                images: images.slice(0, 10),
+                platform: 'twitter',
+            };
+        }
+
+        // Step 2: Try fxtwitter as backup
+        const fxUrl = url
+            .replace(/\/(twitter|x)\.com\//i, '/fxtwitter.com/')
+            .replace(/\?.*$/, '');
+
+        console.log(`[Scraper] Trying fxtwitter proxy: ${fxUrl}`);
+        const fxData = await fetchOgTagsHttp(fxUrl, 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)');
+
+        if (fxData.description) text = fxData.description;
+        if (fxData.title && !author) {
+            author = fxData.title;
+            const handleMatch = author.match(/^(.+?)\s*\(@/);
+            if (handleMatch) author = handleMatch[1].trim();
+        }
+        for (const img of fxData.images) {
+            if (!images.includes(img)) images.push(img);
+        }
+
+        if (text.length > 10 || images.length > 0) {
+            console.log(`[Scraper] fxtwitter success: text=${text.length}, images=${images.length}`);
+            return {
+                text: text.trim(),
+                author: author.trim() || undefined,
+                images: images.slice(0, 10),
+                platform: 'twitter',
+            };
+        }
+
+        // Step 3: Playwright fallback (last resort — X is aggressive with bot detection)
+        console.log('[Scraper] Proxy methods failed, launching Playwright for X...');
+        browser = await launchBrowser();
+
+        const context = await browser.newContext({
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            viewport: { width: 1280, height: 800 },
+            locale: 'es-AR',
+        });
+
+        const page = await context.newPage();
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForTimeout(5000);
+
+        // Dismiss login prompts
+        await dismissModals(page);
+
+        // Extract OG tags
+        const pageOg = await extractOgTags(page);
+        if (!text && pageOg.description) text = pageOg.description;
+        if (!author && pageOg.title) author = pageOg.title;
+        for (const img of pageOg.images) {
+            if (!images.includes(img)) images.push(img);
+        }
+
+        // Try to get tweet text from the page
+        const tweetText = await page.evaluate(() => {
+            // Twitter/X uses article[data-testid="tweet"] or div[data-testid="tweetText"]
+            const tweetEl = document.querySelector('[data-testid="tweetText"]');
+            if (tweetEl) return tweetEl.textContent || '';
+            // Fallback: largest text block in an article
+            const article = document.querySelector('article');
+            if (article) return article.textContent || '';
+            return '';
+        });
+
+        if (tweetText && tweetText.length > text.length) {
+            text = tweetText;
+        }
+
+        // Extract images from tweet
+        const tweetImages = await page.evaluate(() => {
+            const imgs: string[] = [];
+            // Twitter image URLs contain pbs.twimg.com
+            document.querySelectorAll('img').forEach(img => {
+                const src = img.src;
+                if (src && src.includes('twimg.com/media')) {
+                    imgs.push(src);
+                }
+            });
+            return imgs;
+        });
+
+        for (const img of tweetImages) {
+            if (!images.includes(img)) images.push(img);
+        }
+
+        console.log(`[Scraper] Twitter result: text=${text.length}, author="${author}", images=${images.length}`);
+
+        await browser.close();
+
+        return {
+            text: text.trim(),
+            author: author.trim() || undefined,
+            images: images.slice(0, 10),
+            platform: 'twitter',
+        };
+
+    } catch (error) {
+        console.error('[Scraper] Twitter error:', error);
+        if (browser) await browser.close();
+        return {
+            text: '',
+            images: [],
+            platform: 'twitter',
+            error: error instanceof Error ? error.message : 'Twitter scraping failed'
+        };
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TIKTOK SCRAPER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function scrapeTikTokPost(url: string): Promise<ScrapeResult> {
+    let browser: Browser | null = null;
+
+    try {
+        console.log(`[Scraper] Starting TikTok scrape for: ${url}`);
+
+        // Step 1: Try HTTP OG fetch — TikTok typically serves OG tags
+        const ogData = await fetchOgTagsHttp(url, 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)');
+
+        let text = ogData.description || ogData.text || '';
+        let author = ogData.title || '';
+        const images: string[] = [...ogData.images];
+
+        // Clean up title — TikTok format: "Author on TikTok"
+        if (author) {
+            const ttMatch = author.match(/^(.+?)(?:\s+on\s+TikTok|\s+-\s+TikTok|'s?)/i);
+            if (ttMatch) author = ttMatch[1].trim();
+        }
+
+        if (text.length > 10 || images.length > 0) {
+            console.log(`[Scraper] TikTok OG success: text=${text.length}, images=${images.length}`);
+            return {
+                text: text.trim(),
+                author: author.trim() || undefined,
+                images: images.slice(0, 10),
+                platform: 'tiktok',
+            };
+        }
+
+        // Step 2: Playwright fallback
+        console.log('[Scraper] TikTok OG insufficient, launching Playwright...');
+        browser = await launchBrowser();
+
+        const context = await browser.newContext({
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            viewport: { width: 1280, height: 800 },
+            locale: 'es-AR',
+        });
+
+        const page = await context.newPage();
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForTimeout(5000);
+
+        // Dismiss any modals
+        await dismissModals(page);
+
+        // Extract OG tags from rendered page
+        const pageOg = await extractOgTags(page);
+        if (!text && pageOg.description) text = pageOg.description;
+        if (!author && pageOg.title) author = pageOg.title;
+        for (const img of pageOg.images) {
+            if (!images.includes(img)) images.push(img);
+        }
+
+        // Try to get description from page content
+        const pageText = await page.evaluate(() => {
+            // TikTok video descriptions
+            const descEl = document.querySelector('[data-e2e="video-desc"], [data-e2e="browse-video-desc"]');
+            if (descEl) return descEl.textContent || '';
+            return '';
+        });
+
+        if (pageText && pageText.length > text.length) {
+            text = pageText;
+        }
+
+        // Extract video poster images
+        const videoPosterImages = await page.evaluate(() => {
+            const posters: string[] = [];
+            document.querySelectorAll('video').forEach(v => {
+                if (v.poster) posters.push(v.poster);
+            });
+            // Also check for large cover images
+            document.querySelectorAll('img').forEach(img => {
+                const src = img.src;
+                if (src && (src.includes('tiktokcdn') || src.includes('tiktokv.com')) && img.width > 200) {
+                    posters.push(src);
+                }
+            });
+            return posters;
+        });
+
+        for (const img of videoPosterImages) {
+            if (!images.includes(img)) images.push(img);
+        }
+
+        console.log(`[Scraper] TikTok result: text=${text.length}, author="${author}", images=${images.length}`);
+
+        await browser.close();
+
+        return {
+            text: text.trim(),
+            author: author.trim() || undefined,
+            images: images.slice(0, 10),
+            platform: 'tiktok',
+        };
+
+    } catch (error) {
+        console.error('[Scraper] TikTok error:', error);
+        if (browser) await browser.close();
+        return {
+            text: '',
+            images: [],
+            platform: 'tiktok',
+            error: error instanceof Error ? error.message : 'TikTok scraping failed'
+        };
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GENERIC SCRAPER (unknown platforms)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function scrapeGenericPost(url: string): Promise<ScrapeResult> {
+    try {
+        console.log(`[Scraper] Starting generic scrape for: ${url}`);
+        const ogData = await fetchOgTagsHttp(url, 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)');
+        return {
+            text: (ogData.description || ogData.text || '').trim(),
+            author: ogData.title?.trim() || undefined,
+            images: ogData.images.slice(0, 10),
+            platform: 'unknown',
+        };
+    } catch (error) {
+        console.error('[Scraper] Generic error:', error);
+        return {
+            text: '',
+            images: [],
+            platform: 'unknown',
+            error: error instanceof Error ? error.message : 'Scraping failed'
+        };
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN ROUTER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function scrapePost(url: string): Promise<ScrapeResult> {
+    const platform = detectPlatform(url);
+    console.log(`[Scraper] Detected platform: ${platform} for URL: ${url}`);
+
+    switch (platform) {
+        case 'facebook': return scrapeFacebookPost(url);
+        case 'instagram': return scrapeInstagramPost(url);
+        case 'twitter': return scrapeTwitterPost(url);
+        case 'tiktok': return scrapeTikTokPost(url);
+        default: return scrapeGenericPost(url);
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EXPRESS ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        supportedPlatforms: SUPPORTED_PLATFORMS,
+    });
 });
 
-// Main scrape endpoint
+// Main scrape endpoint — accepts any supported social media URL
 app.post('/scrape', async (req: Request, res: Response) => {
     const { url } = req.body;
 
@@ -349,17 +861,25 @@ app.post('/scrape', async (req: Request, res: Response) => {
         return res.status(400).json({ error: 'URL is required' });
     }
 
-    // Validate Facebook URL
-    const fbPattern = /^https?:\/\/(www\.|m\.|web\.)?(facebook\.com|fb\.com)\//i;
-    if (!fbPattern.test(url)) {
-        return res.status(400).json({ error: 'Invalid Facebook URL' });
+    const platform = detectPlatform(url);
+
+    // Validate it's a supported URL
+    if (platform === 'unknown') {
+        return res.status(400).json({
+            error: 'Unsupported URL. Supported platforms: Facebook, Instagram, X/Twitter, TikTok',
+            detectedPlatform: platform,
+        });
     }
 
     try {
-        const result = await scrapeFacebookPost(url);
+        const result = await scrapePost(url);
 
         if (result.error) {
-            return res.status(500).json({ success: false, error: result.error });
+            return res.status(500).json({
+                success: false,
+                error: result.error,
+                platform,
+            });
         }
 
         res.json({
@@ -367,18 +887,21 @@ app.post('/scrape', async (req: Request, res: Response) => {
             data: {
                 text: result.text,
                 author: result.author,
-                images: result.images
-            }
+                images: result.images,
+            },
+            platform,
         });
     } catch (error) {
         console.error('[API] Error:', error);
         res.status(500).json({
             success: false,
-            error: 'Failed to scrape post'
+            error: 'Failed to scrape post',
+            platform,
         });
     }
 });
 
 app.listen(PORT, () => {
     console.log(`[Scraper] Server running on port ${PORT}`);
+    console.log(`[Scraper] Supported platforms: ${SUPPORTED_PLATFORMS.join(', ')}`);
 });

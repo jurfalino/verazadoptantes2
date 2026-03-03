@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.8.0-2] - 2026-03-03
+
+### Added
+- **Universal social media scraper** — scraper microservice now supports Instagram, X/Twitter, and TikTok in addition to Facebook; `fetch-content` route delegates social URLs to the Playwright scraper with Googlebot/proxy fallbacks
+
+---
+
 ## [2.8.0] - 2026-03-02
 
 ### Changed

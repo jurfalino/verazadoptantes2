@@ -9,7 +9,7 @@ interface FetchedContent {
     text: string;
     images: string[];
     sourceUrl: string;
-    sourceType: 'facebook' | 'instagram' | 'web' | 'unknown';
+    sourceType: 'facebook' | 'instagram' | 'twitter' | 'tiktok' | 'web' | 'unknown';
 }
 
 /**
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
 
         const sourceType = detectSourceType(url);
 
-        // For Facebook URLs, delegate to the specialized scraper
+        // For Facebook URLs, delegate to the specialized client-side scraper call
         if (sourceType === 'facebook') {
             return NextResponse.json({
                 success: true,
@@ -63,10 +63,80 @@ export async function POST(request: NextRequest) {
             });
         }
 
-        // Generic URL fetching
+        // For social media URLs (Instagram, X/Twitter, TikTok), delegate to Playwright scraper
+        const socialPlatforms: FetchedContent['sourceType'][] = ['instagram', 'twitter', 'tiktok'];
+        if (socialPlatforms.includes(sourceType)) {
+            const scraperUrl = process.env.SCRAPER_URL;
+            if (scraperUrl) {
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 120000);
+
+                    const scraperResponse = await fetch(`${scraperUrl}/scrape`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...(process.env.SCRAPER_API_KEY && { 'X-API-Key': process.env.SCRAPER_API_KEY }),
+                        },
+                        body: JSON.stringify({ url }),
+                        signal: controller.signal,
+                    });
+                    clearTimeout(timeoutId);
+
+                    if (scraperResponse.ok) {
+                        const scraperData = await scraperResponse.json() as {
+                            success: boolean;
+                            data?: { text: string; author?: string; images: string[] };
+                            platform?: string;
+                            error?: string;
+                        };
+
+                        if (scraperData.success && scraperData.data) {
+                            const titlePrefix = scraperData.data.author ? `[${scraperData.data.author}]\n\n` : '';
+                            logger.info('Social media scraper success', {
+                                userEmail: session?.user?.email || 'anonymous',
+                                url,
+                                sourceType,
+                                platform: scraperData.platform,
+                                textLength: scraperData.data.text.length,
+                                imageCount: scraperData.data.images.length,
+                            });
+
+                            return NextResponse.json({
+                                success: true,
+                                data: {
+                                    title: scraperData.data.author,
+                                    text: scraperData.data.text,
+                                    images: scraperData.data.images,
+                                    sourceUrl: url,
+                                    sourceType,
+                                } satisfies FetchedContent,
+                            });
+                        }
+                    }
+
+                    // Scraper failed — log and fall through to generic fetch
+                    logger.warn('Social media scraper returned no data, falling through', {
+                        url, sourceType,
+                    });
+                } catch (scraperError) {
+                    const isTimeout = scraperError instanceof Error && scraperError.name === 'AbortError';
+                    logger.warn('Social media scraper unavailable', {
+                        url, sourceType,
+                        reason: isTimeout ? 'timeout' : 'error',
+                        error: scraperError instanceof Error ? scraperError.message : String(scraperError),
+                    });
+                    // Fall through to generic fetch
+                }
+            } else {
+                logger.warn('SCRAPER_URL not configured, falling through to generic fetch', { url, sourceType });
+            }
+        }
+
+        // Generic URL fetching (for non-social URLs or as fallback)
         const response = await fetch(url, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'es-AR,es;q=0.9,en;q=0.5',
             },
@@ -76,6 +146,7 @@ export async function POST(request: NextRequest) {
         if (!response.ok) {
             return NextResponse.json({
                 error: `Failed to fetch URL (status ${response.status})`,
+                requiresManualInput: true,
             }, { status: 400 });
         }
 
@@ -128,6 +199,8 @@ function detectSourceType(url: string): FetchedContent['sourceType'] {
     const lowerUrl = url.toLowerCase();
     if (/facebook\.com|fb\.com|fb\.watch/.test(lowerUrl)) return 'facebook';
     if (/instagram\.com|instagr\.am/.test(lowerUrl)) return 'instagram';
+    if (/twitter\.com|x\.com|t\.co/.test(lowerUrl)) return 'twitter';
+    if (/tiktok\.com/.test(lowerUrl)) return 'tiktok';
     return 'web';
 }
 
