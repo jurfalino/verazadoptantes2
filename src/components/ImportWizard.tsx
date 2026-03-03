@@ -885,7 +885,7 @@ export default function ImportWizard() {
                                     <div
                                         key={i}
                                         className="relative rounded-xl overflow-hidden border-2 border-teal-300 aspect-video cursor-pointer group bg-gradient-to-br from-teal-600 to-teal-800"
-                                        onClick={() => { setExpandedImage(`/api/proxy-image?url=${encodeURIComponent(url)}`); setExpandedIsVideo(true); }}
+                                        onClick={() => { setExpandedImage(url); setExpandedIsVideo(true); }}
                                     >
                                         {/* Video placeholder — actual playback happens in lightbox */}
                                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -1151,7 +1151,7 @@ export default function ImportWizard() {
                                     ))}
                                     {fetchedVideos.map((url: string, i: number) => (
                                         <div key={`vid-${i}`} className="relative group w-14 h-14 rounded-lg overflow-hidden border border-teal-300 bg-gradient-to-br from-teal-600 to-teal-800 cursor-pointer"
-                                            onClick={() => { setExpandedImage(`/api/proxy-image?url=${encodeURIComponent(url)}`); setExpandedIsVideo(true); }}
+                                            onClick={() => { setExpandedImage(url); setExpandedIsVideo(true); }}
                                         >
                                             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                                 <div className="w-6 h-6 rounded-full bg-white/25 flex items-center justify-center shadow">
@@ -1376,6 +1376,14 @@ export default function ImportWizard() {
                             playsInline
                             className="max-w-full max-h-[90vh] rounded-lg shadow-2xl"
                             onClick={(e) => e.stopPropagation()}
+                            onError={(e) => {
+                                // Fallback: if direct CDN URL fails, try through proxy
+                                const vid = e.currentTarget;
+                                const src = vid.src;
+                                if (src && !src.includes('/api/proxy-image')) {
+                                    vid.src = `/api/proxy-image?url=${encodeURIComponent(src)}`;
+                                }
+                            }}
                         />
                     ) : (
                         <img
