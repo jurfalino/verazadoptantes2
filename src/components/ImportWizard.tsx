@@ -880,7 +880,11 @@ export default function ImportWizard() {
                             </label>
                             <div className="grid grid-cols-2 gap-3">
                                 {fetchedVideos.map((url, i) => (
-                                    <div key={i} className="relative rounded-xl overflow-hidden border-2 border-teal-300 bg-black aspect-video">
+                                    <div
+                                        key={i}
+                                        className="relative rounded-xl overflow-hidden border-2 border-teal-300 bg-black aspect-video cursor-pointer group"
+                                        onClick={() => setExpandedImage(`/api/proxy-image?url=${encodeURIComponent(url)}`)}
+                                    >
                                         <video
                                             src={`/api/proxy-image?url=${encodeURIComponent(url)}`}
                                             className="w-full h-full object-cover"
@@ -888,18 +892,9 @@ export default function ImportWizard() {
                                             muted
                                             playsInline
                                         />
-                                        {/* Play button overlay */}
-                                        <div
-                                            className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/30 transition-colors cursor-pointer"
-                                            onClick={() => {
-                                                const video = document.querySelector(`video[data-video-idx="${i}"]`) as HTMLVideoElement;
-                                                if (video) {
-                                                    if (video.paused) video.play();
-                                                    else video.pause();
-                                                }
-                                            }}
-                                        >
-                                            <div className="w-12 h-12 rounded-full bg-teal-500/90 flex items-center justify-center shadow-lg">
+                                        {/* Play button overlay — opens in lightbox */}
+                                        <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors">
+                                            <div className="w-12 h-12 rounded-full bg-teal-500/90 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                                                 <svg className="w-6 h-6 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
                                                     <path d="M8 5v14l11-7z" />
                                                 </svg>
@@ -1133,28 +1128,49 @@ export default function ImportWizard() {
                         </div>
                     )}
 
-                    {/* Image preview — show all images that will be saved */}
+                    {/* Media preview — show all images and videos that will be saved */}
                     {(() => {
                         const allImages: { src: string; label?: string }[] = [];
                         // Processed images from fetch (base64)
                         processedImages.forEach((img, _i) => allImages.push({ src: `data:${img.mimeType};base64,${img.data}`, label: img.originalUrl ? new URL(img.originalUrl).pathname.split('/').pop() : undefined }));
                         // Manually uploaded images
                         manualImages.forEach((img) => allImages.push({ src: img.preview }));
-                        if (allImages.length === 0) return null;
+                        const totalMedia = allImages.length + fetchedVideos.length;
+                        if (totalMedia === 0) return null;
                         return (
                             <div>
                                 <label className="block text-xs font-medium text-stone-500 mb-1.5">
-                                    {t('import.attachedImages') || 'Attached Images'} ({allImages.length})
+                                    {t('import.attachedImages') || 'Attached Media'} ({totalMedia})
                                 </label>
                                 <div className="flex flex-wrap gap-2">
                                     {allImages.map((img, i) => (
-                                        <div key={i} className="relative group">
+                                        <div key={`img-${i}`} className="relative group">
                                             <img
                                                 src={img.src}
                                                 alt={img.label || `Image ${i + 1}`}
                                                 className="w-16 h-16 object-cover rounded-lg border border-stone-200 cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all"
                                                 onClick={() => setExpandedImage(img.src)}
                                             />
+                                        </div>
+                                    ))}
+                                    {fetchedVideos.map((url: string, i: number) => (
+                                        <div key={`vid-${i}`} className="relative group w-16 h-16 rounded-lg overflow-hidden border border-teal-300 bg-black cursor-pointer"
+                                            onClick={() => setExpandedImage(`/api/proxy-image?url=${encodeURIComponent(url)}`)}
+                                        >
+                                            <video
+                                                src={`/api/proxy-image?url=${encodeURIComponent(url)}`}
+                                                className="w-full h-full object-cover"
+                                                preload="metadata"
+                                                muted
+                                                playsInline
+                                            />
+                                            <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                                                <div className="w-6 h-6 rounded-full bg-teal-500/90 flex items-center justify-center shadow">
+                                                    <svg className="w-3 h-3 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                                                        <path d="M8 5v14l11-7z" />
+                                                    </svg>
+                                                </div>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -1350,7 +1366,7 @@ export default function ImportWizard() {
                 </div>
             )}
 
-            {/* Image Lightbox */}
+            {/* Image/Video Lightbox */}
             {expandedImage && (
                 <div
                     className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
@@ -1358,16 +1374,26 @@ export default function ImportWizard() {
                 >
                     <button
                         onClick={() => setExpandedImage(null)}
-                        className="absolute top-4 right-4 w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full text-white text-xl flex items-center justify-center transition-colors"
+                        className="absolute top-4 right-4 w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full text-white text-xl flex items-center justify-center transition-colors z-10"
                     >
                         ✕
                     </button>
-                    <img
-                        src={expandedImage}
-                        alt=""
-                        className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl"
-                        onClick={(e) => e.stopPropagation()}
-                    />
+                    {(/\.(mp4|webm|mov)(\?|$)/i.test(expandedImage) || (expandedImage.includes('proxy-image') && /\.(mp4|webm|mov)/i.test(decodeURIComponent(expandedImage)))) ? (
+                        <video
+                            src={expandedImage}
+                            controls
+                            autoPlay
+                            className="max-w-full max-h-[90vh] rounded-lg shadow-2xl"
+                            onClick={(e) => e.stopPropagation()}
+                        />
+                    ) : (
+                        <img
+                            src={expandedImage}
+                            alt=""
+                            className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl"
+                            onClick={(e) => e.stopPropagation()}
+                        />
+                    )}
                 </div>
             )}
         </div>

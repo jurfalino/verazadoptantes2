@@ -13,6 +13,12 @@ import { isAdmin as isAdminEmail } from '@/config/admins-shared';
 
 import AdoptionForm from './AdoptionForm';
 
+/** Detect if a URL points to a video file based on extension */
+function isVideoUrl(url: string): boolean {
+    const path = url.split('?')[0].toLowerCase();
+    return /\.(mp4|webm|mov)$/.test(path);
+}
+
 interface Adoption {
     id: string;
     animalName: string | null;
@@ -110,17 +116,27 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                     onClick={() => setLightboxImage(null)}
                 >
                     <button
-                        className="absolute top-4 right-4 text-white text-3xl hover:text-gray-300"
+                        className="absolute top-4 right-4 text-white text-3xl hover:text-gray-300 z-10"
                         onClick={() => setLightboxImage(null)}
                     >
                         ×
                     </button>
-                    <img
-                        src={lightboxImage}
-                        alt="Full size"
-                        className="max-w-full max-h-full object-contain rounded-lg"
-                        onClick={(e) => e.stopPropagation()}
-                    />
+                    {isVideoUrl(lightboxImage) ? (
+                        <video
+                            src={lightboxImage}
+                            controls
+                            autoPlay
+                            className="max-w-full max-h-full rounded-lg"
+                            onClick={(e) => e.stopPropagation()}
+                        />
+                    ) : (
+                        <img
+                            src={lightboxImage}
+                            alt="Full size"
+                            className="max-w-full max-h-full object-contain rounded-lg"
+                            onClick={(e) => e.stopPropagation()}
+                        />
+                    )}
                 </div>
             )}
 
@@ -247,16 +263,37 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                                 }}
                                                 className="relative group/img"
                                             >
-                                                <img
-                                                    src={img.url}
-                                                    alt={img.caption || 'Adoption photo'}
-                                                    className="w-12 h-12 object-cover rounded-lg border border-stone-200 hover:border-stone-400 transition-colors"
-                                                />
-                                                <div className="absolute inset-0 bg-black/0 hover:bg-black/20 rounded-lg transition-colors flex items-center justify-center">
-                                                    <svg className="w-3.5 h-3.5 text-white opacity-0 group-hover/img:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
-                                                    </svg>
-                                                </div>
+                                                {isVideoUrl(img.url) ? (
+                                                    <>
+                                                        <video
+                                                            src={img.url}
+                                                            className="w-12 h-12 object-cover rounded-lg border border-stone-200 hover:border-stone-400 transition-colors"
+                                                            preload="metadata"
+                                                            muted
+                                                            playsInline
+                                                        />
+                                                        <div className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/30 rounded-lg transition-colors">
+                                                            <div className="w-6 h-6 rounded-full bg-teal-500/90 flex items-center justify-center shadow">
+                                                                <svg className="w-3 h-3 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                                                                    <path d="M8 5v14l11-7z" />
+                                                                </svg>
+                                                            </div>
+                                                        </div>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <img
+                                                            src={img.url}
+                                                            alt={img.caption || 'Adoption photo'}
+                                                            className="w-12 h-12 object-cover rounded-lg border border-stone-200 hover:border-stone-400 transition-colors"
+                                                        />
+                                                        <div className="absolute inset-0 bg-black/0 hover:bg-black/20 rounded-lg transition-colors flex items-center justify-center">
+                                                            <svg className="w-3.5 h-3.5 text-white opacity-0 group-hover/img:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                                                            </svg>
+                                                        </div>
+                                                    </>
+                                                )}
                                             </button>
                                         ))}
                                         {images.length > 4 && (

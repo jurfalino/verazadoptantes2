@@ -2,7 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
-## [2.8.0-4] - 2026-03-03
+## [2.8.0-5] - 2026-03-03
+
+### Fixed
+- **Import Wizard video playback** — replaced broken inline play/pause (overlay blocked video view) with lightbox-based approach; clicking video thumbnail opens full-screen player with native controls
+- **Import Wizard step 3 review** — now shows video thumbnails with play icons alongside images; label updated to "Attached Media"
+- **Import Wizard lightbox** — detects proxied video URLs and renders `<video>` with controls instead of `<img>`
+- **Interaction record media display** — thumbnails now differentiate images (magnifying glass on hover) vs videos (teal play icon); both open in lightbox on click; lightbox renders `<video>` for video URLs
+
+---
+
+
 
 ### Added
 - **Video storage and playback** — scraper extracts video URLs from `<video>` elements and `og:video` tags across all platforms; videos are downloaded and stored in R2; ImageGallery renders `<video>` with play overlay and lightbox player
