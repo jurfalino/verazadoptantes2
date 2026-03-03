@@ -69,6 +69,7 @@ export default function ImportWizard() {
     const [_sourceType, setSourceType] = useState<string>('');
     const [isVideoPost, setIsVideoPost] = useState(false);
     const [fetchedVideos, setFetchedVideos] = useState<string[]>([]);
+    const [videoLoading, setVideoLoading] = useState(false);
     const [retryCountdown, setRetryCountdown] = useState(0);
 
     // Retry countdown timer
@@ -885,7 +886,24 @@ export default function ImportWizard() {
                                     <div
                                         key={i}
                                         className="relative rounded-xl overflow-hidden border-2 border-teal-300 aspect-video cursor-pointer group bg-gradient-to-br from-teal-600 to-teal-800"
-                                        onClick={() => { setExpandedImage(url); setExpandedIsVideo(true); }}
+                                        onClick={async () => {
+                                            setVideoLoading(true);
+                                            setExpandedIsVideo(true);
+                                            setExpandedImage(null);
+                                            try {
+                                                const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`);
+                                                if (!res.ok) throw new Error('Failed to load video');
+                                                const blob = await res.blob();
+                                                const blobUrl = URL.createObjectURL(blob);
+                                                setExpandedImage(blobUrl);
+                                            } catch {
+                                                setExpandedImage(null);
+                                                setExpandedIsVideo(false);
+                                                toast.error(locale === 'es' ? 'No se pudo cargar el video' : 'Failed to load video');
+                                            } finally {
+                                                setVideoLoading(false);
+                                            }
+                                        }}
                                     >
                                         {/* Video placeholder — actual playback happens in lightbox */}
                                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -1151,7 +1169,24 @@ export default function ImportWizard() {
                                     ))}
                                     {fetchedVideos.map((url: string, i: number) => (
                                         <div key={`vid-${i}`} className="relative group w-14 h-14 rounded-lg overflow-hidden border border-teal-300 bg-gradient-to-br from-teal-600 to-teal-800 cursor-pointer"
-                                            onClick={() => { setExpandedImage(url); setExpandedIsVideo(true); }}
+                                            onClick={async () => {
+                                                setVideoLoading(true);
+                                                setExpandedIsVideo(true);
+                                                setExpandedImage(null);
+                                                try {
+                                                    const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`);
+                                                    if (!res.ok) throw new Error('Failed to load video');
+                                                    const blob = await res.blob();
+                                                    const blobUrl = URL.createObjectURL(blob);
+                                                    setExpandedImage(blobUrl);
+                                                } catch {
+                                                    setExpandedImage(null);
+                                                    setExpandedIsVideo(false);
+                                                    toast.error(locale === 'es' ? 'No se pudo cargar el video' : 'Failed to load video');
+                                                } finally {
+                                                    setVideoLoading(false);
+                                                }
+                                            }}
                                         >
                                             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                                 <div className="w-6 h-6 rounded-full bg-white/25 flex items-center justify-center shadow">
@@ -1356,38 +1391,40 @@ export default function ImportWizard() {
             )}
 
             {/* Image/Video Lightbox */}
-            {expandedImage && (
+            {(expandedImage || videoLoading) && (
                 <div
                     className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
-                    onClick={() => { setExpandedImage(null); setExpandedIsVideo(false); }}
+                    onClick={() => {
+                        if (expandedImage?.startsWith('blob:')) URL.revokeObjectURL(expandedImage);
+                        setExpandedImage(null); setExpandedIsVideo(false);
+                    }}
                 >
                     <button
-                        onClick={() => { setExpandedImage(null); setExpandedIsVideo(false); }}
+                        onClick={() => {
+                            if (expandedImage?.startsWith('blob:')) URL.revokeObjectURL(expandedImage);
+                            setExpandedImage(null); setExpandedIsVideo(false);
+                        }}
                         className="absolute top-4 right-4 w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full text-white text-xl flex items-center justify-center transition-colors z-10"
                     >
                         ✕
                     </button>
-                    {expandedIsVideo ? (
+                    {videoLoading ? (
+                        <div className="flex flex-col items-center gap-4">
+                            <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin" />
+                            <span className="text-white/80 text-sm">{locale === 'es' ? 'Cargando video…' : 'Loading video…'}</span>
+                        </div>
+                    ) : expandedIsVideo ? (
                         <video
-                            src={expandedImage}
+                            src={expandedImage || undefined}
                             controls
                             autoPlay
-                            muted
                             playsInline
                             className="max-w-full max-h-[90vh] rounded-lg shadow-2xl"
                             onClick={(e) => e.stopPropagation()}
-                            onError={(e) => {
-                                // Fallback: if direct CDN URL fails, try through proxy
-                                const vid = e.currentTarget;
-                                const src = vid.src;
-                                if (src && !src.includes('/api/proxy-image')) {
-                                    vid.src = `/api/proxy-image?url=${encodeURIComponent(src)}`;
-                                }
-                            }}
                         />
                     ) : (
                         <img
-                            src={expandedImage}
+                            src={expandedImage || undefined}
                             alt=""
                             className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl"
                             onClick={(e) => e.stopPropagation()}
