@@ -297,14 +297,16 @@ export async function POST(request: Request) {
         }
 
         // Create interaction record if adoption data provided
+        let adoptionId: string | null = null;
         if (adoption) {
             // Pack notes and contact info into details for searchability
             const detailsParts: string[] = [];
             if (notes) detailsParts.push(notes);
             if (contactInfoStr) detailsParts.push(`Contact: ${contactInfoStr}`);
 
+            adoptionId = crypto.randomUUID();
             await db.insert(adoptions).values({
-                id: crypto.randomUUID(),
+                id: adoptionId,
                 adopterId: newId,
                 animalName: adoption.animalName || 'Unknown',
                 species: adoption.species || 'other',
@@ -316,9 +318,19 @@ export async function POST(request: Request) {
                 sourceUrl: sourceUrl || null,
                 details: detailsParts.length > 0 ? detailsParts.join('\n') : null
             });
+
+            // Link all imported media to this adoption record
+            if (savedImageCount > 0) {
+                await db.update(adopterImages)
+                    .set({ adoptionId })
+                    .where(eq(adopterImages.adopterId, newId));
+            }
+
             logger.info('Adopter create: adoption record created', {
                 errorId,
                 adopterId: newId,
+                adoptionId,
+                mediaLinked: savedImageCount,
                 user: session.user.email
             });
         }
