@@ -884,23 +884,17 @@ export default function ImportWizard() {
                                 {fetchedVideos.map((url, i) => (
                                     <div
                                         key={i}
-                                        className="relative rounded-xl overflow-hidden border-2 border-teal-300 bg-black aspect-video cursor-pointer group"
+                                        className="relative rounded-xl overflow-hidden border-2 border-teal-300 aspect-video cursor-pointer group bg-gradient-to-br from-teal-600 to-teal-800"
                                         onClick={() => { setExpandedImage(`/api/proxy-image?url=${encodeURIComponent(url)}`); setExpandedIsVideo(true); }}
                                     >
-                                        <video
-                                            src={`/api/proxy-image?url=${encodeURIComponent(url)}`}
-                                            className="w-full h-full object-cover pointer-events-none"
-                                            preload="metadata"
-                                            muted
-                                            playsInline
-                                        />
-                                        {/* Play button overlay — opens in lightbox */}
-                                        <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors pointer-events-none">
-                                            <div className="w-12 h-12 rounded-full bg-teal-500/90 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                                                <svg className="w-6 h-6 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                                        {/* Video placeholder — actual playback happens in lightbox */}
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                            <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                                                <svg className="w-7 h-7 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
                                                     <path d="M8 5v14l11-7z" />
                                                 </svg>
                                             </div>
+                                            <span className="text-white/80 text-xs mt-2 font-medium">Video {i + 1}</span>
                                         </div>
                                     </div>
                                 ))}
@@ -1156,18 +1150,11 @@ export default function ImportWizard() {
                                         </div>
                                     ))}
                                     {fetchedVideos.map((url: string, i: number) => (
-                                        <div key={`vid-${i}`} className="relative group w-14 h-14 rounded-lg overflow-hidden border border-teal-300 bg-black cursor-pointer"
+                                        <div key={`vid-${i}`} className="relative group w-14 h-14 rounded-lg overflow-hidden border border-teal-300 bg-gradient-to-br from-teal-600 to-teal-800 cursor-pointer"
                                             onClick={() => { setExpandedImage(`/api/proxy-image?url=${encodeURIComponent(url)}`); setExpandedIsVideo(true); }}
                                         >
-                                            <video
-                                                src={`/api/proxy-image?url=${encodeURIComponent(url)}`}
-                                                className="w-full h-full object-cover pointer-events-none"
-                                                preload="metadata"
-                                                muted
-                                                playsInline
-                                            />
-                                            <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none">
-                                                <div className="w-6 h-6 rounded-full bg-teal-500/90 flex items-center justify-center shadow">
+                                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                <div className="w-6 h-6 rounded-full bg-white/25 flex items-center justify-center shadow">
                                                     <svg className="w-3 h-3 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
                                                         <path d="M8 5v14l11-7z" />
                                                     </svg>
