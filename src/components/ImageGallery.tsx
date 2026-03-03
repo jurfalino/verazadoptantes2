@@ -190,13 +190,13 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                                 <div className="w-full h-full relative cursor-pointer" onClick={() => setLightboxImage(img.url)}>
                                     <video
                                         src={img.url}
-                                        className="w-full h-full object-cover"
+                                        className="w-full h-full object-cover pointer-events-none"
                                         preload="metadata"
                                         muted
                                         playsInline
                                     />
                                     {/* Play button overlay */}
-                                    <div className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/30 transition-colors">
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/30 transition-colors pointer-events-none">
                                         <div className="w-12 h-12 rounded-full bg-teal-500/90 flex items-center justify-center shadow-lg">
                                             <svg className="w-6 h-6 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
                                                 <path d="M8 5v14l11-7z" />

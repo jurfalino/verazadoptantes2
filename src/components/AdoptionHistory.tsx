@@ -269,12 +269,12 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                                     <>
                                                         <video
                                                             src={img.url}
-                                                            className="w-14 h-14 object-cover rounded-lg border border-stone-200 hover:border-stone-400 transition-colors"
+                                                            className="w-14 h-14 object-cover rounded-lg border border-stone-200 hover:border-stone-400 transition-colors pointer-events-none"
                                                             preload="metadata"
                                                             muted
                                                             playsInline
                                                         />
-                                                        <div className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/30 rounded-lg transition-colors">
+                                                        <div className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/30 rounded-lg transition-colors pointer-events-none">
                                                             <div className="w-6 h-6 rounded-full bg-teal-500/90 flex items-center justify-center shadow">
                                                                 <svg className="w-3 h-3 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
                                                                     <path d="M8 5v14l11-7z" />
