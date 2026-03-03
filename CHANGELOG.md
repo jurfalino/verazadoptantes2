@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.8.0] - 2026-03-02
+
+### Changed
+- **DatePicker redesign** — replaced 3-dropdown (Day→Month→Year) pattern with native `<input type="date">` for full precision; added optional "approximate date" toggle (Month+Year only, outputs `YYYY-MM`)
+- **Deploy workflow** — added golden rule to always check `remotes/origin/*` when reporting deployed versions
+
+### Fixed
+- **Share target images not displaying** — Service Worker now intercepts share POST, caches images in Cache API, and ImportWizard reads them on mount; previously images were silently dropped
+- **Guide page FAQ on mobile** — FAQ accordion answers were not loading on mobile breakpoints
+- **Date parsing guard** — `AdoptionWizard` and `AdoptionForm` now safely handle `YYYY-MM` format by defaulting day to 1st
+
+### Added
+- **Admin menu link** — admin users now see a nav item linking to `/admin` in the header menu
+
+---
+
 ## [2.6.0-6] - 2026-02-27
 
 ### Fixed

@@ -136,8 +136,8 @@ export default function AdoptionWizard() {
             let newAdoptionId: string | undefined;
 
             // Parse date as local noon to avoid timezone issues
-            const [year, month, day] = adoptionDate.split('-').map(Number);
-            const localDate = new Date(year, month - 1, day, 12, 0, 0);
+            const parts = adoptionDate.split('-').map(Number);
+            const localDate = new Date(parts[0], parts[1] - 1, parts[2] || 1, 12, 0, 0);
 
             if (animalMode === 'existing') {
                 // Update existing adoption
@@ -294,6 +294,7 @@ export default function AdoptionWizard() {
                                 value={adoptionDate}
                                 onChange={setAdoptionDate}
                                 maxDate={new Date().toISOString().split('T')[0]}
+                                dayOptional
                             />
                         </div>
 

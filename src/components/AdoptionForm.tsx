@@ -211,8 +211,8 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
         setLoading(true);
         try {
             // Parse date as local noon to avoid timezone issues (UTC midnight can shift to previous day)
-            const [year, month, day] = formData.date.split('-').map(Number);
-            const localDate = new Date(year, month - 1, day, 12, 0, 0);
+            const dateParts = formData.date.split('-').map(Number);
+            const localDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2] || 1, 12, 0, 0);
 
             const result = await saveAdoption({
                 ...formData,
@@ -413,6 +413,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                             value={formData.date}
                             onChange={date => setFormData({ ...formData, date })}
                             maxDate={new Date().toISOString().split('T')[0]}
+                            dayOptional
                         />
                     </div>
                     <div>

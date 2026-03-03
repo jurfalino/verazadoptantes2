@@ -3,12 +3,14 @@ export const runtime = 'edge';
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
- * POST handler for Web Share Target API
- * 
- * When another app shares content to BuenAdoptante via the Android share sheet,
- * the browser sends a POST request here with the shared data (url, text, files).
- * We extract the data and redirect to /import with query params so the
- * ImportWizard can pre-fill the content.
+ * POST handler for Web Share Target API — fallback route.
+ *
+ * In production, the Service Worker intercepts the POST first and handles
+ * image caching + redirect. This route exists as a fallback in case
+ * the SW is not yet active (first install, update pending, etc.).
+ *
+ * It handles text/URL data but cannot forward shared images
+ * (binary data can't be passed via URL redirect).
  */
 export async function POST(request: NextRequest) {
     try {
@@ -18,13 +20,11 @@ export async function POST(request: NextRequest) {
         let sharedText = formData.get('text') as string || '';
         const sharedTitle = formData.get('title') as string || '';
 
-        // Many Android apps (Instagram, WhatsApp, etc.) put URLs in the text
-        // field instead of the url field. Detect and extract URLs from text.
+        // Many Android apps put URLs in the text field
         if (!sharedUrl && sharedText) {
             const urlMatch = sharedText.match(/https?:\/\/[^\s]+/i);
             if (urlMatch) {
                 sharedUrl = urlMatch[0];
-                // Remove the URL from text, keep any surrounding context
                 sharedText = sharedText.replace(urlMatch[0], '').trim();
             }
         }
@@ -33,23 +33,22 @@ export async function POST(request: NextRequest) {
         const params = new URLSearchParams();
         params.set('shared', 'true');
 
-        if (sharedUrl) {
-            params.set('shared_url', sharedUrl);
-        }
-        if (sharedText) {
-            params.set('shared_text', sharedText);
-        }
-        if (sharedTitle) {
-            params.set('shared_title', sharedTitle);
+        if (sharedUrl) params.set('shared_url', sharedUrl);
+        if (sharedText) params.set('shared_text', sharedText);
+        if (sharedTitle) params.set('shared_title', sharedTitle);
+
+        // Check if files were included (SW didn't intercept)
+        const imageFiles = formData.getAll('images');
+        if (imageFiles && imageFiles.length > 0 && imageFiles[0] instanceof File && (imageFiles[0] as File).size > 0) {
+            // Flag that images were shared but couldn't be cached (SW not active)
+            params.set('shared_images_lost', 'true');
         }
 
-        // Redirect to import page with shared content
         return NextResponse.redirect(
             new URL(`/import?${params.toString()}`, request.url),
-            303 // Use 303 See Other for POST-to-GET redirect
+            303
         );
-    } catch (error) {
-        // If parsing fails, redirect to import page without params
-        return NextResponse.redirect(new URL('/import', request.url), 303);
+    } catch {
+        return NextResponse.redirect(new URL('/import?shared=true', request.url), 303);
     }
 }

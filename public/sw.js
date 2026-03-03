@@ -4,6 +4,7 @@
 const CACHE_VERSION = 'buenaadoptante-v1';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
+const SHARE_CACHE = 'share-target-media';
 
 // Static assets to pre-cache on install
 const PRECACHE_ASSETS = [
@@ -27,7 +28,7 @@ self.addEventListener('activate', (event) => {
         caches.keys().then((keys) => {
             return Promise.all(
                 keys
-                    .filter((key) => key !== STATIC_CACHE && key !== DYNAMIC_CACHE)
+                    .filter((key) => key !== STATIC_CACHE && key !== DYNAMIC_CACHE && key !== SHARE_CACHE)
                     .map((key) => caches.delete(key))
             );
         })
@@ -41,7 +42,13 @@ self.addEventListener('fetch', (event) => {
     const { request } = event;
     const url = new URL(request.url);
 
-    // Skip non-GET requests (POST share_target handled by the app)
+    // ── Share Target: intercept POST, cache image, redirect ──
+    if (request.method === 'POST' && url.pathname === '/api/share-target') {
+        event.respondWith(handleShareTarget(request));
+        return;
+    }
+
+    // Skip non-GET requests
     if (request.method !== 'GET') return;
 
     // Skip auth-related requests (never cache)
@@ -71,6 +78,70 @@ self.addEventListener('fetch', (event) => {
     // Everything else: network-first
     event.respondWith(networkFirst(request, DYNAMIC_CACHE));
 });
+
+// --- Share Target Handler ---
+
+async function handleShareTarget(request) {
+    try {
+        const formData = await request.formData();
+
+        // Extract text fields
+        let sharedUrl = formData.get('url') || '';
+        let sharedText = formData.get('text') || '';
+        const sharedTitle = formData.get('title') || '';
+
+        // Extract URL from text if not in url field
+        if (!sharedUrl && sharedText) {
+            const urlMatch = sharedText.match(/https?:\/\/[^\s]+/i);
+            if (urlMatch) {
+                sharedUrl = urlMatch[0];
+                sharedText = sharedText.replace(urlMatch[0], '').trim();
+            }
+        }
+
+        // Extract shared image files
+        const imageFiles = formData.getAll('images');
+        let hasImages = false;
+
+        if (imageFiles && imageFiles.length > 0) {
+            const cache = await caches.open(SHARE_CACHE);
+            // Clear any previous shared images
+            const existingKeys = await cache.keys();
+            for (const key of existingKeys) {
+                await cache.delete(key);
+            }
+
+            // Cache each shared image with a sequential key
+            for (let i = 0; i < imageFiles.length; i++) {
+                const file = imageFiles[i];
+                if (file && file.size > 0) {
+                    const response = new Response(file, {
+                        headers: {
+                            'Content-Type': file.type || 'image/jpeg',
+                            'X-Filename': file.name || `shared-image-${i}`,
+                        },
+                    });
+                    await cache.put(`/share-target-image-${i}`, response);
+                    hasImages = true;
+                }
+            }
+        }
+
+        // Build redirect URL
+        const params = new URLSearchParams();
+        params.set('shared', 'true');
+        if (sharedUrl) params.set('shared_url', sharedUrl);
+        if (sharedText) params.set('shared_text', sharedText);
+        if (sharedTitle) params.set('shared_title', sharedTitle);
+        if (hasImages) params.set('shared_images', 'true');
+
+        // Redirect to import page
+        return Response.redirect(`/import?${params.toString()}`, 303);
+    } catch (error) {
+        console.error('[SW] Share target handling failed:', error);
+        return Response.redirect('/import?shared=true', 303);
+    }
+}
 
 // --- Strategies ---
 

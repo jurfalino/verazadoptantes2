@@ -6,6 +6,14 @@ description: How to commit, tag, and deploy changes. MUST be followed for ANY gi
 
 > **🚨 GOLDEN RULE: NEVER push directly to `master`. All changes go through staging first.**
 
+> **🚨 GOLDEN RULE: When checking deployed versions, ALWAYS use `remotes/origin/*` branches, NEVER local branches.**
+> Local branches can be stale. What's deployed is what's on the remote.
+> ```
+> git log remotes/origin/staging --oneline -1   # ← Staging version
+> git log remotes/origin/master --oneline -1    # ← Production version
+> ```
+> Run `git fetch origin` first if unsure whether remote refs are current.
+
 ## Environment URLs
 
 | Branch | URL | OAuth? |

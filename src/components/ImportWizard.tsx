@@ -104,10 +104,66 @@ export default function ImportWizard() {
     const [fieldOverlapHints, setFieldOverlapHints] = useState<TokenMatchResult[]>([]);
     const [duplicateCheckFailed, setDuplicateCheckFailed] = useState(false);
 
+    // Load shared images from Service Worker cache
+    const loadSharedImages = async () => {
+        try {
+            const cache = await caches.open('share-target-media');
+            const keys = await cache.keys();
+            if (keys.length === 0) return;
+
+            const images: Array<{ data: string; mimeType: string; preview: string }> = [];
+
+            for (const request of keys) {
+                const response = await cache.match(request);
+                if (!response) continue;
+                const blob = await response.blob();
+                const mimeType = blob.type || 'image/jpeg';
+
+                // Convert blob to base64
+                const base64 = await new Promise<string>((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const result = reader.result as string;
+                        resolve(result.split(',')[1]);
+                    };
+                    reader.readAsDataURL(blob);
+                });
+
+                const preview = `data:${mimeType};base64,${base64}`;
+                images.push({ data: base64, mimeType, preview });
+            }
+
+            if (images.length > 0) {
+                setManualImages(prev => [...prev, ...images]);
+            }
+
+            // Clean up the cache
+            for (const request of keys) {
+                await cache.delete(request);
+            }
+        } catch (e) {
+            console.warn('[ImportWizard] Failed to load shared images from cache:', e);
+        }
+    };
+
     // Pre-fill from URL params (for Share Intent / Web Share Target)
     useEffect(() => {
         const sharedUrl = searchParams.get('shared_url') || searchParams.get('url');
         const sharedText = searchParams.get('shared_text') || searchParams.get('text');
+        const hasSharedImages = searchParams.get('shared_images') === 'true';
+        const imagesLost = searchParams.get('shared_images_lost') === 'true';
+
+        // Load cached images from SW (if any)
+        if (hasSharedImages) {
+            loadSharedImages();
+        }
+
+        // Show warning if SW wasn't active and images were lost
+        if (imagesLost) {
+            setError(locale === 'es'
+                ? 'Las imágenes compartidas no se pudieron cargar. Por favor, subilas manualmente.'
+                : 'Shared images could not be loaded. Please upload them manually.');
+        }
 
         if (sharedUrl) {
             // Share intent with URL: skip Step 1, auto-fetch
