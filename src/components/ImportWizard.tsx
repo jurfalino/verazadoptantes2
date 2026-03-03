@@ -529,8 +529,9 @@ export default function ImportWizard() {
     };
 
     // Merge into existing profile
-    const handleMerge = async () => {
-        if (!extractedData || !selectedMatch) return;
+    const handleMerge = async (target?: { id: string; name: string }) => {
+        const mergeTarget = target || selectedMatch;
+        if (!extractedData || !mergeTarget) return;
         setIsSaving(true);
 
         try {
@@ -546,10 +547,13 @@ export default function ImportWizard() {
                     rating: extractedData.adoptionRating || 2,
                     date: extractedData.adoptionDate || new Date().toISOString().split('T')[0],
                 },
-                images: processedImages.length > 0 ? processedImages : manualImages.map(img => ({ data: img.data, mimeType: img.mimeType })),
+                images: [
+                    ...(processedImages.length > 0 ? processedImages : manualImages.map(img => ({ data: img.data, mimeType: img.mimeType }))),
+                    ...fetchedVideos.map(videoUrl => ({ data: '', mimeType: 'video/mp4', originalUrl: videoUrl })),
+                ],
             };
 
-            const response = await fetch(`/api/adopters/${selectedMatch.id}/add-record`, {
+            const response = await fetch(`/api/adopters/${mergeTarget.id}/add-record`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
@@ -561,8 +565,8 @@ export default function ImportWizard() {
                 throw new Error(result.error || 'Failed to add record');
             }
 
-            const adopterId = result.adopterId || selectedMatch.id;
-            const adopterName = result.adopterName || selectedMatch.name;
+            const adopterId = result.adopterId || mergeTarget.id;
+            const adopterName = result.adopterName || mergeTarget.name;
 
             toast.success('Record added to profile', adopterName, {
                 label: '→ Ver Perfil',
@@ -1280,6 +1284,15 @@ export default function ImportWizard() {
                     <div className="flex flex-col gap-2">
                         {duplicateAdopter ? (
                             <>
+                                <button
+                                    onClick={() => {
+                                        handleMerge({ id: duplicateAdopter.id, name: duplicateAdopter.name });
+                                    }}
+                                    disabled={isSaving}
+                                    className="py-2.5 px-4 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                >
+                                    {isSaving ? <><span className="animate-spin">⏳</span> {t('import.addingRecord') || 'Adding...'}</> : <>{t('import.addInteraction') || '➕ Add New Interaction to This Profile'}</>}
+                                </button>
                                 <a
                                     href={`/adopter/${duplicateAdopter.id}`}
                                     className="py-2.5 px-4 bg-blue-600 text-white rounded-xl font-medium text-center hover:bg-blue-700"
@@ -1296,7 +1309,7 @@ export default function ImportWizard() {
                         ) : personMatches.length > 0 ? (
                             <>
                                 <button
-                                    onClick={handleMerge}
+                                    onClick={() => handleMerge()}
                                     disabled={isSaving || !selectedMatch}
                                     className="py-2.5 px-4 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                 >
