@@ -7,7 +7,7 @@ import { logger } from '@/lib/logger';
 import { getDb, getUser } from './_db';
 import { processImageForStorage } from '@/lib/r2';
 
-export async function saveImage(adopterId: string, url: string, caption?: string, adoptionId?: string) {
+export async function saveImage(adopterId: string, url: string, caption?: string, adoptionId?: string, mediaType?: string) {
     try {
         const db = await getDb();
         if (!db) throw new Error("No database");
@@ -25,7 +25,8 @@ export async function saveImage(adopterId: string, url: string, caption?: string
             url: persistedUrl,
             caption: caption || null,
             uploadedAt: new Date(),
-            addedBy
+            addedBy,
+            mediaType: mediaType || 'image',
         });
 
         return { success: true, id };

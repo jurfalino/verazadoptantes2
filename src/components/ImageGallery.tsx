@@ -6,6 +6,8 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { setProfilePicture } from '@/app/actions';
 import { useShowToast } from '@/components/ui/Toast';
+import { MediaLightbox, isVideo } from '@/components/ui/MediaLightbox';
+import type { MediaItem } from '@/components/ui/MediaLightbox';
 
 interface ImageItem {
     id?: string;
@@ -13,12 +15,7 @@ interface ImageItem {
     caption?: string;
     addedBy?: string;
     isProfilePicture?: number;
-}
-
-/** Detect if a URL points to a video file based on extension */
-function isVideoUrl(url: string): boolean {
-    const path = url.split('?')[0].toLowerCase();
-    return /\.(mp4|webm|mov)$/.test(path);
+    mediaType?: string;
 }
 
 export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, isAdmin = false }: { adopterId: string, initialImages: ImageItem[], onUpload: (id: string, url: string, caption: string) => Promise<void | { id?: string }>, currentUser: string, isAdmin?: boolean }) {
@@ -29,7 +26,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
     const [images, setImages] = useState<ImageItem[]>(initialImages);
     const [uploading, setUploading] = useState(false);
     const [settingProfile, setSettingProfile] = useState<string | null>(null);
-    const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+    const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
 
     // Helper to compress image before upload
     const compressImage = (file: File): Promise<string> => {
@@ -139,37 +136,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
     return (
         <>
             {/* Lightbox Modal */}
-            {lightboxImage && (
-                <div
-                    className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-                    onClick={() => setLightboxImage(null)}
-                >
-                    <button
-                        className="absolute top-4 right-4 text-white text-3xl hover:text-gray-300 z-10"
-                        onClick={() => setLightboxImage(null)}
-                    >
-                        ×
-                    </button>
-                    {isVideoUrl(lightboxImage) ? (
-                        <video
-                            src={lightboxImage}
-                            controls
-                            autoPlay
-                            muted
-                            playsInline
-                            className="max-w-full max-h-full rounded-lg"
-                            onClick={(e) => e.stopPropagation()}
-                        />
-                    ) : (
-                        <img
-                            src={lightboxImage}
-                            alt="Full size"
-                            className="max-w-full max-h-full object-contain rounded-lg"
-                            onClick={(e) => e.stopPropagation()}
-                        />
-                    )}
-                </div>
-            )}
+            <MediaLightbox item={lightboxItem} onClose={() => setLightboxItem(null)} />
 
             <div>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
@@ -186,18 +153,12 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                                         <p className="text-xs mt-1">{t('adopter.image_expired') || 'Image expired'}</p>
                                     </div>
                                 </div>
-                            ) : isVideoUrl(img.url) ? (
-                                <div className="w-full h-full relative cursor-pointer" onClick={() => setLightboxImage(img.url)}>
-                                    <video
-                                        src={img.url}
-                                        className="w-full h-full object-cover pointer-events-none"
-                                        preload="metadata"
-                                        muted
-                                        playsInline
-                                    />
+                            ) : isVideo({ url: img.url, mediaType: img.mediaType as any }) ? (
+                                <div className="w-full h-full relative cursor-pointer" onClick={() => setLightboxItem({ url: img.url, caption: img.caption, mediaType: 'video' })}>
+                                    <div className="w-full h-full bg-gradient-to-br from-teal-600 to-teal-800" />
                                     {/* Play button overlay */}
-                                    <div className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/30 transition-colors pointer-events-none">
-                                        <div className="w-12 h-12 rounded-full bg-teal-500/90 flex items-center justify-center shadow-lg">
+                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                        <div className="w-12 h-12 rounded-full bg-white/25 flex items-center justify-center shadow-lg">
                                             <svg className="w-6 h-6 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
                                                 <path d="M8 5v14l11-7z" />
                                             </svg>
@@ -208,7 +169,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                                 <img
                                     src={img.url}
                                     className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                                    onClick={() => setLightboxImage(img.url)}
+                                    onClick={() => setLightboxItem({ url: img.url, caption: img.caption, mediaType: 'image' })}
                                     onError={(e) => {
                                         const target = e.currentTarget;
                                         target.style.display = 'none';

@@ -7,6 +7,8 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
+import { MediaLightbox } from '@/components/ui/MediaLightbox';
+import type { MediaItem } from '@/components/ui/MediaLightbox';
 import LegalConsent from '@/components/LegalConsent';
 import { checkTokenDuplicates } from '@/app/actions';
 import type { TokenMatchResult } from '@/app/actions';
@@ -102,8 +104,7 @@ export default function ImportWizard() {
     const [duplicateAdopter, setDuplicateAdopter] = useState<any>(null);
     const [personMatches, setPersonMatches] = useState<PersonMatch[]>([]);
     const [selectedMatch, setSelectedMatch] = useState<PersonMatch | null>(null);
-    const [expandedImage, setExpandedImage] = useState<string | null>(null);
-    const [expandedIsVideo, setExpandedIsVideo] = useState(false);
+    const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
     const [fieldOverlapHints, setFieldOverlapHints] = useState<TokenMatchResult[]>([]);
     const [duplicateCheckFailed, setDuplicateCheckFailed] = useState(false);
 
@@ -860,8 +861,7 @@ export default function ImportWizard() {
                                             <div
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    setExpandedImage(`/api/proxy-image?url=${encodeURIComponent(url)}`);
-                                                    setExpandedIsVideo(false);
+                                                    setLightboxItem({ url: `/api/proxy-image?url=${encodeURIComponent(url)}`, mediaType: 'image' });
                                                 }}
                                                 className="absolute bottom-1 left-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 hover:bg-black/80 transition-opacity cursor-pointer"
                                                 title="Expand image"
@@ -886,24 +886,7 @@ export default function ImportWizard() {
                                     <div
                                         key={i}
                                         className="relative rounded-xl overflow-hidden border-2 border-teal-300 aspect-video cursor-pointer group bg-gradient-to-br from-teal-600 to-teal-800"
-                                        onClick={async () => {
-                                            setVideoLoading(true);
-                                            setExpandedIsVideo(true);
-                                            setExpandedImage(null);
-                                            try {
-                                                const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`);
-                                                if (!res.ok) throw new Error('Failed to load video');
-                                                const blob = await res.blob();
-                                                const blobUrl = URL.createObjectURL(blob);
-                                                setExpandedImage(blobUrl);
-                                            } catch {
-                                                setExpandedImage(null);
-                                                setExpandedIsVideo(false);
-                                                toast.error(locale === 'es' ? 'No se pudo cargar el video' : 'Failed to load video');
-                                            } finally {
-                                                setVideoLoading(false);
-                                            }
-                                        }}
+                                        onClick={() => setLightboxItem({ url, mediaType: 'video' })}
                                     >
                                         {/* Video placeholder — actual playback happens in lightbox */}
                                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -1162,31 +1145,14 @@ export default function ImportWizard() {
                                             <img
                                                 src={img.src}
                                                 alt={img.label || `Image ${i + 1}`}
-                                                className="w-14 h-14 object-cover rounded-lg border border-stone-200 cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all"
-                                                onClick={() => { setExpandedImage(img.src); setExpandedIsVideo(false); }}
+                                                className="w-20 h-20 object-cover rounded-lg border border-stone-200 cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all"
+                                                onClick={() => setLightboxItem({ url: img.src, mediaType: 'image' })}
                                             />
                                         </div>
                                     ))}
                                     {fetchedVideos.map((url: string, i: number) => (
-                                        <div key={`vid-${i}`} className="relative group w-14 h-14 rounded-lg overflow-hidden border border-teal-300 bg-gradient-to-br from-teal-600 to-teal-800 cursor-pointer"
-                                            onClick={async () => {
-                                                setVideoLoading(true);
-                                                setExpandedIsVideo(true);
-                                                setExpandedImage(null);
-                                                try {
-                                                    const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`);
-                                                    if (!res.ok) throw new Error('Failed to load video');
-                                                    const blob = await res.blob();
-                                                    const blobUrl = URL.createObjectURL(blob);
-                                                    setExpandedImage(blobUrl);
-                                                } catch {
-                                                    setExpandedImage(null);
-                                                    setExpandedIsVideo(false);
-                                                    toast.error(locale === 'es' ? 'No se pudo cargar el video' : 'Failed to load video');
-                                                } finally {
-                                                    setVideoLoading(false);
-                                                }
-                                            }}
+                                        <div key={`vid-${i}`} className="relative group w-20 h-20 rounded-lg overflow-hidden border border-teal-300 bg-gradient-to-br from-teal-600 to-teal-800 cursor-pointer"
+                                            onClick={() => setLightboxItem({ url, mediaType: 'video' })}
                                         >
                                             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                                 <div className="w-6 h-6 rounded-full bg-white/25 flex items-center justify-center shadow">
@@ -1391,47 +1357,7 @@ export default function ImportWizard() {
             )}
 
             {/* Image/Video Lightbox */}
-            {(expandedImage || videoLoading) && (
-                <div
-                    className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
-                    onClick={() => {
-                        if (expandedImage?.startsWith('blob:')) URL.revokeObjectURL(expandedImage);
-                        setExpandedImage(null); setExpandedIsVideo(false);
-                    }}
-                >
-                    <button
-                        onClick={() => {
-                            if (expandedImage?.startsWith('blob:')) URL.revokeObjectURL(expandedImage);
-                            setExpandedImage(null); setExpandedIsVideo(false);
-                        }}
-                        className="absolute top-4 right-4 w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full text-white text-xl flex items-center justify-center transition-colors z-10"
-                    >
-                        ✕
-                    </button>
-                    {videoLoading ? (
-                        <div className="flex flex-col items-center gap-4">
-                            <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin" />
-                            <span className="text-white/80 text-sm">{locale === 'es' ? 'Cargando video…' : 'Loading video…'}</span>
-                        </div>
-                    ) : expandedIsVideo ? (
-                        <video
-                            src={expandedImage || undefined}
-                            controls
-                            autoPlay
-                            playsInline
-                            className="max-w-full max-h-[90vh] rounded-lg shadow-2xl"
-                            onClick={(e) => e.stopPropagation()}
-                        />
-                    ) : (
-                        <img
-                            src={expandedImage || undefined}
-                            alt=""
-                            className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl"
-                            onClick={(e) => e.stopPropagation()}
-                        />
-                    )}
-                </div>
-            )}
+            <MediaLightbox item={lightboxItem} onClose={() => setLightboxItem(null)} />
         </div>
     );
 }

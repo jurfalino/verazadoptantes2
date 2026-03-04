@@ -34,6 +34,7 @@ export const adopterImages = sqliteTable("adopter_images", {
     uploadedAt: integer("uploaded_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     addedBy: text("added_by").default("anonymous"),
     isProfilePicture: integer("is_profile_picture").default(0), // 1 if this is the profile picture
+    mediaType: text("media_type").default("image"), // 'image' or 'video'
 });
 
 export const adopterFlags = sqliteTable("adopter_flags", {
