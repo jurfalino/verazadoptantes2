@@ -109,7 +109,6 @@ export async function deleteAdopter(adopterId: string) {
         revalidatePath('/admin/adopters');
         return { success: true };
     } catch (error) {
-        console.error("Delete adopter error:", error);
         logger.error('Delete adopter failed', error, { adopterId, user: session?.user?.email });
         return { success: false, error: error instanceof Error ? error.message : "Failed to delete adopter" };
     }
@@ -158,7 +157,6 @@ export async function purgeAllData(confirmationCode: string) {
         revalidatePath('/');
         return { success: true, message: "All data has been purged" };
     } catch (error) {
-        console.error("Purge all data error:", error);
         const errorId = logger.error('Purge all data failed', error);
         throw new Error(`Failed to purge data (Error ID: ${errorId})`);
     }

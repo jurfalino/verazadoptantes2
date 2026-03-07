@@ -171,7 +171,6 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
 
         return enrichedAdopters;
     } catch (error) {
-        console.error("getMyAdopters error:", error);
         logger.error('getMyAdopters failed', error);
         return [];
     }
@@ -231,7 +230,6 @@ export async function getMyAdoptions(filter: 'all' | 'adoption' | 'adoption_requ
 
         return adoptionsWithDetails;
     } catch (error) {
-        console.error("getMyAdoptions error:", error);
         logger.error('getMyAdoptions failed', error);
         return [];
     }

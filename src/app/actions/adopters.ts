@@ -1,7 +1,7 @@
 'use server';
 
 import { adopters, adopterHistory, adopterStats } from '@/db/schema';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, and } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
@@ -19,7 +19,6 @@ export async function getAdopter(id: string) {
 
         return await db.select().from(adopters).where(eq(adopters.id, id)).get();
     } catch (error) {
-        console.error("Get adopter error:", error);
         logger.error('Get adopter failed', error, { adopterId: id });
         return null;
     }
@@ -42,7 +41,7 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
         try {
             changedBy = await getUser();
         } catch (e) {
-            console.error("getUser failed", e);
+            logger.warn('getUser failed during adopter save', { error: e instanceof Error ? e.message : String(e) });
         }
 
         // Check if exists
@@ -64,11 +63,22 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
             }
 
             if (hasChanges) {
-                // Update
-                await db.update(adopters).set({
+                // Optimistic locking: only update if the record hasn't been modified since we read it
+                const result = await db.update(adopters).set({
                     ...data,
                     updatedAt: new Date()
-                }).where(eq(adopters.id, data.id as string));
+                }).where(
+                    and(
+                        eq(adopters.id, data.id as string),
+                        eq(adopters.updatedAt, existing.updatedAt!)
+                    )
+                );
+
+                // Check if update succeeded (no concurrent modification)
+                const rowsAffected = (result as unknown as { rowsAffected?: number }).rowsAffected ?? 1;
+                if (rowsAffected === 0) {
+                    throw new Error('This record was modified by another user. Please refresh and try again.');
+                }
 
                 // Log history
                 await db.insert(adopterHistory).values({
@@ -83,7 +93,7 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
                 logAudit({ userEmail: changedBy, action: 'adopter_updated', target: data.id as string, details: changes });
 
                 // Fire-and-forget: update duplicate detection tokens
-                tokenizeAdopter(data.id as string).catch(() => { });
+                tokenizeAdopter(data.id as string).catch(e => { logger.warn('Tokenize adopter failed (fire-and-forget)', { adopterId: data.id, error: e instanceof Error ? e.message : String(e) }); });
             }
             return { success: true, id: data.id };
         } else {
@@ -115,13 +125,12 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
             logAudit({ userEmail: changedBy, action: 'adopter_created', target: newId, details: { name: data.name } });
 
             // Fire-and-forget: generate duplicate detection tokens
-            tokenizeAdopter(newId).catch(() => { });
+            tokenizeAdopter(newId).catch(e => { logger.warn('Tokenize adopter failed (fire-and-forget)', { adopterId: newId, error: e instanceof Error ? e.message : String(e) }); });
 
             return { success: true, id: newId };
         }
 
     } catch (error) {
-        console.error("Save adopter error:", error);
         const errorId = logger.error('Save adopter failed', error, { adopterId: data.id });
         throw new Error(`Failed to save adopter (Error ID: ${errorId})`);
     }
@@ -170,7 +179,6 @@ export async function getAdopterStats(adopterId: string) {
 
         return stats;
     } catch (error) {
-        console.error("Get adopter stats error:", error);
         logger.error('Get adopter stats failed', error, { adopterId });
         return null;
     }
@@ -189,7 +197,6 @@ export async function logProfileView(adopterId: string) {
             createdAt: new Date()
         });
     } catch (error) {
-        console.error("Log profile view error:", error);
         logger.warn('Log profile view failed', { adopterId, error: error instanceof Error ? error.message : String(error) });
     }
 }
@@ -207,7 +214,6 @@ export async function getAverageRating(adopterId: string): Promise<number | null
 
         return result?.avgRating ?? null;
     } catch (error) {
-        console.error("Get average rating error:", error);
         logger.error('Get average rating failed', error, { adopterId });
         return null;
     }
@@ -223,7 +229,6 @@ export async function getHistory(adopterId: string) {
             .orderBy(sql`${adopterHistory.changedAt} DESC`)
             .all();
     } catch (error) {
-        console.error("Get history error:", error);
         logger.error('Get history failed', error, { adopterId });
         return [];
     }

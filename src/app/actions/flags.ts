@@ -45,7 +45,6 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
         logAudit({ userEmail: flaggedBy, action: 'flag_created', target: adopterId, details: { reason, details } });
         return { success: true, id };
     } catch (error) {
-        console.error("Flag adopter error:", error);
         const errorId = logger.error('Flag adopter failed', error, { adopterId, reason });
         throw new Error(`Failed to flag adopter (Error ID: ${errorId})`);
     }
@@ -60,7 +59,6 @@ export async function getFlags(adopterId: string) {
             .orderBy(sql`${adopterFlags.createdAt} DESC`)
             .all();
     } catch (error) {
-        console.error("Get flags error:", error);
         logger.error('Get flags failed', error, { adopterId });
         return [];
     }
@@ -85,7 +83,6 @@ export async function dismissFlag(flagId: string) {
         revalidatePath('/admin/flags');
         return { success: true };
     } catch (error) {
-        console.error("Dismiss flag error:", error);
         const errorId = logger.error('Dismiss flag failed', error, { flagId });
         throw new Error(`Failed to dismiss flag (Error ID: ${errorId})`);
     }
@@ -136,7 +133,6 @@ export async function removeVerification(adopterId: string, type: 'verified_iden
 
         return { success: true };
     } catch (error) {
-        console.error("Remove verification error:", error);
         const errorId = logger.error('Remove verification failed', error, { adopterId, type });
         throw new Error(`Failed to remove verification (Error ID: ${errorId})`);
     }

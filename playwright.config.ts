@@ -44,9 +44,9 @@ export default defineConfig({
       testMatch: /auth\.setup\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
-    // Anonymous/regular user tests — use non-admin JWT session
+    // Regular (non-admin) user tests — authenticated with non-admin JWT session
     {
-      name: 'anon',
+      name: 'user',
       testIgnore: /auth\.setup\.ts|authed\.spec\.ts/,
       dependencies: ['setup'],
       use: {
@@ -62,6 +62,25 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         storageState: '.auth/admin.json',
+      },
+    },
+    // Truly unauthenticated tests — no session cookie at all
+    {
+      name: 'unauthed',
+      testMatch: /unauthed\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: { cookies: [], origins: [] },
+      },
+    },
+    // Mobile viewport — verify responsive layouts
+    {
+      name: 'mobile',
+      testMatch: /mobile\.spec\.ts/,
+      dependencies: ['setup'],
+      use: {
+        ...devices['iPhone 14'],
+        storageState: '.auth/user.json',
       },
     },
   ],

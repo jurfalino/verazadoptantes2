@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { isAdminAsync } from "@/config/admins";
 import { NextResponse } from "next/server";
 import { getRequestContext } from "@cloudflare/next-on-pages";
+import { logger } from '@/lib/logger';
 
 export async function GET(request: Request) {
     const session = await auth();
@@ -68,8 +69,8 @@ export async function GET(request: Request) {
             stats: sizeResult
         });
     } catch (error) {
-        console.error("Get audit log error:", error);
-        return NextResponse.json({ error: "Failed to fetch audit log" }, { status: 500 });
+        const errorId = logger.error('Get audit log failed', error);
+        return NextResponse.json({ error: "Failed to fetch audit log", errorId }, { status: 500 });
     }
 }
 
@@ -96,7 +97,7 @@ export async function DELETE(request: Request) {
             purged: result.meta?.changes || 0
         });
     } catch (error) {
-        console.error("Purge audit log error:", error);
-        return NextResponse.json({ error: "Failed to purge audit log" }, { status: 500 });
+        const errorId = logger.error('Purge audit log failed', error);
+        return NextResponse.json({ error: "Failed to purge audit log", errorId }, { status: 500 });
     }
 }

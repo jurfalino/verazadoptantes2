@@ -49,9 +49,8 @@ test.describe('Duplicate Detection UX', () => {
         await page.goto(`/adopter/${TEST_ADOPTERS.NUEVA}`);
         await expect(page.getByRole('heading', { name: TEST_NAMES.NUEVA })).toBeVisible({ timeout: 15000 });
 
-        // Wait for page to settle, then assert no banner
-        await page.waitForTimeout(2000);
-        await expect(page.getByText(/Possible duplicate of|Posible duplicado de/i)).not.toBeVisible();
+        // Assert no banner (the timeout in not.toBeVisible handles the wait)
+        await expect(page.getByText(/Possible duplicate of|Posible duplicado de/i)).not.toBeVisible({ timeout: 5000 });
     });
 
     // ── #3 Search Badge ───────────────────────────────────────────

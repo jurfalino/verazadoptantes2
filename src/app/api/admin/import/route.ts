@@ -5,6 +5,7 @@ import { getDb } from "@/app/actions";
 import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, appConfig } from "@/db/schema";
 import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
+import { logger } from '@/lib/logger';
 
 // Table config: drizzle table ref + raw table name for DELETE
 const TABLE_MAP = {
@@ -119,8 +120,8 @@ export async function POST(request: Request) {
         });
 
     } catch (error: unknown) {
-        console.error("Import error:", error);
+        const errorId = logger.error('Import failed', error);
         const message = error instanceof Error ? error.message : "Unknown error";
-        return NextResponse.json({ error: `Import failed: ${message}` }, { status: 500 });
+        return NextResponse.json({ error: `Import failed: ${message}`, errorId }, { status: 500 });
     }
 }

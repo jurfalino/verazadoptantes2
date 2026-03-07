@@ -8,6 +8,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
+import { extractErrorId } from '@/lib/errorUtils';
 
 export interface AdopterFlaggingHandle {
     openAction: (action: string) => void;
@@ -111,7 +112,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                 }
             } catch (e) {
                 console.error(e);
-                toast.error('Error', 'Error submitting report.');
+                toast.error('Error', 'Error submitting report.', extractErrorId(e));
             } finally {
                 setSubmitLoading(false);
             }
@@ -160,7 +161,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
             }
         } catch (e) {
             console.error(e);
-            toast.error('Error', 'Error submitting report.');
+            toast.error('Error', 'Error submitting report.', extractErrorId(e));
         } finally {
             setSubmitLoading(false);
         }

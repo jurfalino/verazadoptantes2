@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { isAdminAsync } from "@/config/admins";
 import { NextResponse } from "next/server";
 import { getRequestContext } from "@cloudflare/next-on-pages";
+import { logger } from '@/lib/logger';
 
 export async function GET(_request: Request) {
     const session = await auth();
@@ -28,8 +29,8 @@ export async function GET(_request: Request) {
 
         return NextResponse.json({ users: users.results || [] });
     } catch (error) {
-        console.error("Get users error:", error);
-        return NextResponse.json({ error: "Failed to fetch users", detail: String(error) }, { status: 500 });
+        const errorId = logger.error('Get users failed', error);
+        return NextResponse.json({ error: "Failed to fetch users", errorId }, { status: 500 });
     }
 }
 
@@ -71,8 +72,8 @@ export async function PUT(request: Request) {
 
         return NextResponse.json({ success: true });
     } catch (error) {
-        console.error("Update user profile error:", error);
-        return NextResponse.json({ error: "Failed to update profile" }, { status: 500 });
+        const errorId = logger.error('Update user profile failed', error);
+        return NextResponse.json({ error: "Failed to update profile", errorId }, { status: 500 });
     }
 }
 
@@ -108,7 +109,7 @@ export async function DELETE(request: Request) {
 
         return NextResponse.json({ success: true });
     } catch (error) {
-        console.error("Delete user error:", error);
-        return NextResponse.json({ error: "Failed to delete user", detail: String(error) }, { status: 500 });
+        const errorId = logger.error('Delete user failed', error);
+        return NextResponse.json({ error: "Failed to delete user", errorId }, { status: 500 });
     }
 }

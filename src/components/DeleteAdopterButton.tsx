@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useShowToast } from '@/components/ui/Toast';
+import { extractErrorId } from '@/lib/errorUtils';
 
 interface DeleteButtonProps {
     adopterId: string;
@@ -36,7 +37,7 @@ export default function DeleteAdopterButton({ adopterId, adopterName }: DeleteBu
             }
         } catch (error) {
             console.error('Delete error:', error);
-            toast.error('Delete Failed', 'An unexpected error occurred. Check console for details.');
+            toast.error('Delete Failed', 'An unexpected error occurred. Check console for details.', extractErrorId(error));
         } finally {
             setLoading(false);
         }

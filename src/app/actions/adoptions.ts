@@ -62,7 +62,7 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
             // Re-tokenize adopter if onBehalfOf changed (cross-field name tokens)
             const targetAdopterId2 = data.adopterId || existing.adopterId;
             if (targetAdopterId2 && data.onBehalfOf !== undefined) {
-                tokenizeAdopter(targetAdopterId2).catch(() => { });
+                tokenizeAdopter(targetAdopterId2).catch(e => { logger.warn('Tokenize adopter failed (fire-and-forget)', { adopterId: targetAdopterId2, error: e instanceof Error ? e.message : String(e) }); });
             }
 
             return { success: true, id: data.id };
@@ -145,13 +145,12 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
 
             // Re-tokenize adopter if onBehalfOf is set (cross-field name tokens)
             if (data.adopterId && data.onBehalfOf) {
-                tokenizeAdopter(data.adopterId).catch(() => { });
+                tokenizeAdopter(data.adopterId).catch(e => { logger.warn('Tokenize adopter failed (fire-and-forget)', { adopterId: data.adopterId, error: e instanceof Error ? e.message : String(e) }); });
             }
 
             return { success: true, id };
         }
     } catch (error) {
-        console.error("Save adoption error:", error);
         const errorId = logger.error('Save adoption failed', error, { adoptionId: data.id, adopterId: data.adopterId });
         throw new Error(`Failed to save adoption (Error ID: ${errorId})`);
     }
@@ -184,7 +183,6 @@ export async function deleteAdoption(adoptionId: string, adopterId: string) {
         revalidatePath(`/adopter/${adopterId}`);
         return { success: true };
     } catch (error) {
-        console.error("Delete adoption error:", error);
         const errorId = logger.error('Delete adoption failed', error, { adoptionId, adopterId });
         throw new Error(`Failed to delete adoption (Error ID: ${errorId})`);
     }
@@ -206,7 +204,6 @@ export async function getAdoptions(adopterId: string) {
             return true;
         });
     } catch (error) {
-        console.error("Get adoptions error:", error);
         logger.error('Get adoptions failed', error, { adopterId });
         return [];
     }
@@ -225,7 +222,6 @@ export async function getAvailableAnimals() {
         // We could add status check, but usually available animals are just unlinked.
 
     } catch (error) {
-        console.error("getAvailableAnimals error:", error);
         logger.error('getAvailableAnimals failed', error);
         return [];
     }

@@ -62,14 +62,26 @@ export async function uploadToR2(
         throw new Error('R2 bucket not configured');
     }
 
-    await bucket.put(key, data, {
-        httpMetadata: {
-            contentType,
-            cacheControl: 'public, max-age=31536000', // 1 year cache
-        },
-    });
-
-    return `${R2_PUBLIC_URL}/${key}`;
+    // Retry with exponential backoff (2 retries: 500ms, 1s)
+    const MAX_RETRIES = 2;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            await bucket.put(key, data, {
+                httpMetadata: {
+                    contentType,
+                    cacheControl: 'public, max-age=31536000', // 1 year cache
+                },
+            });
+            return `${R2_PUBLIC_URL}/${key}`;
+        } catch (err) {
+            if (attempt === MAX_RETRIES) throw err;
+            const delay = 500 * Math.pow(2, attempt); // 500ms, 1000ms
+            console.warn(`[R2] Upload attempt ${attempt + 1} failed, retrying in ${delay}ms...`, (err as Error).message);
+            await new Promise(r => setTimeout(r, delay));
+        }
+    }
+    // Unreachable, but satisfies TS
+    throw new Error('R2 upload failed after retries');
 }
 
 /**

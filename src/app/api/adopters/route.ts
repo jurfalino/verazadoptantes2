@@ -8,6 +8,7 @@ import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
 import { tokenizeAdopter } from '@/app/actions/duplicates';
 import { processImageForStorage, uploadToR2 } from '@/lib/r2';
+import { createAdopterApiSchema } from '@/app/actions/validation';
 
 export async function GET(request: Request) {
     const session = await auth();
@@ -133,7 +134,6 @@ export async function GET(request: Request) {
             confidence: scoredMatches[0]?.confidence || 'none'
         });
     } catch (error) {
-        console.error('Check duplicate/match failed:', error);
         logger.error('Adopter duplicate check failed', error, { sourceUrl: sourceUrl || undefined, matchName: matchName || undefined });
         return NextResponse.json({ matches: [], matchType: sourceUrl ? 'url' : 'person', confidence: 'none' });
     }
@@ -173,7 +173,17 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Invalid JSON body', errorId }, { status: 400 });
     }
 
-    const { name, contactInfo, notes, sourceUrl, flags, images, adoption } = body;
+    // Validate input
+    const parsed = createAdopterApiSchema.safeParse(body);
+    if (!parsed.success) {
+        return NextResponse.json({
+            error: 'Invalid input',
+            details: parsed.error.issues.map(i => i.message),
+            errorId,
+        }, { status: 400 });
+    }
+
+    const { name, contactInfo, notes, sourceUrl, flags, images, adoption } = parsed.data;
 
     // Log the incoming request (without image data for size)
     logger.info('Adopter create: start', {
@@ -361,7 +371,7 @@ export async function POST(request: Request) {
         });
 
         // Fire-and-forget: generate duplicate detection tokens
-        tokenizeAdopter(newId).catch(() => { });
+        tokenizeAdopter(newId).catch(e => { logger.warn('Tokenize adopter failed (fire-and-forget)', { adopterId: newId, error: e instanceof Error ? e.message : String(e) }); });
 
         return NextResponse.json({ success: true, id: newId });
 

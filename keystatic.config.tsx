@@ -18,6 +18,19 @@ export default config({
                 descriptionEn: fields.text({ label: 'Description (English)', multiline: true }),
                 icon: fields.text({ label: 'Icon (emoji)', defaultValue: '📋' }),
                 order: fields.integer({ label: 'Order', defaultValue: 0, validation: { isRequired: true } }),
+                details: fields.array(
+                    fields.object({
+                        textEs: fields.text({ label: 'Detalle (Español)', multiline: true, validation: { isRequired: true } }),
+                        textEn: fields.text({ label: 'Detail (English)', multiline: true, validation: { isRequired: true } }),
+                        linkUrl: fields.text({ label: 'Link URL (optional)', description: 'Internal link for this item, e.g. "/" for search' }),
+                        linkTextEs: fields.text({ label: 'Link Text (Español)', description: 'Visible text for the link in Spanish' }),
+                        linkTextEn: fields.text({ label: 'Link Text (English)', description: 'Visible text for the link in English' }),
+                    }),
+                    {
+                        label: 'Detail Bullets / Detalles',
+                        itemLabel: (props) => props.fields.textEs.value?.slice(0, 60) || 'New detail',
+                    }
+                ),
                 content: fields.markdoc({ label: 'Extended Content (Español)' }),
             },
         }),

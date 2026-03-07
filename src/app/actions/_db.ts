@@ -16,11 +16,10 @@ export async function getUser() {
         const session = await auth();
         if (session?.user?.email) return session.user.email;
     } catch (e) {
-        console.error("getUser Auth Error:", e);
-        // Auth failed
+        logger.warn('getUser auth failed', { error: e instanceof Error ? e.message : String(e) });
     }
 
-    return 'anonymous';
+    throw new Error('Authentication required');
 }
 
 export async function getIsAdmin(): Promise<boolean> {

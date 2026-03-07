@@ -4,6 +4,7 @@ import { getDb } from '@/app/actions';
 import { dataRequests } from '@/db/schema';
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { logger } from '@/lib/logger';
 
 export async function POST(req: NextRequest) {
     try {
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ success: true, id });
     } catch (error) {
-        console.error('Data request error:', error);
-        return NextResponse.json({ error: 'Failed to submit request' }, { status: 500 });
+        const errorId = logger.error('Data request failed', error);
+        return NextResponse.json({ error: 'Failed to submit request', errorId }, { status: 500 });
     }
 }

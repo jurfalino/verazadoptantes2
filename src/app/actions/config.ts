@@ -27,7 +27,6 @@ export async function getAdoptionConfig() {
             requestsPeriodDays: parseInt(config['too_many_requests_period_days'] || '30', 10)
         };
     } catch (error) {
-        console.error("Get adoption config error:", error);
         logger.error('Get adoption config failed', error);
         return {
             threshold: 5,

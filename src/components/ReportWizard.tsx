@@ -7,6 +7,7 @@ import { searchAdopter } from '@/app/actions';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
+import { extractErrorId } from '@/lib/errorUtils';
 import { StarRating } from '@/components/StarRating';
 import LegalConsent from '@/components/LegalConsent';
 
@@ -105,7 +106,7 @@ export default function ReportWizard() {
 
         } catch (e) {
             console.error(e);
-            toast.error('Error', 'Something went wrong. Please try again.');
+            toast.error('Error', 'Something went wrong. Please try again.', extractErrorId(e));
         } finally {
             setLoading(false);
         }

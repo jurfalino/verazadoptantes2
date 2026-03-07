@@ -53,11 +53,22 @@ export async function GET(request: NextRequest) {
             }
         }
 
-        // Basic SSRF protection: block private/internal IPs
+        // SSRF protection: protocol restriction + domain allowlist
+        if (urlObj.protocol !== 'https:') {
+            return new NextResponse('Only HTTPS URLs allowed', { status: 403 });
+        }
+
         const hostname = urlObj.hostname.toLowerCase();
-        const blockedPatterns = ['localhost', '127.0.0.1', '0.0.0.0', '::1', '10.', '192.168.', '172.16.', '169.254.'];
-        if (blockedPatterns.some(p => hostname.startsWith(p) || hostname === p)) {
-            return new NextResponse('URL not allowed', { status: 403 });
+        const ALLOWED_DOMAINS = [
+            '.fbcdn.net',
+            '.fbsbx.com',
+            '.cdninstagram.com',
+            '.googleusercontent.com',
+            '.r2.dev',
+            '.cloudflarestorage.com',
+        ];
+        if (!ALLOWED_DOMAINS.some(d => hostname.endsWith(d))) {
+            return new NextResponse('Domain not allowed', { status: 403 });
         }
 
         // Build upstream request headers — forward Range for video streaming

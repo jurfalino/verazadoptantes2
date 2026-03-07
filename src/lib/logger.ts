@@ -54,8 +54,17 @@ function getAxiomConfig() {
     }
 }
 
+// Extract request correlation ID from Cloudflare CF-Ray header (or generate fallback)
+function getRequestId(): string | undefined {
+    try {
+        const { cf } = getRequestContext() as unknown as { cf?: { ray?: string } };
+        if (cf?.ray) return cf.ray;
+    } catch { /* not in request context */ }
+    return undefined;
+}
+
 // Detect environment (staging, production, local) and domain
-function getEnvironmentInfo(): { env: string; domain?: string; branch?: string } {
+function getEnvironmentInfo(): { env: string; domain?: string; branch?: string; requestId?: string } {
     try {
         const { env } = getRequestContext();
         const cfEnv = env as unknown as Record<string, string | undefined>;
@@ -84,7 +93,7 @@ function getEnvironmentInfo(): { env: string; domain?: string; branch?: string }
             }
         }
 
-        return { env: envName, domain, branch };
+        return { env: envName, domain, branch, requestId: getRequestId() };
     } catch {
         return { env: 'local' };
     }
@@ -112,17 +121,31 @@ async function sendToAxiom(entries: LogEntry[]) {
     }
 
     const doFetch = async () => {
-        try {
-            await fetch(`https://api.axiom.co/v1/datasets/${config.dataset}/ingest`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${config.token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(entries)
-            });
-        } catch (e) {
-            console.error('[Logger] Failed to send to Axiom:', e);
+        const MAX_RETRIES = 2;
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                const res = await fetch(`https://api.axiom.co/v1/datasets/${config.dataset}/ingest`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${config.token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(entries)
+                });
+                if (res.ok) return;
+                // Server error — retry
+                if (attempt < MAX_RETRIES) {
+                    await new Promise(r => setTimeout(r, 300 * Math.pow(2, attempt)));
+                    continue;
+                }
+                console.error(`[Logger] Axiom returned ${res.status} after ${MAX_RETRIES + 1} attempts`);
+            } catch (e) {
+                if (attempt === MAX_RETRIES) {
+                    console.error('[Logger] Failed to send to Axiom after retries:', e);
+                    return;
+                }
+                await new Promise(r => setTimeout(r, 300 * Math.pow(2, attempt)));
+            }
         }
     };
 

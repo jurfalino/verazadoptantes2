@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { setProfilePicture } from '@/app/actions';
 import { useShowToast } from '@/components/ui/Toast';
+import { extractErrorId } from '@/lib/errorUtils';
 import { MediaLightbox, isVideo } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 import { extractVideoThumbnail } from '@/lib/videoThumbnail';
@@ -161,7 +162,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
             }, ...images]);
         } catch (error) {
             console.error('Media upload failed:', error instanceof Error ? error.message : error);
-            toast.error('Upload Failed', 'Failed to upload. Please try again.');
+            toast.error('Upload Failed', 'Failed to upload. Please try again.', extractErrorId(error));
         } finally {
             setUploading(false);
         }
@@ -183,7 +184,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
             })));
         } catch (err) {
             console.error('Failed to set profile picture:', err);
-            toast.error('Error', 'Failed to set profile picture.');
+            toast.error('Error', 'Failed to set profile picture.', extractErrorId(err));
         } finally {
             setSettingProfile(null);
         }
@@ -297,7 +298,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                                             }
                                         } catch (err) {
                                             console.error(err);
-                                            toast.error('Error', 'Failed to delete image.');
+                                            toast.error('Error', 'Failed to delete image.', extractErrorId(err));
                                         }
                                     }}
                                     className="absolute top-0 right-0 m-2 p-2 bg-white/90 hover:bg-white text-rose-600 rounded-xl shadow-md z-10 transition-all hover:scale-105 backdrop-blur-sm opacity-0 group-hover:opacity-100"

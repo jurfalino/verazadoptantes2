@@ -79,3 +79,34 @@ export const removeVerificationSchema = z.object({
 export const updateCountrySchema = z.object({
     country: z.string().length(2, 'Country code must be 2 characters (ISO 3166-1 alpha-2)'),
 });
+
+// ── Adopters API (POST /api/adopters) ────────────────
+
+export const createAdopterApiSchema = z.object({
+    name: z.string().min(1, 'Name is required').max(1_000),
+    contactInfo: z.union([
+        z.string().max(10_000),
+        z.object({
+            phones: z.array(z.string().max(100)).optional(),
+            emails: z.array(z.string().max(200)).optional(),
+            socialProfiles: z.array(z.string().max(500)).optional(),
+            addresses: z.array(z.string().max(1_000)).optional(),
+        }),
+    ]).optional(),
+    notes: z.string().max(10_000).optional(),
+    sourceUrl: z.string().url().max(2_000).optional().or(z.literal('')),
+    flags: z.array(z.string().max(200)).max(20).optional(),
+    images: z.array(z.object({
+        data: z.string().max(10_000_000), // ~7.5MB base64
+        mimeType: z.string().max(100),
+        originalUrl: z.string().max(2_000).optional(),
+        thumbnail: z.string().max(10_000_000).optional(),
+    })).max(20).optional(),
+    adoption: z.object({
+        animalName: z.string().max(500).optional(),
+        species: z.string().max(100).optional(),
+        recordType: z.enum(['adoption', 'adoption_request', 'returned_pet', 'follow_up', 'observation']).optional(),
+        rating: z.number().int().min(1).max(5).optional(),
+        date: z.string().max(50).optional(),
+    }).optional(),
+});

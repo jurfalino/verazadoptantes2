@@ -9,6 +9,7 @@ import { useAuthContext } from '@/context/AuthContext';
 import { getRecordTypeColors } from '@/lib/recordTypeColors';
 import { StarRating } from '@/components/StarRating';
 import { useShowToast } from '@/components/ui/Toast';
+import { extractErrorId } from '@/lib/errorUtils';
 import { MediaLightbox, isVideo as isVideoItem } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 import { formatShortDate } from '@/lib/dates';
@@ -265,7 +266,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
             }
         } catch (error) {
             console.error('Upload error:', error instanceof Error ? error.message : error);
-            toast.error('Upload Failed', 'Could not upload the file. Please try again.');
+            toast.error('Upload Failed', 'Could not upload the file. Please try again.', extractErrorId(error));
         } finally {
             setUploading(false);
         }
@@ -327,7 +328,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
             }
         } catch (err) {
             console.error(err);
-            toast.error('Error', 'Failed to save adoption record. Please try again.');
+            toast.error('Error', 'Failed to save adoption record. Please try again.', extractErrorId(err));
         } finally {
             setLoading(false);
         }
@@ -661,7 +662,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                                                         await deleteImage(img.id, adopterId);
                                                         setAdoptionImages(prev => prev.filter(i => i.id !== img.id));
                                                     } catch (e) {
-                                                        toast.error('Error', 'Failed to delete media');
+                                                        toast.error('Error', 'Failed to delete media', extractErrorId(e));
                                                     }
                                                 }}
                                                 className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"

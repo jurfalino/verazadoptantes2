@@ -86,7 +86,9 @@ setup('authenticate as user', async ({ page, context }) => {
 
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await expect(page.getByText('Test User')).toBeVisible({ timeout: 15000 });
+    // Non-admin users don't have their name displayed prominently.
+    // Verify the session is valid: search input visible (requires auth).
+    await expect(page.locator('input#search')).toBeVisible({ timeout: 15000 });
 
     await page.context().storageState({ path: USER_AUTH_FILE });
 });

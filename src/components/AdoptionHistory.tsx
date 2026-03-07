@@ -7,6 +7,7 @@ import { deleteAdoption, getAdoptionImages } from '@/app/actions';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getRecordTypeIcon } from '@/lib/recordTypeColors';
 import { useShowToast } from '@/components/ui/Toast';
+import { extractErrorId } from '@/lib/errorUtils';
 import { getSourceIcon, getSourceName } from '@/lib/sourceIcons';
 import { formatShortDate } from '@/lib/dates';
 import { isAdmin as isAdminEmail } from '@/config/admins-shared';
@@ -97,7 +98,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
             router.refresh();
         } catch (error) {
             console.error('Failed to delete adoption:', error);
-            toast.error('Error', 'Failed to delete adoption record.');
+            toast.error('Error', 'Failed to delete adoption record.', extractErrorId(error));
         } finally {
             setDeletingId(null);
         }

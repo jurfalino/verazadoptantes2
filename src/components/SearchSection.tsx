@@ -8,6 +8,7 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useShowToast } from '@/components/ui/Toast';
+import { extractErrorId } from '@/lib/errorUtils';
 import { formatShortDate } from '@/lib/dates';
 
 export default function SearchSection() {
@@ -50,6 +51,7 @@ export default function SearchSection() {
             }
         } catch (err) {
             console.error(err);
+            toast.error('Search Failed', 'An error occurred while searching. Please try again.', extractErrorId(err));
         } finally {
             setLoading(false);
         }
@@ -332,10 +334,10 @@ export default function SearchSection() {
                                                 <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-stone-100 text-stone-500">🔗 {t('flags.possible_duplicate') || 'Possible duplicate'}</span>
                                             )}
                                             {res.flags.verified_identity && (
-                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">✓ Identidad</span>
+                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">✓ {t('flags.verified_identity') || 'Verified ID'}</span>
                                             )}
                                             {res.flags.verified_address && (
-                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">✓ Direccion</span>
+                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">✓ {t('flags.verified_address') || 'Verified Address'}</span>
                                             )}
                                             {res.flags.tooManyAdoptions && (
                                                 <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">⚠ {res.flags.tooManyAdoptions.count} {t('stats.adoptions') || 'adoptions'}/{res.flags.tooManyAdoptions.periodDays}d</span>

@@ -33,7 +33,7 @@ async function searchHistoryIds(db: any, query: string): Promise<string[]> {
             .limit(SEARCH_RESULT_LIMIT);
         return logs.map((l: any) => l.adopterId);
     } catch (e) {
-        console.error("History search error", e);
+        logger.warn('History search error', { error: e instanceof Error ? e.message : String(e) });
         return [];
     }
 }
@@ -49,7 +49,7 @@ async function searchAdoptionsIds(db: any, query: string): Promise<string[]> {
             .limit(SEARCH_RESULT_LIMIT);
         return adoptionLogs.map((l: any) => l.adopterId);
     } catch (e) {
-        console.error("Adoption search error", e);
+        logger.warn('Adoption search error', { error: e instanceof Error ? e.message : String(e) });
         return [];
     }
 }
@@ -162,7 +162,7 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
                         createdAt: new Date()
                     });
                 }
-            } catch (e) { console.error("Failed to log search hits", e); }
+            } catch (e) { logger.warn('Failed to log search hits', { error: e instanceof Error ? e.message : String(e) }); }
         })();
 
         // Map to enriched result type

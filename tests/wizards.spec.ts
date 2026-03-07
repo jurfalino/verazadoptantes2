@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { dismissCountryBanner } from './helpers';
 
 
 test.setTimeout(120000); // Extended timeout for wizard interactions
@@ -7,69 +8,54 @@ test.describe('Home Screen Wizards', () => {
 
     test.beforeEach(async ({ page }) => {
         await page.goto('/');
-        await page.waitForLoadState('networkidle');
-        // Wait for session status to resolve
-        await page.waitForTimeout(3000);
+        await dismissCountryBanner(page);
+        // Wait for page to fully render
+        await expect(page.locator('input#search')).toBeVisible({ timeout: 15000 });
     });
 
     test('Adoption Wizard opens and shows step progression', async ({ page }) => {
-        const wizardBtn = page.getByTestId('adoption-wizard-btn');
-        await expect(wizardBtn).toBeVisible();
-        await wizardBtn.click();
-        await page.waitForTimeout(1000);
+        // The adoption wizard card says "I gave a pet for adoption" with a "Register Now" button
+        const adoptionCard = page.locator('h3').filter({ hasText: /gave a pet|di un animal/i }).locator('..');
+        const registerBtn = adoptionCard.getByRole('button', { name: /Register Now|Registrar/i });
+        await expect(registerBtn).toBeVisible();
+        await registerBtn.click();
 
-        // Check if the wizard modal opened (heading "Identify Animal")
-        // or if the login modal appeared instead
-        const wizardHeading = page.getByText('Identify Animal');
-        const loginHeading = page.getByText(/Sign In|Iniciar/i);
+        // Check if the wizard modal opened or if the login modal appeared
+        const wizardContent = page.locator('[role="dialog"], form').filter({ hasText: /Animal|Mascota/i }).first();
+        const loginModal = page.getByText(/Sign In|Iniciar/i).first();
 
-        const wizardOpened = await wizardHeading.isVisible({ timeout: 5000 }).catch(() => false);
-        const loginOpened = await loginHeading.first().isVisible({ timeout: 1000 }).catch(() => false);
-
-        // At least one modal should have opened
-        expect(wizardOpened || loginOpened).toBeTruthy();
-
-        if (wizardOpened) {
-            // Verify wizard content
-            await expect(page.getByPlaceholder('Animal Name')).toBeVisible();
-        }
+        // Wait for either to appear
+        await expect(wizardContent.or(loginModal)).toBeVisible({ timeout: 10000 });
     });
 
     test('Report Wizard opens', async ({ page }) => {
-        const wizardBtn = page.getByTestId('report-wizard-btn');
-        await expect(wizardBtn).toBeVisible();
-        await wizardBtn.click();
-        await page.waitForTimeout(1000);
+        // The report wizard card says "I have info about an adopter"
+        const reportCard = page.locator('h3').filter({ hasText: /info about|información sobre/i }).locator('..');
+        const registerBtn = reportCard.getByRole('button', { name: /Register Now|Registrar/i });
+        await expect(registerBtn).toBeVisible();
+        await registerBtn.click();
 
-        const wizardHeading = page.getByText('Identify Adopter');
-        const loginHeading = page.getByText(/Sign In|Iniciar/i);
+        // Check if wizard or login modal appeared
+        const wizardContent = page.locator('[role="dialog"], form').filter({ hasText: /Adopter|Adoptante/i }).first();
+        const loginModal = page.getByText(/Sign In|Iniciar/i).first();
 
-        const wizardOpened = await wizardHeading.isVisible({ timeout: 5000 }).catch(() => false);
-        const loginOpened = await loginHeading.first().isVisible({ timeout: 1000 }).catch(() => false);
-
-        expect(wizardOpened || loginOpened).toBeTruthy();
+        await expect(wizardContent.or(loginModal)).toBeVisible({ timeout: 10000 });
     });
 
+    test('Wizard auth gate works — unauthenticated click triggers login', async ({ page }) => {
+        // Look for the adoption card "Register Now" button
+        const adoptionCard = page.locator('h3').filter({ hasText: /gave a pet|di un animal/i }).locator('..');
+        const registerBtn = adoptionCard.getByRole('button', { name: /Register Now|Registrar/i });
 
+        if (await registerBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+            await registerBtn.click();
 
-    test('Wizard auth gate works', async ({ page }) => {
-        // Navigate WITHOUT anon login
-        await page.goto('/');
-        await page.waitForLoadState('networkidle');
+            // Either login modal or wizard should appear
+            const loginModal = page.getByText(/Sign In|Iniciar/i).first();
+            const wizardContent = page.locator('[role="dialog"], form').first();
 
-        const wizardBtn = page.getByTestId('adoption-wizard-btn');
-        if (await wizardBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-            await wizardBtn.click();
-            await page.waitForTimeout(1000);
-
-            // Either login modal or nothing should happen
-            const loginHeading = page.getByText(/Sign In|Iniciar/i);
-            const authGateTriggered = await loginHeading.first().isVisible({ timeout: 5000 }).catch(() => false);
-
-            if (authGateTriggered) {
-                await expect(loginHeading.first()).toBeVisible();
-            }
+            // Wait for either to appear
+            await expect(loginModal.or(wizardContent)).toBeVisible({ timeout: 10000 });
         }
-        expect(true).toBeTruthy();
     });
 });

@@ -35,3 +35,12 @@ export const TEST_FAMILY = {
     MARIA_HUSBAND: 'Juan García',
     MARIA_DAUGHTER: 'Lucía García',
 } as const;
+
+/** Dismiss the country selector banner that appears on first page load */
+export async function dismissCountryBanner(page: Page) {
+    const banner = page.getByRole('heading', { name: 'Select your country' });
+    if (await banner.isVisible({ timeout: 3000 }).catch(() => false)) {
+        await page.getByRole('button', { name: /Argentina/ }).click();
+        await banner.waitFor({ state: 'hidden', timeout: 3000 });
+    }
+}

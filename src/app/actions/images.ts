@@ -31,7 +31,6 @@ export async function saveImage(adopterId: string, url: string, caption?: string
 
         return { success: true, id };
     } catch (error) {
-        console.error("Save image error:", error instanceof Error ? error.message : 'Unknown error');
         const errorId = logger.error('Save image failed', error, { adopterId });
         throw new Error(`Failed to save image (Error ID: ${errorId})`);
     }
@@ -51,7 +50,6 @@ export async function getImages(adopterId: string) {
             .orderBy(sql`${adopterImages.uploadedAt} DESC`)
             .all();
     } catch (error) {
-        console.error("Get images error:", error);
         logger.error('Get images failed', error, { adopterId });
         return [];
     }
@@ -78,7 +76,6 @@ export async function setProfilePicture(adopterId: string, imageId: string) {
         revalidatePath(`/adopter/${adopterId}`);
         return { success: true };
     } catch (error) {
-        console.error("Set profile picture error:", error);
         const errorId = logger.error('Set profile picture failed', error, { adopterId, imageId });
         throw new Error(`Failed to set profile picture (Error ID: ${errorId})`);
     }
@@ -93,7 +90,6 @@ export async function getAdoptionImages(adoptionId: string) {
             .orderBy(sql`${adopterImages.uploadedAt} DESC`)
             .all();
     } catch (error) {
-        console.error("Get adoption images error:", error);
         logger.error('Get adoption images failed', error, { adoptionId });
         return [];
     }
@@ -129,7 +125,6 @@ export async function deleteImage(imageId: string, adopterId: string) {
         revalidatePath(`/adopter/${adopterId}`);
         return { success: true };
     } catch (error) {
-        console.error("Delete image error:", error);
         const errorId = logger.error('Delete image failed', error, { imageId, adopterId });
         throw new Error(`Failed to delete image (Error ID: ${errorId})`);
     }

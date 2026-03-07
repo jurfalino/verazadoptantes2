@@ -63,8 +63,8 @@ test.describe('Authenticated User', () => {
         await expect(submitBtn).toBeVisible();
         await submitBtn.click();
 
-        // Step 5: Wait for save confirmation
-        await page.waitForTimeout(3000);
+        // Step 5: Wait for save confirmation — form should close/collapse
+        await expect(page.getByRole('button', { name: /Record Adoption|Registrar Adopción/i })).not.toBeVisible({ timeout: 10000 });
 
         // Step 6: Verify the record persisted — reload and check
         await page.reload();

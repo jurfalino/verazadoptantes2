@@ -9,6 +9,7 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { StarRating } from '@/components/StarRating';
 import { useShowToast } from '@/components/ui/Toast';
+import { extractErrorId } from '@/lib/errorUtils';
 import { formatDateTime, formatShortDate } from '@/lib/dates';
 import { getRatingColors, getRatingDescription } from '@/lib/ratingColors';
 import { getSourceIcon } from '@/lib/sourceIcons';
@@ -149,7 +150,7 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
             }
         } catch (err: any) {
             console.error("Save Error:", err);
-            toast.error('Save Error', err?.message || 'An unexpected error occurred while saving.');
+            toast.error('Save Error', err?.message || 'An unexpected error occurred while saving.', extractErrorId(err));
         } finally {
             setLoading(false);
         }

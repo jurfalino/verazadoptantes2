@@ -35,7 +35,14 @@ export default function ImportWizard() {
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Steps: 1=Input, 2=Content/Extract, 3=Review, 4=Confirm
-    const [step, setStep] = useState(1);
+    const [step, setStep] = useState(() => {
+        if (typeof window === 'undefined') return 1;
+        const saved = sessionStorage.getItem('import_wizard_state');
+        if (saved) {
+            try { return JSON.parse(saved).step || 1; } catch { return 1; }
+        }
+        return 1;
+    });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [fetchProgress, setFetchProgress] = useState(0);
@@ -59,21 +66,54 @@ export default function ImportWizard() {
     }, [loading]);
 
     // Unified input state (single smart field)
-    const [inputContent, setInputContent] = useState('');
+    const [inputContent, setInputContent] = useState(() => {
+        if (typeof window === 'undefined') return '';
+        const saved = sessionStorage.getItem('import_wizard_state');
+        if (saved) {
+            try { return JSON.parse(saved).inputContent || ''; } catch { return ''; }
+        }
+        return '';
+    });
     const [manualImages, setManualImages] = useState<Array<{ data: string; mimeType: string; preview: string; file?: File; thumbnail?: string }>>([]);
     const [sharedFrom, setSharedFrom] = useState<string | null>(null);
 
     // Extracted/fetched state
     const [_fetchedText, setFetchedText] = useState('');
-    const [editableText, setEditableText] = useState('');
+    const [editableText, setEditableText] = useState(() => {
+        if (typeof window === 'undefined') return '';
+        const saved = sessionStorage.getItem('import_wizard_state');
+        if (saved) {
+            try { return JSON.parse(saved).editableText || ''; } catch { return ''; }
+        }
+        return '';
+    });
     const [fetchedImages, setFetchedImages] = useState<string[]>([]);
     const [selectedFetchedImages, setSelectedFetchedImages] = useState<Set<number>>(new Set());
-    const [sourceUrl, setSourceUrl] = useState('');
+    const [sourceUrl, setSourceUrl] = useState(() => {
+        if (typeof window === 'undefined') return '';
+        const saved = sessionStorage.getItem('import_wizard_state');
+        if (saved) {
+            try { return JSON.parse(saved).sourceUrl || ''; } catch { return ''; }
+        }
+        return '';
+    });
     const [_sourceType, setSourceType] = useState<string>('');
     const [isVideoPost, setIsVideoPost] = useState(false);
     const [fetchedVideos, setFetchedVideos] = useState<string[]>([]);
     const [videoLoading, setVideoLoading] = useState(false);
     const [retryCountdown, setRetryCountdown] = useState(0);
+
+    // Persist wizard state to sessionStorage (survives page refresh)
+    useEffect(() => {
+        if (step === 4) {
+            // Clear on completion
+            sessionStorage.removeItem('import_wizard_state');
+            return;
+        }
+        sessionStorage.setItem('import_wizard_state', JSON.stringify({
+            step, inputContent, editableText, sourceUrl
+        }));
+    }, [step, inputContent, editableText, sourceUrl]);
 
     // Retry countdown timer
     useEffect(() => {

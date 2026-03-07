@@ -7,6 +7,7 @@ import { saveAdoption, searchAdopter, getAvailableAnimals } from '@/app/actions'
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
+import { extractErrorId } from '@/lib/errorUtils';
 import LegalConsent from '@/components/LegalConsent';
 import DatePicker from '@/components/ui/DatePicker';
 
@@ -165,7 +166,7 @@ export default function AdoptionWizard() {
 
         } catch (e) {
             console.error(e);
-            toast.error('Error', 'Error processing adoption. Please try again.');
+            toast.error('Error', 'Error processing adoption. Please try again.', extractErrorId(e));
         } finally {
             setLoading(false);
         }
