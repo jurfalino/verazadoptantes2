@@ -1,7 +1,6 @@
 'use client';
 
 import { useLanguage } from '@/context/LanguageContext';
-import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
@@ -32,6 +31,16 @@ type FaqItem = {
     };
 };
 
+type BenefitItem = {
+    slug: string;
+    entry: {
+        icon: string;
+        textEs: string;
+        textEn: string;
+        order: number;
+    };
+};
+
 type HeroData = {
     titleEs: string;
     titleEn: string;
@@ -42,32 +51,51 @@ type HeroData = {
     ctaUrl: string;
 };
 
+type LabelsData = {
+    processHeaderEs: string;
+    processHeaderEn: string;
+    stepPrefixEs: string;
+    stepPrefixEn: string;
+    whyVetEs: string;
+    whyVetEn: string;
+    faqHeaderEs: string;
+    faqHeaderEn: string;
+    ctaButtonEs: string;
+    ctaButtonEn: string;
+};
+
 export default function GuiaPage() {
     const { locale, t } = useLanguage();
-    const pathname = usePathname();
     const { data: session } = useSession();
 
-    const isEnglish = pathname.startsWith('/guide') || locale === 'en';
+    const isEnglish = locale === 'en';
 
     const [steps, setSteps] = useState<GuideStep[]>([]);
     const [faq, setFaq] = useState<FaqItem[]>([]);
+    const [benefits, setBenefits] = useState<BenefitItem[]>([]);
     const [hero, setHero] = useState<HeroData | null>(null);
+    const [labels, setLabels] = useState<LabelsData | null>(null);
     const [expandedFaq, setExpandedFaq] = useState<string | null>(null);
 
-    // Fetch content from API
+    // Fetch all content from API
     useEffect(() => {
         fetch('/api/guide-content')
-            .then((res) => res.json())
+            .then((res) => res.json() as Promise<{ steps?: GuideStep[]; faq?: FaqItem[]; benefits?: BenefitItem[]; hero?: HeroData; labels?: LabelsData }>)
             .then((data) => {
-                const d = data as { steps: GuideStep[]; faq: FaqItem[]; hero: HeroData };
-                setSteps(d.steps);
-                setFaq(d.faq);
-                setHero(d.hero);
+                setSteps(data.steps || []);
+                setFaq(data.faq || []);
+                setBenefits(data.benefits || []);
+                setHero(data.hero || null);
+                setLabels(data.labels || null);
             })
             .catch((err) => console.error('[Guide] Failed to load content:', err));
     }, [session]);
 
     const pick = <T,>(es: T, en: T) => (isEnglish ? en : es);
+
+    // Label helpers with fallbacks
+    const label = (esKey: keyof LabelsData, enKey: keyof LabelsData, fallbackEs: string, fallbackEn: string) =>
+        labels ? pick(labels[esKey] as string, labels[enKey] as string) : pick(fallbackEs, fallbackEn);
 
     return (
         <main className="min-h-screen bg-stone-50 py-12 px-4">
@@ -76,12 +104,12 @@ export default function GuiaPage() {
                 <header className="text-center space-y-4">
                     <ShieldPawIcon className="w-14 h-14 mx-auto mb-2" />
                     <h1 className="text-4xl md:text-5xl font-extrabold text-stone-900 tracking-tight">
-                        {hero ? pick(hero.titleEs, hero.titleEn) : (isEnglish ? 'Adoption Process Guide' : 'Guía del Proceso de Adopción')}
+                        {hero ? pick(hero.titleEs, hero.titleEn) : pick('Guía del Proceso de Adopción', 'Adoption Process Guide')}
                     </h1>
                     <p className="text-stone-600 text-lg max-w-xl mx-auto font-medium">
-                        {hero ? pick(hero.subtitleEs, hero.subtitleEn) : (isEnglish
-                            ? 'Everything you need to know about responsible pet adoption'
-                            : 'Todo lo que necesitás saber sobre adopción responsable de mascotas'
+                        {hero ? pick(hero.subtitleEs, hero.subtitleEn) : pick(
+                            'Todo lo que necesitás saber sobre adopción responsable de mascotas',
+                            'Everything you need to know about responsible pet adoption'
                         )}
                     </p>
                 </header>
@@ -90,7 +118,7 @@ export default function GuiaPage() {
                 {steps.length > 0 && (
                     <section className="space-y-6">
                         <h2 className="text-sm font-bold text-stone-500 uppercase tracking-wider text-center">
-                            {isEnglish ? 'The Process' : 'El Proceso'}
+                            {label('processHeaderEs', 'processHeaderEn', 'El Proceso', 'The Process')}
                         </h2>
                         <div className="grid gap-4 md:grid-cols-3">
                             {steps
@@ -104,7 +132,7 @@ export default function GuiaPage() {
                                             {step.entry.icon}
                                         </div>
                                         <div className="text-xs font-bold text-teal-600 mb-1">
-                                            {isEnglish ? `Step ${i + 1}` : `Paso ${i + 1}`}
+                                            {label('stepPrefixEs', 'stepPrefixEn', 'Paso', 'Step')} {i + 1}
                                         </div>
                                         <h3 className="text-lg font-bold text-stone-900 mb-2">
                                             {pick(step.entry.titleEs, step.entry.titleEn)}
@@ -118,39 +146,34 @@ export default function GuiaPage() {
                     </section>
                 )}
 
-                {/* Why Vetting Matters */}
+                {/* Why Vetting Matters — content from API */}
                 <section className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6 md:p-8">
                     <h2 className="text-xl font-bold text-stone-900 mb-4 text-center">
-                        {isEnglish ? 'Why Vet Adopters?' : '¿Por qué verificar adoptantes?'}
+                        {label('whyVetEs', 'whyVetEn', '¿Por qué verificar adoptantes?', 'Why Vet Adopters?')}
                     </h2>
                     <div className="grid gap-4 md:grid-cols-2">
-                        {[
-                            {
-                                icon: '🛡️',
-                                es: 'Protege a los animales de adopciones irresponsables',
-                                en: 'Protect animals from irresponsible adoptions',
-                            },
-                            {
-                                icon: '🤝',
-                                es: 'Construye confianza en la comunidad de rescate',
-                                en: 'Build trust in the rescue community',
-                            },
-                            {
-                                icon: '📋',
-                                es: 'Mantiene un historial compartido entre refugios',
-                                en: 'Maintain shared history across shelters',
-                            },
-                            {
-                                icon: '⚠️',
-                                es: 'Alerta sobre adoptantes con advertencias previas',
-                                en: 'Flag adopters with previous warnings',
-                            },
-                        ].map((item, i) => (
-                            <div key={i} className="flex gap-3 items-start">
-                                <span className="text-xl flex-shrink-0">{item.icon}</span>
-                                <p className="text-stone-600 text-sm">{pick(item.es, item.en)}</p>
-                            </div>
-                        ))}
+                        {benefits.length > 0
+                            ? benefits
+                                .sort((a, b) => a.entry.order - b.entry.order)
+                                .map((item) => (
+                                    <div key={item.slug} className="flex gap-3 items-start">
+                                        <span className="text-xl flex-shrink-0">{item.entry.icon}</span>
+                                        <p className="text-stone-600 text-sm">{pick(item.entry.textEs, item.entry.textEn)}</p>
+                                    </div>
+                                ))
+                            : /* Fallback while loading */
+                            [
+                                { icon: '🛡️', es: 'Protege a los animales de adopciones irresponsables', en: 'Protect animals from irresponsible adoptions' },
+                                { icon: '🤝', es: 'Construye confianza en la comunidad de rescate', en: 'Build trust in the rescue community' },
+                                { icon: '📋', es: 'Mantiene un historial compartido entre refugios', en: 'Maintain shared history across shelters' },
+                                { icon: '⚠️', es: 'Alerta sobre adoptantes con advertencias previas', en: 'Flag adopters with previous warnings' },
+                            ].map((item, i) => (
+                                <div key={i} className="flex gap-3 items-start">
+                                    <span className="text-xl flex-shrink-0">{item.icon}</span>
+                                    <p className="text-stone-600 text-sm">{pick(item.es, item.en)}</p>
+                                </div>
+                            ))
+                        }
                     </div>
                 </section>
 
@@ -158,7 +181,7 @@ export default function GuiaPage() {
                 {faq.length > 0 && (
                     <section className="space-y-4">
                         <h2 className="text-sm font-bold text-stone-500 uppercase tracking-wider text-center">
-                            {isEnglish ? 'Frequently Asked Questions' : 'Preguntas Frecuentes'}
+                            {label('faqHeaderEs', 'faqHeaderEn', 'Preguntas Frecuentes', 'Frequently Asked Questions')}
                         </h2>
                         <div className="space-y-3">
                             {faq
@@ -196,13 +219,13 @@ export default function GuiaPage() {
                 {/* CTA */}
                 <section className="text-center space-y-4 py-8">
                     <h2 className="text-2xl font-bold text-stone-900">
-                        {hero ? pick(hero.ctaTextEs, hero.ctaTextEn) : (isEnglish ? 'Ready to start?' : '¿Listo para empezar?')}
+                        {hero ? pick(hero.ctaTextEs, hero.ctaTextEn) : pick('¿Listo para empezar?', 'Ready to start?')}
                     </h2>
                     <Link
                         href={hero?.ctaUrl || '/'}
                         className="inline-flex items-center gap-2 bg-teal-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-teal-700 transition-colors shadow-sm hover:shadow-md"
                     >
-                        {isEnglish ? 'Start Vetting' : 'Empezar a Verificar'} →
+                        {label('ctaButtonEs', 'ctaButtonEn', 'Empezar a Verificar', 'Start Vetting')} →
                     </Link>
                 </section>
 

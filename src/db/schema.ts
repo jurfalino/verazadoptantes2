@@ -35,6 +35,7 @@ export const adopterImages = sqliteTable("adopter_images", {
     addedBy: text("added_by").default("anonymous"),
     isProfilePicture: integer("is_profile_picture").default(0), // 1 if this is the profile picture
     mediaType: text("media_type").default("image"), // 'image' or 'video'
+    thumbnailUrl: text("thumbnail_url"), // Video thumbnail URL (R2)
 });
 
 export const adopterFlags = sqliteTable("adopter_flags", {

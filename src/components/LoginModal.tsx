@@ -9,12 +9,19 @@ export default function LoginModal() {
     const { isLoginOpen, closeLogin, redirectPath } = useAuthContext();
     const { t } = useLanguage();
     const [loading, setLoading] = useState(false);
+    const [devEmail, setDevEmail] = useState('');
 
     if (!isLoginOpen) return null;
 
     const handleGoogleLogin = async () => {
         setLoading(true);
         await signIn('google', { redirectTo: redirectPath || window.location.pathname });
+    };
+
+    const handleDevLogin = async () => {
+        if (!devEmail) return;
+        setLoading(true);
+        await signIn('dev-login', { email: devEmail, redirectTo: redirectPath || window.location.pathname });
     };
 
     return (
@@ -44,6 +51,34 @@ export default function LoginModal() {
                             {loading ? t('auth.signing_in') || 'Signing in...' : t('auth.continue_google')}
                         </span>
                     </button>
+
+                    {/* Dev Login — only in development */}
+                    {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
+                        <>
+                            <div className="flex items-center gap-3 my-2">
+                                <div className="flex-1 h-px bg-gray-200" />
+                                <span className="text-xs text-gray-400 uppercase">Dev</span>
+                                <div className="flex-1 h-px bg-gray-200" />
+                            </div>
+                            <div className="flex gap-2">
+                                <input
+                                    type="email"
+                                    value={devEmail}
+                                    onChange={e => setDevEmail(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && handleDevLogin()}
+                                    placeholder="test@example.com"
+                                    className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                />
+                                <button
+                                    onClick={handleDevLogin}
+                                    disabled={loading || !devEmail}
+                                    className="px-4 py-2 text-sm font-medium text-white bg-gray-700 hover:bg-gray-800 rounded-lg disabled:opacity-50"
+                                >
+                                    Dev Sign In
+                                </button>
+                            </div>
+                        </>
+                    )}
                 </div>
             </div>
         </div>

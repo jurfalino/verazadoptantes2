@@ -120,9 +120,10 @@ export async function persistImageToR2(
 }
 
 /**
- * Process an image URL for storage:
+ * Process a media URL for storage:
  * - External URLs (Facebook CDN etc.) → download and upload to R2
- * - Data URLs (base64/manual uploads) → return as-is (stored in D1)
+ * - Video data URLs → decode and upload to R2 (too large for D1)
+ * - Image data URLs → return as-is (stored in D1, small after compression)
  * - R2 URLs → return as-is (already persisted)
  */
 export async function processImageForStorage(
@@ -130,10 +131,52 @@ export async function processImageForStorage(
     adopterId: string,
     imageId?: string,
 ): Promise<string> {
-    if (!isExternalImageUrl(url)) {
-        return url; // Already safe (base64 or R2 URL)
+    // External URLs: download and persist to R2
+    if (isExternalImageUrl(url)) {
+        const r2Url = await persistImageToR2(url, adopterId, imageId);
+        return r2Url || url;
     }
 
-    const r2Url = await persistImageToR2(url, adopterId, imageId);
-    return r2Url || url; // Fall back to original URL if R2 upload fails
+    // Video data URLs: decode and upload to R2 (too large for D1 column)
+    if (url.startsWith('data:video/')) {
+        try {
+            const r2Url = await uploadDataUrlToR2(url, adopterId, imageId);
+            if (r2Url) return r2Url;
+        } catch (e) {
+            console.error('[R2] Failed to upload video data URL to R2:', (e as Error).message);
+        }
+    }
+
+    return url; // Images as data URLs, or already R2 URLs
+}
+
+/**
+ * Decode a base64 data URL and upload it to R2.
+ * Used for video uploads that are too large for D1.
+ */
+async function uploadDataUrlToR2(
+    dataUrl: string,
+    adopterId: string,
+    imageId?: string,
+): Promise<string | null> {
+    // Parse data URL: data:video/mp4;base64,AAAA...
+    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) return null;
+
+    const contentType = match[1];
+    const base64Data = match[2];
+    const ext = getExtension('', contentType);
+    const id = imageId || crypto.randomUUID();
+    const key = `adopters/${adopterId}/${id}.${ext}`;
+
+    // Decode base64 to binary (Edge-compatible)
+    const binaryString = atob(base64Data);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    const r2Url = await uploadToR2(key, bytes, contentType);
+    console.log(`[R2] Uploaded video data URL → ${key} (${Math.round(bytes.byteLength / 1024)}KB)`);
+    return r2Url;
 }

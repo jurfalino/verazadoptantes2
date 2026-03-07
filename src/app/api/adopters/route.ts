@@ -7,7 +7,7 @@ import { eq, like, or, and, isNull, type InferSelectModel } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
 import { tokenizeAdopter } from '@/app/actions/duplicates';
-import { processImageForStorage } from '@/lib/r2';
+import { processImageForStorage, uploadToR2 } from '@/lib/r2';
 
 export async function GET(request: Request) {
     const session = await auth();
@@ -153,7 +153,7 @@ export async function POST(request: Request) {
         notes?: string;
         sourceUrl?: string;
         flags?: string[];
-        images?: Array<{ data: string; mimeType: string; originalUrl?: string }>;
+        images?: Array<{ data: string; mimeType: string; originalUrl?: string; thumbnail?: string }>;
         adoption?: {
             animalName?: string;
             species?: string;
@@ -283,13 +283,29 @@ export async function POST(request: Request) {
                 // Persist external URLs (social media CDN etc.) to R2
                 const persistedUrl = await processImageForStorage(mediaUrl, newId, imageId);
 
+                // Upload thumbnail if provided
+                let thumbnailUrl: string | null = null;
+                if (img.thumbnail && img.thumbnail.startsWith('data:')) {
+                    try {
+                        const thumbResponse = await fetch(img.thumbnail);
+                        const thumbBlob = await thumbResponse.blob();
+                        const thumbArrayBuffer = await thumbBlob.arrayBuffer();
+                        const thumbKey = `adopters/${newId}/${imageId}_thumb.jpg`;
+                        thumbnailUrl = await uploadToR2(thumbKey, thumbArrayBuffer, thumbBlob.type || 'image/jpeg');
+                    } catch (e) {
+                        // Thumbnail upload failed, continue without
+                    }
+                }
+
                 await db.insert(adopterImages).values({
                     id: imageId,
                     adopterId: newId,
                     url: persistedUrl,
                     caption: isVideo ? `Imported video (${i + 1})` : `Imported image (${i + 1})`,
                     addedBy: session.user.email || 'anonymous',
-                    isProfilePicture: (!isVideo && savedImageCount === 0) ? 1 : 0 // First image (not video) as profile picture
+                    isProfilePicture: (!isVideo && savedImageCount === 0) ? 1 : 0, // First image (not video) as profile picture
+                    mediaType: isVideo ? 'video' : 'image',
+                    thumbnailUrl,
                     // uploadedAt uses database default
                 });
                 savedImageCount++;

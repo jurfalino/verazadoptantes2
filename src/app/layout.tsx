@@ -79,7 +79,7 @@ export default async function RootLayout({
                         </div>
                       </div>
                     </nav>
-                    <CountryConfirmBanner />
+                    <CountryConfirmBanner key={session?.user?.email || 'anon'} userEmail={session?.user?.email || null} />
                     <LoginModal />
                     <InstallPrompt />
                     {children}

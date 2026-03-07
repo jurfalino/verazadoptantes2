@@ -194,10 +194,17 @@ export async function getAdoptions(adopterId: string) {
     try {
         const db = await getDb();
         if (!db) return [];
-        return await db.select().from(adoptions)
+        const results = await db.select().from(adoptions)
             .where(eq(adoptions.adopterId, adopterId))
             .orderBy(sql`${adoptions.date} DESC`)
             .all();
+        // Defensive dedup — protect against SQLite index corruption returning same row twice
+        const seen = new Set<string>();
+        return results.filter((r: { id: string }) => {
+            if (seen.has(r.id)) return false;
+            seen.add(r.id);
+            return true;
+        });
     } catch (error) {
         console.error("Get adoptions error:", error);
         logger.error('Get adoptions failed', error, { adopterId });

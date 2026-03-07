@@ -1,5 +1,6 @@
 import type { NextAuthConfig } from "next-auth"
 import Google from "next-auth/providers/google"
+import Credentials from "next-auth/providers/credentials"
 import { logger } from "@/lib/logger"
 import { logAudit, ensureUserProfile } from "@/lib/audit"
 
@@ -8,7 +9,28 @@ import { logAudit, ensureUserProfile } from "@/lib/audit"
 export const REQUIRED_SESSION_VERSION = 3;
 
 export const authConfig = {
-    providers: [Google],
+    providers: [
+        Google,
+        // Dev-only credentials login — accepts any email, never ships to production
+        ...(process.env.NODE_ENV !== 'production' ? [
+            Credentials({
+                id: 'dev-login',
+                name: 'Dev Login',
+                credentials: {
+                    email: { label: "Email", type: "email", placeholder: "test@example.com" },
+                },
+                async authorize(credentials) {
+                    const email = credentials?.email as string | undefined;
+                    if (!email) return null;
+                    return {
+                        id: email,
+                        email: email,
+                        name: `Dev (${email})`,
+                    };
+                },
+            })
+        ] : []),
+    ],
     callbacks: {
         authorized: async ({ auth }) => {
             if (!auth) return true; // Allow unauthenticated browsing

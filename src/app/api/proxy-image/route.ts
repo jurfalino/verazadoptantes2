@@ -19,8 +19,41 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-        // Basic SSRF protection: block private/internal IPs
         const urlObj = new URL(url);
+
+        // If it's an R2 URL, read directly from the R2 bucket binding
+        // This works both locally (wrangler emulator) and in production
+        if (url.includes('r2.dev')) {
+            try {
+                const { getRequestContext } = await import('@cloudflare/next-on-pages');
+                const { env } = getRequestContext();
+                const bucket = (env as unknown as Record<string, unknown>).IMAGES_BUCKET as R2Bucket | undefined;
+
+                if (bucket) {
+                    // Extract key from URL: https://pub-xxx.r2.dev/adopters/123/file.mp4 → adopters/123/file.mp4
+                    const key = urlObj.pathname.replace(/^\//, '');
+                    const object = await bucket.get(key);
+
+                    if (object) {
+                        const headers = new Headers();
+                        headers.set('Content-Type', object.httpMetadata?.contentType || 'application/octet-stream');
+                        headers.set('Cache-Control', 'public, max-age=3600');
+                        headers.set('Accept-Ranges', 'bytes');
+                        if (object.size) headers.set('Content-Length', String(object.size));
+
+                        return new NextResponse(object.body as ReadableStream, {
+                            status: 200,
+                            headers,
+                        });
+                    }
+                    // Object not found in R2, fall through to external fetch
+                }
+            } catch {
+                // R2 binding not available, fall through to external fetch
+            }
+        }
+
+        // Basic SSRF protection: block private/internal IPs
         const hostname = urlObj.hostname.toLowerCase();
         const blockedPatterns = ['localhost', '127.0.0.1', '0.0.0.0', '::1', '10.', '192.168.', '172.16.', '169.254.'];
         if (blockedPatterns.some(p => hostname.startsWith(p) || hostname === p)) {

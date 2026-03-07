@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.8.0-14] - 2026-03-06
+
+### Fixed
+- **Country banner crash** — `handleSaveCountry` no longer accesses `result.success`; always dismisses the banner regardless of server action outcome, preventing `TypeError` on stale builds
+- **Guide page translation** — removed `pathname.startsWith('/guide')` override that prevented language switching; now correctly uses `locale` from language context
+- **Duplicate key React error** — added defensive dedup filter in `getAdoptions()` to prevent React warnings from SQLite index corruption returning duplicate rows
+
+### Changed
+- **Guide page i18n** — moved hardcoded "Why Vet Adopters?" bullets and section labels from inline JSX to the `/api/guide-content` API; all guide content is now admin-editable from a single file
+- **Dev login provider** — added Credentials provider for local development (non-production only)
+
+---
+
+
 ## [2.8.0-8] - 2026-03-03
 
 ### Fixed

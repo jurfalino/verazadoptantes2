@@ -8,6 +8,17 @@ import { setProfilePicture } from '@/app/actions';
 import { useShowToast } from '@/components/ui/Toast';
 import { MediaLightbox, isVideo } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
+import { extractVideoThumbnail } from '@/lib/videoThumbnail';
+
+/** Convert a data URL to a Blob for FormData upload */
+function dataUrlToBlob(dataUrl: string): Blob {
+    const [header, base64] = dataUrl.split(',');
+    const mime = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+}
 
 interface ImageItem {
     id?: string;
@@ -16,9 +27,10 @@ interface ImageItem {
     addedBy?: string;
     isProfilePicture?: number;
     mediaType?: string;
+    thumbnailUrl?: string;
 }
 
-export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, isAdmin = false }: { adopterId: string, initialImages: ImageItem[], onUpload: (id: string, url: string, caption: string) => Promise<void | { id?: string }>, currentUser: string, isAdmin?: boolean }) {
+export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, isAdmin = false }: { adopterId: string, initialImages: ImageItem[], onUpload: (id: string, url: string, caption: string, mediaType?: string) => Promise<void | { id?: string }>, currentUser: string, isAdmin?: boolean }) {
     const { t } = useLanguage();
     const { data: session } = useSession();
     const { openLogin } = useAuthContext();
@@ -76,36 +88,80 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
         });
     };
 
-    // Simplistic Base64 upload for MVP
+    // Upload handler for images and videos
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
+        const isVideoFile = file.type.startsWith('video/');
+
         // Check file type
-        if (!file.type.startsWith('image/')) {
-            toast.warning('Invalid File', 'Please select an image file.');
+        if (!file.type.startsWith('image/') && !isVideoFile) {
+            toast.warning('Invalid File', 'Please select an image or video file.');
             return;
         }
 
+        // Video size limit: 50MB
+        if (isVideoFile && file.size > 50 * 1024 * 1024) {
+            toast.warning(t('adopter.video_too_large') || 'Video Too Large', t('adopter.video_too_large_desc') || 'Maximum video size is 50MB.');
+            return;
+        }
+
+        // Reset file input so same file can be re-selected
+        e.target.value = '';
+
         setUploading(true);
         try {
-            // Compress image before uploading
-            const base64 = await compressImage(file);
-            // onUpload should return { id } from saveImage
-            const result = await onUpload(adopterId, base64, 'Uploaded Image');
-            // Use the real ID from server, or a temp fallback
-            const newImageId = (result as { id?: string })?.id || 'temp-' + Date.now();
+            let newImageId: string;
+            let displayUrl: string;
+            let thumbnailUrl: string | undefined;
+            const caption = isVideoFile ? 'Uploaded Video' : 'Uploaded Image';
+            const mediaType = isVideoFile ? 'video' : 'image';
+
+            if (isVideoFile) {
+                // Generate thumbnail before uploading
+                let thumbnail: string | undefined;
+                try {
+                    thumbnail = await extractVideoThumbnail(file);
+                } catch (e) {
+                    console.warn('Thumbnail extraction failed:', (e as Error).message);
+                }
+
+                // Upload video via FormData to API route (avoids server action body limit)
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('adopterId', adopterId);
+                formData.append('caption', caption);
+                formData.append('mediaType', 'video');
+                if (thumbnail) formData.append('thumbnail', dataUrlToBlob(thumbnail), 'thumb.jpg');
+
+                const res = await fetch('/api/upload-media', { method: 'POST', body: formData });
+                const result = await res.json() as { id: string; url: string; error?: string };
+                if (!res.ok) throw new Error(result.error || 'Upload failed');
+                newImageId = result.id;
+                displayUrl = result.url;
+                thumbnailUrl = thumbnail || undefined;
+            } else {
+                // Compress image and use server action
+                const base64 = await compressImage(file);
+                const result = await onUpload(adopterId, base64, caption, mediaType);
+                newImageId = (result as { id?: string })?.id || 'temp-' + Date.now();
+                displayUrl = base64;
+            }
+
             // Optimistic update with prepend and ownership
             setImages([{
-                url: base64,
-                caption: 'Uploaded Image',
+                url: displayUrl,
+                caption,
                 addedBy: currentUser,
                 id: newImageId,
-                isProfilePicture: 0
+                isProfilePicture: 0,
+                mediaType,
+                thumbnailUrl,
             }, ...images]);
         } catch (error) {
-            console.error('Image upload failed:', error);
-            toast.error('Upload Failed', 'Failed to upload image. Please try again.');
+            console.error('Media upload failed:', error instanceof Error ? error.message : error);
+            toast.error('Upload Failed', 'Failed to upload. Please try again.');
         } finally {
             setUploading(false);
         }
@@ -154,11 +210,20 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                                     </div>
                                 </div>
                             ) : isVideo({ url: img.url, mediaType: img.mediaType as any }) ? (
-                                <div className="w-full h-full relative cursor-pointer" onClick={() => setLightboxItem({ url: img.url, caption: img.caption, mediaType: 'video' })}>
-                                    <div className="w-full h-full bg-gradient-to-br from-teal-600 to-teal-800" />
+                                <div className="w-full h-full relative cursor-pointer" onClick={() => setLightboxItem({ url: img.url, caption: img.caption, mediaType: 'video', thumbnailUrl: img.thumbnailUrl })}>
+                                    {img.thumbnailUrl ? (
+                                        <img
+                                            src={img.thumbnailUrl.includes('r2.dev') ? `/api/proxy-image?url=${encodeURIComponent(img.thumbnailUrl)}` : img.thumbnailUrl}
+                                            alt={img.caption || 'Video'}
+                                            className="w-full h-full object-cover"
+                                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                        />
+                                    ) : (
+                                        <div className="w-full h-full bg-gradient-to-br from-teal-600 to-teal-800" />
+                                    )}
                                     {/* Play button overlay */}
                                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                        <div className="w-12 h-12 rounded-full bg-white/25 flex items-center justify-center shadow-lg">
+                                        <div className="w-12 h-12 rounded-full bg-black/40 flex items-center justify-center shadow-lg">
                                             <svg className="w-6 h-6 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
                                                 <path d="M8 5v14l11-7z" />
                                             </svg>
@@ -271,9 +336,9 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                             }
                         }}
                         className="aspect-square bg-emerald-50/50 border-2 border-dashed border-emerald-200/60 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-emerald-50 hover:border-emerald-300 transition-all group">
-                        <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} disabled={uploading} />
+                        <input type="file" accept="image/*,video/*" className="hidden" onChange={handleFileChange} disabled={uploading} />
                         <span className="text-3xl text-emerald-300 group-hover:text-emerald-500 transition-colors">+</span>
-                        <span className="text-xs text-emerald-600/70 group-hover:text-emerald-700 font-bold mt-1 uppercase tracking-wide">{uploading ? t('adopter.uploading') : t('adopter.upload_image')}</span>
+                        <span className="text-xs text-emerald-600/70 group-hover:text-emerald-700 font-bold mt-1 uppercase tracking-wide">{uploading ? t('adopter.uploading') : t('adopter.upload_media')}</span>
                     </label>
                 </div>
 

@@ -6,6 +6,7 @@ export interface MediaItem {
     url: string;
     caption?: string;
     mediaType?: 'image' | 'video'; // explicit type from DB
+    thumbnailUrl?: string; // Video thumbnail URL
 }
 
 interface MediaLightboxProps {
@@ -41,40 +42,27 @@ export function MediaLightbox({ item, onClose }: MediaLightboxProps) {
 
     const itemIsVideo = item ? isVideo(item) : false;
 
-    // Load video as blob when item changes
+    // Resolve video URL when item changes
     useEffect(() => {
         if (!item || !itemIsVideo) {
             setBlobUrl(null);
             setError(null);
+            setVideoLoading(false);
             return;
         }
 
-        let cancelled = false;
-        setVideoLoading(true);
+        // Data URLs and blob URLs can be used directly
+        if (item.url.startsWith('data:') || item.url.startsWith('blob:')) {
+            setBlobUrl(item.url);
+            setVideoLoading(false);
+            setError(null);
+            return;
+        }
+
+        // R2 and external URLs: route through proxy to avoid CORS and to read from R2 binding
+        setBlobUrl(`/api/proxy-image?url=${encodeURIComponent(item.url)}`);
+        setVideoLoading(false);
         setError(null);
-
-        (async () => {
-            try {
-                const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(item.url)}`);
-                if (!res.ok) throw new Error(`Proxy returned ${res.status}`);
-
-                const blob = await res.blob();
-                if (cancelled) return;
-
-                const url = URL.createObjectURL(blob);
-                setBlobUrl(url);
-            } catch (e) {
-                if (cancelled) return;
-                console.error('[MediaLightbox] Video load failed:', e);
-                setError('Failed to load video');
-            } finally {
-                if (!cancelled) setVideoLoading(false);
-            }
-        })();
-
-        return () => {
-            cancelled = true;
-        };
     }, [item, itemIsVideo]);
 
     // Cleanup blob URL
@@ -171,11 +159,23 @@ export function MediaThumbnail({
         >
             {videoItem ? (
                 <>
-                    {/* Teal gradient placeholder for video */}
-                    <div className="w-full h-full bg-gradient-to-br from-teal-600 to-teal-800" />
+                    {/* Video thumbnail or teal gradient fallback */}
+                    {item.thumbnailUrl ? (
+                        <img
+                            src={item.thumbnailUrl.includes('r2.dev') ? `/api/proxy-image?url=${encodeURIComponent(item.thumbnailUrl)}` : item.thumbnailUrl}
+                            alt={item.caption || 'Video'}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                                // Fallback to teal gradient on error
+                                (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                        />
+                    ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-teal-600 to-teal-800" />
+                    )}
                     {/* Play icon overlay */}
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="w-7 h-7 rounded-full bg-white/25 flex items-center justify-center shadow">
+                        <div className="w-7 h-7 rounded-full bg-black/40 flex items-center justify-center shadow">
                             <svg className="w-3.5 h-3.5 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
                                 <path d="M8 5v14l11-7z" />
                             </svg>
@@ -185,7 +185,7 @@ export function MediaThumbnail({
             ) : (
                 <>
                     <img
-                        src={item.url}
+                        src={item.url.includes('r2.dev') ? `/api/proxy-image?url=${encodeURIComponent(item.url)}` : item.url}
                         alt={item.caption || 'Photo'}
                         className="w-full h-full object-cover"
                         onError={(e) => {

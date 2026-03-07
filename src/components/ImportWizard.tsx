@@ -10,6 +10,7 @@ import { useShowToast } from '@/components/ui/Toast';
 import { MediaLightbox } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 import LegalConsent from '@/components/LegalConsent';
+import { extractVideoThumbnail, extractVideoThumbnailFromUrl } from '@/lib/videoThumbnail';
 import { checkTokenDuplicates } from '@/app/actions';
 import type { TokenMatchResult } from '@/app/actions';
 import type { ExtractedAdopterData } from '@/lib/gemini';
@@ -59,7 +60,7 @@ export default function ImportWizard() {
 
     // Unified input state (single smart field)
     const [inputContent, setInputContent] = useState('');
-    const [manualImages, setManualImages] = useState<Array<{ data: string; mimeType: string; preview: string }>>([]);
+    const [manualImages, setManualImages] = useState<Array<{ data: string; mimeType: string; preview: string; file?: File; thumbnail?: string }>>([]);
     const [sharedFrom, setSharedFrom] = useState<string | null>(null);
 
     // Extracted/fetched state
@@ -309,23 +310,50 @@ export default function ImportWizard() {
         }
     };
 
-    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (!files) return;
 
         for (const file of Array.from(files)) {
-            const reader = new FileReader();
-            reader.onload = () => {
-                const result = reader.result as string;
-                const base64 = result.split(',')[1];
+            const isVideoFile = file.type.startsWith('video/');
+
+            if (isVideoFile) {
+                // Video: store File object only — don't read as base64
+                // Videos will be uploaded via FormData after adopter creation
+                if (file.size > 50 * 1024 * 1024) {
+                    continue; // Skip oversized videos silently
+                }
+                // Generate thumbnail
+                let thumbnail: string | undefined;
+                try {
+                    thumbnail = await extractVideoThumbnail(file);
+                } catch (err) {
+                    console.warn('Thumbnail extraction failed:', (err as Error).message);
+                }
                 setManualImages(prev => [...prev, {
-                    data: base64,
+                    data: '',
                     mimeType: file.type,
-                    preview: result,
+                    preview: thumbnail || '', // Use thumbnail as preview
+                    file,
+                    thumbnail,
                 }]);
-            };
-            reader.readAsDataURL(file);
+            } else {
+                // Image: read as base64 for preview and sending in JSON
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const result = reader.result as string;
+                    const base64 = result.split(',')[1];
+                    setManualImages(prev => [...prev, {
+                        data: base64,
+                        mimeType: file.type,
+                        preview: result,
+                    }]);
+                };
+                reader.readAsDataURL(file);
+            }
         }
+        // Reset input so same file can be re-selected
+        e.target.value = '';
     };
 
     const removeImage = (index: number) => {
@@ -481,6 +509,19 @@ export default function ImportWizard() {
         try {
             const flags = [`import_${extractedData.confidence}`];
 
+            // Generate thumbnails for fetched videos (via proxy for CORS)
+            const videoPayloads = await Promise.all(
+                fetchedVideos.map(async (videoUrl) => {
+                    let thumbnail: string | undefined;
+                    try {
+                        thumbnail = await extractVideoThumbnailFromUrl(`/api/proxy-image?url=${encodeURIComponent(videoUrl)}`);
+                    } catch (e) {
+                        console.warn('[ImportWizard] Fetched video thumbnail failed:', (e as Error).message);
+                    }
+                    return { data: '', mimeType: 'video/mp4', originalUrl: videoUrl, thumbnail };
+                })
+            );
+
             const payload = {
                 name: extractedData.name,
                 contactInfo: contactInfoText || undefined,
@@ -488,8 +529,8 @@ export default function ImportWizard() {
                 sourceUrl,
                 flags,
                 images: [
-                    ...(processedImages.length > 0 ? processedImages : manualImages.map(img => ({ data: img.data, mimeType: img.mimeType }))),
-                    ...fetchedVideos.map(videoUrl => ({ data: '', mimeType: 'video/mp4', originalUrl: videoUrl })),
+                    ...(processedImages.length > 0 ? processedImages : manualImages.filter(img => !img.file).map(img => ({ data: img.data, mimeType: img.mimeType }))),
+                    ...videoPayloads,
                 ],
                 adoption: {
                     animalName: unknownAnimal ? '' : (extractedData.animalName || ''),
@@ -513,6 +554,20 @@ export default function ImportWizard() {
             }
 
             const adopterId = result.id;
+
+            // Upload any pending video files via FormData (they were excluded from JSON body)
+            const pendingVideoFiles = manualImages.filter(img => img.file);
+            for (const vid of pendingVideoFiles) {
+                if (!vid.file) continue;
+                const fd = new FormData();
+                fd.append('file', vid.file);
+                fd.append('adopterId', adopterId);
+                fd.append('caption', 'Imported video');
+                fd.append('mediaType', 'video');
+                if (vid.thumbnail) fd.append('thumbnail', vid.thumbnail);
+                await fetch('/api/upload-media', { method: 'POST', body: fd });
+            }
+
             const successMessage = extractedData.adoptionDetected && extractedData.adoptionConfidence !== 'low'
                 ? 'Profile + adoption record created'
                 : (extractedData.name || 'New Profile');
@@ -539,6 +594,19 @@ export default function ImportWizard() {
 
         try {
 
+            // Generate thumbnails for fetched videos (via proxy for CORS)
+            const videoPayloads = await Promise.all(
+                fetchedVideos.map(async (videoUrl) => {
+                    let thumbnail: string | undefined;
+                    try {
+                        thumbnail = await extractVideoThumbnailFromUrl(`/api/proxy-image?url=${encodeURIComponent(videoUrl)}`);
+                    } catch (e) {
+                        console.warn('[ImportWizard] Fetched video thumbnail failed:', (e as Error).message);
+                    }
+                    return { data: '', mimeType: 'video/mp4', originalUrl: videoUrl, thumbnail };
+                })
+            );
+
             const payload = {
                 sourceUrl,
                 notes: extractedData.notes,
@@ -551,8 +619,8 @@ export default function ImportWizard() {
                     date: extractedData.adoptionDate || new Date().toISOString().split('T')[0],
                 },
                 images: [
-                    ...(processedImages.length > 0 ? processedImages : manualImages.map(img => ({ data: img.data, mimeType: img.mimeType }))),
-                    ...fetchedVideos.map(videoUrl => ({ data: '', mimeType: 'video/mp4', originalUrl: videoUrl })),
+                    ...(processedImages.length > 0 ? processedImages : manualImages.filter(img => !img.file).map(img => ({ data: img.data, mimeType: img.mimeType }))),
+                    ...videoPayloads,
                 ],
             };
 
@@ -570,6 +638,19 @@ export default function ImportWizard() {
 
             const adopterId = result.adopterId || mergeTarget.id;
             const adopterName = result.adopterName || mergeTarget.name;
+
+            // Upload any pending video files via FormData (they were excluded from JSON body)
+            const pendingVideoFiles = manualImages.filter(img => img.file);
+            for (const vid of pendingVideoFiles) {
+                if (!vid.file) continue;
+                const fd = new FormData();
+                fd.append('file', vid.file);
+                fd.append('adopterId', adopterId);
+                fd.append('caption', 'Imported video');
+                fd.append('mediaType', 'video');
+                if (vid.thumbnail) fd.append('thumbnail', vid.thumbnail);
+                await fetch('/api/upload-media', { method: 'POST', body: fd });
+            }
 
             toast.success('Record added to profile', adopterName, {
                 label: '→ Ver Perfil',
@@ -702,7 +783,7 @@ export default function ImportWizard() {
                         <input
                             ref={fileInputRef}
                             type="file"
-                            accept="image/*"
+                            accept="image/*,video/*"
                             multiple
                             onChange={handleImageUpload}
                             className="hidden"
@@ -713,7 +794,15 @@ export default function ImportWizard() {
                             <div className="grid grid-cols-4 gap-2 mt-3">
                                 {manualImages.map((img, i) => (
                                     <div key={i} className="relative group">
-                                        <img src={img.preview} alt="" className="w-full h-20 object-cover rounded-lg" />
+                                        {img.file ? (
+                                            <div className="w-full h-20 rounded-lg bg-gradient-to-br from-teal-600 to-teal-800 flex items-center justify-center">
+                                                <div className="w-8 h-8 rounded-full bg-white/25 flex items-center justify-center">
+                                                    <svg className="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <img src={img.preview} alt="" className="w-full h-20 object-cover rounded-lg" />
+                                        )}
                                         <button
                                             onClick={() => removeImage(i)}
                                             className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity"
@@ -910,7 +999,7 @@ export default function ImportWizard() {
                         </label>
                         <input
                             type="file"
-                            accept="image/*"
+                            accept="image/*,video/*"
                             multiple
                             onChange={handleImageUpload}
                             className="text-sm"
@@ -1130,9 +1219,11 @@ export default function ImportWizard() {
                         const allImages: { src: string; label?: string }[] = [];
                         // Processed images from fetch (base64)
                         processedImages.forEach((img, _i) => allImages.push({ src: `data:${img.mimeType};base64,${img.data}`, label: img.originalUrl ? new URL(img.originalUrl).pathname.split('/').pop() : undefined }));
-                        // Manually uploaded images
-                        manualImages.forEach((img) => allImages.push({ src: img.preview }));
-                        const totalMedia = allImages.length + fetchedVideos.length;
+                        // Manually uploaded images (not video files)
+                        manualImages.filter(img => !img.file).forEach((img) => allImages.push({ src: img.preview }));
+                        // Count manual videos separately
+                        const manualVideoCount = manualImages.filter(img => img.file).length;
+                        const totalMedia = allImages.length + fetchedVideos.length + manualVideoCount;
                         if (totalMedia === 0) return null;
                         return (
                             <div>

@@ -56,7 +56,7 @@ export default function SettingsPage() {
         setSavingCountry(true);
         const result = await updateUserCountry(country);
         if (result.success) {
-            localStorage.setItem('country_confirmed', '1');
+            localStorage.setItem(`country_confirmed_${session?.user?.email}`, '1');
             toast.success(t('settings.saved') || 'Saved!');
         } else {
             toast.error('Error');

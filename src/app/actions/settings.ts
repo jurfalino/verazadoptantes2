@@ -83,8 +83,10 @@ export async function updateUserCountry(country: string): Promise<{ success: boo
         if (!user) throw new Error('User not found');
 
         await env.DB.prepare(
-            `UPDATE user_profiles SET country = ?, country_confirmed = 1 WHERE user_id = ?`
-        ).bind(country, user.id).run();
+            `INSERT INTO user_profiles (user_id, country, country_confirmed)
+             VALUES (?, ?, 1)
+             ON CONFLICT(user_id) DO UPDATE SET country = excluded.country, country_confirmed = 1`
+        ).bind(user.id, country).run();
 
         logger.info('User country updated', { userEmail, country });
 

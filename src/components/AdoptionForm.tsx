@@ -9,10 +9,28 @@ import { useAuthContext } from '@/context/AuthContext';
 import { getRecordTypeColors } from '@/lib/recordTypeColors';
 import { StarRating } from '@/components/StarRating';
 import { useShowToast } from '@/components/ui/Toast';
-import { MediaLightbox } from '@/components/ui/MediaLightbox';
+import { MediaLightbox, isVideo as isVideoItem } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 import { formatShortDate } from '@/lib/dates';
 import DatePicker from '@/components/ui/DatePicker';
+import { extractVideoThumbnail } from '@/lib/videoThumbnail';
+
+/** Convert a data URL to a Blob for FormData upload */
+function dataUrlToBlob(dataUrl: string): Blob {
+    const [header, base64] = dataUrl.split(',');
+    const mime = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+}
+
+/** Proxy R2 URLs through the same-origin proxy to avoid CORS/accessibility issues */
+function proxyR2Url(url: string): string {
+    if (!url) return '';
+    if (url.includes('r2.dev')) return `/api/proxy-image?url=${encodeURIComponent(url)}`;
+    return url;
+}
 
 // Extract address-like lines from freeform contact text
 function extractAddressFromContact(contactText: string): string {
@@ -55,7 +73,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [adoptionImages, setAdoptionImages] = useState<any[]>([]);
-    const [pendingImages, setPendingImages] = useState<string[]>([]);
+    const [pendingImages, setPendingImages] = useState<Array<{ data: string; file?: File; isVideo: boolean; thumbnail?: string }>>([]);
     const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
     const [unknownAnimal, setUnknownAnimal] = useState(!initialData?.animalName && initialData?.id ? true : false);
     const [customSpecies, setCustomSpecies] = useState(() => {
@@ -184,23 +202,70 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
         const file = e.target.files?.[0];
         if (!file) return;
 
+        const isVideoFile = file.type.startsWith('video/');
+
+        // Validate file type
+        if (!file.type.startsWith('image/') && !isVideoFile) {
+            toast.error('Invalid File', 'Please select an image or video file.');
+            return;
+        }
+
+        // Video size limit: 50MB
+        if (isVideoFile && file.size > 50 * 1024 * 1024) {
+            toast.warning('Video Too Large', 'Maximum video size is 50MB.');
+            return;
+        }
+
+        // Reset file input so same file can be re-selected
+        e.target.value = '';
+
         setUploading(true);
         try {
-            const base64 = await compressImage(file);
+            if (isVideoFile) {
+                // Generate thumbnail
+                let thumbnail: string | undefined;
+                try {
+                    thumbnail = await extractVideoThumbnail(file);
+                    console.log(`[AdoptionForm] Thumbnail generated: ${thumbnail ? `${thumbnail.length} chars` : 'none'}`);
+                } catch (e) {
+                    console.warn('Thumbnail extraction failed:', (e as Error).message);
+                }
 
-            if (formData.id) {
-                // Record already saved — upload immediately
-                const { saveImage } = await import('@/app/actions');
-                await saveImage(adopterId, base64, `Photo for ${formData.animalName}`, formData.id);
-                const updatedImages = await getAdoptionImages(formData.id);
-                setAdoptionImages(updatedImages);
+                if (formData.id) {
+                    // Record already saved — upload video via FormData
+                    const fd = new FormData();
+                    fd.append('file', file);
+                    fd.append('adopterId', adopterId);
+                    fd.append('adoptionId', formData.id);
+                    fd.append('caption', `Video for ${formData.animalName}`);
+                    fd.append('mediaType', 'video');
+                    if (thumbnail) {
+                        fd.append('thumbnail', dataUrlToBlob(thumbnail), 'thumb.jpg');
+                        console.log(`[AdoptionForm] Appended thumbnail as File blob`);
+                    }
+                    const res = await fetch('/api/upload-media', { method: 'POST', body: fd });
+                    const result = await res.json() as { error?: string };
+                    if (!res.ok) throw new Error(result.error || 'Upload failed');
+                    const updatedImages = await getAdoptionImages(formData.id);
+                    setAdoptionImages(updatedImages);
+                } else {
+                    // Record not yet saved — queue the File object
+                    setPendingImages(prev => [...prev, { data: '', file, isVideo: true, thumbnail }]);
+                }
             } else {
-                // Record not yet saved — queue locally
-                setPendingImages(prev => [...prev, base64]);
+                const base64 = await compressImage(file);
+                if (formData.id) {
+                    const { saveImage } = await import('@/app/actions');
+                    await saveImage(adopterId, base64, `Photo for ${formData.animalName}`, formData.id, 'image');
+                    const updatedImages = await getAdoptionImages(formData.id);
+                    setAdoptionImages(updatedImages);
+                } else {
+                    setPendingImages(prev => [...prev, { data: base64, isVideo: false }]);
+                }
             }
         } catch (error) {
-            console.error(error);
-            toast.error('Upload Failed', 'Could not upload the image. Please try again.');
+            console.error('Upload error:', error instanceof Error ? error.message : error);
+            toast.error('Upload Failed', 'Could not upload the file. Please try again.');
         } finally {
             setUploading(false);
         }
@@ -228,11 +293,26 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                 identityVerified: formData.identityVerified ? 1 : 0
             } as any);
 
-            // Upload any pending images now that we have the adoption ID
+            // Upload any pending media now that we have the adoption ID
             if (pendingImages.length > 0 && result?.id) {
-                const { saveImage } = await import('@/app/actions');
-                for (const base64 of pendingImages) {
-                    await saveImage(adopterId, base64, `Photo for ${formData.animalName}`, result.id);
+                for (const pending of pendingImages) {
+                    if (pending.isVideo && pending.file) {
+                        // Upload video via FormData
+                        const fd = new FormData();
+                        fd.append('file', pending.file);
+                        fd.append('adopterId', adopterId);
+                        fd.append('adoptionId', result.id);
+                        fd.append('caption', `Video for ${formData.animalName}`);
+                        fd.append('mediaType', 'video');
+                        if (pending.thumbnail) fd.append('thumbnail', pending.thumbnail);
+                        const res = await fetch('/api/upload-media', { method: 'POST', body: fd });
+                        if (!res.ok) {
+                            console.error('Pending video upload failed:', res.status);
+                        }
+                    } else {
+                        const { saveImage } = await import('@/app/actions');
+                        await saveImage(adopterId, pending.data, `Photo for ${formData.animalName}`, result.id, 'image');
+                    }
                 }
                 setPendingImages([]);
             }
@@ -270,8 +350,13 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
         )
     }
 
-    const showModeSwitcher = !initialData && availableAnimals && availableAnimals.length > 0;
+    const showModeSwitcher = !initialData && availableAnimals && (availableAnimals?.length ?? 0) > 0;
     const effectiveMode = showModeSwitcher ? mode : 'new';
+
+    // Defensive: ensure all arrays are actually arrays (guards against undefined from any source)
+    const safeAdoptionImages = Array.isArray(adoptionImages) ? adoptionImages : [];
+    const safePendingImages = Array.isArray(pendingImages) ? pendingImages : [];
+    const safeAvailableAnimals = Array.isArray(availableAnimals) ? availableAnimals : [];
 
     return (
         <>
@@ -286,7 +371,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
 
                 {showModeSwitcher && (
                     <div className="flex gap-2 mb-4 p-1 bg-emerald-50 rounded-lg">
-                        <button type="button" onClick={() => setMode('existing')} className={`flex-1 py-1.5 text-sm font-bold rounded-md transition-all ${effectiveMode === 'existing' ? 'bg-white text-emerald-700 shadow-sm' : 'text-emerald-600/70 hover:text-emerald-800'}`}>Select Existing ({availableAnimals.length})</button>
+                        <button type="button" onClick={() => setMode('existing')} className={`flex-1 py-1.5 text-sm font-bold rounded-md transition-all ${effectiveMode === 'existing' ? 'bg-white text-emerald-700 shadow-sm' : 'text-emerald-600/70 hover:text-emerald-800'}`}>Select Existing ({safeAvailableAnimals.length})</button>
                         <button type="button" onClick={() => { setMode('new'); setFormData(prev => ({ ...prev, id: undefined, animalName: '', species: '', details: '', status: 'completed', rating: 5, recordType: 'adoption' })); }} className={`flex-1 py-1.5 text-sm font-bold rounded-md transition-all ${effectiveMode === 'new' ? 'bg-white text-emerald-700 shadow-sm' : 'text-emerald-600/70 hover:text-emerald-800'}`}>Create New</button>
                     </div>
                 )}
@@ -297,7 +382,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                             <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">Select Animal</label>
                             <select className="w-full h-10 pl-4 pr-10 rounded-lg border border-emerald-200 bg-emerald-50/50 text-emerald-950 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none appearance-none text-sm" onChange={(e) => handleSelectExisting(e.target.value)} value={formData.id || ''}>
                                 <option value="">-- Choose an animal --</option>
-                                {availableAnimals.map(a => (<option key={a.id} value={a.id}>{a.animalName} ({a.species}) - {formatShortDate(new Date(a.date))}</option>))}
+                                {safeAvailableAnimals.map(a => (<option key={a.id} value={a.id}>{a.animalName} ({a.species}) - {formatShortDate(new Date(a.date))}</option>))}
                             </select>
                         </div>
                     )}
@@ -529,71 +614,112 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                     <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-100/50">
                         <label className="block text-xs font-bold text-emerald-800 mb-2 uppercase tracking-wider flex items-center gap-2">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                            {t('adopter.upload_image') || 'Upload Photo'}
+                            {t('adopter.upload_media') || 'Media'}
                         </label>
 
                         {/* Display existing adoption images (saved records) */}
-                        {adoptionImages.length > 0 && (
+                        {safeAdoptionImages.length > 0 && (
                             <div className="flex flex-wrap gap-2 mb-3">
-                                {adoptionImages.map((img) => (
-                                    <div key={img.id} className="relative group">
-                                        <img
-                                            src={img.url}
-                                            alt={img.caption || 'Adoption photo'}
-                                            className="w-20 h-20 object-cover rounded-lg border border-emerald-200 cursor-pointer hover:border-emerald-400 transition-colors"
-                                            onClick={(e) => { e.preventDefault(); setLightboxItem({ url: img.url, caption: img.caption, mediaType: 'image' }); }}
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={async () => {
-                                                if (!confirm('Delete this photo?')) return;
-                                                try {
-                                                    await deleteImage(img.id, adopterId);
-                                                    setAdoptionImages(prev => prev.filter(i => i.id !== img.id));
-                                                } catch (e) {
-                                                    toast.error('Error', 'Failed to delete image');
-                                                }
-                                            }}
-                                            className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
-                                            title="Delete photo"
-                                        >
-                                            ×
-                                        </button>
-                                    </div>
-                                ))}
+                                {safeAdoptionImages.map((img) => {
+                                    const imgIsVideo = isVideoItem({ url: img.url, mediaType: img.mediaType as any });
+                                    return (
+                                        <div key={img.id} className="relative group">
+                                            {imgIsVideo ? (
+                                                <div
+                                                    className="w-20 h-20 rounded-lg border border-emerald-200 cursor-pointer hover:border-emerald-400 transition-colors overflow-hidden relative"
+                                                    onClick={(e) => { e.preventDefault(); setLightboxItem({ url: img.url, caption: img.caption, mediaType: 'video', thumbnailUrl: img.thumbnailUrl }); }}
+                                                >
+                                                    {img.thumbnailUrl ? (
+                                                        <img
+                                                            src={proxyR2Url(img.thumbnailUrl)}
+                                                            alt={img.caption || 'Video'}
+                                                            className="w-full h-full object-cover"
+                                                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                                        />
+                                                    ) : (
+                                                        <div className="w-full h-full bg-gradient-to-br from-teal-600 to-teal-800" />
+                                                    )}
+                                                    <div className="absolute inset-0 flex items-center justify-center">
+                                                        <div className="w-8 h-8 rounded-full bg-black/40 flex items-center justify-center">
+                                                            <svg className="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <img
+                                                    src={proxyR2Url(img.url)}
+                                                    alt={img.caption || 'Adoption photo'}
+                                                    className="w-20 h-20 object-cover rounded-lg border border-emerald-200 cursor-pointer hover:border-emerald-400 transition-colors"
+                                                    onClick={(e) => { e.preventDefault(); setLightboxItem({ url: img.url, caption: img.caption, mediaType: 'image' }); }}
+                                                />
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={async () => {
+                                                    if (!confirm('Delete this media?')) return;
+                                                    try {
+                                                        await deleteImage(img.id, adopterId);
+                                                        setAdoptionImages(prev => prev.filter(i => i.id !== img.id));
+                                                    } catch (e) {
+                                                        toast.error('Error', 'Failed to delete media');
+                                                    }
+                                                }}
+                                                className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
+                                                title="Delete"
+                                            >
+                                                ×
+                                            </button>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
 
                         {/* Display pending images (not yet saved) */}
-                        {pendingImages.length > 0 && (
+                        {safePendingImages.length > 0 && (
                             <div className="flex flex-wrap gap-2 mb-3">
-                                {pendingImages.map((base64, idx) => (
+                                {safePendingImages.map((pending, idx) => (
                                     <div key={idx} className="relative group">
-                                        <img
-                                            src={base64}
-                                            alt={`Pending photo ${idx + 1}`}
-                                            className="w-20 h-20 object-cover rounded-lg border border-amber-300 ring-2 ring-amber-200"
-                                        />
+                                        {pending.isVideo ? (
+                                            <div className="w-20 h-20 rounded-lg border border-amber-300 ring-2 ring-amber-200 overflow-hidden relative">
+                                                {pending.thumbnail ? (
+                                                    <img src={pending.thumbnail} alt="Video thumbnail" className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <div className="w-full h-full bg-gradient-to-br from-teal-600 to-teal-800" />
+                                                )}
+                                                <div className="absolute inset-0 flex items-center justify-center">
+                                                    <div className="w-8 h-8 rounded-full bg-black/40 flex items-center justify-center">
+                                                        <svg className="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <img
+                                                src={pending.data}
+                                                alt={`Pending photo ${idx + 1}`}
+                                                className="w-20 h-20 object-cover rounded-lg border border-amber-300 ring-2 ring-amber-200"
+                                            />
+                                        )}
                                         <button
                                             type="button"
                                             onClick={() => setPendingImages(prev => prev.filter((_, i) => i !== idx))}
                                             className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
-                                            title="Remove photo"
+                                            title="Remove"
                                         >
                                             ×
                                         </button>
                                     </div>
                                 ))}
-                                <p className="w-full text-xs text-amber-600 mt-1">📎 {pendingImages.length} photo(s) will be uploaded when you save</p>
+                                <p className="w-full text-xs text-amber-600 mt-1">📎 {safePendingImages.length} file(s) will be uploaded when you save</p>
                             </div>
                         )}
 
                         <div className="flex items-center gap-3">
                             <label className={`px-4 py-2 bg-white border border-emerald-200 text-emerald-600 rounded-lg text-sm font-bold cursor-pointer hover:bg-emerald-50 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-                                {uploading ? 'Uploading...' : '+ Add Photo'}
-                                <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={uploading} />
+                                {uploading ? 'Uploading...' : '+ Add Media'}
+                                <input type="file" accept="image/*,video/*" className="hidden" onChange={handleImageUpload} disabled={uploading} />
                             </label>
-                            <span className="text-xs text-emerald-600/60">{adoptionImages.length + pendingImages.length} photo(s) attached</span>
+                            <span className="text-xs text-emerald-600/60">{safeAdoptionImages.length + safePendingImages.length} file(s) attached</span>
                         </div>
                     </div>
 

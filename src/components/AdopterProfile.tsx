@@ -180,8 +180,8 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                                 <ImageGallery
                                     adopterId={id}
                                     initialImages={images as any}
-                                    onUpload={async (adopterId, url, caption) => {
-                                        return await saveImage(adopterId, url, caption);
+                                    onUpload={async (adopterId, url, caption, mediaType) => {
+                                        return await saveImage(adopterId, url, caption, undefined, mediaType);
                                     }}
                                     currentUser={currentUser}
                                     isAdmin={isAdmin}

@@ -227,8 +227,8 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                         {images.slice(0, 4).map((img) => (
                                             <MediaThumbnail
                                                 key={img.id}
-                                                item={{ url: img.url, caption: img.caption || undefined, mediaType: (img as any).mediaType || undefined }}
-                                                onClick={() => setLightboxItem({ url: img.url, caption: img.caption || undefined, mediaType: (img as any).mediaType || undefined })}
+                                                item={{ url: img.url, caption: img.caption || undefined, mediaType: (img as any).mediaType || undefined, thumbnailUrl: ((img as any).thumbnailUrl && (img as any).thumbnailUrl !== 'null') ? (img as any).thumbnailUrl : undefined }}
+                                                onClick={() => setLightboxItem({ url: img.url, caption: img.caption || undefined, mediaType: (img as any).mediaType || undefined, thumbnailUrl: ((img as any).thumbnailUrl && (img as any).thumbnailUrl !== 'null') ? (img as any).thumbnailUrl : undefined })}
                                                 size="md"
                                             />
                                         ))}

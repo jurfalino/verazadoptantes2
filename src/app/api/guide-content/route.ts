@@ -89,6 +89,58 @@ const HERO = {
     ctaUrl: '/',
 };
 
+const BENEFITS = [
+    {
+        slug: 'protect',
+        entry: {
+            icon: '🛡️',
+            textEs: 'Protege a los animales de adopciones irresponsables',
+            textEn: 'Protect animals from irresponsible adoptions',
+            order: 1,
+        },
+    },
+    {
+        slug: 'trust',
+        entry: {
+            icon: '🤝',
+            textEs: 'Construye confianza en la comunidad de rescate',
+            textEn: 'Build trust in the rescue community',
+            order: 2,
+        },
+    },
+    {
+        slug: 'history',
+        entry: {
+            icon: '📋',
+            textEs: 'Mantiene un historial compartido entre refugios',
+            textEn: 'Maintain shared history across shelters',
+            order: 3,
+        },
+    },
+    {
+        slug: 'alert',
+        entry: {
+            icon: '⚠️',
+            textEs: 'Alerta sobre adoptantes con advertencias previas',
+            textEn: 'Flag adopters with previous warnings',
+            order: 4,
+        },
+    },
+];
+
+const LABELS = {
+    processHeaderEs: 'El Proceso',
+    processHeaderEn: 'The Process',
+    stepPrefixEs: 'Paso',
+    stepPrefixEn: 'Step',
+    whyVetEs: '¿Por qué verificar adoptantes?',
+    whyVetEn: 'Why Vet Adopters?',
+    faqHeaderEs: 'Preguntas Frecuentes',
+    faqHeaderEn: 'Frequently Asked Questions',
+    ctaButtonEs: 'Empezar a Verificar',
+    ctaButtonEn: 'Start Vetting',
+};
+
 export async function GET() {
-    return NextResponse.json({ steps: STEPS, faq: FAQ, hero: HERO });
+    return NextResponse.json({ steps: STEPS, faq: FAQ, hero: HERO, benefits: BENEFITS, labels: LABELS });
 }

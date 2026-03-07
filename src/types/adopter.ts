@@ -29,6 +29,7 @@ export interface AdopterImage {
     uploadedAt?: Date | null;
     addedBy?: string | null;
     isProfilePicture?: number | null;
+    mediaType?: string | null;
 }
 
 export interface AdopterFlag {

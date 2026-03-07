@@ -6,7 +6,7 @@ import { adopters, adopterImages, adoptions } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
-import { processImageForStorage } from '@/lib/r2';
+import { processImageForStorage, uploadToR2 } from '@/lib/r2';
 
 export async function POST(
     request: Request,
@@ -31,7 +31,7 @@ export async function POST(
             rating?: number;
             date?: string;
         };
-        images?: Array<{ data: string; mimeType: string; originalUrl?: string }>;
+        images?: Array<{ data: string; mimeType: string; originalUrl?: string; thumbnail?: string }>;
     };
 
     try {
@@ -111,14 +111,32 @@ export async function POST(
                 // Persist external URLs (Facebook CDN etc.) to R2
                 const persistedUrl = await processImageForStorage(imageUrl, adopterId, imageId);
 
+                const isVideoMedia = img.mimeType?.startsWith('video/');
+
+                // Upload thumbnail if provided
+                let thumbnailUrl: string | null = null;
+                if (img.thumbnail && img.thumbnail.startsWith('data:')) {
+                    try {
+                        const thumbResponse = await fetch(img.thumbnail);
+                        const thumbBlob = await thumbResponse.blob();
+                        const thumbArrayBuffer = await thumbBlob.arrayBuffer();
+                        const thumbKey = `adopters/${adopterId}/${imageId}_thumb.jpg`;
+                        thumbnailUrl = await uploadToR2(thumbKey, thumbArrayBuffer, thumbBlob.type || 'image/jpeg');
+                    } catch (e) {
+                        // Thumbnail upload failed, continue without
+                    }
+                }
+
                 await db.insert(adopterImages).values({
                     id: imageId,
                     adopterId,
                     adoptionId,
                     url: persistedUrl,
-                    caption: `Imported from Facebook (${i + 1})`,
+                    caption: isVideoMedia ? `Imported video (${i + 1})` : `Imported image (${i + 1})`,
                     addedBy: session.user.email || 'anonymous',
-                    isProfilePicture: 0
+                    isProfilePicture: 0,
+                    mediaType: isVideoMedia ? 'video' : 'image',
+                    thumbnailUrl,
                 });
                 savedImageCount++;
             }

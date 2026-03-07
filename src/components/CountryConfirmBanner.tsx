@@ -1,75 +1,116 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
 import { useLanguage } from '@/context/LanguageContext';
 import { getCountryByCode, countries, type Country } from '@/config/countries';
 import { getUserSettings, updateUserCountry } from '@/app/actions/settings';
 import { CountrySelector } from '@/components/CountrySelector';
 import { useRouter } from 'next/navigation';
 
-export function CountryConfirmBanner() {
-    const { data: session } = useSession();
+interface CountryConfirmBannerProps {
+    userEmail: string | null;
+}
+
+export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmBannerProps) {
     const { locale, t } = useLanguage();
     const router = useRouter();
+    const [email, setEmail] = useState<string | null>(serverEmail);
     const [settings, setSettings] = useState<{ country: string | null; countryConfirmed: boolean } | null>(null);
     const [dismissed, setDismissed] = useState(false);
     const [saving, setSaving] = useState(false);
     const [loaded, setLoaded] = useState(false);
-    // For "change country" mode within the detected-country flow
     const [showSelector, setShowSelector] = useState(false);
     const [selectedCountry, setSelectedCountry] = useState('');
 
+    // Always resolve the email: prefer server prop, fallback to client-side fetch
     useEffect(() => {
-        if (!session?.user) return;
+        // If server already provided the email (production), use it immediately
+        if (serverEmail) {
+            setEmail(serverEmail);
+            return;
+        }
+        // In local dev, auth() throws so serverEmail is always null.
+        // Fetch session client-side instead.
+        fetch('/api/auth/session')
+            .then(r => r.json())
+            .then((s: any) => {
+                const fetchedEmail = s?.user?.email;
+                if (fetchedEmail) {
+                    setEmail(fetchedEmail);
+                } else {
+                    setLoaded(true); // Not signed in
+                }
+            })
+            .catch(() => {
+                setLoaded(true); // Fetch failed — mark as loaded so we don't hang
+            });
+    }, [serverEmail]);
 
-        // Check localStorage first to avoid repeated DB calls (key is per-user)
-        const storageKey = `country_confirmed_${session.user.email}`;
-        const stored = localStorage.getItem(storageKey);
-        if (stored === '1') {
+    // Fetch country settings when we have an email
+    useEffect(() => {
+        if (!email) {
+            setLoaded(true);
+            return;
+        }
+
+        // Check localStorage first
+        const storageKey = `country_confirmed_${email}`;
+        if (localStorage.getItem(storageKey) === '1') {
             setDismissed(true);
             setLoaded(true);
             return;
         }
 
+        // Fetch settings from DB
+        setLoaded(false);
         getUserSettings().then(s => {
             if (s) {
                 setSettings(s);
-                // If country was already confirmed in the DB, sync localStorage
                 if (s.countryConfirmed) {
-                    localStorage.setItem(`country_confirmed_${session.user?.email}`, '1');
+                    localStorage.setItem(storageKey, '1');
                 }
+            } else {
+                setSettings({ country: null, countryConfirmed: false });
             }
             setLoaded(true);
+        }).catch(err => {
+            console.error('[CountryBanner] getUserSettings error:', err);
+            setSettings({ country: null, countryConfirmed: false });
+            setLoaded(true);
         });
-    }, [session]);
+    }, [email]);
 
-    // Don't show if: not logged in, already confirmed, dismissed, or still loading
-    if (!session?.user || dismissed || !loaded || !settings || settings.countryConfirmed) {
+    // Derive visibility
+    const shouldShow = !!email && !dismissed && loaded && !!settings && !settings.countryConfirmed;
+
+    // Lock body scroll while modal is visible
+    useEffect(() => {
+        if (shouldShow) {
+            document.body.style.overflow = 'hidden';
+            return () => { document.body.style.overflow = ''; };
+        }
+    }, [shouldShow]);
+
+    // --- ALL hooks above this line ---
+
+    if (!shouldShow) {
         return null;
-    }
-
-    // Lock body scroll while modal is open
-    if (typeof document !== 'undefined') {
-        document.body.style.overflow = 'hidden';
     }
 
     const handleSaveCountry = async (code: string) => {
         setSaving(true);
-        const result = await updateUserCountry(code);
-        if (result.success) {
-            localStorage.setItem(`country_confirmed_${session?.user?.email}`, '1');
-            if (typeof document !== 'undefined') {
-                document.body.style.overflow = '';
-            }
-            setDismissed(true);
-            // Force server re-render so the layout picks up the session
-            router.refresh();
+        try {
+            await updateUserCountry(code);
+        } catch (err) {
+            console.error('[CountryBanner] updateUserCountry error:', err);
         }
+        // Always dismiss — don't depend on server action result
+        localStorage.setItem(`country_confirmed_${email}`, '1');
+        setDismissed(true);
         setSaving(false);
+        router.refresh();
     };
 
-    // Quick-pick countries
     const quickCountries = countries.filter(c =>
         ['AR', 'UY', 'CL', 'MX'].includes(c.code)
     );

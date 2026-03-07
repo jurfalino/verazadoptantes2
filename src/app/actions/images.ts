@@ -31,7 +31,7 @@ export async function saveImage(adopterId: string, url: string, caption?: string
 
         return { success: true, id };
     } catch (error) {
-        console.error("Save image error:", error);
+        console.error("Save image error:", error instanceof Error ? error.message : 'Unknown error');
         const errorId = logger.error('Save image failed', error, { adopterId });
         throw new Error(`Failed to save image (Error ID: ${errorId})`);
     }
