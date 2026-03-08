@@ -232,6 +232,8 @@ export const en = {
         submit: 'Record Adoption',
         saving: 'Recording...',
         date: 'Date',
+        date_label: 'Date:',
+        on_behalf_label: 'On behalf of:',
         on_behalf_of: 'On Behalf Of',
         on_behalf_placeholder: 'Leave empty if recording for yourself',
         date_unknown: 'Unknown date',

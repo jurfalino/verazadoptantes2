@@ -232,6 +232,8 @@ export const es = {
         submit: 'Registrar Adopción',
         saving: 'Guardando...',
         date: 'Fecha',
+        date_label: 'Fecha:',
+        on_behalf_label: 'En nombre de:',
         on_behalf_of: 'En Nombre De',
         on_behalf_placeholder: 'Dejar vacío si registras para ti mismo',
         date_unknown: 'Fecha desconocida',
