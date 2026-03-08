@@ -1,0 +1,28 @@
+{
+    "items": [
+        {
+            "icon": "🛡️",
+            "textEs": "Protege a los animales de adopciones irresponsables",
+            "textEn": "Protect animals from irresponsible adoptions",
+            "order": 1
+        },
+        {
+            "icon": "🤝",
+            "textEs": "Construye confianza en la comunidad de rescate",
+            "textEn": "Build trust in the rescue community",
+            "order": 2
+        },
+        {
+            "icon": "📋",
+            "textEs": "Mantiene un historial compartido entre refugios",
+            "textEn": "Maintain shared history across shelters",
+            "order": 3
+        },
+        {
+            "icon": "⚠️",
+            "textEs": "Alerta sobre adoptantes con advertencias previas",
+            "textEn": "Flag adopters with previous warnings",
+            "order": 4
+        }
+    ]
+}

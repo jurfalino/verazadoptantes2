@@ -77,5 +77,41 @@ export default config({
                 bodyEn: fields.text({ label: 'Contract body (English)', multiline: true }),
             },
         }),
+        'guia-benefits': singleton({
+            label: 'Guide Benefits / Beneficios de la Guía',
+            path: 'content/guia-benefits/',
+            format: { data: 'json' },
+            schema: {
+                items: fields.array(
+                    fields.object({
+                        icon: fields.text({ label: 'Icon (emoji)', validation: { isRequired: true } }),
+                        textEs: fields.text({ label: 'Texto (Español)', validation: { isRequired: true } }),
+                        textEn: fields.text({ label: 'Text (English)', validation: { isRequired: true } }),
+                        order: fields.integer({ label: 'Order', defaultValue: 0 }),
+                    }),
+                    {
+                        label: 'Benefit Items',
+                        itemLabel: (props) => props.fields.textEs.value?.slice(0, 50) || 'New benefit',
+                    }
+                ),
+            },
+        }),
+        'guia-labels': singleton({
+            label: 'Guide Labels / Etiquetas de la Guía',
+            path: 'content/guia-labels/',
+            format: { data: 'json' },
+            schema: {
+                processHeaderEs: fields.text({ label: 'Encabezado de fases (Español)', defaultValue: 'Las 6 Fases' }),
+                processHeaderEn: fields.text({ label: 'Phases header (English)', defaultValue: 'The 6 Phases' }),
+                stepPrefixEs: fields.text({ label: 'Prefijo de fase (Español)', defaultValue: 'Fase' }),
+                stepPrefixEn: fields.text({ label: 'Phase prefix (English)', defaultValue: 'Phase' }),
+                whyVetEs: fields.text({ label: 'Sección "¿Por qué?" (Español)', defaultValue: '¿Por qué verificar adoptantes?' }),
+                whyVetEn: fields.text({ label: '"Why?" section (English)', defaultValue: 'Why Vet Adopters?' }),
+                faqHeaderEs: fields.text({ label: 'Encabezado FAQ (Español)', defaultValue: 'Preguntas Frecuentes' }),
+                faqHeaderEn: fields.text({ label: 'FAQ header (English)', defaultValue: 'Frequently Asked Questions' }),
+                ctaButtonEs: fields.text({ label: 'Botón CTA (Español)', defaultValue: 'Empezar a Verificar' }),
+                ctaButtonEn: fields.text({ label: 'CTA button (English)', defaultValue: 'Start Vetting' }),
+            },
+        }),
     },
 });
