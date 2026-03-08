@@ -6,14 +6,19 @@ const EXACT_ORIGINS = [
     'http://localhost:5173',    // Vite default port fallback
 ];
 
+/** Exact production origins */
+const EXACT_PROD_ORIGINS = [
+    'https://contrato.gatitosolivos.workers.dev', // production
+];
+
 /** Suffix patterns: any origin ending with these is allowed */
 const ORIGIN_SUFFIXES = [
-    '.contrato-duj.pages.dev', // all CF Pages deployments (hash-based previews + production)
-    '.contrato.pages.dev',     // future: if custom name is configured
+    '-contrato.gatitosolivos.workers.dev', // preview deployments (*-contrato.gatitosolivos.workers.dev)
 ];
 
 function isAllowedOrigin(origin: string): boolean {
     if (EXACT_ORIGINS.includes(origin)) return true;
+    if (EXACT_PROD_ORIGINS.includes(origin)) return true;
     return ORIGIN_SUFFIXES.some(suffix => origin.endsWith(suffix));
 }
 
