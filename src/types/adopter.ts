@@ -59,6 +59,10 @@ export interface AdoptionRecord {
     verifiedAddress?: string | null;
     identityVerified?: number | null;
     sourceUrl?: string | null;
+    age?: string | null;
+    sex?: string | null;
+    color?: string | null;
+    microchip?: string | null;
 }
 
 export interface HistoryEntry {

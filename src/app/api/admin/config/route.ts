@@ -42,6 +42,7 @@ export async function GET() {
             too_many_requests_period_days: config['too_many_requests_period_days'] || '30',
             // Feature flags (from DB)
             ENABLE_CONTENT_IMPORT: config['ENABLE_CONTENT_IMPORT'] || 'false',
+            ENABLE_ANIMALS_FOR_ADOPTION: config['ENABLE_ANIMALS_FOR_ADOPTION'] || 'false',
         },
         statsCount,
         oldestStat

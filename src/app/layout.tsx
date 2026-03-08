@@ -13,6 +13,7 @@ import LoginModal from '@/components/LoginModal';
 import { ToastProvider } from '@/components/ui/Toast';
 import InstallPrompt from '@/components/InstallPrompt';
 import { CountryConfirmBanner } from '@/components/CountryConfirmBanner';
+import NotificationBell from '@/components/NotificationBell';
 
 export const runtime = "edge";
 export const dynamic = 'force-dynamic';
@@ -75,6 +76,7 @@ export default async function RootLayout({
                       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
                         <Logo />
                         <div className="flex items-center gap-1 sm:gap-2">
+                          <NotificationBell />
                           <UserMenu user={session?.user} />
                         </div>
                       </div>

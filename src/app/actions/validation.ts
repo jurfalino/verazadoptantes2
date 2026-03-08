@@ -43,7 +43,7 @@ export const saveAdoptionSchema = z.object({
     comments: optionalText,
     date: z.union([z.coerce.date(), z.string().max(50)]).optional().nullable(),
     onBehalfOf: z.string().max(500).optional().nullable(),
-    recordType: z.enum(['adoption', 'adoption_request', 'observation', 'follow_up', 'returned_pet']).optional().nullable(),
+    recordType: z.enum(['adoption', 'adoption_request', 'observation', 'follow_up', 'returned_pet', 'available']).optional().nullable(),
     deliveredToHome: z.number().int().min(0).max(1).optional().nullable(),
     verifiedAddress: z.string().max(2_000).optional().nullable(),
     identityVerified: z.number().int().min(0).max(1).optional().nullable(),

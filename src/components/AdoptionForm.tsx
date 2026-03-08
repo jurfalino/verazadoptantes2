@@ -372,17 +372,17 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
 
                 {showModeSwitcher && (
                     <div className="flex gap-2 mb-4 p-1 bg-emerald-50 rounded-lg">
-                        <button type="button" onClick={() => setMode('existing')} className={`flex-1 py-1.5 text-sm font-bold rounded-md transition-all ${effectiveMode === 'existing' ? 'bg-white text-emerald-700 shadow-sm' : 'text-emerald-600/70 hover:text-emerald-800'}`}>Select Existing ({safeAvailableAnimals.length})</button>
-                        <button type="button" onClick={() => { setMode('new'); setFormData(prev => ({ ...prev, id: undefined, animalName: '', species: '', details: '', status: 'completed', rating: 5, recordType: 'adoption' })); }} className={`flex-1 py-1.5 text-sm font-bold rounded-md transition-all ${effectiveMode === 'new' ? 'bg-white text-emerald-700 shadow-sm' : 'text-emerald-600/70 hover:text-emerald-800'}`}>Create New</button>
+                        <button type="button" onClick={() => setMode('existing')} className={`flex-1 py-1.5 text-sm font-bold rounded-md transition-all ${effectiveMode === 'existing' ? 'bg-white text-emerald-700 shadow-sm' : 'text-emerald-600/70 hover:text-emerald-800'}`}>{t('adoption.select_existing') || 'Select Existing'} ({safeAvailableAnimals.length})</button>
+                        <button type="button" onClick={() => { setMode('new'); setFormData(prev => ({ ...prev, id: undefined, animalName: '', species: '', details: '', status: 'completed', rating: 5, recordType: 'adoption' })); }} className={`flex-1 py-1.5 text-sm font-bold rounded-md transition-all ${effectiveMode === 'new' ? 'bg-white text-emerald-700 shadow-sm' : 'text-emerald-600/70 hover:text-emerald-800'}`}>{t('adoption.create_new') || 'Create New'}</button>
                     </div>
                 )}
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                     {effectiveMode === 'existing' && (
                         <div className="mb-4">
-                            <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">Select Animal</label>
+                            <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">{t('adoption.select_animal') || 'Select Animal'}</label>
                             <select className="w-full h-10 pl-4 pr-10 rounded-lg border border-emerald-200 bg-emerald-50/50 text-emerald-950 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none appearance-none text-sm" onChange={(e) => handleSelectExisting(e.target.value)} value={formData.id || ''}>
-                                <option value="">-- Choose an animal --</option>
+                                <option value="">{t('adoption.choose_animal') || '-- Choose an animal --'}</option>
                                 {safeAvailableAnimals.map(a => (<option key={a.id} value={a.id}>{a.animalName} ({a.species}) - {formatShortDate(new Date(a.date))}</option>))}
                             </select>
                         </div>
@@ -419,6 +419,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                                 placeholder={unknownAnimal ? (t('adoption.unknown_animal') || 'Unknown animal') : t('adoption.animal_placeholder')}
                             />
                         </div>
+
                         <div>
                             <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">
                                 {t('adoption.species')}
@@ -472,6 +473,54 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                             )}
                         </div>
                     </div>
+
+                    {/* Animal details (read-only context when editing) */}
+                    {initialData && (initialData.age || initialData.sex || initialData.color || initialData.microchip) && (
+                        <div className="flex flex-wrap gap-1.5">
+                            {initialData.sex && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
+                                    {['male', 'macho'].includes(initialData.sex.toLowerCase()) ? '♂️' : ['female', 'hembra'].includes(initialData.sex.toLowerCase()) ? '♀️' : ''} {t(`adoption.sex_${initialData.sex.toLowerCase()}`) || initialData.sex}
+                                </span>
+                            )}
+                            {initialData.age && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
+                                    🎂 {initialData.age}
+                                </span>
+                            )}
+                            {initialData.color && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
+                                    🎨 {initialData.color}
+                                </span>
+                            )}
+                            {initialData.microchip && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
+                                    💉 {initialData.microchip}
+                                </span>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Contract screenshot link */}
+                    {initialData?.comments && (() => {
+                        try {
+                            const parsed = JSON.parse(initialData.comments);
+                            if (parsed.contractScreenshot) {
+                                return (
+                                    <a
+                                        href={parsed.contractScreenshot}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-2 p-2 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors"
+                                    >
+                                        <span className="text-sm">📋</span>
+                                        <span className="text-sm font-medium text-emerald-700">{t('dashboard.view_signed_contract') || 'View Signed Contract'}</span>
+                                        <svg className="w-3.5 h-3.5 ml-auto text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                    </a>
+                                );
+                            }
+                        } catch { /* not JSON */ }
+                        return null;
+                    })()}
 
                     <div>
                         <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">{t('adoption.record_type') || 'Record Type'}</label>
@@ -717,10 +766,10 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
 
                         <div className="flex items-center gap-3">
                             <label className={`px-4 py-2 bg-white border border-emerald-200 text-emerald-600 rounded-lg text-sm font-bold cursor-pointer hover:bg-emerald-50 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-                                {uploading ? 'Uploading...' : '+ Add Media'}
+                                {uploading ? 'Uploading...' : (t('common.add_media') || '+ Add Media')}
                                 <input type="file" accept="image/*,video/*" className="hidden" onChange={handleImageUpload} disabled={uploading} />
                             </label>
-                            <span className="text-xs text-emerald-600/60">{safeAdoptionImages.length + safePendingImages.length} file(s) attached</span>
+                            <span className="text-xs text-emerald-600/60">{safeAdoptionImages.length + safePendingImages.length} {t('common.files_attached') || 'file(s) attached'}</span>
                         </div>
                     </div>
 

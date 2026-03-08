@@ -269,13 +269,13 @@ export default function ImportWizard() {
                         setIsVideoPost(true);
                         if (responseData.data.videoThumbnailBase64) {
                             const dataUrl = responseData.data.videoThumbnailBase64 as string;
-                            const [header, base64Data] = dataUrl.split(',');
-                            const mimeType = header?.match(/data:([^;]+)/)?.[1] || 'image/jpeg';
-                            setManualImages(prev => [...prev, {
-                                data: base64Data,
-                                mimeType,
-                                preview: dataUrl,
-                            }]);
+                            // Add thumbnail to fetchedImages (not manualImages) so it appears
+                            // alongside other scraped images, not in the manual upload section
+                            setFetchedImages(prev => {
+                                const newIndex = prev.length;
+                                setSelectedFetchedImages(sel => new Set([...sel, newIndex]));
+                                return [...prev, dataUrl];
+                            });
                         }
                     }
                 } else if (responseData.extractionFailed) {

@@ -38,3 +38,5 @@ export type { DuplicateCandidate, TokenMatchResult } from './duplicates';
 // Enrichment
 export { enrichAdopters } from './enrichAdopters';
 export type { EnrichmentResult } from './enrichAdopters';
+
+// Notifications — import directly from '@/app/actions/notifications' (server-side only)

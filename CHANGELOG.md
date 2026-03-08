@@ -2,6 +2,25 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.9.0] - 2026-03-07
+
+### Added
+- **In-app notifications** — new `notifications` D1 table, server actions (`createNotification`, `getUnreadCount`, `markRead`, `markAllRead`), and API route (`GET/PATCH /api/notifications`)
+- **Notification Bell UI** — glassmorphic dropdown in the navbar with animated red badge, 60s polling, optimistic mark-as-read, theme-aware via CSS variables (`var(--card)`, `var(--foreground)`, `var(--primary)`)
+- **Fuzzy search on contract submission** — after an adopter signs a contract, the system runs a hybrid search (token-based + LIKE queries) against `duplicate_tokens` and `adopters` tables to detect potential matches
+- **Contract results page** — `/contract-results/[notificationId]` displays submitted contract data, matching profiles with match-type badges, and links to existing adopter profiles
+- **Contract adopter tokenization** — adopters created via contract submission are now tokenized for future duplicate detection (was previously missing)
+
+### Changed
+- **Notification escalation hooks** — `createNotification()` is the single entry point for all notifications with commented-out Web Push and email hooks for Phase 2
+- **Hybrid search strategy** — contract fuzzy search now combines pre-indexed tokens with direct LIKE queries against `adopters.name` and `adopters.contactInfo` for broader match coverage
+
+### Fixed
+- **Rules of Hooks violation** — `NotificationBell` early return for unauthenticated users was placed before `useCallback`/`useEffect`, causing webpack module resolution crash on `/admin`
+- **Barrel export crash** — removed notifications server actions from barrel `index.ts` to prevent server-only modules (`drizzle-orm`, `@/lib/db`) from leaking into client bundles
+
+---
+
 ## [2.8.0-14] - 2026-03-06
 
 ### Fixed

@@ -1,0 +1,243 @@
+'use client';
+
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import { useLanguage } from '@/context/LanguageContext';
+
+interface NotificationItem {
+    id: string;
+    type: string;
+    title: string;
+    body: string;
+    url: string | null;
+    icon: string;
+    read: number;
+    createdAt: number | string | Date;
+}
+
+function timeAgo(date: Date, locale: string): string {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    const diffHr = Math.floor(diffMin / 60);
+    const diffDays = Math.floor(diffHr / 24);
+
+    const isEs = locale === 'es';
+    if (diffMin < 1) return isEs ? 'ahora' : 'now';
+    if (diffMin < 60) return isEs ? `hace ${diffMin} min` : `${diffMin}m ago`;
+    if (diffHr < 24) return isEs ? `hace ${diffHr}h` : `${diffHr}h ago`;
+    if (diffDays < 7) return isEs ? `hace ${diffDays}d` : `${diffDays}d ago`;
+    return date.toLocaleDateString(locale === 'es' ? 'es-AR' : 'en-US', { month: 'short', day: 'numeric' });
+}
+
+export default function NotificationBell() {
+    const { data: session } = useSession();
+    const router = useRouter();
+    const { locale } = useLanguage();
+    const [open, setOpen] = useState(false);
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [items, setItems] = useState<NotificationItem[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [freshPulse, setFreshPulse] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+    const prevCountRef = useRef(0);
+
+    const isAuthenticated = !!session?.user?.email;
+
+    // Poll unread count every 60s
+    const fetchCount = useCallback(async () => {
+        if (!isAuthenticated) return;
+        try {
+            const res = await fetch('/api/notifications?countOnly=true');
+            if (!res.ok) return;
+            const data = await res.json() as { unreadCount: number };
+            const newCount = data.unreadCount || 0;
+
+            // Trigger pulse animation when count increases
+            if (newCount > prevCountRef.current) {
+                setFreshPulse(true);
+                setTimeout(() => setFreshPulse(false), 3000);
+            }
+            prevCountRef.current = newCount;
+            setUnreadCount(newCount);
+        } catch { /* silent */ }
+    }, [isAuthenticated]);
+
+    useEffect(() => {
+        if (!isAuthenticated) return;
+        fetchCount();
+        const interval = setInterval(fetchCount, 60_000);
+        return () => clearInterval(interval);
+    }, [fetchCount, isAuthenticated]);
+
+    // Close dropdown on click outside
+    useEffect(() => {
+        function handleClickOutside(e: MouseEvent) {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+                setOpen(false);
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    // Fetch full list when dropdown opens
+    const handleToggle = async () => {
+        const willOpen = !open;
+        setOpen(willOpen);
+        if (willOpen) {
+            setLoading(true);
+            try {
+                const res = await fetch('/api/notifications');
+                if (res.ok) {
+                    const data = await res.json() as { items: NotificationItem[]; unreadCount: number };
+                    setItems(data.items || []);
+                    setUnreadCount(data.unreadCount || 0);
+                    prevCountRef.current = data.unreadCount || 0;
+                }
+            } catch { /* silent */ }
+            setLoading(false);
+        }
+    };
+
+    // Click a notification → mark read + navigate
+    const handleClick = async (item: NotificationItem) => {
+        if (!item.read) {
+            // Optimistic update
+            setItems(prev => prev.map(n => n.id === item.id ? { ...n, read: 1 } : n));
+            setUnreadCount(prev => Math.max(0, prev - 1));
+            prevCountRef.current = Math.max(0, prevCountRef.current - 1);
+            fetch('/api/notifications', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: item.id }),
+            }).catch(() => { /* silent */ });
+        }
+        setOpen(false);
+        if (item.url) {
+            router.push(item.url);
+        }
+    };
+
+    // Mark all as read
+    const handleMarkAllRead = async () => {
+        setItems(prev => prev.map(n => ({ ...n, read: 1 })));
+        setUnreadCount(0);
+        prevCountRef.current = 0;
+        setFreshPulse(false);
+        fetch('/api/notifications', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ markAllRead: true }),
+        }).catch(() => { /* silent */ });
+    };
+
+    // Don't render for unauthenticated users (AFTER all hooks)
+    if (!isAuthenticated) return null;
+
+    const isEs = locale === 'es';
+
+    return (
+        <div className="relative" ref={dropdownRef}>
+            {/* Bell Button */}
+            <button
+                onClick={handleToggle}
+                className="relative p-2 rounded-lg text-stone-500 hover:text-stone-700 hover:bg-stone-100 transition-colors"
+                aria-label={isEs ? 'Notificaciones' : 'Notifications'}
+            >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+                </svg>
+
+                {/* Badge */}
+                {unreadCount > 0 && (
+                    <span
+                        className={`absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold text-white bg-red-500 rounded-full shadow-sm ${freshPulse ? 'animate-pulse' : ''
+                            }`}
+                    >
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                )}
+            </button>
+
+            {/* Dropdown Panel — uses inline styles with CSS vars for theme safety */}
+            {open && (
+                <div
+                    className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200"
+                    style={{ background: 'var(--card)', color: 'var(--foreground)', border: '1px solid var(--border)' }}
+                >
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+                        <h3 className="text-sm font-bold" style={{ color: 'var(--foreground)' }}>
+                            🔔 {isEs ? 'Notificaciones' : 'Notifications'}
+                        </h3>
+                        {unreadCount > 0 && (
+                            <button
+                                onClick={handleMarkAllRead}
+                                className="text-xs text-emerald-600 hover:text-emerald-700 font-medium transition-colors"
+                            >
+                                {isEs ? 'Marcar todo leído' : 'Mark all read'}
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Items */}
+                    <div className="max-h-80 overflow-y-auto">
+                        {loading ? (
+                            <div className="flex items-center justify-center py-8">
+                                <div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--muted-foreground)', borderTopColor: 'var(--foreground)' }} />
+                            </div>
+                        ) : items.length === 0 ? (
+                            <div className="py-8 text-center">
+                                <p className="text-2xl mb-1">🎉</p>
+                                <p className="text-sm font-medium" style={{ color: 'var(--muted-foreground)' }}>
+                                    {isEs ? 'Sin notificaciones' : 'No notifications'}
+                                </p>
+                            </div>
+                        ) : (
+                            items.map((item) => {
+                                const createdDate = typeof item.createdAt === 'number'
+                                    ? new Date(item.createdAt * 1000)
+                                    : new Date(item.createdAt);
+
+                                return (
+                                    <button
+                                        key={item.id}
+                                        onClick={() => handleClick(item)}
+                                        className="w-full text-left px-4 py-3 transition-colors"
+                                        style={{
+                                            borderBottom: '1px solid var(--border)',
+                                            borderLeft: !item.read ? '3px solid var(--primary)' : '3px solid transparent',
+                                            background: !item.read ? 'color-mix(in srgb, var(--primary) 8%, var(--card))' : 'transparent',
+                                        }}
+                                        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--muted)'; }}
+                                        onMouseLeave={(e) => { e.currentTarget.style.background = !item.read ? 'color-mix(in srgb, var(--primary) 8%, var(--card))' : 'transparent'; }}
+                                    >
+                                        <div className="flex items-start gap-2.5">
+                                            <span className="text-lg flex-shrink-0 mt-0.5">{item.icon}</span>
+                                            <div className="flex-1 min-w-0">
+                                                <p className={`text-sm leading-snug ${!item.read ? 'font-semibold' : 'font-medium'}`} style={{ color: 'var(--foreground)' }}>
+                                                    {item.title}
+                                                </p>
+                                                <p className="text-xs leading-relaxed mt-0.5 line-clamp-2" style={{ color: 'var(--muted-foreground)' }}>
+                                                    {item.body}
+                                                </p>
+                                                <p className="text-[10px] mt-1" style={{ color: 'var(--muted-foreground)', opacity: 0.7 }}>
+                                                    {timeAgo(createdDate, locale)}
+                                                </p>
+                                            </div>
+                                            {!item.read && (
+                                                <span className="w-2 h-2 rounded-full flex-shrink-0 mt-1.5" style={{ background: 'var(--primary)' }} />
+                                            )}
+                                        </div>
+                                    </button>
+                                );
+                            })
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}

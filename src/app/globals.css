@@ -153,6 +153,12 @@ select:focus {
   border-color: var(--ring);
 }
 
+/* Native option elements must be explicitly styled for dark themes */
+select option {
+  background-color: var(--card);
+  color: var(--foreground);
+}
+
 /* Buttons */
 button {
   cursor: pointer;
@@ -626,6 +632,38 @@ button {
   color: rgba(0, 113, 227, 0.4) !important;
 }
 
+[data-theme="apple"] .bg-emerald-50\/50 {
+  background-color: rgba(0, 113, 227, 0.04) !important;
+}
+
+[data-theme="apple"] .bg-emerald-200 {
+  background-color: rgba(0, 113, 227, 0.15) !important;
+}
+
+[data-theme="apple"] .text-emerald-400 {
+  color: #0071e3 !important;
+}
+
+[data-theme="apple"] .border-emerald-400\/50 {
+  border-color: rgba(0, 113, 227, 0.5) !important;
+}
+
+[data-theme="apple"] .ring-emerald-50\/50 {
+  --tw-ring-color: rgba(0, 113, 227, 0.05) !important;
+}
+
+[data-theme="apple"] .ring-emerald-100 {
+  --tw-ring-color: rgba(0, 113, 227, 0.15) !important;
+}
+
+[data-theme="apple"] .shadow-emerald-500\/20 {
+  --tw-shadow-color: rgba(0, 113, 227, 0.2) !important;
+}
+
+[data-theme="apple"] .shadow-emerald-500\/40 {
+  --tw-shadow-color: rgba(0, 113, 227, 0.4) !important;
+}
+
 /* ========================================
    APPLE THEME - Navigation
    ======================================== */
@@ -711,11 +749,35 @@ button {
 }
 
 [data-theme="dark"] .bg-emerald-50\/50 {
-  background-color: rgba(94, 234, 212, 0.08) !important;
+  background-color: rgba(96, 165, 250, 0.08) !important;
 }
 
 [data-theme="dark"] .border-emerald-100\/50 {
-  border-color: rgba(94, 234, 212, 0.15) !important;
+  border-color: rgba(96, 165, 250, 0.15) !important;
+}
+
+[data-theme="dark"] .text-emerald-400 {
+  color: #60a5fa !important;
+}
+
+[data-theme="dark"] .border-emerald-400\/50 {
+  border-color: rgba(96, 165, 250, 0.5) !important;
+}
+
+[data-theme="dark"] .ring-emerald-50\/50 {
+  --tw-ring-color: rgba(96, 165, 250, 0.05) !important;
+}
+
+[data-theme="dark"] .ring-emerald-100 {
+  --tw-ring-color: rgba(96, 165, 250, 0.15) !important;
+}
+
+[data-theme="dark"] .shadow-emerald-500\/20 {
+  --tw-shadow-color: rgba(96, 165, 250, 0.2) !important;
+}
+
+[data-theme="dark"] .shadow-emerald-500\/40 {
+  --tw-shadow-color: rgba(96, 165, 250, 0.4) !important;
 }
 
 [data-theme="dark"] .text-purple-600\/70 {

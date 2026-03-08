@@ -185,11 +185,11 @@ export async function getMyAdoptions(filter: 'all' | 'adoption' | 'adoption_requ
 
         const query = db.select().from(adoptions);
 
-        // Apply filters by recordType
+        // Apply filters by recordType — always exclude 'available' (those belong on /my-animals)
         if (filter !== 'all') {
             query.where(sql`${adoptions.addedBy} = ${session.user.email} AND ${adoptions.recordType} = ${filter}`);
         } else {
-            query.where(eq(adoptions.addedBy, session.user.email));
+            query.where(sql`${adoptions.addedBy} = ${session.user.email} AND (${adoptions.recordType} IS NULL OR ${adoptions.recordType} != 'available')`);
         }
 
         if (sort === 'name') {

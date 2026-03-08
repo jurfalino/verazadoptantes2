@@ -224,7 +224,7 @@ export default function AdoptionWizard() {
                         {animalMode === 'existing' ? (
                             <div>
                                 <select className="w-full p-3 rounded-xl border border-stone-300" onChange={(e) => handleAnimalSelect(e.target.value)} value={selectedAnimalId}>
-                                    <option value="">Select Existing Animal...</option>
+                                    <option value="">{t('adoption.select_existing_animal') || 'Select Existing Animal...'}</option>
                                     {availableAnimals.map(a => (
                                         <option key={a.id} value={a.id}>{a.animalName} ({a.species})</option>
                                     ))}

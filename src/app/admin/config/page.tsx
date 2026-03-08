@@ -12,6 +12,7 @@ interface ConfigData {
         too_many_requests_threshold?: string;
         too_many_requests_period_days?: string;
         ENABLE_CONTENT_IMPORT?: string;
+        ENABLE_ANIMALS_FOR_ADOPTION?: string;
     };
     statsCount?: number;
     oldestStat?: string | null;
@@ -25,6 +26,7 @@ interface PurgeData {
 // Feature flags definition
 const FEATURE_FLAGS = [
     { key: 'ENABLE_CONTENT_IMPORT', label: 'Content Import', description: 'Show the Import Content button on the home page for importing from any URL, text, or images using AI' },
+    { key: 'ENABLE_ANIMALS_FOR_ADOPTION', label: 'Animals for Adoption', description: 'Allow users to list animals for adoption and share adoption contracts with potential adopters' },
 ];
 
 export default function AdminConfigPage() {
@@ -37,6 +39,7 @@ export default function AdminConfigPage() {
     });
     const [featureFlags, setFeatureFlags] = useState<Record<string, boolean>>({
         ENABLE_CONTENT_IMPORT: false,
+        ENABLE_ANIMALS_FOR_ADOPTION: false,
     });
     const [statsCount, setStatsCount] = useState<number | null>(null);
     const [oldestStat, setOldestStat] = useState<string | null>(null);
@@ -62,6 +65,7 @@ export default function AdminConfigPage() {
                     // Set feature flags from config
                     setFeatureFlags({
                         ENABLE_CONTENT_IMPORT: data.config?.ENABLE_CONTENT_IMPORT === 'true',
+                        ENABLE_ANIMALS_FOR_ADOPTION: data.config?.ENABLE_ANIMALS_FOR_ADOPTION === 'true',
                     });
                     setStatsCount(data.statsCount ?? null);
                     setOldestStat(data.oldestStat ?? null);

@@ -24,10 +24,16 @@ interface Adoption {
     status: string | null;
     rating: number | null;
     details: string | null;
+    comments: string | null;
     date: Date | null;
     addedBy: string | null;
+    onBehalfOf?: string | null;
     recordType?: string;
     sourceUrl?: string | null;
+    age?: string | null;
+    sex?: string | null;
+    color?: string | null;
+    microchip?: string | null;
     images?: { id: string; url: string; caption?: string | null }[];
 }
 
@@ -215,12 +221,61 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                     </div>
                                 </div>
 
+                                {/* Animal details (sex, color, age, microchip) */}
+                                {(adoption.age || adoption.sex || adoption.color || adoption.microchip) && (
+                                    <div className="flex flex-wrap gap-1.5 mt-2">
+                                        {adoption.sex && (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
+                                                {['male', 'macho'].includes(adoption.sex.toLowerCase()) ? '♂️' : ['female', 'hembra'].includes(adoption.sex.toLowerCase()) ? '♀️' : ''} {t(`adoption.sex_${adoption.sex.toLowerCase()}`) || adoption.sex}
+                                            </span>
+                                        )}
+                                        {adoption.age && (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
+                                                🎂 {adoption.age}
+                                            </span>
+                                        )}
+                                        {adoption.color && (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
+                                                🎨 {adoption.color}
+                                            </span>
+                                        )}
+                                        {adoption.microchip && (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
+                                                💉 {adoption.microchip}
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+
                                 {/* Notes - consistent neutral color */}
                                 {adoption.details && (
                                     <p className="text-stone-800 text-sm mt-2.5 leading-relaxed bg-stone-100 p-2.5 rounded-lg">
                                         {adoption.details}
                                     </p>
                                 )}
+
+                                {/* Contract screenshot link */}
+                                {adoption.comments && (() => {
+                                    try {
+                                        const parsed = JSON.parse(adoption.comments);
+                                        if (parsed.contractScreenshot) {
+                                            return (
+                                                <a
+                                                    href={parsed.contractScreenshot}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="flex items-center gap-2 mt-2.5 p-2 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors pointer-events-auto"
+                                                    onClick={e => e.stopPropagation()}
+                                                >
+                                                    <span className="text-sm">📋</span>
+                                                    <span className="text-sm font-medium text-emerald-700">{t('dashboard.view_signed_contract') || 'View Signed Contract'}</span>
+                                                    <svg className="w-3.5 h-3.5 ml-auto text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                                </a>
+                                            );
+                                        }
+                                    } catch { /* not JSON, ignore */ }
+                                    return null;
+                                })()}
 
                                 {/* Image Thumbnails */}
                                 {images.length > 0 && (
@@ -241,8 +296,18 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                     </div>
                                 )}
 
-                                {/* Footer: source link + addedBy */}
-                                <div className="mt-2.5 flex items-center gap-2 text-xs text-stone-400 font-medium">
+                                {/* Footer: date + onBehalfOf + source link + addedBy */}
+                                <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-400 font-medium">
+                                    {adoption.date && (
+                                        <span className="inline-flex items-center gap-1">
+                                            📅 {t('adoption.date_label') || 'Fecha:'} {formatShortDate(new Date(adoption.date))}
+                                        </span>
+                                    )}
+                                    {adoption.onBehalfOf && (
+                                        <span className="inline-flex items-center gap-1">
+                                            👤 {t('adoption.on_behalf_label') || 'En nombre de:'} {adoption.onBehalfOf}
+                                        </span>
+                                    )}
                                     {adoption.sourceUrl && (
                                         <a
                                             href={adoption.sourceUrl}

@@ -19,6 +19,7 @@ export default function UserMenu({ user }: UserMenuProps) {
     const { t, locale, setLocale } = useLanguage();
     const { openLogin } = useAuthContext();
     const [isOpen, setIsOpen] = useState(false);
+    const [animalsEnabled, setAnimalsEnabled] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
 
     // Close on click outside
@@ -33,6 +34,20 @@ export default function UserMenu({ user }: UserMenuProps) {
             document.removeEventListener("mousedown", handleClickOutside);
         };
     }, []);
+
+    // Fetch feature flags
+    useEffect(() => {
+        if (!user) return;
+        fetch('/api/admin/config')
+            .then(res => res.json())
+            .then((data) => {
+                const cfg = data as { config?: Record<string, string> };
+                if (cfg.config?.ENABLE_ANIMALS_FOR_ADOPTION === 'true') {
+                    setAnimalsEnabled(true);
+                }
+            })
+            .catch(() => { });
+    }, [user]);
 
     const handleSignOut = async () => {
         await signOut({ redirectTo: '/' });
@@ -115,15 +130,25 @@ export default function UserMenu({ user }: UserMenuProps) {
                                 onClick={() => setIsOpen(false)}
                             >
                                 <svg className="w-4 h-4 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-                                My Adopters
+                                {t('dashboard.my_adopters') || 'My Adopters'}
                             </Link>
+                            {animalsEnabled && (
+                                <Link
+                                    href="/my-animals"
+                                    className="flex items-center gap-2 px-4 py-2.5 text-sm text-stone-700 hover:bg-stone-50 hover:text-emerald-700 font-medium transition-colors"
+                                    onClick={() => setIsOpen(false)}
+                                >
+                                    <span className="text-base w-4 h-4 flex items-center justify-center">🐾</span>
+                                    {t('dashboard.my_animals') || 'My Animals'}
+                                </Link>
+                            )}
                             <Link
                                 href="/my-adoptions"
                                 className="flex items-center gap-2 px-4 py-2.5 text-sm text-stone-700 hover:bg-stone-50 hover:text-teal-700 font-medium transition-colors"
                                 onClick={() => setIsOpen(false)}
                             >
                                 <svg className="w-4 h-4 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
-                                My Adoptions
+                                {t('dashboard.my_adoptions') || 'My Adoptions'}
                             </Link>
                             <Link
                                 href="/settings"

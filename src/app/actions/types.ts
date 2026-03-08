@@ -1,4 +1,4 @@
-import { adopters } from '@/db/schema';
+import type { adopters } from '@/db/schema';
 
 export interface AdopterFlags {
     inaccurate: boolean;

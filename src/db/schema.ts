@@ -81,6 +81,10 @@ export const adoptions = sqliteTable("adoptions", {
     verifiedAddress: text("verified_address"), // Snapshot of verified address at time of adoption
     identityVerified: integer("identity_verified"), // 1 if adopter identity was verified during this adoption
     sourceUrl: text("source_url"), // Link to original post/source for this specific record
+    age: text("age"), // Approximate age (e.g., "2 años", "3 meses")
+    sex: text("sex"), // macho, hembra
+    color: text("color"), // Color/markings description
+    microchip: text("microchip"), // Microchip number if available
 });
 
 // Adopter Stats - Track analytics events (search hits, profile views)
@@ -230,4 +234,21 @@ export const auditLog = sqliteTable("audit_log", {
     userIdx: index("idx_audit_user").on(table.userId),
     actionIdx: index("idx_audit_action").on(table.action),
     createdIdx: index("idx_audit_created").on(table.createdAt),
+}));
+
+// In-App Notifications
+export const notifications = sqliteTable("notifications", {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(), // recipient email
+    type: text("type").notNull().default("contract_result"), // contract_result, system, etc.
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    url: text("url"), // link to results page
+    icon: text("icon").default("📋"),
+    read: integer("read").default(0), // 0=unread, 1=read
+    metadata: text("metadata"), // JSON blob (match count, animal name, etc.)
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    expiresAt: integer("expires_at", { mode: "timestamp" }),
+}, (table) => ({
+    userIdx: index("idx_notif_user").on(table.userId, table.read, table.createdAt),
 }));

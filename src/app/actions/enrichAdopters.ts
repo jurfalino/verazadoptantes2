@@ -1,3 +1,5 @@
+'use server';
+
 import { adoptions, adopterFlags, adopterStats, adopterImages, duplicateCandidates } from '@/db/schema';
 import { eq, sql, and, isNull, ne, or } from 'drizzle-orm';
 import type { AdopterFlags } from './types';

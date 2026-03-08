@@ -64,5 +64,18 @@ export default config({
                 ctaUrl: fields.text({ label: 'CTA URL', defaultValue: '/' }),
             },
         }),
+        'adoption-contract': singleton({
+            label: 'Adoption Contract / Contrato de Adopción',
+            path: 'content/adoption-contract/',
+            format: { data: 'json' },
+            schema: {
+                titleEs: fields.text({ label: 'Título del contrato (Español)', defaultValue: 'CONTRATO DE ADOPCIÓN RESPONSABLE DE ANIMAL DE COMPAÑÍA' }),
+                titleEn: fields.text({ label: 'Contract title (English)', defaultValue: 'RESPONSIBLE PET ADOPTION CONTRACT' }),
+                introEs: fields.text({ label: 'Introducción (Español)', multiline: true, defaultValue: 'Se celebra el presente contrato entre las partes indicadas a continuación.' }),
+                introEn: fields.text({ label: 'Introduction (English)', multiline: true, defaultValue: 'This contract is entered into between the parties indicated below.' }),
+                bodyEs: fields.text({ label: 'Cuerpo del contrato (Español)', multiline: true }),
+                bodyEn: fields.text({ label: 'Contract body (English)', multiline: true }),
+            },
+        }),
     },
 });
