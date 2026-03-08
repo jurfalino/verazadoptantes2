@@ -8,12 +8,12 @@ const EXACT_ORIGINS = [
 
 /** Exact production origins */
 const EXACT_PROD_ORIGINS = [
-    'https://contrato.gatitosolivos.workers.dev', // production
+    'https://adoptions.pages.dev', // production
 ];
 
 /** Suffix patterns: any origin ending with these is allowed */
 const ORIGIN_SUFFIXES = [
-    '-contrato.gatitosolivos.workers.dev', // preview deployments (*-contrato.gatitosolivos.workers.dev)
+    '.adoptions.pages.dev', // staging + preview deployments
 ];
 
 function isAllowedOrigin(origin: string): boolean {

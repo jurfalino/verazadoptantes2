@@ -8,7 +8,7 @@ interface ShareMenuProps {
 }
 
 // External contract app domain — no buenadoptante branding
-const CONTRACT_BASE = process.env.NEXT_PUBLIC_CONTRACT_URL || 'https://contrato.gatitosolivos.workers.dev';
+const CONTRACT_BASE = process.env.NEXT_PUBLIC_CONTRACT_URL || 'https://adoptions.pages.dev';
 
 export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
     const [isOpen, setIsOpen] = useState(false);
