@@ -1,9 +1,9 @@
 import { config, fields, collection, singleton } from '@keystatic/core';
 
 export default config({
-    storage: {
-        kind: 'local',
-    },
+    storage: process.env.NODE_ENV === 'development'
+        ? { kind: 'local' }
+        : { kind: 'github', repo: 'jurfalino/verazadoptantes2' },
     collections: {
         'guia-steps': collection({
             label: 'Guide Steps / Pasos de la Guía',
