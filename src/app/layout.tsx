@@ -24,11 +24,11 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata: Metadata = {
   metadataBase: new URL('https://buenadoptante.org'),
   title: {
-    default: 'BuenAdoptante — Verificá adoptantes de animales',
+    default: 'BuenAdoptante — Registro de Adopciones',
     template: '%s | BuenAdoptante',
   },
   description:
-    'Plataforma colaborativa para verificar adoptantes de animales. Buscá historial, registrá adopciones y protegé el bienestar animal con la comunidad rescatista.',
+    'Buscá, verificá y reportá adoptantes para asegurar que cada mascota llegue al hogar que merece. Plataforma colaborativa de la comunidad rescatista.',
   keywords: [
     'adopción responsable',
     'verificar adoptantes',
@@ -47,9 +47,9 @@ export const metadata: Metadata = {
     alternateLocale: 'en_US',
     url: 'https://buenadoptante.org',
     siteName: 'BuenAdoptante',
-    title: 'BuenAdoptante — Verificá adoptantes de animales',
+    title: 'BuenAdoptante — Registro de Adopciones',
     description:
-      'Plataforma colaborativa para verificar adoptantes de animales. Protegé el bienestar animal con la comunidad rescatista.',
+      'Buscá, verificá y reportá adoptantes para asegurar que cada mascota llegue al hogar que merece.',
     images: [
       {
         url: '/icon-512.png',
@@ -61,9 +61,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary',
-    title: 'BuenAdoptante — Verificá adoptantes de animales',
+    title: 'BuenAdoptante — Registro de Adopciones',
     description:
-      'Plataforma colaborativa para verificar adoptantes y proteger el bienestar animal.',
+      'Buscá, verificá y reportá adoptantes para asegurar que cada mascota llegue al hogar que merece.',
     images: ['/icon-512.png'],
   },
   alternates: {

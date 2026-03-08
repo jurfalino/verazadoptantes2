@@ -5,6 +5,7 @@ export const runtime = 'edge';
 import { useLanguage } from '@/context/LanguageContext';
 
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import AdoptionWizard from '@/components/AdoptionWizard';
@@ -110,7 +111,10 @@ export default function Home() {
             {t('home.title')}
           </h1>
           <p className="text-stone-600 text-lg max-w-xl mx-auto font-medium">
-            {t('home.tagline')}
+            {t('home.tagline')}{' '}
+            <Link href="/guia" className="text-teal-600 hover:text-teal-700 underline underline-offset-2 transition-colors">
+              {locale === 'en' ? 'Use our Adoption Guide' : 'Utilizá nuestra Guía de Adopción'}
+            </Link>
           </p>
         </header>
 
@@ -130,7 +134,7 @@ export default function Home() {
             <div className="grid grid-cols-3 gap-4 text-center">
               <div
                 className="cursor-pointer hover:opacity-80 transition-opacity"
-                onClick={() => { dismissGuide(); document.getElementById('search-section')?.scrollIntoView({ behavior: 'smooth' }); }}
+                onClick={() => { document.getElementById('search-section')?.scrollIntoView({ behavior: 'smooth' }); }}
               >
                 <div className="text-2xl mb-1">🔍</div>
                 <p className="font-bold text-stone-800 text-sm">{t('home.how_step1_title')}</p>
@@ -138,7 +142,7 @@ export default function Home() {
               </div>
               <div
                 className="cursor-pointer hover:opacity-80 transition-opacity"
-                onClick={() => { dismissGuide(); handleAuthNavigation('/import'); }}
+                onClick={() => { handleAuthNavigation('/import'); }}
               >
                 <div className="text-2xl mb-1">📝</div>
                 <p className="font-bold text-stone-800 text-sm">{t('home.how_step2_title')}</p>
@@ -146,7 +150,7 @@ export default function Home() {
               </div>
               <div
                 className="cursor-pointer hover:opacity-80 transition-opacity"
-                onClick={() => { dismissGuide(); document.getElementById('action-cards')?.scrollIntoView({ behavior: 'smooth' }); }}
+                onClick={() => { document.getElementById('action-cards')?.scrollIntoView({ behavior: 'smooth' }); }}
               >
                 <div className="text-2xl mb-1">⭐</div>
                 <p className="font-bold text-stone-800 text-sm">{t('home.how_step3_title')}</p>

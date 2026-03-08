@@ -134,8 +134,8 @@ export const en = {
         too_many_results: 'Too many results ({count}). Showing first 50. Please refine your search.',
     },
     home: {
-        title: 'SafeAdoption',
-        tagline: 'Protecting those who have no voice. Search, verify, and report adopters to ensure every pet reaches the home they deserve.',
+        title: 'Adoption Registry',
+        tagline: 'Search, verify, and report adopters to ensure every pet reaches the home they deserve.',
         action_register_title: 'I gave a pet for adoption',
         action_register_desc: 'Record who adopted the pet and how the experience went.',
         action_register_btn: 'Register Now',

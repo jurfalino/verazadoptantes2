@@ -115,7 +115,7 @@ export default function GuiaPage() {
                         <ShieldPawIcon className="w-10 h-10" />
                     </div>
                     <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight leading-tight">
-                        {hero ? pick(hero.titleEs, hero.titleEn) : pick('Guía Completa de Adopción Responsable', 'Complete Responsible Adoption Guide')}
+                        {hero ? pick(hero.titleEs, hero.titleEn) : pick('Guía de Adopción Responsable', 'Responsible Adoption Guide')}
                     </h1>
                     <p className="text-teal-100 text-lg md:text-xl max-w-2xl mx-auto font-medium leading-relaxed">
                         {hero ? pick(hero.subtitleEs, hero.subtitleEn) : pick(

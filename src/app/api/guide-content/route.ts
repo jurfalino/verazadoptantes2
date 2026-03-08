@@ -235,8 +235,8 @@ const FAQ = [
 ];
 
 const HERO = {
-    titleEs: 'Guía Completa de Adopción Responsable',
-    titleEn: 'Complete Responsible Adoption Guide',
+    titleEs: 'Guía de Adopción Responsable',
+    titleEn: 'Responsible Adoption Guide',
     subtitleEs: '6 fases para garantizar que cada animal llegue al hogar correcto — y se quede ahí',
     subtitleEn: '6 phases to ensure every animal reaches the right home — and stays there',
     ctaTextEs: '¿Listo para empezar?',

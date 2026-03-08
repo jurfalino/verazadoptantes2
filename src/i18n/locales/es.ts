@@ -134,8 +134,8 @@ export const es = {
         too_many_results: 'Demasiados resultados ({count}). Mostrando los primeros 50. Por favor, refina tu búsqueda.',
     },
     home: {
-        title: 'BuenAdoptante',
-        tagline: 'Protegiendo a quienes no tienen voz. Buscá, verificá y reportá adoptantes para asegurar que cada mascota llegue al hogar que merece.',
+        title: 'Registro de Adopciones',
+        tagline: 'Buscá, verificá y reportá adoptantes para asegurar que cada mascota llegue al hogar que merece.',
         action_register_title: 'Di un animal en adopción',
         action_register_desc: 'Registrá quién adoptó la mascota y cómo fue la experiencia.',
         action_register_btn: 'Registrar Ahora',
