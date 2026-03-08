@@ -296,7 +296,7 @@ export default function MyAdoptionsPage() {
                                                     <img
                                                         key={img.id}
                                                         src={img.url}
-                                                        alt=""
+                                                        alt={img.caption || `${adoption.animalName} photo`}
                                                         className="w-6 h-6 rounded-md object-cover border border-white"
                                                     />
                                                 ))}

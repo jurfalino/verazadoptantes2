@@ -1,7 +1,5 @@
 'use client';
 
-export const runtime = 'edge';
-
 import { useLanguage } from '@/context/LanguageContext';
 import { useRouter } from 'next/navigation';
 

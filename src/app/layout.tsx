@@ -14,6 +14,7 @@ import { ToastProvider } from '@/components/ui/Toast';
 import InstallPrompt from '@/components/InstallPrompt';
 import { CountryConfirmBanner } from '@/components/CountryConfirmBanner';
 import NotificationBell from '@/components/NotificationBell';
+import { WebApplicationJsonLd, OrganizationJsonLd } from '@/components/JsonLd';
 
 export const runtime = "edge";
 export const dynamic = 'force-dynamic';
@@ -21,8 +22,54 @@ export const dynamic = 'force-dynamic';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'BuenAdoptante',
-  description: 'Vet pet adopters and ensure safe homes.',
+  metadataBase: new URL('https://buenadoptante.org'),
+  title: {
+    default: 'BuenAdoptante — Verificá adoptantes de animales',
+    template: '%s | BuenAdoptante',
+  },
+  description:
+    'Plataforma colaborativa para verificar adoptantes de animales. Buscá historial, registrá adopciones y protegé el bienestar animal con la comunidad rescatista.',
+  keywords: [
+    'adopción responsable',
+    'verificar adoptantes',
+    'bienestar animal',
+    'rescate animal',
+    'adoptar mascotas',
+    'pet adoption vetting',
+    'animal rescue community',
+    'BuenAdoptante',
+  ],
+  authors: [{ name: 'BuenAdoptante', url: 'https://buenadoptante.org' }],
+  creator: 'BuenAdoptante',
+  openGraph: {
+    type: 'website',
+    locale: 'es_AR',
+    alternateLocale: 'en_US',
+    url: 'https://buenadoptante.org',
+    siteName: 'BuenAdoptante',
+    title: 'BuenAdoptante — Verificá adoptantes de animales',
+    description:
+      'Plataforma colaborativa para verificar adoptantes de animales. Protegé el bienestar animal con la comunidad rescatista.',
+    images: [
+      {
+        url: '/icon-512.png',
+        width: 512,
+        height: 512,
+        alt: 'BuenAdoptante logo — escudo con huella de mascota',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary',
+    title: 'BuenAdoptante — Verificá adoptantes de animales',
+    description:
+      'Plataforma colaborativa para verificar adoptantes y proteger el bienestar animal.',
+    images: ['/icon-512.png'],
+  },
+  alternates: {
+    canonical: 'https://buenadoptante.org',
+  },
+  category: 'lifestyle',
 };
 
 export default async function RootLayout({
@@ -64,6 +111,9 @@ export default async function RootLayout({
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        {/* Structured Data — JSON-LD for SEO and AI citability */}
+        <WebApplicationJsonLd />
+        <OrganizationJsonLd />
       </head>
       <body className={inter.className}>
         <SessionProvider refetchOnWindowFocus={true} refetchInterval={5 * 60}>
