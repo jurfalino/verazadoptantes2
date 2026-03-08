@@ -1,24 +1,27 @@
-import { makeRouteHandler } from '@keystatic/next/route-handler';
-import { NextResponse } from 'next/server';
-import config from '../../../../../keystatic.config';
+import { NextRequest } from 'next/server';
 
 export const runtime = 'edge';
 
-// Keystatic GitHub mode requires these env vars. If missing, return a
-// helpful error instead of crashing the build.
-const hasGitHubConfig =
-    process.env.KEYSTATIC_GITHUB_CLIENT_ID &&
-    process.env.KEYSTATIC_GITHUB_CLIENT_SECRET &&
-    process.env.KEYSTATIC_SECRET;
+// Lazy-init: defer makeRouteHandler to the first request so it doesn't
+// crash during `next build` when env vars are missing. This also lets
+// the Keystatic GitHub App creation wizard work before env vars exist.
+let _handler: { GET: Function; POST: Function } | null = null;
 
-const missingHandler = () =>
-    NextResponse.json(
-        { error: 'Keystatic GitHub env vars not configured. Set KEYSTATIC_GITHUB_CLIENT_ID, KEYSTATIC_GITHUB_CLIENT_SECRET, and KEYSTATIC_SECRET.' },
-        { status: 503 }
-    );
+async function getHandler() {
+    if (!_handler) {
+        const { makeRouteHandler } = await import('@keystatic/next/route-handler');
+        const { default: config } = await import('../../../../../keystatic.config');
+        _handler = makeRouteHandler({ config });
+    }
+    return _handler;
+}
 
-const handler = hasGitHubConfig
-    ? makeRouteHandler({ config })
-    : { GET: missingHandler, POST: missingHandler };
+export async function GET(req: NextRequest, ctx: { params: Promise<{ params: string[] }> }) {
+    const h = await getHandler();
+    return (h.GET as Function)(req, ctx);
+}
 
-export const { POST, GET } = handler;
+export async function POST(req: NextRequest, ctx: { params: Promise<{ params: string[] }> }) {
+    const h = await getHandler();
+    return (h.POST as Function)(req, ctx);
+}
