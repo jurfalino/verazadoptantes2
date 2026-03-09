@@ -55,16 +55,16 @@ export default async function AdminDataRequestsPage() {
 
     return (
         <div className="max-w-6xl mx-auto space-y-6">
-            <h2 className="text-2xl font-bold text-stone-900">📬 Data Requests</h2>
+            <h2 className="text-2xl font-semibold text-stone-900">📬 Data Requests</h2>
             <p className="text-stone-500 text-sm">ARCO rights requests and inaccuracy reports from data subjects.</p>
 
             {/* Pending */}
             <div>
-                <h3 className="text-lg font-bold text-stone-800 mb-3">
-                    Pending <span className="text-sm font-normal text-stone-400">({pending.length})</span>
+                <h3 className="text-lg font-semibold text-stone-800 mb-3">
+                    Pending <span className="text-sm font-normal text-stone-500">({pending.length})</span>
                 </h3>
                 {pending.length === 0 ? (
-                    <div className="bg-white p-8 text-center rounded-2xl border border-stone-200 text-stone-400">
+                    <div className="bg-white p-8 text-center rounded-2xl border border-stone-200 text-stone-500">
                         No pending requests. ✅
                     </div>
                 ) : (
@@ -74,35 +74,35 @@ export default async function AdminDataRequestsPage() {
                             <table className="w-full text-left">
                                 <thead className="bg-stone-50 border-b border-stone-100">
                                     <tr>
-                                        <th className="p-4 font-bold text-stone-500 text-sm">Requester</th>
-                                        <th className="p-4 font-bold text-stone-500 text-sm">Type</th>
-                                        <th className="p-4 font-bold text-stone-500 text-sm">Profile</th>
-                                        <th className="p-4 font-bold text-stone-500 text-sm">Details</th>
-                                        <th className="p-4 font-bold text-stone-500 text-sm">Date</th>
-                                        <th className="p-4 font-bold text-stone-500 text-sm text-right">Actions</th>
+                                        <th className="p-4 font-semibold text-stone-500 text-sm">Requester</th>
+                                        <th className="p-4 font-semibold text-stone-500 text-sm">Type</th>
+                                        <th className="p-4 font-semibold text-stone-500 text-sm">Profile</th>
+                                        <th className="p-4 font-semibold text-stone-500 text-sm">Details</th>
+                                        <th className="p-4 font-semibold text-stone-500 text-sm">Date</th>
+                                        <th className="p-4 font-semibold text-stone-500 text-sm text-right">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-stone-100">
                                     {pending.map((r: DataRequest) => (
                                         <tr key={r.id} className="hover:bg-stone-50/50">
                                             <td className="p-4">
-                                                <div className="font-bold text-stone-900 text-sm">{r.requesterName}</div>
+                                                <div className="font-semibold text-stone-900 text-sm">{r.requesterName}</div>
                                                 {r.requesterEmail && (
-                                                    <div className="text-xs text-stone-400">{r.requesterEmail}</div>
+                                                    <div className="text-xs text-stone-500">{r.requesterEmail}</div>
                                                 )}
                                             </td>
                                             <td className="p-4">
-                                                <span className={`inline-flex px-2 py-1 rounded-full text-xs font-bold uppercase ${typeColors[r.requestType] || 'bg-stone-100 text-stone-600'}`}>
+                                                <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold uppercase ${typeColors[r.requestType] || 'bg-stone-100 text-stone-600'}`}>
                                                     {r.requestType}
                                                 </span>
                                             </td>
                                             <td className="p-4">
                                                 {r.adopterId ? (
-                                                    <a href={`/adopter/${r.adopterId}`} target="_blank" className="text-teal-600 hover:underline text-sm font-medium">
+                                                    <a href={`/adopter/${r.adopterId}`} target="_blank" className="text-teal-700 hover:underline text-sm font-medium">
                                                         {r.adopterName || r.adopterId}
                                                     </a>
                                                 ) : (
-                                                    <span className="text-stone-400 text-sm">General</span>
+                                                    <span className="text-stone-500 text-sm">General</span>
                                                 )}
                                             </td>
                                             <td className="p-4 text-sm text-stone-600 max-w-xs">
@@ -118,7 +118,7 @@ export default async function AdminDataRequestsPage() {
                                                         type="submit"
                                                         name="action"
                                                         value="resolved"
-                                                        className="px-3 py-1.5 text-xs font-bold text-white bg-teal-500 rounded-lg hover:bg-teal-600"
+                                                        className="px-3 py-1.5 text-xs font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600"
                                                     >
                                                         ✓ Resolve
                                                     </button>
@@ -126,7 +126,7 @@ export default async function AdminDataRequestsPage() {
                                                         type="submit"
                                                         name="action"
                                                         value="rejected"
-                                                        className="px-3 py-1.5 text-xs font-bold text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200"
+                                                        className="px-3 py-1.5 text-xs font-semibold text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200"
                                                     >
                                                         ✕ Reject
                                                     </button>
@@ -144,18 +144,18 @@ export default async function AdminDataRequestsPage() {
                                 <div key={r.id} className="bg-white rounded-xl p-4 shadow-sm border border-stone-200">
                                     <div className="flex items-start justify-between gap-2 mb-2">
                                         <div className="min-w-0">
-                                            <div className="font-bold text-stone-900 text-sm">{r.requesterName}</div>
+                                            <div className="font-semibold text-stone-900 text-sm">{r.requesterName}</div>
                                             {r.requesterEmail && (
-                                                <div className="text-xs text-stone-400 truncate">{r.requesterEmail}</div>
+                                                <div className="text-xs text-stone-500 truncate">{r.requesterEmail}</div>
                                             )}
                                         </div>
-                                        <span className={`inline-flex px-2 py-1 rounded-full text-xs font-bold uppercase flex-shrink-0 ${typeColors[r.requestType] || 'bg-stone-100 text-stone-600'}`}>
+                                        <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold uppercase flex-shrink-0 ${typeColors[r.requestType] || 'bg-stone-100 text-stone-600'}`}>
                                             {r.requestType}
                                         </span>
                                     </div>
                                     {r.adopterId && (
                                         <div className="text-sm mb-1">
-                                            <a href={`/adopter/${r.adopterId}`} target="_blank" className="text-teal-600 hover:underline font-medium">
+                                            <a href={`/adopter/${r.adopterId}`} target="_blank" className="text-teal-700 hover:underline font-medium">
                                                 {r.adopterName || r.adopterId}
                                             </a>
                                         </div>
@@ -170,7 +170,7 @@ export default async function AdminDataRequestsPage() {
                                             type="submit"
                                             name="action"
                                             value="resolved"
-                                            className="flex-1 px-3 py-2 text-xs font-bold text-white bg-teal-500 rounded-lg hover:bg-teal-600"
+                                            className="flex-1 px-3 py-2 text-xs font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600"
                                         >
                                             ✓ Resolve
                                         </button>
@@ -178,7 +178,7 @@ export default async function AdminDataRequestsPage() {
                                             type="submit"
                                             name="action"
                                             value="rejected"
-                                            className="flex-1 px-3 py-2 text-xs font-bold text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200"
+                                            className="flex-1 px-3 py-2 text-xs font-semibold text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200"
                                         >
                                             ✕ Reject
                                         </button>
@@ -193,8 +193,8 @@ export default async function AdminDataRequestsPage() {
             {/* Resolved/Rejected */}
             {resolved.length > 0 && (
                 <div>
-                    <h3 className="text-lg font-bold text-stone-800 mb-3">
-                        History <span className="text-sm font-normal text-stone-400">({resolved.length})</span>
+                    <h3 className="text-lg font-semibold text-stone-800 mb-3">
+                        History <span className="text-sm font-normal text-stone-500">({resolved.length})</span>
                     </h3>
                     <>
                         {/* Desktop table */}
@@ -202,11 +202,11 @@ export default async function AdminDataRequestsPage() {
                             <table className="w-full text-left">
                                 <thead className="bg-stone-50 border-b border-stone-100">
                                     <tr>
-                                        <th className="p-4 font-bold text-stone-500 text-sm">Requester</th>
-                                        <th className="p-4 font-bold text-stone-500 text-sm">Type</th>
-                                        <th className="p-4 font-bold text-stone-500 text-sm">Profile</th>
-                                        <th className="p-4 font-bold text-stone-500 text-sm">Status</th>
-                                        <th className="p-4 font-bold text-stone-500 text-sm">Resolved</th>
+                                        <th className="p-4 font-semibold text-stone-500 text-sm">Requester</th>
+                                        <th className="p-4 font-semibold text-stone-500 text-sm">Type</th>
+                                        <th className="p-4 font-semibold text-stone-500 text-sm">Profile</th>
+                                        <th className="p-4 font-semibold text-stone-500 text-sm">Status</th>
+                                        <th className="p-4 font-semibold text-stone-500 text-sm">Resolved</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-stone-100">
@@ -214,21 +214,21 @@ export default async function AdminDataRequestsPage() {
                                         <tr key={r.id} className="opacity-60">
                                             <td className="p-4 text-sm text-stone-700">{r.requesterName}</td>
                                             <td className="p-4">
-                                                <span className={`inline-flex px-2 py-1 rounded-full text-xs font-bold uppercase ${typeColors[r.requestType] || 'bg-stone-100 text-stone-600'}`}>
+                                                <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold uppercase ${typeColors[r.requestType] || 'bg-stone-100 text-stone-600'}`}>
                                                     {r.requestType}
                                                 </span>
                                             </td>
                                             <td className="p-4">
                                                 {r.adopterId ? (
-                                                    <a href={`/adopter/${r.adopterId}`} target="_blank" className="text-teal-600 hover:underline text-sm">
+                                                    <a href={`/adopter/${r.adopterId}`} target="_blank" className="text-teal-700 hover:underline text-sm">
                                                         {r.adopterName || r.adopterId}
                                                     </a>
                                                 ) : (
-                                                    <span className="text-stone-400 text-sm">General</span>
+                                                    <span className="text-stone-500 text-sm">General</span>
                                                 )}
                                             </td>
                                             <td className="p-4">
-                                                <span className={`inline-flex px-2 py-1 rounded-full text-xs font-bold uppercase ${r.status === 'resolved' ? 'bg-green-100 text-green-800' : 'bg-stone-100 text-stone-600'}`}>
+                                                <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold uppercase ${r.status === 'resolved' ? 'bg-green-100 text-green-800' : 'bg-stone-100 text-stone-600'}`}>
                                                     {r.status}
                                                 </span>
                                             </td>
@@ -248,16 +248,16 @@ export default async function AdminDataRequestsPage() {
                                     <div className="flex items-start justify-between gap-2 mb-2">
                                         <div className="text-sm text-stone-700 font-medium">{r.requesterName}</div>
                                         <div className="flex gap-1.5 flex-shrink-0">
-                                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold uppercase ${typeColors[r.requestType] || 'bg-stone-100 text-stone-600'}`}>
+                                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold uppercase ${typeColors[r.requestType] || 'bg-stone-100 text-stone-600'}`}>
                                                 {r.requestType}
                                             </span>
-                                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold uppercase ${r.status === 'resolved' ? 'bg-green-100 text-green-800' : 'bg-stone-100 text-stone-600'}`}>
+                                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold uppercase ${r.status === 'resolved' ? 'bg-green-100 text-green-800' : 'bg-stone-100 text-stone-600'}`}>
                                                 {r.status}
                                             </span>
                                         </div>
                                     </div>
                                     {r.adopterId && (
-                                        <a href={`/adopter/${r.adopterId}`} target="_blank" className="text-teal-600 hover:underline text-sm block mb-1">
+                                        <a href={`/adopter/${r.adopterId}`} target="_blank" className="text-teal-700 hover:underline text-sm block mb-1">
                                             {r.adopterName || r.adopterId}
                                         </a>
                                     )}

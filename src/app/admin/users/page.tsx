@@ -120,7 +120,7 @@ export default function AdminUsersPage() {
         <div>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
                 <div>
-                    <h2 className="text-2xl font-bold text-stone-900">👥 User Registry</h2>
+                    <h2 className="text-2xl font-semibold text-stone-900">👥 User Registry</h2>
                     <p className="text-stone-500 text-sm mt-1">{users.length} registered user{users.length !== 1 ? 's' : ''}</p>
                 </div>
                 <div className="flex gap-2 w-full sm:w-auto">
@@ -168,7 +168,7 @@ export default function AdminUsersPage() {
                                         {user.image ? (
                                             <img src={user.image} alt="" className="w-8 h-8 rounded-full" />
                                         ) : (
-                                            <div className="w-8 h-8 rounded-full bg-stone-200 flex items-center justify-center text-stone-500 text-xs font-bold">
+                                            <div className="w-8 h-8 rounded-full bg-stone-200 flex items-center justify-center text-stone-500 text-xs font-semibold">
                                                 {(user.name || user.email || '?')[0].toUpperCase()}
                                             </div>
                                         )}
@@ -216,7 +216,7 @@ export default function AdminUsersPage() {
                                 <td className="px-4 py-3">
                                     {user.country ? (() => {
                                         const c = getCountryByCode(user.country);
-                                        return c ? <span title={c.name}>{c.flag} {c.code}</span> : <span className="text-stone-400">{user.country}</span>;
+                                        return c ? <span title={c.name}>{c.flag} {c.code}</span> : <span className="text-stone-500">{user.country}</span>;
                                     })() : <span className="text-stone-300">—</span>}
                                 </td>
                                 <td className="px-4 py-3 text-stone-500 text-xs">
@@ -246,7 +246,7 @@ export default function AdminUsersPage() {
                                         <div className="flex items-center gap-2">
                                             <button
                                                 onClick={() => startEdit(user)}
-                                                className="text-stone-400 hover:text-stone-700 text-xs underline underline-offset-2"
+                                                className="text-stone-500 hover:text-stone-700 text-xs underline underline-offset-2"
                                             >
                                                 Edit
                                             </button>
@@ -254,13 +254,13 @@ export default function AdminUsersPage() {
                                                 <>
                                                     <button
                                                         onClick={() => deleteUser(user.id, user.name || user.email)}
-                                                        className="text-red-600 hover:text-red-800 text-xs font-bold"
+                                                        className="text-red-600 hover:text-red-800 text-xs font-semibold"
                                                     >
                                                         Confirm?
                                                     </button>
                                                     <button
                                                         onClick={() => setDeletingId(null)}
-                                                        className="text-stone-400 hover:text-stone-600 text-xs"
+                                                        className="text-stone-500 hover:text-stone-600 text-xs"
                                                     >
                                                         No
                                                     </button>
@@ -281,7 +281,7 @@ export default function AdminUsersPage() {
                         ))}
                         {filteredUsers.length === 0 && (
                             <tr>
-                                <td colSpan={7} className="px-4 py-8 text-center text-stone-400">
+                                <td colSpan={7} className="px-4 py-8 text-center text-stone-500">
                                     {filter ? 'No users match your filter' : 'No users found'}
                                 </td>
                             </tr>
@@ -298,7 +298,7 @@ export default function AdminUsersPage() {
                             {user.image ? (
                                 <img src={user.image} alt="" className="w-10 h-10 rounded-full" />
                             ) : (
-                                <div className="w-10 h-10 rounded-full bg-stone-200 flex items-center justify-center text-stone-500 text-sm font-bold">
+                                <div className="w-10 h-10 rounded-full bg-stone-200 flex items-center justify-center text-stone-500 text-sm font-semibold">
                                     {(user.name || user.email || '?')[0].toUpperCase()}
                                 </div>
                             )}
@@ -346,13 +346,13 @@ export default function AdminUsersPage() {
                                     <button
                                         onClick={() => saveProfile(user.id)}
                                         disabled={saving}
-                                        className="flex-1 px-3 py-2 bg-stone-900 text-white text-xs font-bold rounded-lg hover:bg-stone-800 disabled:opacity-50"
+                                        className="flex-1 px-3 py-2 bg-stone-900 text-white text-xs font-semibold rounded-lg hover:bg-stone-800 disabled:opacity-50"
                                     >
                                         {saving ? '...' : 'Save'}
                                     </button>
                                     <button
                                         onClick={() => setEditingId(null)}
-                                        className="flex-1 px-3 py-2 text-stone-500 text-xs font-bold bg-stone-100 rounded-lg hover:bg-stone-200"
+                                        className="flex-1 px-3 py-2 text-stone-500 text-xs font-semibold bg-stone-100 rounded-lg hover:bg-stone-200"
                                     >
                                         Cancel
                                     </button>
@@ -362,29 +362,29 @@ export default function AdminUsersPage() {
                             <>
                                 <div className="grid grid-cols-2 gap-2 text-xs mb-3">
                                     <div>
-                                        <span className="text-stone-400">Org: </span>
+                                        <span className="text-stone-500">Org: </span>
                                         <span className="text-stone-600">{user.organization || '—'}</span>
                                     </div>
                                     <div>
-                                        <span className="text-stone-400">First: </span>
+                                        <span className="text-stone-500">First: </span>
                                         <span className="text-stone-500">{formatDate(user.first_sign_in)}</span>
                                     </div>
                                     <div>
-                                        <span className="text-stone-400">Country: </span>
+                                        <span className="text-stone-500">Country: </span>
                                         <span className="text-stone-600">{user.country ? (() => {
                                             const c = getCountryByCode(user.country);
                                             return c ? `${c.flag} ${c.code}` : user.country;
                                         })() : '—'}</span>
                                     </div>
                                     <div className="col-span-2">
-                                        <span className="text-stone-400">Active: </span>
+                                        <span className="text-stone-500">Active: </span>
                                         <span className="text-stone-500">{formatDate(user.last_active_at)}</span>
                                     </div>
                                 </div>
                                 <div className="flex gap-2">
                                     <button
                                         onClick={() => startEdit(user)}
-                                        className="flex-1 py-2 text-xs font-bold text-stone-500 bg-stone-50 rounded-lg hover:bg-stone-100"
+                                        className="flex-1 py-2 text-xs font-semibold text-stone-500 bg-stone-50 rounded-lg hover:bg-stone-100"
                                     >
                                         Edit
                                     </button>
@@ -392,13 +392,13 @@ export default function AdminUsersPage() {
                                         <>
                                             <button
                                                 onClick={() => deleteUser(user.id, user.name || user.email)}
-                                                className="flex-1 py-2 text-xs font-bold text-white bg-red-500 rounded-lg hover:bg-red-600"
+                                                className="flex-1 py-2 text-xs font-semibold text-white bg-red-500 rounded-lg hover:bg-red-600"
                                             >
                                                 Confirm Delete?
                                             </button>
                                             <button
                                                 onClick={() => setDeletingId(null)}
-                                                className="px-3 py-2 text-xs font-bold text-stone-500 bg-stone-50 rounded-lg hover:bg-stone-100"
+                                                className="px-3 py-2 text-xs font-semibold text-stone-500 bg-stone-50 rounded-lg hover:bg-stone-100"
                                             >
                                                 No
                                             </button>
@@ -418,7 +418,7 @@ export default function AdminUsersPage() {
                     </div>
                 ))}
                 {filteredUsers.length === 0 && (
-                    <div className="text-center py-8 text-stone-400 text-sm">
+                    <div className="text-center py-8 text-stone-500 text-sm">
                         {filter ? 'No users match your filter' : 'No users found'}
                     </div>
                 )}

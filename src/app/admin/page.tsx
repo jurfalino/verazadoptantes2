@@ -28,14 +28,14 @@ export default async function AdminOverviewPage() {
     return (
         <div className="max-w-6xl mx-auto space-y-8">
             <header>
-                <h2 className="text-3xl font-bold text-stone-900">Dashboard Overview</h2>
+                <h2 className="text-3xl font-semibold text-stone-900">Dashboard Overview</h2>
                 <p className="text-stone-500 mt-2">Welcome back, Admin.</p>
             </header>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {stats.map((stat) => (
                     <div key={stat.label} className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200">
-                        <p className={`text-sm font-bold uppercase tracking-wider text-${stat.color}-600/70 mb-2`}>
+                        <p className={`text-sm font-semibold uppercase tracking-wider text-${stat.color}-600/70 mb-2`}>
                             {stat.label}
                         </p>
                         <p className="text-4xl font-extrabold text-stone-900">
@@ -46,7 +46,7 @@ export default async function AdminOverviewPage() {
             </div>
 
             {/* Quick Actions or Recent Activity could go here */}
-            <div className="bg-white p-8 rounded-2xl shadow-sm border border-stone-200 text-center py-24 text-stone-400">
+            <div className="bg-white p-8 rounded-2xl shadow-sm border border-stone-200 text-center py-24 text-stone-500">
                 <p>Activity Log coming soon...</p>
             </div>
 

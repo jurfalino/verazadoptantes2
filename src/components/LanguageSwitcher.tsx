@@ -34,7 +34,7 @@ export function LanguageSwitcher() {
                 aria-label="Change language"
             >
                 <span className="text-lg">{currentLang.flag}</span>
-                <span className="text-xs font-bold text-stone-500 uppercase">{currentLang.id}</span>
+                <span className="text-xs font-semibold text-stone-500 uppercase">{currentLang.id}</span>
             </button>
 
             {isOpen && (
@@ -51,7 +51,7 @@ export function LanguageSwitcher() {
                             <span className="text-lg">{lang.flag}</span>
                             <span className="text-sm font-medium text-stone-700">{lang.label}</span>
                             {locale === lang.id && (
-                                <span className="ml-auto text-teal-500">✓</span>
+                                <span className="ml-auto text-teal-700">✓</span>
                             )}
                         </button>
                     ))}

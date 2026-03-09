@@ -1,6 +1,5 @@
 'use client';
 
-import { useLanguage } from '@/context/LanguageContext';
 import Link from 'next/link';
 
 export function ShieldPawIcon({ className = "w-8 h-8" }: { className?: string }) {
@@ -8,8 +7,7 @@ export function ShieldPawIcon({ className = "w-8 h-8" }: { className?: string })
         <svg viewBox="0 0 512 512" className={className} aria-hidden="true">
             <path
                 d="M256 38 C256 38 432 100 432 100 C432 100 432 270 432 270 C432 362 354 432 256 478 C158 432 80 362 80 270 C80 270 80 100 80 100 C80 100 256 38 256 38 Z"
-                fill="currentColor"
-                className="text-teal-500"
+                fill="var(--brand)"
             />
             <ellipse cx="256" cy="310" rx="52" ry="46" fill="#ffffff" />
             <ellipse cx="198" cy="238" rx="28" ry="34" fill="#ffffff" transform="rotate(-12 198 238)" />
@@ -21,12 +19,10 @@ export function ShieldPawIcon({ className = "w-8 h-8" }: { className?: string })
 }
 
 export function Logo() {
-    const { t } = useLanguage();
-
     return (
-        <Link href="/" className="font-bold text-xl text-teal-800 tracking-tight flex items-center gap-2">
+        <Link href="/" className="font-semibold text-xl text-teal-800 tracking-tight flex items-center gap-2">
             <ShieldPawIcon className="w-8 h-8" />
-            <span className="hidden sm:inline">{t('home.title') || 'BuenAdoptante'}</span>
+            <span className="hidden sm:inline">Buen Adoptante</span>
         </Link>
     );
 }

@@ -94,7 +94,7 @@ export default function ContractPage() {
             value={form[name]}
             onChange={e => setForm({ ...form, [name]: e.target.value })}
             placeholder={placeholder}
-            className={`${width} border-0 border-b-2 border-stone-300 bg-transparent px-1 py-0.5 text-stone-900 font-medium placeholder-stone-300 focus:border-emerald-500 focus:bg-emerald-50/30 outline-none transition-all text-sm`}
+            className={`${width} border-0 border-b-2 border-stone-300 bg-transparent px-1 py-0.5 text-stone-900 font-medium placeholder-stone-300 focus:border-teal-500 focus:bg-teal-50/30 outline-none transition-all text-sm`}
         />
     );
 
@@ -108,7 +108,7 @@ export default function ContractPage() {
     if (loading) {
         return (
             <div className="min-h-screen bg-stone-200 flex items-center justify-center">
-                <div className="text-stone-400 animate-pulse text-sm">Cargando contrato...</div>
+                <div className="text-stone-500 animate-pulse text-sm">Cargando contrato...</div>
             </div>
         );
     }
@@ -118,7 +118,7 @@ export default function ContractPage() {
             <div className="min-h-screen bg-stone-200 flex items-center justify-center px-4">
                 <div className="bg-white rounded-2xl p-8 text-center border border-stone-200 shadow-sm max-w-md">
                     <div className="text-3xl mb-3">⚠️</div>
-                    <h3 className="text-lg font-bold text-stone-900 mb-2">Error</h3>
+                    <h3 className="text-lg font-semibold text-stone-900 mb-2">Error</h3>
                     <p className="text-stone-500 text-sm">{error}</p>
                 </div>
             </div>
@@ -128,15 +128,15 @@ export default function ContractPage() {
     if (submitted) {
         return (
             <div className="min-h-screen bg-stone-200 flex items-center justify-center px-4">
-                <div className="bg-white rounded-2xl p-8 text-center border border-emerald-200 shadow-sm max-w-md">
+                <div className="bg-white rounded-2xl p-8 text-center border border-teal-200 shadow-sm max-w-md">
                     <div className="text-5xl mb-4">🎉</div>
-                    <h3 className="text-2xl font-bold text-stone-900 mb-2">¡Adopción Registrada!</h3>
+                    <h3 className="text-2xl font-semibold text-stone-900 mb-2">¡Adopción Registrada!</h3>
                     <p className="text-stone-500 mb-4">
                         El contrato de adopción de <strong>{animal?.animalName}</strong> ha sido enviado exitosamente.
                         El rescatista se pondrá en contacto contigo.
                     </p>
-                    <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 text-sm text-emerald-800">
-                        <p className="font-bold mb-1">Próximos pasos:</p>
+                    <div className="p-4 bg-teal-50 rounded-xl border border-teal-100 text-sm text-teal-800">
+                        <p className="font-semibold mb-1">Próximos pasos:</p>
                         <ul className="text-left space-y-1">
                             <li>✅ Tus datos fueron registrados</li>
                             <li>📞 El rescatista te contactará pronto</li>
@@ -169,7 +169,7 @@ export default function ContractPage() {
                             />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
                             <div className="absolute bottom-4 left-6 text-white">
-                                <p className="text-2xl font-bold drop-shadow">{speciesEmoji} {animal.animalName}</p>
+                                <p className="text-2xl font-semibold drop-shadow">{speciesEmoji} {animal.animalName}</p>
                             </div>
                         </div>
                     )}
@@ -178,7 +178,7 @@ export default function ContractPage() {
                     <div className="px-8 sm:px-12 py-10 text-sm text-stone-800 leading-relaxed space-y-6">
 
                         {/* Title */}
-                        <h1 className="text-center text-base font-bold tracking-wide uppercase mb-6">
+                        <h1 className="text-center text-base font-semibold tracking-wide uppercase mb-6">
                             CONTRATO DE ADOPCIÓN RESPONSABLE DE ANIMAL DE COMPAÑÍA
                         </h1>
 
@@ -189,7 +189,7 @@ export default function ContractPage() {
 
                         {/* ── EL ADOPTANTE ── */}
                         <div className="border border-stone-200 rounded-lg p-5 bg-stone-50/50 space-y-3">
-                            <h2 className="text-xs font-bold uppercase tracking-widest text-emerald-700 mb-2">El Adoptante:</h2>
+                            <h2 className="text-xs font-semibold uppercase tracking-widest text-teal-700 mb-2">El Adoptante:</h2>
                             <p className="flex flex-wrap items-baseline gap-x-2">
                                 <span className="font-semibold whitespace-nowrap">Nombre y Apellido:</span>
                                 {blank('name', 'Nombre', 'min-w-[140px]', true)}
@@ -219,7 +219,7 @@ export default function ContractPage() {
 
                         {/* ── EL RESCATISTA / PROTECTORA ── */}
                         <div className="border border-stone-200 rounded-lg p-5 bg-stone-50/50 space-y-3">
-                            <h2 className="text-xs font-bold uppercase tracking-widest text-stone-500 mb-2">El Rescatista / Protectora:</h2>
+                            <h2 className="text-xs font-semibold uppercase tracking-widest text-stone-500 mb-2">El Rescatista / Protectora:</h2>
                             <p className="flex flex-wrap items-baseline gap-x-2">
                                 <span className="font-semibold whitespace-nowrap">Nombre / Institución:</span>
                                 {staticBlank(animal?.rescuerName)}
@@ -230,7 +230,7 @@ export default function ContractPage() {
 
                         {/* ── 1. DATOS DEL ANIMAL ── */}
                         <section>
-                            <h2 className="font-bold text-stone-900 mb-3">1. DATOS DEL ANIMAL</h2>
+                            <h2 className="font-semibold text-stone-900 mb-3">1. DATOS DEL ANIMAL</h2>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-4">
                                 <p><span className="font-semibold">Nombre:</span> {staticBlank(animal?.animalName)}</p>
                                 <p><span className="font-semibold">Especie:</span> {staticBlank(animal?.species ? `${speciesEmoji} ${animal.species}` : null)}</p>
@@ -245,28 +245,28 @@ export default function ContractPage() {
 
                         {/* ── 2. COMPROMISOS DEL ADOPTANTE ── */}
                         <section>
-                            <h2 className="font-bold text-stone-900 mb-3">2. COMPROMISOS DEL ADOPTANTE</h2>
+                            <h2 className="font-semibold text-stone-900 mb-3">2. COMPROMISOS DEL ADOPTANTE</h2>
                             <p className="mb-3">El adoptante declara aceptar la tenencia del animal bajo las siguientes cláusulas obligatorias:</p>
 
                             <div className="space-y-3 pl-4">
                                 <div>
-                                    <p className="font-bold text-stone-800 text-xs uppercase tracking-wide mb-0.5">Bienestar y Trato:</p>
+                                    <p className="font-semibold text-stone-800 text-xs uppercase tracking-wide mb-0.5">Bienestar y Trato:</p>
                                     <p>El animal será tratado como un miembro de la familia. Se prohíbe terminantemente mantenerlo encadenado, en balcones sin protección, en terrazas/patios sin refugio o deambulando solo por la vía pública.</p>
                                 </div>
                                 <div>
-                                    <p className="font-bold text-stone-800 text-xs uppercase tracking-wide mb-0.5">Salud:</p>
+                                    <p className="font-semibold text-stone-800 text-xs uppercase tracking-wide mb-0.5">Salud:</p>
                                     <p>El adoptante se compromete a brindar asistencia veterinaria inmediata ante enfermedades o accidentes, mantener el plan de vacunación anual y la desparasitación al día.</p>
                                 </div>
                                 <div>
-                                    <p className="font-bold text-stone-800 text-xs uppercase tracking-wide mb-0.5">Esterilización:</p>
+                                    <p className="font-semibold text-stone-800 text-xs uppercase tracking-wide mb-0.5">Esterilización:</p>
                                     <p>(Si no está castrado) El adoptante se obliga a castrar al animal al cumplir los 6 meses de edad, enviando el certificado correspondiente al rescatista. Se prohíbe su uso para cría o reproducción.</p>
                                 </div>
                                 <div>
-                                    <p className="font-bold text-stone-800 text-xs uppercase tracking-wide mb-0.5">Seguridad (Gatos):</p>
+                                    <p className="font-semibold text-stone-800 text-xs uppercase tracking-wide mb-0.5">Seguridad (Gatos):</p>
                                     <p>En caso de felinos, el adoptante garantiza que la vivienda cuenta con mallas de protección en ventanas y balcones para evitar caídas (Síndrome del gato paracaidista) o escapes.</p>
                                 </div>
                                 <div>
-                                    <p className="font-bold text-stone-800 text-xs uppercase tracking-wide mb-0.5">Prohibición de Uso Utilitario:</p>
+                                    <p className="font-semibold text-stone-800 text-xs uppercase tracking-wide mb-0.5">Prohibición de Uso Utilitario:</p>
                                     <p>El animal no podrá ser utilizado para fines de seguridad (guardia), control de plagas (caza de roedores), ni experimentos de ninguna índole.</p>
                                 </div>
                             </div>
@@ -276,14 +276,14 @@ export default function ContractPage() {
 
                         {/* ── 3. SEGUIMIENTO Y NO ABANDONO ── */}
                         <section>
-                            <h2 className="font-bold text-stone-900 mb-3">3. SEGUIMIENTO Y NO ABANDONO</h2>
+                            <h2 className="font-semibold text-stone-900 mb-3">3. SEGUIMIENTO Y NO ABANDONO</h2>
                             <div className="space-y-3 pl-4">
                                 <div>
-                                    <p className="font-bold text-stone-800 text-xs uppercase tracking-wide mb-0.5">Seguimiento:</p>
+                                    <p className="font-semibold text-stone-800 text-xs uppercase tracking-wide mb-0.5">Seguimiento:</p>
                                     <p>El adoptante acepta recibir visitas programadas y enviar fotos/videos periódicos del animal para constatar su estado de salud y adaptación.</p>
                                 </div>
                                 <div>
-                                    <p className="font-bold text-stone-800 text-xs uppercase tracking-wide mb-0.5">Prohibición de Cesión:</p>
+                                    <p className="font-semibold text-stone-800 text-xs uppercase tracking-wide mb-0.5">Prohibición de Cesión:</p>
                                     <p>Si por razones de fuerza mayor el adoptante no pudiera continuar con la tenencia, está estrictamente prohibido regalarlo, venderlo o abandonarlo. Deberá comunicarse inmediatamente con el rescatista para coordinar el retorno del animal o una nueva adopción supervisada.</p>
                                 </div>
                             </div>
@@ -293,7 +293,7 @@ export default function ContractPage() {
 
                         {/* ── 4. INCUMPLIMIENTO Y LEY 14.346 ── */}
                         <section>
-                            <h2 className="font-bold text-stone-900 mb-3">4. INCUMPLIMIENTO Y LEY 14.346</h2>
+                            <h2 className="font-semibold text-stone-900 mb-3">4. INCUMPLIMIENTO Y LEY 14.346</h2>
                             <p className="pl-4">El incumplimiento de cualquiera de estas cláusulas facultará al rescatista a la restitución inmediata del animal sin necesidad de intervención judicial previa, sin perjuicio de las acciones legales que correspondan bajo la Ley Nacional 14.346 de Protección Animal, la cual pena el maltrato y la crueldad.</p>
                         </section>
 
@@ -301,7 +301,7 @@ export default function ContractPage() {
 
                         {/* ── 5. CONSENTIMIENTO ── */}
                         <section>
-                            <h2 className="font-bold text-stone-900 mb-3">5. CONSENTIMIENTO DE TRATAMIENTO DE DATOS Y REGISTRO</h2>
+                            <h2 className="font-semibold text-stone-900 mb-3">5. CONSENTIMIENTO DE TRATAMIENTO DE DATOS Y REGISTRO</h2>
                             <p className="pl-4">El Adoptante presta su consentimiento expreso para que los datos personales consignados en este contrato sean incorporados a los registros internos del Rescatista y a bases de datos compartidas entre organizaciones de protección animal debidamente acreditadas.</p>
                         </section>
 
@@ -310,29 +310,29 @@ export default function ContractPage() {
                         {/* ── Signatures ── */}
                         <section className="flex flex-col sm:flex-row justify-between gap-8 mt-8">
                             <div className="text-center flex-1">
-                                <div className="border-b-2 border-stone-400 h-12 mb-2 flex items-end justify-center pb-1 text-stone-400 italic text-sm">
+                                <div className="border-b-2 border-stone-400 h-12 mb-2 flex items-end justify-center pb-1 text-stone-500 italic text-sm">
                                     {form.name && form.lastName ? `${form.name} ${form.lastName}` : ''}
                                 </div>
-                                <p className="text-xs font-bold text-stone-500 uppercase tracking-wide">Firma del Adoptante</p>
-                                {form.dni && <p className="text-xs text-stone-400 mt-1">DNI: {form.dni}</p>}
+                                <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">Firma del Adoptante</p>
+                                {form.dni && <p className="text-xs text-stone-500 mt-1">DNI: {form.dni}</p>}
                             </div>
                             <div className="text-center flex-1">
                                 <div className="border-b-2 border-stone-400 h-12 mb-2 flex items-end justify-center pb-1 text-stone-500 italic text-sm">
                                     {animal?.rescuerName || ''}
                                 </div>
-                                <p className="text-xs font-bold text-stone-500 uppercase tracking-wide">Firma del Rescatista</p>
+                                <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">Firma del Rescatista</p>
                             </div>
                         </section>
 
                         {/* ── Submit ── */}
                         <div className="mt-10 pt-6 border-t border-stone-100 print:hidden">
-                            <p className="text-xs text-stone-400 text-center mb-4">
+                            <p className="text-xs text-stone-500 text-center mb-4">
                                 Al hacer clic en &quot;Firmar&quot;, declaro haber leído y aceptado todas las cláusulas del presente contrato.
                             </p>
                             <button
                                 type="submit"
                                 disabled={submitting}
-                                className="w-full py-3.5 bg-stone-800 text-white font-bold rounded-xl hover:bg-stone-900 disabled:opacity-50 transition-all shadow-sm text-base active:scale-[0.98]"
+                                className="w-full py-3.5 bg-stone-800 text-white font-semibold rounded-xl hover:bg-stone-900 disabled:opacity-50 transition-all shadow-sm text-base active:scale-[0.98]"
                                 style={{ fontFamily: 'system-ui, sans-serif' }}
                             >
                                 {submitting ? 'Enviando...' : '✍️ Firmar y Enviar Contrato'}
@@ -342,7 +342,7 @@ export default function ContractPage() {
 
                     {/* ── Footer ── */}
                     <div className="bg-stone-50 border-t border-stone-100 px-8 py-3 text-center print:hidden">
-                        <p className="text-[11px] text-stone-400" style={{ fontFamily: 'system-ui, sans-serif' }}>
+                        <p className="text-xs text-stone-500" style={{ fontFamily: 'system-ui, sans-serif' }}>
                             Contrato generado por BuenAdoptante
                         </p>
                     </div>

@@ -200,11 +200,11 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                     {images.map((img, idx) => (
                         <div
                             key={idx}
-                            className={`aspect-square bg-emerald-50 rounded-xl overflow-hidden relative group border-2 ${img.isProfilePicture ? 'border-teal-400 ring-2 ring-teal-200' : 'border-emerald-100/50'
+                            className={`aspect-square bg-teal-50 rounded-xl overflow-hidden relative group border-2 ${img.isProfilePicture ? 'border-teal-400 ring-2 ring-teal-200' : 'border-teal-100/50'
                                 }`}
                         >
                             {img.url.startsWith('broken:') ? (
-                                <div className="w-full h-full flex items-center justify-center bg-stone-100 text-stone-400">
+                                <div className="w-full h-full flex items-center justify-center bg-stone-100 text-stone-500">
                                     <div className="text-center p-4">
                                         <span className="text-2xl">📷</span>
                                         <p className="text-xs mt-1">{t('adopter.image_expired') || 'Image expired'}</p>
@@ -240,7 +240,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                                         const target = e.currentTarget;
                                         target.style.display = 'none';
                                         const placeholder = document.createElement('div');
-                                        placeholder.className = 'w-full h-full flex items-center justify-center bg-stone-100 text-stone-400 absolute inset-0';
+                                        placeholder.className = 'w-full h-full flex items-center justify-center bg-stone-100 text-stone-500 absolute inset-0';
                                         placeholder.innerHTML = '<div class="text-center p-4"><span class="text-2xl">📷</span><p class="text-xs mt-1">Image unavailable</p></div>';
                                         target.parentElement?.appendChild(placeholder);
                                     }}
@@ -249,7 +249,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
 
                             {/* Profile Picture Badge - Top Left */}
                             {img.isProfilePicture ? (
-                                <div className="absolute top-0 left-0 m-2 px-2 py-1 bg-teal-500 text-white text-xs font-bold rounded-lg shadow-md flex items-center gap-1">
+                                <div className="absolute top-0 left-0 m-2 px-2 py-1 bg-teal-700 text-white text-xs font-semibold rounded-lg shadow-md flex items-center gap-1">
                                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
                                     {t('adopter.profile_picture') || 'Profile'}
                                 </div>
@@ -263,7 +263,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                                             if (img.id) await handleSetProfilePicture(img.id);
                                         }}
                                         disabled={settingProfile === img.id}
-                                        className="absolute top-0 left-0 m-2 px-2 py-1 bg-white/90 hover:bg-teal-500 hover:text-white text-teal-700 text-xs font-bold rounded-lg shadow-md opacity-0 group-hover:opacity-100 transition-all flex items-center gap-1 backdrop-blur-sm"
+                                        className="absolute top-0 left-0 m-2 px-2 py-1 bg-white/90 hover:bg-teal-500 hover:text-white text-teal-700 text-xs font-semibold rounded-lg shadow-md opacity-0 group-hover:opacity-100 transition-all flex items-center gap-1 backdrop-blur-sm"
                                         title={t('adopter.set_as_profile') || 'Set as Profile Picture'}
                                     >
                                         {settingProfile === img.id ? (
@@ -336,10 +336,10 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                                 openLogin();
                             }
                         }}
-                        className="aspect-square bg-emerald-50/50 border-2 border-dashed border-emerald-200/60 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-emerald-50 hover:border-emerald-300 transition-all group">
+                        className="aspect-square bg-teal-50/50 border-2 border-dashed border-teal-200/60 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-teal-50 hover:border-teal-300 transition-all group">
                         <input type="file" accept="image/*,video/*" className="hidden" onChange={handleFileChange} disabled={uploading} />
-                        <span className="text-3xl text-emerald-300 group-hover:text-emerald-500 transition-colors">+</span>
-                        <span className="text-xs text-emerald-600/70 group-hover:text-emerald-700 font-bold mt-1 uppercase tracking-wide">{uploading ? t('adopter.uploading') : t('adopter.upload_media')}</span>
+                        <span className="text-3xl text-teal-700 group-hover:text-teal-700 transition-colors">+</span>
+                        <span className="text-xs text-teal-700 group-hover:text-teal-700 font-semibold mt-1 uppercase tracking-wide">{uploading ? t('adopter.uploading') : t('adopter.upload_media')}</span>
                     </label>
                 </div>
 

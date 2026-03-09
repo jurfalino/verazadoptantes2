@@ -112,11 +112,11 @@ export function CountrySelector({ value, onChange, detectedCountry }: CountrySel
                     {selected ? getName(selected) : (t('settings.country_select') || 'Select country')}
                 </span>
                 {detectedCountry && value === detectedCountry && (
-                    <span className="text-xs px-2 py-0.5 bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 rounded-full font-medium">
+                    <span className="text-xs px-2 py-0.5 bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-700 rounded-full font-medium">
                         {t('settings.country_detected') || 'Auto-detected'}
                     </span>
                 )}
-                <svg className={`w-4 h-4 text-stone-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className={`w-4 h-4 text-stone-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
             </button>
@@ -140,7 +140,7 @@ export function CountrySelector({ value, onChange, detectedCountry }: CountrySel
                     {/* Country list */}
                     <div ref={listRef} className="max-h-60 overflow-y-auto">
                         {filtered.length === 0 ? (
-                            <div className="px-4 py-3 text-sm text-stone-400">
+                            <div className="px-4 py-3 text-sm text-stone-500">
                                 {locale === 'es' ? 'No se encontraron países' : 'No countries found'}
                             </div>
                         ) : (
@@ -152,13 +152,13 @@ export function CountrySelector({ value, onChange, detectedCountry }: CountrySel
                                     onClick={() => handleSelect(c)}
                                     className={`w-full px-4 py-2.5 flex items-center gap-3 text-left text-sm transition-colors
                                         ${i === highlightIndex ? 'bg-teal-50 dark:bg-teal-900/20' : 'hover:bg-stone-50 dark:hover:bg-stone-700/50'}
-                                        ${value === c.code ? 'font-bold' : 'font-medium'}
+                                        ${value === c.code ? 'font-semibold' : 'font-medium'}
                                     `}
                                 >
                                     <span className="text-lg flex-shrink-0">{c.flag}</span>
                                     <span className="text-stone-700 dark:text-stone-200">{getName(c)}</span>
                                     {value === c.code && (
-                                        <span className="ml-auto text-teal-500 flex-shrink-0">✓</span>
+                                        <span className="ml-auto text-teal-700 flex-shrink-0">✓</span>
                                     )}
                                 </button>
                             ))

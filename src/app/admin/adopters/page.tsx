@@ -150,7 +150,7 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
     return (
         <div className="max-w-6xl mx-auto space-y-6">
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-                <h2 className="text-2xl font-bold text-stone-900">Manage Adopters</h2>
+                <h2 className="text-2xl font-semibold text-stone-900">Manage Adopters</h2>
                 <form className="flex gap-2">
                     {/* Preserve active filters in hidden inputs */}
                     {filterCountry && <input type="hidden" name="country" value={filterCountry} />}
@@ -162,7 +162,7 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                         placeholder="Search name or ID..."
                         className="px-4 py-2 rounded-lg border border-stone-200 text-sm w-full sm:w-64"
                     />
-                    <button type="submit" className="px-4 py-2 bg-stone-900 text-white rounded-lg text-sm font-bold flex-shrink-0">Search</button>
+                    <button type="submit" className="px-4 py-2 bg-stone-900 text-white rounded-lg text-sm font-semibold flex-shrink-0">Search</button>
                 </form>
             </div>
 
@@ -173,7 +173,7 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                     <div className="flex items-center justify-between mb-2">
                         <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wide">By Country</h3>
                         {filterCountry && (
-                            <Link href={buildFilterUrl({ country: undefined })} className="text-xs text-teal-600 hover:text-teal-800 font-medium">
+                            <Link href={buildFilterUrl({ country: undefined })} className="text-xs text-teal-700 hover:text-teal-800 font-medium">
                                 Clear ✕
                             </Link>
                         )}
@@ -193,7 +193,7 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                                 >
                                     <span>{c.code ? countryFlag(c.code) : '❓'}</span>
                                     <span>{c.code?.toUpperCase() || 'Unknown'}</span>
-                                    <span className={`font-bold ${isActive ? 'text-teal-100' : 'text-stone-400'}`}>
+                                    <span className={`font-semibold ${isActive ? 'text-teal-100' : 'text-stone-500'}`}>
                                         {c.count}
                                     </span>
                                 </Link>
@@ -207,7 +207,7 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                     <div className="flex items-center justify-between mb-2">
                         <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wide">By Rating</h3>
                         {filterRating && (
-                            <Link href={buildFilterUrl({ rating: undefined })} className="text-xs text-teal-600 hover:text-teal-800 font-medium">
+                            <Link href={buildFilterUrl({ rating: undefined })} className="text-xs text-teal-700 hover:text-teal-800 font-medium">
                                 Clear ✕
                             </Link>
                         )}
@@ -229,14 +229,14 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                                 >
                                     <span>⭐</span>
                                     <span className="capitalize">{label}</span>
-                                    <span className="font-bold opacity-70">{count}</span>
+                                    <span className="font-semibold opacity-70">{count}</span>
                                 </Link>
                             );
                         })}
                         {noRatingCount.count > 0 && (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-stone-50 text-stone-400 border border-stone-200">
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-stone-50 text-stone-500 border border-stone-200">
                                 No rating
-                                <span className="font-bold opacity-70">{noRatingCount.count}</span>
+                                <span className="font-semibold opacity-70">{noRatingCount.count}</span>
                             </span>
                         )}
                     </div>
@@ -255,7 +255,7 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                             filterRating={filterRating}
                         />
                         {filterUser && (
-                            <Link href={buildFilterUrl({ user: undefined })} className="text-xs text-teal-600 hover:text-teal-800 font-medium whitespace-nowrap">
+                            <Link href={buildFilterUrl({ user: undefined })} className="text-xs text-teal-700 hover:text-teal-800 font-medium whitespace-nowrap">
                                 Clear ✕
                             </Link>
                         )}
@@ -263,10 +263,10 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                 </div>
             </div>
 
-            <div className="text-sm text-stone-400">
+            <div className="text-sm text-stone-500">
                 {filteredList.length} adopter{filteredList.length !== 1 ? 's' : ''}
                 {(filterCountry || filterRating || filterUser) && (
-                    <span> (filtered) · <Link href={buildFilterUrl({ country: undefined, rating: undefined, user: undefined, q: q || undefined })} className="text-teal-600 hover:underline">Clear all filters</Link></span>
+                    <span> (filtered) · <Link href={buildFilterUrl({ country: undefined, rating: undefined, user: undefined, q: q || undefined })} className="text-teal-700 hover:underline">Clear all filters</Link></span>
                 )}
             </div>
 
@@ -297,7 +297,7 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                                     {thumbnail ? (
                                         <img src={thumbnail} alt="" className="w-full h-full object-cover" />
                                     ) : (
-                                        <div className="w-full h-full flex items-center justify-center text-stone-400">
+                                        <div className="w-full h-full flex items-center justify-center text-stone-500">
                                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                                         </div>
                                     )}
@@ -305,10 +305,10 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                                 {/* Name + Contact + ID */}
                                 <div className="flex-1 min-w-0">
                                     <div className="font-semibold text-stone-900 truncate">{adopter.name}</div>
-                                    <div className="text-xs text-stone-400 truncate">
+                                    <div className="text-xs text-stone-500 truncate">
                                         {adopter.contactInfo || '-'}
                                     </div>
-                                    <div className="text-xs text-stone-300 font-mono truncate">{adopter.id}</div>
+                                    <div className="text-xs text-stone-500 font-mono truncate">{adopter.id}</div>
                                 </div>
                                 {/* Country badge */}
                                 {adopter.country && (
@@ -318,7 +318,7 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                                 )}
                                 {/* Rating Badge (server-rendered) */}
                                 {ratingColors && ratingLabel && (
-                                    <div className={`inline-flex items-center gap-1.5 rounded-full font-bold shadow-sm px-2 py-0.5 text-xs border ${ratingColors.bg} ${ratingColors.text} ${ratingColors.border}`}>
+                                    <div className={`inline-flex items-center gap-1.5 rounded-full font-semibold shadow-sm px-2 py-0.5 text-xs border ${ratingColors.bg} ${ratingColors.text} ${ratingColors.border}`}>
                                         <span className="capitalize">{ratingLabel}</span>
                                     </div>
                                 )}
@@ -342,10 +342,10 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                                         <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-stone-100 text-stone-500">🔗 Possible dup</span>
                                     )}
                                     {flags.verified_identity && (
-                                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">✓ Identity</span>
+                                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-teal-100 text-teal-700">✓ Identity</span>
                                     )}
                                     {flags.verified_address && (
-                                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">✓ Address</span>
+                                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-teal-100 text-teal-700">✓ Address</span>
                                     )}
                                     {flags.tooManyAdoptions && (
                                         <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">⚠ {flags.tooManyAdoptions.count} adoptions/{flags.tooManyAdoptions.periodDays}d</span>
@@ -358,18 +358,18 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
 
                             {/* Bottom Row: Dates + Added By + Actions */}
                             <div className="flex justify-between items-center mt-2 pt-2 border-t border-stone-100">
-                                <div className="flex gap-3 text-xs text-stone-400">
+                                <div className="flex gap-3 text-xs text-stone-500">
                                     {addedDate && <span>📅 {addedDate}</span>}
                                     {updatedDate && <span>✏️ {updatedDate}</span>}
                                     {adopter.addedBy && adopter.addedBy !== 'anonymous' && (
-                                        <span className="text-stone-300">by {adopter.addedBy}</span>
+                                        <span className="text-stone-500">by {adopter.addedBy}</span>
                                     )}
                                 </div>
                                 <div className="flex gap-2">
                                     <Link
                                         href={`/adopter/${adopter.id}`}
                                         target="_blank"
-                                        className="px-3 py-1.5 text-xs font-bold text-teal-600 bg-teal-50 rounded-lg hover:bg-teal-100"
+                                        className="px-3 py-1.5 text-xs font-semibold text-teal-700 bg-teal-50 rounded-lg hover:bg-teal-100"
                                     >
                                         Edit
                                     </Link>

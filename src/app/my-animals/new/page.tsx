@@ -214,16 +214,16 @@ export default function NewAnimalPage() {
                     </h1>
                 </div>
 
-                <div className="bg-white p-5 rounded-xl border-2 border-emerald-400/50 shadow-lg ring-4 ring-emerald-50/50">
+                <div className="bg-white p-5 rounded-xl border-2 border-teal-400/50 shadow-lg ring-4 ring-teal-50/50">
                     <form onSubmit={handleSubmit} className="space-y-4">
                         {/* Animal Name */}
                         <div>
-                            <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">
+                            <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
                                 {t('adoption.animal_name') || 'Animal Name'} *
                             </label>
                             <input
                                 required
-                                className="w-full h-10 px-4 rounded-lg border border-emerald-200 text-emerald-950 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none text-sm"
+                                className="w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm"
                                 value={formData.animalName}
                                 onChange={e => setFormData({ ...formData, animalName: e.target.value })}
                                 placeholder={t('adoption.animal_placeholder') || 'e.g. Luna'}
@@ -232,7 +232,7 @@ export default function NewAnimalPage() {
 
                         {/* Species */}
                         <div>
-                            <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">
+                            <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
                                 {t('adoption.species') || 'Species'} *
                             </label>
                             {customSpecies ? (
@@ -240,7 +240,7 @@ export default function NewAnimalPage() {
                                     <input
                                         required
                                         autoFocus
-                                        className="flex-1 h-10 px-4 rounded-lg border border-emerald-200 text-emerald-950 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none text-sm"
+                                        className="flex-1 h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm"
                                         value={formData.species}
                                         onChange={e => setFormData({ ...formData, species: e.target.value })}
                                         placeholder={t('adoption.species_other_placeholder') || 'Enter species...'}
@@ -248,7 +248,7 @@ export default function NewAnimalPage() {
                                     <button
                                         type="button"
                                         onClick={() => { setCustomSpecies(false); setFormData({ ...formData, species: 'cat' }); }}
-                                        className="px-3 h-10 rounded-lg border border-emerald-200 bg-emerald-50/50 text-emerald-700 text-xs font-medium hover:bg-emerald-50 transition-colors whitespace-nowrap"
+                                        className="px-3 h-10 rounded-lg border border-teal-200 bg-teal-50/50 text-teal-700 text-xs font-medium hover:bg-teal-50 transition-colors whitespace-nowrap"
                                     >
                                         ↩ {t('adoption.species_presets') || 'Presets'}
                                     </button>
@@ -257,7 +257,7 @@ export default function NewAnimalPage() {
                                 <div className="relative">
                                     <select
                                         required
-                                        className="w-full h-10 pl-4 pr-10 rounded-lg border border-emerald-200 bg-emerald-50/50 text-emerald-950 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none appearance-none text-sm"
+                                        className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50/50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm"
                                         value={formData.species.toLowerCase() || 'cat'}
                                         onChange={e => {
                                             if (e.target.value === '_other') {
@@ -273,7 +273,7 @@ export default function NewAnimalPage() {
                                         <option value="bird">{t('species.bird') || 'Bird'} 🐦</option>
                                         <option value="_other">{t('species.other') || 'Other...'}</option>
                                     </select>
-                                    <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-stone-400">
+                                    <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-stone-500">
                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                                     </div>
                                 </div>
@@ -283,22 +283,22 @@ export default function NewAnimalPage() {
                         {/* Age & Sex (side by side) */}
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">
+                                <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
                                     {t('adoption.age') || 'Approximate Age'}
                                 </label>
                                 <input
-                                    className="w-full h-10 px-4 rounded-lg border border-emerald-200 text-emerald-950 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none text-sm"
+                                    className="w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm"
                                     value={formData.age}
                                     onChange={e => setFormData({ ...formData, age: e.target.value })}
                                     placeholder={t('adoption.age_placeholder') || 'e.g. 2 years, 3 months'}
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">
+                                <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
                                     {t('adoption.sex') || 'Sex'}
                                 </label>
                                 <select
-                                    className="w-full h-10 pl-4 pr-10 rounded-lg border border-emerald-200 bg-emerald-50/50 text-emerald-950 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none appearance-none text-sm"
+                                    className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50/50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm"
                                     value={formData.sex}
                                     onChange={e => setFormData({ ...formData, sex: e.target.value })}
                                 >
@@ -312,22 +312,22 @@ export default function NewAnimalPage() {
                         {/* Color & Microchip (side by side) */}
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">
+                                <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
                                     {t('adoption.color') || 'Color / Markings'}
                                 </label>
                                 <input
-                                    className="w-full h-10 px-4 rounded-lg border border-emerald-200 text-emerald-950 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none text-sm"
+                                    className="w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm"
                                     value={formData.color}
                                     onChange={e => setFormData({ ...formData, color: e.target.value })}
                                     placeholder={t('adoption.color_placeholder') || 'e.g. Black with white spots'}
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">
+                                <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
                                     {t('adoption.microchip') || 'Microchip N°'}
                                 </label>
                                 <input
-                                    className="w-full h-10 px-4 rounded-lg border border-emerald-200 text-emerald-950 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none text-sm"
+                                    className="w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm"
                                     value={formData.microchip}
                                     onChange={e => setFormData({ ...formData, microchip: e.target.value })}
                                     placeholder={t('adoption.microchip_placeholder') || 'Optional'}
@@ -337,11 +337,11 @@ export default function NewAnimalPage() {
 
                         {/* Details / Description */}
                         <div>
-                            <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">
+                            <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
                                 {t('common.details') || 'Details'}
                             </label>
                             <textarea
-                                className="w-full p-3 rounded-lg border border-emerald-200 text-emerald-950 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none resize-none text-sm"
+                                className="w-full p-3 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-none text-sm"
                                 rows={4}
                                 value={formData.details}
                                 onChange={e => setFormData({ ...formData, details: e.target.value })}
@@ -350,8 +350,8 @@ export default function NewAnimalPage() {
                         </div>
 
                         {/* Photos */}
-                        <div className="p-4 bg-emerald-50/50 rounded-lg border border-emerald-100">
-                            <label className="block text-xs font-bold text-emerald-800 mb-2 uppercase tracking-wider flex items-center gap-2">
+                        <div className="p-4 bg-teal-50/50 rounded-lg border border-teal-100">
+                            <label className="block text-xs font-semibold text-teal-800 mb-2 uppercase tracking-wider flex items-center gap-2">
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                                 {t('common.photos') || 'Photos'}
                             </label>
@@ -364,9 +364,9 @@ export default function NewAnimalPage() {
                                             <img
                                                 src={img.url}
                                                 alt={img.caption || 'Photo'}
-                                                className="w-20 h-20 object-cover rounded-lg border border-emerald-200"
+                                                className="w-20 h-20 object-cover rounded-lg border border-teal-200"
                                             />
-                                            <div className="absolute inset-0 bg-emerald-600/10 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <div className="absolute inset-0 bg-teal-600/10 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <span className="text-xs text-white bg-black/40 px-1 rounded">saved</span>
                                             </div>
                                         </div>
@@ -382,12 +382,12 @@ export default function NewAnimalPage() {
                                             <img
                                                 src={img}
                                                 alt={`New photo ${idx + 1}`}
-                                                className="w-20 h-20 object-cover rounded-lg border border-emerald-300"
+                                                className="w-20 h-20 object-cover rounded-lg border border-teal-300"
                                             />
                                             <button
                                                 type="button"
                                                 onClick={() => setPendingImages(prev => prev.filter((_, i) => i !== idx))}
-                                                className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
+                                                className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
                                                 title="Remove"
                                             >
                                                 ×
@@ -398,11 +398,11 @@ export default function NewAnimalPage() {
                             )}
 
                             <div className="flex items-center gap-3">
-                                <label className={`px-4 py-2 bg-white border border-emerald-200 text-emerald-600 rounded-lg text-sm font-bold cursor-pointer hover:bg-emerald-50 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                                <label className={`px-4 py-2 bg-white border border-teal-200 text-teal-700 rounded-lg text-sm font-semibold cursor-pointer hover:bg-teal-50 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
                                     {uploading ? (t('adopter.uploading') || 'Uploading...') : (t('common.add_photo') || '+ Add Photo')}
                                     <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={uploading} />
                                 </label>
-                                <span className="text-xs text-emerald-600">{existingImages.length + pendingImages.length} {t('common.photos') || 'photos'}</span>
+                                <span className="text-xs text-teal-700">{existingImages.length + pendingImages.length} {t('common.photos') || 'photos'}</span>
                             </div>
                         </div>
 
@@ -410,14 +410,14 @@ export default function NewAnimalPage() {
                         <div className="flex justify-end gap-3 pt-4 border-t border-stone-100">
                             <Link
                                 href="/my-animals"
-                                className="px-5 py-2.5 text-sm font-bold text-stone-600 hover:bg-stone-100 rounded-lg transition-colors"
+                                className="px-5 py-2.5 text-sm font-semibold text-stone-600 hover:bg-stone-100 rounded-lg transition-colors"
                             >
                                 {t('common.cancel') || 'Cancel'}
                             </Link>
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="px-6 py-2.5 text-sm font-bold text-white bg-emerald-500 rounded-xl hover:bg-emerald-600 shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 disabled:opacity-50 transition-all duration-300 active:scale-[0.99]"
+                                className="px-6 py-2.5 text-sm font-semibold text-white bg-teal-700 rounded-xl hover:bg-teal-600 shadow-lg shadow-teal-700/20 hover:shadow-teal-700/40 disabled:opacity-50 transition-all duration-300 active:scale-[0.99]"
                             >
                                 {loading
                                     ? (t('common.processing') || 'Processing...')

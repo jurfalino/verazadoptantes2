@@ -47,7 +47,7 @@ export default function DeleteAdopterButton({ adopterId, adopterName }: DeleteBu
         <button
             onClick={handleDelete}
             disabled={loading}
-            className="px-3 py-1.5 text-xs font-bold text-rose-600 bg-rose-100 rounded-lg hover:bg-rose-200 transition-colors disabled:opacity-50"
+            className="px-3 py-1.5 text-xs font-semibold text-rose-600 bg-rose-100 rounded-lg hover:bg-rose-200 transition-colors disabled:opacity-50"
             title="Permanently Delete Adopter"
         >
             {loading ? '...' : 'Delete'}

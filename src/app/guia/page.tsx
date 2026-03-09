@@ -68,7 +68,7 @@ const PHASE_COLORS = [
     { bg: 'bg-violet-50', border: 'border-violet-200', accent: 'bg-violet-500', text: 'text-violet-700', badge: 'bg-violet-100 text-violet-800', ring: 'ring-violet-200', iconBg: 'bg-violet-100' },
     { bg: 'bg-rose-50', border: 'border-rose-200', accent: 'bg-rose-500', text: 'text-rose-700', badge: 'bg-rose-100 text-rose-800', ring: 'ring-rose-200', iconBg: 'bg-rose-100' },
     { bg: 'bg-blue-50', border: 'border-blue-200', accent: 'bg-blue-500', text: 'text-blue-700', badge: 'bg-blue-100 text-blue-800', ring: 'ring-blue-200', iconBg: 'bg-blue-100' },
-    { bg: 'bg-emerald-50', border: 'border-emerald-200', accent: 'bg-emerald-500', text: 'text-emerald-700', badge: 'bg-emerald-100 text-emerald-800', ring: 'ring-emerald-200', iconBg: 'bg-emerald-100' },
+    { bg: 'bg-teal-50', border: 'border-teal-200', accent: 'bg-teal-500', text: 'text-teal-700', badge: 'bg-teal-100 text-teal-800', ring: 'ring-teal-200', iconBg: 'bg-teal-100' },
 ];
 
 export default function GuiaPage() {
@@ -105,7 +105,7 @@ export default function GuiaPage() {
     return (
         <main className="min-h-screen bg-stone-50">
             {/* Hero Section — full-width gradient header */}
-            <header className="relative overflow-hidden bg-gradient-to-br from-teal-600 via-teal-700 to-emerald-800 text-white py-16 md:py-24 px-4">
+            <header className="relative overflow-hidden bg-gradient-to-br from-teal-600 via-teal-700 to-teal-800 text-white py-16 md:py-24 px-4">
                 <div className="absolute inset-0 opacity-10" style={{
                     backgroundImage: 'radial-gradient(circle at 25% 25%, white 1px, transparent 1px), radial-gradient(circle at 75% 75%, white 1px, transparent 1px)',
                     backgroundSize: '40px 40px',
@@ -130,7 +130,7 @@ export default function GuiaPage() {
                                 <button
                                     key={step.slug}
                                     onClick={() => document.getElementById(`phase-${i}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/15 hover:bg-white/25 backdrop-blur-sm transition-all hover:scale-105"
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-white/15 hover:bg-white/25 backdrop-blur-sm transition-all hover:scale-105"
                                 >
                                     <span>{step.entry.icon}</span>
                                     <span className="hidden sm:inline">{pick(step.entry.titleEs, step.entry.titleEn).replace(/^Fase \d+:\s*/, '').replace(/^Phase \d+:\s*/, '').split('(')[0].trim()}</span>
@@ -145,12 +145,12 @@ export default function GuiaPage() {
                 {/* Phase Timeline — All phases expanded with full details */}
                 {sortedSteps.length > 0 && (
                     <section className="space-y-2">
-                        <h2 className="text-sm font-bold text-stone-400 uppercase tracking-widest text-center mb-8">
+                        <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-widest text-center mb-8">
                             {label('processHeaderEs', 'processHeaderEn', 'Las 6 Fases', 'The 6 Phases')}
                         </h2>
                         <div className="relative">
                             {/* Vertical timeline connector */}
-                            <div className="absolute left-5 md:left-7 top-0 bottom-0 w-0.5 bg-gradient-to-b from-teal-300 via-violet-300 to-emerald-300 rounded-full" />
+                            <div className="absolute left-5 md:left-7 top-0 bottom-0 w-0.5 bg-gradient-to-b from-teal-300 via-violet-300 to-teal-300 rounded-full" />
 
                             <div className="space-y-6">
                                 {sortedSteps.map((step, i) => {
@@ -171,11 +171,11 @@ export default function GuiaPage() {
                                                     </div>
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-center gap-2 mb-1">
-                                                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${colors.badge}`}>
+                                                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${colors.badge}`}>
                                                                 {label('stepPrefixEs', 'stepPrefixEn', 'Fase', 'Phase')} {i + 1}
                                                             </span>
                                                         </div>
-                                                        <h3 className="text-lg font-bold text-stone-900 mb-1 leading-snug">
+                                                        <h3 className="text-lg font-semibold text-stone-900 mb-1 leading-snug">
                                                             {pick(step.entry.titleEs, step.entry.titleEn)}
                                                         </h3>
                                                         <p className="text-stone-500 text-sm leading-relaxed">
@@ -190,7 +190,7 @@ export default function GuiaPage() {
                                                         <ul className="space-y-3 pt-4">
                                                             {details.map((detail, j) => (
                                                                 <li key={j} className="flex items-start gap-3">
-                                                                    <span className={`flex-shrink-0 w-6 h-6 rounded-full ${colors.bg} ${colors.text} flex items-center justify-center text-xs font-bold mt-0.5`}>
+                                                                    <span className={`flex-shrink-0 w-6 h-6 rounded-full ${colors.bg} ${colors.text} flex items-center justify-center text-xs font-semibold mt-0.5`}>
                                                                         {j + 1}
                                                                     </span>
                                                                     <div className="flex-1 min-w-0">
@@ -200,7 +200,7 @@ export default function GuiaPage() {
                                                                         {detail.linkUrl && (
                                                                             <Link
                                                                                 href={detail.linkUrl}
-                                                                                className={`inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg text-xs font-bold ${colors.badge} hover:opacity-80 transition-opacity shadow-sm`}
+                                                                                className={`inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg text-xs font-semibold ${colors.badge} hover:opacity-80 transition-opacity shadow-sm`}
                                                                             >
                                                                                 {pick(detail.linkTextEs || detail.linkUrl, detail.linkTextEn || detail.linkUrl)}
                                                                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
@@ -223,7 +223,7 @@ export default function GuiaPage() {
 
                 {/* Why Vetting Matters */}
                 <section className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6 md:p-8">
-                    <h2 className="text-xl font-bold text-stone-900 mb-6 text-center">
+                    <h2 className="text-xl font-semibold text-stone-900 mb-6 text-center">
                         {label('whyVetEs', 'whyVetEn', '¿Por qué verificar adoptantes?', 'Why Vet Adopters?')}
                     </h2>
                     <div className="grid gap-4 md:grid-cols-2">
@@ -256,19 +256,19 @@ export default function GuiaPage() {
                     <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-teal-50 mb-1">
                         <span className="text-3xl">🐾</span>
                     </div>
-                    <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
+                    <h2 className="text-2xl md:text-3xl font-semibold text-stone-900">
                         {hero ? pick(hero.ctaTextEs, hero.ctaTextEn) : pick('¿Listo para empezar?', 'Ready to start?')}
                     </h2>
                     <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                         <Link
                             href={hero?.ctaUrl || '/'}
-                            className="inline-flex items-center gap-2 bg-teal-600 text-white px-8 py-3.5 rounded-xl font-bold hover:bg-teal-700 transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 transform"
+                            className="inline-flex items-center gap-2 bg-teal-600 text-white px-8 py-3.5 rounded-xl font-semibold hover:bg-teal-700 transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 transform"
                         >
                             {label('ctaButtonEs', 'ctaButtonEn', 'Empezar a Verificar', 'Start Vetting')} →
                         </Link>
                         <Link
                             href="/guia/faq"
-                            className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-stone-600 bg-stone-100 hover:bg-stone-200 transition-all"
+                            className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-stone-600 bg-stone-100 hover:bg-stone-200 transition-all"
                         >
                             {label('faqHeaderEs', 'faqHeaderEn', 'Preguntas Frecuentes', 'FAQ')} →
                         </Link>
@@ -279,7 +279,7 @@ export default function GuiaPage() {
                 <div className="text-center pb-8">
                     <Link
                         href="/"
-                        className="text-stone-400 hover:text-stone-600 text-sm underline underline-offset-2 transition-colors"
+                        className="text-stone-500 hover:text-stone-600 text-sm underline underline-offset-2 transition-colors"
                     >
                         ← {t('nav.back_to_search')}
                     </Link>

@@ -110,7 +110,7 @@ export default function MyAdoptionsPage() {
 
                     <Link
                         href="/adopter/create"
-                        className="px-5 py-2.5 bg-teal-200 text-teal-900 font-bold rounded-xl hover:bg-teal-300 transition-colors shadow-sm whitespace-nowrap"
+                        className="px-5 py-2.5 bg-teal-200 text-teal-900 font-semibold rounded-xl hover:bg-teal-300 transition-colors shadow-sm whitespace-nowrap"
                     >
                         {t('dashboard.register_adoption')}
                     </Link>
@@ -122,7 +122,7 @@ export default function MyAdoptionsPage() {
                         <Link
                             key={type}
                             href={`/my-adoptions?filter=${type}`}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${filter === type
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${filter === type
                                 ? 'bg-stone-800 text-white shadow-sm'
                                 : 'text-stone-500 hover:text-stone-700 hover:bg-stone-100'
                                 }`}
@@ -134,10 +134,10 @@ export default function MyAdoptionsPage() {
 
                 {adoptions.length === 0 ? (
                     <div className="bg-white rounded-3xl p-12 text-center border border-stone-200 shadow-sm">
-                        <div className="w-16 h-16 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4 text-stone-400">
+                        <div className="w-16 h-16 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4 text-stone-500">
                             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
                         </div>
-                        <h3 className="text-xl font-bold text-stone-900 mb-2">{t('dashboard.no_adoptions_title')}</h3>
+                        <h3 className="text-xl font-semibold text-stone-900 mb-2">{t('dashboard.no_adoptions_title')}</h3>
                         <p className="text-stone-500 mb-6">
                             {t('dashboard.no_records_for_filter') || 'No records found for this filter.'}
                         </p>
@@ -149,11 +149,11 @@ export default function MyAdoptionsPage() {
                             <table className="w-full">
                                 <thead>
                                     <tr className="bg-stone-50 border-b border-stone-200 text-left">
-                                        <th className="py-3 px-4 text-xs font-bold text-stone-500 uppercase tracking-wider">{t('dashboard.table_animal')}</th>
-                                        <th className="py-3 px-4 text-xs font-bold text-stone-500 uppercase tracking-wider">{t('dashboard.table_type')}</th>
-                                        <th className="py-3 px-4 text-xs font-bold text-stone-500 uppercase tracking-wider">{t('dashboard.table_adopter')}</th>
-                                        <th className="py-3 px-4 text-xs font-bold text-stone-500 uppercase tracking-wider">{t('dashboard.table_date')}</th>
-                                        <th className="py-3 px-4 text-xs font-bold text-stone-500 uppercase tracking-wider">{t('dashboard.table_rating')}</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-stone-500 uppercase tracking-wider">{t('dashboard.table_animal')}</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-stone-500 uppercase tracking-wider">{t('dashboard.table_type')}</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-stone-500 uppercase tracking-wider">{t('dashboard.table_adopter')}</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-stone-500 uppercase tracking-wider">{t('dashboard.table_date')}</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-stone-500 uppercase tracking-wider">{t('dashboard.table_rating')}</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-stone-100">
@@ -174,7 +174,7 @@ export default function MyAdoptionsPage() {
                                                                 />
                                                             ))}
                                                             {adoption.images.length > 3 && (
-                                                                <span className="w-8 h-8 rounded-lg bg-stone-200 border-2 border-white shadow-sm flex items-center justify-center text-xs font-bold text-stone-600">
+                                                                <span className="w-8 h-8 rounded-lg bg-stone-200 border-2 border-white shadow-sm flex items-center justify-center text-xs font-semibold text-stone-600">
                                                                     +{adoption.images.length - 3}
                                                                 </span>
                                                             )}
@@ -184,19 +184,19 @@ export default function MyAdoptionsPage() {
                                                         {adoption.adopterId ? (
                                                             <Link
                                                                 href={`/adopter/${adoption.adopterId}?editAdoption=${adoption.id}`}
-                                                                className="font-bold text-stone-900 text-sm hover:text-teal-700 hover:underline transition-colors"
+                                                                className="font-semibold text-stone-900 text-sm hover:text-teal-700 hover:underline transition-colors"
                                                             >
                                                                 {adoption.animalName || t('adoption.unnamed') || 'Unnamed'}
                                                             </Link>
                                                         ) : (
-                                                            <span className="font-bold text-stone-900 text-sm">{adoption.animalName || t('adoption.unnamed') || 'Unnamed'}</span>
+                                                            <span className="font-semibold text-stone-900 text-sm">{adoption.animalName || t('adoption.unnamed') || 'Unnamed'}</span>
                                                         )}
                                                         <div className="text-xs text-stone-500 capitalize">{adoption.species || t('dashboard.unknown_species')}</div>
                                                     </div>
                                                 </div>
                                             </td>
                                             <td className="py-3 px-4">
-                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${getTypeBadgeStyle(adoption.recordType)}`}>
+                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${getTypeBadgeStyle(adoption.recordType)}`}>
                                                     {getTypeLabel(adoption.recordType || 'adoption')}
                                                 </span>
                                             </td>
@@ -209,7 +209,7 @@ export default function MyAdoptionsPage() {
                                                         {adoption.adopterName}
                                                     </Link>
                                                 ) : (
-                                                    <span className="text-stone-400 italic text-sm">{t('dashboard.no_adopter') || '—'}</span>
+                                                    <span className="text-stone-500 italic text-sm">{t('dashboard.no_adopter') || '—'}</span>
                                                 )}
                                             </td>
                                             <td className="py-3 px-4 text-sm text-stone-500 font-medium">
@@ -242,7 +242,7 @@ export default function MyAdoptionsPage() {
                                                     className="w-full h-full object-cover"
                                                 />
                                             ) : (
-                                                <div className="w-full h-full flex items-center justify-center text-stone-400">
+                                                <div className="w-full h-full flex items-center justify-center text-stone-500">
                                                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
                                                 </div>
                                             )}
@@ -251,16 +251,16 @@ export default function MyAdoptionsPage() {
                                             {adoption.adopterId ? (
                                                 <Link
                                                     href={`/adopter/${adoption.adopterId}?editAdoption=${adoption.id}`}
-                                                    className="font-bold text-stone-900 hover:text-teal-700 transition-colors block"
+                                                    className="font-semibold text-stone-900 hover:text-teal-700 transition-colors block"
                                                 >
                                                     {adoption.animalName || t('adoption.unnamed') || 'Unnamed'}
                                                 </Link>
                                             ) : (
-                                                <span className="font-bold text-stone-900">{adoption.animalName || t('adoption.unnamed') || 'Unnamed'}</span>
+                                                <span className="font-semibold text-stone-900">{adoption.animalName || t('adoption.unnamed') || 'Unnamed'}</span>
                                             )}
                                             <div className="text-xs text-stone-500 capitalize">{adoption.species || t('dashboard.unknown_species')}</div>
                                             {/* Type Badge */}
-                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold mt-1 ${getTypeBadgeStyle(adoption.recordType)}`}>
+                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold mt-1 ${getTypeBadgeStyle(adoption.recordType)}`}>
                                                 {getTypeLabel(adoption.recordType || 'adoption')}
                                             </span>
                                         </div>
@@ -279,11 +279,11 @@ export default function MyAdoptionsPage() {
                                                     👤 {adoption.adopterName}
                                                 </Link>
                                             ) : (
-                                                <span className="text-stone-400 italic">{t('dashboard.no_adopter') || '—'}</span>
+                                                <span className="text-stone-500 italic">{t('dashboard.no_adopter') || '—'}</span>
                                             )}
                                         </div>
                                         {/* Date - right aligned */}
-                                        <div className="text-stone-400">
+                                        <div className="text-stone-500">
                                             📅 {adoption.date ? formatShortDate(adoption.date) : t('dashboard.na')}
                                         </div>
                                     </div>
@@ -302,7 +302,7 @@ export default function MyAdoptionsPage() {
                                                 ))}
                                             </div>
                                             {adoption.images.length > 1 && (
-                                                <span className="text-xs text-stone-400">+{adoption.images.length - 1} {t('common.photos') || 'photos'}</span>
+                                                <span className="text-xs text-stone-500">+{adoption.images.length - 1} {t('common.photos') || 'photos'}</span>
                                             )}
                                         </div>
                                     )}

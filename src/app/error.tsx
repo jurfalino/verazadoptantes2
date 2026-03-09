@@ -44,7 +44,7 @@ export default function Error({
                 <div className="pt-2">
                     <button
                         onClick={reset}
-                        className="px-6 py-2.5 bg-teal-600 text-white rounded-xl font-bold text-sm hover:bg-teal-700 transition-colors shadow-md"
+                        className="px-6 py-2.5 bg-teal-600 text-white rounded-xl font-semibold text-sm hover:bg-teal-700 transition-colors shadow-md"
                     >
                         Reintentar / Try Again
                     </button>

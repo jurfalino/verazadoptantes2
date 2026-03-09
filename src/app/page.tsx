@@ -112,7 +112,7 @@ export default function Home() {
           </h1>
           <p className="text-stone-600 text-lg max-w-xl mx-auto font-medium">
             {t('home.tagline')}{' '}
-            <Link href="/guia" className="text-teal-600 hover:text-teal-700 underline underline-offset-2 transition-colors">
+            <Link href="/guia" className="text-teal-700 hover:text-teal-700 underline underline-offset-2 transition-colors">
               {locale === 'en' ? 'Use our Adoption Guide' : 'Utilizá nuestra Guía de Adopción'}
             </Link>
           </p>
@@ -123,12 +123,12 @@ export default function Home() {
           <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-5 relative">
             <button
               onClick={dismissGuide}
-              className="absolute top-3 right-3 text-stone-400 hover:text-stone-600 transition-colors text-lg leading-none"
+              className="absolute top-3 right-3 text-stone-500 hover:text-stone-600 transition-colors text-lg leading-none"
               aria-label="Dismiss"
             >
               ✕
             </button>
-            <h2 className="text-sm font-bold text-stone-500 uppercase tracking-wider mb-4 text-center">
+            <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider mb-4 text-center">
               {t('home.how_title')}
             </h2>
             <div className="grid grid-cols-3 gap-4 text-center">
@@ -137,7 +137,7 @@ export default function Home() {
                 onClick={() => { document.getElementById('search-section')?.scrollIntoView({ behavior: 'smooth' }); }}
               >
                 <div className="text-2xl mb-1">🔍</div>
-                <p className="font-bold text-stone-800 text-sm">{t('home.how_step1_title')}</p>
+                <p className="font-semibold text-stone-800 text-sm">{t('home.how_step1_title')}</p>
                 <p className="text-stone-500 text-xs mt-0.5">{t('home.how_step1_desc')}</p>
               </div>
               <div
@@ -145,7 +145,7 @@ export default function Home() {
                 onClick={() => { handleAuthNavigation('/import'); }}
               >
                 <div className="text-2xl mb-1">📝</div>
-                <p className="font-bold text-stone-800 text-sm">{t('home.how_step2_title')}</p>
+                <p className="font-semibold text-stone-800 text-sm">{t('home.how_step2_title')}</p>
                 <p className="text-stone-500 text-xs mt-0.5">{t('home.how_step2_desc')}</p>
               </div>
               <div
@@ -153,7 +153,7 @@ export default function Home() {
                 onClick={() => { document.getElementById('action-cards')?.scrollIntoView({ behavior: 'smooth' }); }}
               >
                 <div className="text-2xl mb-1">⭐</div>
-                <p className="font-bold text-stone-800 text-sm">{t('home.how_step3_title')}</p>
+                <p className="font-semibold text-stone-800 text-sm">{t('home.how_step3_title')}</p>
                 <p className="text-stone-500 text-xs mt-0.5">{t('home.how_step3_desc')}</p>
               </div>
             </div>
@@ -180,7 +180,7 @@ export default function Home() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
               </div>
-              <h3 className="text-lg font-bold text-stone-900 mb-1">{t('home.action_import_title')}</h3>
+              <h3 className="text-lg font-semibold text-stone-900 mb-1">{t('home.action_import_title')}</h3>
               <p className="text-stone-500 text-sm">{t('home.action_import_desc')}</p>
             </div>
           )}
@@ -194,12 +194,12 @@ export default function Home() {
         {/* PWA Install CTA — shown to users who dismissed the floating banner */}
         <InstallCTA />
 
-        <footer className="mt-10 text-center text-stone-400 text-sm space-y-2">
+        <footer className="mt-10 text-center text-stone-500 text-sm space-y-2">
           {/* How it works toggle — for returning users who dismissed the guide */}
           {!showGuide && (
             <button
               onClick={() => setShowGuide(true)}
-              className="text-stone-400 hover:text-stone-600 text-xs underline underline-offset-2 transition-colors"
+              className="text-stone-500 hover:text-stone-600 text-xs underline underline-offset-2 transition-colors"
             >
               {t('home.how_title')}
             </button>
@@ -207,26 +207,26 @@ export default function Home() {
           <div className="flex items-center justify-center">
             <a
               href={locale === 'en' ? '/guide' : '/guia'}
-              className="text-teal-600 hover:text-teal-700 font-medium text-xs underline underline-offset-2 transition-colors"
+              className="text-teal-700 hover:text-teal-700 font-medium text-xs underline underline-offset-2 transition-colors"
             >
               📖 {t('home.process_guide')}
             </a>
           </div>
           <div className="flex items-center justify-center gap-3 text-xs">
-            <a href="/privacy" className="text-stone-400 hover:text-stone-600 underline underline-offset-2 transition-colors">
+            <a href="/privacy" className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
               {t('legal.privacy')}
             </a>
             <span className="text-stone-300">·</span>
-            <a href="/terms" className="text-stone-400 hover:text-stone-600 underline underline-offset-2 transition-colors">
+            <a href="/terms" className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
               {t('legal.terms')}
             </a>
             <span className="text-stone-300">·</span>
-            <a href="mailto:privacidad@buenadoptante.com" className="text-stone-400 hover:text-stone-600 underline underline-offset-2 transition-colors">
+            <a href="mailto:privacidad@buenadoptante.com" className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
               {t('legal.contact')}
             </a>
           </div>
           <p>{t('home.footer')}</p>
-          <p className="text-stone-300 text-xs">v{packageJson.version}</p>
+          <p className="text-stone-500 text-xs">v{packageJson.version}</p>
         </footer>
       </div>
     </main>

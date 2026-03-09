@@ -102,10 +102,10 @@ export default async function ContractResultsPage({ params }: { params: Promise<
         <main className="container mx-auto px-4 py-8 max-w-2xl">
             {/* Header */}
             <div className="mb-6">
-                <Link href="/" className="text-sm text-stone-400 hover:text-stone-600 transition-colors">
+                <Link href="/" className="text-sm text-stone-500 hover:text-stone-600 transition-colors">
                     ← Volver
                 </Link>
-                <h1 className="text-xl font-bold text-stone-800 mt-2">
+                <h1 className="text-xl font-semibold text-stone-800 mt-2">
                     {hasMatches ? '⚠️' : '✅'} Resultados del contrato
                 </h1>
                 <p className="text-sm text-stone-500 mt-1">
@@ -114,14 +114,14 @@ export default async function ContractResultsPage({ params }: { params: Promise<
             </div>
 
             {/* Status Banner */}
-            <div className={`rounded-xl p-4 mb-6 ${hasMatches ? 'bg-amber-50 border border-amber-200' : 'bg-emerald-50 border border-emerald-200'}`}>
-                <p className={`text-sm font-semibold ${hasMatches ? 'text-amber-800' : 'text-emerald-800'}`}>
+            <div className={`rounded-xl p-4 mb-6 ${hasMatches ? 'bg-amber-50 border border-amber-200' : 'bg-teal-50 border border-teal-200'}`}>
+                <p className={`text-sm font-semibold ${hasMatches ? 'text-amber-800' : 'text-teal-800'}`}>
                     {hasMatches
                         ? `Se encontraron ${metadata.matchCount} posible${metadata.matchCount > 1 ? 's' : ''} coincidencia${metadata.matchCount > 1 ? 's' : ''}`
                         : 'No se encontraron registros previos para este adoptante'
                     }
                 </p>
-                <p className={`text-xs mt-1 ${hasMatches ? 'text-amber-600' : 'text-emerald-600'}`}>
+                <p className={`text-xs mt-1 ${hasMatches ? 'text-amber-600' : 'text-teal-700'}`}>
                     {hasMatches
                         ? 'Revisá los perfiles a continuación para verificar si es la misma persona.'
                         : 'Todo parece estar en orden. Este adoptante no tiene registros previos en el sistema.'
@@ -132,7 +132,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
             {/* Submitted Data */}
             {submitted && (
                 <div className="bg-white rounded-xl border border-stone-200 p-4 mb-6 shadow-sm">
-                    <h2 className="text-sm font-bold text-stone-700 mb-3">📋 Datos del contrato</h2>
+                    <h2 className="text-sm font-semibold text-stone-700 mb-3">📋 Datos del contrato</h2>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {submitted.name && <DataPill label="Nombre" value={submitted.name} />}
                         {submitted.phone && <DataPill label="Teléfono" value={submitted.phone} />}
@@ -147,7 +147,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
             {/* Matched Profiles */}
             {hasMatches && metadata.matchedAdopters && (
                 <div className="space-y-3">
-                    <h2 className="text-sm font-bold text-stone-700">🔍 Perfiles coincidentes</h2>
+                    <h2 className="text-sm font-semibold text-stone-700">🔍 Perfiles coincidentes</h2>
                     {metadata.matchedAdopters.map((match) => {
                         const profile = matchedProfiles.find(p => p.id === match.id);
                         if (!profile) return null;
@@ -160,7 +160,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                             >
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-bold text-stone-800">{profile.name}</p>
+                                        <p className="text-sm font-semibold text-stone-800">{profile.name}</p>
                                         {profile.contactInfo && (
                                             <p className="text-xs text-stone-500 mt-0.5 line-clamp-2">{profile.contactInfo}</p>
                                         )}
@@ -171,7 +171,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                                                 return (
                                                     <span
                                                         key={type}
-                                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-700"
+                                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700"
                                                     >
                                                         {label?.icon || '🔗'} {label?.es || type}
                                                     </span>
@@ -179,7 +179,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                                             })}
                                         </div>
                                     </div>
-                                    <svg className="w-4 h-4 text-stone-400 flex-shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className="w-4 h-4 text-stone-500 flex-shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                                     </svg>
                                 </div>
@@ -210,7 +210,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
 function DataPill({ label, value }: { label: string; value: string }) {
     return (
         <div className="flex items-start gap-2 text-xs">
-            <span className="text-stone-400 font-medium whitespace-nowrap">{label}:</span>
+            <span className="text-stone-500 font-medium whitespace-nowrap">{label}:</span>
             <span className="text-stone-700 break-all">{value}</span>
         </div>
     );

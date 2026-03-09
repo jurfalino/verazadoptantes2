@@ -27,7 +27,7 @@ export function RatingBadge({ rating, size = 'md' }: RatingBadgeProps) {
     }[size];
 
     return (
-        <div className={`inline-flex items-center gap-1.5 rounded-full font-bold shadow-sm ${colors.bg} ${colors.text} ${colors.border} border ${sizeClasses.pad} ${sizeClasses.text}`}>
+        <div className={`inline-flex items-center gap-1.5 rounded-full font-semibold shadow-sm ${colors.bg} ${colors.text} ${colors.border} border ${sizeClasses.pad} ${sizeClasses.text}`}>
             <span>{label}</span>
         </div>
     );

@@ -199,7 +199,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
             <div className="flex flex-wrap items-center gap-2 mb-4">
                 {/* Inaccurate Information Flag */}
                 {isFlaggedAsInaccurate && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-100 text-rose-700 rounded-full text-xs font-bold border border-rose-200 animate-in fade-in">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-100 text-rose-700 rounded-full text-xs font-semibold border border-rose-200 animate-in fade-in">
                         <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                         </svg>
@@ -209,7 +209,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
 
                 {/* Duplicate - with See button */}
                 {isFlaggedAsDuplicate && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-100 text-amber-700 rounded-full text-xs font-bold border border-amber-200">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold border border-amber-200">
                         <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                             <path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L14 2.586A2 2 0 0012.586 2H9z" />
                             <path d="M3 8a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
@@ -218,7 +218,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                         {duplicateFlags[0]?.targetAdopterId && (
                             <button
                                 onClick={() => setShowDuplicateModal(true)}
-                                className="ml-1 px-1.5 py-0.5 bg-amber-200 hover:bg-amber-300 text-amber-800 rounded text-[10px] font-bold transition-colors"
+                                className="ml-1 px-1.5 py-0.5 bg-amber-200 hover:bg-amber-300 text-amber-800 rounded text-xs font-semibold transition-colors"
                             >
                                 {t('common.see') || 'See'}
                             </button>
@@ -228,7 +228,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
 
                 {/* Verified Identity */}
                 {identityVerified && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold border border-emerald-200">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-100 text-teal-700 rounded-full text-xs font-semibold border border-teal-200">
                         <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                         </svg>
@@ -238,7 +238,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
 
                 {/* Verified Address */}
                 {addressVerified && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold border border-emerald-200">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-100 text-teal-700 rounded-full text-xs font-semibold border border-teal-200">
                         <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
                         </svg>
@@ -248,7 +248,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
 
                 {/* Too Many Adoptions Warning */}
                 {tooManyAdoptions && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-100 text-orange-700 rounded-full text-xs font-bold border border-orange-200">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-100 text-orange-700 rounded-full text-xs font-semibold border border-orange-200">
                         <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                         </svg>
@@ -258,7 +258,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
 
                 {/* Too Many Requests Warning */}
                 {tooManyRequests && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-100 text-purple-700 rounded-full text-xs font-bold border border-purple-200">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-100 text-purple-700 rounded-full text-xs font-semibold border border-purple-200">
                         <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                         </svg>
@@ -278,7 +278,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="flex justify-between items-start mb-4">
-                            <h3 className="text-lg font-bold text-amber-800 flex items-center gap-2">
+                            <h3 className="text-lg font-semibold text-amber-800 flex items-center gap-2">
                                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                                     <path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L14 2.586A2 2 0 0012.586 2H9z" />
                                     <path d="M3 8a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
@@ -287,13 +287,13 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                             </h3>
                             <button
                                 onClick={() => setShowDuplicateModal(false)}
-                                className="text-gray-400 hover:text-gray-600"
+                                className="text-stone-500 hover:text-stone-600"
                             >
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                             </button>
                         </div>
 
-                        <p className="text-sm text-gray-600 mb-4">
+                        <p className="text-sm text-stone-600 mb-4">
                             {t('flags.duplicate_desc') || 'This profile may be a duplicate of another adopter.'}
                         </p>
 
@@ -312,7 +312,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                             </a>
                             <button
                                 onClick={() => setShowDuplicateModal(false)}
-                                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors"
+                                className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-lg text-sm font-medium transition-colors"
                             >
                                 {t('common.close') || 'Close'}
                             </button>
@@ -324,15 +324,15 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
 
             {/* Modal */}
             {isOpen && (
-                <div className="fixed inset-0 bg-emerald-950/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-8 max-h-[90vh] overflow-y-auto transform transition-all scale-100 border border-emerald-100">
+                <div className="fixed inset-0 bg-teal-950/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-8 max-h-[90vh] overflow-y-auto transform transition-all scale-100 border border-teal-100">
                         <div className="flex justify-between items-start mb-6">
-                            <h3 className="text-2xl font-bold text-emerald-900 tracking-tight">
+                            <h3 className="text-2xl font-semibold text-teal-900 tracking-tight">
                                 {reason === 'duplicate' && (t('flagging.title_duplicate') || 'Report Duplicate')}
                                 {reason === 'inaccuracy' && (t('flagging.title_inaccuracy') || 'Report Inaccuracy')}
                                 {reason === 'deletion' && (t('flagging.title_deletion') || 'Request Removal')}
                             </h3>
-                            <button onClick={resetAndClose} className="text-emerald-900/40 hover:text-emerald-700 transition-colors">
+                            <button onClick={resetAndClose} className="text-stone-500 hover:text-teal-700 transition-colors">
                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                             </button>
                         </div>
@@ -341,7 +341,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                         {dataRequestSubmitted ? (
                             <div className="text-center py-6">
                                 <div className="text-4xl mb-3">✅</div>
-                                <p className="text-lg font-semibold text-emerald-800 mb-2">
+                                <p className="text-lg font-semibold text-teal-800 mb-2">
                                     {t('flagging.request_received') || 'Request received'}
                                 </p>
                                 <p className="text-sm text-stone-500 mb-6">
@@ -349,7 +349,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                 </p>
                                 <button
                                     onClick={resetAndClose}
-                                    className="px-6 py-2.5 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700 transition-colors"
+                                    className="px-6 py-2.5 bg-teal-600 text-white font-semibold rounded-xl hover:bg-teal-700 transition-colors"
                                 >
                                     {t('common.close') || 'Close'}
                                 </button>
@@ -358,18 +358,18 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                             <div className="space-y-6">
                                 {/* Duplicate flow — search for original profile */}
                                 {reason === 'duplicate' && (
-                                    <div className="p-5 bg-emerald-50 rounded-xl border border-emerald-100">
-                                        <label className="block text-sm font-bold text-emerald-800 mb-3">{t('flagging.find_original')}</label>
+                                    <div className="p-5 bg-teal-50 rounded-xl border border-teal-100">
+                                        <label className="block text-sm font-semibold text-teal-800 mb-3">{t('flagging.find_original')}</label>
                                         <div className="flex gap-2 mb-3">
                                             <div className="relative flex-1">
                                                 <input
-                                                    className="w-full h-10 px-3 pl-10 rounded-lg border border-emerald-200 bg-white text-emerald-900 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none transition-shadow"
+                                                    className="w-full h-10 px-3 pl-10 rounded-lg border border-teal-200 bg-white text-teal-900 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-200 outline-none transition-shadow"
                                                     placeholder={t('flagging.search_placeholder')}
                                                     value={searchTerm}
                                                     onChange={e => setSearchTerm(e.target.value)}
                                                     onKeyDown={e => e.key === 'Enter' && handleManualSearch()}
                                                 />
-                                                <div className="absolute left-3 top-2.5 text-emerald-400">
+                                                <div className="absolute left-3 top-2.5 text-teal-700">
                                                     {isSearching ? (
                                                         <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -391,18 +391,18 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                                         <div
                                                             key={sug.id}
                                                             className={`p-3 border rounded-lg cursor-pointer text-sm transition-all ${targetAdopter?.id === sug.otherAdopterId
-                                                                ? 'bg-emerald-100 border-emerald-500 ring-1 ring-emerald-500'
+                                                                ? 'bg-teal-100 border-teal-500 ring-1 ring-teal-500'
                                                                 : 'bg-blue-50 border-blue-200 hover:border-blue-400 hover:shadow-sm'
                                                                 }`}
                                                             onClick={() => setTargetAdopter({ id: sug.otherAdopterId, name: sug.otherAdopterName })}
                                                         >
                                                             <div className="flex items-center justify-between">
-                                                                <span className="font-bold text-stone-900">{sug.otherAdopterName}</span>
-                                                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600 font-medium">🤖 auto</span>
+                                                                <span className="font-semibold text-stone-900">{sug.otherAdopterName}</span>
+                                                                <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600 font-medium">🤖 auto</span>
                                                             </div>
                                                             <div className="flex flex-wrap gap-1 mt-1">
                                                                 {sug.matchTypes.map(type => (
-                                                                    <span key={type} className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-600">{type.replace('_', ' ')}</span>
+                                                                    <span key={type} className="text-xs px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-600">{type.replace('_', ' ')}</span>
                                                                 ))}
                                                             </div>
                                                         </div>
@@ -412,8 +412,8 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                         )}
 
                                         {searchTerm && !isSearching && searchResults.length === 0 && hasSearched && (
-                                            <div className="text-center py-4 bg-white/50 rounded-lg border border-dashed border-emerald-200/50">
-                                                <p className="text-sm text-emerald-600/60">No matching profiles found.</p>
+                                            <div className="text-center py-4 bg-white/50 rounded-lg border border-dashed border-teal-200/50">
+                                                <p className="text-sm text-teal-700">No matching profiles found.</p>
                                             </div>
                                         )}
 
@@ -423,21 +423,21 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                                     <div
                                                         key={res.adopter.id}
                                                         className={`p-3 border rounded-lg cursor-pointer text-sm transition-all ${targetAdopter?.id === res.adopter.id
-                                                            ? 'bg-emerald-100 border-emerald-500 ring-1 ring-emerald-500'
-                                                            : 'bg-white border-emerald-100 hover:border-emerald-300 hover:shadow-sm'}`}
+                                                            ? 'bg-teal-100 border-teal-500 ring-1 ring-teal-500'
+                                                            : 'bg-white border-teal-100 hover:border-teal-300 hover:shadow-sm'}`}
                                                         onClick={() => setTargetAdopter(res.adopter)}
                                                     >
-                                                        <div className="font-bold text-emerald-900">{res.adopter.name}</div>
-                                                        <div className="text-emerald-600 truncate">{res.adopter.email || res.adopter.phone}</div>
+                                                        <div className="font-semibold text-teal-900">{res.adopter.name}</div>
+                                                        <div className="text-teal-700 truncate">{res.adopter.email || res.adopter.phone}</div>
                                                     </div>
                                                 ))}
                                             </div>
                                         )}
 
                                         {targetAdopter && (
-                                            <div className="flex items-center gap-2 text-sm text-emerald-800 bg-white px-3 py-2 rounded-lg border border-emerald-200 shadow-sm">
-                                                <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                                                <span className="font-bold">{t('flagging.selected_original')}: {targetAdopter.name}</span>
+                                            <div className="flex items-center gap-2 text-sm text-teal-800 bg-white px-3 py-2 rounded-lg border border-teal-200 shadow-sm">
+                                                <svg className="w-4 h-4 text-teal-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                                <span className="font-semibold">{t('flagging.selected_original')}: {targetAdopter.name}</span>
                                             </div>
                                         )}
                                     </div>
@@ -457,14 +457,14 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                                 placeholder={t('flagging.your_name') || 'Your name *'}
                                                 value={requesterName}
                                                 onChange={e => setRequesterName(e.target.value)}
-                                                className="px-3 py-2.5 text-sm border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 outline-none"
+                                                className="px-3 py-2.5 text-sm border border-teal-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-400 outline-none"
                                             />
                                             <input
                                                 type="email"
                                                 placeholder={t('flagging.your_email') || 'Your email (optional)'}
                                                 value={requesterEmail}
                                                 onChange={e => setRequesterEmail(e.target.value)}
-                                                className="px-3 py-2.5 text-sm border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 outline-none"
+                                                className="px-3 py-2.5 text-sm border border-teal-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-400 outline-none"
                                             />
                                         </div>
                                     </div>
@@ -472,13 +472,13 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
 
                                 {/* Details field — shown for all reason types */}
                                 <div>
-                                    <label className="block text-sm font-bold text-emerald-800 mb-2 uppercase tracking-wider">
+                                    <label className="block text-sm font-semibold text-teal-800 mb-2 uppercase tracking-wider">
                                         {reason === 'duplicate'
                                             ? (t('flagging.details') || 'Details (Optional)')
                                             : (t('flagging.details_required') || 'Details *')}
                                     </label>
                                     <textarea
-                                        className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 placeholder-emerald-800/40 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none resize-none"
+                                        className="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 placeholder-stone-500 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-none"
                                         rows={4}
                                         value={details}
                                         onChange={e => setDetails(e.target.value)}
@@ -492,10 +492,10 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                     />
                                 </div>
 
-                                <div className="flex justify-end gap-3 pt-4 border-t border-emerald-100">
+                                <div className="flex justify-end gap-3 pt-4 border-t border-teal-100">
                                     <button
                                         onClick={resetAndClose}
-                                        className="px-5 py-2.5 text-emerald-700 font-semibold hover:bg-emerald-50 rounded-xl transition-colors"
+                                        className="px-5 py-2.5 text-teal-700 font-semibold hover:bg-teal-50 rounded-xl transition-colors"
                                     >
                                         {t('common.cancel')}
                                     </button>

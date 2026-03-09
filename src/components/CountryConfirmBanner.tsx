@@ -127,16 +127,16 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                 <div className="bg-white dark:bg-stone-800 rounded-2xl shadow-2xl max-w-sm w-full p-8 border border-stone-200 dark:border-stone-700">
                     <div className="text-center mb-6">
                         <span className="text-5xl block mb-4">{country.flag}</span>
-                        <h2 className="text-xl font-bold text-stone-800 dark:text-stone-100 tracking-tight">
+                        <h2 className="text-xl font-semibold text-stone-800 dark:text-stone-100 tracking-tight">
                             {locale === 'es' ? 'Confirmá tu país' : 'Confirm your country'}
                         </h2>
-                        <p className="text-stone-500 dark:text-stone-400 text-sm mt-2">
+                        <p className="text-stone-500 dark:text-stone-500 text-sm mt-2">
                             {locale === 'es'
                                 ? `Detectamos que estás en ${getName(country)}. ¿Es correcto?`
                                 : `We detected you're in ${getName(country)}. Is this correct?`
                             }
                         </p>
-                        <p className="text-stone-400 dark:text-stone-500 text-xs mt-1.5">
+                        <p className="text-stone-500 dark:text-stone-500 text-xs mt-1.5">
                             {locale === 'es'
                                 ? 'Tu país determina qué registros ves en las búsquedas.'
                                 : 'Your country determines which records you see in searches.'
@@ -148,7 +148,7 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                         <button
                             onClick={() => handleSaveCountry(settings.country!)}
                             disabled={saving}
-                            className="w-full px-4 py-3 text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl transition-colors disabled:opacity-50"
+                            className="w-full px-4 py-3 text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-xl transition-colors disabled:opacity-50"
                         >
                             {saving ? '...' : (locale === 'es'
                                 ? `Sí, estoy en ${getName(country)}`
@@ -173,10 +173,10 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
             <div className="bg-white dark:bg-stone-800 rounded-2xl shadow-2xl max-w-sm w-full p-8 border border-stone-200 dark:border-stone-700">
                 <div className="text-center mb-6">
                     <span className="text-5xl block mb-4">🌎</span>
-                    <h2 className="text-xl font-bold text-stone-800 dark:text-stone-100 tracking-tight">
+                    <h2 className="text-xl font-semibold text-stone-800 dark:text-stone-100 tracking-tight">
                         {locale === 'es' ? 'Seleccioná tu país' : 'Select your country'}
                     </h2>
-                    <p className="text-stone-500 dark:text-stone-400 text-sm mt-2">
+                    <p className="text-stone-500 dark:text-stone-500 text-sm mt-2">
                         {locale === 'es'
                             ? 'Tu país determina qué registros de adoptantes ves en las búsquedas.'
                             : 'Your country determines which adopter records you see in searches.'
@@ -202,7 +202,7 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                 {/* Divider */}
                 <div className="flex items-center gap-3 my-4">
                     <div className="flex-1 h-px bg-stone-200 dark:bg-stone-600" />
-                    <span className="text-xs text-stone-400 dark:text-stone-500 uppercase tracking-wider">
+                    <span className="text-xs text-stone-500 dark:text-stone-500 uppercase tracking-wider">
                         {locale === 'es' ? 'u otro país' : 'or another country'}
                     </span>
                     <div className="flex-1 h-px bg-stone-200 dark:bg-stone-600" />
@@ -218,7 +218,7 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                     <button
                         onClick={() => handleSaveCountry(selectedCountry)}
                         disabled={saving}
-                        className="w-full mt-4 px-4 py-3 text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl transition-colors disabled:opacity-50"
+                        className="w-full mt-4 px-4 py-3 text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-xl transition-colors disabled:opacity-50"
                     >
                         {saving ? '...' : (locale === 'es' ? 'Continuar' : 'Continue')}
                     </button>

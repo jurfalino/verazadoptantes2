@@ -152,13 +152,13 @@ export default function DuplicatesPage() {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
-                    <h1 className="text-2xl font-bold text-stone-900">🔍 Duplicate Detection</h1>
+                    <h1 className="text-2xl font-semibold text-stone-900">🔍 Duplicate Detection</h1>
                     <p className="text-sm text-stone-500 mt-1">Find and merge duplicate adopter profiles</p>
                 </div>
                 <button
                     onClick={handleScan}
                     disabled={scanning}
-                    className="px-5 py-2.5 text-sm font-bold text-white bg-teal-600 rounded-xl hover:bg-teal-700 disabled:opacity-50 transition-colors self-start sm:self-auto"
+                    className="px-5 py-2.5 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700 disabled:opacity-50 transition-colors self-start sm:self-auto"
                 >
                     {scanning ? '⏳ Scanning...' : '🔄 Scan Now'}
                 </button>
@@ -183,13 +183,13 @@ export default function DuplicatesPage() {
             </div>
 
             {loading ? (
-                <div className="text-center py-12 text-stone-400">Loading...</div>
+                <div className="text-center py-12 text-stone-500">Loading...</div>
             ) : (
                 <>
                     {/* Section 1: User-Flagged */}
                     {userFlagged.length > 0 && (
                         <section>
-                            <h2 className="text-lg font-bold text-stone-800 mb-3">🚩 User-Reported Duplicates</h2>
+                            <h2 className="text-lg font-semibold text-stone-800 mb-3">🚩 User-Reported Duplicates</h2>
                             <div className="space-y-3">
                                 {userFlagged.map(flag => (
                                     <CandidateCard
@@ -215,11 +215,11 @@ export default function DuplicatesPage() {
 
                     {/* Section 2: System-Detected */}
                     <section>
-                        <h2 className="text-lg font-bold text-stone-800 mb-3">
+                        <h2 className="text-lg font-semibold text-stone-800 mb-3">
                             🔍 System-Detected ({statusFilter})
                         </h2>
                         {candidates.length === 0 ? (
-                            <div className="text-center py-12 text-stone-400 bg-stone-50 rounded-xl">
+                            <div className="text-center py-12 text-stone-500 bg-stone-50 rounded-xl">
                                 {statusFilter === 'pending'
                                     ? 'No pending duplicates. Click "Scan Now" to check.'
                                     : `No ${statusFilter} candidates.`
@@ -284,7 +284,7 @@ function StatCard({ label, value, color, active, onClick }: {
             onClick={onClick}
             className={`p-3 rounded-xl border text-center transition-all ${colorMap[color]} ${active ? 'ring-2 ring-offset-1 ring-teal-500' : ''} ${onClick ? 'cursor-pointer hover:shadow-sm' : 'cursor-default'}`}
         >
-            <p className="text-2xl font-bold">{value}</p>
+            <p className="text-2xl font-semibold">{value}</p>
             <p className="text-xs font-medium">{label}</p>
         </button>
     );
@@ -326,17 +326,17 @@ function CandidateCard({
                 <div className="flex-1 min-w-0">
                     <div className="grid grid-cols-2 gap-3 mb-3">
                         <div>
-                            <p className="text-sm font-bold text-stone-900 truncate">{name1}</p>
+                            <p className="text-sm font-semibold text-stone-900 truncate">{name1}</p>
                             {contact1 && <p className="text-xs text-stone-500 mt-0.5 line-clamp-2">{contact1}</p>}
-                            <a href={`/adopter/${id1}`} target="_blank" className="text-xs text-teal-600 hover:underline mt-1 inline-block">
+                            <a href={`/adopter/${id1}`} target="_blank" className="text-xs text-teal-700 hover:underline mt-1 inline-block">
                                 View →
                             </a>
                         </div>
                         <div>
-                            <p className="text-sm font-bold text-stone-900 truncate">{name2}</p>
+                            <p className="text-sm font-semibold text-stone-900 truncate">{name2}</p>
                             {contact2 && <p className="text-xs text-stone-500 mt-0.5 line-clamp-2">{contact2}</p>}
                             {id2 && (
-                                <a href={`/adopter/${id2}`} target="_blank" className="text-xs text-teal-600 hover:underline mt-1 inline-block">
+                                <a href={`/adopter/${id2}`} target="_blank" className="text-xs text-teal-700 hover:underline mt-1 inline-block">
                                     View →
                                 </a>
                             )}
@@ -350,14 +350,14 @@ function CandidateCard({
                             </span>
                         ))}
                         {confidence && (
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${confColors[confidence] || confColors.low}`}>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${confColors[confidence] || confColors.low}`}>
                                 {confidence.toUpperCase()}
                                 {score !== null && ` (${score})`}
                             </span>
                         )}
                     </div>
                     {details && <p className="text-xs text-stone-500 mt-2 italic">{details}</p>}
-                    {flaggedBy && <p className="text-xs text-stone-400 mt-1">Flagged by: {flaggedBy}</p>}
+                    {flaggedBy && <p className="text-xs text-stone-500 mt-1">Flagged by: {flaggedBy}</p>}
                 </div>
 
                 {/* Right: actions */}
@@ -365,7 +365,7 @@ function CandidateCard({
                     {onMerge && (
                         <button
                             onClick={onMerge}
-                            className="px-3 py-1.5 text-xs font-bold text-white bg-red-600 rounded-lg hover:bg-red-700"
+                            className="px-3 py-1.5 text-xs font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700"
                         >
                             Merge
                         </button>

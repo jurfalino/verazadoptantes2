@@ -153,7 +153,7 @@ export default function NotificationBell() {
                 {/* Badge */}
                 {unreadCount > 0 && (
                     <span
-                        className={`absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold text-white bg-red-500 rounded-full shadow-sm ${freshPulse ? 'animate-pulse' : ''
+                        className={`absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 text-xs font-semibold text-white bg-red-500 rounded-full shadow-sm ${freshPulse ? 'animate-pulse' : ''
                             }`}
                     >
                         {unreadCount > 9 ? '9+' : unreadCount}
@@ -164,18 +164,27 @@ export default function NotificationBell() {
             {/* Dropdown Panel — uses inline styles with CSS vars for theme safety */}
             {open && (
                 <div
-                    className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200"
-                    style={{ background: 'var(--card)', color: 'var(--foreground)', border: '1px solid var(--border)' }}
+                    className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl shadow-2xl overflow-hidden z-50"
+                    style={{
+                        background: 'var(--surface-card)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--border-default)',
+                        backdropFilter: 'blur(20px)',
+                    }}
                 >
                     {/* Header */}
-                    <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
-                        <h3 className="text-sm font-bold" style={{ color: 'var(--foreground)' }}>
+                    <div
+                        className="flex items-center justify-between px-4 py-3"
+                        style={{ borderBottom: '1px solid var(--border-default)', background: 'var(--surface-muted)' }}
+                    >
+                        <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
                             🔔 {isEs ? 'Notificaciones' : 'Notifications'}
                         </h3>
                         {unreadCount > 0 && (
                             <button
                                 onClick={handleMarkAllRead}
-                                className="text-xs text-emerald-600 hover:text-emerald-700 font-medium transition-colors"
+                                className="text-xs font-medium transition-colors"
+                                style={{ color: 'var(--brand)' }}
                             >
                                 {isEs ? 'Marcar todo leído' : 'Mark all read'}
                             </button>
@@ -186,12 +195,15 @@ export default function NotificationBell() {
                     <div className="max-h-80 overflow-y-auto">
                         {loading ? (
                             <div className="flex items-center justify-center py-8">
-                                <div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--muted-foreground)', borderTopColor: 'var(--foreground)' }} />
+                                <div
+                                    className="w-5 h-5 border-2 rounded-full animate-spin"
+                                    style={{ borderColor: 'var(--border-default)', borderTopColor: 'var(--brand)' }}
+                                />
                             </div>
                         ) : items.length === 0 ? (
                             <div className="py-8 text-center">
                                 <p className="text-2xl mb-1">🎉</p>
-                                <p className="text-sm font-medium" style={{ color: 'var(--muted-foreground)' }}>
+                                <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>
                                     {isEs ? 'Sin notificaciones' : 'No notifications'}
                                 </p>
                             </div>
@@ -207,28 +219,28 @@ export default function NotificationBell() {
                                         onClick={() => handleClick(item)}
                                         className="w-full text-left px-4 py-3 transition-colors"
                                         style={{
-                                            borderBottom: '1px solid var(--border)',
-                                            borderLeft: !item.read ? '3px solid var(--primary)' : '3px solid transparent',
-                                            background: !item.read ? 'color-mix(in srgb, var(--primary) 8%, var(--card))' : 'transparent',
+                                            borderBottom: '1px solid var(--border-default)',
+                                            borderLeft: !item.read ? '3px solid var(--brand)' : '3px solid transparent',
+                                            background: !item.read ? 'var(--accent-subtle-bg)' : 'transparent',
                                         }}
-                                        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--muted)'; }}
-                                        onMouseLeave={(e) => { e.currentTarget.style.background = !item.read ? 'color-mix(in srgb, var(--primary) 8%, var(--card))' : 'transparent'; }}
+                                        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-muted)'; }}
+                                        onMouseLeave={(e) => { e.currentTarget.style.background = !item.read ? 'var(--accent-subtle-bg)' : 'transparent'; }}
                                     >
                                         <div className="flex items-start gap-2.5">
                                             <span className="text-lg flex-shrink-0 mt-0.5">{item.icon}</span>
                                             <div className="flex-1 min-w-0">
-                                                <p className={`text-sm leading-snug ${!item.read ? 'font-semibold' : 'font-medium'}`} style={{ color: 'var(--foreground)' }}>
+                                                <p className={`text-sm leading-snug ${!item.read ? 'font-semibold' : 'font-medium'}`} style={{ color: 'var(--text-primary)' }}>
                                                     {item.title}
                                                 </p>
-                                                <p className="text-xs leading-relaxed mt-0.5 line-clamp-2" style={{ color: 'var(--muted-foreground)' }}>
+                                                <p className="text-xs leading-relaxed mt-0.5 line-clamp-2" style={{ color: 'var(--text-muted)' }}>
                                                     {item.body}
                                                 </p>
-                                                <p className="text-[10px] mt-1" style={{ color: 'var(--muted-foreground)', opacity: 0.7 }}>
+                                                <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>
                                                     {timeAgo(createdDate, locale)}
                                                 </p>
                                             </div>
                                             {!item.read && (
-                                                <span className="w-2 h-2 rounded-full flex-shrink-0 mt-1.5" style={{ background: 'var(--primary)' }} />
+                                                <span className="w-2 h-2 rounded-full flex-shrink-0 mt-1.5" style={{ background: 'var(--brand)' }} />
                                             )}
                                         </div>
                                     </button>

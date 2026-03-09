@@ -68,7 +68,7 @@ export default function InstallPrompt() {
                     <p className="font-semibold text-sm">
                         {t('pwa.installTitle') || 'Install BuenAdoptante'}
                     </p>
-                    <p className="text-stone-400 text-xs mt-0.5">
+                    <p className="text-stone-500 text-xs mt-0.5">
                         {t('pwa.installMessage') || 'Quick access from your home screen'}
                     </p>
                 </div>

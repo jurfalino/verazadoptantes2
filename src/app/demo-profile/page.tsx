@@ -61,13 +61,13 @@ export default function DemoProfilePage() {
                 {/* Profile Header */}
                 <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6">
                     <div className="flex items-center gap-4 mb-4">
-                        <div className="w-16 h-16 rounded-full bg-stone-100 flex items-center justify-center text-stone-400 ring-2 ring-white shadow-sm">
+                        <div className="w-16 h-16 rounded-full bg-stone-100 flex items-center justify-center text-stone-500 ring-2 ring-white shadow-sm">
                             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                             </svg>
                         </div>
                         <div className="flex-1">
-                            <h1 className="text-2xl font-bold text-stone-900">{adopter.name}</h1>
+                            <h1 className="text-2xl font-semibold text-stone-900">{adopter.name}</h1>
                             <p className="text-sm text-stone-500">
                                 📅 Registered: {formatShortDate(adopter.createdAt)}
                             </p>
@@ -78,7 +78,7 @@ export default function DemoProfilePage() {
                     {/* Flags */}
                     <div className="flex flex-wrap gap-2 mb-4">
                         {flags.verified_identity && (
-                            <span className="text-xs px-2 py-1 rounded-full font-medium bg-emerald-100 text-emerald-700">✓ {t('flags.verified_identity')}</span>
+                            <span className="text-xs px-2 py-1 rounded-full font-medium bg-teal-100 text-teal-700">✓ {t('flags.verified_identity')}</span>
                         )}
                         {flags.inaccurate && (
                             <span className="text-xs px-2 py-1 rounded-full font-medium bg-rose-100 text-rose-700">⚠ {t('flags.inaccurate')}</span>
@@ -110,7 +110,7 @@ export default function DemoProfilePage() {
 
                 {/* Adoption History */}
                 <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6">
-                    <h2 className="text-lg font-bold text-stone-900 mb-4">{t('adoption.history_title')}</h2>
+                    <h2 className="text-lg font-semibold text-stone-900 mb-4">{t('adoption.history_title')}</h2>
                     <div className="space-y-4">
                         {adoptions.map((a, i) => (
                             <div key={i} className="border border-stone-100 rounded-xl p-4 bg-stone-50">
@@ -121,7 +121,7 @@ export default function DemoProfilePage() {
                                     </div>
                                     <RatingBadge rating={String(a.rating)} size="sm" />
                                 </div>
-                                <p className="text-xs text-stone-400 mb-2">📅 {a.date}</p>
+                                <p className="text-xs text-stone-500 mb-2">📅 {a.date}</p>
                                 <p className="text-sm text-stone-600">{a.comments}</p>
                             </div>
                         ))}
@@ -130,22 +130,22 @@ export default function DemoProfilePage() {
 
                 {/* Stats (sample) */}
                 <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6">
-                    <h2 className="text-lg font-bold text-stone-900 mb-4">{t('stats.profile_stats')}</h2>
+                    <h2 className="text-lg font-semibold text-stone-900 mb-4">{t('stats.profile_stats')}</h2>
                     <div className="grid grid-cols-4 gap-4 text-center">
                         <div>
-                            <p className="text-2xl font-bold text-stone-800">12</p>
+                            <p className="text-2xl font-semibold text-stone-800">12</p>
                             <p className="text-xs text-stone-500">{t('stats.searches')}</p>
                         </div>
                         <div>
-                            <p className="text-2xl font-bold text-stone-800">8</p>
+                            <p className="text-2xl font-semibold text-stone-800">8</p>
                             <p className="text-xs text-stone-500">{t('stats.views')}</p>
                         </div>
                         <div>
-                            <p className="text-2xl font-bold text-stone-800">2</p>
+                            <p className="text-2xl font-semibold text-stone-800">2</p>
                             <p className="text-xs text-stone-500">{t('stats.adoptions')}</p>
                         </div>
                         <div>
-                            <p className="text-2xl font-bold text-stone-800">3</p>
+                            <p className="text-2xl font-semibold text-stone-800">3</p>
                             <p className="text-xs text-stone-500">{t('stats.requests')}</p>
                         </div>
                     </div>
@@ -155,7 +155,7 @@ export default function DemoProfilePage() {
                 <div className="text-center">
                     <button
                         onClick={() => router.push('/')}
-                        className="px-6 py-3 bg-teal-600 text-white rounded-xl font-bold hover:bg-teal-700 transition-all shadow-sm"
+                        className="px-6 py-3 bg-teal-600 text-white rounded-xl font-semibold hover:bg-teal-700 transition-all shadow-sm"
                     >
                         ← {t('common.back_to_search') || 'Back to Home'}
                     </button>

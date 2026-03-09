@@ -4,8 +4,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { useState, useRef, useEffect } from 'react';
 
 const themes = [
-    { id: 'light', label: 'Claro', icon: '☀️', bg: '#fafaf9', fg: '#1c1917' },
-    { id: 'apple', label: 'Gris', icon: '🌫️', bg: '#d1d1d6', fg: '#1d1d1f' },
+    { id: 'light', label: 'Claro', icon: '☀️', bg: '#e5e5ea', fg: '#1d1d1f' },
     { id: 'dark', label: 'Azul Noche', icon: '🌙', bg: '#0a1628', fg: '#e0e7ff' },
 ] as const;
 
@@ -57,7 +56,7 @@ export function ThemeSelector() {
                                 {t.label}
                             </span>
                             {theme === t.id && (
-                                <span className="ml-auto text-teal-500">✓</span>
+                                <span className="ml-auto text-teal-700">✓</span>
                             )}
                         </button>
                     ))}

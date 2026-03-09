@@ -149,7 +149,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
                         toast.action.href ? (
                             <a
                                 href={toast.action.href}
-                                className="mt-3 inline-block text-sm font-bold px-4 py-2 rounded-lg transition-opacity hover:opacity-80 no-underline"
+                                className="mt-3 inline-block text-sm font-semibold px-4 py-2 rounded-lg transition-opacity hover:opacity-80 no-underline"
                                 style={{ background: accentColors[toast.type], color: '#ffffff' }}
                                 onClick={() => onDismiss()}
                             >
@@ -161,7 +161,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
                                     toast.action?.onClick?.();
                                     onDismiss();
                                 }}
-                                className="mt-3 text-sm font-bold px-4 py-2 rounded-lg transition-opacity hover:opacity-80"
+                                className="mt-3 text-sm font-semibold px-4 py-2 rounded-lg transition-opacity hover:opacity-80"
                                 style={{ background: accentColors[toast.type], color: '#ffffff' }}
                             >
                                 {toast.action.label}

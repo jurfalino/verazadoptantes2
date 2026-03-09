@@ -175,7 +175,7 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
     };
 
     return (
-        <div className={`bg-white rounded-2xl shadow-sm border border-stone-200 relative group transition-all duration-300 overflow-hidden ${isEditing ? 'ring-4 ring-emerald-50/50' : ''}`}>
+        <div className={`bg-white rounded-2xl shadow-sm border border-stone-200 relative group transition-all duration-300 overflow-hidden ${isEditing ? 'ring-4 ring-teal-50/50' : ''}`}>
 
             <form onSubmit={handleSave} className="p-5">
                 {/* ═══ IDENTITY HEADER ═══ */}
@@ -187,14 +187,14 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                                 <button
                                     type="button"
                                     onClick={handleCancel}
-                                    className="px-3 py-1.5 text-sm font-bold text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
+                                    className="px-3 py-1.5 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors"
                                 >
                                     {t('common.cancel')}
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={loading}
-                                    className="px-4 py-1.5 text-sm font-bold text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 focus:ring-4 focus:ring-emerald-200 disabled:opacity-70 disabled:cursor-not-allowed transition-all shadow-lg shadow-emerald-500/30 transform active:scale-95"
+                                    className="px-4 py-1.5 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 focus:ring-4 focus:ring-teal-200 disabled:opacity-70 disabled:cursor-not-allowed transition-all shadow-lg shadow-teal-700/30 transform active:scale-95"
                                 >
                                     {loading ? t('common.loading') : t('common.save')}
                                 </button>
@@ -204,7 +204,7 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                                 <button
                                     type="button"
                                     onClick={handleClickToEdit}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-lg transition-colors"
                                 >
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                                     {t('common.edit')}
@@ -215,7 +215,7 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                                         <button
                                             type="button"
                                             onClick={() => setShowReportMenu(!showReportMenu)}
-                                            className="flex items-center gap-1 p-1.5 rounded-lg text-stone-400 bg-stone-50 hover:text-stone-600 hover:bg-stone-100 transition-all duration-150"
+                                            className="flex items-center gap-1 p-1.5 rounded-lg text-stone-500 bg-stone-50 hover:text-stone-600 hover:bg-stone-100 transition-all duration-150"
                                             title={t('flagging.report_actions') || 'Report'}
                                         >
                                             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -285,7 +285,7 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                                 : null;
                             if (profilePic) {
                                 return (
-                                    <div className="w-11 h-11 md:w-14 md:h-14 rounded-xl bg-emerald-100 overflow-hidden ring-2 ring-emerald-200 shadow-sm flex-shrink-0">
+                                    <div className="w-11 h-11 md:w-14 md:h-14 rounded-xl bg-teal-100 overflow-hidden ring-2 ring-teal-200 shadow-sm flex-shrink-0">
                                         <img src={profilePic.url} alt="" className="w-full h-full object-cover" />
                                     </div>
                                 );
@@ -293,8 +293,8 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                             const name = initialData?.name || '';
                             const initials = name.split(' ').filter(Boolean).map((w: string) => w[0]).slice(0, 2).join('').toUpperCase();
                             return (
-                                <div className="w-11 h-11 md:w-14 md:h-14 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center flex-shrink-0 shadow-sm">
-                                    <span className="text-white font-bold text-sm md:text-lg">{initials || '?'}</span>
+                                <div className="w-11 h-11 md:w-14 md:h-14 rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center flex-shrink-0 shadow-sm">
+                                    <span className="text-white font-semibold text-sm md:text-lg">{initials || '?'}</span>
                                 </div>
                             );
                         })()}
@@ -304,21 +304,21 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                                 <input
                                     type="text"
                                     required
-                                    className="w-full text-xl md:text-2xl font-extrabold text-emerald-950 tracking-tight bg-transparent border-b-2 border-emerald-300 focus:border-emerald-500 outline-none py-0.5 placeholder-emerald-900/30 transition-all"
+                                    className="w-full text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight bg-transparent border-b-2 border-teal-300 focus:border-teal-500 outline-none py-0.5 placeholder-stone-500 transition-all"
                                     value={data.name}
                                     onChange={e => setData({ ...data, name: e.target.value })}
                                     placeholder={t('adopter.placeholder_name_aliases')}
                                     autoFocus
                                 />
                             ) : (
-                                <h1 className="text-xl md:text-2xl font-extrabold text-emerald-950 tracking-tight truncate">
+                                <h1 className="text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate">
                                     {!isNew && initialData ? initialData.name : t('adopter.title_new')}
                                 </h1>
                             )}
                             {/* Metadata row */}
                             {!isNew && (
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-xs">
-                                    <span className="text-emerald-600/50 font-mono break-all">ID: {id}</span>
+                                    <span className="text-stone-500 font-mono break-all">ID: {id}</span>
                                     {initialData?.country && (() => {
                                         const c = getCountryByCode(initialData.country!);
                                         if (!c) return null;
@@ -343,8 +343,8 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                                                 className={`inline-flex items-center gap-1 px-1.5 py-0.5 ${colors.bg} border ${colors.border} rounded-full cursor-pointer hover:shadow-sm transition-shadow`}
                                             >
                                                 <StarRating value={Math.round(avgRating)} size="sm" />
-                                                <span className={`${colors.text} font-bold text-xs`}>{avgRating.toFixed(1)}</span>
-                                                <span className={`${colors.text} text-[10px] font-medium opacity-75`}>{t(`ratings.${descKey}` as any)}</span>
+                                                <span className={`${colors.text} font-semibold text-xs`}>{avgRating.toFixed(1)}</span>
+                                                <span className={`${colors.text} text-xs font-medium opacity-75`}>{t(`ratings.${descKey}` as any)}</span>
                                             </div>
                                         );
                                     })()}
@@ -371,24 +371,24 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                 )}
 
                 {/* ═══ DIVIDER ═══ */}
-                <div className="border-b border-emerald-100/60 mb-6" />
+                <div className="border-b border-teal-100/60 mb-6" />
 
                 {/* SHARED CONTENT GRID */}
                 <div className={`grid md:grid-cols-2 gap-6 ${isEditing ? 'opacity-100' : 'opacity-90'}`}>
                     {/* Contact Info */}
                     <div className="md:col-span-2">
-                        <h3 className="text-sm font-bold text-emerald-800 mb-3 uppercase tracking-wider">{t('adopter.contact')}</h3>
+                        <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.contact')}</h3>
                         {isEditing ? (
                             <textarea
                                 rows={3}
-                                className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none resize-y min-h-[80px]"
+                                className="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-y min-h-[80px]"
                                 value={data.contactInfo}
                                 onChange={e => setData({ ...data, contactInfo: e.target.value })}
                                 placeholder={t('adopter.placeholder_contact')}
                             />
                         ) : (
                             <div
-                                className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 font-medium leading-relaxed min-h-[60px] cursor-pointer hover:border-emerald-400 transition-colors"
+                                className="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 font-medium leading-relaxed min-h-[60px] cursor-pointer hover:border-teal-400 transition-colors"
                                 style={{ overflowWrap: 'anywhere' }}
                                 onClick={handleClickToEdit}
                                 title={t('common.edit') || 'Click to edit'}
@@ -402,11 +402,11 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
 
                     {/* Family Members (Full Width) */}
                     <div className="md:col-span-2">
-                        <h3 className="text-sm font-bold text-emerald-800 mb-3 uppercase tracking-wider">{t('adopter.family_members')}</h3>
+                        <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.family_members')}</h3>
                         {isEditing ? (
                             <textarea
                                 rows={2}
-                                className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none resize-y min-h-[60px]"
+                                className="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-y min-h-[60px]"
                                 value={data.familyMembers}
                                 onChange={e => setData({ ...data, familyMembers: e.target.value })}
                                 placeholder={t('adopter.placeholder_family')}
@@ -414,7 +414,7 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                         ) : (
                             data.familyMembers ? (
                                 <div
-                                    className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 font-medium leading-relaxed min-h-[60px] cursor-pointer hover:border-emerald-400 transition-colors"
+                                    className="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 font-medium leading-relaxed min-h-[60px] cursor-pointer hover:border-teal-400 transition-colors"
                                     style={{ overflowWrap: 'anywhere' }}
                                     onClick={handleClickToEdit}
                                     title={t('common.edit') || 'Click to edit'}
@@ -423,7 +423,7 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                                 </div>
                             ) : (
                                 <div
-                                    className="text-stone-400 italic p-4 rounded-xl border border-dashed border-emerald-200 bg-white cursor-pointer hover:border-emerald-400 transition-colors"
+                                    className="text-stone-500 italic p-4 rounded-xl border border-dashed border-teal-200 bg-white cursor-pointer hover:border-teal-400 transition-colors"
                                     onClick={handleClickToEdit}
                                     title={t('common.edit') || 'Click to edit'}
                                 >
@@ -435,11 +435,11 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
 
                     {/* Notes (Full Width) */}
                     <div className="md:col-span-2">
-                        <h3 className="text-sm font-bold text-emerald-800 mb-3 uppercase tracking-wider">{t('adopter.notes') || 'Notes'}</h3>
+                        <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.notes') || 'Notes'}</h3>
                         {isEditing ? (
                             <textarea
                                 rows={3}
-                                className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none resize-y min-h-[80px]"
+                                className="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-y min-h-[80px]"
                                 value={data.notes}
                                 onChange={e => setData({ ...data, notes: e.target.value })}
                                 placeholder={t('adopter.placeholder_notes') || 'Additional observations, age, behavior, etc.'}
@@ -447,7 +447,7 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                         ) : (
                             data.notes ? (
                                 <div
-                                    className="w-full p-4 rounded-xl border border-emerald-200 bg-white text-emerald-900 font-medium leading-relaxed min-h-[60px] cursor-pointer hover:border-emerald-400 transition-colors"
+                                    className="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 font-medium leading-relaxed min-h-[60px] cursor-pointer hover:border-teal-400 transition-colors"
                                     style={{ overflowWrap: 'anywhere' }}
                                     onClick={handleClickToEdit}
                                     title={t('common.edit') || 'Click to edit'}
@@ -456,7 +456,7 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                                 </div>
                             ) : (
                                 <div
-                                    className="text-stone-400 italic p-4 rounded-xl border border-dashed border-emerald-200 bg-white cursor-pointer hover:border-emerald-400 transition-colors"
+                                    className="text-stone-500 italic p-4 rounded-xl border border-dashed border-teal-200 bg-white cursor-pointer hover:border-teal-400 transition-colors"
                                     onClick={handleClickToEdit}
                                     title={t('common.edit') || 'Click to edit'}
                                 >
@@ -474,7 +474,7 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                     title={t('audit.log_title')}
                     count={history.length}
                     defaultOpen={false}
-                    className="border-t border-emerald-100/60 rounded-none shadow-none border-x-0 border-b-0"
+                    className="border-t border-teal-100/60 rounded-none shadow-none border-x-0 border-b-0"
                 >
                     <div className="space-y-6 pb-6">
                         {history.map((h) => {
@@ -502,18 +502,18 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                             } catch (e) { console.warn('[AdopterForm] Failed to parse history changes', e); }
 
                             return (
-                                <div key={h.id} className="text-sm border-l-4 border-emerald-200 pl-4 py-3 bg-emerald-50/30 rounded-r-lg mb-2">
+                                <div key={h.id} className="text-sm border-l-4 border-teal-200 pl-4 py-3 bg-teal-50/30 rounded-r-lg mb-2">
                                     <div className="flex justify-between items-start mb-2">
                                         <div className="flex items-center gap-2">
-                                            <span className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">
+                                            <span className="text-teal-700 text-xs font-semibold uppercase tracking-wider">
                                                 {formatDateTime(new Date(h.changedAt as string | number))}
                                             </span>
                                             {/* Badge for event type */}
-                                            {eventType === 'adoption_added' && <span className="bg-emerald-100 text-emerald-700 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase">{t('audit.event_adoption_added')}</span>}
-                                            {eventType === 'adoption_deleted' && <span className="bg-rose-100 text-rose-700 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase">{t('audit.event_adoption_deleted')}</span>}
-                                            {eventType === 'image_deleted' && <span className="bg-rose-100 text-rose-700 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase">{t('audit.event_image_deleted')}</span>}
+                                            {eventType === 'adoption_added' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_adoption_added')}</span>}
+                                            {eventType === 'adoption_deleted' && <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_adoption_deleted')}</span>}
+                                            {eventType === 'image_deleted' && <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_image_deleted')}</span>}
                                         </div>
-                                        <span className="text-xs px-2.5 py-0.5 bg-white border border-emerald-100 rounded-full text-emerald-700 font-medium shadow-sm">
+                                        <span className="text-xs px-2.5 py-0.5 bg-white border border-teal-100 rounded-full text-teal-700 font-medium shadow-sm">
                                             {t('audit.by')} {h.changedBy || t('common.anonymous')}
                                         </span>
                                     </div>
@@ -524,13 +524,13 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                                                 {/* Profile Updates / Adoption Updates (Diffs) */}
                                                 {(eventType === 'update' || eventType === 'adoption_updated') && Object.entries(changes).map(([key, delta]: [string, any]) => (
                                                     <div key={key} className="grid grid-cols-[120px_1fr] gap-3 items-start text-sm">
-                                                        <span className="font-bold text-emerald-800 capitalize truncate" title={key}>{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
-                                                        <div className="text-emerald-700 break-words font-medium">
+                                                        <span className="font-semibold text-teal-800 capitalize truncate" title={key}>{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
+                                                        <div className="text-teal-700 break-words font-medium">
                                                             <div className="line-through text-rose-400 text-xs mr-2 opacity-70 inline-block">
                                                                 {typeof delta.from === 'string' && delta.from.length > 30 ? delta.from.substring(0, 30) + '...' : (delta.from || t('audit.empty_val'))}
                                                             </div>
-                                                            <span className="text-emerald-300 mr-2">➜</span>
-                                                            <span className="text-emerald-900 bg-emerald-100/50 px-1.5 rounded">
+                                                            <span className="text-teal-700 mr-2">➜</span>
+                                                            <span className="text-teal-900 bg-teal-100/50 px-1.5 rounded">
                                                                 {delta.to || t('audit.empty_val')}
                                                             </span>
                                                         </div>
@@ -539,30 +539,30 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
 
                                                 {/* Added Adoption (Snapshot) */}
                                                 {eventType === 'adoption_added' && (
-                                                    <div className="text-emerald-800 font-medium">
-                                                        {t('audit.desc_adoption_added')} <span className="font-bold">{changes.animalName}</span> ({changes.species}) - {changes.status}
+                                                    <div className="text-teal-800 font-medium">
+                                                        {t('audit.desc_adoption_added')} <span className="font-semibold">{changes.animalName}</span> ({changes.species}) - {changes.status}
                                                     </div>
                                                 )}
 
                                                 {/* Deleted Adoption (Snapshot) */}
                                                 {eventType === 'adoption_deleted' && (
-                                                    <div className="space-y-1 text-emerald-800/80">
-                                                        <div><span className="font-bold">{t('adoption.animal_name')}:</span> {changes.animalName} ({changes.species})</div>
-                                                        <div><span className="font-bold">{t('adoption.status')}:</span> {changes.status}</div>
-                                                        <div className="flex items-center gap-1"><span className="font-bold">{t('adoption.rating')}:</span> <StarRating value={changes.rating} size="sm" showLabel /></div>
+                                                    <div className="space-y-1 text-teal-800">
+                                                        <div><span className="font-semibold">{t('adoption.animal_name')}:</span> {changes.animalName} ({changes.species})</div>
+                                                        <div><span className="font-semibold">{t('adoption.status')}:</span> {changes.status}</div>
+                                                        <div className="flex items-center gap-1"><span className="font-semibold">{t('adoption.rating')}:</span> <StarRating value={changes.rating} size="sm" showLabel /></div>
                                                         {changes.details && <div className="text-xs italic mt-1">"{changes.details}"</div>}
                                                     </div>
                                                 )}
 
                                                 {/* Deleted Image */}
                                                 {eventType === 'image_deleted' && (
-                                                    <div className="text-emerald-800">
+                                                    <div className="text-teal-800">
                                                         {t('audit.desc_image_deleted')} <span className="italic opacity-75">"{changes.caption || t('common.untitled')}"</span> ({t('audit.by')} {formatShortDate(new Date(changes.uploadedAt))})
                                                     </div>
                                                 )}
                                             </>
                                         ) : (
-                                            <span className="text-emerald-400 italic text-xs">{t('audit.metadata_update')}</span>
+                                            <span className="text-teal-700 italic text-xs">{t('audit.metadata_update')}</span>
                                         )}
                                     </div>
                                 </div>

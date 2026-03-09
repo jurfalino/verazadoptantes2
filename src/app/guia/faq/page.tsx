@@ -86,7 +86,7 @@ export default function FaqPage() {
                                             <span className="font-semibold text-stone-900 text-sm leading-snug">
                                                 {pick(item.entry.questionEs, item.entry.questionEn)}
                                             </span>
-                                            <span className={`text-stone-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}>
+                                            <span className={`text-stone-500 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}>
                                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                                             </span>
                                         </button>
@@ -105,13 +105,13 @@ export default function FaqPage() {
                 <div className="flex items-center justify-center gap-4 pt-4">
                     <Link
                         href="/guia"
-                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors text-sm"
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors text-sm"
                     >
                         ← {pick('Volver a la Guía', 'Back to Guide')}
                     </Link>
                     <Link
                         href="/"
-                        className="text-stone-400 hover:text-stone-600 text-sm underline underline-offset-2 transition-colors"
+                        className="text-stone-500 hover:text-stone-600 text-sm underline underline-offset-2 transition-colors"
                     >
                         {t('nav.back_to_search')}
                     </Link>

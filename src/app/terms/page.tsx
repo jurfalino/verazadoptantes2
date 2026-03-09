@@ -12,7 +12,7 @@ export default function TermsPage() {
             <div className="max-w-3xl mx-auto">
                 <button
                     onClick={() => router.back()}
-                    className="text-teal-600 hover:text-teal-800 text-sm mb-6 flex items-center gap-1"
+                    className="text-teal-700 hover:text-teal-800 text-sm mb-6 flex items-center gap-1"
                 >
                     ← {t('common.back')}
                 </button>
@@ -21,7 +21,7 @@ export default function TermsPage() {
                     {locale === 'es' ? <TermsES /> : <TermsEN />}
                 </div>
 
-                <div className="mt-6 text-center text-stone-400 text-xs">
+                <div className="mt-6 text-center text-stone-500 text-xs">
                     {t('legal.last_updated')}: 2026-02-09
                 </div>
             </div>
@@ -32,7 +32,7 @@ export default function TermsPage() {
 function TermsES() {
     return (
         <>
-            <h1 className="text-2xl font-bold text-stone-900">Términos y Condiciones de Uso</h1>
+            <h1 className="text-2xl font-semibold text-stone-900">Términos y Condiciones de Uso</h1>
 
             <p className="text-sm text-stone-500 italic">
                 Al utilizar BuenAdoptante, aceptás los siguientes términos.
@@ -130,7 +130,7 @@ function TermsES() {
 function TermsEN() {
     return (
         <>
-            <h1 className="text-2xl font-bold text-stone-900">Terms and Conditions of Use</h1>
+            <h1 className="text-2xl font-semibold text-stone-900">Terms and Conditions of Use</h1>
 
             <p className="text-sm text-stone-500 italic">
                 By using BuenAdoptante, you agree to the following terms.

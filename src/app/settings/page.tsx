@@ -10,8 +10,7 @@ import { getUserSettings, updateUserCountry } from '@/app/actions/settings';
 import { useShowToast } from '@/components/ui/Toast';
 
 const themes = [
-    { id: 'light', label: 'Claro', labelEn: 'Light', icon: '☀️', bg: '#fafaf9', fg: '#1c1917' },
-    { id: 'apple', label: 'Gris', labelEn: 'Gray', icon: '🌫️', bg: '#d1d1d6', fg: '#1d1d1f' },
+    { id: 'light', label: 'Claro', labelEn: 'Light', icon: '☀️', bg: '#e5e5ea', fg: '#1d1d1f' },
     { id: 'dark', label: 'Azul Noche', labelEn: 'Dark Night', icon: '🌙', bg: '#0a1628', fg: '#e0e7ff' },
 ] as const;
 
@@ -81,17 +80,17 @@ export default function SettingsPage() {
 
     return (
         <main className="flex-1 container mx-auto px-4 py-8 max-w-2xl">
-            <h1 className="text-2xl font-bold text-stone-900 dark:text-stone-100 mb-8">
+            <h1 className="text-2xl font-semibold text-stone-900 dark:text-stone-100 mb-8">
                 {t('settings.title') || 'Settings'}
             </h1>
 
             <div className="space-y-8">
                 {/* Country Section */}
                 <section className="bg-white dark:bg-stone-800 rounded-2xl border border-stone-200 dark:border-stone-700 p-6">
-                    <h2 className="text-lg font-bold text-stone-800 dark:text-stone-200 mb-1">
+                    <h2 className="text-lg font-semibold text-stone-800 dark:text-stone-200 mb-1">
                         🌍 {t('settings.country') || 'Country'}
                     </h2>
-                    <p className="text-sm text-stone-500 dark:text-stone-400 mb-4">
+                    <p className="text-sm text-stone-500 dark:text-stone-500 mb-4">
                         {t('settings.country_description') || 'Your country determines which adopter records you see in search results.'}
                     </p>
                     <CountrySelector
@@ -102,7 +101,7 @@ export default function SettingsPage() {
                     <button
                         onClick={handleSaveCountry}
                         disabled={savingCountry || !country}
-                        className="mt-4 px-6 py-2.5 text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="mt-4 px-6 py-2.5 text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {savingCountry ? '...' : (t('settings.save') || 'Save')}
                     </button>
@@ -110,7 +109,7 @@ export default function SettingsPage() {
 
                 {/* Language Section */}
                 <section className="bg-white dark:bg-stone-800 rounded-2xl border border-stone-200 dark:border-stone-700 p-6">
-                    <h2 className="text-lg font-bold text-stone-800 dark:text-stone-200 mb-4">
+                    <h2 className="text-lg font-semibold text-stone-800 dark:text-stone-200 mb-4">
                         🗣️ {t('settings.language') || 'Language'}
                     </h2>
                     <div className="grid grid-cols-2 gap-3">
@@ -126,12 +125,12 @@ export default function SettingsPage() {
                             >
                                 <span className="text-2xl">{lang.flag}</span>
                                 <div className="text-left">
-                                    <span className={`text-sm font-bold ${locale === lang.id ? 'text-teal-700 dark:text-teal-300' : 'text-stone-700 dark:text-stone-300'}`}>
+                                    <span className={`text-sm font-semibold ${locale === lang.id ? 'text-teal-700 dark:text-teal-700' : 'text-stone-700 dark:text-stone-300'}`}>
                                         {lang.label}
                                     </span>
                                 </div>
                                 {locale === lang.id && (
-                                    <span className="ml-auto text-teal-500 text-lg">✓</span>
+                                    <span className="ml-auto text-teal-700 text-lg">✓</span>
                                 )}
                             </button>
                         ))}
@@ -140,10 +139,10 @@ export default function SettingsPage() {
 
                 {/* Theme Section */}
                 <section className="bg-white dark:bg-stone-800 rounded-2xl border border-stone-200 dark:border-stone-700 p-6">
-                    <h2 className="text-lg font-bold text-stone-800 dark:text-stone-200 mb-4">
+                    <h2 className="text-lg font-semibold text-stone-800 dark:text-stone-200 mb-4">
                         🎨 {t('settings.theme') || 'Theme'}
                     </h2>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-2 gap-3">
                         {themes.map(t => (
                             <button
                                 key={t.id}
@@ -158,11 +157,11 @@ export default function SettingsPage() {
                                     className="w-10 h-10 rounded-full border-2 border-stone-300 dark:border-stone-600 flex-shrink-0"
                                     style={{ backgroundColor: t.bg }}
                                 />
-                                <span className={`text-xs font-bold ${theme === t.id ? 'text-teal-700 dark:text-teal-300' : 'text-stone-600 dark:text-stone-400'}`}>
+                                <span className={`text-xs font-semibold ${theme === t.id ? 'text-teal-700 dark:text-teal-700' : 'text-stone-600 dark:text-stone-500'}`}>
                                     {locale === 'es' ? t.label : t.labelEn}
                                 </span>
                                 {theme === t.id && (
-                                    <span className="text-teal-500 text-sm">✓</span>
+                                    <span className="text-teal-700 text-sm">✓</span>
                                 )}
                             </button>
                         ))}

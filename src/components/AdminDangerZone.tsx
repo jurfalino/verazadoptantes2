@@ -53,7 +53,7 @@ export default function AdminDangerZone() {
         <div className="bg-red-50 p-6 rounded-2xl border-2 border-red-200">
             <div className="flex items-center gap-3 mb-4">
                 <span className="text-2xl">⚠️</span>
-                <h3 className="text-lg font-bold text-red-800">Danger Zone</h3>
+                <h3 className="text-lg font-semibold text-red-800">Danger Zone</h3>
             </div>
 
             {!showConfirm ? (
@@ -64,7 +64,7 @@ export default function AdminDangerZone() {
                     </p>
                     <button
                         onClick={() => setShowConfirm(true)}
-                        className="px-4 py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition-colors"
+                        className="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors"
                     >
                         🗑️ Purge All Data
                     </button>
@@ -74,7 +74,7 @@ export default function AdminDangerZone() {
                     {step === 1 && (
                         <>
                             <div className="bg-red-100 p-4 rounded-lg border border-red-300">
-                                <p className="text-red-800 font-bold mb-2">⚠️ First Confirmation</p>
+                                <p className="text-red-800 font-semibold mb-2">⚠️ First Confirmation</p>
                                 <p className="text-red-700 text-sm">
                                     Are you absolutely sure you want to delete ALL data?
                                     This will permanently remove:
@@ -97,7 +97,7 @@ export default function AdminDangerZone() {
                                 </button>
                                 <button
                                     onClick={handleFirstConfirm}
-                                    className="px-4 py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition-colors"
+                                    className="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors"
                                 >
                                     Yes, Continue to Final Confirmation
                                 </button>
@@ -108,7 +108,7 @@ export default function AdminDangerZone() {
                     {step === 2 && (
                         <>
                             <div className="bg-red-100 p-4 rounded-lg border border-red-300">
-                                <p className="text-red-800 font-bold mb-2">🚨 Final Confirmation</p>
+                                <p className="text-red-800 font-semibold mb-2">🚨 Final Confirmation</p>
                                 <p className="text-red-700 text-sm mb-4">
                                     Type <code className="bg-red-200 px-2 py-0.5 rounded font-mono">{CONFIRMATION_CODE}</code> to confirm permanent deletion:
                                 </p>
@@ -135,7 +135,7 @@ export default function AdminDangerZone() {
                                 <button
                                     onClick={handleFinalConfirm}
                                     disabled={loading || confirmInput !== CONFIRMATION_CODE}
-                                    className="px-4 py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {loading ? 'Purging...' : '🗑️ Permanently Delete All Data'}
                                 </button>

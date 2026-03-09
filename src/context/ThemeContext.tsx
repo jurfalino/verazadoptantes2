@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 
-type Theme = 'light' | 'apple' | 'dark';
+type Theme = 'light' | 'dark';
 
 interface ThemeContextType {
     theme: Theme;
@@ -17,9 +17,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         // Load from localStorage on mount
-        const stored = localStorage.getItem('theme') as Theme | null;
-        if (stored && ['light', 'apple', 'dark'].includes(stored)) {
-            setThemeState(stored);
+        const stored = localStorage.getItem('theme');
+        // Migrate legacy 'apple' theme to 'light'
+        if (stored === 'apple') {
+            localStorage.setItem('theme', 'light');
+            setThemeState('light');
+        } else if (stored === 'dark') {
+            setThemeState('dark');
         }
         setMounted(true);
     }, []);

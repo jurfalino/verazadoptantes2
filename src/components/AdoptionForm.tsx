@@ -345,7 +345,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                 const isAuthenticated = (currentUser && currentUser !== '') || !!session?.user;
                 if (!isAuthenticated) { openLogin(); return; }
                 setIsOpen(true);
-            }} className="w-full py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 transition-all duration-300 transform active:scale-[0.99] mb-4">
+            }} className="w-full py-3 bg-teal-700 text-white font-semibold rounded-xl hover:bg-teal-600 shadow-lg shadow-teal-700/20 hover:shadow-teal-700/40 transition-all duration-300 transform active:scale-[0.99] mb-4">
                 + {t('adoption.record_new')}
             </button>
         )
@@ -362,26 +362,26 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
     return (
         <>
             <MediaLightbox item={lightboxItem} onClose={() => setLightboxItem(null)} />
-            <div id="adoption-form-section" className="animate-in fade-in slide-in-from-bottom-2 duration-300 bg-white p-5 rounded-xl border-2 border-emerald-400/50 shadow-lg relative ring-4 ring-emerald-50/50">
-                <h3 className="text-lg font-bold mb-4 text-emerald-900 tracking-tight flex items-center gap-2">
-                    <div className="p-1.5 bg-emerald-100 rounded-lg text-emerald-600">
+            <div id="adoption-form-section" className="animate-in fade-in slide-in-from-bottom-2 duration-300 bg-white p-5 rounded-xl border-2 border-teal-400/50 shadow-lg relative ring-4 ring-teal-50/50">
+                <h3 className="text-lg font-semibold mb-4 text-teal-900 tracking-tight flex items-center gap-2">
+                    <div className="p-1.5 bg-teal-100 rounded-lg text-teal-700">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={initialData ? "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" : "M12 4v16m8-8H4"} /></svg>
                     </div>
                     {initialData ? (t('adoption.record_edit') || 'Edit Adoption') : t('adoption.record_new')}
                 </h3>
 
                 {showModeSwitcher && (
-                    <div className="flex gap-2 mb-4 p-1 bg-emerald-50 rounded-lg">
-                        <button type="button" onClick={() => setMode('existing')} className={`flex-1 py-1.5 text-sm font-bold rounded-md transition-all ${effectiveMode === 'existing' ? 'bg-white text-emerald-700 shadow-sm' : 'text-emerald-600/70 hover:text-emerald-800'}`}>{t('adoption.select_existing') || 'Select Existing'} ({safeAvailableAnimals.length})</button>
-                        <button type="button" onClick={() => { setMode('new'); setFormData(prev => ({ ...prev, id: undefined, animalName: '', species: '', details: '', status: 'completed', rating: 5, recordType: 'adoption' })); }} className={`flex-1 py-1.5 text-sm font-bold rounded-md transition-all ${effectiveMode === 'new' ? 'bg-white text-emerald-700 shadow-sm' : 'text-emerald-600/70 hover:text-emerald-800'}`}>{t('adoption.create_new') || 'Create New'}</button>
+                    <div className="flex gap-2 mb-4 p-1 bg-teal-50 rounded-lg">
+                        <button type="button" onClick={() => setMode('existing')} className={`flex-1 py-1.5 text-sm font-semibold rounded-md transition-all ${effectiveMode === 'existing' ? 'bg-white text-teal-700 shadow-sm' : 'text-teal-700 hover:text-teal-800'}`}>{t('adoption.select_existing') || 'Select Existing'} ({safeAvailableAnimals.length})</button>
+                        <button type="button" onClick={() => { setMode('new'); setFormData(prev => ({ ...prev, id: undefined, animalName: '', species: '', details: '', status: 'completed', rating: 5, recordType: 'adoption' })); }} className={`flex-1 py-1.5 text-sm font-semibold rounded-md transition-all ${effectiveMode === 'new' ? 'bg-white text-teal-700 shadow-sm' : 'text-teal-700 hover:text-teal-800'}`}>{t('adoption.create_new') || 'Create New'}</button>
                     </div>
                 )}
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                     {effectiveMode === 'existing' && (
                         <div className="mb-4">
-                            <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">{t('adoption.select_animal') || 'Select Animal'}</label>
-                            <select className="w-full h-10 pl-4 pr-10 rounded-lg border border-emerald-200 bg-emerald-50/50 text-emerald-950 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none appearance-none text-sm" onChange={(e) => handleSelectExisting(e.target.value)} value={formData.id || ''}>
+                            <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.select_animal') || 'Select Animal'}</label>
+                            <select className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50/50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm" onChange={(e) => handleSelectExisting(e.target.value)} value={formData.id || ''}>
                                 <option value="">{t('adoption.choose_animal') || '-- Choose an animal --'}</option>
                                 {safeAvailableAnimals.map(a => (<option key={a.id} value={a.id}>{a.animalName} ({a.species}) - {formatShortDate(new Date(a.date))}</option>))}
                             </select>
@@ -391,7 +391,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <div className="flex items-center justify-between mb-1.5">
-                                <label className="block text-xs font-bold text-emerald-800 uppercase tracking-wider">
+                                <label className="block text-xs font-semibold text-teal-800 uppercase tracking-wider">
                                     {t('adoption.animal_name')}
                                 </label>
                                 <label className="flex items-center gap-1.5 cursor-pointer text-xs">
@@ -413,7 +413,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                             <input
                                 required={!unknownAnimal}
                                 disabled={unknownAnimal}
-                                className={`w-full h-10 px-4 rounded-lg border border-emerald-200 text-emerald-950 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none text-sm ${unknownAnimal ? 'bg-stone-100 text-stone-400 cursor-not-allowed' : 'bg-white'}`}
+                                className={`w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm ${unknownAnimal ? 'bg-stone-100 text-stone-500 cursor-not-allowed' : 'bg-white'}`}
                                 value={unknownAnimal ? '' : formData.animalName}
                                 onChange={e => setFormData({ ...formData, animalName: e.target.value })}
                                 placeholder={unknownAnimal ? (t('adoption.unknown_animal') || 'Unknown animal') : t('adoption.animal_placeholder')}
@@ -421,7 +421,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                         </div>
 
                         <div>
-                            <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">
+                            <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
                                 {t('adoption.species')}
                             </label>
                             {customSpecies ? (
@@ -429,7 +429,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                                     <input
                                         required
                                         autoFocus
-                                        className="flex-1 h-10 px-4 rounded-lg border border-emerald-200 bg-white text-emerald-950 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none text-sm"
+                                        className="flex-1 h-10 px-4 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm"
                                         value={formData.species}
                                         onChange={e => setFormData({ ...formData, species: e.target.value })}
                                         placeholder={t('adoption.species_other_placeholder') || 'Enter species...'}
@@ -440,7 +440,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                                             setCustomSpecies(false);
                                             setFormData({ ...formData, species: 'cat' });
                                         }}
-                                        className="px-3 h-10 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-medium hover:bg-emerald-100 transition-colors whitespace-nowrap"
+                                        className="px-3 h-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-700 text-xs font-medium hover:bg-teal-100 transition-colors whitespace-nowrap"
                                         title={t('adoption.species_select_preset') || 'Select preset'}
                                     >
                                         ↩ {t('adoption.species_presets') || 'Presets'}
@@ -450,7 +450,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                                 <div className="relative">
                                     <select
                                         required
-                                        className="w-full h-10 pl-4 pr-10 rounded-lg border border-emerald-200 bg-white text-emerald-950 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none appearance-none text-sm"
+                                        className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-white text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm"
                                         value={formData.species.toLowerCase() || 'cat'}
                                         onChange={e => {
                                             if (e.target.value === '_other') {
@@ -466,7 +466,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                                         <option value="bird">{t('species.bird') || 'Bird'} 🐦</option>
                                         <option value="_other">{t('species.other') || 'Other...'}</option>
                                     </select>
-                                    <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-emerald-600">
+                                    <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-teal-700">
                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                                     </div>
                                 </div>
@@ -510,11 +510,11 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                                         href={parsed.contractScreenshot}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="flex items-center gap-2 p-2 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors"
+                                        className="flex items-center gap-2 p-2 bg-teal-50 rounded-lg hover:bg-teal-100 transition-colors"
                                     >
                                         <span className="text-sm">📋</span>
-                                        <span className="text-sm font-medium text-emerald-700">{t('dashboard.view_signed_contract') || 'View Signed Contract'}</span>
-                                        <svg className="w-3.5 h-3.5 ml-auto text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                        <span className="text-sm font-medium text-teal-700">{t('dashboard.view_signed_contract') || 'View Signed Contract'}</span>
+                                        <svg className="w-3.5 h-3.5 ml-auto text-teal-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                                     </a>
                                 );
                             }
@@ -523,7 +523,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                     })()}
 
                     <div>
-                        <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">{t('adoption.record_type') || 'Record Type'}</label>
+                        <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.record_type') || 'Record Type'}</label>
                         <div className="flex flex-wrap gap-2">
                             {[
                                 { value: 'adoption', icon: '🏠', label: t('adoption.type_adoption') || 'Adoption' },
@@ -546,7 +546,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                     {/* Date and On Behalf Of */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">
+                            <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
                                 {t('adoption.date') || 'Date'}
                             </label>
                             <DatePicker
@@ -557,11 +557,11 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">
+                            <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
                                 {t('adoption.on_behalf_of') || 'On Behalf Of'}
                             </label>
                             <input
-                                className="w-full h-10 px-4 rounded-lg border border-emerald-200 bg-white text-emerald-950 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none text-sm"
+                                className="w-full h-10 px-4 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm"
                                 value={formData.onBehalfOf}
                                 onChange={e => setFormData({ ...formData, onBehalfOf: e.target.value })}
                                 placeholder={t('adoption.on_behalf_placeholder') || 'Leave empty if recording for yourself'}
@@ -598,7 +598,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                             {/* Address Verification Section */}
                             {formData.deliveredToHome && (
                                 <div className="mt-4 pt-4 border-t border-blue-100">
-                                    <label className="block text-xs font-bold text-blue-800 mb-1.5 uppercase tracking-wider flex items-center gap-1">
+                                    <label className="block text-xs font-semibold text-blue-800 mb-1.5 uppercase tracking-wider flex items-center gap-1">
                                         <span>📍</span>
                                         {t('adoption.verify_address') || 'Verify Address'}
                                     </label>
@@ -621,24 +621,24 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                     )}
 
                     {/* Identity Verification Toggle */}
-                    <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-100">
+                    <div className="p-4 bg-teal-50 rounded-lg border border-teal-100">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                                 <span className="text-lg">🪪</span>
-                                <label className="text-sm font-medium text-emerald-800">
+                                <label className="text-sm font-medium text-teal-800">
                                     {t('adoption.identity_verified') || 'Did you verify their identity?'}
                                 </label>
                             </div>
                             <button
                                 type="button"
                                 onClick={() => setFormData({ ...formData, identityVerified: !formData.identityVerified })}
-                                className={`relative w-12 h-6 rounded-full transition-colors ${formData.identityVerified ? 'bg-emerald-500' : 'bg-stone-200'}`}
+                                className={`relative w-12 h-6 rounded-full transition-colors ${formData.identityVerified ? 'bg-teal-500' : 'bg-stone-200'}`}
                             >
                                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${formData.identityVerified ? 'translate-x-6' : 'translate-x-0'}`} />
                             </button>
                         </div>
                         {formData.identityVerified && (
-                            <p className="mt-2 text-xs text-emerald-600">
+                            <p className="mt-2 text-xs text-teal-700">
                                 {t('adoption.identity_verified_note') || 'This will mark the adopter profile as ID verified.'}
                             </p>
                         )}
@@ -646,23 +646,23 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
 
                     {/* Rating only (Status hidden/inferred) */}
                     <div>
-                        <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">{t('adoption.rating')}</label>
+                        <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.rating')}</label>
                         <StarRating
                             value={formData.rating}
                             onChange={(r) => setFormData({ ...formData, rating: r })}
                             size="lg"
                         />
-                        <p className="text-xs text-stone-400 mt-1">1 = {t('ratings.dangerous') || 'Dangerous'}, 5 = {t('ratings.excellent') || 'Excellent'}</p>
+                        <p className="text-xs text-stone-500 mt-1">1 = {t('ratings.dangerous') || 'Dangerous'}, 5 = {t('ratings.excellent') || 'Excellent'}</p>
                     </div>
 
                     <div>
-                        <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">{t('adoption.notes')}</label>
-                        <textarea className="w-full p-3 rounded-lg border border-emerald-200 bg-white text-emerald-950 placeholder-emerald-800/40 font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none resize-none text-sm" rows={3} value={formData.details} onChange={e => setFormData({ ...formData, details: e.target.value })} placeholder={t('adoption.notes_placeholder')} />
+                        <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.notes')}</label>
+                        <textarea className="w-full p-3 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-none text-sm" rows={3} value={formData.details} onChange={e => setFormData({ ...formData, details: e.target.value })} placeholder={t('adoption.notes_placeholder')} />
                     </div>
 
                     {/* Photo Upload */}
-                    <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-100/50">
-                        <label className="block text-xs font-bold text-emerald-800 mb-2 uppercase tracking-wider flex items-center gap-2">
+                    <div className="p-3 bg-teal-50 rounded-lg border border-teal-100/50">
+                        <label className="block text-xs font-semibold text-teal-800 mb-2 uppercase tracking-wider flex items-center gap-2">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                             {t('adopter.upload_media') || 'Media'}
                         </label>
@@ -676,7 +676,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                                         <div key={img.id} className="relative group">
                                             {imgIsVideo ? (
                                                 <div
-                                                    className="w-20 h-20 rounded-lg border border-emerald-200 cursor-pointer hover:border-emerald-400 transition-colors overflow-hidden relative"
+                                                    className="w-20 h-20 rounded-lg border border-teal-200 cursor-pointer hover:border-teal-400 transition-colors overflow-hidden relative"
                                                     onClick={(e) => { e.preventDefault(); setLightboxItem({ url: img.url, caption: img.caption, mediaType: 'video', thumbnailUrl: img.thumbnailUrl }); }}
                                                 >
                                                     {img.thumbnailUrl ? (
@@ -699,7 +699,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                                                 <img
                                                     src={proxyR2Url(img.url)}
                                                     alt={img.caption || 'Adoption photo'}
-                                                    className="w-20 h-20 object-cover rounded-lg border border-emerald-200 cursor-pointer hover:border-emerald-400 transition-colors"
+                                                    className="w-20 h-20 object-cover rounded-lg border border-teal-200 cursor-pointer hover:border-teal-400 transition-colors"
                                                     onClick={(e) => { e.preventDefault(); setLightboxItem({ url: img.url, caption: img.caption, mediaType: 'image' }); }}
                                                 />
                                             )}
@@ -714,7 +714,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                                                         toast.error('Error', 'Failed to delete media', extractErrorId(e));
                                                     }
                                                 }}
-                                                className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
+                                                className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
                                                 title="Delete"
                                             >
                                                 ×
@@ -753,7 +753,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                                         <button
                                             type="button"
                                             onClick={() => setPendingImages(prev => prev.filter((_, i) => i !== idx))}
-                                            className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
+                                            className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
                                             title="Remove"
                                         >
                                             ×
@@ -765,24 +765,24 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                         )}
 
                         <div className="flex items-center gap-3">
-                            <label className={`px-4 py-2 bg-white border border-emerald-200 text-emerald-600 rounded-lg text-sm font-bold cursor-pointer hover:bg-emerald-50 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                            <label className={`px-4 py-2 bg-white border border-teal-200 text-teal-700 rounded-lg text-sm font-semibold cursor-pointer hover:bg-teal-50 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
                                 {uploading ? 'Uploading...' : (t('common.add_media') || '+ Add Media')}
                                 <input type="file" accept="image/*,video/*" className="hidden" onChange={handleImageUpload} disabled={uploading} />
                             </label>
-                            <span className="text-xs text-emerald-600/60">{safeAdoptionImages.length + safePendingImages.length} {t('common.files_attached') || 'file(s) attached'}</span>
+                            <span className="text-xs text-teal-700">{safeAdoptionImages.length + safePendingImages.length} {t('common.files_attached') || 'file(s) attached'}</span>
                         </div>
                     </div>
 
-                    <div className="flex justify-between items-center pt-4 border-t border-emerald-100/50">
+                    <div className="flex justify-between items-center pt-4 border-t border-teal-100/50">
                         {onDelete && initialData && (
-                            <button type="button" onClick={onDelete} className="px-4 py-2 text-sm font-bold text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title={t('common.delete')}>
+                            <button type="button" onClick={onDelete} className="px-4 py-2 text-sm font-semibold text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title={t('common.delete')}>
                                 {/* Trash Icon */}
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                             </button>
                         )}
                         <div className={`flex gap-3 ${(!onDelete || !initialData) ? 'w-full justify-end' : ''}`}>
-                            <button type="button" onClick={handleCancel} className="px-4 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors">{t('common.cancel')}</button>
-                            <button type="submit" disabled={loading} className="px-6 py-2 text-sm font-bold text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 shadow-md shadow-emerald-500/20 disabled:opacity-50 transition-all active:scale-95">{loading ? t('adoption.saving') : t('adoption.submit')}</button>
+                            <button type="button" onClick={handleCancel} className="px-4 py-2 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors">{t('common.cancel')}</button>
+                            <button type="submit" disabled={loading} className="px-6 py-2 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 shadow-md shadow-teal-700/20 disabled:opacity-50 transition-all active:scale-95">{loading ? t('adoption.saving') : t('adoption.submit')}</button>
                         </div>
                     </div>
                 </form>

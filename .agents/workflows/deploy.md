@@ -50,36 +50,46 @@ npx tsc --noEmit
 ```
 If errors exist, fix them before proceeding.
 
-2. Stage all changes:
+2. Run lint warning ratchet check (current threshold: **68 warnings**):
+// turbo
+```
+npx next lint 2>&1 | Select-String "Warning:" | Measure-Object | Select-Object -ExpandProperty Count
+```
+Compare the count against the threshold of **68**. If the count is **higher than 68**, STOP and tell the user:
+> "⚠️ Lint warnings increased from 68 to [N]. You should fix the new warnings before deploying, or acknowledge the increase."
+Wait for user acknowledgment before proceeding. If the user acknowledges, update the threshold in this workflow file to match the new count.
+If the count is **equal or lower**, proceed silently.
+
+3. Stage all changes:
 ```
 git add -A
 ```
 
-3. Review what's being committed:
+4. Review what's being committed:
 // turbo
 ```
 git diff --cached --stat
 ```
 
-4. Commit with version-prefixed message (version is MANDATORY in the commit message):
+5. Commit with version-prefixed message (version is MANDATORY in the commit message):
 ```
 git commit -m "v<version>: <description>"
 ```
 > Example: `git commit -m "v2.9.3: fix empty alt tags on adopter thumbnails"`
 
-5. **Push to STAGING only — NEVER to master:**
+6. **Push to STAGING only — NEVER to master:**
 ```
 git push origin HEAD:staging
 ```
 
-6. **STOP. Tell the user to verify on staging:**
+7. **STOP. Tell the user to verify on staging:**
 ```
 Staging URL: https://staging.verazadoptantes2.pages.dev
 ```
 Wait for the Cloudflare build to complete (~2-3 min). CI checks (build, tsc, lint) must pass.
 Ask the user to verify the changes on the staging URL.
 
-7. **WAIT FOR EXPLICIT MASTER PUSH APPROVAL.**
+8. **WAIT FOR EXPLICIT MASTER PUSH APPROVAL.**
 > ⚠️ The user MUST say one of these exact phrases before you push to master:
 > - "push to master"
 > - "merge to master"
@@ -93,19 +103,22 @@ Ask the user to verify the changes on the staging URL.
 git push origin staging:master
 ```
 
-8. If tagging a version, tag AFTER the staging-to-master push:
+9. If tagging a version, tag AFTER the staging-to-master push:
 ```
 git tag -a v<version> -m "<message>"
 git push origin v<version>
 ```
 
-9. Update CHANGELOG.md with release notes BEFORE committing (step 4):
+10. Update CHANGELOG.md with release notes BEFORE committing (step 5):
    - Add a new `## [version] - YYYY-MM-DD` section at the top
    - Group changes under `### Added`, `### Changed`, `### Fixed`, `### Removed` as appropriate
 
 
 
 ## 🗃️ Database Migrations
+
+> **🚨 MANDATORY: After ANY change to `src/db/schema.ts`, run `/schema-sync` to verify the local D1 database matches.**
+> Failing to do this will cause silent query failures locally (server actions return `null` instead of data).
 
 If schema changes were made (drizzle/ folder has new files), migrations auto-apply via CI on push to staging/master.
 

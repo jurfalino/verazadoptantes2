@@ -58,7 +58,7 @@ export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
         <>
             <button
                 onClick={(e) => { e.stopPropagation(); e.preventDefault(); setIsOpen(true); }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-700 bg-teal-50 rounded-lg hover:bg-teal-100 transition-colors"
                 title="Share adoption contract"
             >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -85,15 +85,15 @@ export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
                         <div className="p-5 pb-3 border-b border-stone-100">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center text-lg">📋</div>
+                                    <div className="w-10 h-10 rounded-xl bg-teal-100 flex items-center justify-center text-lg">📋</div>
                                     <div>
-                                        <h3 className="font-bold text-stone-900 text-sm">Enviar Contrato</h3>
+                                        <h3 className="font-semibold text-stone-900 text-sm">Enviar Contrato</h3>
                                         <p className="text-xs text-stone-500 mt-0.5 truncate max-w-[180px]">{animalName}</p>
                                     </div>
                                 </div>
                                 <button
                                     onClick={() => setIsOpen(false)}
-                                    className="w-8 h-8 rounded-full flex items-center justify-center text-stone-400 hover:bg-stone-100 hover:text-stone-600 transition-colors"
+                                    className="w-8 h-8 rounded-full flex items-center justify-center text-stone-500 hover:bg-stone-100 hover:text-stone-600 transition-colors"
                                 >
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                                 </button>
@@ -109,12 +109,12 @@ export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
                                 onClick={() => setIsOpen(false)}
                                 className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left hover:bg-stone-50 active:bg-stone-100 transition-colors"
                             >
-                                <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center flex-shrink-0 text-indigo-600">
+                                <div className="w-10 h-10 rounded-xl bg-teal-100 flex items-center justify-center flex-shrink-0 text-teal-700">
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                                 </div>
                                 <div>
-                                    <p className="text-sm font-bold text-stone-900">Abrir en nueva pestaña</p>
-                                    <p className="text-xs text-stone-400">Ver el contrato como lo verá el adoptante</p>
+                                    <p className="text-sm font-semibold text-stone-900">Abrir en nueva pestaña</p>
+                                    <p className="text-xs text-stone-500">Ver el contrato como lo verá el adoptante</p>
                                 </div>
                             </a>
 
@@ -126,8 +126,8 @@ export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
                                     {copied ? '✅' : '🔗'}
                                 </div>
                                 <div>
-                                    <p className="text-sm font-bold text-stone-900">{copied ? '¡Copiado!' : 'Copiar enlace'}</p>
-                                    <p className="text-xs text-stone-400 truncate max-w-[220px]">{fullUrl}</p>
+                                    <p className="text-sm font-semibold text-stone-900">{copied ? '¡Copiado!' : 'Copiar enlace'}</p>
+                                    <p className="text-xs text-stone-500 truncate max-w-[220px]">{fullUrl}</p>
                                 </div>
                             </button>
 
@@ -137,8 +137,8 @@ export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
                             >
                                 <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center text-lg flex-shrink-0">💬</div>
                                 <div>
-                                    <p className="text-sm font-bold text-stone-900">WhatsApp</p>
-                                    <p className="text-xs text-stone-400">Enviar por mensaje</p>
+                                    <p className="text-sm font-semibold text-stone-900">WhatsApp</p>
+                                    <p className="text-xs text-stone-500">Enviar por mensaje</p>
                                 </div>
                             </button>
 
@@ -148,8 +148,8 @@ export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
                             >
                                 <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-lg flex-shrink-0">📧</div>
                                 <div>
-                                    <p className="text-sm font-bold text-stone-900">Email</p>
-                                    <p className="text-xs text-stone-400">Enviar por correo electrónico</p>
+                                    <p className="text-sm font-semibold text-stone-900">Email</p>
+                                    <p className="text-xs text-stone-500">Enviar por correo electrónico</p>
                                 </div>
                             </button>
 
@@ -160,8 +160,8 @@ export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
                                 >
                                     <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center text-lg flex-shrink-0">📤</div>
                                     <div>
-                                        <p className="text-sm font-bold text-stone-900">Más opciones...</p>
-                                        <p className="text-xs text-stone-400">Compartir usando apps del sistema</p>
+                                        <p className="text-sm font-semibold text-stone-900">Más opciones...</p>
+                                        <p className="text-xs text-stone-500">Compartir usando apps del sistema</p>
                                     </div>
                                 </button>
                             )}
@@ -169,7 +169,7 @@ export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
 
                         {/* Footer hint */}
                         <div className="px-5 pb-4 pt-1">
-                            <p className="text-[11px] text-stone-400 text-center">
+                            <p className="text-xs text-stone-500 text-center">
                                 El adoptante podrá completar sus datos desde el enlace del contrato
                             </p>
                         </div>

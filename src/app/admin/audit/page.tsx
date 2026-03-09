@@ -20,14 +20,14 @@ const ACTION_LABELS: Record<string, { label: string; icon: string; color: string
     sign_in: { label: 'Sign In', icon: '🔑', color: 'bg-green-100 text-green-700' },
     sign_out: { label: 'Sign Out', icon: '🚪', color: 'bg-stone-100 text-stone-600' },
     search: { label: 'Search', icon: '🔍', color: 'bg-blue-100 text-blue-700' },
-    adopter_created: { label: 'Adopter Created', icon: '➕', color: 'bg-emerald-100 text-emerald-700' },
+    adopter_created: { label: 'Adopter Created', icon: '➕', color: 'bg-teal-100 text-teal-700' },
     adopter_updated: { label: 'Adopter Updated', icon: '✏️', color: 'bg-amber-100 text-amber-700' },
     adopter_deleted: { label: 'Adopter Deleted', icon: '🗑️', color: 'bg-rose-100 text-rose-700' },
-    adoption_created: { label: 'Adoption Created', icon: '🐾', color: 'bg-emerald-100 text-emerald-700' },
+    adoption_created: { label: 'Adoption Created', icon: '🐾', color: 'bg-teal-100 text-teal-700' },
     adoption_updated: { label: 'Adoption Updated', icon: '✏️', color: 'bg-amber-100 text-amber-700' },
     adoption_deleted: { label: 'Adoption Deleted', icon: '🗑️', color: 'bg-rose-100 text-rose-700' },
     flag_created: { label: 'Flag Added', icon: '🚩', color: 'bg-orange-100 text-orange-700' },
-    image_uploaded: { label: 'Image Uploaded', icon: '📷', color: 'bg-indigo-100 text-indigo-700' },
+    image_uploaded: { label: 'Image Uploaded', icon: '📷', color: 'bg-teal-100 text-teal-700' },
     config_changed: { label: 'Config Changed', icon: '⚙️', color: 'bg-purple-100 text-purple-700' },
 };
 
@@ -135,7 +135,7 @@ export default function AdminAuditPage() {
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
                 <div>
-                    <h2 className="text-2xl font-bold text-stone-900">📋 Audit Log</h2>
+                    <h2 className="text-2xl font-semibold text-stone-900">📋 Audit Log</h2>
                     <p className="text-stone-500 text-sm mt-1">
                         {total.toLocaleString()} entries
                         {stats?.oldest ? ` · Since ${formatDate(stats.oldest)}` : ''}
@@ -175,7 +175,7 @@ export default function AdminAuditPage() {
 
             {/* Entries */}
             {loading ? (
-                <div className="p-8 text-center text-stone-400">Loading...</div>
+                <div className="p-8 text-center text-stone-500">Loading...</div>
             ) : (
                 <>
                     {/* Desktop table */}
@@ -211,7 +211,7 @@ export default function AdminAuditPage() {
                                                         {entry.user_email}
                                                     </a>
                                                 ) : (
-                                                    <span className="text-stone-400 text-xs">anonymous</span>
+                                                    <span className="text-stone-500 text-xs">anonymous</span>
                                                 )}
                                             </td>
                                             <td className="px-4 py-3">
@@ -228,16 +228,16 @@ export default function AdminAuditPage() {
                                                     <span className="text-stone-500">{entry.target ? entry.target.substring(0, 12) + '...' : '—'}</span>
                                                 )}
                                             </td>
-                                            <td className="px-4 py-3 text-xs text-stone-400 whitespace-nowrap">
+                                            <td className="px-4 py-3 text-xs text-stone-500 whitespace-nowrap">
                                                 {device && (
                                                     <span className="flex items-center gap-1">
                                                         {device.isMobile ? '📱' : '💻'} {device.browser}
-                                                        {entry.is_pwa ? <span className="ml-1 px-1 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[10px] font-bold">PWA</span> : null}
+                                                        {entry.is_pwa ? <span className="ml-1 px-1 py-0.5 bg-teal-100 text-teal-700 rounded text-xs font-semibold">PWA</span> : null}
                                                     </span>
                                                 )}
                                                 {!device && '—'}
                                             </td>
-                                            <td className="px-4 py-3 text-xs text-stone-400 whitespace-nowrap">
+                                            <td className="px-4 py-3 text-xs text-stone-500 whitespace-nowrap">
                                                 {entry.ip_address ? (
                                                     <a
                                                         href={`https://ipinfo.io/${entry.ip_address}`}
@@ -280,7 +280,7 @@ export default function AdminAuditPage() {
                                 })}
                                 {entries.length === 0 && (
                                     <tr>
-                                        <td colSpan={7} className="px-4 py-8 text-center text-stone-400">
+                                        <td colSpan={7} className="px-4 py-8 text-center text-stone-500">
                                             No audit entries found
                                         </td>
                                     </tr>
@@ -325,7 +325,7 @@ export default function AdminAuditPage() {
                                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${actionDisplay.color}`}>
                                             {actionDisplay.icon} {actionDisplay.label}
                                         </span>
-                                        <span className="text-xs text-stone-400 flex-shrink-0">
+                                        <span className="text-xs text-stone-500 flex-shrink-0">
                                             {formatDate(entry.created_at)}
                                         </span>
                                     </div>
@@ -335,12 +335,12 @@ export default function AdminAuditPage() {
                                                 {entry.user_email}
                                             </a>
                                         ) : (
-                                            <span className="text-stone-400">anonymous</span>
+                                            <span className="text-stone-500">anonymous</span>
                                         )}
                                     </div>
                                     {entry.target && (
                                         <div className="text-xs mb-2">
-                                            <span className="text-stone-400">Target: </span>
+                                            <span className="text-stone-500">Target: </span>
                                             {targetUrl ? (
                                                 <a href={targetUrl} className="text-blue-600 hover:underline font-mono">
                                                     {entry.target.substring(0, 20)}…
@@ -350,11 +350,11 @@ export default function AdminAuditPage() {
                                             )}
                                         </div>
                                     )}
-                                    <div className="flex items-center gap-3 text-xs text-stone-400">
+                                    <div className="flex items-center gap-3 text-xs text-stone-500">
                                         {device && (
                                             <span className="flex items-center gap-1">
                                                 {device.isMobile ? '📱' : '💻'} {device.browser}
-                                                {entry.is_pwa ? <span className="ml-1 px-1 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[10px] font-bold">PWA</span> : null}
+                                                {entry.is_pwa ? <span className="ml-1 px-1 py-0.5 bg-teal-100 text-teal-700 rounded text-xs font-semibold">PWA</span> : null}
                                             </span>
                                         )}
                                         {entry.ip_address && (
@@ -370,7 +370,7 @@ export default function AdminAuditPage() {
                                         {details && (
                                             <button
                                                 onClick={() => setExpandedId(isExpanded ? null : entry.id)}
-                                                className="ml-auto text-stone-400 hover:text-stone-600"
+                                                className="ml-auto text-stone-500 hover:text-stone-600"
                                             >
                                                 {isExpanded ? '▲ Less' : '▼ Details'}
                                             </button>
@@ -385,7 +385,7 @@ export default function AdminAuditPage() {
                             );
                         })}
                         {entries.length === 0 && (
-                            <div className="text-center py-8 text-stone-400 text-sm">
+                            <div className="text-center py-8 text-stone-500 text-sm">
                                 No audit entries found
                             </div>
                         )}
@@ -396,7 +396,7 @@ export default function AdminAuditPage() {
                                 <button
                                     onClick={() => setPage(p => Math.max(1, p - 1))}
                                     disabled={page <= 1}
-                                    className="px-3 py-2 text-xs font-bold text-stone-600 bg-white border border-stone-200 rounded-lg hover:bg-stone-50 disabled:text-stone-300 disabled:bg-stone-50"
+                                    className="px-3 py-2 text-xs font-semibold text-stone-600 bg-white border border-stone-200 rounded-lg hover:bg-stone-50 disabled:text-stone-300 disabled:bg-stone-50"
                                 >
                                     ← Prev
                                 </button>
@@ -404,7 +404,7 @@ export default function AdminAuditPage() {
                                 <button
                                     onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                                     disabled={page >= totalPages}
-                                    className="px-3 py-2 text-xs font-bold text-stone-600 bg-white border border-stone-200 rounded-lg hover:bg-stone-50 disabled:text-stone-300 disabled:bg-stone-50"
+                                    className="px-3 py-2 text-xs font-semibold text-stone-600 bg-white border border-stone-200 rounded-lg hover:bg-stone-50 disabled:text-stone-300 disabled:bg-stone-50"
                                 >
                                     Next →
                                 </button>
@@ -416,7 +416,7 @@ export default function AdminAuditPage() {
 
             {/* Retention Settings */}
             <div className="mt-8 bg-white rounded-xl border border-stone-200 p-5">
-                <h3 className="font-bold text-stone-900 text-sm mb-3">🗄️ Data Retention</h3>
+                <h3 className="font-semibold text-stone-900 text-sm mb-3">🗄️ Data Retention</h3>
                 <div className="flex flex-wrap items-center gap-3">
                     <label className="text-sm text-stone-600">Keep audit records for</label>
                     <input
@@ -439,7 +439,7 @@ export default function AdminAuditPage() {
                         <span className="text-xs text-stone-500">{purgeResult}</span>
                     )}
                 </div>
-                <p className="text-xs text-stone-400 mt-2">
+                <p className="text-xs text-stone-500 mt-2">
                     Default: 1095 days (3 years). Records older than the retention period will be permanently deleted.
                 </p>
             </div>

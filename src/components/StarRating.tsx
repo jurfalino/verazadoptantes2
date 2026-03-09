@@ -67,7 +67,7 @@ export function StarRating({ value, onChange, size = 'md', showLabel = false }: 
                 })}
             </div>
             {showLabel && label && (
-                <span className={`${config.text} font-bold ${colors.text} ml-1`}>
+                <span className={`${config.text} font-semibold ${colors.text} ml-1`}>
                     {label}
                 </span>
             )}

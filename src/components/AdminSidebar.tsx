@@ -40,9 +40,9 @@ export default function AdminSidebar() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                         </svg>
                     </button>
-                    <span className="font-bold text-sm tracking-tight">Admin Console</span>
+                    <span className="font-semibold text-sm tracking-tight">Admin Console</span>
                 </div>
-                <Link href="/" className="text-xs text-stone-400 hover:text-white">← App</Link>
+                <Link href="/" className="text-xs text-stone-500 hover:text-white">← App</Link>
             </div>
 
             {/* Mobile overlay */}
@@ -62,13 +62,13 @@ export default function AdminSidebar() {
             `}>
                 <div className="p-6 flex items-center justify-between">
                     <div>
-                        <h1 className="text-xl font-bold text-white tracking-tight">Admin Console</h1>
+                        <h1 className="text-xl font-semibold text-white tracking-tight">Admin Console</h1>
                         <p className="text-xs text-stone-500 mt-1">v1.8.0</p>
                     </div>
                     {/* Close button (mobile only) */}
                     <button
                         onClick={() => setOpen(false)}
-                        className="lg:hidden p-1 rounded-lg hover:bg-stone-800 text-stone-400 hover:text-white"
+                        className="lg:hidden p-1 rounded-lg hover:bg-stone-800 text-stone-500 hover:text-white"
                         aria-label="Close menu"
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -99,7 +99,7 @@ export default function AdminSidebar() {
                         <Link
                             href="/keystatic"
                             target="_blank"
-                            className="block px-4 py-2 rounded-lg hover:bg-stone-800 hover:text-white transition-colors text-sm text-teal-400/80 hover:text-teal-300"
+                            className="block px-4 py-2 rounded-lg hover:bg-stone-800 hover:text-white transition-colors text-sm text-teal-700/80 hover:text-teal-700"
                         >
                             ✏️ CMS Editor ↗
                         </Link>

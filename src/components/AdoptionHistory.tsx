@@ -180,13 +180,13 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
 
                     // Border-left color class based on record type
                     const borderLeftMap: Record<string, string> = {
-                        adoption: 'border-l-emerald-400',
+                        adoption: 'border-l-teal-400',
                         adoption_request: 'border-l-sky-400',
                         observation: 'border-l-amber-400',
                         follow_up: 'border-l-violet-400',
                         returned_pet: 'border-l-rose-400',
                     };
-                    const borderLeftClass = borderLeftMap[recordType] || 'border-l-emerald-400';
+                    const borderLeftClass = borderLeftMap[recordType] || 'border-l-teal-400';
 
                     return (
                         <div
@@ -214,7 +214,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                             <StarRating value={adoption.rating} size="sm" />
                                         )}
                                         {canEdit && (
-                                            <span className="text-stone-400 text-xs font-medium underline opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <span className="text-stone-500 text-xs font-medium underline opacity-0 group-hover:opacity-100 transition-opacity">
                                                 {t('common.edit')}
                                             </span>
                                         )}
@@ -264,12 +264,12 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                                     href={parsed.contractScreenshot}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
-                                                    className="flex items-center gap-2 mt-2.5 p-2 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors pointer-events-auto"
+                                                    className="flex items-center gap-2 mt-2.5 p-2 bg-teal-50 rounded-lg hover:bg-teal-100 transition-colors pointer-events-auto"
                                                     onClick={e => e.stopPropagation()}
                                                 >
                                                     <span className="text-sm">📋</span>
-                                                    <span className="text-sm font-medium text-emerald-700">{t('dashboard.view_signed_contract') || 'View Signed Contract'}</span>
-                                                    <svg className="w-3.5 h-3.5 ml-auto text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                                    <span className="text-sm font-medium text-teal-700">{t('dashboard.view_signed_contract') || 'View Signed Contract'}</span>
+                                                    <svg className="w-3.5 h-3.5 ml-auto text-teal-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                                                 </a>
                                             );
                                         }
@@ -289,7 +289,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                             />
                                         ))}
                                         {images.length > 4 && (
-                                            <div className="w-20 h-20 rounded-lg bg-stone-50 border border-stone-200 flex items-center justify-center text-stone-500 text-xs font-bold">
+                                            <div className="w-20 h-20 rounded-lg bg-stone-50 border border-stone-200 flex items-center justify-center text-stone-500 text-xs font-semibold">
                                                 +{images.length - 4}
                                             </div>
                                         )}
@@ -297,7 +297,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                 )}
 
                                 {/* Footer: date + onBehalfOf + source link + addedBy */}
-                                <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-400 font-medium">
+                                <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-500 font-medium">
                                     {adoption.date && (
                                         <span className="inline-flex items-center gap-1">
                                             📅 {t('adoption.date_label') || 'Fecha:'} {formatShortDate(new Date(adoption.date))}
@@ -313,7 +313,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                             href={adoption.sourceUrl}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="flex items-center gap-1 text-stone-400 hover:text-stone-600 transition-colors pointer-events-auto"
+                                            className="flex items-center gap-1 text-stone-500 hover:text-stone-600 transition-colors pointer-events-auto"
                                             title={getSourceName(adoption.sourceUrl)}
                                         >
                                             {getSourceIcon(adoption.sourceUrl, 'w-3.5 h-3.5')}

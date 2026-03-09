@@ -49,7 +49,7 @@ export default function DuplicateMergeModal({
                 onClick={e => e.stopPropagation()}
             >
                 <div className="p-6 border-b border-stone-200">
-                    <h3 className="text-xl font-bold text-stone-900">Merge Adopter Profiles</h3>
+                    <h3 className="text-xl font-semibold text-stone-900">Merge Adopter Profiles</h3>
                     <p className="text-sm text-stone-500 mt-1">
                         Select which profile to keep as the <strong>primary</strong>. All records from the secondary will be moved to the primary.
                     </p>
@@ -86,7 +86,7 @@ export default function DuplicateMergeModal({
 
                     {/* Warning */}
                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm">
-                        <p className="font-bold text-amber-800 mb-1">⚠️ What will happen:</p>
+                        <p className="font-semibold text-amber-800 mb-1">⚠️ What will happen:</p>
                         <ul className="text-amber-700 space-y-1 list-disc list-inside">
                             <li><strong>&quot;{primary.name}&quot;</strong> will be kept (primary)</li>
                             <li><strong>&quot;{secondary.name}&quot;</strong> will be soft-deleted</li>
@@ -106,7 +106,7 @@ export default function DuplicateMergeModal({
                     <button
                         onClick={handleMerge}
                         disabled={merging}
-                        className="px-4 py-2 text-sm font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50"
+                        className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50"
                     >
                         {merging ? 'Merging...' : 'Merge Profiles'}
                     </button>
@@ -136,20 +136,20 @@ function ProfileCard({
                 }`}
         >
             <div className="flex items-center gap-2 mb-2">
-                <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${role === 'primary'
+                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${role === 'primary'
                     ? 'bg-teal-100 text-teal-700'
                     : 'bg-stone-100 text-stone-500'
                     }`}>
                     {role === 'primary' ? '✓ Keep' : 'Delete'}
                 </span>
             </div>
-            <p className="font-bold text-stone-900 text-sm">{adopter.name}</p>
+            <p className="font-semibold text-stone-900 text-sm">{adopter.name}</p>
             <p className="text-xs text-stone-500 font-mono mt-1 truncate">{adopter.id}</p>
             {adopter.contact && (
                 <p className="text-xs text-stone-500 mt-2 line-clamp-2">{adopter.contact}</p>
             )}
             {adopter.status && (
-                <p className="text-xs text-stone-400 mt-1">Rating: {adopter.status}</p>
+                <p className="text-xs text-stone-500 mt-1">Rating: {adopter.status}</p>
             )}
         </button>
     );

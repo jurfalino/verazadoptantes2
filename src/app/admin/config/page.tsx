@@ -160,13 +160,13 @@ export default function AdminConfigPage() {
     return (
         <div className="max-w-4xl mx-auto space-y-8">
             <header>
-                <h2 className="text-3xl font-bold text-stone-900">System Configuration</h2>
+                <h2 className="text-3xl font-semibold text-stone-900">System Configuration</h2>
                 <p className="text-stone-500 mt-2">Manage application settings and maintenance tasks.</p>
             </header>
 
             {/* Feature Flags */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200">
-                <h3 className="text-lg font-bold text-stone-900 mb-4 flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-stone-900 mb-4 flex items-center gap-2">
                     <span className="text-xl">🚩</span>
                     Feature Flags
                 </h3>
@@ -177,7 +177,7 @@ export default function AdminConfigPage() {
                     {FEATURE_FLAGS.map(flag => (
                         <div key={flag.key} className="flex items-center justify-between p-4 bg-stone-50 rounded-xl">
                             <div>
-                                <p className="font-bold text-stone-800">{flag.label}</p>
+                                <p className="font-semibold text-stone-800">{flag.label}</p>
                                 <p className="text-sm text-stone-500">{flag.description}</p>
                             </div>
                             <button
@@ -198,7 +198,7 @@ export default function AdminConfigPage() {
 
             {/* Threshold Configuration */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200">
-                <h3 className="text-lg font-bold text-stone-900 mb-4 flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-stone-900 mb-4 flex items-center gap-2">
                     <span className="text-xl">⚙️</span>
                     Adoption Threshold Settings
                 </h3>
@@ -207,7 +207,7 @@ export default function AdminConfigPage() {
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-sm font-bold text-stone-700 mb-1">Max Adoptions</label>
+                        <label className="block text-sm font-semibold text-stone-700 mb-1">Max Adoptions</label>
                         <input
                             type="number"
                             value={config.too_many_adoptions_threshold}
@@ -215,10 +215,10 @@ export default function AdminConfigPage() {
                             className="w-full px-4 py-2 border border-stone-200 rounded-lg focus:border-teal-400 focus:ring-2 focus:ring-teal-100 outline-none"
                             min="1"
                         />
-                        <span className="text-xs text-stone-400">adoptions</span>
+                        <span className="text-xs text-stone-500">adoptions</span>
                     </div>
                     <div>
-                        <label className="block text-sm font-bold text-stone-700 mb-1">Time Period</label>
+                        <label className="block text-sm font-semibold text-stone-700 mb-1">Time Period</label>
                         <input
                             type="number"
                             value={config.too_many_adoptions_period_days}
@@ -226,13 +226,13 @@ export default function AdminConfigPage() {
                             className="w-full px-4 py-2 border border-stone-200 rounded-lg focus:border-teal-400 focus:ring-2 focus:ring-teal-100 outline-none"
                             min="1"
                         />
-                        <span className="text-xs text-stone-400">days</span>
+                        <span className="text-xs text-stone-500">days</span>
                     </div>
                 </div>
 
                 {/* Adoption Requests Threshold */}
                 <div className="mt-6 pt-6 border-t border-stone-200">
-                    <h4 className="text-md font-bold text-stone-800 mb-2 flex items-center gap-2">
+                    <h4 className="text-md font-semibold text-stone-800 mb-2 flex items-center gap-2">
                         <span>📋</span>
                         Adoption Requests Threshold
                     </h4>
@@ -241,7 +241,7 @@ export default function AdminConfigPage() {
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-bold text-stone-700 mb-1">Max Requests</label>
+                            <label className="block text-sm font-semibold text-stone-700 mb-1">Max Requests</label>
                             <input
                                 type="number"
                                 value={config.too_many_requests_threshold}
@@ -249,10 +249,10 @@ export default function AdminConfigPage() {
                                 className="w-full px-4 py-2 border border-stone-200 rounded-lg focus:border-teal-400 focus:ring-2 focus:ring-teal-100 outline-none"
                                 min="1"
                             />
-                            <span className="text-xs text-stone-400">requests</span>
+                            <span className="text-xs text-stone-500">requests</span>
                         </div>
                         <div>
-                            <label className="block text-sm font-bold text-stone-700 mb-1">Time Period</label>
+                            <label className="block text-sm font-semibold text-stone-700 mb-1">Time Period</label>
                             <input
                                 type="number"
                                 value={config.too_many_requests_period_days}
@@ -260,7 +260,7 @@ export default function AdminConfigPage() {
                                 className="w-full px-4 py-2 border border-stone-200 rounded-lg focus:border-teal-400 focus:ring-2 focus:ring-teal-100 outline-none"
                                 min="1"
                             />
-                            <span className="text-xs text-stone-400">days</span>
+                            <span className="text-xs text-stone-500">days</span>
                         </div>
                     </div>
                 </div>
@@ -268,7 +268,7 @@ export default function AdminConfigPage() {
                 <button
                     onClick={handleSaveConfig}
                     disabled={saving}
-                    className="mt-6 px-6 py-2 bg-teal-500 text-white font-bold rounded-lg hover:bg-teal-600 disabled:opacity-50 transition-colors"
+                    className="mt-6 px-6 py-2 bg-teal-700 text-white font-semibold rounded-lg hover:bg-teal-600 disabled:opacity-50 transition-colors"
                 >
                     {saving ? 'Saving...' : 'Save All Settings'}
                 </button>
@@ -276,14 +276,14 @@ export default function AdminConfigPage() {
 
             {/* Stats Cleanup */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200">
-                <h3 className="text-lg font-bold text-stone-900 mb-4 flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-stone-900 mb-4 flex items-center gap-2">
                     <span className="text-xl">📊</span>
                     Stats Cleanup
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4 p-4 bg-stone-50 rounded-lg">
                     <div>
                         <span className="text-sm text-stone-500">Total Events</span>
-                        <p className="text-2xl font-bold text-stone-900">{statsCount?.toLocaleString() ?? '—'}</p>
+                        <p className="text-2xl font-semibold text-stone-900">{statsCount?.toLocaleString() ?? '—'}</p>
                     </div>
                     <div>
                         <span className="text-sm text-stone-500">Oldest Event</span>
@@ -294,7 +294,7 @@ export default function AdminConfigPage() {
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                     <div className="flex-1">
-                        <label className="block text-sm font-bold text-stone-700 mb-1">Purge events older than</label>
+                        <label className="block text-sm font-semibold text-stone-700 mb-1">Purge events older than</label>
                         <div className="flex items-center gap-2">
                             <input
                                 type="number"
@@ -309,12 +309,12 @@ export default function AdminConfigPage() {
                     <button
                         onClick={handlePurgeStats}
                         disabled={purging}
-                        className="px-6 py-2 bg-rose-500 text-white font-bold rounded-lg hover:bg-rose-600 disabled:opacity-50 transition-colors"
+                        className="px-6 py-2 bg-rose-500 text-white font-semibold rounded-lg hover:bg-rose-600 disabled:opacity-50 transition-colors"
                     >
                         {purging ? 'Purging...' : '🗑 Purge Old Stats'}
                     </button>
                 </div>
-                <p className="text-xs text-stone-400 mt-2">
+                <p className="text-xs text-stone-500 mt-2">
                     ⚠️ This action is irreversible. Purged stats cannot be recovered.
                 </p>
             </div>

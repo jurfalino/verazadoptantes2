@@ -60,7 +60,7 @@ export default function InstallCTA() {
         <div className="mt-10 mx-auto max-w-md">
             <div className="rounded-2xl p-5 text-center" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
                 <div className="text-2xl mb-2">🐾</div>
-                <h3 className="text-sm font-bold" style={{ color: 'var(--foreground)' }}>
+                <h3 className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>
                     {t('pwa.ctaTitle') || 'Get the BuenAdoptante App'}
                 </h3>
                 <p className="text-xs mt-1 mb-4" style={{ color: 'var(--muted-foreground)' }}>

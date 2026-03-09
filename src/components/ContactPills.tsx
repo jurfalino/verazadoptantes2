@@ -197,7 +197,7 @@ export function ContactPills({ text, showIcons = true }: ContactPillsProps) {
 
     if (pills.length === 0) {
         return (
-            <span className="text-emerald-900/40 italic">
+            <span className="text-stone-500 italic">
                 {t('common.no_contact')}
             </span>
         );

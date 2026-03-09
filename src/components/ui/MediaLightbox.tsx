@@ -93,7 +93,7 @@ export function MediaLightbox({ item, onClose }: MediaLightboxProps) {
         >
             {/* Close button */}
             <button
-                className="absolute top-4 right-4 text-white text-3xl hover:text-gray-300 z-10"
+                className="absolute top-4 right-4 text-white text-3xl hover:text-stone-300 z-10"
                 onClick={handleClose}
             >
                 ×

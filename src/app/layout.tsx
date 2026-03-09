@@ -96,7 +96,8 @@ export default async function RootLayout({
               (function() {
                 try {
                   var theme = localStorage.getItem('theme');
-                  if (theme && ['light', 'apple', 'dark'].includes(theme)) {
+                  if (theme === 'apple') { theme = 'light'; localStorage.setItem('theme', 'light'); }
+                  if (theme && ['light', 'dark'].includes(theme)) {
                     document.documentElement.setAttribute('data-theme', theme);
                   }
                 } catch (e) {}

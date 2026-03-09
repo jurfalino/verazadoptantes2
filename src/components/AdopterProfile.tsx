@@ -53,12 +53,12 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
         : (t('nav.back_to_search') || 'Back to Search');
 
     return (
-        <main className="min-h-screen bg-emerald-50/30 py-12 px-4 relative">
+        <main className="min-h-screen bg-teal-50/30 py-12 px-4 relative">
             <div className="max-w-3xl mx-auto space-y-5">
 
                 {/* Back Navigation */}
                 <div className="mb-2">
-                    <a href={backHref} className="inline-flex items-center gap-2 text-sm text-emerald-600/70 hover:text-emerald-800 transition-colors font-medium group">
+                    <a href={backHref} className="inline-flex items-center gap-2 text-sm text-teal-700 hover:text-teal-800 transition-colors font-medium group">
                         <svg className="w-4 h-4 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
                         {backLabel}
                     </a>
@@ -104,7 +104,7 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                                     </a>
                                     <button
                                         onClick={() => setDismissedDuplicates(prev => new Set(prev).add(dup.id))}
-                                        className="text-stone-400 hover:text-stone-600 p-1 transition-colors"
+                                        className="text-stone-500 hover:text-stone-600 p-1 transition-colors"
                                         title={t('duplicates.dismiss') || 'Dismiss'}
                                     >
                                         ✕
@@ -121,7 +121,7 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                     stats && !isNew && (
                         <div className="bg-white rounded-2xl p-5 shadow-sm border border-stone-200">
                             <div className="flex justify-between items-center mb-4">
-                                <h3 className="font-bold text-stone-800">📊 {t('stats.profile_stats') || 'Profile Statistics'}</h3>
+                                <h3 className="font-semibold text-stone-800">📊 {t('stats.profile_stats') || 'Profile Statistics'}</h3>
                                 <div className="flex gap-1 bg-stone-100 rounded-lg p-1">
                                     {(['90d', '1y', 'all'] as const).map((period) => (
                                         <button
@@ -139,20 +139,20 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                             </div>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                 <div className={`text-center p-3 rounded-xl ${stats.searchHits[selectedPeriod] > 0 ? 'bg-blue-50' : 'bg-stone-50'}`}>
-                                    <div className={`text-2xl font-bold ${stats.searchHits[selectedPeriod] > 0 ? 'text-blue-600' : 'text-stone-400'}`}>{stats.searchHits[selectedPeriod]}</div>
-                                    <div className={`text-xs ${stats.searchHits[selectedPeriod] > 0 ? 'text-blue-600/70' : 'text-stone-400'}`}>🔍 {t('stats.searches') || 'Searches'}</div>
+                                    <div className={`text-2xl font-semibold ${stats.searchHits[selectedPeriod] > 0 ? 'text-blue-600' : 'text-stone-500'}`}>{stats.searchHits[selectedPeriod]}</div>
+                                    <div className={`text-xs ${stats.searchHits[selectedPeriod] > 0 ? 'text-blue-600/70' : 'text-stone-500'}`}>🔍 {t('stats.searches') || 'Searches'}</div>
                                 </div>
                                 <div className={`text-center p-3 rounded-xl ${stats.profileViews[selectedPeriod] > 0 ? 'bg-purple-50' : 'bg-stone-50'}`}>
-                                    <div className={`text-2xl font-bold ${stats.profileViews[selectedPeriod] > 0 ? 'text-purple-600' : 'text-stone-400'}`}>{stats.profileViews[selectedPeriod]}</div>
-                                    <div className={`text-xs ${stats.profileViews[selectedPeriod] > 0 ? 'text-purple-600/70' : 'text-stone-400'}`}>👁 {t('stats.views') || 'Views'}</div>
+                                    <div className={`text-2xl font-semibold ${stats.profileViews[selectedPeriod] > 0 ? 'text-purple-600' : 'text-stone-500'}`}>{stats.profileViews[selectedPeriod]}</div>
+                                    <div className={`text-xs ${stats.profileViews[selectedPeriod] > 0 ? 'text-purple-600/70' : 'text-stone-500'}`}>👁 {t('stats.views') || 'Views'}</div>
                                 </div>
                                 <div className={`text-center p-3 rounded-xl ${requestCountForPeriod > 0 ? 'bg-orange-50' : 'bg-stone-50'}`}>
-                                    <div className={`text-2xl font-bold ${requestCountForPeriod > 0 ? 'text-orange-600' : 'text-stone-400'}`}>{requestCountForPeriod}</div>
-                                    <div className={`text-xs ${requestCountForPeriod > 0 ? 'text-orange-600/70' : 'text-stone-400'}`}>📝 {t('stats.requests') || 'Requests'}</div>
+                                    <div className={`text-2xl font-semibold ${requestCountForPeriod > 0 ? 'text-orange-600' : 'text-stone-500'}`}>{requestCountForPeriod}</div>
+                                    <div className={`text-xs ${requestCountForPeriod > 0 ? 'text-orange-600/70' : 'text-stone-500'}`}>📝 {t('stats.requests') || 'Requests'}</div>
                                 </div>
                                 <div className={`text-center p-3 rounded-xl ${adoptionCountForPeriod > 0 ? 'bg-green-50' : 'bg-stone-50'}`}>
-                                    <div className={`text-2xl font-bold ${adoptionCountForPeriod > 0 ? 'text-green-600' : 'text-stone-400'}`}>{adoptionCountForPeriod}</div>
-                                    <div className={`text-xs ${adoptionCountForPeriod > 0 ? 'text-green-600/70' : 'text-stone-400'}`}>🏠 {t('stats.adoptions') || 'Adoptions'}</div>
+                                    <div className={`text-2xl font-semibold ${adoptionCountForPeriod > 0 ? 'text-green-600' : 'text-stone-500'}`}>{adoptionCountForPeriod}</div>
+                                    <div className={`text-xs ${adoptionCountForPeriod > 0 ? 'text-green-600/70' : 'text-stone-500'}`}>🏠 {t('stats.adoptions') || 'Adoptions'}</div>
                                 </div>
                             </div>
                         </div>

@@ -3,7 +3,7 @@ export type RecordType = 'adoption' | 'adoption_request' | 'observation' | 'foll
 
 export function getRecordTypeColors(recordType: string): { bg: string; text: string; border: string } {
     const colors: Record<string, { bg: string; text: string; border: string }> = {
-        adoption: { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200' },
+        adoption: { bg: 'bg-teal-100', text: 'text-teal-700', border: 'border-teal-200' },
         adoption_request: { bg: 'bg-sky-100', text: 'text-sky-700', border: 'border-sky-200' },
         observation: { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' },
         follow_up: { bg: 'bg-violet-100', text: 'text-violet-700', border: 'border-violet-200' },

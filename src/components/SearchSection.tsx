@@ -135,7 +135,7 @@ export default function SearchSection() {
             <div className={`bg-white rounded-3xl p-6 shadow-sm border border-stone-200 transition-all ${hasResults ? 'md:static sticky top-16 z-30 rounded-b-xl md:rounded-3xl shadow-md md:shadow-sm' : ''
                 }`}>
                 {/* Full title — hidden on mobile when results are showing to save space */}
-                <h2 className={`text-2xl font-bold text-stone-900 mb-5 text-center tracking-tight ${hasResults ? 'hidden md:block' : ''
+                <h2 className={`text-2xl font-semibold text-stone-900 mb-5 text-center tracking-tight ${hasResults ? 'hidden md:block' : ''
                     }`}>{t('search.title')}</h2>
                 <form onSubmit={handleSearch} className={hasResults ? 'flex gap-2 items-center md:block md:space-y-4' : 'space-y-4'}>
                     <div className="relative flex-1">
@@ -144,7 +144,7 @@ export default function SearchSection() {
                             type="text"
                             id="search"
                             placeholder={t('search.placeholder')}
-                            className={`w-full border border-stone-200 focus:border-teal-400 focus:ring-4 focus:ring-teal-100 transition-all outline-none text-stone-900 placeholder:text-stone-400 font-medium bg-stone-50 ${hasResults
+                            className={`w-full border border-stone-200 focus:border-teal-400 focus:ring-4 focus:ring-teal-100 transition-all outline-none text-stone-900 placeholder:text-stone-500 font-medium bg-stone-50 ${hasResults
                                 ? 'px-4 py-3 pr-10 rounded-xl text-sm md:px-5 md:py-4 md:pr-12 md:rounded-2xl md:text-base'
                                 : 'px-5 py-4 pr-12 rounded-2xl'
                                 }`}
@@ -155,7 +155,7 @@ export default function SearchSection() {
                             <button
                                 type="button"
                                 onClick={handleClear}
-                                className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 transition-colors p-1"
+                                className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-600 transition-colors p-1"
                                 aria-label={t('search.clear')}
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -168,7 +168,7 @@ export default function SearchSection() {
                     <button
                         type="submit"
                         disabled={loading}
-                        className={`bg-teal-200 text-teal-900 font-bold shadow-sm hover:bg-teal-300 hover:shadow-md transition-all disabled:opacity-70 transform active:scale-[0.98] ${hasResults
+                        className={`bg-teal-200 text-teal-900 font-semibold shadow-sm hover:bg-teal-300 hover:shadow-md transition-all disabled:opacity-70 transform active:scale-[0.98] ${hasResults
                             ? 'px-4 py-3 rounded-xl text-sm md:w-full md:py-4 md:px-6 md:rounded-2xl md:text-lg'
                             : 'w-full py-4 px-6 rounded-2xl text-lg'
                             }`}
@@ -179,7 +179,7 @@ export default function SearchSection() {
 
                 {/* Hint for first-time users — shown when nothing has been searched */}
                 {!results && !loading && !query && (
-                    <p className="text-center text-stone-400 text-sm mt-3">
+                    <p className="text-center text-stone-500 text-sm mt-3">
                         💡 {t('search.hint')}
                     </p>
                 )}
@@ -212,7 +212,7 @@ export default function SearchSection() {
                             </h3>
                             <button
                                 onClick={handleCreateNew}
-                                className="flex items-center gap-2 px-3 py-1.5 text-sm font-bold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 rounded-lg transition-colors"
+                                className="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold text-teal-700 bg-teal-100 hover:bg-teal-200 rounded-lg transition-colors"
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                                 {t('search.create_new')}
@@ -234,14 +234,14 @@ export default function SearchSection() {
                         <div className="text-center">
                             <button
                                 onClick={() => setShowLegend(!showLegend)}
-                                className="text-xs text-stone-400 hover:text-stone-600 transition-colors underline underline-offset-2"
+                                className="text-xs text-stone-500 hover:text-stone-600 transition-colors underline underline-offset-2"
                             >
                                 ℹ️ {t('flags.legend_title')}
                             </button>
                             {showLegend && (
                                 <div className="mt-2 bg-stone-50 border border-stone-200 rounded-xl p-4 text-left text-xs text-stone-600 space-y-2">
                                     <div className="flex items-start gap-2">
-                                        <span className="px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700 flex-shrink-0">✓</span>
+                                        <span className="px-1.5 py-0.5 rounded font-medium bg-teal-100 text-teal-700 flex-shrink-0">✓</span>
                                         <span>{t('flags.legend_verified')}</span>
                                     </div>
                                     <div className="flex items-start gap-2">
@@ -295,7 +295,7 @@ export default function SearchSection() {
                                             {res.thumbnail ? (
                                                 <img src={res.thumbnail} alt="" className="w-full h-full object-cover" />
                                             ) : (
-                                                <div className="w-full h-full flex items-center justify-center text-stone-400">
+                                                <div className="w-full h-full flex items-center justify-center text-stone-500">
                                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                                                 </div>
                                             )}
@@ -303,10 +303,10 @@ export default function SearchSection() {
                                         {/* Name + Contact */}
                                         <div className="flex-1 min-w-0">
                                             <div className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate">{maskedName}</div>
-                                            <div className="text-xs text-stone-400 truncate">
+                                            <div className="text-xs text-stone-500 truncate">
                                                 {maskedContact || t('common.no_contact')}
                                                 {!isAuthenticated && maskedContact && (
-                                                    <span className="ml-1 text-teal-600 font-medium">• {t('search.login_to_view')}</span>
+                                                    <span className="ml-1 text-teal-700 font-medium">• {t('search.login_to_view')}</span>
                                                 )}
                                             </div>
                                         </div>
@@ -334,10 +334,10 @@ export default function SearchSection() {
                                                 <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-stone-100 text-stone-500">🔗 {t('flags.possible_duplicate') || 'Possible duplicate'}</span>
                                             )}
                                             {res.flags.verified_identity && (
-                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">✓ {t('flags.verified_identity') || 'Verified ID'}</span>
+                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-teal-100 text-teal-700">✓ {t('flags.verified_identity') || 'Verified ID'}</span>
                                             )}
                                             {res.flags.verified_address && (
-                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">✓ {t('flags.verified_address') || 'Verified Address'}</span>
+                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-teal-100 text-teal-700">✓ {t('flags.verified_address') || 'Verified Address'}</span>
                                             )}
                                             {res.flags.tooManyAdoptions && (
                                                 <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">⚠ {res.flags.tooManyAdoptions.count} {t('stats.adoptions') || 'adoptions'}/{res.flags.tooManyAdoptions.periodDays}d</span>
@@ -356,7 +356,7 @@ export default function SearchSection() {
                                     )}
 
                                     {/* Dates Row - bottom right */}
-                                    <div className="flex justify-end gap-3 mt-2 pt-2 border-t border-stone-100 text-xs text-stone-400">
+                                    <div className="flex justify-end gap-3 mt-2 pt-2 border-t border-stone-100 text-xs text-stone-500">
                                         {addedDate && (
                                             <span>📅 {addedDate}</span>
                                         )}
@@ -372,8 +372,8 @@ export default function SearchSection() {
                         <div className="bg-stone-50 rounded-2xl p-8 text-center border border-stone-200">
                             <div className="text-4xl mb-3">🔍</div>
                             <p className="text-stone-600 mb-1 text-lg">{t('search.no_history').replace('{query}', query)}</p>
-                            <p className="text-stone-400 text-sm mb-4">{t('search.no_history_cta')}</p>
-                            <button onClick={handleCreateNew} className="inline-block px-5 py-2.5 bg-teal-600 text-white rounded-xl font-bold hover:bg-teal-700 transition-all shadow-sm">
+                            <p className="text-stone-500 text-sm mb-4">{t('search.no_history_cta')}</p>
+                            <button onClick={handleCreateNew} className="inline-block px-5 py-2.5 bg-teal-600 text-white rounded-xl font-semibold hover:bg-teal-700 transition-all shadow-sm">
                                 + {t('search.create_new')}
                             </button>
                         </div>

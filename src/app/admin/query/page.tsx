@@ -31,13 +31,13 @@ export default function AdminQueryPage() {
     return (
         <div className="max-w-6xl mx-auto space-y-6">
             <header>
-                <h2 className="text-2xl font-bold text-stone-900">SQL Runner</h2>
+                <h2 className="text-2xl font-semibold text-stone-900">SQL Runner</h2>
                 <p className="text-stone-500 text-sm">Execute read-only queries. Be careful.</p>
             </header>
 
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200 space-y-4">
                 <textarea
-                    className="w-full h-32 p-4 font-mono text-sm bg-stone-900 text-green-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full h-32 p-4 font-mono text-sm bg-stone-900 text-green-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     spellCheck={false}
@@ -46,7 +46,7 @@ export default function AdminQueryPage() {
                     <button
                         onClick={handleRun}
                         disabled={loading}
-                        className="px-6 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+                        className="px-6 py-2 bg-teal-600 text-white font-semibold rounded-lg hover:bg-teal-700 disabled:opacity-50"
                     >
                         {loading ? 'Running...' : 'Run Query'}
                     </button>
@@ -68,7 +68,7 @@ export default function AdminQueryPage() {
                             <thead className="bg-stone-50 border-b border-stone-100">
                                 <tr>
                                     {Object.keys(result[0]).map((key) => (
-                                        <th key={key} className="p-3 font-bold text-stone-600 whitespace-nowrap">{key}</th>
+                                        <th key={key} className="p-3 font-semibold text-stone-600 whitespace-nowrap">{key}</th>
                                     ))}
                                 </tr>
                             </thead>

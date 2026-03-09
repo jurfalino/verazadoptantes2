@@ -142,7 +142,7 @@ export default function DataMigrationPage() {
     return (
         <div className="max-w-3xl mx-auto space-y-8">
             <div>
-                <h1 className="text-2xl font-bold text-stone-900">📦 Data Migration</h1>
+                <h1 className="text-2xl font-semibold text-stone-900">📦 Data Migration</h1>
                 <p className="text-sm text-stone-500 mt-1">Export and import data between environments</p>
             </div>
 
@@ -176,11 +176,11 @@ export default function DataMigrationPage() {
                     <button
                         onClick={() => { setImportMode('merge'); setConfirmReplace(false); }}
                         className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-medium border-2 transition-all ${importMode === 'merge'
-                            ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                            ? 'border-teal-500 bg-teal-50 text-teal-700'
                             : 'border-stone-200 text-stone-500 hover:border-stone-300'
                             }`}
                     >
-                        <div className="font-bold">🔀 Merge</div>
+                        <div className="font-semibold">🔀 Merge</div>
                         <div className="text-xs mt-0.5 opacity-75">Add new records, update existing ones</div>
                     </button>
                     <button
@@ -190,7 +190,7 @@ export default function DataMigrationPage() {
                             : 'border-stone-200 text-stone-500 hover:border-stone-300'
                             }`}
                     >
-                        <div className="font-bold">🔄 Replace</div>
+                        <div className="font-semibold">🔄 Replace</div>
                         <div className="text-xs mt-0.5 opacity-75">Delete ALL existing data, then import</div>
                     </button>
                 </div>
@@ -215,7 +215,7 @@ export default function DataMigrationPage() {
                     />
                     <div className="text-3xl mb-2">📄</div>
                     <p className="text-sm text-stone-600 font-medium">Drop JSON file here or click to browse</p>
-                    <p className="text-xs text-stone-400 mt-1">Only .json export files are accepted</p>
+                    <p className="text-xs text-stone-500 mt-1">Only .json export files are accepted</p>
                 </div>
 
                 {/* Preview */}
@@ -230,7 +230,7 @@ export default function DataMigrationPage() {
                             {Object.entries(preview.tables).map(([table, rows]) => (
                                 <div key={table} className="flex justify-between items-center bg-white px-3 py-2 rounded-lg border border-stone-100">
                                     <span className="text-sm">{TABLE_LABELS[table] || table}</span>
-                                    <span className="text-sm font-mono font-bold text-stone-700">
+                                    <span className="text-sm font-mono font-semibold text-stone-700">
                                         {Array.isArray(rows) ? rows.length : 0}
                                     </span>
                                 </div>
@@ -248,7 +248,7 @@ export default function DataMigrationPage() {
                                         <button
                                             onClick={handleImport}
                                             disabled={importing}
-                                            className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-bold hover:bg-red-700 disabled:opacity-50"
+                                            className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
                                         >
                                             {importing ? '⏳ Importing...' : '🗑️ Yes, Replace All'}
                                         </button>
@@ -266,7 +266,7 @@ export default function DataMigrationPage() {
                                     disabled={importing}
                                     className={`px-5 py-2.5 rounded-lg font-medium text-sm text-white disabled:opacity-50 disabled:cursor-wait transition-colors ${importMode === 'replace'
                                         ? 'bg-red-600 hover:bg-red-700'
-                                        : 'bg-emerald-600 hover:bg-emerald-700'
+                                        : 'bg-teal-600 hover:bg-teal-700'
                                         }`}
                                 >
                                     {importing
@@ -283,16 +283,16 @@ export default function DataMigrationPage() {
 
                 {/* Import result */}
                 {importResult && (
-                    <div className="mt-4 bg-emerald-50 rounded-xl border border-emerald-200 p-4">
-                        <h3 className="font-semibold text-emerald-800 text-sm mb-1">✅ Import Complete</h3>
-                        <p className="text-xs text-emerald-600 mb-3">
+                    <div className="mt-4 bg-teal-50 rounded-xl border border-teal-200 p-4">
+                        <h3 className="font-semibold text-teal-800 text-sm mb-1">✅ Import Complete</h3>
+                        <p className="text-xs text-teal-700 mb-3">
                             Mode: {importResult.mode} • {formatDateTime(new Date(importResult.importedAt))}
                         </p>
                         <div className="grid grid-cols-2 gap-2">
                             {Object.entries(importResult.summary).map(([table, count]) => (
-                                <div key={table} className="flex justify-between items-center bg-white px-3 py-2 rounded-lg border border-emerald-100">
+                                <div key={table} className="flex justify-between items-center bg-white px-3 py-2 rounded-lg border border-teal-100">
                                     <span className="text-sm">{TABLE_LABELS[table] || table}</span>
-                                    <span className="text-sm font-mono font-bold text-emerald-700">{count}</span>
+                                    <span className="text-sm font-mono font-semibold text-teal-700">{count}</span>
                                 </div>
                             ))}
                         </div>
