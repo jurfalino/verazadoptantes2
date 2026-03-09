@@ -159,6 +159,7 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
                         id: crypto.randomUUID(),
                         adopterId: a.id,
                         eventType: 'search_hit',
+                        userId: user,
                         createdAt: new Date()
                     });
                 }

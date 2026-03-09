@@ -2,6 +2,7 @@
 
 import { adoptions, adopterFlags, adopterStats, adopterImages, duplicateCandidates } from '@/db/schema';
 import { eq, sql, and, isNull, ne, or } from 'drizzle-orm';
+import { ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
 import type { AdopterFlags } from './types';
 import { getAdoptionConfig } from './config';
 
@@ -46,10 +47,13 @@ export async function enrichAdopters(
                 .from(adopterFlags)
                 .where(eq(adopterFlags.adopterId, adopterId)).catch(() => []),
 
-            // Stats
+            // Stats (exclude admin activity)
             db.select({ eventType: adopterStats.eventType })
                 .from(adopterStats)
-                .where(eq(adopterStats.adopterId, adopterId)).catch(() => []),
+                .where(and(
+                    eq(adopterStats.adopterId, adopterId),
+                    sql`(${adopterStats.userId} IS NULL OR ${adopterStats.userId} NOT IN (${sql.raw(ADMIN_STATS_EXCLUSION_SQL)}))`
+                )).catch(() => []),
 
             // Images
             db.select({

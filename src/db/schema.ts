@@ -93,10 +93,12 @@ export const adopterStats = sqliteTable("adopter_stats", {
     id: text("id").primaryKey(),
     adopterId: text("adopter_id").notNull(),
     eventType: text("event_type").notNull(), // search_hit, profile_view
+    userId: text("user_id"), // Actor email — null for anonymous/legacy events
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
     adopterIdx: index("idx_stats_adopter").on(table.adopterId),
     createdIdx: index("idx_stats_created").on(table.createdAt),
+    userIdx: index("idx_stats_user").on(table.userId),
 }));
 
 // App Config - Admin-configurable settings

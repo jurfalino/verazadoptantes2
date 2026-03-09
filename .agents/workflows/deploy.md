@@ -22,14 +22,19 @@ description: How to commit, tag, and deploy changes. MUST be followed for ANY gi
 | `staging` | `staging.verazadoptantes2.pages.dev` | ✅ |
 | `feature/*` | `<hash>.verazadoptantes2.pages.dev` | ❌ |
 
-## Version Increment (MANDATORY)
+## Version Increment (MANDATORY — Semantic Versioning)
 
 > **🚨 Every deployment MUST increment the version. No exceptions.**
 
-| Change Type | Version Part | Example |
-|-------------|-------------|---------|
-| New features, significant changes | Minor (`x.Y.z`) | `2.5.3` → `2.6.0` |
-| Small fixes, tweaks, config changes | Build suffix (`x.y.z-BUILD`) | `2.6.0` → `2.6.0-1`, or `2.6.0-1` → `2.6.0-2` |
+| Change Type | Who can authorize | Version Part | Example |
+|-------------|-------------------|-------------|--------|
+| Bugfixes, small tweaks, config | Agent (autonomous) | **Build** (`x.y.z-BUILD`) | `2.9.2` → `2.9.2-1` → `2.9.2-2` |
+| Small improvements, new small features | Agent (autonomous) | **Patch** (`x.y.Z`) | `2.9.2` → `2.9.3` |
+| Significant features, breaking changes | **USER ONLY** | **Minor** (`x.Y.0`) | `2.9.3` → `2.10.0` |
+| Major rewrites, breaking API changes | **USER ONLY** | **Major** (`X.0.0`) | `2.10.0` → `3.0.0` |
+
+> ⚠️ **NEVER bump minor or major version without explicit user authorization.**
+> When in doubt, use **patch** for improvements or **build suffix** for fixes.
 
 Run this BEFORE committing (step 4):
 ```
@@ -56,10 +61,11 @@ git add -A
 git diff --cached --stat
 ```
 
-4. Commit with a descriptive message:
+4. Commit with version-prefixed message (version is MANDATORY in the commit message):
 ```
-git commit -m "<message>"
+git commit -m "v<version>: <description>"
 ```
+> Example: `git commit -m "v2.9.3: fix empty alt tags on adopter thumbnails"`
 
 5. **Push to STAGING only — NEVER to master:**
 ```

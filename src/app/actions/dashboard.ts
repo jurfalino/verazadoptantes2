@@ -6,7 +6,7 @@ import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { getDb } from './_db';
 import { getAdoptionConfig } from './config';
-import { DASHBOARD_RECENT_ACTIVITY_LIMIT } from '@/config/constants';
+import { DASHBOARD_RECENT_ACTIVITY_LIMIT, ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
 import type { AdopterFlags } from './types';
 
 export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
@@ -69,13 +69,16 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                 .where(inArray(adoptions.adopterId, adopterIds))
                 .groupBy(adoptions.adopterId, adoptions.recordType)
                 .all(),
-            // Stats per adopter per eventType
+            // Stats per adopter per eventType (exclude admin activity)
             db.select({
                 adopterId: adopterStats.adopterId,
                 eventType: adopterStats.eventType,
                 count: sql<number>`COUNT(*)`
             }).from(adopterStats)
-                .where(inArray(adopterStats.adopterId, adopterIds))
+                .where(and(
+                    inArray(adopterStats.adopterId, adopterIds),
+                    sql`(${adopterStats.userId} IS NULL OR ${adopterStats.userId} NOT IN (${sql.raw(ADMIN_STATS_EXCLUSION_SQL)}))`
+                ))
                 .groupBy(adopterStats.adopterId, adopterStats.eventType)
                 .all(),
             // All adoption records for period calculations

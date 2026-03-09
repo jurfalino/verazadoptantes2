@@ -5,7 +5,7 @@ import { eq, sql, and } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
-import { NINETY_DAYS_IN_SECONDS, ONE_YEAR_IN_SECONDS } from '@/config/constants';
+import { NINETY_DAYS_IN_SECONDS, ONE_YEAR_IN_SECONDS, ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
 import { tokenizeAdopter } from './duplicates';
 import { saveAdopterSchema } from './validation';
 
@@ -14,8 +14,10 @@ export async function getAdopter(id: string) {
         const db = await getDb();
         if (!db) return null;
 
-        // Log profile view (fire and forget)
-        logProfileView(id).catch((e) => { logger.warn('Fire-and-forget profile view failed', { adopterId: id, error: e instanceof Error ? e.message : String(e) }); });
+        // Log profile view with actor (fire and forget)
+        let user = 'unknown';
+        try { user = await getUser(); } catch { /* anonymous */ }
+        logProfileView(id, user).catch((e) => { logger.warn('Fire-and-forget profile view failed', { adopterId: id, error: e instanceof Error ? e.message : String(e) }); });
 
         return await db.select().from(adopters).where(eq(adopters.id, id)).get();
     } catch (error) {
@@ -148,13 +150,17 @@ export async function getAdopterStats(adopterId: string) {
 
         // Aggregate in SQL: returns at most 2 rows (one per event type: search_hit, profile_view)
         // Note: adoption/request counts come from the adoptions table, not from stats events
+        // Exclude admin activity: filter out events from users with role='admin' in user_profiles
         const rows = await db.select({
             eventType: adopterStats.eventType,
             total: sql<number>`COUNT(*)`,
             last90d: sql<number>`SUM(CASE WHEN CAST(strftime('%s', ${adopterStats.createdAt}) AS INTEGER) >= ${ninetyDaysAgo} THEN 1 ELSE 0 END)`,
             last1y: sql<number>`SUM(CASE WHEN CAST(strftime('%s', ${adopterStats.createdAt}) AS INTEGER) >= ${oneYearAgo} THEN 1 ELSE 0 END)`,
         }).from(adopterStats)
-            .where(eq(adopterStats.adopterId, adopterId))
+            .where(and(
+                eq(adopterStats.adopterId, adopterId),
+                sql`(${adopterStats.userId} IS NULL OR ${adopterStats.userId} NOT IN (${sql.raw(ADMIN_STATS_EXCLUSION_SQL)}))`
+            ))
             .groupBy(adopterStats.eventType);
 
         // Map SQL results to the expected shape
@@ -185,7 +191,7 @@ export async function getAdopterStats(adopterId: string) {
 }
 
 // Log a profile view event
-export async function logProfileView(adopterId: string) {
+export async function logProfileView(adopterId: string, userId?: string) {
     try {
         const db = await getDb();
         if (!db) return;
@@ -194,6 +200,7 @@ export async function logProfileView(adopterId: string) {
             id: crypto.randomUUID(),
             adopterId,
             eventType: 'profile_view',
+            userId: userId || null,
             createdAt: new Date()
         });
     } catch (error) {
