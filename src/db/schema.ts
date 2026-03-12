@@ -254,3 +254,35 @@ export const notifications = sqliteTable("notifications", {
 }, (table) => ({
     userIdx: index("idx_notif_user").on(table.userId, table.read, table.createdAt),
 }));
+
+// PetShield Form Submissions
+export const formSubmissions = sqliteTable("form_submissions", {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),          // Who shared the form (rescuer email)
+    // Step 2: Identity
+    name: text("name").notNull(),
+    email: text("email"),
+    phone: text("phone"),
+    address: text("address"),
+    // Step 3: Geolocation
+    latitude: text("latitude"),
+    longitude: text("longitude"),
+    // Step 4: Selfie
+    selfieUrl: text("selfie_url"),              // R2 URL after upload
+    // Step 5: Species & Life Stage
+    species: text("species"),                    // dog, cat, both, other
+    lifeStage: text("life_stage"),               // puppy, young, senior, none
+    specialNeeds: integer("special_needs").default(0),
+    // Step 6: Intent
+    intent: text("intent"),                      // self, gift
+    // Step 7: Household
+    household: text("household"),                // JSON array: ["children","pets","outdoor","presence"]
+    // Metadata
+    status: text("status").default("pending"),   // pending, reviewed, linked
+    linkedAdopterId: text("linked_adopter_id"),  // Set when rescuer links to profile
+    notificationId: text("notification_id"),     // Back-reference to notification
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+    userIdx: index("idx_form_user").on(table.userId),
+    statusIdx: index("idx_form_status").on(table.status),
+}));

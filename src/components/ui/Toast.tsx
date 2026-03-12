@@ -121,9 +121,9 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
             className="rounded-lg p-4 animate-slide-in pointer-events-auto"
             role="alert"
             style={{
-                background: 'var(--card)',
-                color: 'var(--foreground)',
-                border: '1px solid var(--border)',
+                background: 'var(--surface-card)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-default)',
                 borderLeft: `4px solid ${accentColors[toast.type]}`,
                 boxShadow: '0 10px 25px rgba(0,0,0,0.3)'
             }}
@@ -131,15 +131,15 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
             <div className="flex items-start gap-3">
                 {icons[toast.type]}
                 <div className="flex-1 min-w-0">
-                    <p className="font-medium" style={{ color: 'var(--foreground)' }}>{toast.title}</p>
+                    <p className="font-medium" style={{ color: 'var(--text-primary)' }}>{toast.title}</p>
                     {toast.message && (
-                        <p className="text-sm mt-1" style={{ color: 'var(--muted-foreground)' }}>{toast.message}</p>
+                        <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>{toast.message}</p>
                     )}
                     {toast.errorId && (
                         <button
                             onClick={copyErrorId}
                             className="mt-2 inline-flex items-center gap-1 text-xs font-mono px-2 py-1 rounded"
-                            style={{ color: 'var(--muted-foreground)', background: 'var(--muted)' }}
+                            style={{ color: 'var(--text-muted)', background: 'var(--surface-muted)' }}
                         >
                             {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                             Error ID: {toast.errorId}
@@ -172,7 +172,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
                 <button
                     onClick={onDismiss}
                     className="hover:opacity-70"
-                    style={{ color: 'var(--muted-foreground)' }}
+                    style={{ color: 'var(--text-muted)' }}
                 >
                     <X className="w-4 h-4" />
                 </button>

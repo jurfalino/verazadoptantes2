@@ -129,24 +129,44 @@ export default function DemoProfilePage() {
                 </div>
 
                 {/* Stats (sample) */}
-                <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6">
-                    <h2 className="text-lg font-semibold text-stone-900 mb-4">{t('stats.profile_stats')}</h2>
-                    <div className="grid grid-cols-4 gap-4 text-center">
-                        <div>
-                            <p className="text-2xl font-semibold text-stone-800">12</p>
-                            <p className="text-xs text-stone-500">{t('stats.searches')}</p>
+                <div className="stats-card">
+                    <h2 className="stats-title" style={{ marginBottom: 24 }}>{t('stats.profile_stats')}</h2>
+                    <div className="stats-grid">
+                        <div className="stats-tile stats-tile--purple">
+                            <div className="stats-tile-icon">
+                                <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M1 8s2.545-5 7-5 7 5 7 5-2.545 5-7 5-7-5-7-5Z" />
+                                    <circle cx="8" cy="8" r="2" />
+                                </svg>
+                            </div>
+                            <div className="stats-tile-content">
+                                <div className="stats-tile-value">8</div>
+                                <div className="stats-tile-label">{t('stats.views')}</div>
+                            </div>
                         </div>
-                        <div>
-                            <p className="text-2xl font-semibold text-stone-800">8</p>
-                            <p className="text-xs text-stone-500">{t('stats.views')}</p>
+                        <div className="stats-tile stats-tile--green">
+                            <div className="stats-tile-icon">
+                                <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M2.5 8.5L8 3l5.5 5.5" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M3.5 7.5V13a1 1 0 001 1h7a1 1 0 001-1V7.5" />
+                                </svg>
+                            </div>
+                            <div className="stats-tile-content">
+                                <div className="stats-tile-value">2</div>
+                                <div className="stats-tile-label">{t('stats.adoptions')}</div>
+                            </div>
                         </div>
-                        <div>
-                            <p className="text-2xl font-semibold text-stone-800">2</p>
-                            <p className="text-xs text-stone-500">{t('stats.adoptions')}</p>
-                        </div>
-                        <div>
-                            <p className="text-2xl font-semibold text-stone-800">3</p>
-                            <p className="text-xs text-stone-500">{t('stats.requests')}</p>
+                        <div className="stats-tile stats-tile--orange">
+                            <div className="stats-tile-icon">
+                                <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+                                    <rect x="3" y="1" width="10" height="14" rx="1.5" />
+                                    <path d="M6 5h4M6 8h4M6 11h2" strokeLinecap="round" />
+                                </svg>
+                            </div>
+                            <div className="stats-tile-content">
+                                <div className="stats-tile-value">3</div>
+                                <div className="stats-tile-label">{t('stats.requests')}</div>
+                            </div>
                         </div>
                     </div>
                 </div>

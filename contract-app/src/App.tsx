@@ -1,9 +1,21 @@
 import ContractPage from './ContractPage'
 import ErrorBoundary from './ErrorBoundary'
+import PetShieldForm from './PetShieldForm'
 
 function App() {
     // Simple routing: URL is /{animalId}
     const path = window.location.pathname.replace(/^\//, '').replace(/\/$/, '')
+
+    // PetShield Form route: /form?u={userId}
+    if (path === 'form') {
+        const params = new URLSearchParams(window.location.search)
+        const userId = params.get('u')
+        return (
+            <ErrorBoundary>
+                <PetShieldForm userId={userId} />
+            </ErrorBoundary>
+        )
+    }
 
     if (!path) {
         return (

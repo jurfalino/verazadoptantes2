@@ -36,6 +36,7 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
     const searchParams = useSearchParams();
     const [selectedPeriod, setSelectedPeriod] = useState<'90d' | '1y' | 'all'>('all');
     const [dismissedDuplicates, setDismissedDuplicates] = useState<Set<string>>(new Set());
+    const [expandedStat, setExpandedStat] = useState<string | null>(null);
     const visibleDuplicates = duplicateCandidates.filter(c => !dismissedDuplicates.has(c.id));
 
     // Stable reference date for period filtering (avoids hydration mismatch)
@@ -119,41 +120,106 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                 {/* Stats Table */}
                 {
                     stats && !isNew && (
-                        <div className="bg-white rounded-2xl p-5 shadow-sm border border-stone-200">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="font-semibold text-stone-800">📊 {t('stats.profile_stats') || 'Profile Statistics'}</h3>
-                                <div className="flex gap-1 bg-stone-100 rounded-lg p-1">
+                        <div className="stats-card">
+                            <div className="stats-header">
+                                <h3 className="stats-title">📊 {t('stats.profile_stats') || 'Profile Statistics'}</h3>
+                                <div className="stats-tab-bar">
                                     {(['90d', '1y', 'all'] as const).map((period) => (
                                         <button
                                             key={period}
                                             onClick={() => setSelectedPeriod(period)}
-                                            className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${selectedPeriod === period
-                                                ? 'bg-white text-stone-900 shadow-sm'
-                                                : 'text-stone-500 hover:text-stone-700'
-                                                }`}
+                                            className={`stats-tab ${selectedPeriod === period ? 'stats-tab--active' : ''}`}
                                         >
                                             {period === '90d' ? t('stats.period_90d') : period === '1y' ? t('stats.period_1y') : t('stats.period_all')}
                                         </button>
                                     ))}
                                 </div>
+                                <select
+                                    className="stats-period-select"
+                                    value={selectedPeriod}
+                                    onChange={(e) => setSelectedPeriod(e.target.value as '90d' | '1y' | 'all')}
+                                >
+                                    <option value="90d">{t('stats.period_90d')}</option>
+                                    <option value="1y">{t('stats.period_1y')}</option>
+                                    <option value="all">{t('stats.period_all')}</option>
+                                </select>
                             </div>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <div className={`text-center p-3 rounded-xl ${stats.searchHits[selectedPeriod] > 0 ? 'bg-blue-50' : 'bg-stone-50'}`}>
-                                    <div className={`text-2xl font-semibold ${stats.searchHits[selectedPeriod] > 0 ? 'text-blue-600' : 'text-stone-500'}`}>{stats.searchHits[selectedPeriod]}</div>
-                                    <div className={`text-xs ${stats.searchHits[selectedPeriod] > 0 ? 'text-blue-600/70' : 'text-stone-500'}`}>🔍 {t('stats.searches') || 'Searches'}</div>
-                                </div>
-                                <div className={`text-center p-3 rounded-xl ${stats.profileViews[selectedPeriod] > 0 ? 'bg-purple-50' : 'bg-stone-50'}`}>
-                                    <div className={`text-2xl font-semibold ${stats.profileViews[selectedPeriod] > 0 ? 'text-purple-600' : 'text-stone-500'}`}>{stats.profileViews[selectedPeriod]}</div>
-                                    <div className={`text-xs ${stats.profileViews[selectedPeriod] > 0 ? 'text-purple-600/70' : 'text-stone-500'}`}>👁 {t('stats.views') || 'Views'}</div>
-                                </div>
-                                <div className={`text-center p-3 rounded-xl ${requestCountForPeriod > 0 ? 'bg-orange-50' : 'bg-stone-50'}`}>
-                                    <div className={`text-2xl font-semibold ${requestCountForPeriod > 0 ? 'text-orange-600' : 'text-stone-500'}`}>{requestCountForPeriod}</div>
-                                    <div className={`text-xs ${requestCountForPeriod > 0 ? 'text-orange-600/70' : 'text-stone-500'}`}>📝 {t('stats.requests') || 'Requests'}</div>
-                                </div>
-                                <div className={`text-center p-3 rounded-xl ${adoptionCountForPeriod > 0 ? 'bg-green-50' : 'bg-stone-50'}`}>
-                                    <div className={`text-2xl font-semibold ${adoptionCountForPeriod > 0 ? 'text-green-600' : 'text-stone-500'}`}>{adoptionCountForPeriod}</div>
-                                    <div className={`text-xs ${adoptionCountForPeriod > 0 ? 'text-green-600/70' : 'text-stone-500'}`}>🏠 {t('stats.adoptions') || 'Adoptions'}</div>
-                                </div>
+                            <div className="stats-grid">
+                                {/* Views */}
+                                <button
+                                    type="button"
+                                    onClick={() => setExpandedStat(expandedStat === 'views' ? null : 'views')}
+                                    className={`stats-tile ${stats.profileViews[selectedPeriod] > 0 ? 'stats-tile--purple' : 'stats-tile--muted'}`}
+                                >
+                                    <div className="stats-tile-icon">
+                                        <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M1 8s2.545-5 7-5 7 5 7 5-2.545 5-7 5-7-5-7-5Z" />
+                                            <circle cx="8" cy="8" r="2" />
+                                        </svg>
+                                    </div>
+                                    <div className="stats-tile-content">
+                                        <div className="stats-tile-value">
+                                            {stats.profileViews[selectedPeriod]}
+                                            <span className="stats-tile-info">i</span>
+                                        </div>
+                                        <div className="stats-tile-label">
+                                            {t('stats.views') || 'Views'}
+                                        </div>
+                                        <div className={`stats-tile-desc ${expandedStat === 'views' ? 'stats-tile-desc--open' : ''}`}>
+                                            <div className="stats-tile-desc-text">{t('stats.views_desc') || 'How many times this profile was opened'}</div>
+                                        </div>
+                                    </div>
+                                </button>
+                                {/* Requests */}
+                                <button
+                                    type="button"
+                                    onClick={() => setExpandedStat(expandedStat === 'requests' ? null : 'requests')}
+                                    className={`stats-tile ${requestCountForPeriod > 0 ? 'stats-tile--orange' : 'stats-tile--muted'}`}
+                                >
+                                    <div className="stats-tile-icon">
+                                        <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+                                            <rect x="3" y="1" width="10" height="14" rx="1.5" />
+                                            <path d="M6 5h4M6 8h4M6 11h2" strokeLinecap="round" />
+                                        </svg>
+                                    </div>
+                                    <div className="stats-tile-content">
+                                        <div className="stats-tile-value">
+                                            {requestCountForPeriod}
+                                            <span className="stats-tile-info">i</span>
+                                        </div>
+                                        <div className="stats-tile-label">
+                                            {t('stats.requests') || 'Requests'}
+                                        </div>
+                                        <div className={`stats-tile-desc ${expandedStat === 'requests' ? 'stats-tile-desc--open' : ''}`}>
+                                            <div className="stats-tile-desc-text">{t('stats.requests_desc') || 'Adoption requests recorded'}</div>
+                                        </div>
+                                    </div>
+                                </button>
+                                {/* Adoptions */}
+                                <button
+                                    type="button"
+                                    onClick={() => setExpandedStat(expandedStat === 'adoptions' ? null : 'adoptions')}
+                                    className={`stats-tile ${adoptionCountForPeriod > 0 ? 'stats-tile--green' : 'stats-tile--muted'}`}
+                                >
+                                    <div className="stats-tile-icon">
+                                        <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M2.5 8.5L8 3l5.5 5.5" strokeLinecap="round" strokeLinejoin="round" />
+                                            <path d="M3.5 7.5V13a1 1 0 001 1h7a1 1 0 001-1V7.5" />
+                                        </svg>
+                                    </div>
+                                    <div className="stats-tile-content">
+                                        <div className="stats-tile-value">
+                                            {adoptionCountForPeriod}
+                                            <span className="stats-tile-info">i</span>
+                                        </div>
+                                        <div className="stats-tile-label">
+                                            {t('stats.adoptions') || 'Adoptions'}
+                                        </div>
+                                        <div className={`stats-tile-desc ${expandedStat === 'adoptions' ? 'stats-tile-desc--open' : ''}`}>
+                                            <div className="stats-tile-desc-text">{t('stats.adoptions_desc') || 'Completed adoptions recorded'}</div>
+                                        </div>
+                                    </div>
+                                </button>
                             </div>
                         </div>
                     )

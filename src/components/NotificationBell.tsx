@@ -164,7 +164,7 @@ export default function NotificationBell() {
             {/* Dropdown Panel — uses inline styles with CSS vars for theme safety */}
             {open && (
                 <div
-                    className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl shadow-2xl overflow-hidden z-50"
+                    className="fixed inset-x-0 top-14 mx-4 sm:absolute sm:inset-auto sm:right-0 sm:top-auto sm:mt-2 sm:mx-0 sm:w-96 rounded-2xl shadow-2xl overflow-hidden z-50"
                     style={{
                         background: 'var(--surface-card)',
                         color: 'var(--text-primary)',

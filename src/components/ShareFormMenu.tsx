@@ -2,23 +2,19 @@
 
 import { useState } from 'react';
 
-interface ShareMenuProps {
-    contractUrl: string; // animal ID or path like /contract/{id}
-    animalName: string;
-}
-
-// External contract app domain — no buenadoptante branding
+// External contract app domain
 const CONTRACT_BASE = process.env.NEXT_PUBLIC_CONTRACT_URL || 'https://adoptions.pages.dev';
 
-export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
+interface ShareFormMenuProps {
+    userId: string;
+}
+
+export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [copied, setCopied] = useState(false);
 
-    // Extract just the ID from the contractUrl (handles both "/contract/abc" and "abc")
-    const animalId = contractUrl.replace(/^\/contract\//, '');
-    const fullUrl = `${CONTRACT_BASE}/${animalId}`;
-
-    const shareText = `Contrato de adopción para ${animalName}`;
+    const fullUrl = `${CONTRACT_BASE}/form?u=${userId}`;
+    const shareText = 'Formulario de adopción responsable — PetShield';
 
     const handleCopyLink = async () => {
         try {
@@ -59,24 +55,20 @@ export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
             <button
                 onClick={(e) => { e.stopPropagation(); e.preventDefault(); setIsOpen(true); }}
                 className="inline-flex items-center gap-2 px-4 py-2.5 text-[13px] font-semibold text-teal-700 bg-teal-50 rounded-xl hover:bg-teal-100 transition-colors border border-teal-200"
-                title="Share adoption contract"
+                title="Compartir formulario de adopción"
             >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                 </svg>
-                Contrato
+                Formulario
             </button>
 
-            {/* Centered Modal Overlay */}
             {isOpen && (
                 <div
                     className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200"
                     onClick={() => setIsOpen(false)}
                 >
-                    {/* Backdrop */}
                     <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-
-                    {/* Modal */}
                     <div
                         className="relative bg-white rounded-2xl shadow-2xl border border-stone-200 w-full max-w-sm animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
                         onClick={(e) => e.stopPropagation()}
@@ -85,10 +77,10 @@ export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
                         <div className="p-5 pb-3 border-b border-stone-100">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-xl bg-teal-100 flex items-center justify-center text-lg">📋</div>
+                                    <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center text-lg">📋</div>
                                     <div>
-                                        <h3 className="font-semibold text-stone-900 text-sm">Enviar Contrato</h3>
-                                        <p className="text-xs text-stone-500 mt-0.5 truncate max-w-[180px]">{animalName}</p>
+                                        <h3 className="font-semibold text-stone-900 text-sm">Compartir Formulario</h3>
+                                        <p className="text-xs text-stone-500 mt-0.5">Enviar formulario de adopción</p>
                                     </div>
                                 </div>
                                 <button
@@ -109,12 +101,12 @@ export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
                                 onClick={() => setIsOpen(false)}
                                 className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left hover:bg-stone-50 active:bg-stone-100 transition-colors"
                             >
-                                <div className="w-10 h-10 rounded-xl bg-teal-100 flex items-center justify-center flex-shrink-0 text-teal-700">
+                                <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center flex-shrink-0 text-indigo-700">
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                                 </div>
                                 <div>
                                     <p className="text-sm font-semibold text-stone-900">Abrir en nueva pestaña</p>
-                                    <p className="text-xs text-stone-500">Ver el contrato como lo verá el adoptante</p>
+                                    <p className="text-xs text-stone-500">Ver el formulario como lo verá el adoptante</p>
                                 </div>
                             </a>
 
@@ -167,10 +159,10 @@ export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
                             )}
                         </div>
 
-                        {/* Footer hint */}
+                        {/* Footer */}
                         <div className="px-5 pb-4 pt-1">
                             <p className="text-xs text-stone-500 text-center">
-                                El adoptante podrá completar sus datos desde el enlace del contrato
+                                El adoptante podrá completar el formulario desde este enlace
                             </p>
                         </div>
                     </div>

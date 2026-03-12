@@ -4,8 +4,10 @@ import { useLanguage } from '@/context/LanguageContext';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { formatShortDate } from '@/lib/dates';
 import ShareMenu from '@/components/ShareMenu';
+import ShareFormMenu from '@/components/ShareFormMenu';
 
 interface AnimalImage {
     id: string;
@@ -28,7 +30,9 @@ interface Animal {
 export default function MyAnimalsPage() {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
+    const { data: session } = useSession();
     const view = searchParams.get('view') || 'available';
+    const userId = session?.user?.id || '';
 
     const [animals, setAnimals] = useState<Animal[]>([]);
     const [loading, setLoading] = useState(true);
@@ -118,12 +122,15 @@ export default function MyAnimalsPage() {
                         </h1>
                     </div>
 
-                    <Link
-                        href="/my-animals/new"
-                        className="px-5 py-2.5 bg-teal-700 text-white font-semibold rounded-xl hover:bg-teal-600 transition-colors shadow-lg shadow-teal-700/20 whitespace-nowrap"
-                    >
-                        + {t('dashboard.add_animal') || 'Add Animal'}
-                    </Link>
+                    <div className="flex items-center gap-2">
+                        {userId && <ShareFormMenu userId={userId} />}
+                        <Link
+                            href="/my-animals/new"
+                            className="px-5 py-2.5 bg-teal-700 text-white font-semibold rounded-xl hover:bg-teal-600 transition-colors shadow-lg shadow-teal-700/20 whitespace-nowrap"
+                        >
+                            + {t('dashboard.add_animal') || 'Add Animal'}
+                        </Link>
+                    </div>
                 </div>
 
                 {/* View Tabs */}
@@ -246,8 +253,12 @@ export default function MyAnimalsPage() {
                                                 className="w-full h-full object-cover"
                                             />
                                         ) : (
-                                            <div className="w-full h-full flex items-center justify-center text-stone-300">
-                                                <span className="text-5xl">🐾</span>
+                                            <div className="w-full h-full flex items-center justify-center bg-stone-50">
+                                                <img
+                                                    src={animal.species === 'dog' ? '/placeholders/dog.png' : animal.species === 'cat' ? '/placeholders/cat.png' : '/placeholders/paw.png'}
+                                                    alt={animal.species || 'Animal'}
+                                                    className="w-full h-full object-contain p-8 opacity-40"
+                                                />
                                             </div>
                                         )}
                                         {/* Species badge */}

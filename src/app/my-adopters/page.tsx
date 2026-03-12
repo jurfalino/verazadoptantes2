@@ -194,7 +194,6 @@ export default function MyAdoptersPage() {
 
                                         {/* Stats */}
                                         <div className="col-span-2 flex flex-wrap justify-center gap-x-2 gap-y-1 text-xs text-stone-500">
-                                            <span>🔍 {adopter.searchHits}</span>
                                             <span>👁 {adopter.profileViews}</span>
                                             <span>📋 {adopter.requestCount}</span>
                                             <span>🏠 {adopter.adoptionCount}</span>
@@ -254,7 +253,6 @@ export default function MyAdoptersPage() {
 
                                     {/* Stats Row */}
                                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-500">
-                                        <span>🔍 {adopter.searchHits} {t('stats.searches')}</span>
                                         <span>👁 {adopter.profileViews} {t('stats.views')}</span>
                                         <span>📋 {adopter.requestCount} {t('stats.requests')}</span>
                                         <span>🏠 {adopter.adoptionCount} {t('stats.adoptions')}</span>

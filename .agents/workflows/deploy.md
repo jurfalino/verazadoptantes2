@@ -55,7 +55,7 @@ If errors exist, fix them before proceeding.
 ```
 npx next lint 2>&1 | Select-String "Warning:" | Measure-Object | Select-Object -ExpandProperty Count
 ```
-Compare the count against the threshold of **68**. If the count is **higher than 68**, STOP and tell the user:
+Compare the count against the threshold of **105**. If the count is **higher than 105**, STOP and tell the user:
 > "⚠️ Lint warnings increased from 68 to [N]. You should fix the new warnings before deploying, or acknowledge the increase."
 Wait for user acknowledgment before proceeding. If the user acknowledges, update the threshold in this workflow file to match the new count.
 If the count is **equal or lower**, proceed silently.

@@ -326,7 +326,6 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
 
                             {/* Stats Row */}
                             <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
-                                <span>🔍 {stats.searchHits} searches</span>
                                 <span>👁 {stats.profileViews} views</span>
                                 <span>📋 {stats.requests} requests</span>
                                 <span>🏠 {stats.adoptions} adoptions</span>

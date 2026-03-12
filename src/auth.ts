@@ -17,6 +17,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         session: async ({ session, token }) => {
             // Expose sessionVersion so the authorized middleware callback can check it
             (session as unknown as { sessionVersion: number }).sessionVersion = (token.sessionVersion as number) || 0;
+            // Expose user.id (DB primary key / UUID) for client components
+            if (token.sub && session.user) {
+                session.user.id = token.sub;
+            }
             return session;
         },
     },

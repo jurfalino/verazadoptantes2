@@ -318,7 +318,6 @@ export default function SearchSection() {
 
                                     {/* Stats Row */}
                                     <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
-                                        <span>🔍 {res.stats.searchHits} {t('stats.searches')}</span>
                                         <span>👁 {res.stats.profileViews} {t('stats.views')}</span>
                                         <span>📋 {res.stats.requests} {t('stats.requests')}</span>
                                         <span>🏠 {res.stats.adoptions} {t('stats.adoptions')}</span>
