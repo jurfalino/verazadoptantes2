@@ -13,8 +13,8 @@ dotenv.config({ path: path.resolve(__dirname, '.env.local') });
  */
 export default defineConfig({
   testDir: './tests',
-  // In CI, seeding is handled by the workflow; locally, use global-setup.ts
-  globalSetup: process.env.CI ? undefined : './tests/global-setup.ts',
+  // Always run globalSetup to ensure test data is seeded
+  globalSetup: './tests/global-setup.ts',
   /* Run tests in files in parallel */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
