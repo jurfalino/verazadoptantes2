@@ -8,10 +8,13 @@ export default async function AdopterPage({ params }: { params: Promise<{ id: st
     const isNew = id === 'create';
 
     // Batch 1: Auth + config (lightweight, no DB-heavy queries)
-    const [currentUser, isAdmin, adoptionConfig] = await Promise.all([getUser(), getIsAdmin(), getAdoptionConfig()]);
-
-    // Profiles are private — redirect unauthenticated visitors to login
-    if (!currentUser || currentUser === 'anonymous') {
+    let currentUser = '';
+    let isAdmin = false;
+    let adoptionConfig: any = null;
+    try {
+        [currentUser, isAdmin, adoptionConfig] = await Promise.all([getUser(), getIsAdmin(), getAdoptionConfig()]);
+    } catch (e: any) {
+        if (e?.digest?.startsWith('NEXT_REDIRECT')) throw e;
         redirect(`/?authRequired=1&callbackUrl=${encodeURIComponent(`/adopter/${id}`)}`);
     }
 

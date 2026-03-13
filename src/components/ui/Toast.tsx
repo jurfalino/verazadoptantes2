@@ -95,17 +95,17 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
     const [copied, setCopied] = useState(false);
 
     const icons = {
-        success: <CheckCircle className="w-5 h-5" style={{ color: '#10b981' }} />,
-        error: <AlertCircle className="w-5 h-5" style={{ color: '#ef4444' }} />,
-        warning: <AlertTriangle className="w-5 h-5" style={{ color: '#f59e0b' }} />,
-        info: <Info className="w-5 h-5" style={{ color: '#3b82f6' }} />
+        success: <CheckCircle className="w-5 h-5" style={{ color: 'var(--status-success-text)' }} />,
+        error: <AlertCircle className="w-5 h-5" style={{ color: 'var(--status-error-text)' }} />,
+        warning: <AlertTriangle className="w-5 h-5" style={{ color: 'var(--status-warning-text)' }} />,
+        info: <Info className="w-5 h-5" style={{ color: 'var(--status-info-text)' }} />
     };
 
     const accentColors = {
-        success: '#10b981',
-        error: '#ef4444',
-        warning: '#f59e0b',
-        info: '#3b82f6'
+        success: 'var(--status-success-text)',
+        error: 'var(--status-error-text)',
+        warning: 'var(--status-warning-text)',
+        info: 'var(--status-info-text)'
     };
 
     const copyErrorId = () => {
@@ -150,7 +150,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
                             <a
                                 href={toast.action.href}
                                 className="mt-3 inline-block text-sm font-semibold px-4 py-2 rounded-lg transition-opacity hover:opacity-80 no-underline"
-                                style={{ background: accentColors[toast.type], color: '#ffffff' }}
+                                style={{ background: accentColors[toast.type], color: 'var(--btn-primary-text)' }}
                                 onClick={() => onDismiss()}
                             >
                                 {toast.action.label}
@@ -162,7 +162,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
                                     onDismiss();
                                 }}
                                 className="mt-3 text-sm font-semibold px-4 py-2 rounded-lg transition-opacity hover:opacity-80"
-                                style={{ background: accentColors[toast.type], color: '#ffffff' }}
+                                style={{ background: accentColors[toast.type], color: 'var(--btn-primary-text)' }}
                             >
                                 {toast.action.label}
                             </button>

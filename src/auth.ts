@@ -18,8 +18,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             // Expose sessionVersion so the authorized middleware callback can check it
             (session as unknown as { sessionVersion: number }).sessionVersion = (token.sessionVersion as number) || 0;
             // Expose user.id (DB primary key / UUID) for client components
+            // session.user is frozen by NextAuth v5 — must spread, not mutate
             if (token.sub && session.user) {
-                session.user.id = token.sub;
+                session.user = { ...session.user, id: token.sub };
             }
             return session;
         },

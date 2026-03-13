@@ -55,9 +55,11 @@ const HOUSEHOLD_LABELS: Record<string, string> = {
 
 export default async function FormResultsPage({ params }: { params: Promise<{ notificationId: string }> }) {
     const { notificationId } = await params;
-    const currentUser = await getUser();
-
-    if (!currentUser || currentUser === 'anonymous') {
+    let currentUser = '';
+    try {
+        currentUser = await getUser();
+    } catch (e: any) {
+        if (e?.digest?.startsWith('NEXT_REDIRECT')) throw e;
         redirect(`/?authRequired=1&callbackUrl=${encodeURIComponent(`/form-results/${notificationId}`)}`);
     }
 

@@ -60,28 +60,30 @@ export default function InstallPrompt() {
 
     return (
         <div className="fixed bottom-4 left-4 right-4 z-50 mx-auto max-w-md animate-slide-up">
-            <div className="bg-stone-900 text-white rounded-2xl shadow-2xl p-4 flex items-center gap-3">
-                <div className="w-10 h-10 bg-stone-700 rounded-xl flex items-center justify-center text-lg shrink-0">
+            <div className="rounded-2xl p-4 flex items-center gap-3 elevation-overlay" style={{ background: 'var(--surface-card)', border: '1px solid var(--border-default)' }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0" style={{ background: 'var(--surface-elevated)' }}>
                     🐾
                 </div>
                 <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm">
+                    <p className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
                         {t('pwa.installTitle') || 'Install BuenAdoptante'}
                     </p>
-                    <p className="text-stone-500 text-xs mt-0.5">
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                         {t('pwa.installMessage') || 'Quick access from your home screen'}
                     </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                     <button
                         onClick={handleDismiss}
-                        className="text-stone-500 hover:text-stone-300 text-xs px-2 py-1 transition-colors"
+                        className="text-xs px-2 py-1 transition-colors"
+                        style={{ color: 'var(--text-faint)' }}
                     >
                         {t('pwa.dismiss') || 'Later'}
                     </button>
                     <button
                         onClick={handleInstall}
-                        className="bg-white text-stone-900 font-semibold text-xs px-3 py-1.5 rounded-lg hover:bg-stone-100 transition-colors"
+                        className="font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors"
+                        style={{ background: 'var(--btn-primary-bg)', color: 'var(--btn-primary-text)' }}
                     >
                         {t('pwa.installButton') || 'Install'}
                     </button>

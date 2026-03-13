@@ -4,7 +4,13 @@ description: Verify and sync local D1 database schema with Drizzle schema defini
 
 # Local DB Schema Sync
 
-> **Run this after modifying `src/db/schema.ts` or when local data seems broken.**
+> **MUST run this after ANY of the following:**
+> - Modifying `src/db/schema.ts`
+> - Deleting `.wrangler/` directory
+> - Running `rm -r .next` (can reset local D1 state)
+> - Fresh clone or branch switch
+> - Seeing `Failed query` warnings in the console for INSERT/UPDATE operations
+> - Adding new migration files to `drizzle/`
 
 ## Quick Audit — Compare Drizzle schema vs local DB
 
