@@ -116,6 +116,10 @@
   }
 }
 
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 @keyframes ps-slide-out {
   from {
     opacity: 1;

@@ -240,3 +240,25 @@ export async function getHistory(adopterId: string) {
         return [];
     }
 }
+
+export async function getLinkedFormSubmissions(adopterId: string) {
+    try {
+        const db = await getDb();
+        if (!db) return [];
+        const { formSubmissions } = await import('@/db/schema');
+        return await db.select({
+            id: formSubmissions.id,
+            species: formSubmissions.species,
+            lifeStage: formSubmissions.lifeStage,
+            notificationId: formSubmissions.notificationId,
+            answersJson: formSubmissions.answersJson,
+            createdAt: formSubmissions.createdAt,
+        }).from(formSubmissions)
+            .where(eq(formSubmissions.linkedAdopterId, adopterId))
+            .orderBy(sql`${formSubmissions.createdAt} DESC`)
+            .all();
+    } catch (error) {
+        logger.error('Get linked form submissions failed', error, { adopterId });
+        return [];
+    }
+}

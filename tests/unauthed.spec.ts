@@ -15,7 +15,7 @@ test.describe('Unauthenticated User — PII Masking', () => {
         await page.fill('input#search', 'María');
         await page.getByRole('button', { name: /search records|buscar registros/i }).click();
 
-        await expect(page.getByText(/found \d+ match/i)).toBeVisible({ timeout: 15000 });
+        await expect(page.getByText(/found \d+ match|\d+ resultados encontrados/i)).toBeVisible({ timeout: 15000 });
 
         // The full name "María García López" should NOT be visible
         await expect(page.getByText(TEST_NAMES.MARIA)).not.toBeVisible({ timeout: 3000 });
@@ -28,7 +28,7 @@ test.describe('Unauthenticated User — PII Masking', () => {
         await page.fill('input#search', 'María');
         await page.getByRole('button', { name: /search records|buscar registros/i }).click();
 
-        await expect(page.getByText(/found \d+ match/i)).toBeVisible({ timeout: 15000 });
+        await expect(page.getByText(/found \d+ match|\d+ resultados encontrados/i)).toBeVisible({ timeout: 15000 });
 
         // The 🔒 protected info banner should be visible
         await expect(page.getByText('🔒')).toBeVisible();
@@ -38,7 +38,7 @@ test.describe('Unauthenticated User — PII Masking', () => {
         await page.fill('input#search', 'María');
         await page.getByRole('button', { name: /search records|buscar registros/i }).click();
 
-        await expect(page.getByText(/found \d+ match/i)).toBeVisible({ timeout: 15000 });
+        await expect(page.getByText(/found \d+ match|\d+ resultados encontrados/i)).toBeVisible({ timeout: 15000 });
 
         // Click the first result card
         const firstCard = page.locator('a[href*="/adopter/"]').first();
@@ -57,7 +57,7 @@ test.describe('Unauthenticated User — PII Masking', () => {
         await page.fill('input#search', 'María');
         await page.getByRole('button', { name: /search records|buscar registros/i }).click();
 
-        await expect(page.getByText(/found \d+ match/i)).toBeVisible({ timeout: 15000 });
+        await expect(page.getByText(/found \d+ match|\d+ resultados encontrados/i)).toBeVisible({ timeout: 15000 });
 
         // The full phone number "555-1234" should NOT be fully visible
         // It should show a masked version with •••••• replacing most digits

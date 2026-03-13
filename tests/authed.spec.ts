@@ -24,7 +24,7 @@ test.describe('Authenticated User', () => {
         await page.fill('input#search', TEST_NAMES.MARIA);
         await page.getByRole('button', { name: /search records|buscar registros/i }).click();
 
-        await expect(page.getByText(/found \d+ match/i)).toBeVisible({ timeout: 15000 });
+        await expect(page.getByText(/found \d+ match|\d+ resultados encontrados/i)).toBeVisible({ timeout: 15000 });
 
         // Authenticated users see full names (not PII-masked)
         await expect(page.getByText(TEST_NAMES.MARIA).first()).toBeVisible({ timeout: 5000 });
@@ -38,7 +38,7 @@ test.describe('Authenticated User', () => {
         await expect(page.getByRole('heading', { name: TEST_NAMES.NUEVA })).toBeVisible({ timeout: 15000 });
 
         // Step 2: Click the "+ Record New Adoption" button to open the form
-        const openFormBtn = page.getByRole('button', { name: /Record New Adoption/i });
+        const openFormBtn = page.getByRole('button', { name: /Register Adoption|Registrar Adopción/i });
         await expect(openFormBtn).toBeVisible({ timeout: 5000 });
         await openFormBtn.click();
 

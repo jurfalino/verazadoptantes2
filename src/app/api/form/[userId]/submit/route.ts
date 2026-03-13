@@ -44,13 +44,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         const { formSubmissions, adopters } = await import('@/db/schema');
         const { eq } = await import('drizzle-orm');
 
-        // Validate that userId belongs to a real user (userId is the user's UUID, not email)
+        // Try to resolve rescuer email from userId (best-effort — don't block submission if user not found)
         const { users } = await import('@/db/schema');
         const user = await db.select({ email: users.email }).from(users).where(eq(users.id, userId)).get();
-        if (!user) {
-            return withCors(NextResponse.json({ error: 'Usuario no encontrado' }, { status: 404 }), origin);
-        }
-        const rescuerEmail = user.email;
+        const rescuerEmail = user?.email || userId;
 
         // Upload selfie to R2 (if provided)
         let selfieUrl: string | null = null;

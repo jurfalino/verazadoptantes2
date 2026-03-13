@@ -1,6 +1,6 @@
 export const runtime = 'edge';
 import { redirect } from 'next/navigation';
-import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getAdoptionConfig, getDuplicateCandidates } from '@/app/actions';
+import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getAdoptionConfig, getDuplicateCandidates, getLinkedFormSubmissions } from '@/app/actions';
 import { AdopterProfile } from '@/components/AdopterProfile';
 
 export default async function AdopterPage({ params }: { params: Promise<{ id: string }> }) {
@@ -28,9 +28,10 @@ export default async function AdopterPage({ params }: { params: Promise<{ id: st
     let stats = null;
     let avgRating = null;
     let dupCandidates: any[] = [];
+    let linkedForms: any[] = [];
 
     if (!isNew) {
-        [adopter, history, adoptions, images, flags, stats, avgRating, availableAnimals, dupCandidates] = await Promise.all([
+        [adopter, history, adoptions, images, flags, stats, avgRating, availableAnimals, dupCandidates, linkedForms] = await Promise.all([
             getAdopter(id),
             getHistory(id),
             getAdoptions(id),
@@ -39,7 +40,8 @@ export default async function AdopterPage({ params }: { params: Promise<{ id: st
             getAdopterStats(id),
             getAverageRating(id),
             getAvailableAnimals(),
-            getDuplicateCandidates(id)
+            getDuplicateCandidates(id),
+            getLinkedFormSubmissions(id)
         ]);
     } else {
         availableAnimals = await getAvailableAnimals();
@@ -61,6 +63,7 @@ export default async function AdopterPage({ params }: { params: Promise<{ id: st
             isAdmin={isAdmin}
             adoptionConfig={adoptionConfig}
             duplicateCandidates={dupCandidates}
+            linkedForms={linkedForms}
         />
     );
 }

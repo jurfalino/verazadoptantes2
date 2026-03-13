@@ -29,9 +29,10 @@ interface AdopterProfileProps {
     isAdmin?: boolean;
     adoptionConfig?: AdoptionConfig;
     duplicateCandidates?: DuplicateCandidateInfo[];
+    linkedForms?: Array<{ id: string; species: string | null; lifeStage: string | null; notificationId: string | null; answersJson: string | null; createdAt: Date | null }>;
 }
 
-export function AdopterProfile({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [] }: AdopterProfileProps) {
+export function AdopterProfile({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [], linkedForms = [] }: AdopterProfileProps) {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const [selectedPeriod, setSelectedPeriod] = useState<'90d' | '1y' | 'all'>('all');
@@ -275,6 +276,43 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                         </>
                     )
                 }
+
+                {/* Linked Form Submissions */}
+                {!isNew && linkedForms.length > 0 && (
+                    <CollapsibleSection title="📋 Formularios" count={linkedForms.length} defaultOpen={false}>
+                        <div className="space-y-2">
+                            {linkedForms.map(form => {
+                                const date = form.createdAt ? new Date(form.createdAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+                                const speciesLabel = form.species === 'dog' ? 'Perro' : form.species === 'cat' ? 'Gato' : form.species || '—';
+                                const ageLabel = form.lifeStage === 'puppy' ? 'Cachorro' : form.lifeStage === 'young' ? 'Joven' : form.lifeStage === 'senior' ? 'Senior' : '';
+                                const summary = [speciesLabel, ageLabel].filter(Boolean).join(' · ');
+                                return (
+                                    <a
+                                        key={form.id}
+                                        href={`/form-results/${form.notificationId}`}
+                                        className="block bg-white border border-stone-200 rounded-xl p-3 hover:border-teal-300 hover:shadow-sm transition-all group"
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-sm font-semibold text-stone-800">
+                                                    Formulario — {date}
+                                                </p>
+                                                {summary && (
+                                                    <p className="text-xs text-stone-500 mt-0.5">
+                                                        Busca: {summary}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <span className="text-xs text-teal-600 font-medium group-hover:underline">
+                                                Ver respuestas →
+                                            </span>
+                                        </div>
+                                    </a>
+                                );
+                            })}
+                        </div>
+                    </CollapsibleSection>
+                )}
             </div>
         </main>
     );
