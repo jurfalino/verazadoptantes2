@@ -43,6 +43,13 @@
       "when": 1770900000000,
       "tag": "0012_user_profiles_audit_log",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1773372045144,
+      "tag": "0006_lame_lady_ursula",
+      "breakpoints": true
     }
   ]
 }

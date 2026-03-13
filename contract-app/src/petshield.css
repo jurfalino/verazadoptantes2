@@ -130,6 +130,7 @@
 .ps-step {
   animation: ps-slide-in 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
   width: 100%;
+  text-align: center;
 }
 
 /* ── Step Title ── */
@@ -303,6 +304,7 @@
   outline: none;
   transition: all 200ms ease-in-out;
   box-sizing: border-box;
+  text-align: left;
 }
 
 .ps-input::placeholder {
@@ -327,6 +329,7 @@
   color: var(--ps-text-muted);
   margin-bottom: 6px;
   display: block;
+  text-align: left;
 }
 
 .ps-field__error {

@@ -91,6 +91,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             specialNeeds,
             intent,
             household,
+            answersJson: JSON.stringify(body),
             notificationId,
             createdAt: new Date(),
         });
@@ -191,7 +192,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     metadata: {
                         submissionId,
                         matchCount,
-                        submittedData: { name, email, phone, address, species, lifeStage, intent, household },
+                        submittedData: body,
                         matchedAdopters: matchedAdopters.map((a: { id: string; name: string }) => ({
                             id: a.id,
                             name: a.name,
@@ -211,7 +212,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     metadata: {
                         submissionId,
                         matchCount: 0,
-                        submittedData: { name, email, phone, address, species, lifeStage, intent, household },
+                        submittedData: body,
                     },
                 });
             }

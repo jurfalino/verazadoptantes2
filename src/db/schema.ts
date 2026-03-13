@@ -277,6 +277,8 @@ export const formSubmissions = sqliteTable("form_submissions", {
     intent: text("intent"),                      // self, gift
     // Step 7: Household
     household: text("household"),                // JSON array: ["children","pets","outdoor","presence"]
+    // All answers as JSON (future-proof)
+    answersJson: text("answers_json"),           // Full JSON blob of all form answers
     // Metadata
     status: text("status").default("pending"),   // pending, reviewed, linked
     linkedAdopterId: text("linked_adopter_id"),  // Set when rescuer links to profile
