@@ -58,7 +58,8 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
     let user = 'unknown';
     try {
         const db = await getDb();
-        user = await getUser();
+        // getUser() is for logging only — search is public (PII masking is client-side)
+        try { user = await getUser(); } catch { /* unauthenticated — continue */ }
         if (!db) return { results: [] };
 
         // Normalize query

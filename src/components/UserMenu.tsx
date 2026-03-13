@@ -1,10 +1,9 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { signOut } from 'next-auth/react';
+import { signOut, useSession } from 'next-auth/react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useAuthContext } from '@/context/AuthContext';
-import { isAdmin } from '@/config/admins-shared';
 import { ThemeSelector } from '@/components/ThemeSelector';
 import Link from 'next/link';
 
@@ -19,9 +18,11 @@ interface UserMenuProps {
 export default function UserMenu({ user }: UserMenuProps) {
     const { t, locale, setLocale } = useLanguage();
     const { openLogin } = useAuthContext();
+    const { data: session } = useSession();
     const [isOpen, setIsOpen] = useState(false);
     const [animalsEnabled, setAnimalsEnabled] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
+    const userIsAdmin = !!(session?.user as any)?.isAdmin;
 
     // Close on click outside
     useEffect(() => {
@@ -163,7 +164,7 @@ export default function UserMenu({ user }: UserMenuProps) {
                             </Link>
                         </div>
 
-                        {isAdmin(user.email) && (
+                        {userIsAdmin && (
                             <div className="border-t border-stone-100 py-1">
                                 <Link
                                     href="/admin"
