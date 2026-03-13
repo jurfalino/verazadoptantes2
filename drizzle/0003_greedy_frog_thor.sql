@@ -42,6 +42,7 @@ DROP TABLE IF EXISTS `adopters`;--> statement-breakpoint
 ALTER TABLE `__new_adopters` RENAME TO `adopters`;--> statement-breakpoint
 PRAGMA foreign_keys=ON;--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS `name_idx` ON `adopters` (`name`);--> statement-breakpoint
-ALTER TABLE `adopter_images` ADD `adoption_id` text;--> statement-breakpoint
-ALTER TABLE `adoptions` ADD `on_behalf_of` text;--> statement-breakpoint
-ALTER TABLE `adoptions` ADD `record_type` text DEFAULT 'adoption';
+-- Deprecated: these column additions are handled by other migrations
+-- or have already been applied manually. Replace with a no-op to avoid
+-- duplicate-column errors when re-running migrations.
+SELECT 1;

@@ -54,4 +54,8 @@ INSERT OR IGNORE INTO `__new_adoptions`("id", "adopter_id", "animal_name", "spec
 DROP TABLE IF EXISTS `adoptions`;--> statement-breakpoint
 ALTER TABLE `__new_adoptions` RENAME TO `adoptions`;--> statement-breakpoint
 PRAGMA foreign_keys=ON;--> statement-breakpoint
-ALTER TABLE `adopters` ADD `added_by` text DEFAULT 'anonymous';
+-- Deprecated: `added_by` column is now created and managed by later
+-- migrations (see 0003_greedy_frog_thor.sql). Keep a harmless no-op
+-- statement so this migration still contains valid SQL.
+
+SELECT 1;

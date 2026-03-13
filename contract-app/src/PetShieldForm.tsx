@@ -910,12 +910,6 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
                                             {ICONS[pt.icon] || <span style={{ fontSize: 32 }}>🐾</span>}
                                             {count > 0 && (
                                                 <span
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        const updated = { ...counts, [pt.value]: Math.max(0, count - 1) };
-                                                        if (updated[pt.value] === 0) delete updated[pt.value];
-                                                        setAnswer(currentStep.id, updated);
-                                                    }}
                                                     style={{
                                                         position: 'absolute',
                                                         top: -6,
@@ -930,9 +924,8 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
                                                         display: 'flex',
                                                         alignItems: 'center',
                                                         justifyContent: 'center',
-                                                        cursor: 'pointer',
                                                     }}
-                                                    title="Restar uno"
+                                                    aria-hidden="true"
                                                 >
                                                     {count}
                                                 </span>
@@ -941,6 +934,29 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
                                         <div style={{ fontSize: 12, color: 'var(--ps-text-secondary)', marginTop: 6, fontWeight: 500 }}>
                                             {pt.label}
                                         </div>
+                                        {count > 0 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const updated = { ...counts, [pt.value]: Math.max(0, count - 1) };
+                                                    if (updated[pt.value] === 0) delete updated[pt.value];
+                                                    setAnswer(currentStep.id, updated);
+                                                }}
+                                                style={{
+                                                    marginTop: 4, /* 4px: half-grid exception */
+                                                    fontSize: 12,
+                                                    fontWeight: 500,
+                                                    color: 'var(--ps-accent)',
+                                                    background: 'none',
+                                                    border: 'none',
+                                                    padding: 0,
+                                                    cursor: 'pointer',
+                                                    textDecoration: 'underline',
+                                                }}
+                                            >
+                                                − Restar
+                                            </button>
+                                        )}
                                     </div>
                                 );
                             })}
