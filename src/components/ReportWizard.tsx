@@ -150,13 +150,13 @@ export default function ReportWizard() {
                         {/* Preview Panel */}
                         {previewAdopter ? (
                             <div className="animate-in slide-in-from-right duration-200">
-                                <div className="border border-rose-200 rounded-xl overflow-hidden bg-rose-50/30">
+                                <div className="border border-teal-200 rounded-xl overflow-hidden bg-teal-50/30">
                                     {/* Preview Header */}
-                                    <div className="p-4 border-b border-rose-100 flex items-center gap-3">
+                                    <div className="p-4 border-b border-teal-100 flex items-center gap-3">
                                         {previewAdopter.thumbnail ? (
                                             <img src={previewAdopter.thumbnail} alt="" className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm" />
                                         ) : (
-                                            <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center text-rose-700 font-semibold text-lg">
+                                            <div className="w-12 h-12 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-semibold text-lg">
                                                 {previewAdopter.adopter.name?.charAt(0)?.toUpperCase() || '?'}
                                             </div>
                                         )}
@@ -198,7 +198,7 @@ export default function ReportWizard() {
                                     </div>
 
                                     {/* Preview Actions */}
-                                    <div className="p-4 border-t border-rose-100 flex justify-between">
+                                    <div className="p-4 border-t border-teal-100 flex justify-between">
                                         <button
                                             onClick={() => setPreviewAdopter(null)}
                                             className="text-stone-500 text-sm font-semibold hover:text-stone-800 transition-colors"
@@ -210,7 +210,7 @@ export default function ReportWizard() {
                                                 setSelectedAdopterId(previewAdopter.adopter.id);
                                                 setPreviewAdopter(null);
                                             }}
-                                            className="px-5 py-2 bg-rose-600 text-white font-semibold rounded-xl hover:bg-rose-700 transition-colors text-sm"
+                                            className="px-5 py-2 bg-teal-600 text-white font-semibold rounded-xl hover:bg-teal-700 transition-colors text-sm"
                                         >
                                             ✓ {t('wizard.select_this') || 'Select this person'}
                                         </button>
@@ -226,7 +226,7 @@ export default function ReportWizard() {
                                     </div>
                                     <input
                                         autoFocus
-                                        className="w-full pl-10 pr-4 py-3 rounded-xl border border-stone-300 focus:border-rose-400 focus:ring-2 focus:ring-rose-100 transition-all text-stone-800"
+                                        className="w-full pl-10 pr-4 py-3 rounded-xl border border-stone-300 focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition-all text-stone-800"
                                         placeholder={t('wizard.search_name_placeholder') || "Type adopter's name..."}
                                         value={adopterSearch}
                                         onChange={e => handleSearch(e.target.value)}
@@ -235,12 +235,12 @@ export default function ReportWizard() {
 
                                 {/* Selected Adopter Indicator */}
                                 {selectedAdopterId && (
-                                    <div className="flex items-center gap-2 px-3 py-2 bg-rose-50 border border-rose-200 rounded-xl">
-                                        <svg className="w-5 h-5 text-rose-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                        <span className="text-sm font-semibold text-rose-800 flex-1">
+                                    <div className="flex items-center gap-2 px-3 py-2 bg-teal-50 border border-teal-200 rounded-xl">
+                                        <svg className="w-5 h-5 text-teal-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                        <span className="text-sm font-semibold text-teal-800 flex-1">
                                             {searchResults.find(r => r.adopter.id === selectedAdopterId)?.adopter.name || 'Adopter selected'}
                                         </span>
-                                        <button onClick={() => setSelectedAdopterId('')} className="text-rose-500 hover:text-rose-700 text-xs font-semibold">✕</button>
+                                        <button onClick={() => setSelectedAdopterId('')} className="text-stone-400 hover:text-stone-600 text-xs font-semibold">✕</button>
                                     </div>
                                 )}
 
@@ -258,7 +258,7 @@ export default function ReportWizard() {
                                         {searchResults.map(res => (
                                             <div
                                                 key={res.adopter.id}
-                                                className={`flex items-center gap-3 p-3 hover:bg-rose-50/50 transition-colors ${selectedAdopterId === res.adopter.id ? 'bg-rose-50 border-l-2 border-l-rose-500' : ''}`}
+                                                className={`flex items-center gap-3 p-3 hover:bg-teal-50/50 transition-colors ${selectedAdopterId === res.adopter.id ? 'bg-teal-50 border-l-2 border-l-teal-500' : ''}`}
                                             >
                                                 {/* Thumbnail */}
                                                 {res.thumbnail ? (
@@ -291,7 +291,7 @@ export default function ReportWizard() {
                                                 {/* Preview Button */}
                                                 <button
                                                     onClick={() => setPreviewAdopter(res)}
-                                                    className="p-2 text-stone-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors flex-shrink-0"
+                                                    className="p-2 text-stone-500 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors flex-shrink-0"
                                                     title={t('wizard.preview') || 'Preview'}
                                                 >
                                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
@@ -312,7 +312,7 @@ export default function ReportWizard() {
                                 {searchPerformed && (
                                     <button
                                         onClick={handleCreateNew}
-                                        className="w-full p-3 border-2 border-dashed border-stone-300 rounded-xl text-stone-600 hover:border-rose-400 hover:text-rose-700 hover:bg-rose-50/30 transition-all text-sm font-semibold text-center"
+                                        className="w-full p-3 border-2 border-dashed border-stone-300 rounded-xl text-stone-600 hover:border-teal-400 hover:text-teal-700 hover:bg-teal-50/30 transition-all text-sm font-semibold text-center"
                                     >
                                         {adopterSearch.trim()
                                             ? `${t('wizard.create_new_named') || '+ Create new record for'} "${adopterSearch.trim()}"`
@@ -327,7 +327,7 @@ export default function ReportWizard() {
                             <button
                                 onClick={handleNext}
                                 disabled={!selectedAdopterId}
-                                className="px-6 py-2 bg-rose-600 text-white font-semibold rounded-xl hover:bg-rose-700 disabled:opacity-50"
+                                className="px-6 py-2 bg-teal-600 text-white font-semibold rounded-xl hover:bg-teal-700 disabled:opacity-50"
                             >
                                 {t('wizard.next') || 'Next: Details'}
                             </button>
@@ -376,7 +376,7 @@ export default function ReportWizard() {
                             <button
                                 onClick={handleFinish}
                                 disabled={loading}
-                                className="px-6 py-2 bg-rose-600 text-white font-semibold rounded-xl hover:bg-rose-700 disabled:opacity-50"
+                                className="px-6 py-2 bg-teal-600 text-white font-semibold rounded-xl hover:bg-teal-700 disabled:opacity-50"
                             >
                                 {loading ? (t('common.processing') || 'Processing...') : (t('wizard.submit_observation') || 'Submit Observation')}
                             </button>

@@ -37,8 +37,13 @@ interface ChecklistStep {
     options: Array<{ value: string; label: string; icon: string }>;
 }
 
+interface PetCounterStep {
+    id: string; type: 'pet-counter'; title: string; subtitle?: string;
+    petTypes: Array<{ value: string; label: string; icon: string }>;
+}
+
 type FormStep = ConsentStep | TextFieldsStep | GeolocationStep | CameraUploadStep
-    | IconCardsStep | SegmentedCardsStep | ToggleStep | ChecklistStep;
+    | IconCardsStep | SegmentedCardsStep | ToggleStep | ChecklistStep | PetCounterStep;
 
 // ══════════════════════════════════════════════
 // DEFAULT SCHEMA
@@ -46,17 +51,42 @@ type FormStep = ConsentStep | TextFieldsStep | GeolocationStep | CameraUploadSte
 
 const DEFAULT_SCHEMA: FormStep[] = [
     {
-        id: 'legal', type: 'consent', title: 'Protección de datos',
-        body: 'Al continuar, aceptás que tus datos personales serán almacenados de forma segura con fines de registro y verificación, en cumplimiento de la Ley 25.326 de Protección de Datos Personales.',
-        legalRef: 'Ley 25.326', linkLabel: 'Ver Términos y Condiciones',
+        id: 'legal', type: 'consent', title: 'Solicitud de adopción',
+        body: 'Completá este breve formulario para registrar tu interés en adoptar. Nos ayuda a encontrar el animal ideal según lo que buscás. El rescatista revisará tu solicitud para ponerse en contacto.',
+        legalRef: 'Ley 25.326',
     },
     {
-        id: 'identity', type: 'text-fields', title: '¿Quién sos?',
+        id: 'identity-name', type: 'text-fields', title: '¿Cómo te llamás?',
         fields: [
             { name: 'name', label: 'Nombre completo', placeholder: 'Juan García', required: true },
+        ],
+    },
+    {
+        id: 'identity-email', type: 'text-fields', title: '¿Cuál es tu email?',
+        fields: [
             { name: 'email', label: 'Email', placeholder: 'juan@ejemplo.com', required: true, validation: 'email' },
+        ],
+    },
+    {
+        id: 'identity-phone', type: 'text-fields', title: '¿Tu teléfono?',
+        fields: [
             { name: 'phone', label: 'Teléfono', placeholder: '+54 11 1234-5678', validation: 'phone-ar' },
+        ],
+    },
+    {
+        id: 'identity-address', type: 'text-fields', title: '¿Dónde vivís?',
+        fields: [
             { name: 'address', label: 'Dirección', placeholder: 'Av. Corrientes 1234, CABA', required: true },
+        ],
+    },
+    {
+        id: 'ageRange', type: 'segmented-cards', title: '¿Qué edad tenés?',
+        options: [
+            { value: '18-25', label: '18–25' },
+            { value: '26-35', label: '26–35' },
+            { value: '36-45', label: '36–45' },
+            { value: '46-55', label: '46–55' },
+            { value: '56+', label: '56+' },
         ],
     },
     {
@@ -74,7 +104,6 @@ const DEFAULT_SCHEMA: FormStep[] = [
         options: [
             { value: 'dog', label: 'Perro', icon: 'dog' },
             { value: 'cat', label: 'Gato', icon: 'cat' },
-            { value: 'both', label: 'Ambos', icon: 'both' },
             { value: 'other', label: 'Otro', icon: 'other' },
         ],
     },
@@ -104,12 +133,91 @@ const DEFAULT_SCHEMA: FormStep[] = [
         },
     },
     {
-        id: 'household', type: 'checklist', title: 'Contanos sobre tu hogar',
+        id: 'children', type: 'segmented-cards', title: '¿Hay niños en el hogar?',
         options: [
-            { value: 'children', label: 'Niños en el hogar', icon: 'children' },
-            { value: 'pets', label: 'Mascotas existentes', icon: 'pets' },
-            { value: 'outdoor', label: 'Espacio exterior seguro', icon: 'outdoor' },
-            { value: 'presence', label: 'Presencia frecuente', icon: 'presence' },
+            { value: 'none', label: 'No' },
+            { value: '1', label: '1' },
+            { value: '2', label: '2' },
+            { value: '3+', label: '3+' },
+        ],
+    },
+    {
+        id: 'existingPets', type: 'pet-counter', title: '¿Tenés mascotas actualmente?',
+        subtitle: 'Tocá cada ícono para sumar una mascota de ese tipo',
+        petTypes: [
+            { value: 'dogs', label: 'Perros', icon: 'dog' },
+            { value: 'cats', label: 'Gatos', icon: 'cat' },
+            { value: 'birds', label: 'Pájaros', icon: 'bird' },
+            { value: 'other', label: 'Otro', icon: 'other' },
+        ],
+    },
+    {
+        id: 'housingType', type: 'icon-cards', title: '¿Dónde vivís?',
+        options: [
+            { value: 'house', label: 'Casa', icon: 'outdoor' },
+            { value: 'apartment', label: 'Departamento', icon: 'presence' },
+        ],
+    },
+    {
+        id: 'hasOutdoor', type: 'icon-cards', title: '¿Tenés patio o jardín?',
+        options: [
+            { value: 'yes', label: 'Sí', icon: 'outdoor' },
+            { value: 'no', label: 'No', icon: 'presence' },
+        ],
+    },
+    {
+        id: 'isSafe', type: 'icon-cards', title: '¿El espacio está protegido?',
+        options: [
+            { value: 'yes', label: 'Sí, está cerrado', icon: 'outdoor' },
+            { value: 'no', label: 'No está cerrado', icon: 'presence' },
+            { value: 'na', label: 'No aplica', icon: 'other' },
+        ],
+    },
+    {
+        id: 'hoursAlone', type: 'segmented-cards', title: '¿Cuántas horas al día estaría solo el animal?',
+        options: [
+            { value: '0-2', label: '0–2' },
+            { value: '3-5', label: '3–5' },
+            { value: '6-8', label: '6–8' },
+            { value: '8+', label: '8+' },
+        ],
+    },
+    {
+        id: 'petExperience', type: 'icon-cards', title: '¿Tuviste mascotas antes?',
+        options: [
+            { value: 'no', label: 'No, primera vez', icon: 'other' },
+            { value: 'cat', label: 'Sí, gato', icon: 'cat' },
+            { value: 'dog', label: 'Sí, perro', icon: 'dog' },
+            { value: 'other', label: 'Sí, otro', icon: 'bird' },
+        ],
+    },
+    {
+        id: 'willingToSterilize', type: 'icon-cards', title: '¿Estás dispuesto/a a castrar o esterilizar?',
+        options: [
+            { value: 'yes', label: 'Sí', icon: 'self' },
+            { value: 'no', label: 'No', icon: 'presence' },
+        ],
+    },
+    {
+        id: 'vetCommitment', type: 'toggle',
+        label: 'Me comprometo a llevar al animal al veterinario',
+        description: 'Vacunación, controles y atención cuando sea necesario',
+    },
+    {
+        id: 'movingPlans', type: 'icon-cards', title: '¿Tenés pensado mudarte pronto?',
+        options: [
+            { value: 'no', label: 'No', icon: 'outdoor' },
+            { value: 'maybe', label: 'Posiblemente', icon: 'presence' },
+            { value: 'yes', label: 'Sí', icon: 'gift' },
+        ],
+    },
+    {
+        id: 'vacationPlan', type: 'icon-cards', title: '¿Qué harías con el animal en vacaciones?',
+        options: [
+            { value: 'take', label: 'Lo llevo conmigo', icon: 'self' },
+            { value: 'family', label: 'Lo cuida familia', icon: 'children' },
+            { value: 'sitter', label: 'Cuidador / guardería', icon: 'presence' },
+            { value: 'unsure', label: 'No lo sé aún', icon: 'other' },
         ],
     },
 ]
@@ -119,16 +227,168 @@ const DEFAULT_SCHEMA: FormStep[] = [
 // ══════════════════════════════════════════════
 
 const ICONS: Record<string, React.ReactNode> = {
-    dog: <svg viewBox="0 0 64 64" fill="none"><path d="M32 12c-6 0-10 4-14 10-3 4-6 6-8 6-1 0-2 1-2 3 0 3 2 5 5 5h1c2 6 7 12 18 12s16-6 18-12h1c3 0 5-2 5-5 0-2-1-3-2-3-2 0-5-2-8-6C42 16 38 12 32 12z" fill="#818cf8"/><circle cx="24" cy="30" r="3" fill="#0f172a"/><circle cx="40" cy="30" r="3" fill="#0f172a"/><ellipse cx="32" cy="36" rx="4" ry="2.5" fill="#0f172a"/></svg>,
-    cat: <svg viewBox="0 0 64 64" fill="none"><path d="M12 16l6 14h28l6-14-10 8H22L12 16z" fill="#a5b4fc"/><ellipse cx="32" cy="38" rx="16" ry="14" fill="#818cf8"/><circle cx="25" cy="34" r="2.5" fill="#0f172a"/><circle cx="39" cy="34" r="2.5" fill="#0f172a"/><path d="M29 40q3 2 6 0" stroke="#0f172a" strokeWidth="2" strokeLinecap="round"/><line x1="18" y1="36" x2="10" y2="34" stroke="#818cf8" strokeWidth="1.5"/><line x1="18" y1="39" x2="10" y2="40" stroke="#818cf8" strokeWidth="1.5"/><line x1="46" y1="36" x2="54" y2="34" stroke="#818cf8" strokeWidth="1.5"/><line x1="46" y1="39" x2="54" y2="40" stroke="#818cf8" strokeWidth="1.5"/></svg>,
-    both: <svg viewBox="0 0 64 64" fill="none"><circle cx="22" cy="32" r="14" fill="#818cf8" opacity="0.7"/><circle cx="42" cy="32" r="14" fill="#a5b4fc" opacity="0.7"/><path d="M32 22a14 14 0 010 20 14 14 0 010-20z" fill="#6366f1" opacity="0.5"/><text x="15" y="36" fontSize="14" fill="#0f172a">🐶</text><text x="38" y="36" fontSize="14" fill="#0f172a">🐱</text></svg>,
-    other: <svg viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="18" fill="#818cf8" opacity="0.5"/><text x="22" y="40" fontSize="22" fill="#0f172a">🐾</text></svg>,
-    self: <svg viewBox="0 0 64 64" fill="none"><circle cx="32" cy="20" r="10" fill="#818cf8"/><path d="M16 52c0-10 7-18 16-18s16 8 16 18" fill="#a5b4fc" opacity="0.6"/><circle cx="32" cy="20" r="6" fill="#0f172a" opacity="0.2"/></svg>,
-    gift: <svg viewBox="0 0 64 64" fill="none"><rect x="14" y="28" width="36" height="24" rx="4" fill="#818cf8"/><rect x="14" y="24" width="36" height="8" rx="3" fill="#a5b4fc"/><rect x="29" y="24" width="6" height="28" fill="#6366f1" opacity="0.5"/><path d="M32 24c-4-8-12-8-12-2s8 2 12 2z" fill="#a5b4fc"/><path d="M32 24c4-8 12-8 12-2s-8 2-12 2z" fill="#c7d2fe"/></svg>,
-    children: <svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="14" r="6" fill="#818cf8"/><path d="M14 40c0-7 5-14 10-14s10 7 10 14" fill="#818cf8" opacity="0.5"/><circle cx="36" cy="18" r="4" fill="#a5b4fc"/><path d="M30 40c0-5 3-10 6-10s6 5 6 10" fill="#a5b4fc" opacity="0.5"/></svg>,
-    pets: <svg viewBox="0 0 48 48" fill="none"><ellipse cx="14" cy="16" rx="4" ry="5" fill="#818cf8"/><ellipse cx="26" cy="14" rx="4" ry="5" fill="#818cf8"/><ellipse cx="34" cy="20" rx="4" ry="5" fill="#818cf8"/><ellipse cx="8" cy="22" rx="4" ry="5" fill="#818cf8"/><ellipse cx="20" cy="30" rx="9" ry="8" fill="#a5b4fc"/></svg>,
-    outdoor: <svg viewBox="0 0 48 48" fill="none"><rect x="6" y="22" width="36" height="18" rx="3" fill="#818cf8" opacity="0.3"/><path d="M6 22l18-14 18 14" fill="#818cf8"/><rect x="18" y="28" width="8" height="12" rx="1" fill="#a5b4fc"/><circle cx="38" cy="12" r="5" fill="#fbbf24" opacity="0.6"/><path d="M4 42h40" stroke="#a5b4fc" strokeWidth="2" opacity="0.3"/></svg>,
-    presence: <svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="16" fill="#818cf8" opacity="0.2"/><circle cx="24" cy="18" r="6" fill="#818cf8"/><path d="M14 38c0-7 5-12 10-12s10 5 10 12" fill="#818cf8" opacity="0.6"/><path d="M20 42v-4l4-3 4 3v4" fill="#a5b4fc" opacity="0.5"/></svg>,
+    dog: (
+        <svg viewBox="0 0 64 64" fill="none">
+            {/* Floppy ears */}
+            <ellipse cx="16" cy="28" rx="8" ry="14" fill="#6366f1" transform="rotate(-15 16 28)" />
+            <ellipse cx="48" cy="28" rx="8" ry="14" fill="#6366f1" transform="rotate(15 48 28)" />
+            {/* Head */}
+            <ellipse cx="32" cy="32" rx="18" ry="17" fill="#818cf8" />
+            {/* Inner ears */}
+            <ellipse cx="16" cy="27" rx="5" ry="10" fill="#a5b4fc" transform="rotate(-15 16 27)" />
+            <ellipse cx="48" cy="27" rx="5" ry="10" fill="#a5b4fc" transform="rotate(15 48 27)" />
+            {/* Muzzle */}
+            <ellipse cx="32" cy="38" rx="10" ry="8" fill="#c7d2fe" />
+            {/* Eyes */}
+            <circle cx="24" cy="29" r="3.5" fill="#1e1b4b" />
+            <circle cx="40" cy="29" r="3.5" fill="#1e1b4b" />
+            <circle cx="25.5" cy="27.5" r="1.2" fill="white" />
+            <circle cx="41.5" cy="27.5" r="1.2" fill="white" />
+            {/* Nose */}
+            <ellipse cx="32" cy="35" rx="3.5" ry="2.5" fill="#1e1b4b" />
+            <ellipse cx="32" cy="34.5" rx="1.5" ry="0.8" fill="#4338ca" opacity="0.4" />
+            {/* Tongue */}
+            <path d="M30 38c0 0 1 5 2 5s2-5 2-5" fill="#f472b6" />
+            {/* Mouth */}
+            <path d="M28 37.5c2 1.5 6 1.5 8 0" stroke="#1e1b4b" strokeWidth="1" strokeLinecap="round" fill="none" />
+        </svg>
+    ),
+    cat: (
+        <svg viewBox="0 0 64 64" fill="none">
+            {/* Ears */}
+            <path d="M14 12l-2 20 14-8z" fill="#818cf8" />
+            <path d="M50 12l2 20-14-8z" fill="#818cf8" />
+            <path d="M16 15l-1 15 10-6z" fill="#c7d2fe" />
+            <path d="M48 15l1 15-10-6z" fill="#c7d2fe" />
+            {/* Head */}
+            <ellipse cx="32" cy="36" rx="18" ry="16" fill="#818cf8" />
+            {/* Inner face */}
+            <ellipse cx="32" cy="38" rx="12" ry="10" fill="#a5b4fc" opacity="0.5" />
+            {/* Eyes */}
+            <ellipse cx="24" cy="33" rx="3.5" ry="4" fill="#1e1b4b" />
+            <ellipse cx="40" cy="33" rx="3.5" ry="4" fill="#1e1b4b" />
+            <ellipse cx="24" cy="33" rx="2" ry="3.5" fill="#4f46e5" />
+            <ellipse cx="40" cy="33" rx="2" ry="3.5" fill="#4f46e5" />
+            <circle cx="23" cy="31.5" r="1" fill="white" />
+            <circle cx="39" cy="31.5" r="1" fill="white" />
+            {/* Nose */}
+            <path d="M30.5 39l1.5 1.5 1.5-1.5z" fill="#f472b6" />
+            {/* Mouth */}
+            <path d="M32 40.5c-2 2-4 2-5 1.5" stroke="#1e1b4b" strokeWidth="1" strokeLinecap="round" fill="none" />
+            <path d="M32 40.5c2 2 4 2 5 1.5" stroke="#1e1b4b" strokeWidth="1" strokeLinecap="round" fill="none" />
+            {/* Whiskers */}
+            <line x1="19" y1="37" x2="8" y2="35" stroke="#a5b4fc" strokeWidth="1.2" strokeLinecap="round" />
+            <line x1="19" y1="40" x2="7" y2="41" stroke="#a5b4fc" strokeWidth="1.2" strokeLinecap="round" />
+            <line x1="19" y1="43" x2="9" y2="46" stroke="#a5b4fc" strokeWidth="1.2" strokeLinecap="round" />
+            <line x1="45" y1="37" x2="56" y2="35" stroke="#a5b4fc" strokeWidth="1.2" strokeLinecap="round" />
+            <line x1="45" y1="40" x2="57" y2="41" stroke="#a5b4fc" strokeWidth="1.2" strokeLinecap="round" />
+            <line x1="45" y1="43" x2="55" y2="46" stroke="#a5b4fc" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+    ),
+    bird: (
+        <svg viewBox="0 0 64 64" fill="none">
+            {/* Tail feathers */}
+            <path d="M8 28c-2-4-3-10 0-12s6 4 8 8" fill="#6366f1" opacity="0.6" />
+            <path d="M10 30c-3-2-6-8-4-11s7 2 9 6" fill="#818cf8" opacity="0.5" />
+            {/* Body */}
+            <ellipse cx="30" cy="32" rx="18" ry="13" fill="#818cf8" />
+            <ellipse cx="30" cy="34" rx="14" ry="9" fill="#a5b4fc" opacity="0.4" />
+            {/* Wing */}
+            <path d="M20 26c4-6 14-8 20-4-2 2-8 6-14 6s-6-2-6-2z" fill="#6366f1" opacity="0.5" />
+            {/* Head */}
+            <circle cx="46" cy="24" r="9" fill="#818cf8" />
+            <circle cx="46" cy="24" r="6" fill="#a5b4fc" opacity="0.3" />
+            {/* Eye */}
+            <circle cx="49" cy="22" r="2.5" fill="#1e1b4b" />
+            <circle cx="50" cy="21" r="0.8" fill="white" />
+            {/* Beak */}
+            <path d="M55 25l8-2-3 4z" fill="#fbbf24" />
+            <path d="M55 25l8-2-4 1z" fill="#f59e0b" />
+            {/* Legs */}
+            <path d="M25 44l-2 8m0 0l-3-1m3 1l3-1" stroke="#f59e0b" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+            <path d="M33 44l1 8m0 0l-3-1m3 1l3-1" stroke="#f59e0b" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+            {/* Cheek blush */}
+            <circle cx="43" cy="27" r="2" fill="#f472b6" opacity="0.3" />
+        </svg>
+    ),
+    other: (
+        <svg viewBox="0 0 64 64" fill="none">
+            {/* Main pad */}
+            <ellipse cx="32" cy="40" rx="14" ry="11" fill="#818cf8" />
+            <ellipse cx="32" cy="39" rx="10" ry="7" fill="#a5b4fc" opacity="0.4" />
+            {/* Toe pads */}
+            <ellipse cx="18" cy="24" rx="6" ry="8" fill="#818cf8" transform="rotate(-15 18 24)" />
+            <ellipse cx="28" cy="18" rx="5.5" ry="7.5" fill="#818cf8" transform="rotate(-5 28 18)" />
+            <ellipse cx="38" cy="18" rx="5.5" ry="7.5" fill="#818cf8" transform="rotate(5 38 18)" />
+            <ellipse cx="46" cy="24" rx="6" ry="8" fill="#818cf8" transform="rotate(15 46 24)" />
+            {/* Toe highlights */}
+            <ellipse cx="18" cy="22" rx="3" ry="4.5" fill="#a5b4fc" opacity="0.4" transform="rotate(-15 18 22)" />
+            <ellipse cx="28" cy="16" rx="3" ry="4" fill="#a5b4fc" opacity="0.4" transform="rotate(-5 28 16)" />
+            <ellipse cx="38" cy="16" rx="3" ry="4" fill="#a5b4fc" opacity="0.4" transform="rotate(5 38 16)" />
+            <ellipse cx="46" cy="22" rx="3" ry="4.5" fill="#a5b4fc" opacity="0.4" transform="rotate(15 46 22)" />
+        </svg>
+    ),
+    self: (
+        <svg viewBox="0 0 64 64" fill="none">
+            <circle cx="32" cy="20" r="10" fill="#818cf8" />
+            <circle cx="32" cy="18" r="6" fill="#a5b4fc" opacity="0.3" />
+            <path d="M16 54c0-12 7-18 16-18s16 6 16 18" fill="#a5b4fc" opacity="0.6" />
+            <circle cx="29" cy="18" r="1.5" fill="#1e1b4b" /><circle cx="35" cy="18" r="1.5" fill="#1e1b4b" />
+            <path d="M29 23c1.5 1.5 4.5 1.5 6 0" stroke="#1e1b4b" strokeWidth="1" strokeLinecap="round" fill="none" />
+        </svg>
+    ),
+    gift: (
+        <svg viewBox="0 0 64 64" fill="none">
+            <rect x="14" y="30" width="36" height="22" rx="4" fill="#818cf8" />
+            <rect x="14" y="24" width="36" height="10" rx="4" fill="#a5b4fc" />
+            <rect x="29" y="24" width="6" height="28" fill="#6366f1" opacity="0.4" />
+            <path d="M32 24c-3-6-8-10-12-8s-2 6 2 8h10z" fill="#c7d2fe" />
+            <path d="M32 24c3-6 8-10 12-8s2 6-2 8H32z" fill="#e0e7ff" />
+            <circle cx="32" cy="24" r="3" fill="#6366f1" />
+        </svg>
+    ),
+    children: (
+        <svg viewBox="0 0 48 48" fill="none">
+            <circle cx="20" cy="14" r="7" fill="#818cf8" />
+            <path d="M10 42c0-8 5-14 10-14s10 6 10 14" fill="#a5b4fc" opacity="0.5" />
+            <circle cx="17.5" cy="13" r="1.2" fill="#1e1b4b" /><circle cx="22.5" cy="13" r="1.2" fill="#1e1b4b" />
+            <circle cx="36" cy="18" r="5" fill="#a5b4fc" />
+            <path d="M28 42c0-6 4-10 8-10s8 4 8 10" fill="#c7d2fe" opacity="0.5" />
+            <circle cx="34.5" cy="17" r="1" fill="#1e1b4b" /><circle cx="37.5" cy="17" r="1" fill="#1e1b4b" />
+        </svg>
+    ),
+    pets: (
+        <svg viewBox="0 0 48 48" fill="none">
+            <ellipse cx="24" cy="30" rx="10" ry="8" fill="#a5b4fc" />
+            <ellipse cx="12" cy="18" rx="5" ry="6.5" fill="#818cf8" transform="rotate(-10 12 18)" />
+            <ellipse cx="22" cy="13" rx="4.5" ry="6" fill="#818cf8" />
+            <ellipse cx="32" cy="13" rx="4.5" ry="6" fill="#818cf8" />
+            <ellipse cx="40" cy="18" rx="5" ry="6.5" fill="#818cf8" transform="rotate(10 40 18)" />
+        </svg>
+    ),
+    outdoor: (
+        <svg viewBox="0 0 48 48" fill="none">
+            <rect x="8" y="24" width="32" height="16" rx="2" fill="#818cf8" opacity="0.3" />
+            <path d="M8 24l16-14 16 14z" fill="#818cf8" />
+            <path d="M12 24l12-10 12 10z" fill="#a5b4fc" opacity="0.3" />
+            <rect x="20" y="30" width="8" height="10" rx="1.5" fill="#a5b4fc" />
+            <circle cx="26" cy="35" r="1" fill="#6366f1" />
+            <rect x="12" y="28" width="5" height="4" rx="0.5" fill="#c7d2fe" opacity="0.5" />
+            <rect x="31" y="28" width="5" height="4" rx="0.5" fill="#c7d2fe" opacity="0.5" />
+            <rect x="30" y="10" width="3" height="8" rx="1" fill="#818cf8" opacity="0.6" />
+            <circle cx="40" cy="10" r="4" fill="#fbbf24" opacity="0.5" />
+        </svg>
+    ),
+    presence: (
+        <svg viewBox="0 0 48 48" fill="none">
+            <rect x="8" y="12" width="32" height="24" rx="3" fill="#818cf8" opacity="0.3" />
+            <rect x="12" y="16" width="24" height="16" rx="2" fill="#a5b4fc" opacity="0.3" />
+            <rect x="8" y="36" width="32" height="4" rx="1" fill="#818cf8" opacity="0.4" />
+            <circle cx="24" cy="24" r="6" fill="#818cf8" opacity="0.5" />
+            <circle cx="24" cy="22" r="3" fill="#a5b4fc" />
+            <path d="M19 29c0-3 2-5 5-5s5 2 5 5" fill="#a5b4fc" opacity="0.6" />
+        </svg>
+    ),
 }
 
 // ══════════════════════════════════════════════
@@ -164,10 +424,7 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
     const [submitting, setSubmitting] = useState(false)
     const [animationKey, setAnimationKey] = useState(0)
 
-    // Camera
-    const [hasCamera, setHasCamera] = useState<boolean | null>(null)
-    const [cameraStream, setCameraStream] = useState<MediaStream | null>(null)
-    const videoRef = useRef<HTMLVideoElement>(null)
+    // File upload
     const fileInputRef = useRef<HTMLInputElement>(null)
     const [dragOver, setDragOver] = useState(false)
 
@@ -197,21 +454,7 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
         return () => clearTimeout(t)
     }, [toast])
 
-    // ── Detect camera (once) ──
-    useEffect(() => {
-        if (hasCamera !== null) return
-        navigator.mediaDevices?.enumerateDevices()
-            .then(devices => setHasCamera(devices.some(d => d.kind === 'videoinput')))
-            .catch(() => setHasCamera(false))
-    }, [hasCamera])
 
-    // ── Stop camera on step change ──
-    useEffect(() => {
-        if (schema[step]?.type !== 'camera-upload' && cameraStream) {
-            cameraStream.getTracks().forEach(t => t.stop())
-            setCameraStream(null)
-        }
-    }, [step, cameraStream, schema])
 
     // ── Current step ──
     const currentStep = schema[step]
@@ -355,32 +598,7 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
         }
     }
 
-    // ── Camera handlers ──
-    async function startCamera() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
-            setCameraStream(stream)
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream
-                videoRef.current.play()
-            }
-        } catch {
-            setToast({ message: 'No se pudo acceder a la cámara.', id: 'ERR-CAM-201' })
-            setHasCamera(false)
-        }
-    }
-
-    function capturePhoto() {
-        if (!videoRef.current) return
-        const canvas = document.createElement('canvas')
-        canvas.width = videoRef.current.videoWidth
-        canvas.height = videoRef.current.videoHeight
-        canvas.getContext('2d')!.drawImage(videoRef.current, 0, 0)
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.8)
-        setAnswer('selfie', dataUrl)
-        cameraStream?.getTracks().forEach(t => t.stop())
-        setCameraStream(null)
-    }
+    // ── Camera handlers removed — using native capture="user" instead ──
 
     function handleFileSelect(file: File | null) {
         if (!file) return
@@ -441,13 +659,6 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
                     <h1 className="ps-title">{currentStep.title}</h1>
                     <div className="ps-consent-body">
                         <p>{currentStep.body}</p>
-                        {currentStep.linkLabel && (
-                            <p style={{ marginTop: 'var(--ps-2)' }}>
-                                <a href="/terms" target="_blank" rel="noopener noreferrer">
-                                    {currentStep.linkLabel} →
-                                </a>
-                            </p>
-                        )}
                     </div>
                     <div
                         className={`ps-toggle-row ${answers[currentStep.id] ? 'ps-toggle-row--active' : ''}`}
@@ -458,7 +669,18 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
                         onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setAnswer(currentStep.id, !answers[currentStep.id]) } }}
                     >
                         <div>
-                            <div className="ps-toggle__label">Acepto los Términos y Condiciones</div>
+                            <div className="ps-toggle__label">
+                                Acepto los{' '}
+                                <a
+                                    href="/terms"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    style={{ color: 'var(--ps-accent)', textDecoration: 'underline' }}
+                                >
+                                    Términos y Condiciones
+                                </a>
+                            </div>
                             {currentStep.legalRef && (
                                 <div className="ps-toggle__desc">Conforme a {currentStep.legalRef}</div>
                             )}
@@ -516,14 +738,14 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
                                 <span style={{ fontSize: 32 }}>{opt.icon}</span>
                                 <span className="ps-card__label">{opt.label}</span>
                                 <span className="ps-card__check">
-                                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="#0f172a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="#0f172a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
                                 </span>
                             </button>
                         ))}
                     </div>
                     {answers.latitude && (
                         <div className="ps-geo-status">
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" fill="#34d399"/><path d="M5 8l2 2 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" fill="#34d399" /><path d="M5 8l2 2 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" /></svg>
                             Ubicación obtenida
                         </div>
                     )}
@@ -546,20 +768,20 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
                                 Cambiar foto
                             </button>
                         </div>
-                    ) : cameraStream ? (
-                        <div style={{ textAlign: 'center' }}>
-                            <video ref={videoRef} className="ps-camera-preview" autoPlay playsInline muted />
-                            <button className="ps-btn ps-btn--primary ps-camera-btn" onClick={capturePhoto}>
-                                📸 Capturar
-                            </button>
-                        </div>
                     ) : (
                         <>
-                            {hasCamera && (
-                                <button className="ps-btn ps-btn--primary" onClick={startCamera} style={{ width: '100%', marginBottom: 'var(--ps-2)', justifyContent: 'center' }}>
-                                    📸 Tomar Selfie
-                                </button>
-                            )}
+                            {/* Native camera capture — works reliably on mobile */}
+                            <label className="ps-btn ps-btn--primary" style={{ width: '100%', marginBottom: 'var(--ps-2)', justifyContent: 'center', cursor: 'pointer' }}>
+                                📸 Tomar Selfie
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    capture="user"
+                                    style={{ display: 'none' }}
+                                    onChange={(e) => handleFileSelect(e.target.files?.[0] || null)}
+                                />
+                            </label>
+                            {/* File picker / drag-and-drop for gallery */}
                             <div
                                 className={`ps-upload-zone ${dragOver ? 'ps-upload-zone--dragover' : ''}`}
                                 onClick={() => fileInputRef.current?.click()}
@@ -569,7 +791,7 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
                             >
                                 <div style={{ fontSize: 40, marginBottom: 'var(--ps-1)' }}>📁</div>
                                 <p style={{ color: 'var(--ps-text-secondary)', fontSize: 14, fontWeight: 600 }}>
-                                    {hasCamera ? 'O arrastrá una foto acá' : 'Arrastrá una foto o hacé clic para seleccionar'}
+                                    O elegí una foto de tu galería
                                 </p>
                                 <p style={{ color: 'var(--ps-text-muted)', fontSize: 12, marginTop: 4 }}>
                                     JPG, PNG — máx 5MB
@@ -606,7 +828,7 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
                                 </div>
                                 <span className="ps-card__label">{opt.label}</span>
                                 <span className="ps-card__check">
-                                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="#0f172a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="#0f172a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
                                 </span>
                             </button>
                         ))}
@@ -618,9 +840,18 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
                         </div>
                     )}
                     {errors[currentStep.id] && <div className="ps-field__error">{errors[currentStep.id]}</div>}
-                    <div className="ps-kbd-hint">
-                        Usá <kbd>←</kbd> <kbd>→</kbd> para navegar, <kbd>Enter</kbd> para confirmar
-                    </div>
+                    {/* Show text input when 'other' is selected on species step */}
+                    {currentStep.id === 'species' && answers[currentStep.id] === 'other' && (
+                        <div style={{ marginTop: 'var(--ps-3)' }}>
+                            <input
+                                className="ps-input"
+                                placeholder="¿Qué animal buscás?"
+                                value={answers.speciesOther || ''}
+                                onChange={(e) => setAnswer('speciesOther', e.target.value)}
+                                autoFocus
+                            />
+                        </div>
+                    )}
                 </div>
             )
 
@@ -639,8 +870,90 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
                             </button>
                         ))}
                     </div>
+                    {errors[currentStep.id] && <div className="ps-field__error">{errors[currentStep.id]}</div>}
                 </div>
             )
+
+            case 'pet-counter': {
+                const counts = (answers[currentStep.id] as Record<string, number>) || {};
+                const total = Object.values(counts).reduce((s, n) => s + n, 0);
+                return (
+                    <div className="ps-step" key={key}>
+                        <h1 className="ps-title">{currentStep.title}</h1>
+                        {currentStep.subtitle && <p className="ps-subtitle">{currentStep.subtitle}</p>}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 'var(--ps-2)', marginTop: 'var(--ps-3)' }}>
+                            {currentStep.petTypes.map(pt => {
+                                const count = counts[pt.value] || 0;
+                                return (
+                                    <div key={pt.value} style={{ textAlign: 'center' }}>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const updated = { ...counts, [pt.value]: count + 1 };
+                                                setAnswer(currentStep.id, updated);
+                                            }}
+                                            style={{
+                                                position: 'relative',
+                                                width: 72,
+                                                height: 72,
+                                                borderRadius: 16,
+                                                border: count > 0 ? '2px solid var(--ps-accent)' : '2px solid rgba(255,255,255,0.1)',
+                                                background: count > 0 ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.05)',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                transition: 'all 0.15s',
+                                                padding: 14,
+                                            }}
+                                        >
+                                            {ICONS[pt.icon] || <span style={{ fontSize: 32 }}>🐾</span>}
+                                            {count > 0 && (
+                                                <span
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const updated = { ...counts, [pt.value]: Math.max(0, count - 1) };
+                                                        if (updated[pt.value] === 0) delete updated[pt.value];
+                                                        setAnswer(currentStep.id, updated);
+                                                    }}
+                                                    style={{
+                                                        position: 'absolute',
+                                                        top: -6,
+                                                        right: -6,
+                                                        width: 24,
+                                                        height: 24,
+                                                        borderRadius: '50%',
+                                                        background: 'var(--ps-accent)',
+                                                        color: '#fff',
+                                                        fontSize: 13,
+                                                        fontWeight: 700,
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        cursor: 'pointer',
+                                                    }}
+                                                    title="Restar uno"
+                                                >
+                                                    {count}
+                                                </span>
+                                            )}
+                                        </button>
+                                        <div style={{ fontSize: 12, color: 'var(--ps-text-secondary)', marginTop: 6, fontWeight: 500 }}>
+                                            {pt.label}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        {total === 0 && (
+                            <p style={{ textAlign: 'center', color: 'var(--ps-text-muted)', fontSize: 13, marginTop: 'var(--ps-3)' }}>
+                                Si no tenés mascotas, continuá al siguiente paso
+                            </p>
+                        )}
+                        {errors[currentStep.id] && <div className="ps-field__error">{errors[currentStep.id]}</div>}
+                    </div>
+                );
+            }
 
             case 'toggle': return (
                 <div className="ps-step" key={key}>
@@ -682,7 +995,7 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
                                 >
                                     <div className="ps-check-item__box">
                                         {isSelected && (
-                                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
                                         )}
                                     </div>
                                     <div className="ps-check-item__icon">
@@ -726,13 +1039,15 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
 
             {/* Navigation */}
             <div className="ps-nav">
-                <button
-                    className="ps-btn ps-btn--ghost"
-                    onClick={goBack}
-                    disabled={step === 0}
-                >
-                    ← Atrás
-                </button>
+                {step > 0 && (
+                    <button
+                        className="ps-btn ps-btn--ghost"
+                        onClick={goBack}
+                    >
+                        ← Atrás
+                    </button>
+                )}
+                {step === 0 && <div />}
                 <button
                     className="ps-btn ps-btn--primary"
                     onClick={goNext}

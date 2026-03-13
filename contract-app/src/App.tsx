@@ -1,6 +1,7 @@
 import ContractPage from './ContractPage'
 import ErrorBoundary from './ErrorBoundary'
 import PetShieldForm from './PetShieldForm'
+import TermsPage from './TermsPage'
 
 function App() {
     // Simple routing: URL is /{animalId}
@@ -15,6 +16,11 @@ function App() {
                 <PetShieldForm userId={userId} />
             </ErrorBoundary>
         )
+    }
+
+    // Terms and Conditions route: /terms
+    if (path === 'terms') {
+        return <TermsPage />
     }
 
     if (!path) {

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 // External contract app domain
-const CONTRACT_BASE = process.env.NEXT_PUBLIC_CONTRACT_URL || 'https://adoptions.pages.dev';
+const CONTRACT_BASE = (process.env.NEXT_PUBLIC_CONTRACT_URL || 'https://adoptions.pages.dev').replace(/\/+$/, '');
 
 interface ShareFormMenuProps {
     userId: string;

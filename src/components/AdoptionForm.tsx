@@ -85,7 +85,8 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
     });
 
     // New Feature State: "existing" or "new"
-    const [mode, setMode] = useState<'existing' | 'new'>('existing');
+    // If wizard prefilled animal data, default to 'new' — the choice was already made
+    const [mode, setMode] = useState<'existing' | 'new'>(newAdoptionParam ? 'new' : 'existing');
 
     const [formData, setFormData] = useState({
         id: initialData?.id,
@@ -351,7 +352,8 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
         )
     }
 
-    const showModeSwitcher = !initialData && availableAnimals && (availableAnimals?.length ?? 0) > 0;
+    // Hide switcher when wizard already made the new/existing choice (newAdoptionParam)
+    const showModeSwitcher = !initialData && !newAdoptionParam && availableAnimals && (availableAnimals?.length ?? 0) > 0;
     const effectiveMode = showModeSwitcher ? mode : 'new';
 
     // Defensive: ensure all arrays are actually arrays (guards against undefined from any source)

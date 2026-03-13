@@ -43,7 +43,7 @@ jobs:
         run: npx wrangler d1 execute DB --local --file="tests/seed.sql"
 
       - name: Run Playwright tests
-        run: npx playwright test --project=anon --project=setup --project=authed
+        run: npx playwright test --project=unauthed --project=setup --project=authed
         env:
           CI: true
           AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
