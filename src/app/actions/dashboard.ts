@@ -1,6 +1,6 @@
 'use server';
 
-import { adopters, adoptions, adopterImages, adopterFlags, adopterStats } from '@/db/schema';
+import { adopters, adoptions, adopterImages, adopterFlags, adopterStats, formSubmissions } from '@/db/schema';
 import { eq, sql, and, inArray, isNull } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
@@ -28,12 +28,20 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
 
         const adoptersList = await query.all();
 
+        const adopterIds = adoptersList.map((a: typeof adopters.$inferSelect) => a.id);
+        const uniqueAdopterIds = new Set(adopterIds);
+        if (adopterIds.length !== uniqueAdopterIds.size) {
+            logger.warn('getMyAdopters returned duplicate adopter ids', {
+                total: adoptersList.length,
+                unique: uniqueAdopterIds.size,
+                duplicated: adopterIds.length - uniqueAdopterIds.size,
+            });
+        }
+
         if (adoptersList.length === 0) return [];
 
-        const adopterIds = adoptersList.map((a: typeof adopters.$inferSelect) => a.id);
-
-        // Batch queries: 7 queries total instead of 8 × N
-        const [adoptionConfig, allRatings, allImages, allFlags, allAdoptionCounts, allStats, allAdoptionRecords] = await Promise.all([
+        // Batch queries: form submission counts + existing
+        const [adoptionConfig, allRatings, allImages, allFlags, allAdoptionCounts, allStats, allAdoptionRecords, allFormCounts] = await Promise.all([
             getAdoptionConfig(),
             // Average ratings per adopter
             db.select({
@@ -88,6 +96,14 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                 date: adoptions.date
             }).from(adoptions)
                 .where(inArray(adoptions.adopterId, adopterIds))
+                .all(),
+            // Linked form submissions count per adopter
+            db.select({
+                linkedAdopterId: formSubmissions.linkedAdopterId,
+                count: sql<number>`COUNT(*)`
+            }).from(formSubmissions)
+                .where(inArray(formSubmissions.linkedAdopterId, adopterIds))
+                .groupBy(formSubmissions.linkedAdopterId)
                 .all()
         ]);
 
@@ -121,6 +137,11 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             const entry = statsMap.get(s.adopterId)!;
             if (s.eventType === 'search_hit') entry.searchHits = s.count;
             else if (s.eventType === 'profile_view') entry.profileViews = s.count;
+        }
+
+        const formCountMap = new Map<string, number>();
+        for (const row of allFormCounts as { linkedAdopterId: string; count: number }[]) {
+            if (row.linkedAdopterId) formCountMap.set(row.linkedAdopterId, row.count);
         }
 
         // Period calculations
@@ -168,13 +189,54 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                 adoptionCount: counts.adoptions,
                 requestCount: counts.requests,
                 searchHits: stats.searchHits,
-                profileViews: stats.profileViews
+                profileViews: stats.profileViews,
+                formCount: formCountMap.get(adopter.id) ?? 0
             };
         });
 
         return enrichedAdopters;
     } catch (error) {
         logger.error('getMyAdopters failed', error);
+        return [];
+    }
+}
+
+export async function getMyUnlinkedFormSubmissions(): Promise<Array<{ id: string; name: string; email: string | null; notificationId: string | null; createdAt: Date | null }>> {
+    try {
+        const db = await getDb();
+        if (!db) return [];
+        const session = await auth();
+        if (!session?.user?.email) return [];
+
+        const rows = await db
+            .select({
+                id: formSubmissions.id,
+                name: formSubmissions.name,
+                email: formSubmissions.email,
+                notificationId: formSubmissions.notificationId,
+                createdAt: formSubmissions.createdAt,
+            })
+            .from(formSubmissions)
+            .where(and(
+                eq(formSubmissions.userId, session.user.email),
+                isNull(formSubmissions.linkedAdopterId),
+            ))
+            .orderBy(sql`${formSubmissions.createdAt} DESC`)
+            .all();
+
+        const formIds = rows.map((r: { id: string }) => r.id);
+        const uniqueFormIds = new Set(formIds);
+        if (formIds.length !== uniqueFormIds.size) {
+            logger.warn('getMyUnlinkedFormSubmissions returned duplicate submission ids', {
+                total: rows.length,
+                unique: uniqueFormIds.size,
+                duplicated: formIds.length - uniqueFormIds.size,
+            });
+        }
+
+        return rows;
+    } catch (error) {
+        logger.error('getMyUnlinkedFormSubmissions failed', error);
         return [];
     }
 }

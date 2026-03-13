@@ -13,6 +13,7 @@ import { saveImage } from '@/app/actions';
 import ReportInaccuracyForm from '@/components/ReportInaccuracyForm';
 import { countRecordsInPeriod } from '@/lib/adoptionFilters';
 import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, HistoryEntry, AdopterStats, AdoptionConfig, DuplicateCandidateInfo } from '@/types/adopter';
+import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 
 interface AdopterProfileProps {
     id: string;
@@ -30,9 +31,10 @@ interface AdopterProfileProps {
     adoptionConfig?: AdoptionConfig;
     duplicateCandidates?: DuplicateCandidateInfo[];
     linkedForms?: Array<{ id: string; species: string | null; lifeStage: string | null; notificationId: string | null; answersJson: string | null; createdAt: Date | null }>;
+    formPrefill?: FormSubmissionPrefill | null;
 }
 
-export function AdopterProfile({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [], linkedForms = [] }: AdopterProfileProps) {
+export function AdopterProfile({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [], linkedForms = [], formPrefill = null }: AdopterProfileProps) {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const [selectedPeriod, setSelectedPeriod] = useState<'90d' | '1y' | 'all'>('all');
@@ -237,6 +239,7 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                     adoptions={adoptions}
                     adoptionConfig={adoptionConfig}
                     isAdmin={isAdmin}
+                    formPrefill={formPrefill}
                 />
 
                 {
@@ -277,39 +280,54 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                     )
                 }
 
-                {/* Linked Form Submissions */}
-                {!isNew && linkedForms.length > 0 && (
-                    <CollapsibleSection title="📋 Formularios" count={linkedForms.length} defaultOpen={false}>
+                {/* Forms completed by this adopter */}
+                {!isNew && (
+                    <CollapsibleSection title={t('adopter.forms_section')} count={linkedForms.length} defaultOpen={linkedForms.length > 0}>
                         <div className="space-y-2">
-                            {linkedForms.map(form => {
-                                const date = form.createdAt ? new Date(form.createdAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
-                                const speciesLabel = form.species === 'dog' ? 'Perro' : form.species === 'cat' ? 'Gato' : form.species || '—';
-                                const ageLabel = form.lifeStage === 'puppy' ? 'Cachorro' : form.lifeStage === 'young' ? 'Joven' : form.lifeStage === 'senior' ? 'Senior' : '';
-                                const summary = [speciesLabel, ageLabel].filter(Boolean).join(' · ');
-                                return (
-                                    <a
-                                        key={form.id}
-                                        href={`/form-results/${form.notificationId}`}
-                                        className="block bg-white border border-stone-200 rounded-xl p-3 hover:border-teal-300 hover:shadow-sm transition-all group"
-                                    >
+                            {linkedForms.length > 0 ? (
+                                linkedForms.map(form => {
+                                    const date = form.createdAt ? new Date(form.createdAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+                                    const speciesLabel = form.species === 'dog' ? 'Perro' : form.species === 'cat' ? 'Gato' : form.species || '—';
+                                    const ageLabel = form.lifeStage === 'puppy' ? 'Cachorro' : form.lifeStage === 'young' ? 'Joven' : form.lifeStage === 'senior' ? 'Senior' : '';
+                                    const summary = [speciesLabel, ageLabel].filter(Boolean).join(' · ');
+                                    const content = (
                                         <div className="flex items-center justify-between">
                                             <div>
                                                 <p className="text-sm font-semibold text-stone-800">
-                                                    Formulario — {date}
+                                                    {date}
                                                 </p>
                                                 {summary && (
                                                     <p className="text-xs text-stone-500 mt-0.5">
-                                                        Busca: {summary}
+                                                        {t('adopter.form_looking_for')}: {summary}
                                                     </p>
                                                 )}
                                             </div>
-                                            <span className="text-xs text-teal-600 font-medium group-hover:underline">
-                                                Ver respuestas →
-                                            </span>
+                                            {form.notificationId && (
+                                                <span className="text-xs text-teal-600 font-medium group-hover:underline">
+                                                    {t('adopter.form_view_responses')}
+                                                </span>
+                                            )}
                                         </div>
-                                    </a>
-                                );
-                            })}
+                                    );
+                                    return form.notificationId ? (
+                                        <a
+                                            key={form.id}
+                                            href={`/form-results/${form.notificationId}`}
+                                            className="block bg-white border border-stone-200 rounded-xl p-3 hover:border-teal-300 hover:shadow-sm transition-all group"
+                                        >
+                                            {content}
+                                        </a>
+                                    ) : (
+                                        <div key={form.id} className="block bg-white border border-stone-200 rounded-xl p-3 text-stone-600">
+                                            {content}
+                                        </div>
+                                    );
+                                })
+                            ) : (
+                                <p className="text-sm text-stone-500 py-2">
+                                    {t('adopter.forms_empty')}
+                                </p>
+                            )}
                         </div>
                     </CollapsibleSection>
                 )}

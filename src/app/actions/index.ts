@@ -26,7 +26,7 @@ export { saveAdoption, deleteAdoption, getAdoptions, getAvailableAnimals } from 
 export { flagAdopter, getFlags, dismissFlag, removeVerification } from './flags';
 
 // Dashboard
-export { getMyAdopters, getMyAdoptions } from './dashboard';
+export { getMyAdopters, getMyAdoptions, getMyUnlinkedFormSubmissions } from './dashboard';
 
 // Admin
 export { runAdminQuery, deleteAdopter, purgeAllData } from './admin';

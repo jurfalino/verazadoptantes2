@@ -30,6 +30,15 @@ interface Adopter {
     requestCount: number;
     searchHits: number;
     profileViews: number;
+    formCount?: number;
+}
+
+interface UnlinkedForm {
+    id: string;
+    name: string;
+    email: string | null;
+    notificationId: string | null;
+    createdAt: number | string | null;
 }
 
 // Flag badges component for displaying all flags
@@ -89,23 +98,41 @@ function FlagBadges({ flags, t }: { flags: AdopterFlags; t: (key: string) => str
 export default function MyAdoptersPage() {
     const { t } = useLanguage();
     const [adopters, setAdopters] = useState<Adopter[]>([]);
+    const [unlinkedForms, setUnlinkedForms] = useState<UnlinkedForm[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        async function fetchAdopters() {
+        async function fetchData() {
             try {
-                const res = await fetch('/api/my-adopters');
-                if (res.ok) {
-                    const data = await res.json() as Adopter[];
-                    setAdopters(data);
+                const [adoptersRes, formsRes] = await Promise.all([
+                    fetch('/api/my-adopters'),
+                    fetch('/api/my-form-submissions/unlinked'),
+                ]);
+                if (adoptersRes.ok) {
+                    const data = await adoptersRes.json() as Adopter[];
+                    const byId = new Map<string, Adopter>();
+                    data.forEach((a) => { if (!byId.has(a.id)) byId.set(a.id, a); });
+                    if (data.length !== byId.size) {
+                        console.warn('[My Adopters] Dropped duplicate adopter ids', { total: data.length, unique: byId.size });
+                    }
+                    setAdopters(Array.from(byId.values()));
+                }
+                if (formsRes.ok) {
+                    const forms = await formsRes.json() as UnlinkedForm[];
+                    const byId = new Map<string, UnlinkedForm>();
+                    forms.forEach((f) => { if (!byId.has(f.id)) byId.set(f.id, f); });
+                    if (forms.length !== byId.size) {
+                        console.warn('[My Adopters] Dropped duplicate form submission ids', { total: forms.length, unique: byId.size });
+                    }
+                    setUnlinkedForms(Array.from(byId.values()));
                 }
             } catch (e) {
-                console.error('Failed to fetch adopters:', e);
+                console.error('Failed to fetch data:', e);
             } finally {
                 setLoading(false);
             }
         }
-        fetchAdopters();
+        fetchData();
     }, []);
 
     if (loading) {
@@ -140,6 +167,102 @@ export default function MyAdoptersPage() {
                     </Link>
                 </div>
 
+                {/* Forms not linked to an adopter profile */}
+                {unlinkedForms.length > 0 && (
+                    <section className="mb-8">
+                        <h2 className="text-lg font-semibold text-stone-800 mb-3 flex items-center gap-2">
+                            {t('dashboard.unlinked_forms_title')}
+                            <span className="text-sm font-normal text-stone-500 bg-amber-50 px-2 py-0.5 rounded-full">{unlinkedForms.length}</span>
+                        </h2>
+                        {/* Desktop table */}
+                        <div className="hidden md:block bg-white rounded-2xl overflow-hidden shadow-sm border border-stone-200 mb-4">
+                            <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-amber-50/70 border-b border-stone-200 text-xs font-semibold text-stone-500 uppercase tracking-wide">
+                                <div className="col-span-3">{t('dashboard.unlinked_table_name')}</div>
+                                <div className="col-span-3">{t('dashboard.unlinked_table_contact')}</div>
+                                <div className="col-span-2">{t('dashboard.unlinked_table_date')}</div>
+                                <div className="col-span-4 text-right">{t('dashboard.table_actions')}</div>
+                            </div>
+                            <div className="divide-y divide-stone-100">
+                                {unlinkedForms.map((form, i) => (
+                                    <div
+                                        key={`unlinked-${form.id}-${i}`}
+                                        className="grid grid-cols-12 gap-2 px-4 py-3 hover:bg-stone-50/50 transition-colors items-center"
+                                    >
+                                        <div className="col-span-3 font-medium text-stone-900 truncate">{form.name}</div>
+                                        <div className="col-span-3 text-sm text-stone-600 truncate">{form.email || t('dashboard.no_contact')}</div>
+                                        <div className="col-span-2 text-sm text-stone-500">
+                                            {form.createdAt != null ? formatShortDate(form.createdAt) : '—'}
+                                        </div>
+                                        <div className="col-span-4 flex flex-wrap justify-end gap-2">
+                                            {form.notificationId && (
+                                                <Link
+                                                    href={`/form-results/${form.notificationId}`}
+                                                    className="text-sm text-teal-700 hover:text-teal-800 font-medium"
+                                                >
+                                                    {t('dashboard.unlinked_view_response')} →
+                                                </Link>
+                                            )}
+                                            <Link
+                                                href={`/adopter/create?fromForm=${form.id}`}
+                                                className="text-sm text-teal-700 hover:text-teal-800 font-medium"
+                                            >
+                                                {t('dashboard.unlinked_create_profile')}
+                                            </Link>
+                                            {form.notificationId && (
+                                                <Link
+                                                    href={`/form-results/${form.notificationId}/link`}
+                                                    className="text-sm text-stone-600 hover:text-stone-800 font-medium"
+                                                >
+                                                    {t('dashboard.unlinked_link_profile')}
+                                                </Link>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        {/* Mobile cards */}
+                        <div className="md:hidden space-y-3">
+                            {unlinkedForms.map((form, i) => (
+                                <div
+                                    key={`unlinked-${form.id}-${i}`}
+                                    className="bg-white rounded-xl p-4 shadow-sm border border-stone-200"
+                                >
+                                    <div className="font-medium text-stone-900 mb-1">{form.name}</div>
+                                    <div className="text-sm text-stone-600 mb-2">{form.email || t('dashboard.no_contact')}</div>
+                                    <div className="text-xs text-stone-500 mb-3">
+                                        {form.createdAt != null ? formatShortDate(form.createdAt) : '—'}
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {form.notificationId && (
+                                            <Link
+                                                href={`/form-results/${form.notificationId}`}
+                                                className="px-3 py-1.5 text-sm bg-teal-100 text-teal-800 rounded-lg font-medium"
+                                            >
+                                                {t('dashboard.unlinked_view_response')}
+                                            </Link>
+                                        )}
+                                        <Link
+                                            href={`/adopter/create?fromForm=${form.id}`}
+                                            className="px-3 py-1.5 text-sm bg-teal-100 text-teal-800 rounded-lg font-medium"
+                                        >
+                                            {t('dashboard.unlinked_create_profile')}
+                                        </Link>
+                                        {form.notificationId && (
+                                            <Link
+                                                href={`/form-results/${form.notificationId}/link`}
+                                                className="px-3 py-1.5 text-sm bg-stone-100 text-stone-700 rounded-lg font-medium"
+                                            >
+                                                {t('dashboard.unlinked_link_profile')}
+                                            </Link>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                )}
+
                 {adopters.length === 0 ? (
                     <div className="bg-white rounded-2xl p-12 text-center border border-stone-200 shadow-sm">
                         <div className="w-14 h-14 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4 text-stone-500">
@@ -163,9 +286,9 @@ export default function MyAdoptersPage() {
 
                             {/* Table Rows */}
                             <div className="divide-y divide-stone-100">
-                                {adopters.map((adopter) => (
+                                {adopters.map((adopter, i) => (
                                     <Link
-                                        key={adopter.id}
+                                        key={`adopter-${adopter.id}-${i}`}
                                         href={`/adopter/${adopter.id}?ref=my-adopters`}
                                         prefetch={false}
                                         className="grid grid-cols-12 gap-2 px-4 py-3 hover:bg-stone-50 transition-colors group items-center"
@@ -197,6 +320,11 @@ export default function MyAdoptersPage() {
                                             <span>👁 {adopter.profileViews}</span>
                                             <span>📋 {adopter.requestCount}</span>
                                             <span>🏠 {adopter.adoptionCount}</span>
+                                            {(adopter.formCount ?? 0) > 0 && (
+                                                <span className="text-teal-600 font-medium" title={t('dashboard.forms_linked') || 'Forms filled'}>
+                                                    📄 {adopter.formCount} {(adopter.formCount ?? 0) === 1 ? (t('dashboard.form_count_one') || 'form') : (t('dashboard.form_count') || 'forms')}
+                                                </span>
+                                            )}
                                         </div>
 
                                         {/* Flags */}
@@ -226,9 +354,9 @@ export default function MyAdoptersPage() {
 
                         {/* Mobile Cards - Hidden on desktop */}
                         <div className="md:hidden space-y-3">
-                            {adopters.map((adopter) => (
+                            {adopters.map((adopter, i) => (
                                 <Link
-                                    key={adopter.id}
+                                    key={`adopter-${adopter.id}-${i}`}
                                     href={`/adopter/${adopter.id}?ref=my-adopters`}
                                     prefetch={false}
                                     className="block bg-white rounded-xl p-4 shadow-sm border border-stone-200 hover:border-teal-300 hover:shadow-md transition-all"
@@ -256,6 +384,11 @@ export default function MyAdoptersPage() {
                                         <span>👁 {adopter.profileViews} {t('stats.views')}</span>
                                         <span>📋 {adopter.requestCount} {t('stats.requests')}</span>
                                         <span>🏠 {adopter.adoptionCount} {t('stats.adoptions')}</span>
+                                        {(adopter.formCount ?? 0) > 0 && (
+                                            <span className="text-teal-600 font-medium">
+                                                📄 {adopter.formCount} {(adopter.formCount ?? 0) === 1 ? (t('dashboard.form_count_one') || 'form') : (t('dashboard.form_count') || 'forms')}
+                                            </span>
+                                        )}
                                         {/* Flags on mobile */}
                                         <div className="flex gap-1 ml-auto">
                                             <FlagBadges flags={adopter.flags} t={t} />

@@ -1,10 +1,18 @@
 export const runtime = 'edge';
 import { redirect } from 'next/navigation';
 import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getAdoptionConfig, getDuplicateCandidates, getLinkedFormSubmissions } from '@/app/actions';
+import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
 import { AdopterProfile } from '@/components/AdopterProfile';
 
-export default async function AdopterPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function AdopterPage({
+    params,
+    searchParams,
+}: {
+    params: Promise<{ id: string }>;
+    searchParams: Promise<{ fromForm?: string }>;
+}) {
     const { id } = await params;
+    const { fromForm } = await searchParams;
     const isNew = id === 'create';
 
     // Batch 1: Auth + config (lightweight, no DB-heavy queries)
@@ -47,6 +55,11 @@ export default async function AdopterPage({ params }: { params: Promise<{ id: st
         availableAnimals = await getAvailableAnimals();
     }
 
+    let formPrefill = null;
+    if (isNew && fromForm?.trim()) {
+        formPrefill = await getFormSubmissionPrefill(fromForm.trim());
+    }
+
     return (
         <AdopterProfile
             id={id}
@@ -64,6 +77,7 @@ export default async function AdopterPage({ params }: { params: Promise<{ id: st
             adoptionConfig={adoptionConfig}
             duplicateCandidates={dupCandidates}
             linkedForms={linkedForms}
+            formPrefill={formPrefill}
         />
     );
 }

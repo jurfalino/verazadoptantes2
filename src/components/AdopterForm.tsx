@@ -2,7 +2,8 @@
 
 import { useState, useRef, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { saveAdopter } from "@/app/actions";
+import { saveAdopter, saveImage } from "@/app/actions";
+import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
 import { CollapsibleSection } from '@/components/CollapsibleSection';
 import { useSession } from 'next-auth/react';
@@ -19,7 +20,7 @@ import { renderTextWithLinks } from '@/lib/textUtils';
 import { AdopterFlagging } from '@/components/AdopterFlagging';
 import type { AdopterFlaggingHandle } from '@/components/AdopterFlagging';
 import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, HistoryEntry, AdoptionConfig } from '@/types/adopter';
-
+import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 
 interface AdopterFormProps {
     initialData?: Adopter | null;
@@ -32,9 +33,10 @@ interface AdopterFormProps {
     adoptions?: AdoptionRecord[];
     adoptionConfig?: AdoptionConfig;
     isAdmin?: boolean;
+    formPrefill?: FormSubmissionPrefill | null;
 }
 
-export function AdopterForm({ initialData, history = [], currentUser, images = [], adopterId, avgRating, flags = [], adoptions = [], adoptionConfig, isAdmin = false }: AdopterFormProps) {
+export function AdopterForm({ initialData, history = [], currentUser, images = [], adopterId, avgRating, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -80,12 +82,12 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
 
     const [data, setData] = useState({
         id: initialData?.id || '',
-        name: initialData?.name || '',
+        name: initialData?.name || formPrefill?.name || '',
         status: initialData?.status || defaultStatus,
-        contactInfo: initialData?.contactInfo || '',
+        contactInfo: initialData?.contactInfo || formPrefill?.contactInfo || '',
 
         familyMembers: initialData?.familyMembers || '',
-        notes: initialData?.notes || '',
+        notes: initialData?.notes || formPrefill?.notes || '',
     });
 
     const handleSave = async (e: React.FormEvent) => {
@@ -101,6 +103,21 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
             const res = await saveAdopter(data);
             if (res.success) {
                 if (isNew) {
+                    if (formPrefill?.selfieUrl) {
+                        try {
+                            await saveImage(res.id, formPrefill.selfieUrl, t('formResults.selfie_alt') || 'Applicant selfie');
+                        } catch (imgErr) {
+                            console.warn('[AdopterForm] Save selfie from form prefill failed', imgErr);
+                        }
+                    }
+                    const fromFormId = searchParams.get('fromForm');
+                    if (fromFormId?.trim()) {
+                        try {
+                            await linkFormSubmissionToAdopter(fromFormId.trim(), res.id);
+                        } catch (linkErr) {
+                            console.warn('[AdopterForm] Link form submission to adopter failed', linkErr);
+                        }
+                    }
                     // Check if we should continue to adoption form
                     const continueToAdoption = searchParams.get('continueToAdoption');
                     const animalName = searchParams.get('animalName') || '';
@@ -163,12 +180,12 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
             // Reset data and exit edit mode
             setData({
                 id: initialData?.id || '',
-                name: initialData?.name || '',
+                name: initialData?.name || formPrefill?.name || '',
                 status: initialData?.status || '5',
-                contactInfo: initialData?.contactInfo || '',
+                contactInfo: initialData?.contactInfo || formPrefill?.contactInfo || '',
 
                 familyMembers: initialData?.familyMembers || '',
-                notes: initialData?.notes || '',
+                notes: initialData?.notes || formPrefill?.notes || '',
             });
             setIsEditing(false);
         }
@@ -279,14 +296,22 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                     {/* Identity row: avatar + name + metadata */}
                     <div className="flex items-center gap-3">
                         {/* Avatar */}
-                        {!isNew && (() => {
+                        {isNew && formPrefill?.selfieUrl ? (
+                            <div className="w-11 h-11 md:w-14 md:h-14 rounded-xl bg-teal-100 overflow-hidden ring-2 ring-teal-200 shadow-sm flex-shrink-0">
+                                <img
+                                    src={formPrefill.selfieUrl.includes('r2.dev') ? `/api/proxy-image?url=${encodeURIComponent(formPrefill.selfieUrl)}` : formPrefill.selfieUrl}
+                                    alt=""
+                                    className="w-full h-full object-cover"
+                                />
+                            </div>
+                        ) : !isNew && (() => {
                             const profilePic = images.length > 0
                                 ? (images.find(img => img.isProfilePicture === 1) || images[0])
                                 : null;
                             if (profilePic) {
                                 return (
                                     <div className="w-11 h-11 md:w-14 md:h-14 rounded-xl bg-teal-100 overflow-hidden ring-2 ring-teal-200 shadow-sm flex-shrink-0">
-                                        <img src={profilePic.url} alt="" className="w-full h-full object-cover" />
+                                        <img src={profilePic.url.includes('r2.dev') ? `/api/proxy-image?url=${encodeURIComponent(profilePic.url)}` : profilePic.url} alt="" className="w-full h-full object-cover" />
                                     </div>
                                 );
                             }

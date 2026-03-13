@@ -23,7 +23,18 @@ interface Adoption {
     date: number | null;
     rating: number | null;
     recordType: string | null;
+    comments: string | null;
     images: AdoptionImage[];
+}
+
+function getContractUrl(comments: string | null | undefined): string | null {
+    if (!comments) return null;
+    try {
+        const parsed = JSON.parse(comments) as { contractScreenshot?: string };
+        return parsed?.contractScreenshot && typeof parsed.contractScreenshot === 'string' ? parsed.contractScreenshot : null;
+    } catch {
+        return null;
+    }
 }
 
 const RECORD_TYPES = ['all', 'adoption', 'adoption_request', 'observation', 'follow_up', 'returned_pet'] as const;
@@ -116,20 +127,22 @@ export default function MyAdoptionsPage() {
                     </Link>
                 </div>
 
-                {/* Type Filter Tabs */}
-                <div className="bg-white p-1.5 rounded-xl border border-stone-200 inline-flex flex-wrap gap-1 mb-6">
-                    {RECORD_TYPES.map((type) => (
-                        <Link
-                            key={type}
-                            href={`/my-adoptions?filter=${type}`}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${filter === type
-                                ? 'bg-stone-800 text-white shadow-sm'
-                                : 'text-stone-500 hover:text-stone-700 hover:bg-stone-100'
-                                }`}
-                        >
-                            {getTypeLabel(type)}
-                        </Link>
-                    ))}
+                {/* Type Filter Tabs - horizontal scroll on mobile, wrap on desktop */}
+                <div className="bg-white p-1.5 rounded-xl border border-stone-200 mb-6 overflow-x-auto md:overflow-visible">
+                    <div className="flex gap-1 md:flex-wrap min-w-0">
+                        {RECORD_TYPES.map((type) => (
+                            <Link
+                                key={type}
+                                href={`/my-adoptions?filter=${type}`}
+                                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${filter === type
+                                    ? 'bg-stone-800 text-white shadow-sm'
+                                    : 'text-stone-500 hover:text-stone-700 hover:bg-stone-100'
+                                    }`}
+                            >
+                                {getTypeLabel(type)}
+                            </Link>
+                        ))}
+                    </div>
                 </div>
 
                 {adoptions.length === 0 ? (
@@ -157,7 +170,9 @@ export default function MyAdoptionsPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-stone-100">
-                                    {adoptions.map((adoption) => (
+                                    {adoptions.map((adoption) => {
+                                        const contractUrl = getContractUrl(adoption.comments);
+                                        return (
                                         <tr key={adoption.id} className="hover:bg-stone-50/50 transition-colors group">
                                             <td className="py-3 px-4">
                                                 <div className="flex items-center gap-3">
@@ -201,16 +216,33 @@ export default function MyAdoptionsPage() {
                                                 </span>
                                             </td>
                                             <td className="py-3 px-4">
-                                                {adoption.adopterId && adoption.adopterName ? (
-                                                    <Link
-                                                        href={`/adopter/${adoption.adopterId}`}
-                                                        className="font-medium text-teal-700 hover:text-teal-900 hover:underline transition-colors text-sm"
-                                                    >
-                                                        {adoption.adopterName}
-                                                    </Link>
-                                                ) : (
-                                                    <span className="text-stone-500 italic text-sm">{t('dashboard.no_adopter') || '—'}</span>
-                                                )}
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    {adoption.adopterId && adoption.adopterName ? (
+                                                        <Link
+                                                            href={`/adopter/${adoption.adopterId}`}
+                                                            className="font-medium text-teal-700 hover:text-teal-900 hover:underline transition-colors text-sm"
+                                                        >
+                                                            {adoption.adopterName}
+                                                        </Link>
+                                                    ) : (
+                                                        <span className="text-stone-500 italic text-sm">{t('dashboard.no_adopter') || '—'}</span>
+                                                    )}
+                                                    {contractUrl && (
+                                                        <a
+                                                            href={contractUrl}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="inline-flex items-center gap-2 rounded-lg bg-teal-50 px-2.5 py-2 text-xs font-medium text-teal-700 hover:bg-teal-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 min-h-[44px] md:min-h-0 md:py-1.5 transition-colors"
+                                                            title={t('dashboard.view_signed_contract') || 'View signed contract'}
+                                                        >
+                                                            <span aria-hidden className="shrink-0">
+                                                                <svg className="w-4 h-4 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                                            </span>
+                                                            <span>{t('dashboard.view_contract') || 'View contract'}</span>
+                                                            <svg className="w-3.5 h-3.5 shrink-0 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                                        </a>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="py-3 px-4 text-sm text-stone-500 font-medium">
                                                 {adoption.date ? formatShortDate(adoption.date) : t('dashboard.na')}
@@ -219,14 +251,17 @@ export default function MyAdoptionsPage() {
                                                 {adoption.rating && <RatingBadge rating={adoption.rating} size="sm" />}
                                             </td>
                                         </tr>
-                                    ))}
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
 
                         {/* Mobile Cards - Hidden on desktop */}
                         <div className="md:hidden space-y-3">
-                            {adoptions.map((adoption) => (
+                            {adoptions.map((adoption) => {
+                                const contractUrl = getContractUrl(adoption.comments);
+                                return (
                                 <div
                                     key={adoption.id}
                                     className="bg-white rounded-xl p-4 shadow-sm border border-stone-200"
@@ -267,10 +302,10 @@ export default function MyAdoptionsPage() {
                                         {adoption.rating && <RatingBadge rating={adoption.rating} size="sm" />}
                                     </div>
 
-                                    {/* Info Row */}
-                                    <div className="flex items-center justify-between text-xs border-t border-stone-100 pt-2">
-                                        {/* Adopter */}
-                                        <div className="text-stone-600">
+                                    {/* Info section - stacked on mobile to avoid cramped layout */}
+                                    <div className="border-t border-stone-100 pt-3 space-y-3">
+                                        {/* Row 1: Adopter name only */}
+                                        <div className="text-xs text-stone-600">
                                             {adoption.adopterId && adoption.adopterName ? (
                                                 <Link
                                                     href={`/adopter/${adoption.adopterId}`}
@@ -282,9 +317,24 @@ export default function MyAdoptionsPage() {
                                                 <span className="text-stone-500 italic">{t('dashboard.no_adopter') || '—'}</span>
                                             )}
                                         </div>
-                                        {/* Date - right aligned */}
-                                        <div className="text-stone-500">
-                                            📅 {adoption.date ? formatShortDate(adoption.date) : t('dashboard.na')}
+                                        {/* Row 2: Contract button (full width on narrow mobile) + Date */}
+                                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                            {contractUrl && (
+                                                <a
+                                                    href={contractUrl}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-50 px-3 py-2.5 text-xs font-medium text-teal-700 hover:bg-teal-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 min-h-[44px] transition-colors w-full sm:w-auto"
+                                                    title={t('dashboard.view_signed_contract') || 'View signed contract'}
+                                                >
+                                                    <svg className="w-4 h-4 shrink-0 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                                    <span>{t('dashboard.view_contract') || 'View contract'}</span>
+                                                    <svg className="w-3.5 h-3.5 shrink-0 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                                </a>
+                                            )}
+                                            <div className="text-xs text-stone-500 shrink-0">
+                                                📅 {adoption.date ? formatShortDate(adoption.date) : t('dashboard.na')}
+                                            </div>
                                         </div>
                                     </div>
 
@@ -307,7 +357,8 @@ export default function MyAdoptionsPage() {
                                         </div>
                                     )}
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </>
                 )}
