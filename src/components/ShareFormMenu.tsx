@@ -4,6 +4,7 @@ import { useState } from 'react';
 
 // External contract app domain
 const CONTRACT_BASE = (process.env.NEXT_PUBLIC_CONTRACT_URL || 'https://adoptions.pages.dev').replace(/\/+$/, '');
+const QR_API = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=';
 
 interface ShareFormMenuProps {
     userId: string;
@@ -11,6 +12,7 @@ interface ShareFormMenuProps {
 
 export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
     const [isOpen, setIsOpen] = useState(false);
+    const [showQr, setShowQr] = useState(false);
     const [copied, setCopied] = useState(false);
 
     const fullUrl = `${CONTRACT_BASE}/form?u=${encodeURIComponent(userId)}`;
@@ -66,7 +68,7 @@ export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
             {isOpen && (
                 <div
                     className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200"
-                    onClick={() => setIsOpen(false)}
+                    onClick={() => { setIsOpen(false); setShowQr(false); }}
                 >
                     <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
                     <div
@@ -79,12 +81,12 @@ export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center text-lg">📋</div>
                                     <div>
-                                        <h3 className="font-semibold text-stone-900 text-sm">Compartir Formulario</h3>
-                                        <p className="text-xs text-stone-500 mt-0.5">Enviar formulario de adopción</p>
+                                        <h3 className="font-semibold text-stone-900 text-sm">{showQr ? 'Código QR' : 'Compartir Formulario'}</h3>
+                                        <p className="text-xs text-stone-500 mt-0.5">{showQr ? 'Escanear para abrir el formulario' : 'Enviar formulario de adopción'}</p>
                                     </div>
                                 </div>
                                 <button
-                                    onClick={() => setIsOpen(false)}
+                                    onClick={() => showQr ? setShowQr(false) : setIsOpen(false)}
                                     className="w-8 h-8 rounded-full flex items-center justify-center text-stone-500 hover:bg-stone-100 hover:text-stone-600 transition-colors"
                                 >
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -92,6 +94,14 @@ export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
                             </div>
                         </div>
 
+                        {showQr ? (
+                            <div className="p-5 flex flex-col items-center">
+                                <p className="text-xs text-stone-500 mb-3 text-center">Que el adoptante escanee para abrir el formulario</p>
+                                <img src={QR_API + encodeURIComponent(fullUrl)} alt="QR del enlace" className="rounded-xl border border-stone-200 bg-white" width={220} height={220} />
+                                <p className="text-xs text-stone-400 mt-3 truncate max-w-full px-2">{fullUrl}</p>
+                            </div>
+                        ) : (
+                        <>
                         {/* Share Options */}
                         <div className="p-3 space-y-1">
                             <a
@@ -145,6 +155,19 @@ export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
                                 </div>
                             </button>
 
+                            <button
+                                onClick={() => setShowQr(true)}
+                                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left hover:bg-stone-50 active:bg-stone-100 transition-colors"
+                            >
+                                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
+                                    <svg className="w-5 h-5 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
+                                </div>
+                                <div>
+                                    <p className="text-sm font-semibold text-stone-900">Código QR</p>
+                                    <p className="text-xs text-stone-500">Mostrar QR para escanear</p>
+                                </div>
+                            </button>
+
                             {typeof navigator !== 'undefined' && 'share' in navigator && (
                                 <button
                                     onClick={handleNativeShare}
@@ -165,6 +188,8 @@ export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
                                 El adoptante podrá completar el formulario desde este enlace
                             </p>
                         </div>
+                        </>
+                        )}
                     </div>
                 </div>
             )}

@@ -55,50 +55,7 @@ const DEFAULT_SCHEMA: FormStep[] = [
         body: 'Completá este breve formulario para registrar tu interés en adoptar. Nos ayuda a encontrar el animal ideal según lo que buscás. El rescatista revisará tu solicitud para ponerse en contacto.',
         legalRef: 'Ley 25.326',
     },
-    {
-        id: 'identity-name', type: 'text-fields', title: '¿Cómo te llamás?',
-        fields: [
-            { name: 'name', label: 'Nombre completo', placeholder: 'Juan García', required: true },
-        ],
-    },
-    {
-        id: 'identity-email', type: 'text-fields', title: '¿Cuál es tu email?',
-        fields: [
-            { name: 'email', label: 'Email', placeholder: 'juan@ejemplo.com', required: true, validation: 'email' },
-        ],
-    },
-    {
-        id: 'identity-phone', type: 'text-fields', title: '¿Tu teléfono?',
-        fields: [
-            { name: 'phone', label: 'Teléfono', placeholder: '+54 11 1234-5678', validation: 'phone-ar' },
-        ],
-    },
-    {
-        id: 'identity-address', type: 'text-fields', title: '¿Dónde vivís?',
-        fields: [
-            { name: 'address', label: 'Dirección', placeholder: 'Av. Corrientes 1234, CABA', required: true },
-        ],
-    },
-    {
-        id: 'ageRange', type: 'segmented-cards', title: '¿Qué edad tenés?',
-        options: [
-            { value: '18-25', label: '18–25' },
-            { value: '26-35', label: '26–35' },
-            { value: '36-45', label: '36–45' },
-            { value: '46-55', label: '46–55' },
-            { value: '56+', label: '56+' },
-        ],
-    },
-    {
-        id: 'geo', type: 'geolocation',
-        question: '¿Estás actualmente en tu domicilio?',
-        yesLabel: 'Sí, estoy en mi casa', noLabel: 'No',
-    },
-    {
-        id: 'selfie', type: 'camera-upload',
-        title: 'Verificación de identidad',
-        instructions: 'Tomá una selfie o subí una foto tuya para verificar tu identidad.',
-    },
+    // Preferences & situation first (honesty-friendly order)
     {
         id: 'species', type: 'icon-cards', title: '¿Qué animal buscás?',
         options: [
@@ -155,21 +112,21 @@ const DEFAULT_SCHEMA: FormStep[] = [
         id: 'housingType', type: 'icon-cards', title: '¿Dónde vivís?',
         options: [
             { value: 'house', label: 'Casa', icon: 'outdoor' },
-            { value: 'apartment', label: 'Departamento', icon: 'presence' },
+            { value: 'apartment', label: 'Departamento', icon: 'apartment' },
         ],
     },
     {
         id: 'hasOutdoor', type: 'icon-cards', title: '¿Tenés patio o jardín?',
         options: [
             { value: 'yes', label: 'Sí', icon: 'outdoor' },
-            { value: 'no', label: 'No', icon: 'presence' },
+            { value: 'no', label: 'No', icon: 'indoor' },
         ],
     },
     {
         id: 'isSafe', type: 'icon-cards', title: '¿El espacio está protegido?',
         options: [
             { value: 'yes', label: 'Sí, está cerrado', icon: 'outdoor' },
-            { value: 'no', label: 'No está cerrado', icon: 'presence' },
+            { value: 'no', label: 'No está cerrado', icon: 'unfenced' },
             { value: 'na', label: 'No aplica', icon: 'other' },
         ],
     },
@@ -195,7 +152,7 @@ const DEFAULT_SCHEMA: FormStep[] = [
         id: 'willingToSterilize', type: 'icon-cards', title: '¿Estás dispuesto/a a castrar o esterilizar?',
         options: [
             { value: 'yes', label: 'Sí', icon: 'self' },
-            { value: 'no', label: 'No', icon: 'presence' },
+            { value: 'no', label: 'No', icon: 'decline' },
         ],
     },
     {
@@ -207,7 +164,7 @@ const DEFAULT_SCHEMA: FormStep[] = [
         id: 'movingPlans', type: 'icon-cards', title: '¿Tenés pensado mudarte pronto?',
         options: [
             { value: 'no', label: 'No', icon: 'outdoor' },
-            { value: 'maybe', label: 'Posiblemente', icon: 'presence' },
+            { value: 'maybe', label: 'Posiblemente', icon: 'maybe' },
             { value: 'yes', label: 'Sí', icon: 'gift' },
         ],
     },
@@ -216,9 +173,54 @@ const DEFAULT_SCHEMA: FormStep[] = [
         options: [
             { value: 'take', label: 'Lo llevo conmigo', icon: 'self' },
             { value: 'family', label: 'Lo cuida familia', icon: 'children' },
-            { value: 'sitter', label: 'Cuidador / guardería', icon: 'presence' },
+            { value: 'sitter', label: 'Cuidador / guardería', icon: 'sitter' },
             { value: 'unsure', label: 'No lo sé aún', icon: 'other' },
         ],
+    },
+    // Identity & verification last
+    {
+        id: 'identity-name', type: 'text-fields', title: '¿Cómo te llamás?',
+        fields: [
+            { name: 'name', label: 'Nombre completo', placeholder: 'Juan García', required: true },
+        ],
+    },
+    {
+        id: 'identity-email', type: 'text-fields', title: '¿Cuál es tu email?',
+        fields: [
+            { name: 'email', label: 'Email', placeholder: 'juan@ejemplo.com', required: true, validation: 'email' },
+        ],
+    },
+    {
+        id: 'identity-phone', type: 'text-fields', title: '¿Tu teléfono?',
+        fields: [
+            { name: 'phone', label: 'Teléfono', placeholder: '+54 11 1234-5678', validation: 'phone-ar' },
+        ],
+    },
+    {
+        id: 'identity-address', type: 'text-fields', title: '¿Dónde vivís?',
+        fields: [
+            { name: 'address', label: 'Dirección', placeholder: 'Av. Corrientes 1234, CABA', required: true },
+        ],
+    },
+    {
+        id: 'ageRange', type: 'segmented-cards', title: '¿Qué edad tenés?',
+        options: [
+            { value: '18-25', label: '18–25' },
+            { value: '26-35', label: '26–35' },
+            { value: '36-45', label: '36–45' },
+            { value: '46-55', label: '46–55' },
+            { value: '56+', label: '56+' },
+        ],
+    },
+    {
+        id: 'geo', type: 'geolocation',
+        question: '¿Estás actualmente en tu domicilio?',
+        yesLabel: 'Sí, estoy en mi casa', noLabel: 'No',
+    },
+    {
+        id: 'selfie', type: 'camera-upload',
+        title: 'Verificación de identidad',
+        instructions: 'Tomá una selfie o subí una foto tuya para verificar tu identidad.',
     },
 ]
 
@@ -387,6 +389,56 @@ const ICONS: Record<string, React.ReactNode> = {
             <circle cx="24" cy="24" r="6" fill="#818cf8" opacity="0.5" />
             <circle cx="24" cy="22" r="3" fill="#a5b4fc" />
             <path d="M19 29c0-3 2-5 5-5s5 2 5 5" fill="#a5b4fc" opacity="0.6" />
+        </svg>
+    ),
+    apartment: (
+        <svg viewBox="0 0 48 48" fill="none">
+            <rect x="6" y="18" width="36" height="24" rx="2" fill="#818cf8" />
+            <rect x="6" y="18" width="36" height="8" fill="#a5b4fc" opacity="0.5" />
+            <line x1="6" y1="26" x2="42" y2="26" stroke="#6366f1" strokeWidth="1" opacity="0.5" />
+            <line x1="6" y1="34" x2="42" y2="34" stroke="#6366f1" strokeWidth="1" opacity="0.5" />
+            <rect x="12" y="22" width="5" height="4" rx="0.5" fill="#c7d2fe" />
+            <rect x="22" y="22" width="5" height="4" rx="0.5" fill="#c7d2fe" />
+            <rect x="32" y="22" width="5" height="4" rx="0.5" fill="#c7d2fe" />
+            <rect x="12" y="30" width="5" height="4" rx="0.5" fill="#c7d2fe" />
+            <rect x="22" y="30" width="5" height="4" rx="0.5" fill="#c7d2fe" />
+            <rect x="32" y="30" width="5" height="4" rx="0.5" fill="#c7d2fe" />
+        </svg>
+    ),
+    indoor: (
+        <svg viewBox="0 0 48 48" fill="none">
+            <rect x="8" y="8" width="32" height="28" rx="2" fill="#818cf8" opacity="0.4" />
+            <rect x="14" y="14" width="20" height="16" rx="1" fill="#a5b4fc" opacity="0.5" />
+            <path d="M22 14v16M26 14v16M14 22h20" stroke="#6366f1" strokeWidth="1.2" opacity="0.6" />
+            <rect x="8" y="36" width="32" height="4" rx="1" fill="#818cf8" opacity="0.5" />
+        </svg>
+    ),
+    unfenced: (
+        <svg viewBox="0 0 48 48" fill="none">
+            <path d="M8 38V18l16-10 16 10v20" stroke="#818cf8" strokeWidth="2" fill="none" strokeLinejoin="round" />
+            <path d="M8 38V18l16-10 16 10v20" stroke="#a5b4fc" strokeWidth="1" fill="none" strokeLinejoin="round" opacity="0.5" />
+            <line x1="8" y1="24" x2="40" y2="24" stroke="#818cf8" strokeWidth="1.5" strokeDasharray="3 2" opacity="0.7" />
+        </svg>
+    ),
+    decline: (
+        <svg viewBox="0 0 48 48" fill="none">
+            <circle cx="24" cy="24" r="16" fill="#818cf8" opacity="0.3" />
+            <circle cx="24" cy="24" r="12" fill="#a5b4fc" opacity="0.4" />
+            <path d="M16 24h16" stroke="#6366f1" strokeWidth="3" strokeLinecap="round" />
+        </svg>
+    ),
+    maybe: (
+        <svg viewBox="0 0 48 48" fill="none">
+            <circle cx="24" cy="24" r="14" fill="#818cf8" opacity="0.3" />
+            <path d="M24 18v4M24 28v2" stroke="#6366f1" strokeWidth="2.5" strokeLinecap="round" />
+            <circle cx="24" cy="34" r="2.5" fill="#6366f1" />
+        </svg>
+    ),
+    sitter: (
+        <svg viewBox="0 0 48 48" fill="none">
+            <circle cx="24" cy="14" r="8" fill="#818cf8" />
+            <path d="M10 42c0-10 6-16 14-16s14 6 14 16" fill="#a5b4fc" opacity="0.6" />
+            <path d="M20 28l4 4 8-10" stroke="#34d399" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
         </svg>
     ),
 }

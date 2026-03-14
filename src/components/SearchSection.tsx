@@ -65,19 +65,21 @@ export default function SearchSection() {
 
     const handleCreateNew = (e: React.MouseEvent) => {
         e.preventDefault();
+        const nameParam = query.trim() ? `?name=${encodeURIComponent(query.trim())}` : '';
+        const createUrl = `/adopter/create${nameParam}`;
         if (!session?.user) {
-            openLogin('/adopter/create');
+            openLogin(createUrl);
         } else {
             try {
-                router.push('/adopter/create');
+                router.push(createUrl);
                 // Fallback if router fails
                 setTimeout(() => {
                     if (!window.location.pathname.includes('/adopter/')) {
-                        window.location.href = '/adopter/create';
+                        window.location.href = createUrl;
                     }
                 }, 500);
             } catch (e) {
-                window.location.href = '/adopter/create';
+                window.location.href = createUrl;
             }
         }
     };

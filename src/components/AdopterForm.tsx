@@ -80,9 +80,11 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
     // Status uses numeric values 1-5 only
     const defaultStatus = intent === 'report' ? '1' : '5';
 
+    // Name can come from URL when coming from homepage search or Adoption/Report wizard
+    const nameFromUrl = searchParams.get('name')?.trim() || '';
     const [data, setData] = useState({
         id: initialData?.id || '',
-        name: initialData?.name || formPrefill?.name || '',
+        name: initialData?.name || formPrefill?.name || nameFromUrl || '',
         status: initialData?.status || defaultStatus,
         contactInfo: initialData?.contactInfo || formPrefill?.contactInfo || '',
 
@@ -132,6 +134,8 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                         if (linkAnimalId) params.set('linkAnimalId', linkAnimalId);
                         if (animalName) params.set('animalName', animalName);
                         if (species) params.set('species', species);
+                        const date = searchParams.get('date');
+                        if (date) params.set('date', date);
                         // Forward observation params (ReportWizard)
                         const newAdoption = searchParams.get('newAdoption');
                         const rating = searchParams.get('rating');
@@ -180,7 +184,7 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
             // Reset data and exit edit mode
             setData({
                 id: initialData?.id || '',
-                name: initialData?.name || formPrefill?.name || '',
+                name: initialData?.name || formPrefill?.name || nameFromUrl || '',
                 status: initialData?.status || '5',
                 contactInfo: initialData?.contactInfo || formPrefill?.contactInfo || '',
 

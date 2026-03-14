@@ -45,7 +45,8 @@ export default function NotificationBell() {
 
     const isAuthenticated = !!session?.user?.email;
 
-    // Poll unread count every 60s
+    const POLL_INTERVAL_MS = 25_000; // Check for new notifications every 25s
+
     const fetchCount = useCallback(async () => {
         if (!isAuthenticated) return;
         try {
@@ -54,7 +55,6 @@ export default function NotificationBell() {
             const data = await res.json() as { unreadCount: number };
             const newCount = data.unreadCount || 0;
 
-            // Trigger pulse animation when count increases
             if (newCount > prevCountRef.current) {
                 setFreshPulse(true);
                 setTimeout(() => setFreshPulse(false), 3000);
@@ -64,11 +64,31 @@ export default function NotificationBell() {
         } catch { /* silent */ }
     }, [isAuthenticated]);
 
+    const fetchFullList = useCallback(async () => {
+        if (!isAuthenticated) return;
+        try {
+            const res = await fetch('/api/notifications');
+            if (!res.ok) return;
+            const data = await res.json() as { items: NotificationItem[]; unreadCount: number };
+            setItems(data.items || []);
+            setUnreadCount(data.unreadCount ?? 0);
+            prevCountRef.current = data.unreadCount ?? 0;
+        } catch { /* silent */ }
+    }, [isAuthenticated]);
+
+    // Poll unread count regularly + refetch when tab becomes visible
     useEffect(() => {
         if (!isAuthenticated) return;
         fetchCount();
-        const interval = setInterval(fetchCount, 60_000);
-        return () => clearInterval(interval);
+        const interval = setInterval(fetchCount, POLL_INTERVAL_MS);
+        const onVisibilityChange = () => {
+            if (document.visibilityState === 'visible') fetchCount();
+        };
+        document.addEventListener('visibilitychange', onVisibilityChange);
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', onVisibilityChange);
+        };
     }, [fetchCount, isAuthenticated]);
 
     // Close dropdown on click outside
@@ -82,24 +102,22 @@ export default function NotificationBell() {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // Fetch full list when dropdown opens
+    // Fetch full list when dropdown opens; while open, refresh list periodically
     const handleToggle = async () => {
         const willOpen = !open;
         setOpen(willOpen);
         if (willOpen) {
             setLoading(true);
-            try {
-                const res = await fetch('/api/notifications');
-                if (res.ok) {
-                    const data = await res.json() as { items: NotificationItem[]; unreadCount: number };
-                    setItems(data.items || []);
-                    setUnreadCount(data.unreadCount || 0);
-                    prevCountRef.current = data.unreadCount || 0;
-                }
-            } catch { /* silent */ }
+            await fetchFullList();
             setLoading(false);
         }
     };
+
+    useEffect(() => {
+        if (!open || !isAuthenticated) return;
+        const interval = setInterval(fetchFullList, POLL_INTERVAL_MS);
+        return () => clearInterval(interval);
+    }, [open, isAuthenticated, fetchFullList]);
 
     // Click a notification → mark read + navigate
     const handleClick = async (item: NotificationItem) => {

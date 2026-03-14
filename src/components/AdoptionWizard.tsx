@@ -313,6 +313,18 @@ export default function AdoptionWizard() {
 
                 {step === 2 && (
                     <div className="space-y-5">
+                        {/* Step 1 summary — show animal and date so user sees what they entered */}
+                        <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-stone-100 rounded-xl text-sm text-stone-700">
+                            <span className="font-semibold text-stone-500">{t('adoption.animal_name') || 'Animal'}:</span>
+                            <span className="font-medium">{animalData.animalName || (animalMode === 'existing' && selectedAnimalId ? availableAnimals.find(a => a.id === selectedAnimalId)?.animalName : '—')}</span>
+                            <span className="text-stone-400">·</span>
+                            <span className="font-semibold text-stone-500">{t('adoption.species') || 'Species'}:</span>
+                            <span className="font-medium">{animalMode === 'existing' && selectedAnimalId ? availableAnimals.find(a => a.id === selectedAnimalId)?.species : animalData.species}</span>
+                            <span className="text-stone-400">·</span>
+                            <span className="font-semibold text-stone-500">{t('adoption.date') || 'Date'}:</span>
+                            <span className="font-medium">{adoptionDate || '—'}</span>
+                        </div>
+
                         {/* Preview Panel */}
                         {previewAdopter ? (
                             <div className="animate-in slide-in-from-right duration-200">

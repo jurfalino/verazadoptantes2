@@ -61,6 +61,8 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
 
     // Check if we should auto-open the form with prefilled animal data (from new adopter flow)
     const newAdoptionParam = searchParams.get('newAdoption');
+    const continueToAdoption = searchParams.get('continueToAdoption') === 'true';
+    const shouldOpenFromWizard = !!newAdoptionParam || continueToAdoption;
     const prefillAnimalName = searchParams.get('animalName') || '';
     const prefillSpecies = searchParams.get('species') || 'cat';
     // Support newAdoption=observation to preselect observation type
@@ -70,7 +72,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
     const prefillDetails = searchParams.get('details') || '';
     const prefillDate = searchParams.get('date') || '';
 
-    const [isOpen, setIsOpen] = useState(!!initialData || !!newAdoptionParam);
+    const [isOpen, setIsOpen] = useState(!!initialData || shouldOpenFromWizard);
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [adoptionImages, setAdoptionImages] = useState<any[]>([]);
@@ -86,7 +88,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
 
     // New Feature State: "existing" or "new"
     // If wizard prefilled animal data, default to 'new' — the choice was already made
-    const [mode, setMode] = useState<'existing' | 'new'>(newAdoptionParam ? 'new' : 'existing');
+    const [mode, setMode] = useState<'existing' | 'new'>(shouldOpenFromWizard ? 'new' : 'existing');
 
     const [formData, setFormData] = useState({
         id: initialData?.id,
@@ -145,7 +147,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
 
     // Auto-scroll to adoption form when coming from new adopter flow or observation flow
     useEffect(() => {
-        if (newAdoptionParam) {
+        if (shouldOpenFromWizard) {
             // Small delay to ensure the form is rendered
             setTimeout(() => {
                 const formElement = document.getElementById('adoption-form-section');
@@ -154,7 +156,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                 }
             }, 100);
         }
-    }, [newAdoptionParam]);
+    }, [shouldOpenFromWizard]);
 
     const handleSelectExisting = (animalId: string) => {
         if (!animalId) return;
@@ -352,8 +354,8 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
         )
     }
 
-    // Hide switcher when wizard already made the new/existing choice (newAdoptionParam)
-    const showModeSwitcher = !initialData && !newAdoptionParam && availableAnimals && (availableAnimals?.length ?? 0) > 0;
+    // Hide switcher when wizard already made the new/existing choice (newAdoptionParam or continueToAdoption)
+    const showModeSwitcher = !initialData && !shouldOpenFromWizard && availableAnimals && (availableAnimals?.length ?? 0) > 0;
     const effectiveMode = showModeSwitcher ? mode : 'new';
 
     // Defensive: ensure all arrays are actually arrays (guards against undefined from any source)
