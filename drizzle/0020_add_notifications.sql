@@ -1,5 +1,5 @@
 -- Migration: Add notifications table for in-app notification system
-CREATE TABLE notifications (
+CREATE TABLE IF NOT EXISTS notifications (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
   type TEXT NOT NULL DEFAULT 'contract_result',
@@ -12,4 +12,4 @@ CREATE TABLE notifications (
   created_at INTEGER DEFAULT (strftime('%s', 'now')),
   expires_at INTEGER
 );
-CREATE INDEX idx_notif_user ON notifications(user_id, read, created_at);
+CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id, read, created_at);

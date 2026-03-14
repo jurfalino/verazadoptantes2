@@ -66,7 +66,6 @@ CREATE TABLE IF NOT EXISTS `form_submissions` (
 	`special_needs` integer DEFAULT 0,
 	`intent` text,
 	`household` text,
-	`answers_json` text,
 	`status` text DEFAULT 'pending',
 	`linked_adopter_id` text,
 	`notification_id` text,

@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { saveAdopter, saveImage } from "@/app/actions";
+import { saveAdopter, saveImage, searchAdopter } from "@/app/actions";
+import type { SearchResult } from "@/app/actions";
 import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
 import { CollapsibleSection } from '@/components/CollapsibleSection';
@@ -67,6 +68,26 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
     const [isEditing, setIsEditing] = useState(isNew);
     const [loading, setLoading] = useState(false);
 
+    // Duplicate detection (create only): while-typing results + save confirmation modal
+    const [duplicateResults, setDuplicateResults] = useState<SearchResult[] | null>(null);
+    const [duplicateSearching, setDuplicateSearching] = useState(false);
+    const [saveDuplicateModal, setSaveDuplicateModal] = useState<{ matches: SearchResult[] } | null>(null);
+    const saveDuplicateModalRef = useRef<HTMLDivElement>(null);
+    const createAnywayButtonRef = useRef<HTMLButtonElement>(null);
+    const duplicateDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const DUPLICATE_DEBOUNCE_MS = 350;
+
+    // Focus "Create new profile anyway" when save duplicate modal opens (accessibility)
+    useEffect(() => {
+        if (saveDuplicateModal) {
+            const id = setTimeout(() => createAnywayButtonRef.current?.focus(), 100);
+            return () => clearTimeout(id);
+        }
+    }, [saveDuplicateModal]);
+    const MIN_NAME_LENGTH_FOR_SEARCH = 2;
+    const MAX_DUPLICATE_CARD_RESULTS = 5;
+
     // Auth-gated click-to-edit: clicking any view field enables editing
     const handleClickToEdit = () => {
         if (isEditing) return;
@@ -92,14 +113,47 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
         notes: initialData?.notes || formPrefill?.notes || '',
     });
 
-    const handleSave = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!isAuthenticated) {
-            openLogin();
+    // Build search query from name + contact for duplicate check
+    const getDuplicateSearchQuery = useCallback(() => {
+        const parts = [data.name.trim(), data.contactInfo.trim()].filter(Boolean);
+        return parts.join(' ').trim();
+    }, [data.name, data.contactInfo]);
+
+    // Debounced duplicate search while typing (create only)
+    useEffect(() => {
+        if (!isNew) {
+            setDuplicateResults(null);
             return;
         }
+        const query = getDuplicateSearchQuery();
+        if (data.name.trim().length < MIN_NAME_LENGTH_FOR_SEARCH) {
+            setDuplicateResults(null);
+            return;
+        }
+        if (duplicateDebounceRef.current) clearTimeout(duplicateDebounceRef.current);
+        duplicateDebounceRef.current = setTimeout(async () => {
+            duplicateDebounceRef.current = null;
+            setDuplicateSearching(true);
+            try {
+                const response = await searchAdopter(query || data.name.trim());
+                if (response.validationError || !response.results?.length) {
+                    setDuplicateResults(null);
+                } else {
+                    setDuplicateResults((response.results || []).slice(0, MAX_DUPLICATE_CARD_RESULTS));
+                }
+            } catch {
+                setDuplicateResults(null);
+            } finally {
+                setDuplicateSearching(false);
+            }
+        }, DUPLICATE_DEBOUNCE_MS);
+        return () => {
+            if (duplicateDebounceRef.current) clearTimeout(duplicateDebounceRef.current);
+        };
+    }, [isNew, data.name, data.contactInfo, getDuplicateSearchQuery]);
 
-
+    // Perform the actual save (used after "Create new anyway" or when no duplicates)
+    const performActualSave = useCallback(async () => {
         setLoading(true);
         try {
             const res = await saveAdopter(data);
@@ -175,6 +229,29 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
         } finally {
             setLoading(false);
         }
+    }, [data, isNew, formPrefill, searchParams, router, t]);
+
+    const handleSave = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!isAuthenticated) {
+            openLogin();
+            return;
+        }
+        if (isNew) {
+            const query = getDuplicateSearchQuery() || data.name.trim();
+            if (query.length >= MIN_NAME_LENGTH_FOR_SEARCH) {
+                try {
+                    const response = await searchAdopter(query);
+                    if (!response.validationError && response.results?.length) {
+                        setSaveDuplicateModal({ matches: response.results });
+                        return;
+                    }
+                } catch {
+                    // Proceed to save on search error
+                }
+            }
+        }
+        await performActualSave();
     };
 
     const handleCancel = () => {
@@ -427,7 +504,64 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                         )}
                     </div>
 
-
+                    {/* Possible matching profiles (create only, non-blocking) */}
+                    {isNew && isEditing && (
+                        <>
+                            {duplicateSearching && (
+                                <div className="md:col-span-2 flex items-center gap-2 text-sm text-stone-500">
+                                    <span className="inline-block w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" aria-hidden />
+                                    {t('common.searching') || 'Searching'}…
+                                </div>
+                            )}
+                            {!duplicateSearching && duplicateResults && duplicateResults.length > 0 && (
+                                <div className="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50/80 p-4" role="region" aria-labelledby="duplicate-card-title">
+                                    <h4 id="duplicate-card-title" className="text-sm font-semibold text-amber-900 mb-1">
+                                        {t('import.duplicateCard_title') || 'Possible matching profiles'}
+                                    </h4>
+                                    <p className="text-xs text-amber-700 mb-3">
+                                        {t('import.duplicateCard_subtitle') || 'Similar names in your records'}
+                                    </p>
+                                    <ul className="space-y-2">
+                                        {duplicateResults.map((result) => (
+                                            <li key={result.adopter.id} className="flex items-center justify-between gap-3 p-2 rounded-lg bg-white/80 border border-amber-100">
+                                                <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                    {result.thumbnail ? (
+                                                        <img src={result.thumbnail} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
+                                                    ) : (
+                                                        <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 font-semibold text-sm flex-shrink-0">
+                                                            {result.adopter.name?.charAt(0)?.toUpperCase() || '?'}
+                                                        </div>
+                                                    )}
+                                                    <div className="min-w-0">
+                                                        <p className="font-semibold text-stone-800 text-sm truncate">{result.adopter.name}</p>
+                                                        {result.adopter.contactInfo && (
+                                                            <p className="text-xs text-stone-500 truncate">{result.adopter.contactInfo}</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-1 flex-shrink-0">
+                                                    <a
+                                                        href={`/adopter/${result.adopter.id}`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="px-2 py-1 text-xs font-medium text-stone-600 hover:text-stone-800 hover:bg-stone-100 rounded transition-colors"
+                                                    >
+                                                        {t('import.duplicateCard_view') || 'View'}
+                                                    </a>
+                                                    <a
+                                                        href={`/adopter/${result.adopter.id}`}
+                                                        className="px-3 py-1.5 text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors"
+                                                    >
+                                                        {t('import.duplicateCard_use_profile') || 'Use this profile'}
+                                                    </a>
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                        </>
+                    )}
 
                     {/* Family Members (Full Width) */}
                     <div className="md:col-span-2">
@@ -496,6 +630,78 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                     </div>
                 </div>
             </form>
+
+            {/* Save confirmation modal when possible duplicates found */}
+            {saveDuplicateModal && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/50 backdrop-blur-sm animate-in fade-in duration-200"
+                    onClick={() => setSaveDuplicateModal(null)}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="save-duplicate-modal-title"
+                    aria-describedby="save-duplicate-modal-desc"
+                >
+                    <div
+                        ref={saveDuplicateModalRef}
+                        className="relative bg-white rounded-2xl shadow-xl border border-stone-200 w-full max-w-md max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <h2 id="save-duplicate-modal-title" className="text-lg font-semibold text-stone-900 p-5 pb-2">
+                            {t('import.saveModal_title') || 'Possible duplicate profiles'}
+                        </h2>
+                        <p id="save-duplicate-modal-desc" className="text-sm text-stone-600 px-5 pb-4">
+                            {t('import.saveModal_body') || 'Creating a new profile may create a duplicate. You can link to an existing profile instead.'}
+                        </p>
+                        <ul className="px-5 space-y-2 max-h-48 overflow-y-auto">
+                            {saveDuplicateModal.matches.map((result) => (
+                                <li key={result.adopter.id} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-stone-50 border border-stone-200">
+                                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                                        {result.thumbnail ? (
+                                            <img src={result.thumbnail} alt="" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+                                        ) : (
+                                            <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-semibold flex-shrink-0">
+                                                {result.adopter.name?.charAt(0)?.toUpperCase() || '?'}
+                                            </div>
+                                        )}
+                                        <div className="min-w-0">
+                                            <p className="font-semibold text-stone-800 truncate">{result.adopter.name}</p>
+                                            {result.adopter.contactInfo && (
+                                                <p className="text-xs text-stone-500 truncate">{result.adopter.contactInfo}</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <a
+                                        href={`/adopter/${result.adopter.id}`}
+                                        className="px-3 py-1.5 text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors flex-shrink-0"
+                                    >
+                                        {t('import.saveModal_use_existing') || 'Use existing profile'}
+                                    </a>
+                                </li>
+                            ))}
+                        </ul>
+                        <div className="p-5 pt-4 flex flex-col sm:flex-row gap-2 sm:justify-end border-t border-stone-100">
+                            <button
+                                type="button"
+                                ref={createAnywayButtonRef}
+                                onClick={async () => {
+                                    setSaveDuplicateModal(null);
+                                    await performActualSave();
+                                }}
+                                className="px-4 py-2.5 text-sm font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-xl transition-colors"
+                            >
+                                {t('import.saveModal_create_anyway') || 'Create new profile anyway'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setSaveDuplicateModal(null)}
+                                className="px-4 py-2.5 text-sm font-semibold text-stone-600 hover:bg-stone-100 rounded-xl transition-colors"
+                            >
+                                {t('common.cancel')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* MERGED HISTORY LOG */}
             {history && history.length > 0 && !isEditing && (

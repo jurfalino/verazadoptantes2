@@ -495,6 +495,15 @@ export const es = {
         noAddresses: 'No se detectaron direcciones',
         noNotes: 'Notas adicionales',
         createAdopter: 'Crear Registro de Adoptante',
+        // Duplicate detection on create adopter form
+        duplicateCard_title: 'Posibles perfiles coincidentes',
+        duplicateCard_subtitle: 'Nombres similares en tus registros',
+        duplicateCard_use_profile: 'Usar este perfil',
+        duplicateCard_view: 'Ver',
+        saveModal_title: 'Posibles perfiles duplicados',
+        saveModal_body: 'Crear un perfil nuevo puede generar un duplicado. Podés vincular con un perfil existente.',
+        saveModal_use_existing: 'Usar perfil existente',
+        saveModal_create_anyway: 'Crear perfil nuevo igualmente',
         confidence: {
             high: 'Alta confianza',
             medium: 'Confianza media',

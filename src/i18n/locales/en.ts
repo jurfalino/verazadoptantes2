@@ -495,6 +495,15 @@ export const en = {
         noAddresses: 'No addresses detected',
         noNotes: 'Additional notes',
         createAdopter: 'Create Adopter Record',
+        // Duplicate detection on create adopter form
+        duplicateCard_title: 'Possible matching profiles',
+        duplicateCard_subtitle: 'Similar names in your records',
+        duplicateCard_use_profile: 'Use this profile',
+        duplicateCard_view: 'View',
+        saveModal_title: 'Possible duplicate profiles',
+        saveModal_body: 'Creating a new profile may create a duplicate. You can link to an existing profile instead.',
+        saveModal_use_existing: 'Use existing profile',
+        saveModal_create_anyway: 'Create new profile anyway',
         confidence: {
             high: 'High confidence',
             medium: 'Medium confidence',
