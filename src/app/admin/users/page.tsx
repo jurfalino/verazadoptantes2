@@ -4,6 +4,36 @@ import { useEffect, useState, useMemo } from 'react';
 import { formatDateTime } from '@/lib/dates';
 import { getCountryByCode } from '@/config/countries';
 
+function CopyIdButton({ id, className = '' }: { id: string; className?: string }) {
+    const [copied, setCopied] = useState(false);
+    const copy = async () => {
+        try {
+            await navigator.clipboard.writeText(id);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+        } catch {
+            // ignore
+        }
+    };
+    return (
+        <button
+            type="button"
+            onClick={copy}
+            title={id}
+            className={`inline-flex items-center gap-1.5 font-mono text-xs text-stone-500 hover:text-stone-700 transition-colors ${className}`}
+        >
+            <span className="truncate max-w-[7ch]">{id.slice(0, 8)}…</span>
+            {copied ? (
+                <span className="text-green-600 shrink-0">✓</span>
+            ) : (
+                <svg className="w-3.5 h-3.5 shrink-0 text-stone-400 hover:text-stone-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+            )}
+        </button>
+    );
+}
+
 interface UserProfile {
     id: string;
     name: string;
@@ -152,6 +182,7 @@ export default function AdminUsersPage() {
                     <thead className="bg-stone-50 text-stone-600 text-xs uppercase tracking-wider">
                         <tr>
                             <th className="px-4 py-3 text-left">User</th>
+                            <th className="px-4 py-3 text-left">ID</th>
                             <th className="px-4 py-3 text-left">Organization</th>
                             <th className="px-4 py-3 text-left">Role</th>
                             <th className="px-4 py-3 text-left">Country</th>
@@ -179,6 +210,9 @@ export default function AdminUsersPage() {
                                             </a>
                                         </div>
                                     </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                    <CopyIdButton id={user.id} />
                                 </td>
                                 <td className="px-4 py-3">
                                     {editingId === user.id ? (
@@ -281,7 +315,7 @@ export default function AdminUsersPage() {
                         ))}
                         {filteredUsers.length === 0 && (
                             <tr>
-                                <td colSpan={7} className="px-4 py-8 text-center text-stone-500">
+                                <td colSpan={8} className="px-4 py-8 text-center text-stone-500">
                                     {filter ? 'No users match your filter' : 'No users found'}
                                 </td>
                             </tr>
@@ -360,6 +394,10 @@ export default function AdminUsersPage() {
                             </div>
                         ) : (
                             <>
+                                <div className="flex items-center gap-2 text-xs mb-2">
+                                    <span className="text-stone-500">ID:</span>
+                                    <CopyIdButton id={user.id} className="flex-1 min-w-0" />
+                                </div>
                                 <div className="grid grid-cols-2 gap-2 text-xs mb-3">
                                     <div>
                                         <span className="text-stone-500">Org: </span>

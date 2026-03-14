@@ -44,7 +44,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         const { formSubmissions, adopters } = await import('@/db/schema');
         const { eq } = await import('drizzle-orm');
 
-        // Validate that userId belongs to a real user (userId is the user's UUID, not email)
+        // Validate that userId belongs to a real user (userId is the user's UUID from the DB)
         const { users } = await import('@/db/schema');
         const user = await db.select({ email: users.email }).from(users).where(eq(users.id, userId)).get();
         if (!user) {

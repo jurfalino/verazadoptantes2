@@ -13,7 +13,7 @@ export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [copied, setCopied] = useState(false);
 
-    const fullUrl = `${CONTRACT_BASE}/form?u=${userId}`;
+    const fullUrl = `${CONTRACT_BASE}/form?u=${encodeURIComponent(userId)}`;
     const shareText = 'Formulario de adopción responsable — PetShield';
 
     const handleCopyLink = async () => {
