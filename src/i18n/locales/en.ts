@@ -4,6 +4,7 @@ export const en = {
         cancel: 'Cancel',
         loading: 'Loading...',
         search: 'Search',
+        searching: 'Searching...',
         edit: 'Click to Edit',
         delete: 'Delete',
         back_to_search: 'Back to Search',
@@ -118,6 +119,10 @@ export const en = {
         email_magic_link: 'We\'ll send you a magic link to sign in.',
         check_email: 'Check your email for the login link!',
         cancel: 'Cancel'
+    },
+    errors: {
+        generic: 'Error',
+        adoption_processing: 'Error processing adoption. Please try again.',
     },
     search: {
         title: 'Vet an Adopter',
@@ -437,6 +442,7 @@ export const en = {
         add_animal: 'Add Animal',
         animal_details_placeholder: 'Personality, health status, any special needs...',
         animal_saved: 'Animal listed for adoption!',
+        animal_updated: 'Animal updated!',
         available: 'Available',
         already_adopted: 'Already Adopted',
         no_animals_title: 'No animals listed yet',
@@ -450,6 +456,12 @@ export const en = {
     wizard: {
         step_adopter: 'Identify Adopter',
         step_observation: 'Observation Details',
+        identify_animal: 'Identify Animal',
+        new_animal: 'New Animal',
+        existing_animal: 'Existing',
+        complete_adoption: 'Complete Adoption',
+        animal_name_placeholder: 'Animal Name',
+        adopter_selected: 'Adopter selected',
         existing_adopter: 'Search Existing',
         new_adopter: 'New Adopter',
         search_placeholder: 'Search by name, phone, email...',
@@ -772,6 +784,7 @@ export const en = {
         personMatchTitle: 'Existing Profiles Found',
         personMatchDesc: 'Select a profile to add this record to, or create a new one',
         matchedBy: 'Matched by:',
+        addInteraction: '➕ Add New Interaction to This Profile',
         addToExisting: 'Add Record to Selected Profile',
         addingRecord: 'Adding record...',
         createNewAnyway: 'Create New Profile Instead',
@@ -787,6 +800,15 @@ export const en = {
         duplicateUrl: 'This URL was already imported. Existing profile:',
         // Back button
         back: 'Back',
+        // Duplicate detection (adopter create form)
+        duplicateCard_title: 'Possible matching profiles',
+        duplicateCard_subtitle: 'Similar names in your records',
+        duplicateCard_view: 'View',
+        duplicateCard_use_profile: 'Use this profile',
+        saveModal_title: 'Possible duplicate profiles',
+        saveModal_body: 'Creating a new profile may create a duplicate. You can link to an existing profile instead.',
+        saveModal_use_existing: 'Use existing profile',
+        saveModal_create_anyway: 'Create new profile anyway',
         // AI validation
         aiValidationWarning: 'AI-extracted data may contain errors. Please verify all fields before saving.',
     },

@@ -6,20 +6,21 @@
 -- ADOPTERS (5 personas)
 -- ============================================================
 
-INSERT OR REPLACE INTO adopters (id, name, contact_info, address_info, family_members, notes, status, added_by, source_url, created_at, updated_at) VALUES
-('test-adopter-1', 'María García López', 'Tel: 555-1234, Email: maria@example.com', 'Calle Falsa 123, Buenos Aires', 'Juan García (esposo), Lucía García (hija)', 'Excelente adoptante, tiene experiencia con mascotas. Casa con patio grande.', '5', 'test-seed', NULL, strftime('%s','now'), strftime('%s','now'));
+-- Adopters: omit source_url so seed works with or without that column (migration 0004_cute_sunfire)
+INSERT OR REPLACE INTO adopters (id, name, contact_info, address_info, family_members, notes, status, added_by, created_at, updated_at) VALUES
+('test-adopter-1', 'María García López', 'Tel: 555-1234, Email: maria@example.com', 'Calle Falsa 123, Buenos Aires', 'Juan García (esposo), Lucía García (hija)', 'Excelente adoptante, tiene experiencia con mascotas. Casa con patio grande.', '5', 'test-seed', strftime('%s','now'), strftime('%s','now'));
 
-INSERT OR REPLACE INTO adopters (id, name, contact_info, address_info, family_members, notes, status, added_by, source_url, created_at, updated_at) VALUES
-('test-adopter-2', 'Carlos Danger', 'Tel: 555-9999', NULL, NULL, 'Reportado por maltrato animal. Múltiples denuncias.', '1', 'test-seed', NULL, strftime('%s','now'), strftime('%s','now'));
+INSERT OR REPLACE INTO adopters (id, name, contact_info, address_info, family_members, notes, status, added_by, created_at, updated_at) VALUES
+('test-adopter-2', 'Carlos Danger', 'Tel: 555-9999', NULL, NULL, 'Reportado por maltrato animal. Múltiples denuncias.', '1', 'test-seed', strftime('%s','now'), strftime('%s','now'));
 
-INSERT OR REPLACE INTO adopters (id, name, contact_info, address_info, family_members, notes, status, added_by, source_url, created_at, updated_at) VALUES
-('test-adopter-3', 'Ana Martínez', 'Tel: 555-5555', 'Av. Libertador 456', NULL, NULL, '3', 'test-seed', NULL, strftime('%s','now'), strftime('%s','now'));
+INSERT OR REPLACE INTO adopters (id, name, contact_info, address_info, family_members, notes, status, added_by, created_at, updated_at) VALUES
+('test-adopter-3', 'Ana Martínez', 'Tel: 555-5555', 'Av. Libertador 456', NULL, NULL, '3', 'test-seed', strftime('%s','now'), strftime('%s','now'));
 
-INSERT OR REPLACE INTO adopters (id, name, contact_info, address_info, family_members, notes, status, added_by, source_url, created_at, updated_at) VALUES
-('test-adopter-4', 'Roberto Fernández', 'Tel: 555-7777, WhatsApp: 555-7778', 'Barrio Norte 789', 'Patricia Fernández (esposa)', 'Adopta regularmente. Voluntario en refugio local.', '4', 'test-seed', NULL, strftime('%s','now'), strftime('%s','now'));
+INSERT OR REPLACE INTO adopters (id, name, contact_info, address_info, family_members, notes, status, added_by, created_at, updated_at) VALUES
+('test-adopter-4', 'Roberto Fernández', 'Tel: 555-7777, WhatsApp: 555-7778', 'Barrio Norte 789', 'Patricia Fernández (esposa)', 'Adopta regularmente. Voluntario en refugio local.', '4', 'test-seed', strftime('%s','now'), strftime('%s','now'));
 
-INSERT OR REPLACE INTO adopters (id, name, contact_info, address_info, family_members, notes, status, added_by, source_url, created_at, updated_at) VALUES
-('test-adopter-5', 'Nueva Persona', NULL, NULL, NULL, NULL, '5', 'test-seed', NULL, strftime('%s','now'), strftime('%s','now'));
+INSERT OR REPLACE INTO adopters (id, name, contact_info, address_info, family_members, notes, status, added_by, created_at, updated_at) VALUES
+('test-adopter-5', 'Nueva Persona', NULL, NULL, NULL, NULL, '5', 'test-seed', strftime('%s','now'), strftime('%s','now'));
 
 -- ============================================================
 -- ADOPTIONS (6 records)
@@ -37,8 +38,9 @@ INSERT OR REPLACE INTO adoptions (id, adopter_id, animal_name, species, details,
 ('test-adoption-3', 'test-adopter-2', NULL, NULL, 'Se observó condiciones inadecuadas en la vivienda', NULL, 1, 'observation', strftime('%s','now','-15 days'), 'test-seed');
 
 -- Roberto: 3 adoptions
-INSERT OR REPLACE INTO adoptions (id, adopter_id, animal_name, species, details, status, rating, record_type, date, added_by, source_url) VALUES
-('test-adoption-4', 'test-adopter-4', 'Firulais', 'dog', 'Golden retriever adulto', 'completed', 4, 'adoption', strftime('%s','now','-90 days'), 'test-seed', 'https://www.facebook.com/groups/123/posts/456');
+-- Omit source_url so seed works with or without that column (migration 0010)
+INSERT OR REPLACE INTO adoptions (id, adopter_id, animal_name, species, details, status, rating, record_type, date, added_by) VALUES
+('test-adoption-4', 'test-adopter-4', 'Firulais', 'dog', 'Golden retriever adulto', 'completed', 4, 'adoption', strftime('%s','now','-90 days'), 'test-seed');
 
 INSERT OR REPLACE INTO adoptions (id, adopter_id, animal_name, species, details, status, rating, record_type, date, added_by) VALUES
 ('test-adoption-5', 'test-adopter-4', 'Pelusa', 'cat', 'Gata siamesa', 'completed', 5, 'adoption', strftime('%s','now','-45 days'), 'gatitosolivos@gmail.com');

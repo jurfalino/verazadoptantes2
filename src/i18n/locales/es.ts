@@ -4,6 +4,7 @@ export const es = {
         cancel: 'Cancelar',
         loading: 'Cargando...',
         search: 'Buscar',
+        searching: 'Buscando...',
         edit: 'Clic para Editar',
         delete: 'Eliminar',
         back_to_search: 'Volver a Buscar',
@@ -118,6 +119,10 @@ export const es = {
         email_magic_link: 'Te enviaremos un enlace mágico para entrar.',
         check_email: '¡Revisa tu correo para el enlace de acceso!',
         cancel: 'Cancelar'
+    },
+    errors: {
+        generic: 'Error',
+        adoption_processing: 'Error al procesar la adopción. Por favor, intentá de nuevo.',
     },
     search: {
         title: 'Verificar Adoptante',
@@ -437,6 +442,7 @@ export const es = {
         add_animal: 'Agregar Animal',
         animal_details_placeholder: 'Personalidad, estado de salud, necesidades especiales...',
         animal_saved: '¡Animal publicado para adopción!',
+        animal_updated: '¡Animal actualizado!',
         available: 'Disponibles',
         already_adopted: 'Ya Adoptados',
         no_animals_title: 'Sin animales publicados',
@@ -450,6 +456,12 @@ export const es = {
     wizard: {
         step_adopter: 'Identificar Adoptante',
         step_observation: 'Detalles de Observación',
+        identify_animal: 'Identificar animal',
+        new_animal: 'Nuevo animal',
+        existing_animal: 'Existente',
+        complete_adoption: 'Completar adopción',
+        animal_name_placeholder: 'Nombre del animal',
+        adopter_selected: 'Adoptante seleccionado',
         existing_adopter: 'Buscar Existente',
         new_adopter: 'Nuevo Adoptante',
         search_placeholder: 'Buscar por nombre, teléfono, email...',
@@ -772,6 +784,7 @@ export const es = {
         personMatchTitle: 'Perfiles Existentes Encontrados',
         personMatchDesc: 'Seleccioná un perfil para agregar este registro, o creá uno nuevo',
         matchedBy: 'Coincide por:',
+        addInteraction: '➕ Agregar nueva interacción a este perfil',
         addToExisting: 'Agregar Registro al Perfil Seleccionado',
         addingRecord: 'Agregando registro...',
         createNewAnyway: 'Crear Perfil Nuevo',
@@ -787,6 +800,15 @@ export const es = {
         duplicateUrl: 'Esta URL ya fue importada. Perfil existente:',
         // Botón volver
         back: 'Volver',
+        // Detección de duplicados (formulario crear adoptante)
+        duplicateCard_title: 'Posibles perfiles coincidentes',
+        duplicateCard_subtitle: 'Nombres similares en tus registros',
+        duplicateCard_view: 'Ver',
+        duplicateCard_use_profile: 'Usar este perfil',
+        saveModal_title: 'Posibles perfiles duplicados',
+        saveModal_body: 'Crear un perfil nuevo puede generar un duplicado. Podés vincular con un perfil existente.',
+        saveModal_use_existing: 'Usar perfil existente',
+        saveModal_create_anyway: 'Crear perfil nuevo igualmente',
         // Validación IA
         aiValidationWarning: 'Los datos extraídos por IA pueden contener errores. Verificá todos los campos antes de guardar.',
     },

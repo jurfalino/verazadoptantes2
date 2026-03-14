@@ -166,7 +166,7 @@ export default function AdoptionWizard() {
 
         } catch (e) {
             console.error(e);
-            toast.error('Error', 'Error processing adoption. Please try again.', extractErrorId(e));
+            toast.error(t('errors.generic') || 'Error', t('errors.adoption_processing') || 'Error processing adoption. Please try again.', extractErrorId(e));
         } finally {
             setLoading(false);
         }
@@ -198,7 +198,7 @@ export default function AdoptionWizard() {
 
                 <h2 className="text-2xl font-semibold text-stone-800 mb-6 flex items-center gap-2">
                     <span className="w-8 h-8 rounded-full bg-teal-100 text-teal-800 flex items-center justify-center text-sm">{step}</span>
-                    {step === 1 ? 'Identify Animal' : (t('wizard.who_is_adopter') || 'Who is the adopter?')}
+                    {step === 1 ? (t('wizard.identify_animal') || 'Identify Animal') : (t('wizard.who_is_adopter') || 'Who is the adopter?')}
                 </h2>
 
                 {step === 1 && (
@@ -210,13 +210,13 @@ export default function AdoptionWizard() {
                                     onClick={() => setAnimalMode('new')}
                                     className={`flex-1 py-2 text-sm font-semibold rounded-md transition-all ${animalMode === 'new' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-500'}`}
                                 >
-                                    New Animal
+                                    {t('wizard.new_animal') || 'New Animal'}
                                 </button>
                                 <button
                                     onClick={() => setAnimalMode('existing')}
                                     className={`flex-1 py-2 text-sm font-semibold rounded-md transition-all ${animalMode === 'existing' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-500'}`}
                                 >
-                                    Existing ({availableAnimals.length})
+                                    {t('wizard.existing_animal') || 'Existing'} ({availableAnimals.length})
                                 </button>
                             </div>
                         )}
@@ -234,7 +234,7 @@ export default function AdoptionWizard() {
                             <div className="grid grid-cols-2 gap-4">
                                 <input
                                     className="p-3 rounded-xl border border-stone-300"
-                                    placeholder="Animal Name"
+                                    placeholder={t('wizard.animal_name_placeholder') || 'Animal Name'}
                                     value={animalData.animalName}
                                     onChange={e => setAnimalData({ ...animalData, animalName: e.target.value })}
                                 />
@@ -416,7 +416,7 @@ export default function AdoptionWizard() {
                                     <div className="flex items-center gap-2 px-3 py-2 bg-teal-50 border border-teal-200 rounded-xl">
                                         <svg className="w-5 h-5 text-teal-700 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                         <span className="text-sm font-semibold text-teal-800 flex-1">
-                                            {searchResults.find(r => r.adopter.id === selectedAdopterId)?.adopter.name || 'Adopter selected'}
+                                            {searchResults.find(r => r.adopter.id === selectedAdopterId)?.adopter.name || (t('wizard.adopter_selected') || 'Adopter selected')}
                                         </span>
                                         <button onClick={() => setSelectedAdopterId('')} className="text-teal-700 hover:text-teal-700 text-xs font-semibold">✕</button>
                                     </div>
@@ -515,7 +515,7 @@ export default function AdoptionWizard() {
                                 disabled={loading || !selectedAdopterId}
                                 className="px-6 py-2 bg-teal-600 text-white font-semibold rounded-xl hover:bg-teal-700 disabled:opacity-50"
                             >
-                                {loading ? (t('common.processing') || 'Processing...') : 'Complete Adoption'}
+                                {loading ? (t('common.processing') || 'Processing...') : (t('wizard.complete_adoption') || 'Complete Adoption')}
                             </button>
                         </div>
                     </div>
