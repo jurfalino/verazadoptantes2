@@ -117,7 +117,7 @@ export default async function RootLayout({
         <OrganizationJsonLd />
       </head>
       <body className={inter.className}>
-        <SessionProvider refetchOnWindowFocus={true} refetchInterval={5 * 60}>
+        <SessionProvider session={session ?? undefined} refetchOnWindowFocus={true} refetchInterval={5 * 60}>
           <LanguageProvider>
             <ThemeProvider>
               <ToastProvider>
@@ -128,7 +128,7 @@ export default async function RootLayout({
                         <Logo />
                         <div className="flex items-center gap-1 sm:gap-2">
                           <NotificationBell />
-                          <UserMenu user={session?.user} />
+                          <UserMenu user={session?.user} isAdmin={(session?.user as { isAdmin?: boolean } | undefined)?.isAdmin} />
                         </div>
                       </div>
                     </nav>

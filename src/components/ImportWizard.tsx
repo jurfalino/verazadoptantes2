@@ -100,7 +100,7 @@ export default function ImportWizard() {
     const [_sourceType, setSourceType] = useState<string>('');
     const [isVideoPost, setIsVideoPost] = useState(false);
     const [fetchedVideos, setFetchedVideos] = useState<string[]>([]);
-    const [videoLoading, setVideoLoading] = useState(false);
+    const [_videoLoading, _setVideoLoading] = useState(false);
     const [retryCountdown, setRetryCountdown] = useState(0);
 
     // Persist wizard state to sessionStorage (survives page refresh)

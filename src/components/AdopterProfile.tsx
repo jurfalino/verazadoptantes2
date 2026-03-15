@@ -32,9 +32,10 @@ interface AdopterProfileProps {
     duplicateCandidates?: DuplicateCandidateInfo[];
     linkedForms?: Array<{ id: string; species: string | null; lifeStage: string | null; notificationId: string | null; answersJson: string | null; createdAt: Date | null }>;
     formPrefill?: FormSubmissionPrefill | null;
+    userNameMap?: Record<string, string>;
 }
 
-export function AdopterProfile({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [], linkedForms = [], formPrefill = null }: AdopterProfileProps) {
+export function AdopterProfile({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [], linkedForms = [], formPrefill = null, userNameMap = {} }: AdopterProfileProps) {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const [selectedPeriod, setSelectedPeriod] = useState<'90d' | '1y' | 'all'>('all');
@@ -240,6 +241,7 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                     adoptionConfig={adoptionConfig}
                     isAdmin={isAdmin}
                     formPrefill={formPrefill}
+                    userNameMap={userNameMap}
                 />
 
                 {
@@ -254,6 +256,7 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                                         return await saveImage(adopterId, url, caption, undefined, mediaType);
                                     }}
                                     currentUser={currentUser}
+                                    userNameMap={userNameMap}
                                     isAdmin={isAdmin}
                                 />
                             </CollapsibleSection>
@@ -272,6 +275,7 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                                         adopterId={id}
                                         currentUser={currentUser}
                                         isAdmin={isAdmin}
+                                        userNameMap={userNameMap}
                                         adopterAddress={adopter?.contactInfo || ''}
                                     />
                                 </CollapsibleSection>

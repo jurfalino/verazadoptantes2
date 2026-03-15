@@ -50,26 +50,30 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('app-locale', newLocale);
     }, []);
 
-    // Memoize the t function to avoid unnecessary re-renders
+    // Memoize the t function. Always returns a non-empty string so labels never render blank (production-safe).
     const t = useMemo(() => {
         return (path: string): string => {
             const keys = path.split('.');
-            let current: any = dictionaries[locale];
+            const dict = dictionaries[locale] ?? dictionaries[DEFAULT_LOCALE];
+            let current: unknown = dict;
 
             for (const key of keys) {
-                if (current[key] === undefined) {
-                    // Fallback to Spanish if key missing
-                    let fallback: any = dictionaries[DEFAULT_LOCALE];
+                if (current === undefined || current === null || typeof current !== 'object' || !(key in (current as object))) {
+                    let fallback: unknown = dictionaries[DEFAULT_LOCALE];
                     for (const k of keys) {
-                        if (fallback[k] === undefined) return path;
-                        fallback = fallback[k];
+                        if (fallback === undefined || fallback === null || typeof fallback !== 'object' || !(k in (fallback as object))) {
+                            return path || ' ';
+                        }
+                        fallback = (fallback as Record<string, unknown>)[k];
                     }
-                    return fallback as string;
+                    const s = typeof fallback === 'string' ? fallback : path;
+                    return s || path || ' ';
                 }
-                current = current[key];
+                current = (current as Record<string, unknown>)[key];
             }
 
-            return current as string;
+            const result = typeof current === 'string' ? current : path;
+            return (result && result.trim().length > 0) ? result : path || ' ';
         };
     }, [locale]);
 

@@ -217,6 +217,10 @@ export const userProfiles = sqliteTable("user_profiles", {
     commsOptIn: integer("comms_opt_in").default(0),
     country: text("country"), // ISO 3166-1 alpha-2 (e.g. AR, US, MX) — auto-detected via CF-IPCountry
     countryConfirmed: integer("country_confirmed").default(0), // 1 if user has confirmed their country
+    province: text("province"), // Region/state name (e.g. "Buenos Aires") — auto-detected via cf-region
+    provinceCode: text("province_code"), // ISO subdivision code (e.g. "B") — auto-detected via cf-region-code
+    city: text("city"), // City name (e.g. "La Plata") — auto-detected via cf-ipcity
+    timezone: text("timezone"), // IANA timezone (e.g. "America/Argentina/Buenos_Aires") — via cf-timezone
     lastActiveAt: integer("last_active_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
 });

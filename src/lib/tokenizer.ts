@@ -30,7 +30,7 @@ export function normalizeText(s: string): string {
 
 // ── Phone Extraction ─────────────────────────────────────────────
 
-const MIN_PHONE_DIGITS = 7;
+const _MIN_PHONE_DIGITS = 7;
 const PHONE_SUFFIX_LENGTH = 8;
 const MIN_PHONE_FOR_SUFFIX = 9;
 

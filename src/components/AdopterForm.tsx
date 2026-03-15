@@ -35,9 +35,10 @@ interface AdopterFormProps {
     adoptionConfig?: AdoptionConfig;
     isAdmin?: boolean;
     formPrefill?: FormSubmissionPrefill | null;
+    userNameMap?: Record<string, string>;
 }
 
-export function AdopterForm({ initialData, history = [], currentUser, images = [], adopterId, avgRating, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null }: AdopterFormProps) {
+export function AdopterForm({ initialData, history = [], currentUser, images = [], adopterId, avgRating, flags = [], adoptions = [], adoptionConfig, isAdmin: _isAdmin = false, formPrefill = null, userNameMap = {} }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -749,7 +750,7 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                                             {eventType === 'image_deleted' && <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_image_deleted')}</span>}
                                         </div>
                                         <span className="text-xs px-2.5 py-0.5 bg-white border border-teal-100 rounded-full text-teal-700 font-medium shadow-sm">
-                                            {t('audit.by')} {h.changedBy || t('common.anonymous')}
+                                            {t('audit.by')} {(h.changedBy && userNameMap?.[h.changedBy]) || h.changedBy || t('common.anonymous')}
                                         </span>
                                     </div>
 

@@ -53,7 +53,6 @@ const DEFAULT_SCHEMA: FormStep[] = [
     {
         id: 'legal', type: 'consent', title: 'Solicitud de adopción',
         body: 'Completá este breve formulario para registrar tu interés en adoptar. Nos ayuda a encontrar el animal ideal según lo que buscás. El rescatista revisará tu solicitud para ponerse en contacto.',
-        legalRef: 'Ley 25.326',
     },
     // Preferences & situation first (honesty-friendly order)
     {
@@ -84,10 +83,6 @@ const DEFAULT_SCHEMA: FormStep[] = [
             { value: 'self', label: 'Para mí', icon: 'self' },
             { value: 'gift', label: 'Es un regalo', icon: 'gift' },
         ],
-        warning: {
-            triggerValue: 'gift',
-            message: 'Nota: Los datos del cuidador principal siguen siendo necesarios para el registro legal (Ley 25.326).',
-        },
     },
     {
         id: 'children', type: 'segmented-cards', title: '¿Hay niños en el hogar?',
@@ -118,8 +113,8 @@ const DEFAULT_SCHEMA: FormStep[] = [
     {
         id: 'hasOutdoor', type: 'icon-cards', title: '¿Tenés patio o jardín?',
         options: [
-            { value: 'yes', label: 'Sí', icon: 'outdoor' },
-            { value: 'no', label: 'No', icon: 'indoor' },
+            { value: 'yes', label: 'Sí', icon: 'patio' },
+            { value: 'no', label: 'No', icon: 'noPatio' },
         ],
     },
     {
@@ -152,7 +147,7 @@ const DEFAULT_SCHEMA: FormStep[] = [
         id: 'willingToSterilize', type: 'icon-cards', title: '¿Estás dispuesto/a a castrar o esterilizar?',
         options: [
             { value: 'yes', label: 'Sí', icon: 'self' },
-            { value: 'no', label: 'No', icon: 'decline' },
+            { value: 'no', label: 'No', icon: 'sadDog' },
         ],
     },
     {
@@ -253,6 +248,29 @@ const ICONS: Record<string, React.ReactNode> = {
             <path d="M30 38c0 0 1 5 2 5s2-5 2-5" fill="#f472b6" />
             {/* Mouth */}
             <path d="M28 37.5c2 1.5 6 1.5 8 0" stroke="#1e1b4b" strokeWidth="1" strokeLinecap="round" fill="none" />
+        </svg>
+    ),
+    sadDog: (
+        <svg viewBox="0 0 64 64" fill="none">
+            {/* Droopy ears */}
+            <ellipse cx="14" cy="32" rx="9" ry="12" fill="#6366f1" transform="rotate(-25 14 32)" />
+            <ellipse cx="50" cy="32" rx="9" ry="12" fill="#6366f1" transform="rotate(25 50 32)" />
+            {/* Head */}
+            <ellipse cx="32" cy="34" rx="18" ry="17" fill="#818cf8" />
+            {/* Inner ears */}
+            <ellipse cx="14" cy="31" rx="5" ry="8" fill="#a5b4fc" transform="rotate(-25 14 31)" />
+            <ellipse cx="50" cy="31" rx="5" ry="8" fill="#a5b4fc" transform="rotate(25 50 31)" />
+            {/* Muzzle */}
+            <ellipse cx="32" cy="40" rx="10" ry="8" fill="#c7d2fe" />
+            {/* Sad eyes (downward curves) */}
+            <path d="M22 30c2 2 4 2 5 0" stroke="#1e1b4b" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+            <path d="M38 30c2 2 4 2 5 0" stroke="#1e1b4b" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+            <circle cx="24" cy="28" r="1" fill="#1e1b4b" opacity="0.6" />
+            <circle cx="40" cy="28" r="1" fill="#1e1b4b" opacity="0.6" />
+            {/* Nose */}
+            <ellipse cx="32" cy="37" rx="3.5" ry="2.5" fill="#1e1b4b" />
+            {/* Sad mouth (downturned) */}
+            <path d="M26 42c2-1.5 6-1.5 8 0" stroke="#1e1b4b" strokeWidth="1.2" strokeLinecap="round" fill="none" />
         </svg>
     ),
     cat: (
@@ -413,6 +431,24 @@ const ICONS: Record<string, React.ReactNode> = {
             <rect x="8" y="36" width="32" height="4" rx="1" fill="#818cf8" opacity="0.5" />
         </svg>
     ),
+    patio: (
+        <svg viewBox="0 0 48 48" fill="none">
+            <rect x="6" y="28" width="36" height="14" rx="6" fill="#22c55e" opacity="0.95" />
+            <circle cx="24" cy="14" r="10" fill="#fbbf24" opacity="0.95" />
+            <circle cx="24" cy="12" r="6" fill="#fde68a" opacity="0.7" />
+        </svg>
+    ),
+    noPatio: (
+        <svg viewBox="0 0 48 48" fill="none">
+            <rect x="10" y="14" width="28" height="24" rx="2" fill="#818cf8" opacity="0.5" />
+            <rect x="10" y="14" width="28" height="6" fill="#a5b4fc" opacity="0.6" />
+            <line x1="10" y1="26" x2="38" y2="26" stroke="#6366f1" strokeWidth="1" opacity="0.5" />
+            <line x1="10" y1="34" x2="38" y2="34" stroke="#6366f1" strokeWidth="1" opacity="0.5" />
+            <rect x="16" y="18" width="5" height="4" rx="0.5" fill="#c7d2fe" />
+            <rect x="27" y="18" width="5" height="4" rx="0.5" fill="#c7d2fe" />
+            <rect x="10" y="38" width="28" height="4" rx="1" fill="#64748b" opacity="0.4" />
+        </svg>
+    ),
     unfenced: (
         <svg viewBox="0 0 48 48" fill="none">
             <path d="M8 38V18l16-10 16 10v20" stroke="#818cf8" strokeWidth="2" fill="none" strokeLinejoin="round" />
@@ -520,20 +556,20 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
         if (errors[key]) setErrors(prev => { const n = { ...prev }; delete n[key]; return n })
     }
 
-    // ── Validation for current step ──
-    function validateCurrentStep(): boolean {
+    // ── Validation (takes answers to support auto-advance with not-yet-flushed state) ──
+    function validateWithAnswers(answersToCheck: Record<string, any>): boolean {
         if (!currentStep) return false
         const newErrors: Record<string, string> = {}
 
         if (currentStep.type === 'consent') {
-            if (!answers[currentStep.id]) {
+            if (!answersToCheck[currentStep.id]) {
                 newErrors[currentStep.id] = 'Debés aceptar para continuar'
             }
         }
 
         if (currentStep.type === 'text-fields') {
             for (const field of currentStep.fields) {
-                const val = (answers[field.name] || '').trim()
+                const val = (answersToCheck[field.name] || '').trim()
                 if (field.required && !val) {
                     newErrors[field.name] = 'Campo obligatorio'
                 } else if (val && field.validation && VALIDATORS[field.validation] && !VALIDATORS[field.validation](val)) {
@@ -543,7 +579,7 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
         }
 
         if (currentStep.type === 'icon-cards') {
-            if (!answers[currentStep.id]) {
+            if (!answersToCheck[currentStep.id]) {
                 newErrors[currentStep.id] = 'Seleccioná una opción'
             }
         }
@@ -570,11 +606,16 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
     }
 
     // ── Navigation ──
-    function goNext() {
-        if (!validateCurrentStep()) return
+    /** If overrides is provided (e.g. from auto-advance), use it for validation and for building next answers so we don't rely on state having flushed yet. Ignore if caller passed a DOM event by mistake. */
+    function goNext(overrides?: Record<string, any>) {
+        const isEvent = overrides && typeof overrides === 'object' && 'target' in overrides && (overrides as any).target?.nodeType !== undefined
+        const safeOverrides = isEvent ? undefined : overrides
+        const effectiveAnswers = safeOverrides ? { ...answers, ...safeOverrides } : answers
+        if (!validateWithAnswers(effectiveAnswers)) return
         const nextStep = step + 1
-        const nextAnswers = { ...answers }
+        const nextAnswers = safeOverrides ? { ...answers, ...safeOverrides } : { ...answers }
         setAnimationKey(k => k + 1)
+        if (safeOverrides) setAnswers(prev => ({ ...prev, ...safeOverrides }))
 
         if (nextStep >= totalSteps) {
             handleSubmit(nextAnswers)
@@ -613,7 +654,8 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
             // Success
             localStorage.removeItem(STORAGE_KEY)
             setSubmitted(true)
-        } catch {
+        } catch (err) {
+            console.error('[PetShield submit]', err)
             setToast({ message: 'Error de red. Verificá tu conexión e intentá de nuevo.', id: 'ERR-NET-001' })
         } finally {
             setSubmitting(false)
@@ -872,7 +914,12 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
                             <button
                                 key={opt.value}
                                 className={`ps-card ${answers[currentStep.id] === opt.value ? 'ps-card--selected' : ''}`}
-                                onClick={() => setAnswer(currentStep.id, opt.value)}
+                                onClick={() => {
+                                    setAnswer(currentStep.id, opt.value)
+                                    // Auto-advance for simple single choice; skip when species "other" (has follow-up input)
+                                    const isSpeciesOther = currentStep.id === 'species' && opt.value === 'other'
+                                    if (!isSpeciesOther) goNext({ [currentStep.id]: opt.value })
+                                }}
                                 tabIndex={0}
                             >
                                 <div className="ps-card__icon">
@@ -915,7 +962,10 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
                             <button
                                 key={opt.value}
                                 className={`ps-segmented__item ${answers[currentStep.id] === opt.value ? 'ps-segmented__item--selected' : ''}`}
-                                onClick={() => setAnswer(currentStep.id, opt.value)}
+                                onClick={() => {
+                                    setAnswer(currentStep.id, opt.value)
+                                    goNext({ [currentStep.id]: opt.value })
+                                }}
                                 tabIndex={0}
                             >
                                 {opt.label}
@@ -1118,7 +1168,7 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
                 {step === 0 && <div />}
                 <button
                     className="ps-btn ps-btn--primary"
-                    onClick={goNext}
+                    onClick={() => goNext()}
                     disabled={!canAdvance() || submitting}
                 >
                     {submitting ? (

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useLanguage } from '@/context/LanguageContext';
 
 interface ShareMenuProps {
     contractUrl: string; // animal ID or path like /contract/{id}
@@ -9,9 +10,11 @@ interface ShareMenuProps {
 
 // External contract app domain — no buenadoptante branding
 const CONTRACT_BASE = (process.env.NEXT_PUBLIC_CONTRACT_URL || 'https://adoptions.pages.dev').replace(/\/+$/, '');
-const QR_API = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=';
+// Use same-origin proxy so CSP img-src 'self' allows the QR image
+const getQrImageSrc = (url: string) => `/api/qr?data=${encodeURIComponent(url)}`;
 
 export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
+    const { t } = useLanguage();
     const [isOpen, setIsOpen] = useState(false);
     const [showQr, setShowQr] = useState(false);
     const [copied, setCopied] = useState(false);
@@ -61,12 +64,12 @@ export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
             <button
                 onClick={(e) => { e.stopPropagation(); e.preventDefault(); setIsOpen(true); }}
                 className="inline-flex items-center gap-2 px-4 py-2.5 text-[13px] font-semibold text-teal-700 bg-teal-50 rounded-xl hover:bg-teal-100 transition-colors border border-teal-200"
-                title="Share adoption contract"
+                aria-label={t('dashboard.share_contract') || 'Share contract'}
             >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                Contrato
+                {t('dashboard.share_contract') || 'Share contract'}
             </button>
 
             {/* Centered Modal Overlay */}
@@ -89,7 +92,7 @@ export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-xl bg-teal-100 flex items-center justify-center text-lg">📋</div>
                                     <div>
-                                        <h3 className="font-semibold text-stone-900 text-sm">{showQr ? 'Código QR' : 'Enviar Contrato'}</h3>
+                                        <h3 className="font-semibold text-stone-900 text-sm">{showQr ? (t('common.qr_code') || 'QR code') : (t('dashboard.share_contract_modal_title') || 'Share adoption contract')}</h3>
                                         <p className="text-xs text-stone-500 mt-0.5 truncate max-w-[180px]">{animalName}</p>
                                     </div>
                                 </div>
@@ -105,7 +108,7 @@ export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
                         {showQr ? (
                             <div className="p-5 flex flex-col items-center">
                                 <p className="text-xs text-stone-500 mb-3 text-center">Que el adoptante escanee para abrir el contrato</p>
-                                <img src={QR_API + encodeURIComponent(fullUrl)} alt="QR del enlace" className="rounded-xl border border-stone-200 bg-white" width={220} height={220} />
+                                <img src={getQrImageSrc(fullUrl)} alt="QR del enlace" className="rounded-xl border border-stone-200 bg-white" width={220} height={220} />
                                 <p className="text-xs text-stone-400 mt-3 truncate max-w-full px-2">{fullUrl}</p>
                             </div>
                         ) : (
@@ -193,7 +196,7 @@ export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
                         {/* Footer hint */}
                         <div className="px-5 pb-4 pt-1">
                             <p className="text-xs text-stone-500 text-center">
-                                El adoptante podrá completar sus datos desde el enlace del contrato
+                                {t('dashboard.share_contract_modal_hint') || 'The adopter will use this link to sign the contract for this animal.'}
                             </p>
                         </div>
                         </>

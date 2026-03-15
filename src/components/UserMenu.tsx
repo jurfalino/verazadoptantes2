@@ -12,17 +12,21 @@ interface UserMenuProps {
         name?: string | null;
         email?: string | null;
         image?: string | null;
+        isAdmin?: boolean;
     };
+    /** Server-resolved admin flag (from layout auth()); use so Admin shows on first paint and on every route */
+    isAdmin?: boolean;
 }
 
-export default function UserMenu({ user }: UserMenuProps) {
+export default function UserMenu({ user, isAdmin: isAdminFromServer }: UserMenuProps) {
     const { t, locale, setLocale } = useLanguage();
     const { openLogin } = useAuthContext();
     const { data: session } = useSession();
     const [isOpen, setIsOpen] = useState(false);
     const [animalsEnabled, setAnimalsEnabled] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
-    const userIsAdmin = !!(session?.user as any)?.isAdmin;
+    // Single source: server-passed isAdmin (layout) > user.isAdmin (session callback) > client session
+    const userIsAdmin = isAdminFromServer ?? !!(user as { isAdmin?: boolean } | undefined)?.isAdmin ?? !!(session?.user as { isAdmin?: boolean } | undefined)?.isAdmin;
 
     // Close on click outside
     useEffect(() => {

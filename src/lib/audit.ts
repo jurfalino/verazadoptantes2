@@ -91,17 +91,26 @@ export async function logAudit(entry: AuditEntry) {
  * IMPORTANT: JWT strategy gives a new random user.id per sign-in,
  * so we look up users by EMAIL to prevent duplicate rows.
  *
- * Country detection: reads CF-IPCountry header on first sign-in and
- * stores it. Does NOT overwrite on subsequent sign-ins so user
- * changes via settings are preserved.
+ * Geo detection: reads CF-IPCountry, cf-region, cf-region-code,
+ * cf-ipcity, cf-timezone headers on first sign-in and stores them.
+ * Does NOT overwrite on subsequent sign-ins so user changes via
+ * settings are preserved.
  */
 export async function ensureUserProfile(userId: string, email?: string, name?: string, image?: string) {
-    // Read CF-IPCountry header before waitUntil
+    // Read Cloudflare geo headers before waitUntil
     let detectedCountry: string | null = null;
+    let detectedProvince: string | null = null;
+    let detectedProvinceCode: string | null = null;
+    let detectedCity: string | null = null;
+    let detectedTimezone: string | null = null;
     try {
         const h = await headers();
         if (h && typeof h.get === 'function') {
             detectedCountry = h.get('cf-ipcountry') || null;
+            detectedProvince = h.get('cf-region') || null;
+            detectedProvinceCode = h.get('cf-region-code') || null;
+            detectedCity = h.get('cf-ipcity') || null;
+            detectedTimezone = h.get('cf-timezone') || null;
         }
     } catch { /* headers() unavailable outside server request context */ }
 
@@ -139,21 +148,22 @@ export async function ensureUserProfile(userId: string, email?: string, name?: s
             }
 
             // 2. Ensure user_profiles row (INSERT OR IGNORE keeps original created_at)
-            //    On first sign-in, also store the detected country
-            if (detectedCountry) {
-                await env.DB.prepare(
-                    `INSERT OR IGNORE INTO user_profiles (user_id, country, created_at) VALUES (?, ?, strftime('%s','now'))`
-                ).bind(resolvedId, detectedCountry).run();
-            } else {
-                await env.DB.prepare(
-                    `INSERT OR IGNORE INTO user_profiles (user_id, created_at) VALUES (?, strftime('%s','now'))`
-                ).bind(resolvedId).run();
-            }
-
-            // Always update last_active_at (but NOT country — respect user overrides)
+            //    On first sign-in, also store detected geo data
             await env.DB.prepare(
-                `UPDATE user_profiles SET last_active_at = strftime('%s','now') WHERE user_id = ?`
-            ).bind(resolvedId).run();
+                `INSERT OR IGNORE INTO user_profiles (user_id, country, province, province_code, city, timezone, created_at) VALUES (?, ?, ?, ?, ?, ?, strftime('%s','now'))`
+            ).bind(resolvedId, detectedCountry, detectedProvince, detectedProvinceCode, detectedCity, detectedTimezone).run();
+
+            // Always update last_active_at, and backfill geo columns if still NULL
+            // (respects user overrides — only fills empty slots)
+            await env.DB.prepare(
+                `UPDATE user_profiles SET
+                    last_active_at = strftime('%s','now'),
+                    province = COALESCE(province, ?),
+                    province_code = COALESCE(province_code, ?),
+                    city = COALESCE(city, ?),
+                    timezone = COALESCE(timezone, ?)
+                 WHERE user_id = ?`
+            ).bind(detectedProvince, detectedProvinceCode, detectedCity, detectedTimezone, resolvedId).run();
         } catch (e) {
             console.error('[Audit] Failed to upsert user profile:', e);
         }

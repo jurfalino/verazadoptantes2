@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { getCountryByCode, countries, type Country } from '@/config/countries';
-import { getUserSettings, updateUserCountry } from '@/app/actions/settings';
+import { getUserSettings, updateUserCountry, getUserName, updateUserName } from '@/app/actions/settings';
 import { CountrySelector } from '@/components/CountrySelector';
 import { useRouter } from 'next/navigation';
 
@@ -12,7 +12,7 @@ interface CountryConfirmBannerProps {
 }
 
 export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmBannerProps) {
-    const { locale, t } = useLanguage();
+    const { locale } = useLanguage();
     const router = useRouter();
     const [email, setEmail] = useState<string | null>(serverEmail);
     const [settings, setSettings] = useState<{ country: string | null; countryConfirmed: boolean } | null>(null);
@@ -21,6 +21,8 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
     const [loaded, setLoaded] = useState(false);
     const [showSelector, setShowSelector] = useState(false);
     const [selectedCountry, setSelectedCountry] = useState('');
+    const [userName, setUserName] = useState('');
+    const [editingName, setEditingName] = useState(false);
 
     // Always resolve the email: prefer server prop, fallback to client-side fetch
     useEffect(() => {
@@ -46,7 +48,7 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
             });
     }, [serverEmail]);
 
-    // Fetch country settings when we have an email
+    // Fetch country settings and user name when we have an email
     useEffect(() => {
         if (!email) {
             setLoaded(true);
@@ -61,9 +63,9 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
             return;
         }
 
-        // Fetch settings from DB
+        // Fetch settings + name from DB
         setLoaded(false);
-        getUserSettings().then(s => {
+        Promise.all([getUserSettings(), getUserName()]).then(([s, name]) => {
             if (s) {
                 setSettings(s);
                 if (s.countryConfirmed) {
@@ -72,6 +74,7 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
             } else {
                 setSettings({ country: null, countryConfirmed: false });
             }
+            if (name) setUserName(name);
             setLoaded(true);
         }).catch(err => {
             console.error('[CountryBanner] getUserSettings error:', err);
@@ -100,9 +103,13 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
     const handleSaveCountry = async (code: string) => {
         setSaving(true);
         try {
+            // Save name if it was edited
+            if (userName.trim()) {
+                await updateUserName(userName.trim());
+            }
             await updateUserCountry(code);
         } catch (err) {
-            console.error('[CountryBanner] updateUserCountry error:', err);
+            console.error('[CountryBanner] save error:', err);
         }
         // Always dismiss — don't depend on server action result
         localStorage.setItem(`country_confirmed_${email}`, '1');
@@ -117,6 +124,47 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
 
     const getName = (c: Country) => locale === 'es' ? c.nameEs : c.name;
 
+    // Name editor section (shared between both modal variants)
+    const nameSection = (
+        <div className="mb-5 pb-5 border-b border-stone-200 dark:border-stone-600">
+            <label className="block text-xs font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-2">
+                {locale === 'es' ? 'Tu nombre' : 'Your name'}
+            </label>
+            {editingName ? (
+                <div className="flex gap-2">
+                    <input
+                        type="text"
+                        value={userName}
+                        onChange={e => setUserName(e.target.value)}
+                        maxLength={100}
+                        className="flex-1 px-3 py-2 text-sm rounded-lg border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none transition-all"
+                        autoFocus
+                    />
+                    <button
+                        type="button"
+                        onClick={() => setEditingName(false)}
+                        className="px-3 py-2 text-xs font-medium text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-900/20 rounded-lg transition-colors"
+                    >
+                        {locale === 'es' ? 'Listo' : 'Done'}
+                    </button>
+                </div>
+            ) : (
+                <button
+                    type="button"
+                    onClick={() => setEditingName(true)}
+                    className="w-full flex items-center justify-between px-3 py-2.5 text-sm rounded-lg border border-stone-200 dark:border-stone-600 bg-stone-50 dark:bg-stone-700/50 hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors text-left group"
+                >
+                    <span className="text-stone-800 dark:text-stone-200 font-medium truncate">
+                        {userName || (locale === 'es' ? 'Sin nombre' : 'No name')}
+                    </span>
+                    <svg className="w-3.5 h-3.5 text-stone-400 group-hover:text-stone-600 dark:group-hover:text-stone-300 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                </button>
+            )}
+        </div>
+    );
+
     // Case 1: Country detected — show confirm/change
     if (settings.country && !showSelector) {
         const country = getCountryByCode(settings.country);
@@ -128,21 +176,17 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                     <div className="text-center mb-6">
                         <span className="text-5xl block mb-4">{country.flag}</span>
                         <h2 className="text-xl font-semibold text-stone-800 dark:text-stone-100 tracking-tight">
-                            {locale === 'es' ? 'Confirmá tu país' : 'Confirm your country'}
+                            {locale === 'es' ? '¡Bienvenido!' : 'Welcome!'}
                         </h2>
                         <p className="text-stone-500 dark:text-stone-500 text-sm mt-2">
                             {locale === 'es'
-                                ? `Detectamos que estás en ${getName(country)}. ¿Es correcto?`
-                                : `We detected you're in ${getName(country)}. Is this correct?`
-                            }
-                        </p>
-                        <p className="text-stone-500 dark:text-stone-500 text-xs mt-1.5">
-                            {locale === 'es'
-                                ? 'Tu país determina qué registros ves en las búsquedas.'
-                                : 'Your country determines which records you see in searches.'
+                                ? 'Confirmá tu información para empezar.'
+                                : 'Confirm your info to get started.'
                             }
                         </p>
                     </div>
+
+                    {nameSection}
 
                     <div className="space-y-3">
                         <button
@@ -174,15 +218,21 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                 <div className="text-center mb-6">
                     <span className="text-5xl block mb-4">🌎</span>
                     <h2 className="text-xl font-semibold text-stone-800 dark:text-stone-100 tracking-tight">
-                        {locale === 'es' ? 'Seleccioná tu país' : 'Select your country'}
+                        {locale === 'es' ? '¡Bienvenido!' : 'Welcome!'}
                     </h2>
                     <p className="text-stone-500 dark:text-stone-500 text-sm mt-2">
                         {locale === 'es'
-                            ? 'Tu país determina qué registros de adoptantes ves en las búsquedas.'
-                            : 'Your country determines which adopter records you see in searches.'
+                            ? 'Confirmá tu información para empezar.'
+                            : 'Confirm your info to get started.'
                         }
                     </p>
                 </div>
+
+                {nameSection}
+
+                <label className="block text-xs font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-3">
+                    {locale === 'es' ? 'Tu país' : 'Your country'}
+                </label>
 
                 {/* Quick-pick buttons */}
                 <div className="grid grid-cols-2 gap-2 mb-4">

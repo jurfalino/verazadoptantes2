@@ -2,6 +2,7 @@ export const runtime = 'edge';
 import { redirect } from 'next/navigation';
 import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getAdoptionConfig, getDuplicateCandidates, getLinkedFormSubmissions } from '@/app/actions';
 import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
+import { resolveUserNames } from '@/app/actions/userNames';
 import { AdopterProfile } from '@/components/AdopterProfile';
 
 export default async function AdopterPage({
@@ -55,6 +56,13 @@ export default async function AdopterPage({
         availableAnimals = await getAvailableAnimals();
     }
 
+    // Resolve emails → display names for addedBy/changedBy fields
+    const allEmails = new Set<string>();
+    for (const h of history) { if (h.changedBy) allEmails.add(h.changedBy); }
+    for (const a of adoptions) { if (a.addedBy) allEmails.add(a.addedBy); }
+    for (const img of images) { if (img.addedBy) allEmails.add(img.addedBy); }
+    const userNameMap = allEmails.size > 0 ? await resolveUserNames([...allEmails]) : {};
+
     let formPrefill = null;
     if (isNew && fromForm?.trim()) {
         formPrefill = await getFormSubmissionPrefill(fromForm.trim());
@@ -78,6 +86,7 @@ export default async function AdopterPage({
             duplicateCandidates={dupCandidates}
             linkedForms={linkedForms}
             formPrefill={formPrefill}
+            userNameMap={userNameMap}
         />
     );
 }

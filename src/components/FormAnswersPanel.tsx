@@ -2,75 +2,80 @@
 
 import { useLanguage } from '@/context/LanguageContext';
 
-interface FormAnswersPanelProps {
-    fullAnswers: Record<string, any>;
+/** Shared form-answer display logic (used by FormResultsContent for adopter info + other pets). */
+export function renderFormAnswerValue(key: string, raw: any, t: (path: string) => string): string | null {
+    if (raw === undefined || raw === null || raw === '') return null;
+    switch (key) {
+        case 'geo':
+            return t(`petshield.options.geo.${raw === 'yes' ? 'yes' : 'no'}`);
+        case 'ageRange':
+        case 'hoursAlone':
+        case 'petExperience':
+        case 'movingPlans':
+        case 'vacationPlan':
+        case 'housingType':
+        case 'hasOutdoor':
+        case 'isSafe':
+        case 'children': {
+            const val = String(raw);
+            return t(`petshield.options.${key}.${val}`);
+        }
+        case 'existingPets':
+            if (typeof raw !== 'object') return null;
+            const entries = Object.entries(raw as Record<string, number>)
+                .filter(([, v]) => typeof v === 'number' && v > 0);
+            if (entries.length === 0) return null;
+            return entries
+                .map(([type, count]) => {
+                    const label = t(`petshield.options.existingPets.${type}`) !== `petshield.options.existingPets.${type}` ? t(`petshield.options.existingPets.${type}`) : type;
+                    return `${count} ${label}`;
+                })
+                .join(', ');
+        case 'specialNeeds':
+        case 'vetCommitment':
+            return t(`petshield.options.boolean.${raw ? 'yes' : 'no'}`);
+        case 'willingToSterilize':
+            return t(`petshield.options.willingToSterilize.${raw ? String(raw) : 'no'}`);
+        case 'legal':
+            return t(`petshield.options.boolean.${raw ? 'yes' : 'no'}`);
+        case 'lifeStage': {
+            const val = String(raw).toLowerCase();
+            return t(`petshield.options.lifeStage.${val}`) !== `petshield.options.lifeStage.${val}` ? t(`petshield.options.lifeStage.${val}`) : String(raw);
+        }
+        case 'species': {
+            const val = String(raw).toLowerCase();
+            const out = t(`petshield.options.species.${val}`);
+            return out !== `petshield.options.species.${val}` ? out : String(raw);
+        }
+        case 'intent':
+            return raw === 'self' ? t('formResults.intent_self') : raw === 'gift' ? t('formResults.intent_gift') : String(raw);
+        default:
+            return String(raw);
+    }
 }
 
-export default function FormAnswersPanel({ fullAnswers }: FormAnswersPanelProps) {
+interface FormAnswersPanelProps {
+    fullAnswers: Record<string, any>;
+    /** Section ids to skip (e.g. ['identity', 'household'] when shown in form results as adopter info + other pets). */
+    excludeSections?: string[];
+}
+
+export default function FormAnswersPanel({ fullAnswers, excludeSections = [] }: FormAnswersPanelProps) {
     const { t } = useLanguage();
 
     if (!fullAnswers || Object.keys(fullAnswers).length === 0) return null;
 
-    // Helpers
     const get = (key: string): any => fullAnswers[key];
 
     const sections: Array<{ id: string; titleKey: string; fields: string[] }> = [
-        // Who this person is and their general profile
         { id: 'identity', titleKey: 'petshield.sections.identity', fields: ['ageRange', 'petExperience'] },
-        // Household composition and physical environment
         { id: 'household', titleKey: 'petshield.sections.household', fields: ['children', 'existingPets', 'housingType', 'hasOutdoor', 'isSafe', 'hoursAlone'] },
-        // What they are looking for
-        { id: 'preferences', titleKey: 'petshield.sections.preferences', fields: ['speciesOther', 'lifeStage'] },
-        // Long‑term commitments and logistics
+        { id: 'preferences', titleKey: 'petshield.sections.preferences', fields: ['species', 'speciesOther', 'lifeStage', 'intent'] },
         { id: 'commitments', titleKey: 'petshield.sections.commitments', fields: ['specialNeeds', 'willingToSterilize', 'vetCommitment', 'movingPlans', 'vacationPlan'] },
-        // Meta / legal context
         { id: 'context', titleKey: 'petshield.sections.context', fields: ['geo', 'legal'] },
-    ];
+    ].filter((s) => !excludeSections.includes(s.id));
 
-    const renderValue = (key: string, raw: any): string | null => {
-        if (raw === undefined || raw === null || raw === '') return null;
-
-        switch (key) {
-            case 'geo':
-                return t(`petshield.options.geo.${raw === 'yes' ? 'yes' : 'no'}`);
-            case 'ageRange':
-            case 'hoursAlone':
-            case 'petExperience':
-            case 'movingPlans':
-            case 'vacationPlan':
-            case 'housingType':
-            case 'hasOutdoor':
-            case 'isSafe':
-            case 'children': {
-                const val = String(raw);
-                return t(`petshield.options.${key}.${val}`);
-            }
-            case 'existingPets':
-                if (typeof raw !== 'object') return null;
-                const entries = Object.entries(raw as Record<string, number>)
-                    .filter(([, v]) => typeof v === 'number' && v > 0);
-                if (entries.length === 0) return null;
-                return entries
-                    .map(([type, count]) => {
-                        const label = t(`petshield.options.existingPets.${type}`) !== `petshield.options.existingPets.${type}` ? t(`petshield.options.existingPets.${type}`) : type;
-                        return `${count} ${label}`;
-                    })
-                    .join(', ');
-            case 'specialNeeds':
-            case 'vetCommitment':
-                return t(`petshield.options.boolean.${raw ? 'yes' : 'no'}`);
-            case 'willingToSterilize':
-                return t(`petshield.options.willingToSterilize.${raw ? String(raw) : 'no'}`);
-            case 'legal':
-                return t(`petshield.options.boolean.${raw ? 'yes' : 'no'}`);
-            case 'lifeStage': {
-                const val = String(raw).toLowerCase();
-                return t(`petshield.options.lifeStage.${val}`) !== `petshield.options.lifeStage.${val}` ? t(`petshield.options.lifeStage.${val}`) : String(raw);
-            }
-            default:
-                return String(raw);
-        }
-    };
+    const renderValue = (key: string, raw: any): string | null => renderFormAnswerValue(key, raw, t);
 
     return (
         <>

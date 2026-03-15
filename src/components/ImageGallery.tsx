@@ -31,7 +31,7 @@ interface ImageItem {
     thumbnailUrl?: string;
 }
 
-export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, isAdmin = false }: { adopterId: string, initialImages: ImageItem[], onUpload: (id: string, url: string, caption: string, mediaType?: string) => Promise<void | { id?: string }>, currentUser: string, isAdmin?: boolean }) {
+export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, isAdmin = false, userNameMap = {} }: { adopterId: string, initialImages: ImageItem[], onUpload: (id: string, url: string, caption: string, mediaType?: string) => Promise<void | { id?: string }>, currentUser: string, isAdmin?: boolean, userNameMap?: Record<string, string> }) {
     const { t } = useLanguage();
     const { data: session } = useSession();
     const { openLogin } = useAuthContext();
@@ -234,6 +234,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                             ) : (
                                 <img
                                     src={img.url}
+                                    alt={img.caption || ''}
                                     className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
                                     onClick={() => setLightboxItem({ url: img.url, caption: img.caption, mediaType: 'image' })}
                                     onError={(e) => {
@@ -321,7 +322,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                                     {img.addedBy ? (
                                         <span className="flex items-center gap-1">
                                             <span className="opacity-75 font-normal">{t('common.added_by')}</span>
-                                            <span>{img.addedBy}</span>
+                                            <span>{userNameMap?.[img.addedBy] || img.addedBy}</span>
                                         </span>
                                     ) : img.caption}
                                 </p>

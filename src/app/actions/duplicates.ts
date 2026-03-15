@@ -1,7 +1,7 @@
 'use server';
 
 import { adopters, adoptions, duplicateTokens, duplicateCandidates } from '@/db/schema';
-import { eq, or, and, sql, inArray } from 'drizzle-orm';
+import { eq, or, and, inArray } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { getDb } from './_db';
 import { extractTokens, computeTokenHash, normalizeText, extractPhones, extractEmails, extractSocials, type Token } from '@/lib/tokenizer';

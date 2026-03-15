@@ -11,7 +11,7 @@ import { extractErrorId } from '@/lib/errorUtils';
 import { getSourceIcon, getSourceName } from '@/lib/sourceIcons';
 import { formatShortDate } from '@/lib/dates';
 import { isAdmin as isAdminEmail } from '@/config/admins-shared';
-import { MediaLightbox, MediaThumbnail, isVideo } from '@/components/ui/MediaLightbox';
+import { MediaLightbox, MediaThumbnail } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 
 import AdoptionForm from './AdoptionForm';
@@ -43,7 +43,7 @@ interface AdoptionImage {
     caption?: string | null;
 }
 
-export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, adopterAddress = '' }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, adopterAddress?: string }) {
+export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, adopterAddress = '', userNameMap = {} }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, adopterAddress?: string, userNameMap?: Record<string, string> }) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
@@ -320,7 +320,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                         </a>
                                     )}
                                     {adoption.addedBy && !isAdminEmail(adoption.addedBy) && (
-                                        <span>{t('common.added_by')} {adoption.addedBy}</span>
+                                        <span>{t('common.added_by')} {userNameMap?.[adoption.addedBy] || adoption.addedBy}</span>
                                     )}
                                 </div>
                             </div>

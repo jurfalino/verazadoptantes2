@@ -14,11 +14,11 @@ export interface AdopterFlaggingHandle {
     openAction: (action: string) => void;
 }
 
-export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], hasVerifiedAdoption?: boolean, hasVerifiedAddress?: boolean, tooManyAdoptions?: { count: number; threshold: number; periodDays: number }, tooManyRequests?: { count: number; threshold: number; periodDays: number } }>(function AdopterFlagging({ adopterId, adopterName, existingFlags, hasVerifiedAdoption = false, hasVerifiedAddress = false, tooManyAdoptions, tooManyRequests }, ref) {
+export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], hasVerifiedAdoption?: boolean, hasVerifiedAddress?: boolean, tooManyAdoptions?: { count: number; threshold: number; periodDays: number }, tooManyRequests?: { count: number; threshold: number; periodDays: number } }>(function AdopterFlagging({ adopterId, adopterName: _adopterName, existingFlags, hasVerifiedAdoption = false, hasVerifiedAddress = false, tooManyAdoptions, tooManyRequests }, ref) {
     const router = useRouter();
     const { t } = useLanguage();
-    const { data: session } = useSession();
-    const { openLogin } = useAuthContext();
+    const { data: _session } = useSession();
+    const { openLogin: _openLogin } = useAuthContext();
     const toast = useShowToast();
     const [isOpen, setIsOpen] = useState(false);
     const [reason, setReason] = useState('duplicate');
