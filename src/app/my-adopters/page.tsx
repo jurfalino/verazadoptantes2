@@ -4,6 +4,7 @@ export const runtime = 'edge';
 import { useLanguage } from '@/context/LanguageContext';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { RatingBadge } from '@/components/RatingBadge';
 import { formatShortDate } from '@/lib/dates';
 
@@ -31,6 +32,7 @@ interface Adopter {
     searchHits: number;
     profileViews: number;
     formCount?: number;
+    addedBy?: string | null;
 }
 
 interface UnlinkedForm {
@@ -97,6 +99,8 @@ function FlagBadges({ flags, t }: { flags: AdopterFlags; t: (key: string) => str
 
 export default function MyAdoptersPage() {
     const { t } = useLanguage();
+    const { data: session } = useSession();
+    const currentEmail = session?.user?.email || '';
     const [adopters, setAdopters] = useState<Adopter[]>([]);
     const [unlinkedForms, setUnlinkedForms] = useState<UnlinkedForm[]>([]);
     const [loading, setLoading] = useState(true);
@@ -307,6 +311,9 @@ export default function MyAdoptersPage() {
                                             <div className="min-w-0">
                                                 <div className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate text-sm">{adopter.name}</div>
                                                 <div className="text-xs text-stone-500 truncate">{adopter.contactInfo || t('dashboard.no_contact')}</div>
+                                                {adopter.addedBy && adopter.addedBy !== currentEmail && (
+                                                    <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', adopter.addedBy)}</div>
+                                                )}
                                             </div>
                                         </div>
 
@@ -375,6 +382,9 @@ export default function MyAdoptersPage() {
                                         <div className="flex-1 min-w-0">
                                             <div className="font-semibold text-stone-900 truncate">{adopter.name}</div>
                                             <div className="text-xs text-stone-500 truncate">{adopter.contactInfo || t('dashboard.no_contact')}</div>
+                                            {adopter.addedBy && adopter.addedBy !== currentEmail && (
+                                                <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', adopter.addedBy)}</div>
+                                            )}
                                         </div>
                                         <RatingBadge rating={adopter.avgRating !== null ? String(Math.round(adopter.avgRating)) : (adopter.status || '5')} size="sm" />
                                     </div>

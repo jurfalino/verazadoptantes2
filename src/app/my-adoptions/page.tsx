@@ -4,6 +4,7 @@ export const runtime = 'edge';
 import { useLanguage } from '@/context/LanguageContext';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import { RatingBadge } from '@/components/RatingBadge';
 import { formatShortDate } from '@/lib/dates';
@@ -25,6 +26,7 @@ interface Adoption {
     recordType: string | null;
     comments: string | null;
     images: AdoptionImage[];
+    addedBy?: string | null;
 }
 
 function getContractUrl(comments: string | null | undefined): string | null {
@@ -42,6 +44,8 @@ type RecordTypeFilter = typeof RECORD_TYPES[number];
 
 export default function MyAdoptionsPage() {
     const { t } = useLanguage();
+    const { data: session } = useSession();
+    const currentEmail = session?.user?.email || '';
     const searchParams = useSearchParams();
     const filterParam = searchParams.get('filter') || 'all';
     const filter: RecordTypeFilter = RECORD_TYPES.includes(filterParam as RecordTypeFilter)
@@ -207,6 +211,9 @@ export default function MyAdoptionsPage() {
                                                             <span className="font-semibold text-stone-900 text-sm">{adoption.animalName || t('adoption.unnamed') || 'Unnamed'}</span>
                                                         )}
                                                         <div className="text-xs text-stone-500 capitalize">{adoption.species || t('dashboard.unknown_species')}</div>
+                                                        {adoption.addedBy && adoption.addedBy !== currentEmail && (
+                                                            <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', adoption.addedBy)}</div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </td>
@@ -294,6 +301,9 @@ export default function MyAdoptionsPage() {
                                                 <span className="font-semibold text-stone-900">{adoption.animalName || t('adoption.unnamed') || 'Unnamed'}</span>
                                             )}
                                             <div className="text-xs text-stone-500 capitalize">{adoption.species || t('dashboard.unknown_species')}</div>
+                                            {adoption.addedBy && adoption.addedBy !== currentEmail && (
+                                                <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', adoption.addedBy)}</div>
+                                            )}
                                             {/* Type Badge */}
                                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold mt-1 ${getTypeBadgeStyle(adoption.recordType)}`}>
                                                 {getTypeLabel(adoption.recordType || 'adoption')}
