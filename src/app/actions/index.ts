@@ -20,7 +20,7 @@ export { getAdopter, saveAdopter, getAdopterStats, logProfileView, getAverageRat
 export { saveImage, getImages, setProfilePicture, getAdoptionImages, deleteImage } from './images';
 
 // Adoptions
-export { saveAdoption, deleteAdoption, getAdoptions, getAvailableAnimals } from './adoptions';
+export { saveAdoption, deleteAdoption, getAdoptions, getAvailableAnimals, deleteAnimalForAdoption, deleteAnimalImage } from './adoptions';
 
 // Flags
 export { flagAdopter, getFlags, dismissFlag, removeVerification } from './flags';

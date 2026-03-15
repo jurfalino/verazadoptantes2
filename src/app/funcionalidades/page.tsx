@@ -9,10 +9,10 @@ import { ShieldPawIcon } from '@/components/Logo';
 /* ── Features with real screenshots ────────────────────────── */
 
 const FEATURES = [
-    { key: 'search',    img: '/images/features/profile.png' },
-    { key: 'import',    img: '/images/features/import.png' },
-    { key: 'dashboard', img: '/images/features/dashboard.png' },
-    { key: 'orgs',      img: '/images/features/organizations.png' },
+    { key: 'search',    img: '/images/features/profile.png',        img2: '/images/features/profile2.png', noBrowserFrame: false },
+    { key: 'dashboard', img: '/images/features/dashboard.png',       noBrowserFrame: false },
+    { key: 'forms',     img: '/images/features/forms.png',           img2: '/images/features/forms2.png', img3: '/images/features/forms3.png', noBrowserFrame: true },
+    { key: 'orgs',      img: '/images/features/organizations.png',   noBrowserFrame: false },
 ] as const;
 
 /* ── Scroll reveal ────────────────────────────────────────── */
@@ -121,26 +121,75 @@ export default function FuncionalidadesPage() {
                         >
                             {/* Screenshot */}
                             <div className={isReversed ? 'lg:order-2' : ''}>
-                                <div className="screenshot-frame rounded-2xl overflow-hidden bg-stone-200 ring-1 ring-stone-300/50">
-                                    {/* Fake browser chrome */}
-                                    <div className="bg-stone-100 border-b border-stone-200 px-4 py-2.5 flex items-center gap-2">
-                                        <div className="flex gap-1.5">
-                                            <div className="w-2.5 h-2.5 rounded-full bg-stone-300" />
-                                            <div className="w-2.5 h-2.5 rounded-full bg-stone-300" />
-                                            <div className="w-2.5 h-2.5 rounded-full bg-stone-300" />
+                                {'img3' in feat && feat.img3 && 'img2' in feat && feat.img2 ? (
+                                    /* Triple-image layout: cascading diagonal steps */
+                                    <div className="relative" style={{ paddingBottom: '20%' }}>
+                                        {/* Back — step 3 (right, top) */}
+                                        <div className="absolute right-0 top-0 w-[55%] rounded-2xl overflow-hidden shadow-xl ring-1 ring-stone-200 z-10">
+                                            <Image src={feat.img3} alt="Step 3" width={440} height={780} className="w-full h-auto" />
                                         </div>
-                                        <div className="flex-1 bg-white rounded-md px-3 py-1 text-[10px] text-stone-400 font-mono ml-2 truncate">
-                                            buenadoptante.com
+                                        {/* Middle — step 2 */}
+                                        <div className="relative w-[55%] mx-auto mt-[5%] rounded-2xl overflow-hidden shadow-2xl ring-1 ring-stone-200 z-20">
+                                            <Image src={feat.img2} alt="Step 2" width={440} height={780} className="w-full h-auto" />
+                                        </div>
+                                        {/* Front — step 1 (left, bottom) */}
+                                        <div className="absolute left-0 bottom-0 w-[55%] rounded-2xl overflow-hidden shadow-2xl ring-1 ring-stone-300 z-30">
+                                            <Image src={feat.img} alt="Step 1" width={440} height={780} className="w-full h-auto" />
                                         </div>
                                     </div>
-                                    <Image
-                                        src={feat.img}
-                                        alt={t(`features.feat_${feat.key}_title`)}
-                                        width={700}
-                                        height={440}
-                                        className="w-full h-auto"
-                                    />
-                                </div>
+                                ) : 'img2' in feat && feat.img2 ? (
+                                    /* Dual-image layout: two screenshots side by side with overlap */
+                                    <div className="relative" style={{ paddingBottom: '8%' }}>
+                                        <div className="screenshot-frame rounded-2xl overflow-hidden ring-1 ring-stone-300/50 bg-stone-200 relative z-10 w-[58%]">
+                                            <div className="bg-stone-100 border-b border-stone-200 px-4 py-2.5 flex items-center gap-2">
+                                                <div className="flex gap-1.5">
+                                                    <div className="w-2.5 h-2.5 rounded-full bg-stone-300" />
+                                                    <div className="w-2.5 h-2.5 rounded-full bg-stone-300" />
+                                                    <div className="w-2.5 h-2.5 rounded-full bg-stone-300" />
+                                                </div>
+                                                <div className="flex-1 bg-white rounded-md px-3 py-1 text-[10px] text-stone-400 font-mono ml-2 truncate">
+                                                    buenadoptante.com
+                                                </div>
+                                            </div>
+                                            <Image src={feat.img} alt={t(`features.feat_${feat.key}_title`)} width={500} height={400} className="w-full h-auto" />
+                                        </div>
+                                        <div className="screenshot-frame rounded-2xl overflow-hidden ring-1 ring-stone-300/50 bg-stone-200 absolute top-[8%] right-0 w-[52%] z-20">
+                                            <div className="bg-stone-100 border-b border-stone-200 px-4 py-2.5 flex items-center gap-2">
+                                                <div className="flex gap-1.5">
+                                                    <div className="w-2.5 h-2.5 rounded-full bg-stone-300" />
+                                                    <div className="w-2.5 h-2.5 rounded-full bg-stone-300" />
+                                                    <div className="w-2.5 h-2.5 rounded-full bg-stone-300" />
+                                                </div>
+                                                <div className="flex-1 bg-white rounded-md px-3 py-1 text-[10px] text-stone-400 font-mono ml-2 truncate">
+                                                    buenadoptante.com
+                                                </div>
+                                            </div>
+                                            <Image src={feat.img2} alt={t(`features.feat_${feat.key}_title`)} width={500} height={400} className="w-full h-auto" />
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className={`screenshot-frame rounded-2xl overflow-hidden ring-1 ring-stone-300/50 ${feat.noBrowserFrame ? 'bg-slate-900' : 'bg-stone-200'}`}>
+                                        {!feat.noBrowserFrame && (
+                                            <div className="bg-stone-100 border-b border-stone-200 px-4 py-2.5 flex items-center gap-2">
+                                                <div className="flex gap-1.5">
+                                                    <div className="w-2.5 h-2.5 rounded-full bg-stone-300" />
+                                                    <div className="w-2.5 h-2.5 rounded-full bg-stone-300" />
+                                                    <div className="w-2.5 h-2.5 rounded-full bg-stone-300" />
+                                                </div>
+                                                <div className="flex-1 bg-white rounded-md px-3 py-1 text-[10px] text-stone-400 font-mono ml-2 truncate">
+                                                    buenadoptante.com
+                                                </div>
+                                            </div>
+                                        )}
+                                        <Image
+                                            src={feat.img}
+                                            alt={t(`features.feat_${feat.key}_title`)}
+                                            width={700}
+                                            height={feat.noBrowserFrame ? 700 : 440}
+                                            className={`w-full h-auto ${feat.noBrowserFrame ? 'object-contain p-4' : ''}`}
+                                        />
+                                    </div>
+                                )}
                             </div>
 
                             {/* Copy */}

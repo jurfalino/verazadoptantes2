@@ -266,6 +266,22 @@ export default function NotificationBell() {
                             })
                         )}
                     </div>
+
+                    {/* Footer — See all link */}
+                    <a
+                        href="/notificaciones"
+                        onClick={(e) => { e.preventDefault(); setOpen(false); router.push('/notificaciones'); }}
+                        className="block w-full text-center py-2.5 text-xs font-semibold transition-colors"
+                        style={{
+                            borderTop: '1px solid var(--border-default)',
+                            color: 'var(--brand)',
+                            textDecoration: 'none',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-muted)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                    >
+                        {isEs ? 'Ver todas →' : 'See all →'}
+                    </a>
                 </div>
             )}
         </div>

@@ -2,7 +2,7 @@
 
 import { getDb } from '@/lib/db';
 import { notifications } from '@/db/schema';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, sql, or } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 
 /**
@@ -77,6 +77,7 @@ export async function getUnreadCount(userId: string): Promise<number> {
 
 /**
  * Get notifications for a user (most recent first, limit 20).
+ * Excludes dismissed notifications — used by the bell dropdown.
  */
 export async function getNotifications(userId: string) {
     try {
@@ -86,7 +87,10 @@ export async function getNotifications(userId: string) {
         return await db
             .select()
             .from(notifications)
-            .where(eq(notifications.userId, userId))
+            .where(and(
+                eq(notifications.userId, userId),
+                eq(notifications.dismissed, 0)
+            ))
             .orderBy(desc(notifications.createdAt))
             .limit(20)
             .all();
@@ -130,6 +134,135 @@ export async function markAllNotificationsRead(userId: string): Promise<boolean>
         return true;
     } catch (error) {
         logger.error('Failed to mark all notifications read', error, { userId });
+        return false;
+    }
+}
+
+const PAGE_SIZE = 20;
+
+/**
+ * Get paginated notifications for the full notifications page.
+ * filter: 'all' | 'unread' | 'archived'
+ * type: optional notification type filter
+ */
+export async function getNotificationsPaginated(userId: string, opts: {
+    page?: number;
+    filter?: 'all' | 'unread' | 'archived';
+    type?: string;
+} = {}): Promise<{ items: any[]; total: number; hasMore: boolean }> {
+    try {
+        const db = await getDb();
+        if (!db) return { items: [], total: 0, hasMore: false };
+
+        const page = Math.max(1, opts.page || 1);
+        const filter = opts.filter || 'all';
+        const offset = (page - 1) * PAGE_SIZE;
+
+        // Build WHERE conditions
+        const conditions = [eq(notifications.userId, userId)];
+
+        if (filter === 'unread') {
+            conditions.push(eq(notifications.read, 0));
+            conditions.push(eq(notifications.dismissed, 0));
+        } else if (filter === 'archived') {
+            conditions.push(eq(notifications.dismissed, 1));
+        } else {
+            // 'all' shows non-dismissed
+            conditions.push(eq(notifications.dismissed, 0));
+        }
+
+        if (opts.type) {
+            conditions.push(eq(notifications.type, opts.type));
+        }
+
+        const where = and(...conditions);
+
+        const [items, countResult] = await Promise.all([
+            db.select()
+                .from(notifications)
+                .where(where)
+                .orderBy(desc(notifications.createdAt))
+                .limit(PAGE_SIZE)
+                .offset(offset)
+                .all(),
+            db.select({ count: sql<number>`count(*)` })
+                .from(notifications)
+                .where(where)
+                .get(),
+        ]);
+
+        const total = countResult?.count || 0;
+
+        return {
+            items,
+            total,
+            hasMore: offset + PAGE_SIZE < total,
+        };
+    } catch (error) {
+        logger.error('Failed to get paginated notifications', error, { userId });
+        return { items: [], total: 0, hasMore: false };
+    }
+}
+
+/**
+ * Get distinct notification types for a user (for filter pills).
+ */
+export async function getNotificationTypes(userId: string): Promise<string[]> {
+    try {
+        const db = await getDb();
+        if (!db) return [];
+
+        const rows = await db
+            .selectDistinct({ type: notifications.type })
+            .from(notifications)
+            .where(eq(notifications.userId, userId))
+            .all();
+
+        return rows.map((r: { type: string }) => r.type);
+    } catch (error) {
+        logger.error('Failed to get notification types', error, { userId });
+        return [];
+    }
+}
+
+/**
+ * Dismiss (archive) a single notification.
+ */
+export async function dismissNotification(id: string, userId: string): Promise<boolean> {
+    try {
+        const db = await getDb();
+        if (!db) return false;
+
+        await db.update(notifications)
+            .set({ dismissed: 1 })
+            .where(and(eq(notifications.id, id), eq(notifications.userId, userId)));
+
+        return true;
+    } catch (error) {
+        logger.error('Failed to dismiss notification', error, { id, userId });
+        return false;
+    }
+}
+
+/**
+ * Dismiss all read notifications for a user.
+ */
+export async function dismissAllNotifications(userId: string): Promise<boolean> {
+    try {
+        const db = await getDb();
+        if (!db) return false;
+
+        await db.update(notifications)
+            .set({ dismissed: 1 })
+            .where(and(
+                eq(notifications.userId, userId),
+                eq(notifications.read, 1),
+                eq(notifications.dismissed, 0)
+            ));
+
+        return true;
+    } catch (error) {
+        logger.error('Failed to dismiss all notifications', error, { userId });
         return false;
     }
 }

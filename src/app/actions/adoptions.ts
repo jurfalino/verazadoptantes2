@@ -226,3 +226,71 @@ export async function getAvailableAnimals() {
         return [];
     }
 }
+
+/**
+ * Delete an animal-for-adoption record + its images.
+ * Verifies the current user is the one who added it.
+ */
+export async function deleteAnimalForAdoption(adoptionId: string) {
+    try {
+        const db = await getDb();
+        if (!db) throw new Error("No database");
+        const changedBy = await getUser();
+
+        // Verify ownership
+        const existing = await db.select().from(adoptions).where(eq(adoptions.id, adoptionId)).get();
+        if (!existing) throw new Error("Animal not found");
+        if (existing.addedBy !== changedBy) throw new Error("Not authorized to delete this animal");
+
+        // Delete associated images first
+        const { adopterImages } = await import('@/db/schema');
+        await db.delete(adopterImages).where(eq(adopterImages.adoptionId, adoptionId));
+
+        // Delete the adoption record
+        await db.delete(adoptions).where(eq(adoptions.id, adoptionId));
+
+        logAudit({ userEmail: changedBy, action: 'animal_for_adoption_deleted', target: adoptionId, details: { animalName: existing.animalName } });
+        revalidatePath('/my-animals');
+        logger.info('Animal for adoption deleted', { adoptionId, animalName: existing.animalName, changedBy });
+
+        return { success: true };
+    } catch (error) {
+        const errorId = logger.error('Delete animal for adoption failed', error, { adoptionId });
+        throw new Error(`Failed to delete animal (Error ID: ${errorId})`);
+    }
+}
+
+/**
+ * Delete a single image from an animal-for-adoption record.
+ * Verifies the current user owns the parent adoption.
+ */
+export async function deleteAnimalImage(imageId: string, adoptionId: string) {
+    try {
+        const db = await getDb();
+        if (!db) throw new Error("No database");
+        const changedBy = await getUser();
+
+        // Verify ownership via the parent adoption
+        const adoption = await db.select().from(adoptions).where(eq(adoptions.id, adoptionId)).get();
+        if (!adoption) throw new Error("Animal not found");
+        if (adoption.addedBy !== changedBy) throw new Error("Not authorized to delete this image");
+
+        const { adopterImages } = await import('@/db/schema');
+
+        // Verify image exists and belongs to this adoption
+        const existing = await db.select().from(adopterImages).where(eq(adopterImages.id, imageId)).get();
+        if (!existing) throw new Error("Image not found");
+
+        await db.delete(adopterImages).where(eq(adopterImages.id, imageId));
+
+        logAudit({ userEmail: changedBy, action: 'animal_image_deleted', target: imageId, details: { adoptionId } });
+        revalidatePath('/my-animals');
+        logger.info('Animal image deleted', { imageId, adoptionId, changedBy });
+
+        return { success: true };
+    } catch (error) {
+        const errorId = logger.error('Delete animal image failed', error, { imageId, adoptionId });
+        throw new Error(`Failed to delete image (Error ID: ${errorId})`);
+    }
+}
+

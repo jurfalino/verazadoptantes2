@@ -252,6 +252,7 @@ export const notifications = sqliteTable("notifications", {
     url: text("url"), // link to results page
     icon: text("icon").default("📋"),
     read: integer("read").default(0), // 0=unread, 1=read
+    dismissed: integer("dismissed").default(0), // 0=active, 1=dismissed/archived
     metadata: text("metadata"), // JSON blob (match count, animal name, etc.)
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     expiresAt: integer("expires_at", { mode: "timestamp" }),

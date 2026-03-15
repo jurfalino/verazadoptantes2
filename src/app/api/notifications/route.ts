@@ -2,12 +2,17 @@ export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
 import { getUser } from '@/app/actions/_db';
-import { getNotifications, getUnreadCount, markNotificationRead, markAllNotificationsRead } from '@/app/actions/notifications';
+import {
+    getNotifications, getUnreadCount, markNotificationRead, markAllNotificationsRead,
+    getNotificationsPaginated, getNotificationTypes, dismissNotification, dismissAllNotifications
+} from '@/app/actions/notifications';
 
 /**
  * GET /api/notifications
  * Returns notifications + unread count for the authenticated user.
- * Query param: ?countOnly=true for just the badge count.
+ * Query params:
+ *   ?countOnly=true — just the badge count
+ *   ?page=1&filter=all&type=contract_result — paginated view for the full page
  */
 export async function GET(request: Request) {
     const user = await getUser();
@@ -23,6 +28,22 @@ export async function GET(request: Request) {
         return NextResponse.json({ unreadCount: count });
     }
 
+    // Paginated mode (for the full notifications page)
+    const page = url.searchParams.get('page');
+    if (page) {
+        const filter = (url.searchParams.get('filter') || 'all') as 'all' | 'unread' | 'archived';
+        const type = url.searchParams.get('type') || undefined;
+
+        const [result, types, unreadCount] = await Promise.all([
+            getNotificationsPaginated(user, { page: parseInt(page, 10), filter, type }),
+            getNotificationTypes(user),
+            getUnreadCount(user),
+        ]);
+
+        return NextResponse.json({ ...result, types, unreadCount });
+    }
+
+    // Default: bell dropdown (latest 20, no dismissed)
     const [items, unreadCount] = await Promise.all([
         getNotifications(user),
         getUnreadCount(user),
@@ -33,8 +54,8 @@ export async function GET(request: Request) {
 
 /**
  * PATCH /api/notifications
- * Mark one or all notifications as read.
- * Body: { id: string } or { markAllRead: true }
+ * Mark one or all notifications as read, or dismiss.
+ * Body: { id: string } | { markAllRead: true } | { dismiss: string } | { dismissAll: true }
  */
 export async function PATCH(request: Request) {
     const user = await getUser();
@@ -42,10 +63,25 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const body = await request.json() as { id?: string; markAllRead?: boolean };
+    const body = await request.json() as {
+        id?: string;
+        markAllRead?: boolean;
+        dismiss?: string;
+        dismissAll?: boolean;
+    };
 
     if (body.markAllRead) {
         await markAllNotificationsRead(user);
+        return NextResponse.json({ success: true });
+    }
+
+    if (body.dismissAll) {
+        await dismissAllNotifications(user);
+        return NextResponse.json({ success: true });
+    }
+
+    if (body.dismiss) {
+        await dismissNotification(body.dismiss, user);
         return NextResponse.json({ success: true });
     }
 
@@ -54,5 +90,5 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ success: true });
     }
 
-    return NextResponse.json({ error: 'Missing id or markAllRead' }, { status: 400 });
+    return NextResponse.json({ error: 'Missing action' }, { status: 400 });
 }

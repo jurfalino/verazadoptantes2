@@ -8,6 +8,9 @@ import { useSession } from 'next-auth/react';
 import { formatShortDate } from '@/lib/dates';
 import ShareMenu from '@/components/ShareMenu';
 import ShareFormMenu from '@/components/ShareFormMenu';
+import { deleteAnimalForAdoption } from '@/app/actions';
+import { useShowToast } from '@/components/ui/Toast';
+import { extractErrorId } from '@/lib/errorUtils';
 
 interface AnimalImage {
     id: string;
@@ -24,13 +27,17 @@ interface Animal {
     adopterId: string | null;
     adopterName: string | null;
     date: number | null;
+    age: string | null;
+    sex: string | null;
+    color: string | null;
     images: AnimalImage[];
 }
 
 export default function MyAnimalsPage() {
-    const { t } = useLanguage();
+    const { t, locale } = useLanguage();
     const searchParams = useSearchParams();
     const { data: session } = useSession();
+    const toast = useShowToast();
     const view = searchParams.get('view') || 'available';
     const userId = session?.user?.id || '';
 
@@ -293,7 +300,30 @@ export default function MyAnimalsPage() {
                                     </Link>
 
                                     {animal.details && (
-                                        <p className="text-sm text-stone-500 mb-3 line-clamp-2">{animal.details}</p>
+                                        <p className="text-sm text-stone-500 mb-2 line-clamp-2">{animal.details}</p>
+                                    )}
+
+                                    {/* Age / Sex / Color pills */}
+                                    {(animal.age || animal.sex || animal.color) && (
+                                        <div className="flex flex-wrap gap-1.5 mb-3">
+                                            {animal.sex && (
+                                                <span className="px-2 py-0.5 bg-stone-100 text-stone-600 rounded-full text-xs font-medium">
+                                                    {animal.sex === 'male' || animal.sex === 'macho' ? '♂ ' + (locale === 'es' ? 'Macho' : 'Male')
+                                                        : animal.sex === 'female' || animal.sex === 'hembra' ? '♀ ' + (locale === 'es' ? 'Hembra' : 'Female')
+                                                        : animal.sex}
+                                                </span>
+                                            )}
+                                            {animal.age && (
+                                                <span className="px-2 py-0.5 bg-stone-100 text-stone-600 rounded-full text-xs font-medium">
+                                                    {animal.age}
+                                                </span>
+                                            )}
+                                            {animal.color && (
+                                                <span className="px-2 py-0.5 bg-stone-100 text-stone-600 rounded-full text-xs font-medium">
+                                                    🎨 {animal.color}
+                                                </span>
+                                            )}
+                                        </div>
                                     )}
 
                                     {/* Adopter info (for adopted view) */}

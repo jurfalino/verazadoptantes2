@@ -6,7 +6,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { saveAdoption } from '@/app/actions';
+import { saveAdoption, deleteAnimalForAdoption, deleteAnimalImage } from '@/app/actions';
 import { extractErrorId } from '@/lib/errorUtils';
 import Link from 'next/link';
 
@@ -49,7 +49,7 @@ export default function NewAnimalPage() {
     const editId = searchParams.get('edit');
     const isEditMode = !!editId;
 
-    const { t } = useLanguage();
+    const { t, locale } = useLanguage();
     const { data: session } = useSession();
     const { openLogin } = useAuthContext();
     const toast = useShowToast();
@@ -57,6 +57,7 @@ export default function NewAnimalPage() {
     const [loading, setLoading] = useState(false);
     const [loadingData, setLoadingData] = useState(isEditMode);
     const [uploading, setUploading] = useState(false);
+    const [deleting, setDeleting] = useState(false);
     const [pendingImages, setPendingImages] = useState<string[]>([]);
     const [existingImages, setExistingImages] = useState<ExistingImage[]>([]);
     const [customSpecies, setCustomSpecies] = useState(false);
@@ -366,9 +367,29 @@ export default function NewAnimalPage() {
                                                 alt={img.caption || 'Photo'}
                                                 className="w-20 h-20 object-cover rounded-lg border border-teal-200"
                                             />
-                                            <div className="absolute inset-0 bg-teal-600/10 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <span className="text-xs text-white bg-black/40 px-1 rounded">saved</span>
-                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={async () => {
+                                                    if (!editId) return;
+                                                    const confirmed = window.confirm(
+                                                        locale === 'es'
+                                                            ? '¿Eliminar esta foto? Esta acción no se puede deshacer.'
+                                                            : 'Delete this photo? This cannot be undone.'
+                                                    );
+                                                    if (!confirmed) return;
+                                                    try {
+                                                        await deleteAnimalImage(img.id, editId);
+                                                        setExistingImages(prev => prev.filter(i => i.id !== img.id));
+                                                        toast.success('✓', locale === 'es' ? 'Foto eliminada' : 'Photo deleted');
+                                                    } catch (err) {
+                                                        toast.error('Error', locale === 'es' ? 'No se pudo eliminar la foto' : 'Could not delete photo', extractErrorId(err));
+                                                    }
+                                                }}
+                                                className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
+                                                title={locale === 'es' ? 'Eliminar foto' : 'Delete photo'}
+                                            >
+                                                ×
+                                            </button>
                                         </div>
                                     ))}
                                 </div>
@@ -407,25 +428,58 @@ export default function NewAnimalPage() {
                         </div>
 
                         {/* Actions */}
-                        <div className="flex justify-end gap-3 pt-4 border-t border-stone-100">
-                            <Link
-                                href="/my-animals"
-                                className="px-5 py-2.5 text-sm font-semibold text-stone-600 hover:bg-stone-100 rounded-lg transition-colors"
-                            >
-                                {t('common.cancel') || 'Cancel'}
-                            </Link>
-                            <button
-                                type="submit"
-                                disabled={loading}
-                                className="px-6 py-2.5 text-sm font-semibold text-white bg-teal-700 rounded-xl hover:bg-teal-600 shadow-lg shadow-teal-700/20 hover:shadow-teal-700/40 disabled:opacity-50 transition-all duration-300 active:scale-[0.99]"
-                            >
-                                {loading
-                                    ? (t('common.processing') || 'Processing...')
-                                    : isEditMode
-                                        ? '💾 ' + (t('common.save') || 'Save Changes')
-                                        : '🐾 ' + (t('dashboard.add_animal') || 'Add Animal')
-                                }
-                            </button>
+                        <div className="flex items-center justify-between gap-3 pt-4 border-t border-stone-100">
+                            {/* Delete button (edit mode only) */}
+                            {isEditMode && editId ? (
+                                <button
+                                    type="button"
+                                    disabled={deleting}
+                                    onClick={async () => {
+                                        const confirmed = window.confirm(
+                                            locale === 'es'
+                                                ? `¿Eliminar "${formData.animalName || 'este animal'}"? Se borrarán también todas sus fotos. Esta acción no se puede deshacer.`
+                                                : `Delete "${formData.animalName || 'this animal'}"? All photos will also be removed. This cannot be undone.`
+                                        );
+                                        if (!confirmed) return;
+                                        setDeleting(true);
+                                        try {
+                                            await deleteAnimalForAdoption(editId);
+                                            toast.success('✓', locale === 'es' ? 'Animal eliminado' : 'Animal deleted');
+                                            router.push('/my-animals');
+                                        } catch (err) {
+                                            toast.error('Error', locale === 'es' ? 'No se pudo eliminar' : 'Could not delete', extractErrorId(err));
+                                            setDeleting(false);
+                                        }
+                                    }}
+                                    className="px-4 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-50"
+                                >
+                                    {deleting
+                                        ? (locale === 'es' ? 'Eliminando...' : 'Deleting...')
+                                        : '🗑️ ' + (locale === 'es' ? 'Eliminar animal' : 'Delete animal')
+                                    }
+                                </button>
+                            ) : <div />}
+
+                            <div className="flex gap-3">
+                                <Link
+                                    href="/my-animals"
+                                    className="px-5 py-2.5 text-sm font-semibold text-stone-600 hover:bg-stone-100 rounded-lg transition-colors"
+                                >
+                                    {t('common.cancel') || 'Cancel'}
+                                </Link>
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    className="px-6 py-2.5 text-sm font-semibold text-white bg-teal-700 rounded-xl hover:bg-teal-600 shadow-lg shadow-teal-700/20 hover:shadow-teal-700/40 disabled:opacity-50 transition-all duration-300 active:scale-[0.99]"
+                                >
+                                    {loading
+                                        ? (t('common.processing') || 'Processing...')
+                                        : isEditMode
+                                            ? '💾 ' + (t('common.save') || 'Save Changes')
+                                            : '🐾 ' + (t('dashboard.add_animal') || 'Add Animal')
+                                    }
+                                </button>
+                            </div>
                         </div>
                     </form>
                 </div>
