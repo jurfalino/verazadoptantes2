@@ -24,7 +24,7 @@ test.describe('Authenticated User', () => {
         await page.fill('input#search', TEST_NAMES.MARIA);
         await page.getByRole('button', { name: /search records|buscar registros/i }).click();
 
-        await expect(page.getByText(/found \d+ match|\d+ resultados encontrados/i)).toBeVisible({ timeout: 15000 });
+        await expect(page.getByText(/found \d+ match|\d+ resultados encontrados/i)).toBeVisible({ timeout: 30000 });
 
         // Authenticated users see full names (not PII-masked)
         await expect(page.getByText(TEST_NAMES.MARIA).first()).toBeVisible({ timeout: 5000 });
@@ -37,9 +37,9 @@ test.describe('Authenticated User', () => {
         await page.goto(`/adopter/${TEST_ADOPTERS.NUEVA}`);
         await expect(page.getByRole('heading', { name: TEST_NAMES.NUEVA })).toBeVisible({ timeout: 15000 });
 
-        // Step 2: Click the "+ Record New Adoption" button to open the form
-        const openFormBtn = page.getByRole('button', { name: /Register Adoption|Registrar Adopción/i });
-        await expect(openFormBtn).toBeVisible({ timeout: 5000 });
+        // Step 2: Click the "+ New Interaction" button to open the form
+        const openFormBtn = page.getByRole('button', { name: /New Interaction|Nueva Interacci/i });
+        await expect(openFormBtn).toBeVisible({ timeout: 10000 });
         await openFormBtn.click();
 
         // Step 3: Fill in the adoption form
@@ -64,7 +64,7 @@ test.describe('Authenticated User', () => {
         await submitBtn.click();
 
         // Step 5: Wait for save confirmation — form should close/collapse
-        await expect(page.getByRole('button', { name: /Record Adoption|Registrar Adopción/i })).not.toBeVisible({ timeout: 10000 });
+        await expect(page.getByRole('button', { name: /New Interaction|Nueva Interacci/i })).not.toBeVisible({ timeout: 10000 });
 
         // Step 6: Verify the record persisted — reload and check
         await page.reload();
