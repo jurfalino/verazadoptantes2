@@ -82,6 +82,10 @@ INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES
 INSERT OR REPLACE INTO user (id, name, email, emailVerified, image) VALUES
 ('test-admin-id', 'Test Admin', 'gatitosolivos@gmail.com', strftime('%s','now'), NULL);
 
+-- User profile: country confirmed so CountryConfirmBanner doesn't block the page
+INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed) VALUES
+('test-admin-id', 'AR', 1);
+
 -- ============================================================
 -- DUPLICATE DETECTION SEED DATA
 -- ============================================================

@@ -24,7 +24,7 @@ test.describe('Authenticated User', () => {
         await page.fill('input#search', TEST_NAMES.MARIA);
         await page.getByRole('button', { name: /search records|buscar registros/i }).click();
 
-        await expect(page.getByText(/found \d+ match|\d+ resultados encontrados/i)).toBeVisible({ timeout: 30000 });
+        await expect(page.getByText(/found \d+ match|\d+ resultado/i)).toBeVisible({ timeout: 30000 });
 
         // Authenticated users see full names (not PII-masked)
         await expect(page.getByText(TEST_NAMES.MARIA).first()).toBeVisible({ timeout: 5000 });
@@ -48,8 +48,8 @@ test.describe('Authenticated User', () => {
         await expect(animalInput).toBeVisible({ timeout: 5000 });
         await animalInput.fill(animalName);
 
-        // Species — select dog from dropdown
-        const speciesSelect = page.locator('select').first();
+        // Species — select dog from dropdown (use form-section scope to avoid hidden stats select)
+        const speciesSelect = page.locator('#adoption-form-section select').first();
         await speciesSelect.selectOption('dog');
 
         // Details (optional)
