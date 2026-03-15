@@ -49,7 +49,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                                 .leftJoin(userProfiles, eq(users.id, userProfiles.userId))
                                 .where(eq(users.email, token.email as string))
                                 .limit(1)
-                                .then(rows => rows[0]);
+                                .then((rows: { id: string; role: string | null }[]) => rows[0]);
                             if (u) row = { id: u.id, role: u.role ?? 'viewer' };
                         }
                     } catch {

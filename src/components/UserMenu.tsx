@@ -26,7 +26,7 @@ export default function UserMenu({ user, isAdmin: isAdminFromServer }: UserMenuP
     const [animalsEnabled, setAnimalsEnabled] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
     // Single source: server-passed isAdmin (layout) > user.isAdmin (session callback) > client session
-    const userIsAdmin = isAdminFromServer ?? !!(user as { isAdmin?: boolean } | undefined)?.isAdmin ?? !!(session?.user as { isAdmin?: boolean } | undefined)?.isAdmin;
+    const userIsAdmin = isAdminFromServer ?? (user as { isAdmin?: boolean } | undefined)?.isAdmin ?? (session?.user as { isAdmin?: boolean } | undefined)?.isAdmin ?? false;
 
     // Close on click outside
     useEffect(() => {
