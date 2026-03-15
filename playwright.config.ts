@@ -57,7 +57,7 @@ export default defineConfig({
     // Authenticated tests — depend on setup, load saved session
     {
       name: 'authed',
-      testMatch: /authed\.spec\.ts/,
+      testMatch: /(?<![a-z])authed\.spec\.ts/,
       dependencies: ['setup'],
       use: {
         ...devices['Desktop Chrome'],
