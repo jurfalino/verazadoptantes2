@@ -159,6 +159,14 @@ export default function UserMenu({ user, isAdmin: isAdminFromServer }: UserMenuP
                                 {t('dashboard.my_adoptions') || 'My Adoptions'}
                             </Link>
                             <Link
+                                href="/organizations"
+                                className="flex items-center gap-2 px-4 py-2.5 text-sm text-stone-700 hover:bg-stone-50 hover:text-teal-700 font-medium transition-colors"
+                                onClick={() => setIsOpen(false)}
+                            >
+                                <span className="text-base w-4 h-4 flex items-center justify-center">🏢</span>
+                                {t('organizations.title') || 'Organizations'}
+                            </Link>
+                            <Link
                                 href="/settings"
                                 className="flex items-center gap-2 px-4 py-2.5 text-sm text-stone-700 hover:bg-stone-50 hover:text-teal-700 font-medium transition-colors"
                                 onClick={() => setIsOpen(false)}

@@ -6,6 +6,7 @@ import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { getDb } from './_db';
 import { getAdoptionConfig } from './config';
+import { getOrgMemberEmails } from './organizations';
 import { DASHBOARD_RECENT_ACTIVITY_LIMIT, ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
 import type { AdopterFlags } from './types';
 
@@ -17,8 +18,11 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         const session = await auth();
         if (!session?.user?.email) return [];
 
+        // Scope by org membership: show records from all org members
+        const memberEmails = await getOrgMemberEmails();
+
         const query = db.select().from(adopters)
-            .where(eq(adopters.addedBy, session.user.email));
+            .where(inArray(adopters.addedBy, memberEmails));
 
         if (sort === 'name') {
             query.orderBy(adopters.name);
@@ -248,13 +252,16 @@ export async function getMyAdoptions(filter: 'all' | 'adoption' | 'adoption_requ
         const session = await auth();
         if (!session?.user?.email) return [];
 
+        // Scope by org membership
+        const memberEmails = await getOrgMemberEmails();
+
         const query = db.select().from(adoptions);
 
         // Apply filters by recordType — always exclude 'available' (those belong on /my-animals)
         if (filter !== 'all') {
-            query.where(sql`${adoptions.addedBy} = ${session.user.email} AND ${adoptions.recordType} = ${filter}`);
+            query.where(sql`${adoptions.addedBy} IN (${sql.join(memberEmails.map(e => sql`${e}`), sql`, `)}) AND ${adoptions.recordType} = ${filter}`);
         } else {
-            query.where(sql`${adoptions.addedBy} = ${session.user.email} AND (${adoptions.recordType} IS NULL OR ${adoptions.recordType} != 'available')`);
+            query.where(sql`${adoptions.addedBy} IN (${sql.join(memberEmails.map(e => sql`${e}`), sql`, `)}) AND (${adoptions.recordType} IS NULL OR ${adoptions.recordType} != 'available')`);
         }
 
         if (sort === 'name') {

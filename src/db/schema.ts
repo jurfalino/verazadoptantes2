@@ -292,3 +292,33 @@ export const formSubmissions = sqliteTable("form_submissions", {
     userIdx: index("idx_form_user").on(table.userId),
     statusIdx: index("idx_form_status").on(table.status),
 }));
+
+// ── Organizations ────────────────────────────────────────────────
+
+export const organizations = sqliteTable("organizations", {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+});
+
+export const orgMembers = sqliteTable("org_members", {
+    id: text("id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    userEmail: text("user_email").notNull(),
+    role: text("role").default("member"),
+    joinedAt: integer("joined_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+    uniqueMember: index("idx_org_member_unique").on(table.orgId, table.userEmail),
+    emailIdx: index("idx_org_member_email").on(table.userEmail),
+}));
+
+export const orgInvites = sqliteTable("org_invites", {
+    id: text("id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    createdBy: text("created_by").notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp" }),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+    orgIdx: index("idx_org_invite_org").on(table.orgId),
+}));
