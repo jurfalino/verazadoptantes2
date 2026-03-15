@@ -204,12 +204,19 @@ export default function Home() {
               {t('home.how_title')}
             </button>
           )}
-          <div className="flex items-center justify-center">
+          <div className="flex items-center justify-center gap-3">
+            <a
+              href="/funcionalidades"
+              className="text-teal-700 hover:text-teal-700 font-medium text-xs underline underline-offset-2 transition-colors"
+            >
+              {locale === 'en' ? 'Features' : 'Funcionalidades'}
+            </a>
+            <span className="text-stone-300">·</span>
             <a
               href={locale === 'en' ? '/guide' : '/guia'}
               className="text-teal-700 hover:text-teal-700 font-medium text-xs underline underline-offset-2 transition-colors"
             >
-              📖 {t('home.process_guide')}
+              {t('home.process_guide')}
             </a>
           </div>
           <div className="flex items-center justify-center gap-3 text-xs">
