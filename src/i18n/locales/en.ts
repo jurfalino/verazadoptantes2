@@ -927,5 +927,9 @@ export const en = {
         left_success: 'You left the organization',
         deleted_success: 'Organization deleted',
         added_by: 'by {name}',
+        banner_title: 'What are organizations?',
+        banner_what: '🏢 Organizations let you work as a team. Create one and add the members of your shelter, NGO, or rescue group.',
+        banner_invite: '📨 Invite members by sharing a link — when they open it and sign in, they join automatically.',
+        banner_records: '📋 All members can see adopters, adoptions, and animals added by any team member, tagged with who added them.',
     },
 };

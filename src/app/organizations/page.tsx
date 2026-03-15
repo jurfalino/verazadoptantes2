@@ -74,6 +74,9 @@ export default function OrganizationsPage() {
                 🏢 {t('organizations.title')}
             </h1>
 
+            {/* Explanatory collapsible banner */}
+            <InfoBanner />
+
             {/* Create new org */}
             <div className="bg-white rounded-xl border border-stone-200 p-5 mb-6 shadow-sm">
                 <p className="text-sm text-stone-600 mb-3">{t('organizations.create_description')}</p>
@@ -108,6 +111,48 @@ export default function OrganizationsPage() {
                 </div>
             )}
         </main>
+    );
+}
+
+function InfoBanner() {
+    const { t } = useLanguage();
+    const [dismissed, setDismissed] = useState(true); // start collapsed
+
+    useEffect(() => {
+        setDismissed(localStorage.getItem('org-banner-dismissed') === '1');
+    }, []);
+
+    const toggle = () => {
+        const next = !dismissed;
+        setDismissed(next);
+        if (next) localStorage.setItem('org-banner-dismissed', '1');
+        else localStorage.removeItem('org-banner-dismissed');
+    };
+
+    return (
+        <div className="mb-6 rounded-xl border border-teal-200 bg-gradient-to-br from-teal-50 to-white overflow-hidden shadow-sm">
+            <button
+                onClick={toggle}
+                className="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-teal-50/50 transition-colors"
+            >
+                <span className="text-sm font-semibold text-teal-800 flex items-center gap-2">
+                    💡 {t('organizations.banner_title')}
+                </span>
+                <svg
+                    className={`w-4 h-4 text-teal-500 transition-transform ${dismissed ? '' : 'rotate-180'}`}
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+            </button>
+            {!dismissed && (
+                <div className="px-5 pb-4 space-y-2 text-sm text-teal-900/80 leading-relaxed">
+                    <p>{t('organizations.banner_what')}</p>
+                    <p>{t('organizations.banner_invite')}</p>
+                    <p>{t('organizations.banner_records')}</p>
+                </div>
+            )}
+        </div>
     );
 }
 

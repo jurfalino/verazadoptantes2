@@ -926,6 +926,10 @@ export const es = {
         left_success: 'Saliste de la organización',
         deleted_success: 'Organización eliminada',
         added_by: 'por {name}',
+        banner_title: '¿Qué son las organizaciones?',
+        banner_what: '🏢 Las organizaciones te permiten trabajar en equipo. Creá una organización y sumá a los miembros de tu refugio, ONG o grupo de rescate.',
+        banner_invite: '📨 Invitá miembros compartiendo un enlace — cuando lo abran e inicien sesión, se unen automáticamente.',
+        banner_records: '📋 Todos los miembros ven los adoptantes, adopciones y animales cargados por cualquier miembro del equipo, con el nombre de quién los agregó.',
     },
 };
 
