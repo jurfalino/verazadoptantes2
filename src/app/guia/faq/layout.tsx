@@ -10,6 +10,12 @@ export const metadata: Metadata = {
             'Todo lo que necesitás saber sobre el proceso de adopción responsable.',
         type: 'website',
     },
+    twitter: {
+        card: 'summary_large_image',
+        title: 'Preguntas Frecuentes — BuenAdoptante',
+        description:
+            'Todo lo que necesitás saber sobre el proceso de adopción responsable.',
+    },
     alternates: {
         canonical: 'https://buenadoptante.org/guia/faq',
     },

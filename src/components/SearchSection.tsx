@@ -10,6 +10,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { formatShortDate } from '@/lib/dates';
+import { zarazTrack } from '@/lib/zaraz';
 
 export default function SearchSection() {
     const { t } = useLanguage();
@@ -107,6 +108,12 @@ export default function SearchSection() {
                 if (response.truncated && response.totalCount) {
                     setTruncatedInfo({ truncated: true, totalCount: response.totalCount });
                 }
+                // Track search event in Amplitude via Zaraz
+                zarazTrack('search_performed', {
+                    resultCount: (response.results || []).length,
+                    query_length: query.trim().length,
+                    truncated: response.truncated ? 1 : 0,
+                });
                 // Auto-scroll to results on mobile
                 setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
             }

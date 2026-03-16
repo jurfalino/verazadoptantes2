@@ -936,7 +936,7 @@ export const es = {
         meta_description: 'Conocé todas las herramientas que BuenAdoptante ofrece para proteger animales y gestionar adopciones responsables.',
         hero_title: 'La base de datos que tu refugio necesita',
         hero_subtitle: 'Gratis y pensada para rescatistas independientes, refugios y ONGs en Latinoamérica. Buscá adoptantes, registrá entregas, detectá perfiles duplicados y compartí todo con tu equipo.',
-        hero_cta: 'Empezar gratis',
+        hero_cta: 'Empezar ahora',
         hero_cta_guide: 'Ver la guía de adopción',
         pain_title: 'Dejá de perder información',
         pain1_before: 'Nadie sabe si un adoptante ya adoptó, o devolvió animales.',

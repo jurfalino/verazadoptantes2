@@ -12,6 +12,12 @@ export const metadata: Metadata = {
             'Términos de uso de la plataforma de verificación de adoptantes de animales.',
         type: 'website',
     },
+    twitter: {
+        card: 'summary_large_image',
+        title: 'Términos y Condiciones — BuenAdoptante',
+        description:
+            'Términos de uso de la plataforma de verificación de adoptantes de animales.',
+    },
     alternates: {
         canonical: 'https://buenadoptante.org/terms',
     },

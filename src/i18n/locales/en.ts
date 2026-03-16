@@ -937,7 +937,7 @@ export const en = {
         meta_description: 'Discover all the tools BuenAdoptante offers to protect animals and manage responsible adoptions.',
         hero_title: 'The database your shelter actually needs',
         hero_subtitle: 'Free and built for independent rescuers, shelters, and NGOs. Search adopters, track adoptions, detect duplicates, and share everything with your team.',
-        hero_cta: 'Get started free',
+        hero_cta: 'Start now',
         hero_cta_guide: 'See the adoption guide',
         pain_title: 'Stop losing information',
         pain1_before: 'Nobody knows if an adopter has already adopted, or returned animals.',

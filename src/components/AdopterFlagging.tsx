@@ -9,6 +9,7 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
+import { zarazTrack } from '@/lib/zaraz';
 
 export interface AdopterFlaggingHandle {
     openAction: (action: string) => void;
@@ -105,6 +106,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                 const res = await flagAdopter(adopterId, reason, details, targetAdopter.id);
                 if (res.success) {
                     toast.success(t('flagging.submit_success') || 'Report submitted successfully');
+                    zarazTrack('flag_submitted', { flagType: 'duplicate' });
                     resetAndClose();
                     router.refresh();
                 } else {
@@ -136,6 +138,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                     }),
                 });
                 if (res.ok) {
+                    zarazTrack('flag_submitted', { flagType: reason });
                     setDataRequestSubmitted(true);
                 } else {
                     toast.error('Error', 'Failed to submit request.');
@@ -154,6 +157,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
             const res = await flagAdopter(adopterId, reason, details);
             if (res.success) {
                 toast.success(t('flagging.submit_success') || 'Report submitted successfully');
+                zarazTrack('flag_submitted', { flagType: reason });
                 resetAndClose();
                 router.refresh();
             } else {

@@ -14,6 +14,7 @@ import { ToastProvider } from '@/components/ui/Toast';
 import InstallPrompt from '@/components/InstallPrompt';
 import { CountryConfirmBanner } from '@/components/CountryConfirmBanner';
 import NotificationBell from '@/components/NotificationBell';
+import ZarazIdentify from '@/components/ZarazIdentify';
 import { WebApplicationJsonLd, OrganizationJsonLd } from '@/components/JsonLd';
 
 export const runtime = "edge";
@@ -52,19 +53,19 @@ export const metadata: Metadata = {
       'Buscá, verificá y reportá adoptantes para asegurar que cada mascota llegue al hogar que merece.',
     images: [
       {
-        url: '/icon-512.png',
-        width: 512,
-        height: 512,
-        alt: 'BuenAdoptante logo — escudo con huella de mascota',
+        url: '/og-image.png',
+        width: 1200,
+        height: 630,
+        alt: 'BuenAdoptante — Registro de Adopciones Responsables',
       },
     ],
   },
   twitter: {
-    card: 'summary',
+    card: 'summary_large_image',
     title: 'BuenAdoptante — Registro de Adopciones',
     description:
       'Buscá, verificá y reportá adoptantes para asegurar que cada mascota llegue al hogar que merece.',
-    images: ['/icon-512.png'],
+    images: ['/og-image.png'],
   },
   alternates: {
     canonical: 'https://buenadoptante.org',
@@ -118,6 +119,7 @@ export default async function RootLayout({
       </head>
       <body className={inter.className}>
         <SessionProvider session={session ?? undefined} refetchOnWindowFocus={true} refetchInterval={5 * 60}>
+          <ZarazIdentify />
           <LanguageProvider>
             <ThemeProvider>
               <ToastProvider>

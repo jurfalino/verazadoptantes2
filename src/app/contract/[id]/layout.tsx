@@ -30,11 +30,16 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
             title,
             description,
             type: 'website',
+            images: [{ url: '/og-image.png', width: 1200, height: 630 }],
         },
         twitter: {
-            card: 'summary',
+            card: 'summary_large_image',
             title,
             description,
+            images: ['/og-image.png'],
+        },
+        robots: {
+            index: false,
         },
     };
 }

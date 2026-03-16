@@ -11,7 +11,7 @@ export const metadata: Metadata = {
         type: 'website',
     },
     twitter: {
-        card: 'summary',
+        card: 'summary_large_image',
         title: 'Guía de Adopción Responsable — BuenAdoptante',
         description:
             '6 fases para verificar adoptantes de animales y garantizar adopciones responsables.',

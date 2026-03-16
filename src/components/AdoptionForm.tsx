@@ -15,6 +15,7 @@ import type { MediaItem } from '@/components/ui/MediaLightbox';
 import { formatShortDate } from '@/lib/dates';
 import DatePicker from '@/components/ui/DatePicker';
 import { extractVideoThumbnail } from '@/lib/videoThumbnail';
+import { zarazTrack } from '@/lib/zaraz';
 
 /** Convert a data URL to a Blob for FormData upload */
 function dataUrlToBlob(dataUrl: string): Blob {
@@ -320,6 +321,14 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                 }
                 setPendingImages([]);
             }
+
+            // Track adoption event in Amplitude via Zaraz
+            zarazTrack('adoption_created', {
+                species: formData.species,
+                recordType: formData.recordType,
+                rating: Number(formData.rating),
+                hasMedia: (pendingImages.length + adoptionImages.length) > 0 ? 1 : 0,
+            });
 
             if (onSuccess) onSuccess();
             else {

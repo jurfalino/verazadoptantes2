@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
+import { zarazTrack } from '@/lib/zaraz';
 
 // External contract app domain
 const CONTRACT_BASE = (process.env.NEXT_PUBLIC_CONTRACT_URL || 'https://adoptions.pages.dev').replace(/\/+$/, '');
@@ -33,16 +34,19 @@ export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
             document.body.removeChild(textarea);
         }
         setCopied(true);
+        zarazTrack('contract_shared', { channel: 'clipboard' });
         setTimeout(() => setCopied(false), 2000);
     };
 
     const handleWhatsApp = () => {
         window.open(`https://wa.me/?text=${encodeURIComponent(`${shareText}\n${fullUrl}`)}`, '_blank');
+        zarazTrack('contract_shared', { channel: 'whatsapp' });
         setIsOpen(false);
     };
 
     const handleEmail = () => {
         window.open(`mailto:?subject=${encodeURIComponent(shareText)}&body=${encodeURIComponent(`${shareText}\n\n${fullUrl}`)}`, '_blank');
+        zarazTrack('contract_shared', { channel: 'email' });
         setIsOpen(false);
     };
 
@@ -50,6 +54,7 @@ export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
         if (navigator.share) {
             try {
                 await navigator.share({ title: shareText, url: fullUrl });
+                zarazTrack('contract_shared', { channel: 'native' });
             } catch { /* User cancelled */ }
         }
         setIsOpen(false);

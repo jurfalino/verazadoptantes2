@@ -11,6 +11,7 @@ import { MediaLightbox } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 import LegalConsent from '@/components/LegalConsent';
 import { extractVideoThumbnail, extractVideoThumbnailFromUrl } from '@/lib/videoThumbnail';
+import { zarazTrack } from '@/lib/zaraz';
 import { checkTokenDuplicates } from '@/app/actions';
 import type { TokenMatchResult } from '@/app/actions';
 import type { ExtractedAdopterData } from '@/lib/gemini';
@@ -617,6 +618,13 @@ export default function ImportWizard() {
                 href: `/adopter/${adopterId}`,
             });
 
+            // Track import event in Amplitude via Zaraz
+            zarazTrack('import_completed', {
+                source: sourceUrl ? 'url' : 'text',
+                hasImages: (processedImages.length + manualImages.length) > 0 ? 1 : 0,
+                confidence: extractedData.confidence || 'unknown',
+            });
+
             router.push('/');
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to save');
@@ -695,6 +703,11 @@ export default function ImportWizard() {
             toast.success('Record added to profile', adopterName, {
                 label: '→ Ver Perfil',
                 href: `/adopter/${adopterId}`,
+            });
+
+            // Track merge event in Amplitude via Zaraz
+            zarazTrack('import_merged', {
+                hasImages: (processedImages.length + manualImages.length) > 0 ? 1 : 0,
             });
 
             router.push('/');

@@ -12,6 +12,12 @@ export const metadata: Metadata = {
             'Cómo protegemos los datos personales en la plataforma de verificación de adoptantes.',
         type: 'website',
     },
+    twitter: {
+        card: 'summary_large_image',
+        title: 'Política de Privacidad — BuenAdoptante',
+        description:
+            'Cómo protegemos los datos personales en la plataforma de verificación de adoptantes.',
+    },
     alternates: {
         canonical: 'https://buenadoptante.org/privacy',
     },
