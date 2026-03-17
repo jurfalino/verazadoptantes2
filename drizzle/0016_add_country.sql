@@ -1,6 +1,5 @@
--- Add country column to user_profiles and adopters
-ALTER TABLE user_profiles ADD COLUMN country TEXT;
-ALTER TABLE user_profiles ADD COLUMN country_confirmed INTEGER DEFAULT 0;
+-- user_profiles.country and country_confirmed are already created by 0006_lame_lady_ursula.sql
+-- Only add country to adopters (the one column not covered by 0006)
 ALTER TABLE adopters ADD COLUMN country TEXT;
 
 -- Backfill existing adopters as Argentina (all current data is from AR users)
