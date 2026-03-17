@@ -27,16 +27,15 @@ export interface OrgMember {
 // ── Create ───────────────────────────────────────────────────────
 
 export async function createOrganization(name: string): Promise<{ success: boolean; id?: string; error?: string }> {
-    const user = await getUser();
-    const db = await getDb();
-    if (!db) return { success: false, error: 'Database unavailable' };
-
     const trimmed = name.trim();
     if (!trimmed || trimmed.length > 100) {
         return { success: false, error: 'Name must be 1–100 characters' };
     }
 
     try {
+        const user = await getUser();
+        const db = await getDb();
+        if (!db) return { success: false, error: 'Database unavailable' };
         const orgId = crypto.randomUUID();
         const memberId = crypto.randomUUID();
 
