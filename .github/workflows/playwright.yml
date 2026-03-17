@@ -39,12 +39,18 @@ jobs:
             npx wrangler d1 execute DB --local --file="$f" || echo "⚠️ Migration $f had errors (likely pre-existing tables), continuing..."
           done
 
+      - name: Repair columns (idempotent)
+        run: |
+          npx wrangler d1 execute DB --local --command="ALTER TABLE adopters ADD COLUMN country TEXT" || echo "⚠️ adopters.country already exists"
+          npx wrangler d1 execute DB --local --command="ALTER TABLE user_profiles ADD COLUMN country TEXT" || echo "⚠️ user_profiles.country already exists"
+          npx wrangler d1 execute DB --local --command="ALTER TABLE user_profiles ADD COLUMN country_confirmed INTEGER DEFAULT 0" || echo "⚠️ user_profiles.country_confirmed already exists"
+
       - name: Seed test data (Wrangler D1)
         run: npx wrangler d1 execute DB --local --file="tests/seed.sql"
 
       - name: Seed country data (resilient)
         run: |
-          npx wrangler d1 execute DB --local --command="UPDATE adopters SET country = 'AR' WHERE id LIKE 'test-adopter-%'" || echo "⚠️ country column not found, skipping"
+          npx wrangler d1 execute DB --local --command="UPDATE adopters SET country = 'AR' WHERE id LIKE 'test-adopter-%'" || echo "⚠️ country update failed, skipping"
 
       - name: Seed local.db fallback (used by next dev)
         run: |
@@ -53,8 +59,12 @@ jobs:
             echo "Applying migration to local.db: $f"
             sqlite3 local.db < "$f" || echo "⚠️ Migration $f had errors, continuing..."
           done
+          sqlite3 local.db "ALTER TABLE adopters ADD COLUMN country TEXT" 2>/dev/null || true
+          sqlite3 local.db "ALTER TABLE user_profiles ADD COLUMN country TEXT" 2>/dev/null || true
+          sqlite3 local.db "ALTER TABLE user_profiles ADD COLUMN country_confirmed INTEGER DEFAULT 0" 2>/dev/null || true
           sqlite3 local.db < tests/seed.sql
-          sqlite3 local.db "UPDATE adopters SET country = 'AR' WHERE id LIKE 'test-adopter-%'" || echo "⚠️ country column not found in local.db, skipping"
+          sqlite3 local.db "UPDATE adopters SET country = 'AR' WHERE id LIKE 'test-adopter-%'" || echo "⚠️ country update failed in local.db"
+
 
 
       - name: Run Playwright tests
