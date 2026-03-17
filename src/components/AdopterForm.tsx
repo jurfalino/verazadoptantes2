@@ -515,7 +515,7 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                                 </div>
                             )}
                             {!duplicateSearching && duplicateResults && duplicateResults.length > 0 && (
-                                <div className="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50/80 p-4" role="region" aria-labelledby="duplicate-card-title">
+                                <div className="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50 p-4" role="region" aria-labelledby="duplicate-card-title">
                                     <h4 id="duplicate-card-title" className="text-sm font-semibold text-amber-900 mb-1">
                                         {t('import.duplicateCard_title') || 'Possible matching profiles'}
                                     </h4>
@@ -738,7 +738,7 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                             } catch (e) { console.warn('[AdopterForm] Failed to parse history changes', e); }
 
                             return (
-                                <div key={h.id} className="text-sm border-l-4 border-teal-200 pl-4 py-3 bg-teal-50/30 rounded-r-lg mb-2">
+                                <div key={h.id} className="text-sm border-l-4 border-teal-200 pl-4 py-3 bg-teal-50 rounded-r-lg mb-2">
                                     <div className="flex justify-between items-start mb-2">
                                         <div className="flex items-center gap-2">
                                             <span className="text-teal-700 text-xs font-semibold uppercase tracking-wider">
@@ -766,7 +766,7 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                                                                 {typeof delta.from === 'string' && delta.from.length > 30 ? delta.from.substring(0, 30) + '...' : (delta.from || t('audit.empty_val'))}
                                                             </div>
                                                             <span className="text-teal-700 mr-2">➜</span>
-                                                            <span className="text-teal-900 bg-teal-100/50 px-1.5 rounded">
+                                                            <span className="text-teal-900 bg-teal-100 px-1.5 rounded">
                                                                 {delta.to || t('audit.empty_val')}
                                                             </span>
                                                         </div>

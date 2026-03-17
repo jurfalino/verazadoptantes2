@@ -131,23 +131,28 @@ function InfoBanner() {
     };
 
     return (
-        <div className="mb-6 rounded-xl border border-teal-200 bg-gradient-to-br from-teal-50 to-white overflow-hidden shadow-sm">
+        <div
+            className="mb-6 rounded-xl overflow-hidden shadow-sm"
+            style={{ backgroundColor: 'var(--accent-subtle-bg)', border: '1px solid var(--border-accent)' }}
+        >
             <button
                 onClick={toggle}
-                className="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-teal-50/50 transition-colors"
+                className="w-full flex items-center justify-between px-5 py-3 text-left transition-colors"
+                style={{ color: 'var(--accent)' }}
             >
-                <span className="text-sm font-semibold text-teal-800 flex items-center gap-2">
+                <span className="text-sm font-semibold flex items-center gap-2" style={{ color: 'var(--accent)' }}>
                     💡 {t('organizations.banner_title')}
                 </span>
                 <svg
-                    className={`w-4 h-4 text-teal-500 transition-transform ${dismissed ? '' : 'rotate-180'}`}
+                    className={`w-4 h-4 transition-transform ${dismissed ? '' : 'rotate-180'}`}
+                    style={{ color: 'var(--accent)' }}
                     fill="none" stroke="currentColor" viewBox="0 0 24 24"
                 >
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
             </button>
             {!dismissed && (
-                <div className="px-5 pb-4 space-y-2 text-sm text-teal-900/80 leading-relaxed">
+                <div className="px-5 pb-4 space-y-2 text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                     <p>{t('organizations.banner_what')}</p>
                     <p>{t('organizations.banner_invite')}</p>
                     <p>{t('organizations.banner_records')}</p>

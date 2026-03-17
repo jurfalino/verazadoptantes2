@@ -180,7 +180,7 @@ export default function MyAdoptersPage() {
                         </h2>
                         {/* Desktop table */}
                         <div className="hidden md:block bg-white rounded-2xl overflow-hidden shadow-sm border border-stone-200 mb-4">
-                            <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-amber-50/70 border-b border-stone-200 text-xs font-semibold text-stone-500 uppercase tracking-wide">
+                            <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-amber-50 border-b border-stone-200 text-xs font-semibold text-stone-500 uppercase tracking-wide">
                                 <div className="col-span-3">{t('dashboard.unlinked_table_name')}</div>
                                 <div className="col-span-3">{t('dashboard.unlinked_table_contact')}</div>
                                 <div className="col-span-2">{t('dashboard.unlinked_table_date')}</div>

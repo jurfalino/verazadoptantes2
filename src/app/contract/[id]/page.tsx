@@ -188,7 +188,7 @@ export default function ContractPage() {
                         </p>
 
                         {/* ── EL ADOPTANTE ── */}
-                        <div className="border border-stone-200 rounded-lg p-5 bg-stone-50/50 space-y-3">
+                        <div className="border border-stone-200 rounded-lg p-5 bg-stone-50 space-y-3">
                             <h2 className="text-xs font-semibold uppercase tracking-widest text-teal-700 mb-2">El Adoptante:</h2>
                             <p className="flex flex-wrap items-baseline gap-x-2">
                                 <span className="font-semibold whitespace-nowrap">Nombre y Apellido:</span>
@@ -218,7 +218,7 @@ export default function ContractPage() {
                         </div>
 
                         {/* ── EL RESCATISTA / PROTECTORA ── */}
-                        <div className="border border-stone-200 rounded-lg p-5 bg-stone-50/50 space-y-3">
+                        <div className="border border-stone-200 rounded-lg p-5 bg-stone-50 space-y-3">
                             <h2 className="text-xs font-semibold uppercase tracking-widest text-stone-500 mb-2">El Rescatista / Protectora:</h2>
                             <p className="flex flex-wrap items-baseline gap-x-2">
                                 <span className="font-semibold whitespace-nowrap">Nombre / Institución:</span>

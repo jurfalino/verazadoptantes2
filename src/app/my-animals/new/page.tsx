@@ -249,7 +249,7 @@ export default function NewAnimalPage() {
                                     <button
                                         type="button"
                                         onClick={() => { setCustomSpecies(false); setFormData({ ...formData, species: 'cat' }); }}
-                                        className="px-3 h-10 rounded-lg border border-teal-200 bg-teal-50/50 text-teal-700 text-xs font-medium hover:bg-teal-50 transition-colors whitespace-nowrap"
+                                        className="px-3 h-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-700 text-xs font-medium hover:bg-teal-50 transition-colors whitespace-nowrap"
                                     >
                                         ↩ {t('adoption.species_presets') || 'Presets'}
                                     </button>
@@ -258,7 +258,7 @@ export default function NewAnimalPage() {
                                 <div className="relative">
                                     <select
                                         required
-                                        className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50/50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm"
+                                        className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm"
                                         value={formData.species.toLowerCase() || 'cat'}
                                         onChange={e => {
                                             if (e.target.value === '_other') {
@@ -299,7 +299,7 @@ export default function NewAnimalPage() {
                                     {t('adoption.sex') || 'Sex'}
                                 </label>
                                 <select
-                                    className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50/50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm"
+                                    className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm"
                                     value={formData.sex}
                                     onChange={e => setFormData({ ...formData, sex: e.target.value })}
                                 >
@@ -351,7 +351,7 @@ export default function NewAnimalPage() {
                         </div>
 
                         {/* Photos */}
-                        <div className="p-4 bg-teal-50/50 rounded-lg border border-teal-100">
+                        <div className="p-4 bg-teal-50 rounded-lg border border-teal-100">
                             <label className="block text-xs font-semibold text-teal-800 mb-2 uppercase tracking-wider flex items-center gap-2">
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                                 {t('common.photos') || 'Photos'}

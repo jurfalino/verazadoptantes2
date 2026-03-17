@@ -14,6 +14,7 @@ const NAV_ITEMS = [
     { href: '/admin/data-requests', label: 'Data Requests', icon: '📬' },
     { href: '/admin/users', label: 'Users', icon: '👥' },
     { href: '/admin/audit', label: 'Audit Log', icon: '📋' },
+    { href: '/admin/health', label: 'System Health', icon: '🩺' },
     { href: '/admin/data', label: 'Data Migration', icon: '📦' },
 ];
 
@@ -99,7 +100,7 @@ export default function AdminSidebar() {
                         <Link
                             href="/keystatic"
                             target="_blank"
-                            className="block px-4 py-2 rounded-lg hover:bg-stone-800 hover:text-white transition-colors text-sm text-teal-700/80 hover:text-teal-700"
+                            className="block px-4 py-2 rounded-lg hover:bg-stone-800 hover:text-white transition-colors text-sm text-teal-700 hover:text-teal-700"
                         >
                             ✏️ CMS Editor ↗
                         </Link>

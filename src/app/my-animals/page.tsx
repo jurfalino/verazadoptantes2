@@ -141,9 +141,13 @@ export default function MyAnimalsPage() {
                 </div>
 
                 {/* Hint: form vs contract (visible on all devices) */}
-                <div className="mb-4 flex gap-3 rounded-xl border border-stone-200 bg-stone-100/80 px-4 py-3 max-w-2xl" role="status">
+                <div
+                    className="mb-4 flex gap-3 rounded-xl px-4 py-3 max-w-2xl"
+                    role="status"
+                    style={{ backgroundColor: 'var(--surface-muted)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}
+                >
                     <span className="flex-shrink-0 text-base opacity-70" aria-hidden>💡</span>
-                    <p className="text-sm text-stone-700">
+                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                         {String(t('dashboard.share_buttons_hint') || '').trim() || 'Share the form with people interested in adopting; when they complete it the system will notify you. On each animal, share the contract when you have an adopter.'}
                     </p>
                 </div>

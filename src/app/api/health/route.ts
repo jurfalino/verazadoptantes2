@@ -67,9 +67,9 @@ function classifyLatency(latencyMs: number, ok: boolean): ServiceStatus {
 /**
  * Probe D1 + R2 (combined as "platform" for public view).
  */
-async function probePlatform(env: CloudflareEnv): Promise<{ platform: ServiceResult; schemaDrift: Array<{ table: string; driftDetected: boolean }> }> {
+async function probePlatform(env: CloudflareEnv): Promise<{ platform: ServiceResult; schemaDrift: Array<{ table: string; driftDetected: boolean; missing: string[]; extra: string[] }> }> {
     const start = performance.now();
-    const schemaDrift: Array<{ table: string; driftDetected: boolean }> = [];
+    const schemaDrift: Array<{ table: string; driftDetected: boolean; missing: string[]; extra: string[] }> = [];
     let dbOk = false;
     let r2Ok = false;
 
@@ -87,7 +87,7 @@ async function probePlatform(env: CloudflareEnv): Promise<{ platform: ServiceRes
             const extra = actualColumns.filter((col: string) => !expectedColumns.includes(col));
 
             if (missing.length > 0 || extra.length > 0) {
-                schemaDrift.push({ table: tableName, driftDetected: true });
+                schemaDrift.push({ table: tableName, driftDetected: true, missing, extra });
             }
         }
         dbOk = true;

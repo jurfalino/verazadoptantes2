@@ -58,7 +58,7 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
         : (t('nav.back_to_search') || 'Back to Search');
 
     return (
-        <main className="min-h-screen bg-teal-50/30 py-12 px-4 relative">
+        <main className="min-h-screen bg-teal-50 py-12 px-4 relative">
             <div className="max-w-3xl mx-auto space-y-5">
 
                 {/* Back Navigation */}

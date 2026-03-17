@@ -13,7 +13,7 @@ interface CollapsibleSectionProps {
 export function CollapsibleSection({ title, count, defaultOpen = true, children, className = "" }: CollapsibleSectionProps) {
     return (
         <details className={`bg-white rounded-2xl shadow-sm border border-teal-100/60 overflow-hidden group ${className}`} open={defaultOpen}>
-            <summary className="p-5 cursor-pointer list-none flex justify-between items-center hover:bg-teal-50/50 transition-colors">
+            <summary className="p-5 cursor-pointer list-none flex justify-between items-center hover:bg-teal-50 transition-colors">
                 <div className="flex items-center gap-3">
                     <h3 className="text-xl font-semibold text-teal-900 tracking-tight">{title}</h3>
                     {count !== undefined && (

@@ -394,7 +394,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                     {effectiveMode === 'existing' && (
                         <div className="mb-4">
                             <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.select_animal') || 'Select Animal'}</label>
-                            <select className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50/50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm" onChange={(e) => handleSelectExisting(e.target.value)} value={formData.id || ''}>
+                            <select className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm" onChange={(e) => handleSelectExisting(e.target.value)} value={formData.id || ''}>
                                 <option value="">{t('adoption.choose_animal') || '-- Choose an animal --'}</option>
                                 {safeAvailableAnimals.map(a => (<option key={a.id} value={a.id}>{a.animalName} ({a.species}) - {formatShortDate(new Date(a.date))}</option>))}
                             </select>

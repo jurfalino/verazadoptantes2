@@ -102,7 +102,7 @@ export default function FormResultMatchCard({
         >
             {/* Applicant vs profile photos (when available) */}
             {showPhotos && (
-                <div className="px-4 py-3 border-b border-stone-200 flex items-center justify-center gap-6 bg-stone-50/50">
+                <div className="px-4 py-3 border-b border-stone-200 flex items-center justify-center gap-6 bg-stone-50">
                     <div className="flex flex-col items-center gap-1">
                         {applicantSelfieUrl ? (
                             <img
@@ -171,7 +171,7 @@ export default function FormResultMatchCard({
             {/* Two-block comparison */}
             <div id={`comparison-${profile.id}`} className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-stone-200">
                 {/* Form applicant */}
-                <div className="p-4 bg-teal-50/60">
+                <div className="p-4 bg-teal-50">
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-teal-800 mb-2">
                         {L('form_applicant')}
                     </h3>

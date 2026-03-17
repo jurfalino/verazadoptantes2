@@ -328,7 +328,7 @@ export default function AdoptionWizard() {
                         {/* Preview Panel */}
                         {previewAdopter ? (
                             <div className="animate-in slide-in-from-right duration-200">
-                                <div className="border border-teal-200 rounded-xl overflow-hidden bg-teal-50/30">
+                                <div className="border border-teal-200 rounded-xl overflow-hidden bg-teal-50">
                                     {/* Preview Header */}
                                     <div className="p-4 border-b border-teal-100 flex items-center gap-3">
                                         {previewAdopter.thumbnail ? (
@@ -436,7 +436,7 @@ export default function AdoptionWizard() {
                                         {searchResults.map(res => (
                                             <div
                                                 key={res.adopter.id}
-                                                className={`flex items-center gap-3 p-3 hover:bg-teal-50/50 transition-colors ${selectedAdopterId === res.adopter.id ? 'bg-teal-50 border-l-2 border-l-teal-500' : ''}`}
+                                                className={`flex items-center gap-3 p-3 hover:bg-teal-50 transition-colors ${selectedAdopterId === res.adopter.id ? 'bg-teal-50 border-l-2 border-l-teal-500' : ''}`}
                                             >
                                                 {/* Thumbnail */}
                                                 {res.thumbnail ? (
@@ -490,7 +490,7 @@ export default function AdoptionWizard() {
                                 {searchPerformed && (
                                     <button
                                         onClick={handleCreateNew}
-                                        className="w-full p-3 border-2 border-dashed border-stone-300 rounded-xl text-stone-600 hover:border-teal-400 hover:text-teal-700 hover:bg-teal-50/30 transition-all text-sm font-semibold text-center"
+                                        className="w-full p-3 border-2 border-dashed border-stone-300 rounded-xl text-stone-600 hover:border-teal-400 hover:text-teal-700 hover:bg-teal-50 transition-all text-sm font-semibold text-center"
                                     >
                                         {adopterSearch.trim()
                                             ? `${t('wizard.create_new_named') || '+ Create new record for'} "${adopterSearch.trim()}"`
