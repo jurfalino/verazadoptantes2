@@ -198,9 +198,9 @@ export default function MyAdoptersPage() {
                                             {form.createdAt != null ? formatShortDate(form.createdAt) : '—'}
                                         </div>
                                         <div className="col-span-4 flex flex-wrap justify-end gap-2">
-                                            {form.notificationId && (
+                                            {form.id && (
                                                 <Link
-                                                    href={`/form-results/${form.notificationId}`}
+                                                    href={`/form-results/${form.id}`}
                                                     className="text-sm text-teal-700 hover:text-teal-800 font-medium"
                                                 >
                                                     {t('dashboard.unlinked_view_response')} →
@@ -212,9 +212,9 @@ export default function MyAdoptersPage() {
                                             >
                                                 {t('dashboard.unlinked_create_profile')}
                                             </Link>
-                                            {form.notificationId && (
+                                            {form.id && (
                                                 <Link
-                                                    href={`/form-results/${form.notificationId}/link`}
+                                                    href={`/form-results/${form.id}/link`}
                                                     className="text-sm text-stone-600 hover:text-stone-800 font-medium"
                                                 >
                                                     {t('dashboard.unlinked_link_profile')}
@@ -238,9 +238,9 @@ export default function MyAdoptersPage() {
                                         {form.createdAt != null ? formatShortDate(form.createdAt) : '—'}
                                     </div>
                                     <div className="flex flex-wrap gap-2">
-                                        {form.notificationId && (
+                                        {form.id && (
                                             <Link
-                                                href={`/form-results/${form.notificationId}`}
+                                                href={`/form-results/${form.id}`}
                                                 className="px-3 py-1.5 text-sm bg-teal-100 text-teal-800 rounded-lg font-medium"
                                             >
                                                 {t('dashboard.unlinked_view_response')}
@@ -252,9 +252,9 @@ export default function MyAdoptersPage() {
                                         >
                                             {t('dashboard.unlinked_create_profile')}
                                         </Link>
-                                        {form.notificationId && (
+                                        {form.id && (
                                             <Link
-                                                href={`/form-results/${form.notificationId}/link`}
+                                                href={`/form-results/${form.id}/link`}
                                                 className="px-3 py-1.5 text-sm bg-stone-100 text-stone-700 rounded-lg font-medium"
                                             >
                                                 {t('dashboard.unlinked_link_profile')}

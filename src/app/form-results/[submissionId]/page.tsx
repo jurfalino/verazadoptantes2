@@ -32,60 +32,54 @@ interface NotificationMetadata {
     matchedAdopters?: MatchedAdopter[];
 }
 
-const _MATCH_TYPE_LABELS: Record<string, { icon: string; label: string }> = {
-    'token:name_full': { icon: '👤', label: 'Nombre completo' },
-    'token:name_word': { icon: '📝', label: 'Nombre parcial' },
-    'token:phone': { icon: '📱', label: 'Teléfono' },
-    'token:phone_suffix': { icon: '📞', label: 'Teléfono (sufijo)' },
-    'token:email': { icon: '📧', label: 'Email' },
-    'token:social': { icon: '🌐', label: 'Red social' },
-    'like:name': { icon: '👤', label: 'Nombre' },
-    'like:contact': { icon: '📱', label: 'Contacto' },
-};
 
-const _SPECIES_LABELS: Record<string, string> = {
-    dog: '🐶 Perro', cat: '🐱 Gato', both: '🐾 Ambos', other: '🐾 Otro',
-};
 
-const _LIFE_STAGE_LABELS: Record<string, string> = {
-    puppy: 'Cachorro', young: 'Joven', senior: 'Senior', none: 'Sin preferencia',
-};
 
-const _HOUSEHOLD_LABELS: Record<string, string> = {
-    children: '👶 Niños', pets: '🐾 Mascotas', outdoor: '🏡 Exterior seguro', presence: '🏠 Presencia frecuente',
-};
-
-export default async function FormResultsPage({ params }: { params: Promise<{ notificationId: string }> }) {
-    const { notificationId } = await params;
+export default async function FormResultsPage({ params }: { params: Promise<{ submissionId: string }> }) {
+    const { submissionId } = await params;
     let currentUser = '';
     try {
         currentUser = await getUser();
     } catch (e: any) {
         if (e?.digest?.startsWith('NEXT_REDIRECT')) throw e;
-        redirect(`/?authRequired=1&callbackUrl=${encodeURIComponent(`/form-results/${notificationId}`)}`);
+        redirect(`/?authRequired=1&callbackUrl=${encodeURIComponent(`/form-results/${submissionId}`)}`);
     }
 
     const db = await getDb();
     if (!db) return <ErrorState message="Database unavailable" />;
 
-    const notification = await db.select().from(notifications).where(eq(notifications.id, notificationId)).get();
-    if (!notification) return <ErrorState message="Notificación no encontrada" />;
-    if (notification.userId !== currentUser) return <ErrorState message="No tenés permiso para ver esta notificación" />;
+    // Auth: verify the current user owns this submission (is the rescuer)
+    const ownerCheck = await db.select({ userId: formSubmissions.userId })
+        .from(formSubmissions)
+        .where(eq(formSubmissions.id, submissionId))
+        .get();
+    if (!ownerCheck) return <ErrorState message="Formulario no encontrado" />;
+    if (ownerCheck.userId !== currentUser) return <ErrorState message="No tenés permiso para ver este formulario" />;
 
-    await markNotificationRead(notificationId, currentUser);
-
-    let metadata: NotificationMetadata = { submissionId: '', matchCount: 0 };
+    // Load notification for match metadata + mark as read (single query)
+    let metadata: NotificationMetadata = { submissionId, matchCount: 0 };
     try {
-        const parsed = notification.metadata ? JSON.parse(notification.metadata) : {};
-        metadata = {
-            submissionId: parsed.submissionId ?? '',
-            matchCount: parsed.matchCount ?? 0,
-            submittedData: parsed.submittedData,
-            matchedAdopters: parsed.matchedAdopters,
-        };
-    } catch {
-        // Invalid metadata JSON — keep defaults
-    }
+        const notif = await db.select({ id: notifications.id, metadata: notifications.metadata })
+            .from(notifications)
+            .where(and(
+                eq(notifications.userId, currentUser),
+                sql`json_extract(${notifications.metadata}, '$.submissionId') = ${submissionId}`,
+            ))
+            .get();
+        if (notif) {
+            // Best-effort mark as read
+            try { await markNotificationRead(notif.id, currentUser); } catch { /* non-blocking */ }
+            if (notif.metadata) {
+                const parsed = JSON.parse(notif.metadata);
+                metadata = {
+                    submissionId,
+                    matchCount: parsed.matchCount ?? 0,
+                    submittedData: parsed.submittedData,
+                    matchedAdopters: parsed.matchedAdopters,
+                };
+            }
+        }
+    } catch { /* keep defaults */ }
 
     // Load the full submission
     let submission: {
@@ -94,27 +88,25 @@ export default async function FormResultsPage({ params }: { params: Promise<{ no
         latitude: string | null; longitude: string | null; status: string | null;
         linkedAdopterId: string | null; answersJson: string | null; createdAt: Date | null;
     } | undefined;
-    if (metadata.submissionId) {
-        submission = await db
-            .select({
-                id: formSubmissions.id,
-                selfieUrl: formSubmissions.selfieUrl,
-                species: formSubmissions.species,
-                lifeStage: formSubmissions.lifeStage,
-                specialNeeds: formSubmissions.specialNeeds,
-                intent: formSubmissions.intent,
-                household: formSubmissions.household,
-                latitude: formSubmissions.latitude,
-                longitude: formSubmissions.longitude,
-                status: formSubmissions.status,
-                linkedAdopterId: formSubmissions.linkedAdopterId,
-                answersJson: formSubmissions.answersJson,
-                createdAt: formSubmissions.createdAt,
-            })
-            .from(formSubmissions)
-            .where(eq(formSubmissions.id, metadata.submissionId))
-            .get();
-    }
+    submission = await db
+        .select({
+            id: formSubmissions.id,
+            selfieUrl: formSubmissions.selfieUrl,
+            species: formSubmissions.species,
+            lifeStage: formSubmissions.lifeStage,
+            specialNeeds: formSubmissions.specialNeeds,
+            intent: formSubmissions.intent,
+            household: formSubmissions.household,
+            latitude: formSubmissions.latitude,
+            longitude: formSubmissions.longitude,
+            status: formSubmissions.status,
+            linkedAdopterId: formSubmissions.linkedAdopterId,
+            answersJson: formSubmissions.answersJson,
+            createdAt: formSubmissions.createdAt,
+        })
+        .from(formSubmissions)
+        .where(eq(formSubmissions.id, submissionId))
+        .get();
 
     // Fetch matched adopter profiles (with addressInfo and profile image for comparison)
     let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; addressInfo: string | null; status: string | null; profileImageUrl: string | null }> = [];
@@ -168,7 +160,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ no
 
     return (
         <FormResultsContent
-            notificationId={notificationId}
+            notificationId={submissionId}
             submitted={submitted}
             submission={submission}
             fullAnswers={fullAnswers}

@@ -254,7 +254,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                     </p>
                                 )}
 
-                                {/* Contract screenshot link */}
+                                {/* Contract screenshot link (for adoptions) */}
                                 {adoption.comments && (() => {
                                     try {
                                         const parsed = JSON.parse(adoption.comments);
@@ -275,6 +275,22 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                         }
                                     } catch { /* not JSON, ignore */ }
                                     return null;
+                                })()}
+
+                                {/* Form link (for adoption_requests) */}
+                                {recordType === 'adoption_request' && adoption.sourceUrl?.startsWith('form:') && (() => {
+                                    const formSubmissionId = adoption.sourceUrl!.replace('form:', '');
+                                    return (
+                                        <a
+                                            href={`/form-results/${formSubmissionId}`}
+                                            className="flex items-center gap-2 mt-2.5 p-2 bg-teal-50 rounded-lg hover:bg-teal-100 transition-colors pointer-events-auto"
+                                            onClick={e => e.stopPropagation()}
+                                        >
+                                            <span className="text-sm">📝</span>
+                                            <span className="text-sm font-medium text-teal-700">{t('adopter.form_view_responses') || 'Ver formulario completado'}</span>
+                                            <svg className="w-3.5 h-3.5 ml-auto text-teal-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                        </a>
+                                    );
                                 })()}
 
                                 {/* Image Thumbnails */}
@@ -308,7 +324,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                             👤 {t('adoption.on_behalf_label') || 'En nombre de:'} {adoption.onBehalfOf}
                                         </span>
                                     )}
-                                    {adoption.sourceUrl && (
+                                    {adoption.sourceUrl && !adoption.sourceUrl.startsWith('form:') && (
                                         <a
                                             href={adoption.sourceUrl}
                                             target="_blank"

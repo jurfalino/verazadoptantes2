@@ -332,57 +332,8 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                     )
                 }
 
-                {/* Forms completed by this adopter */}
-                {!isNew && (
-                    <CollapsibleSection title={t('adopter.forms_section')} count={linkedForms.length} defaultOpen={linkedForms.length > 0}>
-                        <div className="space-y-2">
-                            {linkedForms.length > 0 ? (
-                                linkedForms.map(form => {
-                                    const date = form.createdAt ? new Date(form.createdAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
-                                    const speciesLabel = form.species === 'dog' ? 'Perro' : form.species === 'cat' ? 'Gato' : form.species || '—';
-                                    const ageLabel = form.lifeStage === 'puppy' ? 'Cachorro' : form.lifeStage === 'young' ? 'Joven' : form.lifeStage === 'senior' ? 'Senior' : '';
-                                    const summary = [speciesLabel, ageLabel].filter(Boolean).join(' · ');
-                                    const content = (
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <p className="text-sm font-semibold text-stone-800">
-                                                    {date}
-                                                </p>
-                                                {summary && (
-                                                    <p className="text-xs text-stone-500 mt-0.5">
-                                                        {t('adopter.form_looking_for')}: {summary}
-                                                    </p>
-                                                )}
-                                            </div>
-                                            {form.notificationId && (
-                                                <span className="text-xs text-teal-600 font-medium group-hover:underline">
-                                                    {t('adopter.form_view_responses')}
-                                                </span>
-                                            )}
-                                        </div>
-                                    );
-                                    return form.notificationId ? (
-                                        <a
-                                            key={form.id}
-                                            href={`/form-results/${form.notificationId}`}
-                                            className="block bg-white border border-stone-200 rounded-xl p-3 hover:border-teal-300 hover:shadow-sm transition-all group"
-                                        >
-                                            {content}
-                                        </a>
-                                    ) : (
-                                        <div key={form.id} className="block bg-white border border-stone-200 rounded-xl p-3 text-stone-600">
-                                            {content}
-                                        </div>
-                                    );
-                                })
-                            ) : (
-                                <p className="text-sm text-stone-500 py-2">
-                                    {t('adopter.forms_empty')}
-                                </p>
-                            )}
-                        </div>
-                    </CollapsibleSection>
-                )}
+
+
 
                 {/* Delete record — owner only */}
                 {!isNew && adopter && isOwner && (

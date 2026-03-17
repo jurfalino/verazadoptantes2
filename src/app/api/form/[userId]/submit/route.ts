@@ -187,7 +187,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     type: 'form_submission',
                     title: `📋 ${name} completó el formulario — ${matchCount} coincidencia${matchCount > 1 ? 's' : ''}`,
                     body: `Se encontraron posibles registros previos. Tocá para revisar las respuestas y vincular.`,
-                    url: `/form-results/${notificationId}`,
+                    url: `/form-results/${submissionId}`,
                     icon: '⚠️',
                     metadata: {
                         submissionId,
@@ -207,7 +207,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     type: 'form_submission',
                     title: `📋 ${name} completó el formulario`,
                     body: `No se encontraron registros previos. Revisá las respuestas para continuar.`,
-                    url: `/form-results/${notificationId}`,
+                    url: `/form-results/${submissionId}`,
                     icon: '📋',
                     metadata: {
                         submissionId,
@@ -226,7 +226,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     type: 'form_submission',
                     title: `📋 Nueva respuesta al formulario`,
                     body: `${name} completó el formulario de adopción compartido por ${rescuerEmail}.`,
-                    url: `/form-results/${notificationId}`,
+                    url: `/form-results/${submissionId}`,
                     icon: '📋',
                     metadata: { submissionId, submitterName: name },
                 }).catch(() => {});
