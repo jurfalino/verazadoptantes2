@@ -1,2 +1,3 @@
--- Add dismissed column to notifications table
-ALTER TABLE notifications ADD COLUMN dismissed INTEGER DEFAULT 0;
+-- [BROKEN] Original had literal \r\n text instead of real newlines.
+-- D1 recorded this as applied but the ALTER TABLE never executed.
+-- Actual column creation is handled by 0032_repair_notification_dismissed.sql

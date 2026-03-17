@@ -36,11 +36,13 @@ export const TEST_FAMILY = {
     MARIA_DAUGHTER: 'Lucía García',
 } as const;
 
-/** Dismiss the country selector banner that appears on first page load */
+/** Dismiss the country selector banner that appears on first page load.
+ * Sets localStorage to suppress the banner for both test user emails. */
 export async function dismissCountryBanner(page: Page) {
-    const banner = page.getByRole('heading', { name: 'Select your country' });
-    if (await banner.isVisible({ timeout: 3000 }).catch(() => false)) {
-        await page.getByRole('button', { name: /Argentina/ }).click();
-        await banner.waitFor({ state: 'hidden', timeout: 3000 });
-    }
+    await page.evaluate(() => {
+        localStorage.setItem('country_confirmed_gatitosolivos@gmail.com', '1');
+        localStorage.setItem('country_confirmed_testuser@example.com', '1');
+    });
+    // Brief wait for React to re-render after localStorage change
+    await page.waitForTimeout(500);
 }

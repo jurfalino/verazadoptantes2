@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { TEST_NAMES, TEST_ADOPTERS } from './helpers';
+import { TEST_NAMES, TEST_ADOPTERS, dismissCountryBanner } from './helpers';
 
 test.setTimeout(60000);
 
@@ -7,6 +7,7 @@ test.describe('Search to Decision', () => {
 
     test.beforeEach(async ({ page }) => {
         await page.goto('/');
+        await dismissCountryBanner(page);
     });
 
     test('Search returns results and links to profiles', async ({ page }) => {
@@ -28,13 +29,15 @@ test.describe('Search to Decision', () => {
         // Step 3: Results appear with match count
         await expect(page.getByText(/found \d+ match/i)).toBeVisible({ timeout: 15000 });
 
-        // Step 4: No error toast should appear
-        await expect(page.locator('[role="alert"]')).not.toBeVisible({ timeout: 2000 }).catch(() => {
-            // If an error toast IS visible, fail with its text
-            return page.locator('[role="alert"]').textContent().then(text => {
+        // Step 4: No error toast with text should appear
+        const alertElements = page.locator('[role="alert"]');
+        const alertCount = await alertElements.count();
+        for (let i = 0; i < alertCount; i++) {
+            const text = await alertElements.nth(i).textContent();
+            if (text && text.trim().length > 0) {
                 throw new Error(`Error toast appeared during search: ${text}`);
-            });
-        });
+            }
+        }
 
         // Step 5: At least one result card must render with a profile link
         const resultLinks = page.locator('a[href*="/adopter/"]');

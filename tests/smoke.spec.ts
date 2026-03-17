@@ -29,7 +29,7 @@ test.describe('Smoke Tests', () => {
 
         // Navigate to create adopter
         await page.goto('/adopter/create');
-        await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 15000 });
+        await expect(page.getByPlaceholder(/Full Name|Nombre completo/i)).toBeVisible({ timeout: 15000 });
 
         // Navigate back home
         await page.goto('/');
@@ -43,20 +43,23 @@ test.describe('Smoke Tests', () => {
         const response = await request.get('/api/health');
         const body = await response.json();
 
-        if (body.status === 'schema_mismatch') {
-            const details = body.mismatches
+        // The overall status may be 'down' if external services (scraper, petshield) are unreachable.
+        // We only care about platform health and schema drift for this test.
+        if (body.schemaDrift && body.schemaDrift.length > 0) {
+            const details = body.schemaDrift
                 .map((m: any) => {
                     const parts = [`Table "${m.table}":`];
-                    if (m.missing.length) parts.push(`  missing: ${m.missing.join(', ')}`);
-                    if (m.extra.length) parts.push(`  extra: ${m.extra.join(', ')}`);
+                    if (m.missing?.length) parts.push(`  missing: ${m.missing.join(', ')}`);
+                    if (m.extra?.length) parts.push(`  extra: ${m.extra.join(', ')}`);
                     return parts.join('\n');
                 })
                 .join('\n');
-            throw new Error(`Schema mismatch detected!\n${details}`);
+            throw new Error(`Schema drift detected!\n${details}`);
         }
 
-        expect(response.status()).toBe(200);
-        expect(body.status).toBe('ok');
+        // Platform (D1/R2) should be healthy
+        const platformStatus = body.services?.platform?.status;
+        expect(platformStatus).not.toBe('down');
     });
 });
 

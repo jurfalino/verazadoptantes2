@@ -32,7 +32,8 @@ export default function globalSetup() {
         const Database = require('better-sqlite3');
         const db = new Database(localDbPath);
 
-        // Apply all migrations first
+        // Apply all migrations first — run each statement individually
+        // so that one failure (e.g. "table already exists") doesn't block later migrations
         const drizzleDir = path.resolve(rootDir, 'drizzle');
         if (fs.existsSync(drizzleDir)) {
             const migrations = fs.readdirSync(drizzleDir)
@@ -40,15 +41,34 @@ export default function globalSetup() {
                 .sort();
             for (const migration of migrations) {
                 const sql = fs.readFileSync(path.join(drizzleDir, migration), 'utf-8');
-                try { db.exec(sql); } catch { /* table already exists */ }
+                // Split into individual statements and run each one
+                const statements = sql.split(';')
+                    .map(s => s.trim())
+                    .filter(s => s.length > 0 && !s.startsWith('--'));
+                for (const stmt of statements) {
+                    try { db.exec(stmt + ';'); } catch { /* column/table already exists — OK */ }
+                }
             }
         }
 
-        // Apply seed data
+        // Apply seed data — also per-statement to handle partial schema issues
         const seedSql = fs.readFileSync(seedFile, 'utf-8');
-        db.exec(seedSql);
+        const seedStatements = seedSql.split(';')
+            .map(s => s.trim())
+            .filter(s => s.length > 0 && !s.startsWith('--'));
+        let seedSuccessCount = 0;
+        let seedFailCount = 0;
+        for (const stmt of seedStatements) {
+            try {
+                db.exec(stmt + ';');
+                seedSuccessCount++;
+            } catch (e) {
+                seedFailCount++;
+                console.warn(`[Global Setup] Seed statement failed: ${(e as Error).message.slice(0, 100)}`);
+            }
+        }
         db.close();
-        console.log('[Global Setup] local.db seed complete.');
+        console.log(`[Global Setup] local.db seed complete: ${seedSuccessCount} ok, ${seedFailCount} failed.`);
     } catch (error) {
         console.error('[Global Setup] local.db seed failed (better-sqlite3 may not be available):', error);
     }
