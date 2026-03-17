@@ -13,6 +13,7 @@ import {
     getInviteLink,
     type Organization,
 } from '@/app/actions/organizations';
+import OrgActivityFeed from '@/components/OrgActivityFeed';
 
 
 export default function OrganizationsPage() {
@@ -25,6 +26,7 @@ export default function OrganizationsPage() {
     const [loading, setLoading] = useState(true);
     const [creating, setCreating] = useState(false);
     const [newName, setNewName] = useState('');
+    const [showCreateForm, setShowCreateForm] = useState(false);
 
     const loadOrgs = useCallback(async () => {
         try {
@@ -55,6 +57,7 @@ export default function OrganizationsPage() {
         if (result.success) {
             toast.success(t('organizations.created_success'));
             setNewName('');
+            setShowCreateForm(false);
             loadOrgs();
         } else {
             toast.error(result.error || 'Error');
@@ -69,6 +72,8 @@ export default function OrganizationsPage() {
         );
     }
 
+    const hasOrgs = orgs.length > 0;
+
     return (
         <main className="container mx-auto px-4 py-8 max-w-2xl">
             <h1 className="text-2xl font-bold text-stone-900 mb-6">
@@ -78,31 +83,83 @@ export default function OrganizationsPage() {
             {/* Explanatory collapsible banner */}
             <InfoBanner />
 
-            {/* Create new org */}
-            <div className="bg-white rounded-xl border border-stone-200 p-5 mb-6 shadow-sm">
-                <p className="text-sm text-stone-600 mb-3">{t('organizations.create_description')}</p>
-                <div className="flex gap-2">
-                    <input
-                        type="text"
-                        value={newName}
-                        onChange={(e) => setNewName(e.target.value)}
-                        placeholder={t('organizations.name_placeholder')}
-                        className="flex-1 px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
-                        maxLength={100}
-                        onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-                    />
-                    <button
-                        onClick={handleCreate}
-                        disabled={creating || !newName.trim()}
-                        className="px-4 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 disabled:opacity-50 transition-colors"
-                    >
-                        {creating ? '...' : t('organizations.create')}
-                    </button>
+            {/* Team activity feed */}
+            {hasOrgs && <OrgActivityFeed />}
+
+            {/* Create new org — full form (empty state) or collapsible (has orgs) */}
+            {!hasOrgs ? (
+                <div className="bg-white rounded-xl border border-stone-200 p-5 mb-6 shadow-sm">
+                    <p className="text-sm text-stone-600 mb-3">{t('organizations.create_description')}</p>
+                    <div className="flex gap-2">
+                        <input
+                            type="text"
+                            value={newName}
+                            onChange={(e) => setNewName(e.target.value)}
+                            placeholder={t('organizations.name_placeholder')}
+                            className="flex-1 px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
+                            maxLength={100}
+                            onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+                        />
+                        <button
+                            onClick={handleCreate}
+                            disabled={creating || !newName.trim()}
+                            className="px-4 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 disabled:opacity-50 transition-colors"
+                        >
+                            {creating ? '...' : t('organizations.create')}
+                        </button>
+                    </div>
                 </div>
-            </div>
+            ) : (
+                <div className="mb-6">
+                    {!showCreateForm ? (
+                        <button
+                            onClick={() => setShowCreateForm(true)}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-xl border border-dashed transition-colors"
+                            style={{ color: 'var(--accent)', borderColor: 'var(--border-accent)' }}
+                        >
+                            ＋ {t('organizations.create')}
+                        </button>
+                    ) : (
+                        <div
+                            className="rounded-xl border p-4 shadow-sm"
+                            style={{ background: 'var(--surface-card)', borderColor: 'var(--border-default)' }}
+                        >
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={newName}
+                                    onChange={(e) => setNewName(e.target.value)}
+                                    placeholder={t('organizations.name_placeholder')}
+                                    className="flex-1 px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
+                                    maxLength={100}
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') handleCreate();
+                                        if (e.key === 'Escape') { setShowCreateForm(false); setNewName(''); }
+                                    }}
+                                />
+                                <button
+                                    onClick={handleCreate}
+                                    disabled={creating || !newName.trim()}
+                                    className="px-4 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 disabled:opacity-50 transition-colors"
+                                >
+                                    {creating ? '...' : t('organizations.create')}
+                                </button>
+                                <button
+                                    onClick={() => { setShowCreateForm(false); setNewName(''); }}
+                                    className="px-3 py-2 text-sm rounded-lg transition-colors"
+                                    style={{ color: 'var(--text-muted)' }}
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Org list */}
-            {orgs.length === 0 ? (
+            {!hasOrgs ? (
                 <p className="text-sm text-stone-500 text-center py-8">{t('organizations.no_orgs')}</p>
             ) : (
                 <div className="space-y-4">

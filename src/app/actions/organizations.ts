@@ -266,6 +266,21 @@ export async function joinOrganization(inviteToken: string): Promise<{ success: 
         });
 
         const org = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, invite.orgId)).get();
+
+        // Notify existing org members about the new member (fire-and-forget)
+        import('@/app/actions/notifications').then(async ({ notifyOrgMembers, resolveDisplayName }) => {
+            const displayName = await resolveDisplayName(user);
+            notifyOrgMembers({
+                actorEmail: user,
+                type: 'member_joined',
+                title: '👋 Nuevo miembro',
+                body: `${displayName} se unió a ${org?.name || 'la organización'}.`,
+                url: '/organizations',
+                icon: '👋',
+                metadata: { orgId: invite.orgId, orgName: org?.name },
+            }).catch(() => {});
+        });
+
         return { success: true, orgName: org?.name || 'Organization' };
     } catch (error) {
         logger.error('joinOrganization failed', { error: error instanceof Error ? error.message : String(error) });
@@ -335,3 +350,35 @@ export async function getOrgMemberEmails(): Promise<string[]> {
         return [user]; // fallback to just the current user
     }
 }
+
+/**
+ * Session-free variant: returns all member emails across all organizations
+ * that the given email belongs to. Safe to call from unauthenticated contexts
+ * (e.g. public API routes) where getUser() would fail.
+ */
+export async function getOrgMemberEmailsFor(email: string): Promise<string[]> {
+    const db = await getDb();
+    if (!db) return [email];
+
+    try {
+        const myOrgs = await db.select({ orgId: orgMembers.orgId })
+            .from(orgMembers)
+            .where(eq(orgMembers.userEmail, email));
+
+        if (myOrgs.length === 0) return [email];
+
+        const orgIds = myOrgs.map((o: { orgId: string }) => o.orgId);
+
+        const allMembers = await db.select({ userEmail: orgMembers.userEmail })
+            .from(orgMembers)
+            .where(inArray(orgMembers.orgId, orgIds));
+
+        const emails = new Set<string>(allMembers.map((m: { userEmail: string }) => m.userEmail));
+        emails.add(email);
+        return Array.from(emails);
+    } catch (error) {
+        logger.error('getOrgMemberEmailsFor failed', { error: error instanceof Error ? error.message : String(error) });
+        return [email];
+    }
+}
+

@@ -24,7 +24,6 @@ export default function Home() {
   const { openLogin } = useAuthContext();
   const toast = useShowToast();
   const [contentImportEnabled, setContentImportEnabled] = useState(false);
-  const [showGuide, setShowGuide] = useState(false);
   const [appConfig, setAppConfig] = useState<Record<string, string>>({});
 
   // Check feature flag on client side
@@ -40,10 +39,6 @@ export default function Home() {
       })
       .catch((e) => { console.error('[Homepage] Config fetch error:', e); });
 
-    // Show guide for first-time users
-    if (!localStorage.getItem('guide_dismissed')) {
-      setShowGuide(true);
-    }
   }, []);
 
   // Auto-open LoginModal when redirected (session expired or auth required)
@@ -81,10 +76,7 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const dismissGuide = () => {
-    setShowGuide(false);
-    localStorage.setItem('guide_dismissed', '1');
-  };
+
 
   const handleAuthNavigation = (url: string) => {
     // Check if user is logged in
@@ -142,6 +134,7 @@ export default function Home() {
           {/* Report / Observation */}
           <ReportWizard />
         </div>
+
         {/* PWA Install CTA — shown to users who dismissed the floating banner */}
         <InstallCTA />
 
@@ -149,15 +142,6 @@ export default function Home() {
         <ReferralBanner />
 
         <footer className="mt-10 text-center text-stone-500 text-sm space-y-2">
-          {/* How it works toggle — for returning users who dismissed the guide */}
-          {!showGuide && (
-            <button
-              onClick={() => setShowGuide(true)}
-              className="text-stone-500 hover:text-stone-600 text-xs underline underline-offset-2 transition-colors"
-            >
-              {t('home.how_title')}
-            </button>
-          )}
 
           <div className="flex items-center justify-center gap-3 text-xs">
             <a href="/privacy" className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">

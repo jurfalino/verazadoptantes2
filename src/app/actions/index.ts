@@ -14,7 +14,7 @@ export { getAdoptionConfig } from './config';
 export { searchAdopter } from './search';
 
 // Adopters
-export { getAdopter, saveAdopter, getAdopterStats, logProfileView, getAverageRating, getHistory, getLinkedFormSubmissions } from './adopters';
+export { getAdopter, saveAdopter, getAdopterStats, logProfileView, getAverageRating, getHistory, getLinkedFormSubmissions, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from './adopters';
 
 // Images
 export { saveImage, getImages, setProfilePicture, getAdoptionImages, deleteImage } from './images';

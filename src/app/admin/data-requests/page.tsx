@@ -37,6 +37,7 @@ export default async function AdminDataRequestsPage() {
         resolvedAt: dataRequests.resolvedAt,
         resolvedBy: dataRequests.resolvedBy,
         adopterName: adopters.name,
+        adopterAddedBy: adopters.addedBy,
     })
         .from(dataRequests)
         .leftJoin(adopters, eq(dataRequests.adopterId, adopters.id))
@@ -89,6 +90,9 @@ export default async function AdminDataRequestsPage() {
                                                 <div className="font-semibold text-stone-900 text-sm">{r.requesterName}</div>
                                                 {r.requesterEmail && (
                                                     <div className="text-xs text-stone-500">{r.requesterEmail}</div>
+                                                )}
+                                                {r.adopterAddedBy && (
+                                                    <div className="text-xs text-stone-400 mt-0.5">Created by: {r.adopterAddedBy}</div>
                                                 )}
                                             </td>
                                             <td className="p-4">
@@ -147,6 +151,9 @@ export default async function AdminDataRequestsPage() {
                                             <div className="font-semibold text-stone-900 text-sm">{r.requesterName}</div>
                                             {r.requesterEmail && (
                                                 <div className="text-xs text-stone-500 truncate">{r.requesterEmail}</div>
+                                            )}
+                                            {r.adopterAddedBy && (
+                                                <div className="text-xs text-stone-400 mt-0.5">Created by: {r.adopterAddedBy}</div>
                                             )}
                                         </div>
                                         <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold uppercase flex-shrink-0 ${typeColors[r.requestType] || 'bg-stone-100 text-stone-600'}`}>

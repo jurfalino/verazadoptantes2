@@ -218,6 +218,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             }
 
             logger.info('Form fuzzy search completed', { submissionId, matchCount, tokenCount: tokenValues.length });
+
+            // Fan-out to org members (fire-and-forget)
+            import('@/app/actions/notifications').then(({ notifyOrgMembers }) => {
+                notifyOrgMembers({
+                    actorEmail: rescuerEmail,
+                    type: 'form_submission',
+                    title: `📋 Nueva respuesta al formulario`,
+                    body: `${name} completó el formulario de adopción compartido por ${rescuerEmail}.`,
+                    url: `/form-results/${notificationId}`,
+                    icon: '📋',
+                    metadata: { submissionId, submitterName: name },
+                }).catch(() => {});
+            });
         } catch (searchErr) {
             logger.warn('Form fuzzy search/notification failed (non-blocking)', { error: (searchErr as Error).message, submissionId });
         }

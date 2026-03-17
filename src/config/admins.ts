@@ -4,7 +4,7 @@ import { getRequestContext } from '@cloudflare/next-on-pages';
 // the database is available (e.g. first deploy, build time).
 // Additional admins should be granted via the user_profiles.role column
 // (set role='admin' via the admin SQL runner).
-const BOOTSTRAP_ADMIN_EMAILS = [
+export const BOOTSTRAP_ADMIN_EMAILS = [
     'gatitosolivos@gmail.com',
 ];
 

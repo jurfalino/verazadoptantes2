@@ -262,3 +262,164 @@ export async function getLinkedFormSubmissions(adopterId: string) {
         return [];
     }
 }
+
+// ── Adopter Deletion ─────────────────────────────────────────
+
+export async function checkAdopterDeletable(adopterId: string) {
+    try {
+        const db = await getDb();
+        if (!db) return { canDelete: false, isOwner: false, collaborators: { adoptions: 0, images: 0, edits: 0, flags: 0, forms: 0 } };
+
+        const user = await getUser();
+        const adopter = await db.select().from(adopters).where(eq(adopters.id, adopterId)).get();
+        if (!adopter) return { canDelete: false, isOwner: false, collaborators: { adoptions: 0, images: 0, edits: 0, flags: 0, forms: 0 } };
+
+        const isOwner = adopter.addedBy === user;
+        if (!isOwner) return { canDelete: false, isOwner: false, collaborators: { adoptions: 0, images: 0, edits: 0, flags: 0, forms: 0 } };
+
+        // Count contributions from OTHER users across all related tables
+        const { adoptions: adoptionsTable, adopterImages, adopterFlags, formSubmissions } = await import('@/db/schema');
+
+        const [otherAdoptions, otherImages, otherEdits, otherFlags, linkedForms] = await Promise.all([
+            db.select({ count: sql<number>`COUNT(*)` }).from(adoptionsTable)
+                .where(and(eq(adoptionsTable.adopterId, adopterId), sql`${adoptionsTable.addedBy} != ${user}`)).get(),
+            db.select({ count: sql<number>`COUNT(*)` }).from(adopterImages)
+                .where(and(eq(adopterImages.adopterId, adopterId), sql`${adopterImages.addedBy} != ${user}`)).get(),
+            db.select({ count: sql<number>`COUNT(*)` }).from(adopterHistory)
+                .where(and(eq(adopterHistory.adopterId, adopterId), sql`${adopterHistory.changedBy} != ${user}`)).get(),
+            db.select({ count: sql<number>`COUNT(*)` }).from(adopterFlags)
+                .where(eq(adopterFlags.adopterId, adopterId)).get(),
+            db.select({ count: sql<number>`COUNT(*)` }).from(formSubmissions)
+                .where(eq(formSubmissions.linkedAdopterId, adopterId)).get(),
+        ]);
+
+        const collaborators = {
+            adoptions: otherAdoptions?.count || 0,
+            images: otherImages?.count || 0,
+            edits: otherEdits?.count || 0,
+            flags: otherFlags?.count || 0,
+            forms: linkedForms?.count || 0,
+        };
+
+        const totalOtherContributions = Object.values(collaborators).reduce((a, b) => a + b, 0);
+        return { canDelete: totalOtherContributions === 0, isOwner: true, collaborators };
+    } catch (error) {
+        logger.error('Check adopter deletable failed', error, { adopterId });
+        return { canDelete: false, isOwner: false, collaborators: { adoptions: 0, images: 0, edits: 0, flags: 0, forms: 0 } };
+    }
+}
+
+export async function deleteOwnAdopter(adopterId: string) {
+    try {
+        const db = await getDb();
+        if (!db) throw new Error('No database');
+
+        const user = await getUser();
+
+        // Inline ownership check — avoids a full checkAdopterDeletable call
+        // to minimize the TOCTOU window. We re-verify ownership + collaboration
+        // right before deleting. The window between these queries and the
+        // actual delete is ~10-50ms on D1, which is an acceptable risk.
+        const adopter = await db.select().from(adopters).where(eq(adopters.id, adopterId)).get();
+        if (!adopter || adopter.addedBy !== user) throw new Error('Not the owner');
+
+        // Re-check collaboration inline (not via checkAdopterDeletable to shrink TOCTOU window)
+        const { adoptions: adoptionsTable, adopterImages, adopterFlags, formSubmissions } = await import('@/db/schema');
+        const [otherAdoptions, otherImages, otherEdits, otherFlags, linkedForms] = await Promise.all([
+            db.select({ count: sql<number>`COUNT(*)` }).from(adoptionsTable)
+                .where(and(eq(adoptionsTable.adopterId, adopterId), sql`${adoptionsTable.addedBy} != ${user}`)).get(),
+            db.select({ count: sql<number>`COUNT(*)` }).from(adopterImages)
+                .where(and(eq(adopterImages.adopterId, adopterId), sql`${adopterImages.addedBy} != ${user}`)).get(),
+            db.select({ count: sql<number>`COUNT(*)` }).from(adopterHistory)
+                .where(and(eq(adopterHistory.adopterId, adopterId), sql`${adopterHistory.changedBy} != ${user}`)).get(),
+            db.select({ count: sql<number>`COUNT(*)` }).from(adopterFlags)
+                .where(eq(adopterFlags.adopterId, adopterId)).get(),
+            db.select({ count: sql<number>`COUNT(*)` }).from(formSubmissions)
+                .where(eq(formSubmissions.linkedAdopterId, adopterId)).get(),
+        ]);
+        const totalOther = (otherAdoptions?.count || 0) + (otherImages?.count || 0) + (otherEdits?.count || 0) + (otherFlags?.count || 0) + (linkedForms?.count || 0);
+        if (totalOther > 0) throw new Error('Record has contributions from other users');
+
+        // Cascade delete all related data
+        const { duplicateTokens, duplicateCandidates } = await import('@/db/schema');
+
+        await Promise.all([
+            db.delete(adoptionsTable).where(eq(adoptionsTable.adopterId, adopterId)),
+            db.delete(adopterImages).where(eq(adopterImages.adopterId, adopterId)),
+            db.delete(adopterHistory).where(eq(adopterHistory.adopterId, adopterId)),
+            db.delete(adopterFlags).where(eq(adopterFlags.adopterId, adopterId)),
+            db.delete(adopterStats).where(eq(adopterStats.adopterId, adopterId)),
+            db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, adopterId)),
+            db.delete(duplicateCandidates).where(sql`${duplicateCandidates.adopter1Id} = ${adopterId} OR ${duplicateCandidates.adopter2Id} = ${adopterId}`),
+            db.update(formSubmissions).set({ linkedAdopterId: null }).where(eq(formSubmissions.linkedAdopterId, adopterId)),
+        ]);
+
+        await db.delete(adopters).where(eq(adopters.id, adopterId));
+
+        logger.info('Adopter deleted by owner', { adopterId, deletedBy: user });
+        logAudit({ userEmail: user, action: 'adopter_deleted', target: adopterId });
+
+        return { success: true };
+    } catch (error) {
+        const errorId = logger.error('Delete adopter failed', error, { adopterId });
+        throw new Error(`Failed to delete adopter (Error ID: ${errorId})`);
+    }
+}
+
+export async function requestAdopterDeletion(adopterId: string) {
+    try {
+        const db = await getDb();
+        if (!db) throw new Error('No database');
+
+        const user = await getUser();
+
+        // F3: Verify ownership before allowing request
+        const adopter = await db.select().from(adopters).where(eq(adopters.id, adopterId)).get();
+        if (!adopter || adopter.addedBy !== user) throw new Error('Not the owner');
+
+        const { dataRequests } = await import('@/db/schema');
+
+        // F4: Check for existing pending deletion request to prevent duplicates
+        const existing = await db.select({ id: dataRequests.id }).from(dataRequests)
+            .where(and(
+                eq(dataRequests.adopterId, adopterId),
+                eq(dataRequests.requestType, 'deletion'),
+                eq(dataRequests.status, 'pending'),
+            )).get();
+        if (existing) return { success: true, alreadyRequested: true };
+
+        await db.insert(dataRequests).values({
+            id: crypto.randomUUID(),
+            adopterId,
+            requesterName: user,
+            requesterEmail: user,
+            requestType: 'deletion',
+            details: `Owner-initiated deletion request. Record has contributions from other users.`,
+            status: 'pending',
+            createdAt: new Date(),
+        });
+
+        logger.info('Adopter deletion requested', { adopterId, requestedBy: user });
+        logAudit({ userEmail: user, action: 'adopter_deletion_requested', target: adopterId });
+
+        // Notify admins (fire-and-forget)
+        import('@/app/actions/notifications').then(async ({ notifyAdmins, resolveDisplayName }) => {
+            const displayName = await resolveDisplayName(user);
+            notifyAdmins({
+                actorEmail: user,
+                type: 'deletion_request',
+                title: '🗑️ Solicitud de eliminación',
+                body: `${displayName} solicitó eliminar un registro de adoptante.`,
+                url: '/admin/data-requests',
+                icon: '🗑️',
+                metadata: { adopterId },
+            }).catch(() => {});
+        });
+
+        return { success: true };
+    } catch (error) {
+        const errorId = logger.error('Request adopter deletion failed', error, { adopterId });
+        throw new Error(`Failed to request deletion (Error ID: ${errorId})`);
+    }
+}
+

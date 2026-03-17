@@ -266,3 +266,128 @@ export async function dismissAllNotifications(userId: string): Promise<boolean> 
         return false;
     }
 }
+
+// ── Fan-out Helpers ──────────────────────────────────────────────
+
+/**
+ * Resolve a display name for an email from the `user` table.
+ * Falls back to the email prefix if lookup fails.
+ */
+export async function resolveDisplayName(email: string): Promise<string> {
+    try {
+        const { getRequestContext } = await import('@cloudflare/next-on-pages');
+        const { env } = getRequestContext();
+        if (env?.DB) {
+            const row = await env.DB.prepare(
+                `SELECT name FROM user WHERE email = ? LIMIT 1`
+            ).bind(email).first<{ name: string | null }>();
+            if (row?.name) return row.name;
+        }
+    } catch { /* fallback */ }
+    return email.split('@')[0];
+}
+
+/**
+ * Notify all admin users (bootstrap admins + role='admin' in user_profiles).
+ * Excludes the actor who triggered the event.
+ */
+export async function notifyAdmins(opts: {
+    actorEmail: string;
+    type: string;
+    title: string;
+    body: string;
+    url?: string;
+    icon?: string;
+    metadata?: Record<string, unknown>;
+}): Promise<void> {
+    try {
+        const adminEmails = new Set<string>();
+
+        // Import bootstrap admin list from single source of truth
+        const { BOOTSTRAP_ADMIN_EMAILS } = await import('@/config/admins');
+        for (const email of BOOTSTRAP_ADMIN_EMAILS) {
+            adminEmails.add(email);
+        }
+
+        // DB-based admins via raw D1 query (user_profiles is not in Drizzle schema)
+        try {
+            const { getRequestContext } = await import('@cloudflare/next-on-pages');
+            const { env } = getRequestContext();
+            if (env?.DB) {
+                const rows = await env.DB.prepare(
+                    `SELECT u.email FROM user_profiles up
+                     INNER JOIN user u ON u.id = up.user_id
+                     WHERE up.role = 'admin'`
+                ).all<{ email: string }>();
+                for (const row of rows.results || []) {
+                    adminEmails.add(row.email);
+                }
+            }
+        } catch {
+            // DB unavailable — only bootstrap admins will be notified
+        }
+
+        // Exclude the actor
+        adminEmails.delete(opts.actorEmail);
+
+        if (adminEmails.size === 0) return;
+
+        await Promise.all([...adminEmails].map(email =>
+            createNotification({
+                userId: email,
+                type: opts.type,
+                title: opts.title,
+                body: opts.body,
+                url: opts.url,
+                icon: opts.icon,
+                metadata: opts.metadata,
+            })
+        ));
+
+        logger.info('Admin notifications sent', { type: opts.type, count: adminEmails.size });
+    } catch (error) {
+        logger.warn('notifyAdmins failed (non-critical)', { error: error instanceof Error ? error.message : String(error) });
+    }
+}
+
+/**
+ * Notify all org members of the actor's organizations, excluding the actor.
+ * Uses getOrgMemberEmailsFor() — session-free, safe for public API routes.
+ */
+export async function notifyOrgMembers(opts: {
+    actorEmail: string;
+    type: string;
+    title: string;
+    body: string;
+    url?: string;
+    icon?: string;
+    metadata?: Record<string, unknown>;
+}): Promise<void> {
+    try {
+        const { getOrgMemberEmailsFor } = await import('@/app/actions/organizations');
+        const emails = await getOrgMemberEmailsFor(opts.actorEmail);
+
+        // Exclude the actor
+        const recipients = emails.filter((e: string) => e !== opts.actorEmail);
+        if (recipients.length === 0) return;
+
+        await Promise.all(recipients.map((email: string) =>
+            createNotification({
+                userId: email,
+                type: opts.type,
+                title: opts.title,
+                body: opts.body,
+                url: opts.url,
+                icon: opts.icon,
+                metadata: opts.metadata,
+            })
+        ));
+
+        logger.info('Org member notifications sent', { type: opts.type, count: recipients.length });
+    } catch (error) {
+        logger.warn('notifyOrgMembers failed (non-critical)', { error: error instanceof Error ? error.message : String(error) });
+    }
+}
+
+
+

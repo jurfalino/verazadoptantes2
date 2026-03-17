@@ -1,8 +1,62 @@
 'use server';
 
-import { formSubmissions } from '@/db/schema';
+import { formSubmissions, adoptions } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
+
+// ── Human-readable label helpers ──────────────────────────────────
+
+const SPECIES_LABELS: Record<string, string> = {
+    dog: 'Perro', cat: 'Gato', both: 'Ambos', other: 'Otro',
+};
+const LIFE_STAGE_LABELS: Record<string, string> = {
+    puppy: 'Cachorro', young: 'Joven', senior: 'Senior',
+};
+const INTENT_LABELS: Record<string, string> = {
+    self: 'Para sí mismx', gift: 'Regalo para otra persona',
+};
+const HOUSEHOLD_LABELS: Record<string, string> = {
+    children: 'Niños en el hogar', pets: 'Otras mascotas', outdoor: 'Espacio exterior seguro', presence: 'Presencia frecuente en casa',
+};
+
+function buildDetailedDescription(formRow: {
+    species?: string | null;
+    lifeStage?: string | null;
+    intent?: string | null;
+    specialNeeds?: number | null;
+    household?: string | null;
+}): string {
+    const lines: string[] = [];
+    if (formRow.species) lines.push(`Especie: ${SPECIES_LABELS[formRow.species] || formRow.species}`);
+    if (formRow.lifeStage) lines.push(`Edad preferida: ${LIFE_STAGE_LABELS[formRow.lifeStage] || formRow.lifeStage}`);
+    if (formRow.intent) lines.push(`Destino: ${INTENT_LABELS[formRow.intent] || formRow.intent}`);
+    if (formRow.specialNeeds === 1) lines.push('Acepta animales con necesidades especiales');
+    if (formRow.specialNeeds === 0) lines.push('No busca animales con necesidades especiales');
+    if (formRow.household) {
+        try {
+            const items = JSON.parse(formRow.household);
+            if (Array.isArray(items) && items.length > 0) {
+                lines.push(`Hogar: ${items.map((h: string) => HOUSEHOLD_LABELS[h] || h).join(', ')}`);
+            }
+        } catch { /* ignore */ }
+    }
+    return lines.join('\n');
+}
+
+function buildNotesSummary(formRow: {
+    species?: string | null;
+    lifeStage?: string | null;
+    intent?: string | null;
+    specialNeeds?: number | null;
+}): string {
+    const parts: string[] = [];
+    if (formRow.species) parts.push(`Especie: ${SPECIES_LABELS[formRow.species] || formRow.species}`);
+    if (formRow.lifeStage) parts.push(`Edad: ${LIFE_STAGE_LABELS[formRow.lifeStage] || formRow.lifeStage}`);
+    if (formRow.intent) parts.push(`Destino: ${INTENT_LABELS[formRow.intent] || formRow.intent}`);
+    if (formRow.specialNeeds === 1) parts.push('Acepta necesidades especiales');
+    if (parts.length === 0) return '';
+    return 'Datos del formulario de adopción:\n' + parts.map(p => `• ${p}`).join('\n');
+}
 
 export interface FormSubmissionPrefill {
     name: string;
@@ -46,13 +100,9 @@ export async function getFormSubmissionPrefill(submissionId: string): Promise<Fo
         const contactParts = [row.email, row.phone, row.address].filter(Boolean) as string[];
         const contactInfo = contactParts.join('\n');
 
-        const speciesLabel = row.species === 'dog' ? 'Perro' : row.species === 'cat' ? 'Gato' : row.species || '';
-        const lifeStageLabel = row.lifeStage === 'puppy' ? 'Cachorro' : row.lifeStage === 'young' ? 'Joven' : row.lifeStage === 'senior' ? 'Senior' : row.lifeStage || '';
-        const intentLabel = row.intent === 'self' ? 'Para sí' : row.intent === 'gift' ? 'Regalo' : '';
-        const summaryParts = [speciesLabel, lifeStageLabel, intentLabel].filter(Boolean);
-        let notes = summaryParts.length > 0
-            ? `Formulario PetShield: ${summaryParts.join(' · ')}`
-            : 'Datos del formulario de adopción.';
+        // Brief summary for notes (adopter record context)
+        const summary = buildNotesSummary(row);
+        let notes = summary ? `Solicitud de adopción: ${summary}` : '';
 
         if (row.answersJson) {
             try {
@@ -85,6 +135,8 @@ export async function getFormSubmissionPrefill(submissionId: string): Promise<Fo
 
 /**
  * Link a form submission to an adopter profile (sets linkedAdopterId and status = 'linked').
+ * Also creates an adoption_request record from the form's structured data.
+ * Idempotent: skips if the adoption request already exists (dedup via sourceUrl).
  * Only updates if the submission belongs to the current user (rescuer).
  */
 export async function linkFormSubmissionToAdopter(submissionId: string, adopterId: string): Promise<{ success: boolean; error?: string }> {
@@ -94,6 +146,7 @@ export async function linkFormSubmissionToAdopter(submissionId: string, adopterI
         const currentUser = await getUser();
         if (!db || !currentUser) return { success: false, error: 'Unauthorized' };
 
+        // 1. Link the form submission
         await db
             .update(formSubmissions)
             .set({
@@ -114,7 +167,50 @@ export async function linkFormSubmissionToAdopter(submissionId: string, adopterI
             ))
             .get();
 
-        return updated ? { success: true } : { success: false, error: 'Submission not found or not owned' };
+        if (!updated) return { success: false, error: 'Submission not found or not owned' };
+
+        // 2. Create adoption_request record from form data (idempotent)
+        try {
+            const sourceUrl = `form:${submissionId}`;
+
+            // Dedup guard — skip if already created
+            const existing = await db.select({ id: adoptions.id })
+                .from(adoptions)
+                .where(and(
+                    eq(adoptions.adopterId, adopterId),
+                    eq(adoptions.sourceUrl, sourceUrl),
+                )).get();
+
+            if (!existing) {
+                const formRow = await db.select({
+                    species: formSubmissions.species,
+                    lifeStage: formSubmissions.lifeStage,
+                    intent: formSubmissions.intent,
+                    specialNeeds: formSubmissions.specialNeeds,
+                    household: formSubmissions.household,
+                    createdAt: formSubmissions.createdAt,
+                }).from(formSubmissions).where(eq(formSubmissions.id, submissionId)).get();
+
+                if (formRow) {
+                    await db.insert(adoptions).values({
+                        id: crypto.randomUUID(),
+                        adopterId,
+                        recordType: 'adoption_request',
+                        species: formRow.species,
+                        status: 'pending',
+                        details: buildDetailedDescription(formRow) || 'Solicitud de adopción',
+                        sourceUrl,
+                        addedBy: currentUser,
+                        date: formRow.createdAt,
+                    });
+                }
+            }
+        } catch (adoptionErr) {
+            // Non-blocking: the link succeeded, adoption request creation is best-effort
+            console.warn('[formSubmission] Failed to create adoption_request record', adoptionErr);
+        }
+
+        return { success: true };
     } catch (e) {
         return { success: false, error: e instanceof Error ? e.message : 'Unknown error' };
     }

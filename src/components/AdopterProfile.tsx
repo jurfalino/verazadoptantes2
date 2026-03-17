@@ -10,6 +10,8 @@ import AdoptionForm from '@/components/AdoptionForm';
 import { ImageGallery } from '@/components/ImageGallery';
 import { useLanguage } from '@/context/LanguageContext';
 import { saveImage } from '@/app/actions';
+import { checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from '@/app/actions';
+import { useShowToast } from '@/components/ui/Toast';
 import ReportInaccuracyForm from '@/components/ReportInaccuracyForm';
 import { countRecordsInPeriod } from '@/lib/adoptionFilters';
 import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, HistoryEntry, AdopterStats, AdoptionConfig, DuplicateCandidateInfo } from '@/types/adopter';
@@ -38,10 +40,56 @@ interface AdopterProfileProps {
 export function AdopterProfile({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [], linkedForms = [], formPrefill = null, userNameMap = {} }: AdopterProfileProps) {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
+    const toast = useShowToast();
     const [selectedPeriod, setSelectedPeriod] = useState<'90d' | '1y' | 'all'>('all');
     const [dismissedDuplicates, setDismissedDuplicates] = useState<Set<string>>(new Set());
     const [expandedStat, setExpandedStat] = useState<string | null>(null);
     const visibleDuplicates = duplicateCandidates.filter(c => !dismissedDuplicates.has(c.id));
+
+    // Delete state
+    const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+    const [deleteLoading, setDeleteLoading] = useState(false);
+    const [deleteCheck, setDeleteCheck] = useState<{ canDelete: boolean; collaborators: { adoptions: number; images: number; edits: number; flags: number; forms: number } } | null>(null);
+
+    const isOwner = adopter?.addedBy === currentUser;
+
+    const handleDeleteClick = async () => {
+        setDeleteLoading(true);
+        try {
+            const result = await checkAdopterDeletable(id);
+            setDeleteCheck(result);
+            setDeleteModalOpen(true);
+        } catch {
+            toast.error('Error', t('adopter.delete_error_check'));
+        } finally {
+            setDeleteLoading(false);
+        }
+    };
+
+    const handleConfirmDelete = async () => {
+        setDeleteLoading(true);
+        try {
+            await deleteOwnAdopter(id);
+            toast.success('✓', t('adopter.delete_success'));
+            window.location.href = '/';
+        } catch {
+            toast.error('Error', t('adopter.delete_error_failed'));
+            setDeleteLoading(false);
+        }
+    };
+
+    const handleRequestDeletion = async () => {
+        setDeleteLoading(true);
+        try {
+            await requestAdopterDeletion(id);
+            toast.success('✓', t('adopter.delete_request_success'));
+            setDeleteModalOpen(false);
+        } catch {
+            toast.error('Error', t('adopter.delete_error_request'));
+        } finally {
+            setDeleteLoading(false);
+        }
+    };
 
     // Stable reference date for period filtering (avoids hydration mismatch)
     const referenceDate = useMemo(() => new Date(), []);
@@ -334,6 +382,69 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                             )}
                         </div>
                     </CollapsibleSection>
+                )}
+
+                {/* Delete record — owner only */}
+                {!isNew && adopter && isOwner && (
+                    <div className="pt-6 border-t border-stone-200 mt-6">
+                        <button
+                            onClick={handleDeleteClick}
+                            disabled={deleteLoading}
+                            className="flex items-center gap-2 text-sm text-rose-600 hover:text-rose-700 font-medium transition-colors disabled:opacity-50"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            {deleteLoading ? '...' : t('adopter.delete_record')}
+                        </button>
+                    </div>
+                )}
+
+                {/* Delete confirmation modal */}
+                {deleteModalOpen && deleteCheck && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'var(--overlay-bg)' }}>
+                        <div className="rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4" style={{ background: 'var(--surface-card)' }}>
+                            {deleteCheck.canDelete ? (
+                                <>
+                                    <h3 className="text-lg font-bold text-rose-600">{t('adopter.delete_confirm_title')}</h3>
+                                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t('adopter.delete_confirm_body')}</p>
+                                    <div className="flex gap-3 pt-2">
+                                        <button
+                                            onClick={() => setDeleteModalOpen(false)}
+                                            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors" style={{ background: 'var(--surface-muted)', color: 'var(--text-primary)' }}
+                                        >{t('adopter.delete_cancel')}</button>
+                                        <button
+                                            onClick={handleConfirmDelete}
+                                            disabled={deleteLoading}
+                                            className="flex-1 px-4 py-2.5 bg-rose-600 text-white rounded-xl text-sm font-semibold hover:bg-rose-700 transition-colors disabled:opacity-50"
+                                        >{deleteLoading ? '...' : t('adopter.delete_confirm_btn')}</button>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{t('adopter.delete_collab_title')}</h3>
+                                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t('adopter.delete_collab_body')}</p>
+                                    <div className="text-xs space-y-1 rounded-xl p-3" style={{ background: 'var(--surface-muted)', color: 'var(--text-muted)' }}>
+                                        <p className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{t('adopter.delete_collab_detail')}:</p>
+                                        {deleteCheck.collaborators.adoptions > 0 && <p>• {deleteCheck.collaborators.adoptions} {t('adopter.delete_collab_adoptions')}</p>}
+                                        {deleteCheck.collaborators.images > 0 && <p>• {deleteCheck.collaborators.images} {t('adopter.delete_collab_images')}</p>}
+                                        {deleteCheck.collaborators.edits > 0 && <p>• {deleteCheck.collaborators.edits} {t('adopter.delete_collab_edits')}</p>}
+                                        {deleteCheck.collaborators.flags > 0 && <p>• {deleteCheck.collaborators.flags} {t('adopter.delete_collab_flags')}</p>}
+                                        {deleteCheck.collaborators.forms > 0 && <p>• {deleteCheck.collaborators.forms} {t('adopter.delete_collab_forms')}</p>}
+                                    </div>
+                                    <div className="flex gap-3 pt-2">
+                                        <button
+                                            onClick={() => setDeleteModalOpen(false)}
+                                            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors" style={{ background: 'var(--surface-muted)', color: 'var(--text-primary)' }}
+                                        >{t('adopter.delete_cancel')}</button>
+                                        <button
+                                            onClick={handleRequestDeletion}
+                                            disabled={deleteLoading}
+                                            className="flex-1 px-4 py-2.5 bg-rose-600 text-white rounded-xl text-sm font-semibold hover:bg-rose-700 transition-colors disabled:opacity-50"
+                                        >{deleteLoading ? '...' : t('adopter.delete_request_btn')}</button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
                 )}
             </div>
         </main>

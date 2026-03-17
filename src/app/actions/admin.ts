@@ -79,10 +79,7 @@ export async function deleteAdopter(adopterId: string) {
         const db = await getDb();
         if (!db) return { success: false, error: "No database" };
 
-        // Get all adoption IDs for this adopter first (to delete their images)
-        const _adopterAdoptions = await db.select({ id: adoptions.id })
-            .from(adoptions)
-            .where(eq(adoptions.adopterId, adopterId));
+        const { duplicateTokens, duplicateCandidates, formSubmissions } = await import('@/db/schema');
 
         // Cascade Logic
         // 1. Delete adopter stats
@@ -97,10 +94,17 @@ export async function deleteAdopter(adopterId: string) {
         // 4. Delete Adopter Images
         await db.delete(adopterImages).where(eq(adopterImages.adopterId, adopterId));
 
-        // 6. Delete linked Adoptions entirely (rather than unlinking)
+        // 5. Delete linked Adoptions entirely
         await db.delete(adoptions).where(eq(adoptions.adopterId, adopterId));
 
-        // 7. Delete Adopter
+        // 6. Delete duplicate detection tokens & candidates
+        await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, adopterId));
+        await db.delete(duplicateCandidates).where(sql`${duplicateCandidates.adopter1Id} = ${adopterId} OR ${duplicateCandidates.adopter2Id} = ${adopterId}`);
+
+        // 7. Unlink form submissions (don't delete — they belong to the form submitter)
+        await db.update(formSubmissions).set({ linkedAdopterId: null }).where(eq(formSubmissions.linkedAdopterId, adopterId));
+
+        // 8. Delete Adopter
         await db.delete(adopters).where(eq(adopters.id, adopterId));
 
         logger.info('Adopter deleted', { adopterId, deletedBy: session.user.email });

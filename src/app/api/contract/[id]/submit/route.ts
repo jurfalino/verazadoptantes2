@@ -299,6 +299,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
                     logger.info('Contract fuzzy search completed', { animalId, adopterId, matchCount, tokenCount: tokenValues.length });
                 }
+
+                // Fan-out to org members (fire-and-forget)
+                import('@/app/actions/notifications').then(({ notifyOrgMembers }) => {
+                    notifyOrgMembers({
+                        actorEmail: rescuerEmail,
+                        type: 'contract_result',
+                        title: `📝 Contrato firmado: ${animal.animalName || 'Animal'}`,
+                        body: `${fullName} firmó el contrato de adopción de ${animal.animalName || 'un animal'}.`,
+                        url: `/adopter/${adopterId}`,
+                        icon: '📝',
+                        metadata: { adopterId, adopterName: fullName, animalName: animal.animalName },
+                    }).catch(() => {});
+                });
             }
         } catch (searchErr) {
             // Never block the contract response — just log

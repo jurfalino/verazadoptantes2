@@ -43,6 +43,21 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
         });
 
         logAudit({ userEmail: flaggedBy, action: 'flag_created', target: adopterId, details: { reason, details } });
+
+        // Notify admins (fire-and-forget)
+        import('@/app/actions/notifications').then(async ({ notifyAdmins, resolveDisplayName }) => {
+            const displayName = await resolveDisplayName(flaggedBy);
+            notifyAdmins({
+                actorEmail: flaggedBy,
+                type: 'adopter_flagged',
+                title: '🚩 Adoptante reportado',
+                body: `${displayName} reportó un adoptante. Motivo: ${reason}`,
+                url: `/adopter/${adopterId}`,
+                icon: '🚩',
+                metadata: { adopterId, reason, details },
+            }).catch(() => {});
+        });
+
         return { success: true, id };
     } catch (error) {
         const errorId = logger.error('Flag adopter failed', error, { adopterId, reason });
