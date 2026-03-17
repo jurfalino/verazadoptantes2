@@ -1,1 +1,2 @@
--- Add dismissed column to notifications table\r\nALTER TABLE notifications ADD COLUMN dismissed INTEGER DEFAULT 0;\r\n
+-- Add dismissed column to notifications table
+ALTER TABLE notifications ADD COLUMN dismissed INTEGER DEFAULT 0;
