@@ -16,8 +16,10 @@ if (process.env.NODE_ENV === 'development') {
 const nextConfig: NextConfig = {
   serverExternalPackages: ["better-sqlite3"],
   // Mitigate Next.js 15.1 dev server memory leak (known regression)
+  // DISABLED: causes webpack module factory eviction → TypeError during RSC hydration
+  // If OOM returns, increase --max-old-space-size in package.json dev script instead
   experimental: {
-    webpackMemoryOptimizations: true,
+    // webpackMemoryOptimizations: true,
   },
   async headers() {
     return [

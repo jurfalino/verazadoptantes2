@@ -13,6 +13,7 @@ import {
     getInviteLink,
     type Organization,
 } from '@/app/actions/organizations';
+import VerifiedBadge from '@/components/VerifiedBadge';
 
 export default function OrganizationsPage() {
     const { data: session, status } = useSession();
@@ -289,6 +290,11 @@ function OrgCard({ org, onRefresh }: { org: Organization; onRefresh: () => void 
                         </li>
                     ))}
                 </ul>
+            </div>
+
+            {/* Verified Badge */}
+            <div className="px-5 py-3 border-t border-stone-100">
+                <VerifiedBadge orgName={org.name} orgId={org.id} />
             </div>
 
             {/* Invite link (if generated) */}

@@ -43,6 +43,9 @@ export async function GET() {
             // Feature flags (from DB)
             ENABLE_CONTENT_IMPORT: config['ENABLE_CONTENT_IMPORT'] || 'false',
             ENABLE_ANIMALS_FOR_ADOPTION: config['ENABLE_ANIMALS_FOR_ADOPTION'] || 'false',
+            // Social proof banner
+            SOCIAL_PROOF_ENABLED: config['SOCIAL_PROOF_ENABLED'] || 'false',
+            SOCIAL_PROOF_MESSAGES: config['SOCIAL_PROOF_MESSAGES'] || '[]',
         },
         statsCount,
         oldestStat

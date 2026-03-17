@@ -211,7 +211,7 @@
 body {
   background: var(--surface-base);
   color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+  /* font-family: inherited from Inter via next/font/google class on <body> */
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
@@ -1071,6 +1071,22 @@ button {
 
 .animate-slide-up {
   animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slide-down {
+  from {
+    transform: translateY(-8px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slideDown {
+  animation: slide-down 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* ════════════════════════════════════════════════════════════

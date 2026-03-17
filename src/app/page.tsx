@@ -5,15 +5,16 @@ export const runtime = 'edge';
 import { useLanguage } from '@/context/LanguageContext';
 
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import AdoptionWizard from '@/components/AdoptionWizard';
 import ReportWizard from '@/components/ReportWizard';
-import { ShieldPawIcon } from '@/components/Logo';
 import packageJson from '../../package.json';
 import { useEffect, useState } from 'react';
 import InstallCTA from '@/components/InstallCTA';
+import SocialProofBanner from '@/components/SocialProofBanner';
+import MilestoneBadge from '@/components/MilestoneBadge';
+import ReferralBanner from '@/components/ReferralBanner';
 import { useShowToast } from '@/components/ui/Toast';
 
 export default function Home() {
@@ -24,6 +25,7 @@ export default function Home() {
   const toast = useShowToast();
   const [contentImportEnabled, setContentImportEnabled] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
+  const [appConfig, setAppConfig] = useState<Record<string, string>>({});
 
   // Check feature flag on client side
   useEffect(() => {
@@ -31,6 +33,7 @@ export default function Home() {
       .then(res => res.json())
       .then((data) => {
         const cfg = data as { config?: Record<string, string> };
+        if (cfg.config) setAppConfig(cfg.config);
         if (cfg.config?.ENABLE_CONTENT_IMPORT === 'true') {
           setContentImportEnabled(true);
         }
@@ -103,71 +106,18 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-stone-50 py-12 px-4 relative">
-      <div className="max-w-3xl mx-auto space-y-8">
-        <header className="text-center mb-12">
-          <ShieldPawIcon className="w-16 h-16 mx-auto mb-4" />
-          <h1 className="text-4xl md:text-5xl font-extrabold text-stone-900 mb-4 tracking-tight">
-            {t('home.title')}
-          </h1>
-          <p className="text-stone-600 text-lg max-w-xl mx-auto font-medium">
-            {t('home.tagline')}{' '}
-            <Link href="/guia" className="text-teal-700 hover:text-teal-700 underline underline-offset-2 transition-colors">
-              {locale === 'en' ? 'Use our Adoption Guide' : 'Utilizá nuestra Guía de Adopción'}
-            </Link>
-          </p>
-        </header>
-
-        {/* How it works — collapsible guide for first-time users */}
-        {showGuide && (
-          <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-5 relative">
-            <button
-              onClick={dismissGuide}
-              className="absolute top-3 right-3 text-stone-500 hover:text-stone-600 transition-colors text-lg leading-none"
-              aria-label="Dismiss"
-            >
-              ✕
-            </button>
-            <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider mb-4 text-center">
-              {t('home.how_title')}
-            </h2>
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <div
-                className="cursor-pointer hover:opacity-80 transition-opacity"
-                onClick={() => { document.getElementById('search-section')?.scrollIntoView({ behavior: 'smooth' }); }}
-              >
-                <div className="text-2xl mb-1">🔍</div>
-                <p className="font-semibold text-stone-800 text-sm">{t('home.how_step1_title')}</p>
-                <p className="text-stone-500 text-xs mt-0.5">{t('home.how_step1_desc')}</p>
-              </div>
-              <div
-                className="cursor-pointer hover:opacity-80 transition-opacity"
-                onClick={() => { handleAuthNavigation('/import'); }}
-              >
-                <div className="text-2xl mb-1">📝</div>
-                <p className="font-semibold text-stone-800 text-sm">{t('home.how_step2_title')}</p>
-                <p className="text-stone-500 text-xs mt-0.5">{t('home.how_step2_desc')}</p>
-              </div>
-              <div
-                className="cursor-pointer hover:opacity-80 transition-opacity"
-                onClick={() => { document.getElementById('action-cards')?.scrollIntoView({ behavior: 'smooth' }); }}
-              >
-                <div className="text-2xl mb-1">⭐</div>
-                <p className="font-semibold text-stone-800 text-sm">{t('home.how_step3_title')}</p>
-                <p className="text-stone-500 text-xs mt-0.5">{t('home.how_step3_desc')}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Facebook Import removed — unified Import Wizard handles all imports */}
-
+    <main className="min-h-screen bg-stone-50 py-6 px-4 relative">
+      <div className="max-w-3xl mx-auto space-y-6">
         <div id="search-section">
-          <SearchSection />
+          <SearchSection locale={locale} />
         </div>
 
+        {/* Social proof + milestone — below search for mobile-first */}
+        <SocialProofBanner config={appConfig} />
+        {session?.user && <MilestoneBadge />}
+
         {/* Action Cards — 3-column grid */}
-        <div id="action-cards" className={`grid gap-6 mt-12 ${contentImportEnabled ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+        <div id="action-cards" className={`grid gap-6 mt-6 ${contentImportEnabled ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
           {/* Import from post — promoted to full card */}
           {contentImportEnabled && (
             <div
@@ -181,7 +131,8 @@ export default function Home() {
                 </svg>
               </div>
               <h3 className="text-lg font-semibold text-stone-900 mb-1">{t('home.action_import_title')}</h3>
-              <p className="text-stone-500 text-sm">{t('home.action_import_desc')}</p>
+              <p className="text-stone-500 text-sm mb-3">{t('home.action_import_desc')}</p>
+              <span className="inline-block px-4 py-2 bg-teal-600 text-white rounded-xl font-semibold text-sm group-hover:bg-teal-700 transition-colors">{t('home.action_import_btn')}</span>
             </div>
           )}
 
@@ -194,6 +145,9 @@ export default function Home() {
         {/* PWA Install CTA — shown to users who dismissed the floating banner */}
         <InstallCTA />
 
+        {/* Referral banner — logged-in users only */}
+        <ReferralBanner />
+
         <footer className="mt-10 text-center text-stone-500 text-sm space-y-2">
           {/* How it works toggle — for returning users who dismissed the guide */}
           {!showGuide && (
@@ -204,21 +158,7 @@ export default function Home() {
               {t('home.how_title')}
             </button>
           )}
-          <div className="flex items-center justify-center gap-3">
-            <a
-              href="/funcionalidades"
-              className="text-teal-700 hover:text-teal-700 font-medium text-xs underline underline-offset-2 transition-colors"
-            >
-              {locale === 'en' ? 'Features' : 'Funcionalidades'}
-            </a>
-            <span className="text-stone-300">·</span>
-            <a
-              href={locale === 'en' ? '/guide' : '/guia'}
-              className="text-teal-700 hover:text-teal-700 font-medium text-xs underline underline-offset-2 transition-colors"
-            >
-              {t('home.process_guide')}
-            </a>
-          </div>
+
           <div className="flex items-center justify-center gap-3 text-xs">
             <a href="/privacy" className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
               {t('legal.privacy')}

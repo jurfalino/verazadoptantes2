@@ -11,8 +11,10 @@ import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { formatShortDate } from '@/lib/dates';
 import { zarazTrack } from '@/lib/zaraz';
+import { ShieldPawIcon } from '@/components/Logo';
+import Link from 'next/link';
 
-export default function SearchSection() {
+export default function SearchSection({ locale }: { locale?: string }) {
     const { t } = useLanguage();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -141,12 +143,38 @@ export default function SearchSection() {
 
     return (
         <div className="w-full">
-            <div className={`bg-white rounded-3xl p-6 shadow-sm border border-stone-200 transition-all ${hasResults ? 'md:static sticky top-16 z-30 rounded-b-xl md:rounded-3xl shadow-md md:shadow-sm' : ''
+            {/* Hero header — outside the card, hides when results visible */}
+            <div className={`text-center mb-5 ${hasResults ? 'hidden md:block' : ''}`}>
+                <ShieldPawIcon className="w-10 h-10 mx-auto mb-2" />
+                <h1 className="text-3xl font-extrabold text-stone-900 mb-2 tracking-tight">{t('home.title')}</h1>
+                <div className="flex flex-col items-center gap-1 mb-3">
+                    <p className="text-stone-500 text-sm font-medium flex items-center gap-2">
+                        <svg className="w-4 h-4 text-teal-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
+                        {t('home.value_verify')}
+                    </p>
+                    <p className="text-stone-500 text-sm font-medium flex items-center gap-2">
+                        <svg className="w-4 h-4 text-teal-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
+                        {t('home.value_register')}
+                    </p>
+                </div>
+                <div className="flex items-center justify-center gap-2 flex-wrap">
+                    <Link href={locale === 'en' ? '/guide' : '/guia'} className="hero-pill group">
+                        <svg className="w-3.5 h-3.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" /></svg>
+                        <span>{t('home.hero_guide')}</span>
+                        <svg className="w-3 h-3 opacity-40 group-hover:opacity-70 group-hover:translate-x-0.5 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+                    </Link>
+                    <Link href="/funcionalidades" className="hero-pill group">
+                        <svg className="w-3.5 h-3.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" /></svg>
+                        <span>{t('home.hero_features')}</span>
+                        <svg className="w-3 h-3 opacity-40 group-hover:opacity-70 group-hover:translate-x-0.5 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+                    </Link>
+                </div>
+            </div>
+
+            {/* Search card — just the search tool */}
+            <div className={`bg-white rounded-3xl p-5 md:p-6 shadow-sm border border-stone-200 transition-all ${hasResults ? 'md:static sticky top-16 z-30 rounded-b-xl md:rounded-3xl shadow-md md:shadow-sm' : ''
                 }`}>
-                {/* Full title — hidden on mobile when results are showing to save space */}
-                <h2 className={`text-2xl font-semibold text-stone-900 mb-5 text-center tracking-tight ${hasResults ? 'hidden md:block' : ''
-                    }`}>{t('search.title')}</h2>
-                <form onSubmit={handleSearch} className={hasResults ? 'flex gap-2 items-center md:block md:space-y-4' : 'space-y-4'}>
+                <form onSubmit={handleSearch} className={hasResults ? 'flex gap-2 items-center md:block md:space-y-4' : 'space-y-3'}>
                     <div className="relative flex-1">
                         <label htmlFor="search" className="sr-only">{t('common.search')}</label>
                         <input
@@ -155,7 +183,7 @@ export default function SearchSection() {
                             placeholder={t('search.placeholder')}
                             className={`w-full border border-stone-200 focus:border-teal-400 focus:ring-4 focus:ring-teal-100 transition-all outline-none text-stone-900 placeholder:text-stone-500 font-medium bg-stone-50 ${hasResults
                                 ? 'px-4 py-3 pr-10 rounded-xl text-sm md:px-5 md:py-4 md:pr-12 md:rounded-2xl md:text-base'
-                                : 'px-5 py-4 pr-12 rounded-2xl'
+                                : 'px-4 py-3.5 pr-12 rounded-2xl'
                                 }`}
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
@@ -179,19 +207,50 @@ export default function SearchSection() {
                         disabled={loading}
                         className={`bg-teal-200 text-teal-900 font-semibold shadow-sm hover:bg-teal-300 hover:shadow-md transition-all disabled:opacity-70 transform active:scale-[0.98] ${hasResults
                             ? 'px-4 py-3 rounded-xl text-sm md:w-full md:py-4 md:px-6 md:rounded-2xl md:text-lg'
-                            : 'w-full py-4 px-6 rounded-2xl text-lg'
+                            : 'w-full py-3.5 px-6 rounded-2xl text-base'
                             }`}
                     >
                         {loading ? t('search.searching') : t('search.button')}
                     </button>
                 </form>
 
-                {/* Hint for first-time users — shown when nothing has been searched */}
                 {!results && !loading && !query && (
-                    <p className="text-center text-stone-500 text-sm mt-3">
-                        💡 {t('search.hint')}
+                    <p className="text-center text-stone-500 text-xs mt-2">
+                        <svg className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" /></svg>
+                        {t('search.hint')}
                     </p>
                 )}
+
+                <style>{`
+                    .hero-pill {
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 0.375rem;
+                        padding: 0.5rem 1rem;
+                        font-size: 0.8125rem;
+                        font-weight: 600;
+                        color: var(--text-secondary);
+                        background: var(--surface-card);
+                        border: 1px solid var(--border-default);
+                        border-radius: 0.75rem;
+                        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+                        text-decoration: none;
+                        will-change: transform, box-shadow;
+                        white-space: nowrap;
+                    }
+                    .hero-pill:hover {
+                        transform: translateY(-2px);
+                        border-color: var(--border-accent);
+                        color: var(--accent);
+                        background: var(--accent-subtle-bg);
+                        box-shadow: 0 4px 12px -2px rgba(13, 148, 136, 0.15),
+                                    0 1px 3px rgba(0, 0, 0, 0.06);
+                    }
+                    .hero-pill:active {
+                        transform: translateY(0);
+                        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+                    }
+                `}</style>
             </div>
 
             {/* Validation Error Banner */}

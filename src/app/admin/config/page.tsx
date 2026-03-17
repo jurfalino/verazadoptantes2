@@ -5,6 +5,12 @@ import { useState, useEffect } from 'react';
 import { useShowToast } from '@/components/ui/Toast';
 import { formatShortDate } from '@/lib/dates';
 
+interface SocialProofMessage {
+    city: string;
+    count: number;
+    period: string;
+}
+
 interface ConfigData {
     config?: {
         too_many_adoptions_threshold?: string;
@@ -13,6 +19,8 @@ interface ConfigData {
         too_many_requests_period_days?: string;
         ENABLE_CONTENT_IMPORT?: string;
         ENABLE_ANIMALS_FOR_ADOPTION?: string;
+        SOCIAL_PROOF_ENABLED?: string;
+        SOCIAL_PROOF_MESSAGES?: string;
     };
     statsCount?: number;
     oldestStat?: string | null;
@@ -41,6 +49,9 @@ export default function AdminConfigPage() {
         ENABLE_CONTENT_IMPORT: false,
         ENABLE_ANIMALS_FOR_ADOPTION: false,
     });
+    const [socialProofEnabled, setSocialProofEnabled] = useState(false);
+    const [socialProofMessages, setSocialProofMessages] = useState<SocialProofMessage[]>([]);
+    const [savingSocialProof, setSavingSocialProof] = useState(false);
     const [statsCount, setStatsCount] = useState<number | null>(null);
     const [oldestStat, setOldestStat] = useState<string | null>(null);
     const [purgeDays, setPurgeDays] = useState('365');
@@ -67,6 +78,12 @@ export default function AdminConfigPage() {
                         ENABLE_CONTENT_IMPORT: data.config?.ENABLE_CONTENT_IMPORT === 'true',
                         ENABLE_ANIMALS_FOR_ADOPTION: data.config?.ENABLE_ANIMALS_FOR_ADOPTION === 'true',
                     });
+                    // Social proof config
+                    setSocialProofEnabled(data.config?.SOCIAL_PROOF_ENABLED === 'true');
+                    try {
+                        const msgs = data.config?.SOCIAL_PROOF_MESSAGES ? JSON.parse(data.config.SOCIAL_PROOF_MESSAGES) : [];
+                        setSocialProofMessages(msgs);
+                    } catch { setSocialProofMessages([]); }
                     setStatsCount(data.statsCount ?? null);
                     setOldestStat(data.oldestStat ?? null);
                 }
@@ -119,6 +136,44 @@ export default function AdminConfigPage() {
         } finally {
             setSavingFlags(false);
         }
+    };
+
+    const handleSaveSocialProof = async () => {
+        setSavingSocialProof(true);
+        try {
+            const res = await fetch('/api/admin/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    SOCIAL_PROOF_ENABLED: socialProofEnabled ? 'true' : 'false',
+                    SOCIAL_PROOF_MESSAGES: JSON.stringify(socialProofMessages.filter(m => m.city.trim())),
+                })
+            });
+            if (res.ok) {
+                toast.success('Saved', 'Social proof banner updated.');
+            } else {
+                toast.error('Error', 'Failed to save social proof settings.');
+            }
+        } catch (e) {
+            console.error(e);
+            toast.error('Error', 'Error saving social proof settings.');
+        } finally {
+            setSavingSocialProof(false);
+        }
+    };
+
+    const addSocialProofMessage = () => {
+        setSocialProofMessages(prev => [...prev, { city: '', count: 1, period: 'esta semana' }]);
+    };
+
+    const updateSocialProofMessage = (idx: number, field: keyof SocialProofMessage, value: string | number) => {
+        setSocialProofMessages(prev => prev.map((m, i) =>
+            i === idx ? { ...m, [field]: value } : m
+        ));
+    };
+
+    const removeSocialProofMessage = (idx: number) => {
+        setSocialProofMessages(prev => prev.filter((_, i) => i !== idx));
     };
 
     const handlePurgeStats = async () => {
@@ -193,6 +248,100 @@ export default function AdminConfigPage() {
                             </button>
                         </div>
                     ))}
+                </div>
+            </div>
+
+            {/* Social Proof Banner */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200">
+                <h3 className="text-lg font-semibold text-stone-900 mb-4 flex items-center gap-2">
+                    <span className="text-xl">📊</span>
+                    Social Proof Banner
+                </h3>
+                <p className="text-sm text-stone-500 mb-4">
+                    Show a rotating banner on the homepage with adoption activity stats. Messages rotate every 8 seconds.
+                </p>
+
+                {/* Enable toggle */}
+                <div className="flex items-center justify-between p-4 bg-stone-50 rounded-xl mb-4">
+                    <div>
+                        <p className="font-semibold text-stone-800">Enable Banner</p>
+                        <p className="text-sm text-stone-500">Show social proof messages on the homepage</p>
+                    </div>
+                    <button
+                        onClick={() => setSocialProofEnabled(!socialProofEnabled)}
+                        className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+                            socialProofEnabled ? 'bg-blue-600' : 'bg-stone-300'
+                        }`}
+                    >
+                        <span
+                            className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                socialProofEnabled ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                        />
+                    </button>
+                </div>
+
+                {/* Messages list */}
+                <div className="space-y-3 mb-4">
+                    {socialProofMessages.map((msg, idx) => (
+                        <div key={idx} className="flex items-start gap-2 p-3 bg-stone-50 rounded-lg">
+                            <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                <div>
+                                    <label className="block text-xs font-medium text-stone-600 mb-1">City / Org</label>
+                                    <input
+                                        type="text"
+                                        value={msg.city}
+                                        onChange={(e) => updateSocialProofMessage(idx, 'city', e.target.value)}
+                                        placeholder="Buenos Aires"
+                                        className="w-full px-3 py-1.5 text-sm border border-stone-200 rounded-lg outline-none focus:border-teal-400"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-stone-600 mb-1">Count</label>
+                                    <input
+                                        type="number"
+                                        value={msg.count}
+                                        onChange={(e) => updateSocialProofMessage(idx, 'count', parseInt(e.target.value) || 0)}
+                                        min="1"
+                                        className="w-full px-3 py-1.5 text-sm border border-stone-200 rounded-lg outline-none focus:border-teal-400"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-stone-600 mb-1">Period</label>
+                                    <input
+                                        type="text"
+                                        value={msg.period}
+                                        onChange={(e) => updateSocialProofMessage(idx, 'period', e.target.value)}
+                                        placeholder="esta semana"
+                                        className="w-full px-3 py-1.5 text-sm border border-stone-200 rounded-lg outline-none focus:border-teal-400"
+                                    />
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => removeSocialProofMessage(idx)}
+                                className="mt-5 text-stone-400 hover:text-rose-500 transition-colors text-sm"
+                                aria-label="Remove message"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={addSocialProofMessage}
+                        className="px-4 py-1.5 text-sm font-medium text-stone-600 border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors"
+                    >
+                        + Add Message
+                    </button>
+                    <button
+                        onClick={handleSaveSocialProof}
+                        disabled={savingSocialProof}
+                        className="px-6 py-1.5 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-600 disabled:opacity-50 transition-colors"
+                    >
+                        {savingSocialProof ? 'Saving...' : 'Save Social Proof'}
+                    </button>
                 </div>
             </div>
 
