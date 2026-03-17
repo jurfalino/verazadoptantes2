@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 
 type ServiceStatus = 'ok' | 'starting' | 'degraded' | 'down';
 
@@ -152,9 +153,9 @@ export default function HealthPage() {
             <div className="health-page">
                 {/* Header */}
                 <header className="health-header">
-                    <a href="/" className="health-logo" aria-label="Volver al inicio">
+                    <Link href="/" className="health-logo" aria-label="Volver al inicio">
                         🐾 BuenAdoptante
-                    </a>
+                    </Link>
                     <h1>{lang === 'es' ? 'Estado del Sistema' : 'System Status'}</h1>
                 </header>
 
@@ -246,7 +247,7 @@ export default function HealthPage() {
                 <footer className="health-footer">
                     {data?.version && <span>v{data.version}</span>}
                     <span>•</span>
-                    <a href="/">{lang === 'es' ? 'Volver al inicio' : 'Back to home'}</a>
+                    <Link href="/">{lang === 'es' ? 'Volver al inicio' : 'Back to home'}</Link>
                 </footer>
             </div>
 
