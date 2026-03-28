@@ -5,9 +5,10 @@ import { eq, sql, and } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
-import { NINETY_DAYS_IN_SECONDS, ONE_YEAR_IN_SECONDS, ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
+import { ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
 import { tokenizeAdopter } from './duplicates';
 import { saveAdopterSchema } from './validation';
+import { RECORD_TYPES } from '@/domain/constants';
 
 export async function getAdopter(id: string) {
     try {
@@ -138,24 +139,17 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
     }
 }
 
-// Fetch adopter stats for different time periods (aggregated in SQL)
+// Fetch adopter stats — flat totals (no period bucketing)
 export async function getAdopterStats(adopterId: string) {
     try {
         const db = await getDb();
         if (!db) return null;
 
-        const now = Math.floor(Date.now() / 1000); // Unix timestamp in seconds
-        const ninetyDaysAgo = now - NINETY_DAYS_IN_SECONDS;
-        const oneYearAgo = now - ONE_YEAR_IN_SECONDS;
-
         // Aggregate in SQL: returns at most 2 rows (one per event type: search_hit, profile_view)
-        // Note: adoption/request counts come from the adoptions table, not from stats events
         // Exclude admin activity: filter out events from users with role='admin' in user_profiles
         const rows = await db.select({
             eventType: adopterStats.eventType,
             total: sql<number>`COUNT(*)`,
-            last90d: sql<number>`SUM(CASE WHEN CAST(strftime('%s', ${adopterStats.createdAt}) AS INTEGER) >= ${ninetyDaysAgo} THEN 1 ELSE 0 END)`,
-            last1y: sql<number>`SUM(CASE WHEN CAST(strftime('%s', ${adopterStats.createdAt}) AS INTEGER) >= ${oneYearAgo} THEN 1 ELSE 0 END)`,
         }).from(adopterStats)
             .where(and(
                 eq(adopterStats.adopterId, adopterId),
@@ -163,24 +157,11 @@ export async function getAdopterStats(adopterId: string) {
             ))
             .groupBy(adopterStats.eventType);
 
-        // Map SQL results to the expected shape
-        const stats = {
-            searchHits: { '90d': 0, '1y': 0, 'all': 0 },
-            profileViews: { '90d': 0, '1y': 0, 'all': 0 },
-        };
-
-        const bucketMap: Record<string, keyof typeof stats> = {
-            'search_hit': 'searchHits',
-            'profile_view': 'profileViews',
-        };
+        const stats = { searchHits: 0, profileViews: 0 };
 
         for (const row of rows) {
-            const bucket = row.eventType ? bucketMap[row.eventType] : undefined;
-            if (bucket) {
-                stats[bucket].all = row.total || 0;
-                stats[bucket]['1y'] = row.last1y || 0;
-                stats[bucket]['90d'] = row.last90d || 0;
-            }
+            if (row.eventType === 'search_hit') stats.searchHits = row.total || 0;
+            else if (row.eventType === 'profile_view') stats.profileViews = row.total || 0;
         }
 
         return stats;
@@ -217,7 +198,9 @@ export async function getAverageRating(adopterId: string): Promise<number | null
         const { adoptions } = await import('@/db/schema');
         const result = await db.select({
             avgRating: sql<number>`AVG(${adoptions.rating})`
-        }).from(adoptions).where(eq(adoptions.adopterId, adopterId)).get();
+        }).from(adoptions).where(
+            eq(adoptions.adopterId, adopterId)
+        ).get();
 
         return result?.avgRating ?? null;
     } catch (error) {

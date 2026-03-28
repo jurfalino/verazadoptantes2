@@ -2,6 +2,125 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.10.0-16] - 2026-03-28
+
+### Added
+- **Domain layer** — new `src/domain/` module with `constants.ts` (FLAG_REASONS, RECORD_TYPES, EVENT_TYPES), `flags.ts` (buildFlags), `stats.ts` (computeStats), `ratings.ts` (computeAvgRating) replacing 3 duplicated implementations
+- **AdminAdopterList component** — extracted client component from admin adopters page for cleaner separation
+- **Mass-action API route** — new `/api/admin/mass-action` endpoint for bulk admin operations
+- **Config API route** — moved feature flag config from `/api/admin/config` to `/api/config` (public, non-admin scoped)
+
+### Changed
+- **Rating display standardization** — all inline `⭐ rating.toFixed(1)` replaced with `<RatingBadge>` component; new `variant="inline"` mode and decimal support (e.g. `4.2` instead of rounding to `4`)
+- **AdoptionHistory rewrite** — restructured timeline card layout with cleaner component hierarchy
+- **RecordTypeColors extended** — added `dot`, `ring`, `iconBg` properties for richer record-type styling
+- **AdopterFlags type moved** — from `actions/types.ts` to `types/adopter.ts` for shared access
+- **AdopterStats simplified** — flat `searchHits`/`profileViews` counters replacing period-bucketed `{90d, 1y, all}` objects
+- **i18n labels** — "Interactions" → "Activity", "New Interaction" → "Log Activity" (EN/ES)
+
+---
+
+## [2.10.0-9] - 2026-03-17
+
+### Changed
+- **Form results route** — refactored from `[notificationId]` to `[submissionId]` for clearer URL semantics
+- **Adoption timeline** — added form submission pill to adoption history timeline
+
+---
+
+## [2.10.0-8] - 2026-03-17
+
+### Added
+- **Zaraz/Amplitude integration** — event tracking for search, profile views, and adoption flows
+- **OG social preview cards** — Open Graph meta tags for rich link previews on social platforms
+
+### Changed
+- **Funcionalidades page** — polished copy, layout, and CTA updates; dark theme fix for pain point cards
+
+---
+
+## [2.10.0-7] - 2026-03-15
+
+### Fixed
+- **E2E tests** — fixed species select locator (was targeting wrong select element), country banner seed data, and search results visibility in CI
+
+---
+
+## [2.10.0-6] - 2026-03-15
+
+### Added
+- **Notifications page** — full notifications listing at `/notifications` with read/unread filtering
+- **Features landing page** — premium `/funcionalidades` page with generated illustrations
+- **Delete animals** — ability to delete adoption/interaction records
+
+### Changed
+- **Features page screenshots** — replaced AI art with real app screenshots, sharpened feature copy
+
+---
+
+## [2.10.0] - 2026-03-13
+
+### Added
+- **Form results UX** — redesigned form submission results page with comparison cards, match badges, and link-to-profile actions
+- **Unlinked forms on My Adopters** — surface unlinked PetShield form submissions in the adopter management dashboard
+- **Contract link on My Adoptions** — quick link to signed contract from adoption records
+
+### Fixed
+- **Mobile layout** — responsive fixes for form results and adopter management on small screens
+
+---
+
+## [2.9.10-2] - 2026-03-13
+
+### Fixed
+- **Form submission route** — fixed routing for PetShield form submissions
+- **Idempotent migrations** — ensured all migration files use `IF NOT EXISTS` / `OR IGNORE` guards
+
+---
+
+## [2.9.4] - 2026-03-09
+
+### Changed
+- **CSS architecture refactor** — consolidated to 2-theme system (light/dark) with green brand consistency
+- **Notification bell** — visual polish and theme alignment
+
+### Fixed
+- **Keystatic API route** — tolerate missing GitHub env vars during build (503 + setup instructions)
+
+---
+
+## [2.9.3] - 2026-03-08
+
+### Fixed
+- **JWT user ID desync** — fixed session-based admin menu visibility, public search access
+- **Strict form submission** — tightened validation on PetShield form submit
+- **Admin activity exclusion** — tag userId at write, filter admin stats at read
+
+---
+
+## [2.9.2] - 2026-03-08
+
+### Added
+- **PetShield form** — pre-adoption screening questionnaire with species/life stage, household assessment, geolocation, selfie capture, and lifestyle/commitment questions
+- **Share button** — standardized share button component across profile and form pages
+
+### Changed
+- **Style guide** — established design token infrastructure for consistent theming
+
+---
+
+## [2.9.1] - 2026-03-08
+
+### Added
+- **SEO/GEO foundation** — `robots.txt`, `sitemap.xml`, JSON-LD structured data, rich metadata
+- **Country auto-detect** — auto-detection via Cloudflare headers with confirmation flow
+- **Canonical URLs** — proper canonical link tags, alt text audit fixes
+
+### Changed
+- **Schema-sync workflow** — added `/schema-sync` workflow for verifying local D1 parity
+
+---
+
 ## [2.9.0] - 2026-03-07
 
 ### Added
@@ -68,7 +187,7 @@ All notable changes to BuenAdoptante are documented here.
 
 ---
 
-
+## [2.8.0-4] - 2026-03-03
 
 ### Added
 - **Video storage and playback** — scraper extracts video URLs from `<video>` elements and `og:video` tags across all platforms; videos are downloaded and stored in R2; ImageGallery renders `<video>` with play overlay and lightbox player
@@ -150,6 +269,29 @@ All notable changes to BuenAdoptante are documented here.
 
 ---
 
+## [2.6.0-3] - 2026-02-22
+
+### Added
+- **R2 permanent image storage** — all Facebook CDN images now persisted to Cloudflare R2 bucket, eliminating broken image links when FB CDN URLs expire
+
+---
+
+## [2.6.0-2] - 2026-02-22
+
+### Fixed
+- **Scraper extraction** — OG tags extracted from DOM, article text; dismisses login modal
+- **Googlebot UA fallback** — uses `facebookexternalhit` UA directly for recovery, no Playwright needed
+
+---
+
+## [2.6.0-1] - 2026-02-22
+
+### Fixed
+- **Scraper extraction** — fixed OG tag parsing, How It Works step 2 updated to "record adoptions"
+- **R2 save endpoint** — added client-side recovery flow for failed image uploads
+
+---
+
 ## [2.6.0] - 2026-02-22
 
 ### Added
@@ -223,6 +365,14 @@ All notable changes to BuenAdoptante are documented here.
 
 ---
 
+## [2.5.2] - 2026-02-11
+
+### Fixed
+- **Sticky search bar on mobile** — search bar was hidden behind navbar on mobile when scrolled
+- **Data request auth** — added authentication check to data-request POST endpoint
+
+---
+
 ## [2.5.1] - 2026-02-12
 
 ### Fixed
@@ -265,6 +415,14 @@ All notable changes to BuenAdoptante are documented here.
 
 ### Removed
 - **FacebookImportWizard** — removed unused legacy component
+
+---
+
+## [2.2.0] - 2026-02-09
+
+### Added
+- **How-it-works steps** — clickable guide steps linking to search, import, and action cards
+- **InstallCTA theming** — respects theme colors using CSS variables instead of hardcoded stone palette
 
 ---
 
@@ -354,21 +512,83 @@ All notable changes to BuenAdoptante are documented here.
 ## [1.8.0] - 2026-01-28
 
 ### Added
-- Observation flow and i18n additions
+- Unified flag display, adoption record enhancements, admin config
 
 ---
 
 ## [1.7.1] - 2026-01-26
 
 ### Fixed
-- Bug fixes and stability improvements
+- Duplicate return statement in SearchSection component
 
 ---
 
 ## [1.7.0] - 2026-01-25
 
+### Changed
+- **Auth + D1 Cloudflare compatibility** — bundled auth for edge runtime
+- **UI pastel theme redesign** — new visual style across the application
+
+---
+
+## [1.6.4] - 2026-01-25
+
+### Fixed
+- **Edge runtime compatibility** — enabled edge runtime for all routes and restored imports
+
+---
+
+## [1.6.3] - 2026-01-25
+
+### Fixed
+- **Cloudflare build** — added `.npmrc` to force `legacy-peer-deps` for Cloudflare build pipeline
+
+---
+
+## [1.6.2] - 2026-01-25
+
+### Fixed
+- **ESLint build blocker** — disabled ESLint during build to unblock Cloudflare deployment
+
+---
+
+## [1.6.1] - 2026-01-25
+
+### Fixed
+- **Edge build** — disabled local DB fallback to prevent bundling `better-sqlite3`
+- **Module resolution** — mocked `node:async_hooks` for edge builds
+
+---
+
+## [1.6.0] - 2026-01-25
+
+### Fixed
+- **Edge startup crash** — lazy-load `better-sqlite3` to prevent Edge runtime crash
+- **Module mocking** — mock `async_hooks` and node modules for edge runtime
+
+---
+
+## [1.5.0] - 2026-01-25
+
 ### Added
-- Internationalization (EN/ES) support
+- **Ownership access control** — UI polish and permission enforcement
+- **Notification system foundation** — early notification infrastructure
+
+---
+
+## [1.4.0] - 2026-01-25
+
+### Added
+- **Ownership access control** — implement per-user access controls and UI polish
+
+---
+
+## [1.3] - 2026-01-24
+
+### Added
+- UI consistency improvements
+- Full i18n (EN/ES) support
+- Adoption history logging
 
 ---
 
@@ -378,3 +598,4 @@ All notable changes to BuenAdoptante are documented here.
 - Compact UI
 - Merged history view
 - Premium theme system
+

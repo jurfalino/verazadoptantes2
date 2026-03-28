@@ -4,62 +4,63 @@ description: Code quality checklist. MUST be followed for ANY code change.
 
 # Code Quality Checklist
 
-> **Run this checklist mentally before submitting ANY code edit.**
+Before committing any code change, verify the following:
 
-## Before Writing Code
+## 1. Verify Before Assuming
 
-1. **Read the function you're calling.** Open its implementation. Understand:
-   - What does it return? (exact type, not assumed)
-   - When does it throw? What errors?
-   - Does it have side effects?
-   - Never write a caller based on the function *name* alone.
+> ⚠️ **Never assume business rules — verify them in the actual code.**
 
-2. **Search for blast radius.** Before fixing a bug or changing a pattern:
-   ```
-   grep -r "functionName\|patternToFix" src/ --include="*.tsx" --include="*.ts"
-   ```
-   Fix ALL instances or document why you're only fixing some.
+Before modifying any logic, **read the relevant UI and data code** to confirm how the feature actually works. Common mistakes from guessing:
+- Assuming only certain record types carry ratings (check the form — does the input render conditionally or for all types?)
+- Assuming a field is optional when the UI always sets it
+- Assuming filtering logic based on one SQL query without checking if other paths do it differently
 
-3. **Understand the context.** Before editing a component:
-   - What theme is active? Will this work in both light AND dark?
-   - Is the user authenticated? What happens if they're not?
-   - Is this server or client code? Can you use hooks? Can you use `redirect()`?
+**Rule of thumb:** If you're about to add a `WHERE` clause, a filter, or any conditional, first verify in the UI component whether that condition matches reality.
 
-## While Writing Code
+## 2. Architecture — Domain Layer Separation
 
-4. **No dead code.** For every condition you write (`if`, `catch`, ternary):
-   - Can this branch actually execute? Trace the data flow to prove it.
-   - If not, delete it. Don't leave "defensive" checks for impossible states.
+This project uses a 4-layer architecture:
 
-5. **No redundant code.** Before adding a new block:
-   - Does equivalent logic already exist above/below?
-   - Am I duplicating a redirect, a check, or a fetch?
+```
+PRESENTATION    → src/app/**/page.tsx, src/components/*.tsx
+DOMAIN          → src/domain/*.ts  (pure functions, business rules, NO DB imports)
+DATA ACCESS     → src/app/actions/*.ts  (server actions, SQL queries)
+INFRASTRUCTURE  → src/lib/*.ts  (logger, dates, audit — cross-cutting utilities)
+```
 
-6. **Respect framework internals.** In Next.js specifically:
-   - `redirect()` throws a `NEXT_REDIRECT` error — catch blocks must re-throw it.
-   - Server Actions that throw are auth guards — don't change their contract without auditing all callers.
-   - `'use server'` functions have different constraints than page components.
+**Rules:**
+- **Business rules** (computing ratings, building flags, evaluating thresholds) belong in `src/domain/`, NOT in server actions or components.
+- **Server actions** should be thin orchestrators: fetch data → call domain functions → return results.
+- **Components** should NOT contain business logic. They receive computed data via props.
+- **`src/lib/`** is for framework-agnostic utilities (logging, date formatting, error handling). NOT for business rules.
 
-7. **One concern per edit.** Don't mix:
-   - Auth fixes with styling changes
-   - Refactors with feature additions
-   - Token infrastructure with violation fixes
+> ⚠️ Before writing a computation, search `src/domain/` for an existing function. If one exists, use it. If the rule doesn't exist yet, add it to the appropriate domain file.
 
-## Before Calling It Done
+## 3. DRY — No Duplicated Business Rules
 
-8. **Re-read your own output.** Read the diff as if reviewing someone else's PR:
-   - Does every line serve a purpose?
-   - Are there typos in template literals, extra braces, wrong variable names?
-   - Is the type annotation accurate (not `any` when a real type is known)?
+- The same business rule must NOT be computed in multiple places.
+- If SQL and JS both need the same logic, the rule is **documented once** in the domain module, and each caller implements it consistently.
+- Flag reason strings, threshold values, and record type constants must come from `src/domain/constants.ts`, not hardcoded strings.
 
-9. **Type check.** Run before declaring any edit complete:
-   // turbo
-   ```
-   npx tsc --noEmit
-   ```
+## 4. Constants — No Magic Strings
 
-10. **Verify all affected sites.** If you changed a function's behavior, grep for every caller and confirm they still work.
+- Flag reasons → `FLAG_REASONS` in `src/domain/constants.ts`
+- Record types → `RECORD_TYPES` in `src/domain/constants.ts`
+- Use these constants in both server actions AND components.
 
-11. **Schema changes → run `/schema-sync`.** If you touched `src/db/schema.ts` or added a migration file, run the schema-sync workflow to ensure the local D1 database matches.
+## 5. TypeScript
 
-12. **Before pushing → run `/deploy`.** Follow the full deploy workflow for commits.
+// turbo
+```
+npx tsc --noEmit
+```
+Zero errors required before committing.
+
+## 6. Lint Check
+
+// turbo
+```
+npx next lint 2>&1 | Select-String "Warning:" | Measure-Object | Select-Object -ExpandProperty Count
+```
+Must not exceed the current threshold defined in the deploy workflow.
+

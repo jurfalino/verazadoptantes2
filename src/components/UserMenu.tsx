@@ -44,7 +44,7 @@ export default function UserMenu({ user, isAdmin: isAdminFromServer }: UserMenuP
     // Fetch feature flags
     useEffect(() => {
         if (!user) return;
-        fetch('/api/admin/config')
+        fetch('/api/config')
             .then(res => res.json())
             .then((data) => {
                 const cfg = data as { config?: Record<string, string> };

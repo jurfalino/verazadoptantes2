@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
-import { StarRating } from '@/components/StarRating';
+import { RatingBadge } from '@/components/RatingBadge';
 import { deleteAdoption, getAdoptionImages } from '@/app/actions';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { getRecordTypeIcon } from '@/lib/recordTypeColors';
+import { getRecordTypeIcon, getRecordTypeColors } from '@/lib/recordTypeColors';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { getSourceIcon, getSourceName } from '@/lib/sourceIcons';
@@ -117,11 +117,15 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
             {/* Lightbox Modal */}
             <MediaLightbox item={lightboxItem} onClose={() => setLightboxItem(null)} />
 
-            <div className="space-y-4 pb-6">
+            <div className="relative pb-6">
+                {/* Vertical timeline connector */}
+                <div className="absolute left-[7px] md:left-[15px] top-3 bottom-3 w-0.5 bg-gradient-to-b from-teal-300 via-violet-300 to-teal-300 rounded-full" />
+
+                <div className="space-y-5">
                 {initialAdoptions.map((adoption) => {
                     if (editingId === adoption.id) {
                         return (
-                            <div key={adoption.id} id={`adoption-${adoption.id}`}>
+                            <div key={adoption.id} id={`adoption-${adoption.id}`} className="relative ml-6 md:ml-10">
                                 <AdoptionForm
                                     adopterId={adopterId}
                                     initialData={adoption}
@@ -141,6 +145,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                     const canEdit = isAdmin || adoption.addedBy === currentUser;
                     const images = adoptionImages[adoption.id] || [];
                     const recordType = adoption.recordType || 'adoption';
+                    const colors = getRecordTypeColors(recordType);
                     const species = (adoption as any).species || '';
                     const speciesLabel = species ? (t(`species.${species.toLowerCase()}`) || species) : '';
 
@@ -178,171 +183,165 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                             summary = animalName || speciesLabel || recordType;
                     }
 
-                    // Border-left color class based on record type
-                    const borderLeftMap: Record<string, string> = {
-                        adoption: 'border-l-teal-400',
-                        adoption_request: 'border-l-sky-400',
-                        observation: 'border-l-amber-400',
-                        follow_up: 'border-l-violet-400',
-                        returned_pet: 'border-l-rose-400',
-                    };
-                    const borderLeftClass = borderLeftMap[recordType] || 'border-l-teal-400';
-
                     return (
-                        <div
-                            key={adoption.id}
-                            id={`adoption-${adoption.id}`}
-                            className={`bg-white rounded-xl p-4 shadow-sm border border-stone-200 border-l-4 ${borderLeftClass} relative overflow-hidden transition-all hover:shadow-md group`}
-                        >
-                            {/* Whole card clickable for edit */}
-                            {canEdit && (
-                                <div
-                                    className="absolute inset-0 cursor-pointer z-0"
-                                    onClick={() => setEditingId(adoption.id)}
-                                    title={t('common.edit')}
-                                />
-                            )}
+                        <div key={adoption.id} id={`adoption-${adoption.id}`} className="relative">
+                            {/* Timeline dot */}
+                            <div className={`absolute left-0 md:left-1 top-5 w-[15px] h-[15px] md:w-[23px] md:h-[23px] rounded-full ${colors.dot} ring-2 md:ring-4 ${colors.ring} ring-offset-2 ring-offset-stone-50 z-10 shadow-sm`} />
 
-                            <div className="relative z-10 pointer-events-none">
-                                {/* Header: icon + date + summary + stars */}
-                                <div className="flex items-start justify-between gap-2">
-                                    <p className="text-sm font-semibold text-stone-800 leading-snug">
-                                        {icon} {dateStr}{dateStr ? ' — ' : ''}{summary}
-                                    </p>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                        {adoption.rating != null && adoption.rating > 0 && (
-                                            <StarRating value={adoption.rating} size="sm" />
-                                        )}
-                                        {canEdit && (
-                                            <span className="text-stone-500 text-xs font-medium underline opacity-0 group-hover:opacity-100 transition-opacity">
-                                                {t('common.edit')}
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Animal details (sex, color, age, microchip) */}
-                                {(adoption.age || adoption.sex || adoption.color || adoption.microchip) && (
-                                    <div className="flex flex-wrap gap-1.5 mt-2">
-                                        {adoption.sex && (
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
-                                                {['male', 'macho'].includes(adoption.sex.toLowerCase()) ? '♂️' : ['female', 'hembra'].includes(adoption.sex.toLowerCase()) ? '♀️' : ''} {t(`adoption.sex_${adoption.sex.toLowerCase()}`) || adoption.sex}
-                                            </span>
-                                        )}
-                                        {adoption.age && (
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
-                                                🎂 {adoption.age}
-                                            </span>
-                                        )}
-                                        {adoption.color && (
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
-                                                🎨 {adoption.color}
-                                            </span>
-                                        )}
-                                        {adoption.microchip && (
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
-                                                💉 {adoption.microchip}
-                                            </span>
-                                        )}
-                                    </div>
-                                )}
-
-                                {/* Notes - consistent neutral color */}
-                                {adoption.details && (
-                                    <p className="text-stone-800 text-sm mt-2.5 leading-relaxed bg-stone-100 p-2.5 rounded-lg">
-                                        {adoption.details}
-                                    </p>
-                                )}
-
-                                {/* Contract screenshot link (for adoptions) */}
-                                {adoption.comments && (() => {
-                                    try {
-                                        const parsed = JSON.parse(adoption.comments);
-                                        if (parsed.contractScreenshot) {
-                                            return (
-                                                <a
-                                                    href={parsed.contractScreenshot}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="flex items-center gap-2 mt-2.5 p-2 bg-teal-50 rounded-lg hover:bg-teal-100 transition-colors pointer-events-auto"
-                                                    onClick={e => e.stopPropagation()}
-                                                >
-                                                    <span className="text-sm">📋</span>
-                                                    <span className="text-sm font-medium text-teal-700">{t('dashboard.view_signed_contract') || 'View Signed Contract'}</span>
-                                                    <svg className="w-3.5 h-3.5 ml-auto text-teal-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                                                </a>
-                                            );
-                                        }
-                                    } catch { /* not JSON, ignore */ }
-                                    return null;
-                                })()}
-
-                                {/* Form link (for adoption_requests) */}
-                                {recordType === 'adoption_request' && adoption.sourceUrl?.startsWith('form:') && (() => {
-                                    const formSubmissionId = adoption.sourceUrl!.replace('form:', '');
-                                    return (
-                                        <a
-                                            href={`/form-results/${formSubmissionId}`}
-                                            className="flex items-center gap-2 mt-2.5 p-2 bg-teal-50 rounded-lg hover:bg-teal-100 transition-colors pointer-events-auto"
-                                            onClick={e => e.stopPropagation()}
-                                        >
-                                            <span className="text-sm">📝</span>
-                                            <span className="text-sm font-medium text-teal-700">{t('adopter.form_view_responses') || 'Ver formulario completado'}</span>
-                                            <svg className="w-3.5 h-3.5 ml-auto text-teal-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                                        </a>
-                                    );
-                                })()}
-
-                                {/* Image Thumbnails */}
-                                {images.length > 0 && (
-                                    <div className="mt-2.5 flex flex-wrap gap-2 pointer-events-auto relative z-20">
-                                        {images.slice(0, 4).map((img) => (
-                                            <MediaThumbnail
-                                                key={img.id}
-                                                item={{ url: img.url, caption: img.caption || undefined, mediaType: (img as any).mediaType || undefined, thumbnailUrl: ((img as any).thumbnailUrl && (img as any).thumbnailUrl !== 'null') ? (img as any).thumbnailUrl : undefined }}
-                                                onClick={() => setLightboxItem({ url: img.url, caption: img.caption || undefined, mediaType: (img as any).mediaType || undefined, thumbnailUrl: ((img as any).thumbnailUrl && (img as any).thumbnailUrl !== 'null') ? (img as any).thumbnailUrl : undefined })}
-                                                size="md"
-                                            />
-                                        ))}
-                                        {images.length > 4 && (
-                                            <div className="w-20 h-20 rounded-lg bg-stone-50 border border-stone-200 flex items-center justify-center text-stone-500 text-xs font-semibold">
-                                                +{images.length - 4}
+                            {/* Card */}
+                            <div
+                                className={`ml-6 md:ml-10 rounded-2xl border ${colors.border} bg-white shadow-sm transition-all hover:shadow-md group ${canEdit ? 'cursor-pointer' : ''}`}
+                                onClick={canEdit ? () => setEditingId(adoption.id) : undefined}
+                                title={canEdit ? t('common.edit') : undefined}
+                            >
+                                <div className="p-3 md:p-4">
+                                    {/* Header: icon badge (md+) + date + summary */}
+                                    <div className="flex items-start gap-2">
+                                        <div className={`hidden md:flex flex-shrink-0 w-8 h-8 rounded-lg ${colors.iconBg} items-center justify-center text-base shadow-sm mt-0.5`}>
+                                            {icon}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-semibold text-stone-800 leading-snug">
+                                                <span className="md:hidden">{icon} </span>{dateStr}{dateStr ? ' — ' : ''}{summary}
+                                            </p>
+                                            {/* Stars + edit hint — below summary */}
+                                            <div className="flex items-center gap-2 mt-1">
+                                                {adoption.rating != null && adoption.rating > 0 && (
+                                                    <RatingBadge rating={adoption.rating} variant="inline" size="sm" />
+                                                )}
+                                                {canEdit && (
+                                                    <span className="text-stone-500 text-xs font-medium underline opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        {t('common.edit')}
+                                                    </span>
+                                                )}
                                             </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Animal details (sex, color, age, microchip) */}
+                                    {(adoption.age || adoption.sex || adoption.color || adoption.microchip) && (
+                                        <div className="flex flex-wrap gap-1.5 mt-2">
+                                            {adoption.sex && (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
+                                                    {['male', 'macho'].includes(adoption.sex.toLowerCase()) ? '♂️' : ['female', 'hembra'].includes(adoption.sex.toLowerCase()) ? '♀️' : ''} {t(`adoption.sex_${adoption.sex.toLowerCase()}`) || adoption.sex}
+                                                </span>
+                                            )}
+                                            {adoption.age && (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
+                                                    🎂 {adoption.age}
+                                                </span>
+                                            )}
+                                            {adoption.color && (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
+                                                    🎨 {adoption.color}
+                                                </span>
+                                            )}
+                                            {adoption.microchip && (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
+                                                    💉 {adoption.microchip}
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Notes - consistent neutral color */}
+                                    {adoption.details && (
+                                        <p className="text-stone-800 text-sm mt-2.5 leading-relaxed bg-stone-100 p-2.5 rounded-lg">
+                                            {adoption.details}
+                                        </p>
+                                    )}
+
+                                    {/* Contract screenshot link (for adoptions) */}
+                                    {adoption.comments && (() => {
+                                        try {
+                                            const parsed = JSON.parse(adoption.comments);
+                                            if (parsed.contractScreenshot) {
+                                                return (
+                                                    <a
+                                                        href={parsed.contractScreenshot}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="flex items-center gap-2 mt-2.5 p-2 bg-teal-50 rounded-lg hover:bg-teal-100 transition-colors"
+                                                        onClick={e => e.stopPropagation()}
+                                                    >
+                                                        <span className="text-sm">📋</span>
+                                                        <span className="text-sm font-medium text-teal-700">{t('dashboard.view_signed_contract') || 'View Signed Contract'}</span>
+                                                        <svg className="w-3.5 h-3.5 ml-auto text-teal-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                                    </a>
+                                                );
+                                            }
+                                        } catch { /* not JSON, ignore */ }
+                                        return null;
+                                    })()}
+
+                                    {/* Form link (for adoption_requests) */}
+                                    {recordType === 'adoption_request' && adoption.sourceUrl?.startsWith('form:') && (() => {
+                                        const formSubmissionId = adoption.sourceUrl!.replace('form:', '');
+                                        return (
+                                            <a
+                                                href={`/form-results/${formSubmissionId}`}
+                                                className="flex items-center gap-2 mt-2.5 p-2 bg-teal-50 rounded-lg hover:bg-teal-100 transition-colors"
+                                                onClick={e => e.stopPropagation()}
+                                            >
+                                                <span className="text-sm">📝</span>
+                                                <span className="text-sm font-medium text-teal-700">{t('adopter.form_view_responses') || 'Ver formulario completado'}</span>
+                                                <svg className="w-3.5 h-3.5 ml-auto text-teal-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                            </a>
+                                        );
+                                    })()}
+
+                                    {/* Image Thumbnails */}
+                                    {images.length > 0 && (
+                                        <div className="mt-2.5 flex flex-wrap gap-2">
+                                            {images.slice(0, 4).map((img) => (
+                                                <MediaThumbnail
+                                                    key={img.id}
+                                                    item={{ url: img.url, caption: img.caption || undefined, mediaType: (img as any).mediaType || undefined, thumbnailUrl: ((img as any).thumbnailUrl && (img as any).thumbnailUrl !== 'null') ? (img as any).thumbnailUrl : undefined }}
+                                                    onClick={() => setLightboxItem({ url: img.url, caption: img.caption || undefined, mediaType: (img as any).mediaType || undefined, thumbnailUrl: ((img as any).thumbnailUrl && (img as any).thumbnailUrl !== 'null') ? (img as any).thumbnailUrl : undefined })}
+                                                    size="md"
+                                                />
+                                            ))}
+                                            {images.length > 4 && (
+                                                <div className="w-20 h-20 rounded-lg bg-stone-50 border border-stone-200 flex items-center justify-center text-stone-500 text-xs font-semibold">
+                                                    +{images.length - 4}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Footer: date + onBehalfOf + source link + addedBy */}
+                                    <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-500 font-medium">
+                                        {adoption.date && (
+                                            <span className="inline-flex items-center gap-1">
+                                                📅 {t('adoption.date_label') || 'Fecha:'} {formatShortDate(new Date(adoption.date))}
+                                            </span>
+                                        )}
+                                        {adoption.onBehalfOf && (
+                                            <span className="inline-flex items-center gap-1">
+                                                👤 {t('adoption.on_behalf_label') || 'En nombre de:'} {adoption.onBehalfOf}
+                                            </span>
+                                        )}
+                                        {adoption.sourceUrl && !adoption.sourceUrl.startsWith('form:') && (
+                                            <a
+                                                href={adoption.sourceUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex items-center gap-1 text-stone-500 hover:text-stone-600 transition-colors"
+                                                title={getSourceName(adoption.sourceUrl)}
+                                            >
+                                                {getSourceIcon(adoption.sourceUrl, 'w-3.5 h-3.5')}
+                                            </a>
+                                        )}
+                                        {adoption.addedBy && !isAdminEmail(adoption.addedBy) && (
+                                            <span>{t('common.added_by')} {userNameMap?.[adoption.addedBy] || adoption.addedBy}</span>
                                         )}
                                     </div>
-                                )}
-
-                                {/* Footer: date + onBehalfOf + source link + addedBy */}
-                                <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-500 font-medium">
-                                    {adoption.date && (
-                                        <span className="inline-flex items-center gap-1">
-                                            📅 {t('adoption.date_label') || 'Fecha:'} {formatShortDate(new Date(adoption.date))}
-                                        </span>
-                                    )}
-                                    {adoption.onBehalfOf && (
-                                        <span className="inline-flex items-center gap-1">
-                                            👤 {t('adoption.on_behalf_label') || 'En nombre de:'} {adoption.onBehalfOf}
-                                        </span>
-                                    )}
-                                    {adoption.sourceUrl && !adoption.sourceUrl.startsWith('form:') && (
-                                        <a
-                                            href={adoption.sourceUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="flex items-center gap-1 text-stone-500 hover:text-stone-600 transition-colors pointer-events-auto"
-                                            title={getSourceName(adoption.sourceUrl)}
-                                        >
-                                            {getSourceIcon(adoption.sourceUrl, 'w-3.5 h-3.5')}
-                                        </a>
-                                    )}
-                                    {adoption.addedBy && !isAdminEmail(adoption.addedBy) && (
-                                        <span>{t('common.added_by')} {userNameMap?.[adoption.addedBy] || adoption.addedBy}</span>
-                                    )}
                                 </div>
                             </div>
                         </div>
                     );
                 })}
+                </div>
             </div>
         </>
     );

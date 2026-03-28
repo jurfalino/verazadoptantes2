@@ -380,7 +380,7 @@ export default function SearchSection({ locale }: { locale?: string }) {
                                         </div>
                                         {/* Rating Badge */}
                                         {res.avgRating !== null && (
-                                            <RatingBadge rating={String(Math.round(res.avgRating))} size="sm" />
+                                            <RatingBadge rating={res.avgRating} size="sm" />
                                         )}
                                     </div>
 

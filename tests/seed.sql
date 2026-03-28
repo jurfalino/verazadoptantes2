@@ -22,7 +22,8 @@ INSERT OR REPLACE INTO adopters (id, name, contact_info, address_info, family_me
 INSERT OR REPLACE INTO adopters (id, name, contact_info, address_info, family_members, notes, status, added_by, created_at, updated_at) VALUES
 ('test-adopter-5', 'Nueva Persona', NULL, NULL, NULL, NULL, '5', 'test-seed', strftime('%s','now'), strftime('%s','now'));
 
-
+-- Set country on all test adopters (matches admin user's country 'AR' so geo-filtered search returns results)
+UPDATE adopters SET country = 'AR' WHERE id IN ('test-adopter-1','test-adopter-2','test-adopter-3','test-adopter-4','test-adopter-5');
 
 
 -- ============================================================

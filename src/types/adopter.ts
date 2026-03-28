@@ -74,8 +74,18 @@ export interface HistoryEntry {
 }
 
 export interface AdopterStats {
-    searchHits: { '90d': number; '1y': number; 'all': number };
-    profileViews: { '90d': number; '1y': number; 'all': number };
+    searchHits: number;
+    profileViews: number;
+}
+
+export interface AdopterFlags {
+    inaccurate: boolean;
+    duplicate: boolean;
+    systemDuplicate: boolean;
+    verified_identity: boolean;
+    verified_address: boolean;
+    tooManyAdoptions: { count: number; threshold: number; periodDays: number } | null;
+    tooManyRequests: { count: number; threshold: number; periodDays: number } | null;
 }
 
 export interface AdoptionConfig {

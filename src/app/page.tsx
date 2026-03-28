@@ -28,7 +28,7 @@ export default function Home() {
 
   // Check feature flag on client side
   useEffect(() => {
-    fetch('/api/admin/config')
+    fetch('/api/config')
       .then(res => res.json())
       .then((data) => {
         const cfg = data as { config?: Record<string, string> };

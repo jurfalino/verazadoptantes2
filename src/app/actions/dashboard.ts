@@ -8,7 +8,10 @@ import { getDb } from './_db';
 import { getAdoptionConfig } from './config';
 import { getOrgMemberEmails } from './organizations';
 import { DASHBOARD_RECENT_ACTIVITY_LIMIT, ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
-import type { AdopterFlags } from './types';
+import type { AdopterFlags } from '@/types/adopter';
+import { computeAvgRating } from '@/domain/ratings';
+import { buildFlags } from '@/domain/flags';
+import { RECORD_TYPES } from '@/domain/constants';
 
 export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
     try {
@@ -45,16 +48,8 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         if (adoptersList.length === 0) return [];
 
         // Batch queries: form submission counts + existing
-        const [adoptionConfig, allRatings, allImages, allFlags, allAdoptionCounts, allStats, allAdoptionRecords, allFormCounts] = await Promise.all([
+        const [adoptionConfig, allImages, allFlags, allAdoptionCounts, allStats, allAdoptionRecords, allFormCounts] = await Promise.all([
             getAdoptionConfig(),
-            // Average ratings per adopter
-            db.select({
-                adopterId: adoptions.adopterId,
-                avgRating: sql<number>`AVG(${adoptions.rating})`
-            }).from(adoptions)
-                .where(and(inArray(adoptions.adopterId, adopterIds), eq(adoptions.recordType, 'adoption')))
-                .groupBy(adoptions.adopterId)
-                .all(),
             // Profile images (all profile images for these adopters)
             db.select({
                 adopterId: adopterImages.adopterId,
@@ -112,12 +107,21 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         ]);
 
         // Build lookup maps
-        const ratingsMap = new Map(allRatings.map((r: any) => [r.adopterId, r.avgRating]));
+        // Ratings: compute from allAdoptionRecords using domain function (replaces separate AVG SQL query)
+        const ratingsMap = new Map<string, number | null>();
+        const recordsByAdopter = new Map<string, typeof allAdoptionRecords>();
+        for (const rec of allAdoptionRecords as any[]) {
+            if (!recordsByAdopter.has(rec.adopterId)) recordsByAdopter.set(rec.adopterId, []);
+            recordsByAdopter.get(rec.adopterId)!.push(rec);
+        }
+        for (const [adopterId, records] of recordsByAdopter) {
+            ratingsMap.set(adopterId, computeAvgRating(records as any));
+        }
 
         const imagesMap = new Map<string, string>();
         for (const img of allImages as any[]) {
             if (!imagesMap.has(img.adopterId)) {
-                imagesMap.set(img.adopterId, img.url); // First match wins (profile pic first due to ORDER BY)
+                imagesMap.set(img.adopterId, img.url);
             }
         }
 
@@ -131,8 +135,8 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         for (const c of allAdoptionCounts as any[]) {
             if (!countsMap.has(c.adopterId)) countsMap.set(c.adopterId, { adoptions: 0, requests: 0 });
             const entry = countsMap.get(c.adopterId)!;
-            if (c.recordType === 'adoption') entry.adoptions = c.count;
-            else if (c.recordType === 'adoption_request') entry.requests = c.count;
+            if (c.recordType === RECORD_TYPES.ADOPTION) entry.adoptions = c.count;
+            else if (c.recordType === RECORD_TYPES.REQUEST) entry.requests = c.count;
         }
 
         const statsMap = new Map<string, { searchHits: number; profileViews: number }>();
@@ -160,8 +164,8 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             const entry = periodMap.get(a.adopterId)!;
             const aDate = a.date ? (typeof a.date === 'number' ? new Date(a.date * 1000) : new Date(a.date)) : null;
             if (!aDate) continue;
-            if (a.recordType === 'adoption' && aDate >= adoptionsCutoff) entry.adoptionsInPeriod++;
-            if (a.recordType === 'adoption_request' && aDate >= requestsCutoff) entry.requestsInPeriod++;
+            if (a.recordType === RECORD_TYPES.ADOPTION && aDate >= adoptionsCutoff) entry.adoptionsInPeriod++;
+            if (a.recordType === RECORD_TYPES.REQUEST && aDate >= requestsCutoff) entry.requestsInPeriod++;
         }
 
         // Assemble results in memory (no more DB calls)
@@ -171,25 +175,19 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             const stats = statsMap.get(adopter.id) || { searchHits: 0, profileViews: 0 };
             const period = periodMap.get(adopter.id) || { adoptionsInPeriod: 0, requestsInPeriod: 0 };
 
-            const flagsObj: AdopterFlags = {
-                inaccurate: flags.includes('inaccurate_information'),
-                duplicate: flags.includes('duplicate'),
-                systemDuplicate: false,
-                verified_identity: flags.includes('verified_identity'),
-                verified_address: flags.includes('verified_address'),
-                tooManyAdoptions: period.adoptionsInPeriod >= adoptionConfig.threshold
-                    ? { count: period.adoptionsInPeriod, threshold: adoptionConfig.threshold, periodDays: adoptionConfig.periodDays }
-                    : null,
-                tooManyRequests: period.requestsInPeriod >= adoptionConfig.requestsThreshold
-                    ? { count: period.requestsInPeriod, threshold: adoptionConfig.requestsThreshold, periodDays: adoptionConfig.requestsPeriodDays }
-                    : null
-            };
+            const flagObj: AdopterFlags = buildFlags(flags, 0);
+            flagObj.tooManyAdoptions = period.adoptionsInPeriod >= adoptionConfig.threshold
+                ? { count: period.adoptionsInPeriod, threshold: adoptionConfig.threshold, periodDays: adoptionConfig.periodDays }
+                : null;
+            flagObj.tooManyRequests = period.requestsInPeriod >= adoptionConfig.requestsThreshold
+                ? { count: period.requestsInPeriod, threshold: adoptionConfig.requestsThreshold, periodDays: adoptionConfig.requestsPeriodDays }
+                : null;
 
             return {
                 ...adopter,
                 avgRating: ratingsMap.get(adopter.id) ?? null,
                 thumbnail: imagesMap.get(adopter.id) ?? null,
-                flags: flagsObj,
+                flags: flagObj,
                 adoptionCount: counts.adoptions,
                 requestCount: counts.requests,
                 searchHits: stats.searchHits,

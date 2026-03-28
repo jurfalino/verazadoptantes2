@@ -50,46 +50,53 @@ npx tsc --noEmit
 ```
 If errors exist, fix them before proceeding.
 
-2. Run lint warning ratchet check (current threshold: **68 warnings**):
+2. Run lint warning ratchet check (current threshold: **114 warnings**):
 // turbo
 ```
 npx next lint 2>&1 | Select-String "Warning:" | Measure-Object | Select-Object -ExpandProperty Count
 ```
-Compare the count against the threshold of **114**. If the count is **higher than 114**, STOP and tell the user:
-> "⚠️ Lint warnings increased from 68 to [N]. You should fix the new warnings before deploying, or acknowledge the increase."
+Compare the count against the threshold of **118**. If the count is **higher than 118**, STOP and tell the user:
+> "⚠️ Lint warnings increased from 114 to [N]. You should fix the new warnings before deploying, or acknowledge the increase."
 Wait for user acknowledgment before proceeding. If the user acknowledges, update the threshold in this workflow file to match the new count.
 If the count is **equal or lower**, proceed silently.
 
-3. Stage all changes:
+3. **Update CHANGELOG.md** (MANDATORY — do NOT skip):
+   - Add a new `## [version] - YYYY-MM-DD` section at the top of `CHANGELOG.md`
+   - Group changes under `### Added`, `### Changed`, `### Fixed`, `### Removed` as appropriate
+   - Every tagged version MUST have a corresponding changelog entry
+   > ⚠️ This step exists here — before staging — so it is included in the commit. It was previously step 10 (after tagging) and was systematically skipped, leaving ~22 releases undocumented.
+
+4. Stage all changes:
 ```
 git add -A
 ```
 
-4. Review what's being committed:
+5. Review what's being committed:
 // turbo
 ```
 git diff --cached --stat
 ```
+> 🔍 **Checkpoint:** Verify that `CHANGELOG.md` appears in the diff. If it does not, STOP — go back to step 3.
 
-5. Commit with version-prefixed message (version is MANDATORY in the commit message):
+6. Commit with version-prefixed message (version is MANDATORY in the commit message):
 ```
 git commit -m "v<version>: <description>"
 ```
 > Example: `git commit -m "v2.9.3: fix empty alt tags on adopter thumbnails"`
 
-6. **Push to STAGING only — NEVER to master:**
+7. **Push to STAGING only — NEVER to master:**
 ```
 git push origin HEAD:staging
 ```
 
-7. **STOP. Tell the user to verify on staging:**
+8. **STOP. Tell the user to verify on staging:**
 ```
 Staging URL: https://staging.verazadoptantes2.pages.dev
 ```
 Wait for the Cloudflare build to complete (~2-3 min). CI checks (build, tsc, lint) must pass.
 Ask the user to verify the changes on the staging URL.
 
-8. **WAIT FOR EXPLICIT MASTER PUSH APPROVAL.**
+9. **WAIT FOR EXPLICIT MASTER PUSH APPROVAL.**
 > ⚠️ The user MUST say one of these exact phrases before you push to master:
 > - "push to master"
 > - "merge to master"
@@ -103,15 +110,11 @@ Ask the user to verify the changes on the staging URL.
 git push origin staging:master
 ```
 
-9. If tagging a version, tag AFTER the staging-to-master push:
+10. If tagging a version, tag AFTER the staging-to-master push:
 ```
 git tag -a v<version> -m "<message>"
 git push origin v<version>
 ```
-
-10. Update CHANGELOG.md with release notes BEFORE committing (step 5):
-   - Add a new `## [version] - YYYY-MM-DD` section at the top
-   - Group changes under `### Added`, `### Changed`, `### Fixed`, `### Removed` as appropriate
 
 
 

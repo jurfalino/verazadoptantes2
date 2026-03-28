@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 import { AdopterForm } from '@/components/AdopterForm';
@@ -13,7 +13,6 @@ import { saveImage } from '@/app/actions';
 import { checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from '@/app/actions';
 import { useShowToast } from '@/components/ui/Toast';
 import ReportInaccuracyForm from '@/components/ReportInaccuracyForm';
-import { countRecordsInPeriod } from '@/lib/adoptionFilters';
 import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, HistoryEntry, AdopterStats, AdoptionConfig, DuplicateCandidateInfo } from '@/types/adopter';
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 
@@ -41,9 +40,7 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const toast = useShowToast();
-    const [selectedPeriod, setSelectedPeriod] = useState<'90d' | '1y' | 'all'>('all');
     const [dismissedDuplicates, setDismissedDuplicates] = useState<Set<string>>(new Set());
-    const [expandedStat, setExpandedStat] = useState<string | null>(null);
     const visibleDuplicates = duplicateCandidates.filter(c => !dismissedDuplicates.has(c.id));
 
     // Delete state
@@ -91,12 +88,9 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
         }
     };
 
-    // Stable reference date for period filtering (avoids hydration mismatch)
-    const referenceDate = useMemo(() => new Date(), []);
-    const periodDaysMap = { '90d': 90, '1y': 365, 'all': Infinity };
-    const days = periodDaysMap[selectedPeriod];
-    const adoptionCountForPeriod = countRecordsInPeriod(adoptions, 'adoption', days, referenceDate);
-    const requestCountForPeriod = countRecordsInPeriod(adoptions, 'adoption_request', days, referenceDate);
+    // Compute adoption/request counts from the adoptions array directly
+    const adoptionCount = adoptions.filter(a => a.recordType === 'adoption').length;
+    const requestCount = adoptions.filter(a => a.recordType === 'adoption_request').length;
 
     // Determine back link based on referrer
     const ref = searchParams.get('ref');
@@ -175,33 +169,11 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                         <div className="stats-card">
                             <div className="stats-header">
                                 <h3 className="stats-title">📊 {t('stats.profile_stats') || 'Profile Statistics'}</h3>
-                                <div className="stats-tab-bar">
-                                    {(['90d', '1y', 'all'] as const).map((period) => (
-                                        <button
-                                            key={period}
-                                            onClick={() => setSelectedPeriod(period)}
-                                            className={`stats-tab ${selectedPeriod === period ? 'stats-tab--active' : ''}`}
-                                        >
-                                            {period === '90d' ? t('stats.period_90d') : period === '1y' ? t('stats.period_1y') : t('stats.period_all')}
-                                        </button>
-                                    ))}
-                                </div>
-                                <select
-                                    className="stats-period-select"
-                                    value={selectedPeriod}
-                                    onChange={(e) => setSelectedPeriod(e.target.value as '90d' | '1y' | 'all')}
-                                >
-                                    <option value="90d">{t('stats.period_90d')}</option>
-                                    <option value="1y">{t('stats.period_1y')}</option>
-                                    <option value="all">{t('stats.period_all')}</option>
-                                </select>
                             </div>
                             <div className="stats-grid">
                                 {/* Views */}
-                                <button
-                                    type="button"
-                                    onClick={() => setExpandedStat(expandedStat === 'views' ? null : 'views')}
-                                    className={`stats-tile ${stats.profileViews[selectedPeriod] > 0 ? 'stats-tile--purple' : 'stats-tile--muted'}`}
+                                <div
+                                    className={`stats-tile ${stats.profileViews > 0 ? 'stats-tile--purple' : 'stats-tile--muted'}`}
                                 >
                                     <div className="stats-tile-icon">
                                         <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
@@ -211,22 +183,16 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                                     </div>
                                     <div className="stats-tile-content">
                                         <div className="stats-tile-value">
-                                            {stats.profileViews[selectedPeriod]}
-                                            <span className="stats-tile-info">i</span>
+                                            {stats.profileViews}
                                         </div>
                                         <div className="stats-tile-label">
                                             {t('stats.views') || 'Views'}
                                         </div>
-                                        <div className={`stats-tile-desc ${expandedStat === 'views' ? 'stats-tile-desc--open' : ''}`}>
-                                            <div className="stats-tile-desc-text">{t('stats.views_desc') || 'How many times this profile was opened'}</div>
-                                        </div>
                                     </div>
-                                </button>
+                                </div>
                                 {/* Requests */}
-                                <button
-                                    type="button"
-                                    onClick={() => setExpandedStat(expandedStat === 'requests' ? null : 'requests')}
-                                    className={`stats-tile ${requestCountForPeriod > 0 ? 'stats-tile--orange' : 'stats-tile--muted'}`}
+                                <div
+                                    className={`stats-tile ${requestCount > 0 ? 'stats-tile--orange' : 'stats-tile--muted'}`}
                                 >
                                     <div className="stats-tile-icon">
                                         <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
@@ -236,22 +202,16 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                                     </div>
                                     <div className="stats-tile-content">
                                         <div className="stats-tile-value">
-                                            {requestCountForPeriod}
-                                            <span className="stats-tile-info">i</span>
+                                            {requestCount}
                                         </div>
                                         <div className="stats-tile-label">
                                             {t('stats.requests') || 'Requests'}
                                         </div>
-                                        <div className={`stats-tile-desc ${expandedStat === 'requests' ? 'stats-tile-desc--open' : ''}`}>
-                                            <div className="stats-tile-desc-text">{t('stats.requests_desc') || 'Adoption requests recorded'}</div>
-                                        </div>
                                     </div>
-                                </button>
+                                </div>
                                 {/* Adoptions */}
-                                <button
-                                    type="button"
-                                    onClick={() => setExpandedStat(expandedStat === 'adoptions' ? null : 'adoptions')}
-                                    className={`stats-tile ${adoptionCountForPeriod > 0 ? 'stats-tile--green' : 'stats-tile--muted'}`}
+                                <div
+                                    className={`stats-tile ${adoptionCount > 0 ? 'stats-tile--green' : 'stats-tile--muted'}`}
                                 >
                                     <div className="stats-tile-icon">
                                         <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
@@ -261,17 +221,13 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                                     </div>
                                     <div className="stats-tile-content">
                                         <div className="stats-tile-value">
-                                            {adoptionCountForPeriod}
-                                            <span className="stats-tile-info">i</span>
+                                            {adoptionCount}
                                         </div>
                                         <div className="stats-tile-label">
                                             {t('stats.adoptions') || 'Adoptions'}
                                         </div>
-                                        <div className={`stats-tile-desc ${expandedStat === 'adoptions' ? 'stats-tile-desc--open' : ''}`}>
-                                            <div className="stats-tile-desc-text">{t('stats.adoptions_desc') || 'Completed adoptions recorded'}</div>
-                                        </div>
                                     </div>
-                                </button>
+                                </div>
                             </div>
                         </div>
                     )

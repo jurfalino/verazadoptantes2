@@ -10,6 +10,7 @@ import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import LegalConsent from '@/components/LegalConsent';
 import DatePicker from '@/components/ui/DatePicker';
+import { RatingBadge } from '@/components/RatingBadge';
 
 export default function AdoptionWizard() {
     const { t } = useLanguage();
@@ -356,10 +357,7 @@ export default function AdoptionWizard() {
                                         )}
                                         <div className="flex gap-4 text-sm">
                                             {previewAdopter.avgRating != null && (
-                                                <div className="flex items-center gap-1">
-                                                    <span className="text-amber-500">⭐</span>
-                                                    <span className="font-semibold text-stone-700">{Number(previewAdopter.avgRating).toFixed(1)}</span>
-                                                </div>
+                                                <RatingBadge rating={previewAdopter.avgRating} variant="inline" size="sm" />
                                             )}
                                             {previewAdopter.stats?.adoptions != null && (
                                                 <div className="text-stone-500">
@@ -455,9 +453,7 @@ export default function AdoptionWizard() {
                                                     <div className="font-semibold text-sm text-stone-800 truncate">{res.adopter.name}</div>
                                                     <div className="flex items-center gap-2 text-xs text-stone-500">
                                                         {res.avgRating != null && (
-                                                            <span className="flex items-center gap-0.5">
-                                                                <span className="text-amber-500">⭐</span>{Number(res.avgRating).toFixed(1)}
-                                                            </span>
+                                                            <RatingBadge rating={res.avgRating} variant="inline" size="sm" />
                                                         )}
                                                         {res.stats?.adoptions > 0 && (
                                                             <span>{res.stats.adoptions} {t('wizard.adoptions_label') || 'adoptions'}</span>

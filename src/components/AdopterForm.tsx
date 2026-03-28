@@ -9,11 +9,10 @@ import { useLanguage } from "@/context/LanguageContext";
 import { CollapsibleSection } from '@/components/CollapsibleSection';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
-import { StarRating } from '@/components/StarRating';
+import { RatingBadge } from '@/components/RatingBadge';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { formatDateTime, formatShortDate } from '@/lib/dates';
-import { getRatingColors, getRatingDescription } from '@/lib/ratingColors';
 import { getSourceIcon } from '@/lib/sourceIcons';
 import { getCountryByCode } from '@/config/countries';
 import { countRecordsInPeriod } from '@/lib/adoptionFilters';
@@ -438,23 +437,17 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                                         </a>
                                     )}
                                     {/* Rating badge */}
-                                    {avgRating !== null && avgRating !== undefined && (() => {
-                                        const colors = getRatingColors(avgRating);
-                                        const descKey = getRatingDescription(Math.round(avgRating));
-                                        return (
-                                            <div
-                                                role="button"
-                                                tabIndex={0}
-                                                data-testid="rating-badge"
-                                                onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
-                                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 ${colors.bg} border ${colors.border} rounded-full cursor-pointer hover:shadow-sm transition-shadow`}
-                                            >
-                                                <StarRating value={Math.round(avgRating)} size="sm" />
-                                                <span className={`${colors.text} font-semibold text-xs`}>{avgRating.toFixed(1)}</span>
-                                                <span className={`${colors.text} text-xs font-medium opacity-75`}>{t(`ratings.${descKey}` as any)}</span>
-                                            </div>
-                                        );
-                                    })()}
+                                    {avgRating !== null && avgRating !== undefined && (
+                                        <div
+                                            role="button"
+                                            tabIndex={0}
+                                            data-testid="rating-badge"
+                                            onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
+                                            className="cursor-pointer hover:shadow-sm transition-shadow"
+                                        >
+                                            <RatingBadge rating={avgRating} size="sm" />
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -785,7 +778,7 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                                                     <div className="space-y-1 text-teal-800">
                                                         <div><span className="font-semibold">{t('adoption.animal_name')}:</span> {changes.animalName} ({changes.species})</div>
                                                         <div><span className="font-semibold">{t('adoption.status')}:</span> {changes.status}</div>
-                                                        <div className="flex items-center gap-1"><span className="font-semibold">{t('adoption.rating')}:</span> <StarRating value={changes.rating} size="sm" showLabel /></div>
+                                                        <div className="flex items-center gap-1"><span className="font-semibold">{t('adoption.rating')}:</span> <RatingBadge rating={changes.rating} variant="inline" size="sm" /></div>
                                                         {changes.details && <div className="text-xs italic mt-1">"{changes.details}"</div>}
                                                     </div>
                                                 )}

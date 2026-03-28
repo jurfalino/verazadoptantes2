@@ -72,7 +72,7 @@ export default function DemoProfilePage() {
                                 📅 Registered: {formatShortDate(adopter.createdAt)}
                             </p>
                         </div>
-                        <RatingBadge rating={adopter.status} size="lg" />
+                        <RatingBadge rating={4} size="lg" />
                     </div>
 
                     {/* Flags */}
@@ -119,7 +119,7 @@ export default function DemoProfilePage() {
                                         <span className="text-lg">{a.species === 'cat' ? '🐱' : '🐶'}</span>
                                         <span className="font-semibold text-stone-800">{a.animalName}</span>
                                     </div>
-                                    <RatingBadge rating={String(a.rating)} size="sm" />
+                                    <RatingBadge rating={a.rating} variant="inline" size="sm" />
                                 </div>
                                 <p className="text-xs text-stone-500 mb-2">📅 {a.date}</p>
                                 <p className="text-sm text-stone-600">{a.comments}</p>

@@ -3,8 +3,13 @@
 import { adoptions, adopterFlags, adopterStats, adopterImages, duplicateCandidates } from '@/db/schema';
 import { eq, sql, and, isNull, ne, or } from 'drizzle-orm';
 import { ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
-import type { AdopterFlags } from './types';
+import type { AdopterFlags } from '@/types/adopter';
 import { getAdoptionConfig } from './config';
+
+import { computeAvgRating } from '@/domain/ratings';
+import { computeStats } from '@/domain/stats';
+import { buildFlags } from '@/domain/flags';
+import { RECORD_TYPES } from '@/domain/constants';
 
 export interface EnrichmentResult {
     avgRating: number | null;
@@ -22,6 +27,7 @@ export async function enrichAdopters(
     adopterIds: string[]
 ): Promise<Map<string, EnrichmentResult>> {
     if (adopterIds.length === 0) return new Map();
+
 
     const adoptionConfig = await getAdoptionConfig();
 
@@ -83,39 +89,22 @@ export async function enrichAdopters(
 
         // Process adoptions
         if (adopterAdoptions.length > 0) {
-            const avgRating = adopterAdoptions.reduce((sum: number, a: { rating: number | null }) => sum + (a.rating || 0), 0) / adopterAdoptions.length;
-            const adoptionCount = adopterAdoptions.filter((a: { recordType: string | null }) => a.recordType === 'adoption').length;
-            const requestCount = adopterAdoptions.filter((a: { recordType: string | null }) => a.recordType === 'adoption_request').length;
+            const avgRating = computeAvgRating(adopterAdoptions);
+            const adoptionCount = adopterAdoptions.filter((a: { recordType: string | null }) => a.recordType === RECORD_TYPES.ADOPTION).length;
+            const requestCount = adopterAdoptions.filter((a: { recordType: string | null }) => a.recordType === RECORD_TYPES.REQUEST).length;
             adoptionMap.set(adopterId, { avgRating, count: adopterAdoptions.length, adoptionCount, requestCount });
             for (const rec of adopterAdoptions) {
                 allAdoptionRecords.push({ adopterId, recordType: rec.recordType, date: rec.date });
             }
         }
 
-        // Process flags
-        const flags: AdopterFlags = {
-            inaccurate: false,
-            duplicate: false,
-            systemDuplicate: (systemDupCount[0]?.count ?? 0) > 0,
-            verified_identity: false,
-            verified_address: false,
-            tooManyAdoptions: null,
-            tooManyRequests: null
-        };
-        for (const f of adopterFlagRecords) {
-            if (f.reason === 'inaccurate') flags.inaccurate = true;
-            if (f.reason === 'duplicate') flags.duplicate = true;
-            if (f.reason === 'verified_identity') flags.verified_identity = true;
-            if (f.reason === 'verified_address') flags.verified_address = true;
-        }
+        // Process flags (using domain function — fixes 'inaccurate' vs 'inaccurate_information' mismatch)
+        const flagReasons = adopterFlagRecords.map((f: { reason: string }) => f.reason);
+        const flags = buildFlags(flagReasons, systemDupCount[0]?.count ?? 0);
         flagsMap.set(adopterId, flags);
 
-        // Process stats (only search_hit and profile_view — adoption/request counts come from adoptionMap)
-        const stats = { searchHits: 0, profileViews: 0, requests: 0, adoptions: 0 };
-        for (const s of adopterStatRecords) {
-            if (s.eventType === 'search_hit') stats.searchHits++;
-            else if (s.eventType === 'profile_view') stats.profileViews++;
-        }
+        // Process stats (using domain function)
+        const stats = computeStats(adopterStatRecords, adopterAdoptions);
         statsMap.set(adopterId, stats);
 
         // Process thumbnail
@@ -132,12 +121,12 @@ export async function enrichAdopters(
             inaccurate: false, duplicate: false, systemDuplicate: false, verified_identity: false, verified_address: false,
             tooManyAdoptions: null, tooManyRequests: null
         };
-        if (rec.recordType === 'adoption') {
+        if (rec.recordType === RECORD_TYPES.ADOPTION) {
             if (!flags.tooManyAdoptions) {
                 flags.tooManyAdoptions = { count: 0, threshold: adoptionConfig.threshold, periodDays: adoptionConfig.periodDays };
             }
             flags.tooManyAdoptions.count++;
-        } else if (rec.recordType === 'request') {
+        } else if (rec.recordType === RECORD_TYPES.REQUEST) {
             if (!flags.tooManyRequests) {
                 flags.tooManyRequests = { count: 0, threshold: adoptionConfig.requestsThreshold, periodDays: adoptionConfig.requestsPeriodDays };
             }
@@ -179,6 +168,7 @@ export async function enrichAdopters(
             flags: flagsMap.get(id) || defaultFlags,
         });
     }
+
 
     return resultMap;
 }
