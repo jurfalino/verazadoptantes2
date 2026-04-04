@@ -390,9 +390,15 @@ export default function SearchSection({ locale }: { locale?: string }) {
                                         </div>
                                         {/* Name + Contact */}
                                         <div className="flex-1 min-w-0">
-                                            <div className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate">{res.adopter.name}</div>
+                                            <div className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate">
+                                                {isAuthenticated && res.matchSnippet?.field === 'name' && res.matchSnippet.snippet === res.adopter.name
+                                                    ? (renderHighlightedSnippet(res.adopter.name, res.matchSnippet.highlights) || res.adopter.name)
+                                                    : res.adopter.name}
+                                            </div>
                                             <div className="text-xs text-stone-500 truncate">
-                                                {res.adopter.contactInfo || t('common.no_contact')}
+                                                {isAuthenticated && res.matchSnippet?.field === 'contact' && res.matchSnippet.snippet === res.adopter.contactInfo
+                                                    ? (renderHighlightedSnippet(res.adopter.contactInfo, res.matchSnippet.highlights) || res.adopter.contactInfo)
+                                                    : (res.adopter.contactInfo || t('common.no_contact'))}
                                                 {!isAuthenticated && res.adopter.contactInfo && (
                                                     <span className="ml-1 text-teal-700 font-medium">• {t('search.login_to_view')}</span>
                                                 )}
@@ -438,6 +444,9 @@ export default function SearchSection({ locale }: { locale?: string }) {
                                     {/* Match Snippet — shows why this result appeared */}
                                     {res.matchSnippet && (() => {
                                         const s = res.matchSnippet;
+                                        // Hide redundant snippets for fields already visible on the card (Name / Contact)
+                                        if (s.field === 'name' || s.field === 'contact') return null;
+
                                         const icon = SNIPPET_ICONS[s.field];
                                         const label = t(`search.snippet_${s.field}`);
                                         return (

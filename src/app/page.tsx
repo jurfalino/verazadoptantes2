@@ -1,6 +1,7 @@
 'use client';
 
 import SearchSection from '@/components/SearchSection';
+import QuickAccessStrip from '@/components/QuickAccessStrip';
 export const runtime = 'edge';
 import { useLanguage } from '@/context/LanguageContext';
 
@@ -107,6 +108,9 @@ export default function Home() {
         {/* Social proof + milestone — below search for mobile-first */}
         <SocialProofBanner config={appConfig} />
         {session?.user && <MilestoneBadge />}
+        
+        {/* Quick Access Dashboard Strip */}
+        <QuickAccessStrip />
 
         {/* Action Cards — 3-column grid */}
         <div id="action-cards" className={`grid gap-6 mt-6 ${contentImportEnabled ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>

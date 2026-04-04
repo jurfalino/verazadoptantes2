@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.10.0-19] - 2026-04-04
+
+### Added
+- **Quick Access Strip** — Homepage now includes a contextual dashboard strip for authenticated users, displaying live counts and quick shortcuts for My Animals, My Adoptions, and My Adopters.
+
 ## [2.10.0-18] - 2026-04-04
 
 ### Security
