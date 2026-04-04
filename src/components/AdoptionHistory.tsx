@@ -110,7 +110,15 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
         }
     };
 
-    if (initialAdoptions.length === 0) return null;
+    if (initialAdoptions.length === 0) {
+        return (
+            <div className="py-6 text-center">
+                <div className="text-3xl mb-2 opacity-60">📋</div>
+                <p className="text-sm text-stone-500 font-medium">{t('adoption.no_activity') || 'No hay actividad registrada aún.'}</p>
+                <p className="text-xs text-stone-400 mt-1">{t('adoption.no_activity_hint') || 'Registrá una adopción, solicitud o nota para comenzar.'}</p>
+            </div>
+        );
+    }
 
     return (
         <>
@@ -162,7 +170,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                 : `${t('adoption.verb_adopted') || 'adopted'} ${speciesLabel}`;
                             break;
                         case 'adoption_request':
-                            summary = `${t('adoption.verb_requested') || 'requested'} ${speciesLabel || animalName} ${t('adoption.word_adoption') || ''}`.trim();
+                            summary = `${t('adoption.verb_requested') || 'requested adoption —'} ${speciesLabel || animalName}`.trim();
                             break;
                         case 'observation':
                             summary = animalName
@@ -207,11 +215,11 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                             {/* Stars + edit hint — below summary */}
                                             <div className="flex items-center gap-2 mt-1">
                                                 {adoption.rating != null && adoption.rating > 0 && (
-                                                    <RatingBadge rating={adoption.rating} variant="inline" size="sm" />
+                                                    <RatingBadge rating={adoption.rating} size="sm" />
                                                 )}
                                                 {canEdit && (
-                                                    <span className="text-stone-500 text-xs font-medium underline opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        {t('common.edit')}
+                                                    <span className="text-teal-600 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex items-center">
+                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                                                     </span>
                                                 )}
                                             </div>
@@ -246,7 +254,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
 
                                     {/* Notes - consistent neutral color */}
                                     {adoption.details && (
-                                        <p className="text-stone-800 text-sm mt-2.5 leading-relaxed bg-stone-100 p-2.5 rounded-lg">
+                                        <p className="text-stone-600 text-xs mt-2.5 leading-relaxed bg-stone-50 border border-stone-100 p-2.5 rounded-lg">
                                             {adoption.details}
                                         </p>
                                     )}
@@ -311,11 +319,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
 
                                     {/* Footer: date + onBehalfOf + source link + addedBy */}
                                     <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-500 font-medium">
-                                        {adoption.date && (
-                                            <span className="inline-flex items-center gap-1">
-                                                📅 {t('adoption.date_label') || 'Fecha:'} {formatShortDate(new Date(adoption.date))}
-                                            </span>
-                                        )}
+
                                         {adoption.onBehalfOf && (
                                             <span className="inline-flex items-center gap-1">
                                                 👤 {t('adoption.on_behalf_label') || 'En nombre de:'} {adoption.onBehalfOf}
@@ -332,7 +336,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                                 {getSourceIcon(adoption.sourceUrl, 'w-3.5 h-3.5')}
                                             </a>
                                         )}
-                                        {adoption.addedBy && !isAdminEmail(adoption.addedBy) && (
+                                        {adoption.addedBy && !isAdminEmail(adoption.addedBy) && adoption.addedBy !== currentUser && (
                                             <span>{t('common.added_by')} {userNameMap?.[adoption.addedBy] || adoption.addedBy}</span>
                                         )}
                                     </div>

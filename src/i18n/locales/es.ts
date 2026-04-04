@@ -343,11 +343,10 @@ export const es = {
         unnamed: 'Sin nombre',
         // Card summary verbs
         verb_adopted: 'adoptó a',
-        verb_requested: 'solicitó adopción de',
+        verb_requested: 'solicitó adopción —',
         verb_noted: 'nota sobre',
         verb_followed_up: 'seguimiento de',
         verb_returned: 'devolvió a',
-        word_adoption: 'adopción',
         select_existing: 'Seleccionar Existente',
         create_new: 'Crear Nuevo',
         select_animal: 'Seleccionar Animal',
@@ -357,6 +356,8 @@ export const es = {
         lifeStage_young: 'Joven',
         lifeStage_senior: 'Senior',
         lifeStage_none: 'Sin preferencia',
+        no_activity: 'No hay actividad registrada aún.',
+        no_activity_hint: 'Registrá una adopción, solicitud o nota para comenzar.',
     },
     species: {
         cat: 'Gato',

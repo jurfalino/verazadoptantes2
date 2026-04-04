@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.10.1] - 2026-04-04
+
+### Changed
+- **Activity Timeline UX Polish** — Resolved redundant date displays, fixed adoption request Spanish translation bug, lightened background weight of detail blocks, suppressed self-authored record attribution for privacy, upgraded numeric ratings to standardized color-coded `RatingBadge` pills, implemented a friendly empty state for new profiles, and replaced hover-only mobile edit affordance with a consistent, always-visible SVG pencil icon.
+
 ## [2.10.0] - 2026-04-04
 
 ### Added

@@ -344,11 +344,10 @@ export const en = {
         unnamed: 'Unnamed',
         // Card summary verbs
         verb_adopted: 'adopted',
-        verb_requested: 'requested',
+        verb_requested: 'requested adoption —',
         verb_noted: 'noted about',
         verb_followed_up: 'followed up on',
         verb_returned: 'returned',
-        word_adoption: 'adoption',
         select_existing: 'Select Existing',
         create_new: 'Create New',
         select_animal: 'Select Animal',
@@ -358,6 +357,8 @@ export const en = {
         lifeStage_young: 'Young',
         lifeStage_senior: 'Senior',
         lifeStage_none: 'No preference',
+        no_activity: 'No activity recorded yet.',
+        no_activity_hint: 'Record an adoption, request, or note to get started.',
     },
     species: {
         cat: 'Cat',
