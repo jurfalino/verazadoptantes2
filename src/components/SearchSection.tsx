@@ -284,6 +284,18 @@ export default function SearchSection({ locale }: { locale?: string }) {
                     </p>
                 </div>
             )}
+            {validationError === 'login_required' && (
+                <div className="mt-4 p-4 bg-teal-50 border border-teal-200 rounded-xl">
+                    <p className="text-teal-800 font-medium text-center">
+                        🔒 {t('search.login_required')}
+                    </p>
+                    <div className="mt-3 flex justify-center">
+                        <button onClick={(e) => { e.preventDefault(); openLogin(); }} className="px-5 py-2.5 bg-teal-600 text-white rounded-xl font-semibold hover:bg-teal-700 transition-all shadow-sm">
+                            {t('nav.sign_in')}
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Truncation Warning Banner */}
             {truncatedInfo?.truncated && (
@@ -348,22 +360,7 @@ export default function SearchSection({ locale }: { locale?: string }) {
                         </div>
                     )}
                     {results.map((res) => {
-                        // PII masking for unauthenticated users
                         const isAuthenticated = !!session?.user;
-
-                        // Partial name masking: show first 3 chars + ****
-                        const maskedName = isAuthenticated
-                            ? res.adopter.name
-                            : (res.adopter.name?.length > 3
-                                ? res.adopter.name.slice(0, 3) + '••••'
-                                : '••••');
-
-                        // Partial contact masking: show some context but hide sensitive parts
-                        const maskedContact = isAuthenticated
-                            ? res.adopter.contactInfo
-                            : res.adopter.contactInfo
-                                ?.replace(/(\d{2,3})[\d\s\-.()]{4,}/g, '$1••••••')  // Partial phone: show first 2-3 digits, mask rest
-                                ?.replace(/[a-zA-Z0-9._%+-]+@/g, '•••@');  // Email: hide username
 
                         const handleCardClick = (e: React.MouseEvent) => {
                             if (!isAuthenticated) {
@@ -393,10 +390,10 @@ export default function SearchSection({ locale }: { locale?: string }) {
                                         </div>
                                         {/* Name + Contact */}
                                         <div className="flex-1 min-w-0">
-                                            <div className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate">{maskedName}</div>
+                                            <div className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate">{res.adopter.name}</div>
                                             <div className="text-xs text-stone-500 truncate">
-                                                {maskedContact || t('common.no_contact')}
-                                                {!isAuthenticated && maskedContact && (
+                                                {res.adopter.contactInfo || t('common.no_contact')}
+                                                {!isAuthenticated && res.adopter.contactInfo && (
                                                     <span className="ml-1 text-teal-700 font-medium">• {t('search.login_to_view')}</span>
                                                 )}
                                             </div>
@@ -430,10 +427,10 @@ export default function SearchSection({ locale }: { locale?: string }) {
                                                 <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-teal-100 text-teal-700">✓ {t('flags.verified_address') || 'Verified Address'}</span>
                                             )}
                                             {res.flags.tooManyAdoptions && (
-                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">⚠ {t('flags.too_many_adoptions').replace('{count}', res.flags.tooManyAdoptions.count.toString()).replace('{days}', (res.flags.tooManyAdoptions.actualSpanDays || res.flags.tooManyAdoptions.periodDays).toString())}</span>
+                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">⚠ {t('flags.too_many_adoptions').replace('{count}', res.flags.tooManyAdoptions.count.toString()).replace('{days}', Math.round(res.flags.tooManyAdoptions.actualSpanDays || res.flags.tooManyAdoptions.periodDays).toString())}</span>
                                             )}
                                             {res.flags.tooManyRequests && (
-                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">⚠ {t('flags.too_many_requests').replace('{count}', res.flags.tooManyRequests.count.toString()).replace('{days}', (res.flags.tooManyRequests.actualSpanDays || res.flags.tooManyRequests.periodDays).toString())}</span>
+                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">⚠ {t('flags.too_many_requests').replace('{count}', res.flags.tooManyRequests.count.toString()).replace('{days}', Math.round(res.flags.tooManyRequests.actualSpanDays || res.flags.tooManyRequests.periodDays).toString())}</span>
                                             )}
                                         </div>
                                     </div>
@@ -441,8 +438,6 @@ export default function SearchSection({ locale }: { locale?: string }) {
                                     {/* Match Snippet — shows why this result appeared */}
                                     {res.matchSnippet && (() => {
                                         const s = res.matchSnippet;
-                                        // Suppress PII snippets for unauthenticated users
-                                        if (!isAuthenticated && (s.field === 'contact' || s.field === 'address')) return null;
                                         const icon = SNIPPET_ICONS[s.field];
                                         const label = t(`search.snippet_${s.field}`);
                                         return (
@@ -452,6 +447,8 @@ export default function SearchSection({ locale }: { locale?: string }) {
                                                     <span className="font-semibold text-stone-500">{label}:</span>{' '}
                                                     {s.field === 'history' ? (
                                                         <span className="italic">{t('search.snippet_history_generic')}</span>
+                                                    ) : !isAuthenticated ? (
+                                                        <span className="italic">{(t('search.protected_info') || '').split('.')[0]}</span>
                                                     ) : (
                                                         renderHighlightedSnippet(s.snippet, s.highlights) || s.snippet
                                                     )}

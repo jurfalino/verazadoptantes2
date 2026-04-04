@@ -241,8 +241,17 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
         const normalizedQuery = query.trim();
         if (!normalizedQuery) return { results: [] };
 
+        const isUnauthenticated = user === 'unknown';
+
         if (isPhoneLikeQuery(normalizedQuery) && countDigits(normalizedQuery) < MIN_PHONE_DIGITS) {
             return { results: [], validationError: 'min_digits' };
+        }
+
+        // Anti-fishing threshold: block raw PII guesses without session
+        if (isUnauthenticated) {
+            if (normalizedQuery.includes('@') || (isPhoneLikeQuery(normalizedQuery) && countDigits(normalizedQuery) >= MIN_PHONE_DIGITS)) {
+                return { results: [], validationError: 'login_required' };
+            }
         }
 
         const tokens = tokenize(normalizedQuery);
@@ -451,9 +460,10 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
                 if (Date.now() - updatedMs < NINETY_DAYS_MS) score += WEIGHTS.recent_update;
             }
 
-            return {
-                adopter: a,
-                matchSnippet: bestSnippet,
+            const isUnauthenticated = user === 'unknown';
+            const result = {
+                adopter: { ...a },
+                matchSnippet: bestSnippet ? { ...bestSnippet } : null,
                 relevanceScore: score,
                 avgRating: enrichment?.avgRating ?? null,
                 thumbnail: enrichment?.thumbnail ?? null,
@@ -464,6 +474,27 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
                     tooManyAdoptions: null, tooManyRequests: null
                 }
             };
+
+            if (isUnauthenticated) {
+                // mask name
+                result.adopter.name = result.adopter.name?.length > 3 ? result.adopter.name.slice(0, 3) + '••••' : '••••';
+                // mask contact
+                result.adopter.contactInfo = result.adopter.contactInfo
+                    ?.replace(/(\d{2,3})[\d\s\-.()]{4,}/g, '$1••••••')
+                    ?.replace(/[a-zA-Z0-9._%+-]+@/g, '•••@') || null;
+                
+                // clear sensitive fields entirely
+                result.adopter.familyMembers = null;
+                result.adopter.addressInfo = null;
+                
+                // Suppress raw snippet payload
+                if (result.matchSnippet) {
+                    result.matchSnippet.snippet = "";
+                    result.matchSnippet.highlights = [];
+                }
+            }
+
+            return result;
         });
 
         allResults.sort((a, b) => b.relevanceScore - a.relevanceScore);

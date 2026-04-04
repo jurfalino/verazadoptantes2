@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.10.0-18] - 2026-04-04
+
+### Security
+- **Critical Vulnerability Remediation**: Transitioned PII masking from cosmetic Client-Side UI filtering to Server-Side Payload Masking inside `searchAdopter` action. Ensure raw phone numbers and emails are never sent across the wire to unauthenticated users.
+- **Data Leakage Fix**: Redacted an 80-character snippet window entirely when matching against PII fields to prevent adjacent data leakage.
+- **Anti-Fishing Hurdle**: Blocked purely numeric queries (length > 4) and queries containing `@` for unauthenticated sessions to prevent scraping of valid profiles via brute-force.
+
+### Fixed
+- Fixed an issue where the `tooManyAdoptions` and `tooManyRequests` UI flags were not rounding their "days" counts and displaying the localized word "days" correctly.
+
 ## [2.10.0-17] - 2026-04-04
 
 ### Added
