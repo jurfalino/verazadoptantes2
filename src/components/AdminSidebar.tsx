@@ -12,6 +12,7 @@ const NAV_ITEMS = [
     { href: '/admin/query', label: 'SQL Runner', icon: '⚡', special: true },
     { href: '/admin/config', label: 'Configuration', icon: '⚙️' },
     { href: '/admin/data-requests', label: 'Data Requests', icon: '📬' },
+    { href: '/admin/notifications', label: 'Communications', icon: '📡' },
     { href: '/admin/users', label: 'Users', icon: '👥' },
     { href: '/admin/audit', label: 'Audit Log', icon: '📋' },
     { href: '/admin/health', label: 'System Health', icon: '🩺' },

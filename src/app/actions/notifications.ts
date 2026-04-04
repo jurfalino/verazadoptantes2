@@ -27,11 +27,29 @@ export async function createNotification(data: {
             return null;
         }
 
+        const type = data.type || 'contract_result';
+
+        // Check global kill switch using cached Edge implementation
+        try {
+            const { getFeatureFlag } = await import('@/config/features');
+            // Cast to any to bypass strict type checking for dynamic keys
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const isEnabled = await getFeatureFlag(`NOTIF_ENABLED_${type}` as any) !== false;
+            
+            if (!isEnabled) {
+                logger.info('Notification suppressed by admin config', { type });
+                return null;
+            }
+        } catch {
+            // Fail open if config fails to fetch
+            logger.warn('Failed to evaluate notification kill switch, defaulting to sending', { type });
+        }
+
         const id = data.id || crypto.randomUUID();
         await db.insert(notifications).values({
             id,
             userId: data.userId,
-            type: data.type || 'contract_result',
+            type,
             title: data.title,
             body: data.body,
             url: data.url || null,
@@ -40,7 +58,7 @@ export async function createNotification(data: {
             createdAt: new Date(),
         });
 
-        logger.info('Notification created', { id, userId: data.userId, type: data.type || 'contract_result' });
+        logger.info('Notification created', { id, userId: data.userId, type });
 
         // ── Escalation hooks (Phase 2) ──
         // await sendPushNotification(data.userId, { title: data.title, body: data.body, url: data.url });

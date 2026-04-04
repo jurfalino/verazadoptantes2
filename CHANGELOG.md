@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.10.0] - 2026-04-04
+
+### Added
+- **Admin Communications Hub** — Implemented a dedicated dashboard (`/admin/notifications`) to control platform notifications globally. Includes a kill-switch toggle for each notification type.
+- **Performance Optimization** — Restructured notification schemas to map composite indexes (`type`, `created_at`), directly eliminating severe table scans. Refactored `actions` block to cache feature flags for multi-dispatch notifications loops.
+- **Liveness Audit Tuning** — Added `auditDurationMs` dashboard metrics to the Health Admin UI and restructured parallel database pings behind `Promise.all()`.
+
 ## [2.10.0-19] - 2026-04-04
 
 ### Added

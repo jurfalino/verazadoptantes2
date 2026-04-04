@@ -84,47 +84,47 @@ async function probeFetch(url: string, timeoutMs: number, method: 'GET' | 'HEAD'
 
 /** Probe D1 database + schema drift + row counts */
 async function probeDatabase(db: D1Database) {
-    const start = performance.now();
-    const tables: Array<{
-        name: string;
-        status: 'ok' | 'drift' | 'missing';
-        expectedColumns: string[];
-        actualColumns: string[];
-        missingColumns: string[];
-        extraColumns: string[];
-        fixSql: string | null;
-        rowCount: number;
-    }> = [];
+    const pingStart = performance.now();
     let dbOk = false;
+    let trueLatencyMs = 0;
 
+    // True Liveness Ping
     try {
-        for (const table of SCHEMA_TABLES) {
-            const tableName = getTableName(table);
-            const expectedColumns = getColumnNames(table);
+        await db.prepare('SELECT 1').first();
+        dbOk = true;
+        trueLatencyMs = Math.round(performance.now() - pingStart);
+    } catch {
+        dbOk = false;
+        trueLatencyMs = Math.round(performance.now() - pingStart);
+        return { tables: [], dbOk, latencyMs: trueLatencyMs, auditDurationMs: trueLatencyMs };
+    }
 
-            // PRAGMA table_info
+    const auditStart = performance.now();
+    
+    // Parallelize schema audits and row counts
+    const tablePromises = SCHEMA_TABLES.map(async (table) => {
+        const tableName = getTableName(table);
+        const expectedColumns = getColumnNames(table);
+
+        try {
+            // PRAGMA and COUNT ran in parallel per-table for speed
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const pragmaResult = await db.prepare(`PRAGMA table_info(${tableName})`).all() as any;
+            const [pragmaResult, countResult] = await Promise.all([
+                db.prepare(`PRAGMA table_info(${tableName})`).all() as any,
+                db.prepare(`SELECT COUNT(*) as cnt FROM ${tableName}`).first().catch(() => ({ cnt: 0 })) as any
+            ]);
+
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const actualColumns = (pragmaResult.results || []).map((row: any) => row.name as string);
 
             const missingColumns = expectedColumns.filter(col => !actualColumns.includes(col));
             const extraColumns = actualColumns.filter((col: string) => !expectedColumns.includes(col));
-
-            // Row count
-            let rowCount = 0;
-            try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const countResult = await db.prepare(`SELECT COUNT(*) as cnt FROM ${tableName}`).first() as any;
-                rowCount = countResult?.cnt ?? 0;
-            } catch {
-                // Table may not exist
-            }
+            const rowCount = countResult?.cnt ?? 0;
 
             const hasDrift = missingColumns.length > 0 || extraColumns.length > 0;
             const tableExists = actualColumns.length > 0;
 
-            tables.push({
+            return {
                 name: tableName,
                 status: !tableExists ? 'missing' : hasDrift ? 'drift' : 'ok',
                 expectedColumns,
@@ -133,15 +133,25 @@ async function probeDatabase(db: D1Database) {
                 extraColumns,
                 fixSql: missingColumns.length > 0 ? generateFixSql(tableName, missingColumns, table) : null,
                 rowCount,
-            });
+            };
+        } catch {
+            return {
+                name: tableName,
+                status: 'missing',
+                expectedColumns,
+                actualColumns: [],
+                missingColumns: expectedColumns,
+                extraColumns: [],
+                fixSql: null,
+                rowCount: 0,
+            } as any;
         }
-        dbOk = true;
-    } catch {
-        dbOk = false;
-    }
+    });
 
-    const latencyMs = Math.round(performance.now() - start);
-    return { tables, dbOk, latencyMs };
+    const tables = await Promise.all(tablePromises);
+    const auditDurationMs = Math.round(performance.now() - auditStart);
+
+    return { tables, dbOk, latencyMs: trueLatencyMs, auditDurationMs };
 }
 
 /** Probe R2 storage */
@@ -242,7 +252,7 @@ export async function GET() {
         ]);
 
         // Unpack results with safe defaults
-        const db = dbResult.status === 'fulfilled' ? dbResult.value : { tables: [], dbOk: false, latencyMs: 0 };
+        const db = dbResult.status === 'fulfilled' ? dbResult.value : { tables: [], dbOk: false, latencyMs: 0, auditDurationMs: 0 };
         const storage = storageResult.status === 'fulfilled' ? storageResult.value : { ok: false, latencyMs: 0, error: 'probe failed' };
         const migrations = migrationsResult.status === 'fulfilled' ? migrationsResult.value : { applied: [], count: 0 };
         const petshield = petshieldResult.status === 'fulfilled' ? petshieldResult.value : { status: 'down' as ServiceStatus, latencyMs: 0 };
@@ -270,7 +280,7 @@ export async function GET() {
                 runtime: 'edge',
                 vars: checkEnvironment(),
             },
-            meta: { checkedAt: new Date().toISOString() },
+            meta: { checkedAt: new Date().toISOString(), auditDurationMs: db.auditDurationMs },
         });
     } catch (error) {
         return NextResponse.json(

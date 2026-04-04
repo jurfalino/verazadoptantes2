@@ -258,6 +258,7 @@ export const notifications = sqliteTable("notifications", {
     expiresAt: integer("expires_at", { mode: "timestamp" }),
 }, (table) => ({
     userIdx: index("idx_notif_user").on(table.userId, table.read, table.createdAt),
+    typeIdx: index("idx_notif_type").on(table.type, table.createdAt),
 }));
 
 // PetShield Form Submissions

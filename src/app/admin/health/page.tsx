@@ -40,7 +40,7 @@ interface HealthData {
         runtime: string;
         vars: Record<string, boolean>;
     };
-    meta: { checkedAt: string };
+    meta: { checkedAt: string; auditDurationMs?: number; };
 }
 
 const STATUS_LABELS: Record<ServiceStatus, { label: string; color: string }> = {
@@ -403,7 +403,12 @@ export default function AdminHealthPage() {
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
                             <div className="p-3 rounded-xl bg-stone-50">
                                 <span className="text-xs text-stone-500">Tablas</span>
-                                <p className="text-2xl font-semibold text-stone-900">{data.schema.tables.length}</p>
+                                <div className="flex items-baseline gap-2">
+                                    <p className="text-2xl font-semibold text-stone-900">{data.schema.tables.length}</p>
+                                    {data.meta.auditDurationMs !== undefined && (
+                                        <span className="text-xs text-stone-400 font-mono">audit: {data.meta.auditDurationMs}ms</span>
+                                    )}
+                                </div>
                             </div>
                             <div className="p-3 rounded-xl bg-stone-50">
                                 <span className="text-xs text-stone-500">Total Filas</span>
