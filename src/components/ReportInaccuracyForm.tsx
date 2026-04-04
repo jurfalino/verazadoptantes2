@@ -11,9 +11,9 @@ export default function ReportInaccuracyForm({ adopterId: _adopterId, adopterNam
     const { t } = useLanguage();
 
     return (
-        <div className="bg-stone-50 border border-stone-200 rounded-xl px-4 py-2.5">
-            <p className="text-stone-500 text-xs">
-                ℹ️ {t('legal.disclaimer') || 'Information is provided by community users. BuenAdoptante does not verify its accuracy.'}
+        <div className="bg-stone-50 border border-stone-200 rounded-lg px-3 py-1.5 mt-1">
+            <p className="text-stone-500 text-[11px] leading-relaxed">
+                ℹ️ {t('legal.disclaimer') || 'Community-contributed data · not independently verified'}
             </p>
         </div>
     );

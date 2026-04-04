@@ -2,7 +2,7 @@ export const runtime = 'edge';
 
 import { getDb } from "@/app/actions";
 import { adopters } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { auth } from "@/auth";
 import { logger } from "@/lib/logger";
 import { logAudit } from "@/lib/audit";

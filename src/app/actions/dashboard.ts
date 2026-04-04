@@ -12,6 +12,7 @@ import type { AdopterFlags } from '@/types/adopter';
 import { computeAvgRating } from '@/domain/ratings';
 import { buildFlags } from '@/domain/flags';
 import { RECORD_TYPES } from '@/domain/constants';
+import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
 
 export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
     try {
@@ -152,35 +153,38 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             if (row.linkedAdopterId) formCountMap.set(row.linkedAdopterId, row.count);
         }
 
-        // Period calculations
-        const adoptionsCutoff = new Date();
-        adoptionsCutoff.setDate(adoptionsCutoff.getDate() - adoptionConfig.periodDays);
-        const requestsCutoff = new Date();
-        requestsCutoff.setDate(requestsCutoff.getDate() - adoptionConfig.requestsPeriodDays);
-
-        const periodMap = new Map<string, { adoptionsInPeriod: number; requestsInPeriod: number }>();
-        for (const a of allAdoptionRecords as any[]) {
-            if (!periodMap.has(a.adopterId)) periodMap.set(a.adopterId, { adoptionsInPeriod: 0, requestsInPeriod: 0 });
-            const entry = periodMap.get(a.adopterId)!;
-            const aDate = a.date ? (typeof a.date === 'number' ? new Date(a.date * 1000) : new Date(a.date)) : null;
-            if (!aDate) continue;
-            if (a.recordType === RECORD_TYPES.ADOPTION && aDate >= adoptionsCutoff) entry.adoptionsInPeriod++;
-            if (a.recordType === RECORD_TYPES.REQUEST && aDate >= requestsCutoff) entry.requestsInPeriod++;
-        }
-
         // Assemble results in memory (no more DB calls)
         const enrichedAdopters = adoptersList.map((adopter: typeof adopters.$inferSelect) => {
             const flags = flagsMap.get(adopter.id) || [];
             const counts = countsMap.get(adopter.id) || { adoptions: 0, requests: 0 };
             const stats = statsMap.get(adopter.id) || { searchHits: 0, profileViews: 0 };
-            const period = periodMap.get(adopter.id) || { adoptionsInPeriod: 0, requestsInPeriod: 0 };
+
+            const adopterRecords = recordsByAdopter.get(adopter.id) || [];
+            const adoptionsDensity = computeMaxDensityPeriod(adopterRecords as any, RECORD_TYPES.ADOPTION, adoptionConfig.periodDays);
+            const requestsDensity = computeMaxDensityPeriod(adopterRecords as any, RECORD_TYPES.REQUEST, adoptionConfig.requestsPeriodDays);
 
             const flagObj: AdopterFlags = buildFlags(flags, 0);
-            flagObj.tooManyAdoptions = period.adoptionsInPeriod >= adoptionConfig.threshold
-                ? { count: period.adoptionsInPeriod, threshold: adoptionConfig.threshold, periodDays: adoptionConfig.periodDays }
+            
+            flagObj.tooManyAdoptions = adoptionsDensity.count >= adoptionConfig.threshold
+                ? { 
+                    count: adoptionsDensity.count, 
+                    threshold: adoptionConfig.threshold, 
+                    periodDays: adoptionConfig.periodDays,
+                    actualSpanDays: adoptionsDensity.timeSpanDays,
+                    startDate: adoptionsDensity.startDate,
+                    endDate: adoptionsDensity.endDate
+                  }
                 : null;
-            flagObj.tooManyRequests = period.requestsInPeriod >= adoptionConfig.requestsThreshold
-                ? { count: period.requestsInPeriod, threshold: adoptionConfig.requestsThreshold, periodDays: adoptionConfig.requestsPeriodDays }
+                
+            flagObj.tooManyRequests = requestsDensity.count >= adoptionConfig.requestsThreshold
+                ? { 
+                    count: requestsDensity.count, 
+                    threshold: adoptionConfig.requestsThreshold, 
+                    periodDays: adoptionConfig.requestsPeriodDays,
+                    actualSpanDays: requestsDensity.timeSpanDays,
+                    startDate: requestsDensity.startDate,
+                    endDate: requestsDensity.endDate
+                  }
                 : null;
 
             return {

@@ -3,7 +3,7 @@ export const runtime = 'edge';
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { adopters, adoptions, duplicateTokens, duplicateCandidates, adopterFlags, appConfig } from '@/db/schema';
-import { eq, sql, isNull, and, or, ne } from 'drizzle-orm';
+import { eq, sql, isNull, or } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { isAdmin } from '@/config/admins';
 import { logger } from '@/lib/logger';
@@ -124,7 +124,7 @@ export async function GET(request: Request) {
  * POST /api/admin/duplicates
  * Scan: refresh stale tokens, find shared tokens, score pairs, insert candidates
  */
-export async function POST(request: Request) {
+export async function POST(_request: Request) {
     const session = await auth();
     if (!session?.user?.email || !isAdmin(session.user.email)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

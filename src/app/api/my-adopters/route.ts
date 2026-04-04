@@ -5,7 +5,7 @@ import { logger } from '@/lib/logger';
 
 export const runtime = 'edge';
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
     const session = await auth();
 
     if (!session?.user) {

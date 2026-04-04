@@ -17,7 +17,7 @@ import OrgActivityFeed from '@/components/OrgActivityFeed';
 
 
 export default function OrganizationsPage() {
-    const { data: session, status } = useSession();
+    const { data: _session, status } = useSession();
     const router = useRouter();
     const { t } = useLanguage();
     const toast = useShowToast();

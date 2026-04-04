@@ -357,7 +357,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                 const isAuthenticated = (currentUser && currentUser !== '') || !!session?.user;
                 if (!isAuthenticated) { openLogin(); return; }
                 setIsOpen(true);
-            }} className="w-full py-3 bg-teal-700 text-white font-semibold rounded-xl hover:bg-teal-600 shadow-lg shadow-teal-700/20 hover:shadow-teal-700/40 transition-all duration-300 transform active:scale-[0.99] mb-4">
+            }} className="w-full py-3 border-2 border-teal-600 text-teal-700 font-semibold rounded-xl hover:bg-teal-50 transition-all duration-300 transform active:scale-[0.99] mb-4">
                 + {t('adoption.record_new')}
             </button>
         )

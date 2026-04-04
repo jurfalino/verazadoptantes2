@@ -66,7 +66,7 @@ const COUNTRY_OPTIONS = [
 
 // ── Component ────────────────────────────────────────────────────────────
 
-export default function AdminAdopterList({ adopters, countries }: Props) {
+export default function AdminAdopterList({ adopters, countries: _countries }: Props) {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(false);
     const [actionCountry, setActionCountry] = useState('');
@@ -245,10 +245,10 @@ export default function AdminAdopterList({ adopters, countries }: Props) {
                                         <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-teal-100 text-teal-700">✓ Address</span>
                                     )}
                                     {flags.tooManyAdoptions && (
-                                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">⚠ {flags.tooManyAdoptions.count} adoptions/{flags.tooManyAdoptions.periodDays}d</span>
+                                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">⚠ {flags.tooManyAdoptions.count} adoptions in {flags.tooManyAdoptions.actualSpanDays || flags.tooManyAdoptions.periodDays}d</span>
                                     )}
                                     {flags.tooManyRequests && (
-                                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">⚠ {flags.tooManyRequests.count} requests/{flags.tooManyRequests.periodDays}d</span>
+                                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">⚠ {flags.tooManyRequests.count} requests in {flags.tooManyRequests.actualSpanDays || flags.tooManyRequests.periodDays}d</span>
                                     )}
                                 </div>
                             </div>

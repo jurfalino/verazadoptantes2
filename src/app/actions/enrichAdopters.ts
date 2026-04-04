@@ -10,6 +10,7 @@ import { computeAvgRating } from '@/domain/ratings';
 import { computeStats } from '@/domain/stats';
 import { buildFlags } from '@/domain/flags';
 import { RECORD_TYPES } from '@/domain/constants';
+import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
 
 export interface EnrichmentResult {
     avgRating: number | null;
@@ -113,36 +114,46 @@ export async function enrichAdopters(
         }
     }));
 
-    // Process adoption records for tooMany flags
-    const periodCutoff = Date.now() - (adoptionConfig.periodDays * 24 * 60 * 60 * 1000);
+    // Group adoptions by adopterId
+    const recordsByAdopterId = new Map<string, any[]>();
     for (const rec of allAdoptionRecords) {
-        if (!rec.date || rec.date < periodCutoff) continue;
-        const flags = flagsMap.get(rec.adopterId) || {
+        if (!recordsByAdopterId.has(rec.adopterId)) {
+            recordsByAdopterId.set(rec.adopterId, []);
+        }
+        recordsByAdopterId.get(rec.adopterId)!.push(rec);
+    }
+
+    for (const [adopterId, records] of recordsByAdopterId) {
+        const flags = flagsMap.get(adopterId) || {
             inaccurate: false, duplicate: false, systemDuplicate: false, verified_identity: false, verified_address: false,
             tooManyAdoptions: null, tooManyRequests: null
         };
-        if (rec.recordType === RECORD_TYPES.ADOPTION) {
-            if (!flags.tooManyAdoptions) {
-                flags.tooManyAdoptions = { count: 0, threshold: adoptionConfig.threshold, periodDays: adoptionConfig.periodDays };
-            }
-            flags.tooManyAdoptions.count++;
-        } else if (rec.recordType === RECORD_TYPES.REQUEST) {
-            if (!flags.tooManyRequests) {
-                flags.tooManyRequests = { count: 0, threshold: adoptionConfig.requestsThreshold, periodDays: adoptionConfig.requestsPeriodDays };
-            }
-            flags.tooManyRequests.count++;
+        
+        const adoptionsDensity = computeMaxDensityPeriod(records as any, RECORD_TYPES.ADOPTION, adoptionConfig.periodDays);
+        if (adoptionsDensity.count >= adoptionConfig.threshold) {
+            flags.tooManyAdoptions = {
+                count: adoptionsDensity.count,
+                threshold: adoptionConfig.threshold,
+                periodDays: adoptionConfig.periodDays,
+                actualSpanDays: adoptionsDensity.timeSpanDays,
+                startDate: adoptionsDensity.startDate,
+                endDate: adoptionsDensity.endDate
+            };
         }
-        flagsMap.set(rec.adopterId, flags);
-    }
 
-    // Clear tooMany flags if below threshold
-    for (const [, flags] of flagsMap) {
-        if (flags.tooManyAdoptions && flags.tooManyAdoptions.count < flags.tooManyAdoptions.threshold) {
-            flags.tooManyAdoptions = null;
+        const requestsDensity = computeMaxDensityPeriod(records as any, RECORD_TYPES.REQUEST, adoptionConfig.requestsPeriodDays);
+        if (requestsDensity.count >= adoptionConfig.requestsThreshold) {
+            flags.tooManyRequests = {
+                count: requestsDensity.count,
+                threshold: adoptionConfig.requestsThreshold,
+                periodDays: adoptionConfig.requestsPeriodDays,
+                actualSpanDays: requestsDensity.timeSpanDays,
+                startDate: requestsDensity.startDate,
+                endDate: requestsDensity.endDate
+            };
         }
-        if (flags.tooManyRequests && flags.tooManyRequests.count < flags.tooManyRequests.threshold) {
-            flags.tooManyRequests = null;
-        }
+
+        flagsMap.set(adopterId, flags);
     }
 
     // Build combined result map

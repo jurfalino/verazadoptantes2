@@ -8,14 +8,7 @@ import { useSession } from 'next-auth/react';
 import { RatingBadge } from '@/components/RatingBadge';
 import { formatShortDate } from '@/lib/dates';
 
-interface AdopterFlags {
-    inaccurate: boolean;
-    duplicate: boolean;
-    verified_identity: boolean;
-    verified_address: boolean;
-    tooManyAdoptions: { count: number; threshold: number; periodDays: number } | null;
-    tooManyRequests: { count: number; threshold: number; periodDays: number } | null;
-}
+import type { AdopterFlags } from '@/types/adopter';
 
 interface Adopter {
     id: string;
@@ -78,14 +71,14 @@ function FlagBadges({ flags, t }: { flags: AdopterFlags; t: (key: string) => str
     if (flags.tooManyAdoptions) {
         badges.push(
             <span key="too_many_adoptions" className="text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap bg-orange-100 text-orange-700">
-                ⚠ {flags.tooManyAdoptions.count} {t('stats.adoptions') || 'adoptions'}/{flags.tooManyAdoptions.periodDays}d
+                ⚠ {flags.tooManyAdoptions.count} {t('stats.adoptions') || 'adoptions'} in {flags.tooManyAdoptions.actualSpanDays || flags.tooManyAdoptions.periodDays}d
             </span>
         );
     }
     if (flags.tooManyRequests) {
         badges.push(
             <span key="too_many_requests" className="text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap bg-purple-100 text-purple-700">
-                ⚠ {flags.tooManyRequests.count} {t('stats.requests') || 'requests'}/{flags.tooManyRequests.periodDays}d
+                ⚠ {flags.tooManyRequests.count} {t('stats.requests') || 'requests'} in {flags.tooManyRequests.actualSpanDays || flags.tooManyRequests.periodDays}d
             </span>
         );
     }

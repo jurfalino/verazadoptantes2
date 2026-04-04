@@ -84,8 +84,8 @@ export interface AdopterFlags {
     systemDuplicate: boolean;
     verified_identity: boolean;
     verified_address: boolean;
-    tooManyAdoptions: { count: number; threshold: number; periodDays: number } | null;
-    tooManyRequests: { count: number; threshold: number; periodDays: number } | null;
+    tooManyAdoptions: { count: number; threshold: number; periodDays: number; actualSpanDays?: number; startDate?: Date | null; endDate?: Date | null } | null;
+    tooManyRequests: { count: number; threshold: number; periodDays: number; actualSpanDays?: number; startDate?: Date | null; endDate?: Date | null } | null;
 }
 
 export interface AdoptionConfig {

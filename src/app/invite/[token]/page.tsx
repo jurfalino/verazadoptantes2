@@ -9,7 +9,7 @@ import { useShowToast } from '@/components/ui/Toast';
 import { getInvitePreview, joinOrganization } from '@/app/actions/organizations';
 
 export default function InvitePage({ params }: { params: Promise<{ token: string }> }) {
-    const { data: session, status } = useSession();
+    const { data: _session, status } = useSession();
     const router = useRouter();
     const { t } = useLanguage();
     const { openLogin } = useAuthContext();

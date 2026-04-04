@@ -2,6 +2,29 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { searchAdopter, SearchResult } from '@/app/actions';
+import type { SnippetField } from '@/app/actions';
+
+const SNIPPET_ICONS: Record<SnippetField, string> = {
+    name: '👤', contact: '📞', address: '📍',
+    family: '👨‍👩‍👧', adoption: '🐾', history: '📝',
+};
+
+function renderHighlightedSnippet(snippet: string, highlights: { start: number; end: number }[]) {
+    if (highlights.length === 0) return null;
+    const parts: React.ReactNode[] = [];
+    let lastEnd = 0;
+    for (const h of highlights) {
+        if (h.start > lastEnd) parts.push(snippet.slice(lastEnd, h.start));
+        parts.push(
+            <mark key={h.start} className="bg-amber-200/70 text-stone-900 rounded px-0.5 font-medium">
+                {snippet.slice(h.start, h.end)}
+            </mark>
+        );
+        lastEnd = h.end;
+    }
+    if (lastEnd < snippet.length) parts.push(snippet.slice(lastEnd));
+    return <>{parts}</>;
+}
 import { RatingBadge } from './RatingBadge';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
@@ -407,20 +430,35 @@ export default function SearchSection({ locale }: { locale?: string }) {
                                                 <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-teal-100 text-teal-700">✓ {t('flags.verified_address') || 'Verified Address'}</span>
                                             )}
                                             {res.flags.tooManyAdoptions && (
-                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">⚠ {res.flags.tooManyAdoptions.count} {t('stats.adoptions') || 'adoptions'}/{res.flags.tooManyAdoptions.periodDays}d</span>
+                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">⚠ {t('flags.too_many_adoptions').replace('{count}', res.flags.tooManyAdoptions.count.toString()).replace('{days}', (res.flags.tooManyAdoptions.actualSpanDays || res.flags.tooManyAdoptions.periodDays).toString())}</span>
                                             )}
                                             {res.flags.tooManyRequests && (
-                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">⚠ {res.flags.tooManyRequests.count} {t('stats.requests') || 'requests'}/{res.flags.tooManyRequests.periodDays}d</span>
+                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">⚠ {t('flags.too_many_requests').replace('{count}', res.flags.tooManyRequests.count.toString()).replace('{days}', (res.flags.tooManyRequests.actualSpanDays || res.flags.tooManyRequests.periodDays).toString())}</span>
                                             )}
                                         </div>
                                     </div>
 
-                                    {/* Match Context (if applicable) */}
-                                    {res.matchContext && (
-                                        <div className="mt-2 text-xs font-medium text-teal-800 bg-teal-50 px-2 py-1 rounded border border-teal-100 inline-block">
-                                            🔍 {t(`wizard.${res.matchContext}`) || res.matchContext}
-                                        </div>
-                                    )}
+                                    {/* Match Snippet — shows why this result appeared */}
+                                    {res.matchSnippet && (() => {
+                                        const s = res.matchSnippet;
+                                        // Suppress PII snippets for unauthenticated users
+                                        if (!isAuthenticated && (s.field === 'contact' || s.field === 'address')) return null;
+                                        const icon = SNIPPET_ICONS[s.field];
+                                        const label = t(`search.snippet_${s.field}`);
+                                        return (
+                                            <div className="mt-2 flex items-start gap-2 text-xs text-stone-600 bg-stone-50 px-3 py-2 rounded-lg border border-stone-100">
+                                                <span className="flex-shrink-0 mt-0.5">{icon}</span>
+                                                <span className="min-w-0">
+                                                    <span className="font-semibold text-stone-500">{label}:</span>{' '}
+                                                    {s.field === 'history' ? (
+                                                        <span className="italic">{t('search.snippet_history_generic')}</span>
+                                                    ) : (
+                                                        renderHighlightedSnippet(s.snippet, s.highlights) || s.snippet
+                                                    )}
+                                                </span>
+                                            </div>
+                                        );
+                                    })()}
 
                                     {/* Dates Row - bottom right */}
                                     <div className="flex justify-end gap-3 mt-2 pt-2 border-t border-stone-100 text-xs text-stone-500">

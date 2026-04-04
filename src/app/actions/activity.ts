@@ -31,7 +31,7 @@ const ACTIVITY_ACTIONS = [
  */
 export async function getOrgActivity(limit: number = 30): Promise<OrgActivityEntry[]> {
     try {
-        const user = await getUser();
+        const _user = await getUser();
         const { getOrgMemberEmails } = await import('@/app/actions/organizations');
         const emails = await getOrgMemberEmails();
 

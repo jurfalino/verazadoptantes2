@@ -2,7 +2,7 @@
 
 import { getDb } from '@/lib/db';
 import { notifications } from '@/db/schema';
-import { eq, and, desc, sql, or } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 
 /**

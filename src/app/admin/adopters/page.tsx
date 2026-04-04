@@ -6,7 +6,7 @@ import Link from "next/link";
 import AdminAdopterList from "@/components/AdminAdopterList";
 import { enrichAdopters } from "@/app/actions/enrichAdopters";
 import { getRatingColors, getRatingDescription } from "@/lib/ratingColors";
-import { formatShortDate } from "@/lib/dates";
+
 
 export default async function AdminAdoptersPage({ searchParams }: { searchParams: Promise<{ q?: string; country?: string; rating?: string; user?: string }> }) {
     const db = await getDb();

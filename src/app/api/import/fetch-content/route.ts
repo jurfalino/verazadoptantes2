@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
                         };
 
                         if (scraperData.success && scraperData.data) {
-                            const titlePrefix = scraperData.data.author ? `[${scraperData.data.author}]\n\n` : '';
+                            const _titlePrefix = scraperData.data.author ? `[${scraperData.data.author}]\n\n` : '';
                             logger.info('Social media scraper success', {
                                 userEmail: session?.user?.email || 'anonymous',
                                 url,

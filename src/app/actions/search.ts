@@ -6,16 +6,14 @@ import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { SEARCH_RESULT_LIMIT, SEARCH_ENRICHMENT_LIMIT } from '@/config/constants';
-import type { SearchResponse } from './types';
+import type { SearchResponse, MatchSnippet } from './types';
 import { enrichAdopters } from './enrichAdopters';
 
 const MIN_PHONE_DIGITS = 4;
 
 // Helper to detect if query looks like a phone number
 function isPhoneLikeQuery(query: string): boolean {
-    // Remove common phone separators and check if mostly digits
     const digitsOnly = query.replace(/[\s\-\.\(\)\+]/g, '');
-    // If more than 50% of remaining chars are digits, treat as phone-like
     const digitCount = (digitsOnly.match(/\d/g) || []).length;
     return digitCount > 0 && digitCount / digitsOnly.length > 0.5;
 }
@@ -24,54 +22,233 @@ function countDigits(query: string): number {
     return (query.match(/\d/g) || []).length;
 }
 
-// Helper to perform parallel searches
-async function searchHistoryIds(db: any, query: string): Promise<string[]> {
+// ── P1: LIKE wildcard escaping ──────────────────────────────────────
+
+/** Escape SQL LIKE wildcards so user input is treated as literal text */
+function escapeLike(str: string): string {
+    return str.replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
+// ── Tokenization ────────────────────────────────────────────────────
+
+function tokenize(query: string): string[] {
+    const tokens = query.split(/\s+/).filter(t => t.length >= 2);
+    return tokens.length > 0 ? tokens : [query];
+}
+
+function allTokensMatch(text: string | null | undefined, tokens: string[]): boolean {
+    if (!text) return false;
+    const lower = text.toLowerCase();
+    return tokens.every(t => lower.includes(t.toLowerCase()));
+}
+
+function anyTokenMatch(text: string | null | undefined, tokens: string[]): boolean {
+    if (!text) return false;
+    const lower = text.toLowerCase();
+    return tokens.some(t => lower.includes(t.toLowerCase()));
+}
+
+function countTokenMatches(text: string | null | undefined, tokens: string[]): number {
+    if (!text) return 0;
+    const lower = text.toLowerCase();
+    return tokens.filter(t => lower.includes(t.toLowerCase())).length;
+}
+
+// ── P3: Multi-token snippet extraction ──────────────────────────────
+
+/**
+ * Extract snippet with highlight ranges for ALL matching tokens.
+ * Centers the window on the best anchor (full query > first token).
+ * Then finds every token occurrence within the window.
+ */
+function extractSnippet(text: string, query: string, tokens: string[], maxLen = 80): { snippet: string; highlights: { start: number; end: number }[] } | null {
+    const lowerText = text.toLowerCase();
+
+    // Find anchor position for window centering
+    let anchorIdx = lowerText.indexOf(query.toLowerCase());
+    let anchorLen = query.length;
+
+    if (anchorIdx === -1) {
+        for (const token of tokens) {
+            const idx = lowerText.indexOf(token.toLowerCase());
+            if (idx !== -1) {
+                anchorIdx = idx;
+                anchorLen = token.length;
+                break;
+            }
+        }
+    }
+
+    if (anchorIdx === -1) return null;
+
+    // Build text window
+    const matchEnd = anchorIdx + anchorLen;
+    const halfWindow = Math.floor((maxLen - anchorLen) / 2);
+    let start = Math.max(0, anchorIdx - halfWindow);
+    let end = Math.min(text.length, matchEnd + halfWindow);
+
+    if (start === 0) end = Math.min(text.length, maxLen);
+    if (end === text.length) start = Math.max(0, text.length - maxLen);
+
+    let snippet = text.slice(start, end).trim();
+    const prefix = start > 0 ? '...' : '';
+    const suffix = end < text.length ? '...' : '';
+    snippet = prefix + snippet + suffix;
+
+    // Find ALL token highlights within the final snippet
+    const snippetLower = snippet.toLowerCase();
+    const rawHighlights: { start: number; end: number }[] = [];
+
+    for (const token of tokens) {
+        const tokenLower = token.toLowerCase();
+        let searchFrom = 0;
+        while (searchFrom < snippetLower.length) {
+            const idx = snippetLower.indexOf(tokenLower, searchFrom);
+            if (idx === -1) break;
+            rawHighlights.push({ start: idx, end: idx + token.length });
+            searchFrom = idx + token.length;
+        }
+    }
+
+    // Sort and merge overlapping ranges
+    rawHighlights.sort((a, b) => a.start - b.start);
+    const highlights: { start: number; end: number }[] = [];
+    for (const h of rawHighlights) {
+        const last = highlights[highlights.length - 1];
+        if (last && h.start <= last.end) {
+            last.end = Math.max(last.end, h.end);
+        } else {
+            highlights.push({ ...h });
+        }
+    }
+
+    return { snippet, highlights };
+}
+
+function buildSnippet(
+    field: MatchSnippet['field'],
+    text: string | null | undefined,
+    query: string,
+    tokens: string[]
+): MatchSnippet | null {
+    if (!text) return null;
+    const result = extractSnippet(text, query, tokens);
+    if (!result) return null;
+    return { field, ...result };
+}
+
+// ── Deep search helpers ─────────────────────────────────────────────
+
+interface DeepMatch {
+    adopterId: string;
+    matchedText: string;
+}
+
+async function searchHistoryMatches(db: any, tokens: string[]): Promise<DeepMatch[]> {
     try {
-        const logs = await db.select({ adopterId: adopterHistory.adopterId })
+        const conditions = tokens.map(t => like(adopterHistory.changes, `%${escapeLike(t)}%`));
+        const logs = await db.select({
+            adopterId: adopterHistory.adopterId,
+            changes: adopterHistory.changes,
+        })
             .from(adopterHistory)
-            .where(like(adopterHistory.changes, `%${query}%`))
+            .where(conditions.length === 1 ? conditions[0] : or(...conditions))
             .limit(SEARCH_RESULT_LIMIT);
-        return logs.map((l: any) => l.adopterId);
+        return logs.map((l: any) => ({
+            adopterId: l.adopterId,
+            matchedText: l.changes || '',
+        }));
     } catch (e) {
         logger.warn('History search error', { error: e instanceof Error ? e.message : String(e) });
         return [];
     }
 }
 
-async function searchAdoptionsIds(db: any, query: string): Promise<string[]> {
+async function searchAdoptionMatches(db: any, tokens: string[]): Promise<DeepMatch[]> {
     try {
-        const adoptionLogs = await db.select({ adopterId: adoptions.adopterId })
+        const conditions = tokens.flatMap(t => [
+            like(adoptions.animalName, `%${escapeLike(t)}%`),
+            like(adoptions.details, `%${escapeLike(t)}%`),
+        ]);
+        const adoptionLogs = await db.select({
+            adopterId: adoptions.adopterId,
+            animalName: adoptions.animalName,
+            details: adoptions.details,
+        })
             .from(adoptions)
-            .where(or(
-                like(adoptions.animalName, `%${query}%`),
-                like(adoptions.details, `%${query}%`)
-            ))
+            .where(conditions.length === 1 ? conditions[0] : or(...conditions))
             .limit(SEARCH_RESULT_LIMIT);
-        return adoptionLogs.map((l: any) => l.adopterId);
+        return adoptionLogs.map((l: any) => {
+            const nameMatches = countTokenMatches(l.animalName, tokens);
+            const detailMatches = countTokenMatches(l.details, tokens);
+            const matchedText = nameMatches >= detailMatches ? (l.animalName || '') : (l.details || '');
+            return { adopterId: l.adopterId, matchedText };
+        });
     } catch (e) {
         logger.warn('Adoption search error', { error: e instanceof Error ? e.message : String(e) });
         return [];
     }
 }
 
+// ── Relevance scoring ───────────────────────────────────────────────
+
+const WEIGHTS = {
+    name_exact: 100,
+    name_contains: 50,
+    name_tokens: 35,
+    name_partial: 20,
+    contact: 40,
+    contact_partial: 25,
+    address: 25,
+    address_partial: 15,
+    family: 20,
+    family_partial: 12,
+    adoption: 15,
+    history: 10,
+    query_coverage_full: 40,
+    has_thumbnail: 5,
+    has_rating: 3,
+    verified: 2,
+    recent_update: 3,
+} as const;
+
+const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+
+// ── Build SQL conditions ────────────────────────────────────────────
+
+function buildProfileSearchConditions(tokens: string[]) {
+    const searchableFields = [adopters.name, adopters.contactInfo, adopters.addressInfo, adopters.familyMembers];
+
+    if (tokens.length === 1) {
+        return or(...searchableFields.map(f => like(f, `%${escapeLike(tokens[0])}%`)));
+    }
+
+    const tokenConditions = tokens.flatMap(token =>
+        searchableFields.map(f => like(f, `%${escapeLike(token)}%`))
+    );
+    return or(...tokenConditions);
+}
+
+// ── Main search ─────────────────────────────────────────────────────
+
 export async function searchAdopter(query: string): Promise<SearchResponse> {
     let user = 'unknown';
     try {
         const db = await getDb();
-        // getUser() is for logging only — search is public (PII masking is client-side)
-        try { user = await getUser(); } catch { /* unauthenticated — continue */ }
+        try { user = await getUser(); } catch { /* unauthenticated */ }
         if (!db) return { results: [] };
 
-        // Normalize query
         const normalizedQuery = query.trim();
         if (!normalizedQuery) return { results: [] };
 
-        // Validate phone-like queries have minimum digits
         if (isPhoneLikeQuery(normalizedQuery) && countDigits(normalizedQuery) < MIN_PHONE_DIGITS) {
             return { results: [], validationError: 'min_digits' };
         }
 
-        // Look up current user's country for geo-filtering
+        const tokens = tokenize(normalizedQuery);
+        const isMultiToken = tokens.length > 1;
+
+        // Geo-filtering
         let userCountry: string | null = null;
         try {
             const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
@@ -81,9 +258,9 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
                 ).bind(user).first<{ country: string | null }>();
                 userCountry = row?.country || null;
             }
-        } catch { /* country lookup is best-effort */ }
+        } catch { /* best-effort */ }
 
-        // Log the search (fire and forget)
+        // Log search (fire and forget)
         (async () => {
             try {
                 await db.insert(searches).values({
@@ -94,65 +271,61 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
                     lastSearchedAt: new Date(),
                 }).onConflictDoUpdate({
                     target: searches.query,
-                    set: {
-                        count: sql`count + 1`,
-                        lastSearchedAt: new Date()
-                    }
+                    set: { count: sql`count + 1`, lastSearchedAt: new Date() }
                 });
             } catch (e) { logger.warn('Failed to log search query', { error: e instanceof Error ? e.message : String(e) }); }
         })();
 
-        // 1. Search Main Profile (Name, Contact, Address, Family)
-        const profileConditions = [
+        // 1. Profile search + 2. Parallel deep search
+        const profileConditions: any[] = [
             isNull(adopters.deletedAt),
-            or(
-                like(adopters.name, `%${normalizedQuery}%`),
-                like(adopters.contactInfo, `%${normalizedQuery}%`),
-                like(adopters.familyMembers, `%${normalizedQuery}%`)
-            )
+            buildProfileSearchConditions(tokens),
         ];
-        // Apply country filter if user has a country set
-        if (userCountry) {
-            profileConditions.push(eq(adopters.country, userCountry));
-        }
+        if (userCountry) profileConditions.push(eq(adopters.country, userCountry));
+
         const profileQuery = db.select().from(adopters).where(
             and(...profileConditions)
         ).limit(SEARCH_ENRICHMENT_LIMIT);
 
-        // 2. Parallel Deep Search (History & Adoptions)
-        const [directResults, historyIds, adoptionIds] = await Promise.all([
+        const [directResults, historyMatches, adoptionMatches] = await Promise.all([
             profileQuery,
-            searchHistoryIds(db, normalizedQuery),
-            searchAdoptionsIds(db, normalizedQuery)
+            searchHistoryMatches(db, tokens),
+            searchAdoptionMatches(db, tokens)
         ]);
 
-        // Merge IDs unique
-        const extraIds = new Set([...historyIds, ...adoptionIds]);
+        // Build deep search lookup maps
+        const historyTextMap = new Map<string, string>();
+        const adoptionTextMap = new Map<string, string>();
+        const historyIds: string[] = [];
+        const adoptionIds: string[] = [];
 
-        // Remove IDs already found in directResults
+        for (const m of historyMatches) {
+            historyIds.push(m.adopterId);
+            if (!historyTextMap.has(m.adopterId)) historyTextMap.set(m.adopterId, m.matchedText);
+        }
+        for (const m of adoptionMatches) {
+            adoptionIds.push(m.adopterId);
+            if (!adoptionTextMap.has(m.adopterId)) adoptionTextMap.set(m.adopterId, m.matchedText);
+        }
+
+        // Merge deep search IDs
+        const extraIds = new Set([...historyIds, ...adoptionIds]);
         directResults.forEach((r: any) => extraIds.delete(r.id));
 
-        // Fetch profiles for extra IDs
         let extraProfiles: typeof adopters.$inferSelect[] = [];
         if (extraIds.size > 0) {
             const extraConditions = [inArray(adopters.id, Array.from(extraIds))];
-            if (userCountry) {
-                extraConditions.push(eq(adopters.country, userCountry));
-            }
-            extraProfiles = await db.select().from(adopters)
-                .where(and(...extraConditions));
+            if (userCountry) extraConditions.push(eq(adopters.country, userCountry));
+            extraProfiles = await db.select().from(adopters).where(and(...extraConditions));
         }
 
-        // Combine Results
         const allProfiles = [...directResults, ...extraProfiles];
         const adopterIds = allProfiles.map(a => a.id);
-
         if (adopterIds.length === 0) return { results: [] };
 
-        // Enrich all adopters with ratings, stats, flags, and thumbnails
         const enrichmentMap = await enrichAdopters(db, adopterIds);
 
-        // Log search hits for each result (fire and forget)
+        // Log search hits (fire and forget)
         (async () => {
             try {
                 for (const a of allProfiles) {
@@ -167,31 +340,121 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
             } catch (e) { logger.warn('Failed to log search hits', { error: e instanceof Error ? e.message : String(e) }); }
         })();
 
-        // Map to enriched result type
+        // ── Score & snippet each result ──────────────────────────
+        const qLower = normalizedQuery.toLowerCase();
+
         const allResults = allProfiles.map(a => {
-            // Determine match context
-            let context = "";
-            const qLower = normalizedQuery.toLowerCase();
+            const enrichment = enrichmentMap.get(a.id);
+            let score = 0;
+            let bestSnippet: MatchSnippet | null = null;
+            let bestSnippetWeight = 0;
 
-            const basicMatch =
-                (a.name?.toLowerCase().includes(qLower)) ||
-                (a.contactInfo?.toLowerCase().includes(qLower));
+            // ── Name ─────────────────────────────────────────────
+            const nameLower = a.name?.toLowerCase() || '';
+            if (nameLower === qLower) {
+                score += WEIGHTS.name_exact;
+                const s = buildSnippet('name', a.name, normalizedQuery, tokens);
+                if (s && WEIGHTS.name_exact > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.name_exact; }
+            } else if (nameLower.includes(qLower)) {
+                score += WEIGHTS.name_contains;
+                const s = buildSnippet('name', a.name, normalizedQuery, tokens);
+                if (s && WEIGHTS.name_contains > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.name_contains; }
+            } else if (isMultiToken && allTokensMatch(a.name, tokens)) {
+                score += WEIGHTS.name_tokens;
+                const s = buildSnippet('name', a.name, normalizedQuery, tokens);
+                if (s && WEIGHTS.name_tokens > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.name_tokens; }
+            } else if (isMultiToken && anyTokenMatch(a.name, tokens)) {
+                const matched = countTokenMatches(a.name, tokens);
+                score += Math.round(WEIGHTS.name_partial * (matched / tokens.length));
+                const s = buildSnippet('name', a.name, normalizedQuery, tokens);
+                if (s && WEIGHTS.name_partial > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.name_partial; }
+            }
 
-            if (!basicMatch) {
-                if (a.familyMembers?.toLowerCase().includes(qLower)) {
-                    context = "match_family";
-                } else if (historyIds.includes(a.id)) {
-                    context = "match_history";
-                } else if (adoptionIds.includes(a.id)) {
-                    context = "match_adoption";
+            // ── Contact ──────────────────────────────────────────
+            if (a.contactInfo?.toLowerCase().includes(qLower)) {
+                score += WEIGHTS.contact;
+                const s = buildSnippet('contact', a.contactInfo, normalizedQuery, tokens);
+                if (s && WEIGHTS.contact > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.contact; }
+            } else if (isMultiToken && anyTokenMatch(a.contactInfo, tokens)) {
+                const matched = countTokenMatches(a.contactInfo, tokens);
+                score += Math.round(WEIGHTS.contact_partial * (matched / tokens.length));
+                const s = buildSnippet('contact', a.contactInfo, normalizedQuery, tokens);
+                if (s && WEIGHTS.contact_partial > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.contact_partial; }
+            }
+
+            // ── Address ──────────────────────────────────────────
+            if (a.addressInfo?.toLowerCase().includes(qLower)) {
+                score += WEIGHTS.address;
+                const s = buildSnippet('address', a.addressInfo, normalizedQuery, tokens);
+                if (s && WEIGHTS.address > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.address; }
+            } else if (isMultiToken && anyTokenMatch(a.addressInfo, tokens)) {
+                const matched = countTokenMatches(a.addressInfo, tokens);
+                score += Math.round(WEIGHTS.address_partial * (matched / tokens.length));
+                const s = buildSnippet('address', a.addressInfo, normalizedQuery, tokens);
+                if (s && WEIGHTS.address_partial > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.address_partial; }
+            }
+
+            // ── Family ───────────────────────────────────────────
+            if (a.familyMembers?.toLowerCase().includes(qLower)) {
+                score += WEIGHTS.family;
+                const s = buildSnippet('family', a.familyMembers, normalizedQuery, tokens);
+                if (s && WEIGHTS.family > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.family; }
+            } else if (isMultiToken && anyTokenMatch(a.familyMembers, tokens)) {
+                const matched = countTokenMatches(a.familyMembers, tokens);
+                score += Math.round(WEIGHTS.family_partial * (matched / tokens.length));
+                const s = buildSnippet('family', a.familyMembers, normalizedQuery, tokens);
+                if (s && WEIGHTS.family_partial > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.family_partial; }
+            }
+
+            // ── Adoption deep search ─────────────────────────────
+            if (adoptionIds.includes(a.id)) {
+                score += WEIGHTS.adoption;
+                const matchedText = adoptionTextMap.get(a.id);
+                if (matchedText && WEIGHTS.adoption > bestSnippetWeight) {
+                    const s = buildSnippet('adoption', matchedText, normalizedQuery, tokens);
+                    if (s) { bestSnippet = s; bestSnippetWeight = WEIGHTS.adoption; }
                 }
             }
 
-            const enrichment = enrichmentMap.get(a.id);
+            // ── History deep search ──────────────────────────────
+            if (historyIds.includes(a.id)) {
+                score += WEIGHTS.history;
+                if (WEIGHTS.history > bestSnippetWeight) {
+                    bestSnippet = { field: 'history', snippet: '', highlights: [] };
+                    bestSnippetWeight = WEIGHTS.history;
+                }
+            }
+
+            // ── Cross-field coverage bonus ────────────────────────
+            if (isMultiToken) {
+                const allSearchableText = [
+                    a.name, a.contactInfo, a.addressInfo, a.familyMembers,
+                    adoptionTextMap.get(a.id), historyTextMap.get(a.id)
+                ].filter(Boolean).join(' ');
+                const coveredTokens = countTokenMatches(allSearchableText, tokens);
+                const coverage = coveredTokens / tokens.length;
+                if (coverage >= 1) {
+                    score += WEIGHTS.query_coverage_full;
+                } else {
+                    score += Math.round(WEIGHTS.query_coverage_full * coverage * 0.5);
+                }
+            }
+
+            // ── Bonus signals ────────────────────────────────────
+            if (enrichment?.thumbnail) score += WEIGHTS.has_thumbnail;
+            if (enrichment?.avgRating != null) score += WEIGHTS.has_rating;
+            if (enrichment?.flags.verified_identity) score += WEIGHTS.verified;
+            if (a.updatedAt) {
+                const updatedMs = typeof a.updatedAt === 'number'
+                    ? a.updatedAt * 1000
+                    : new Date(a.updatedAt).getTime();
+                if (Date.now() - updatedMs < NINETY_DAYS_MS) score += WEIGHTS.recent_update;
+            }
 
             return {
                 adopter: a,
-                matchContext: context,
+                matchSnippet: bestSnippet,
+                relevanceScore: score,
                 avgRating: enrichment?.avgRating ?? null,
                 thumbnail: enrichment?.thumbnail ?? null,
                 stats: enrichment?.stats ?? { searchHits: 0, profileViews: 0, requests: 0, adoptions: 0 },
@@ -203,19 +466,14 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
             };
         });
 
-        // Apply result cap
-        const totalCount = allResults.length;
+        allResults.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
-        // Log search hit
-        logger.info('Search', { query, resultCount: Math.min(totalCount, SEARCH_RESULT_LIMIT), truncated: totalCount > SEARCH_RESULT_LIMIT, user });
+        const totalCount = allResults.length;
+        logger.info('Search', { query, tokens: tokens.length, resultCount: Math.min(totalCount, SEARCH_RESULT_LIMIT), truncated: totalCount > SEARCH_RESULT_LIMIT, user });
         logAudit({ userEmail: user, action: 'search', details: { query, resultCount: Math.min(totalCount, SEARCH_RESULT_LIMIT) } });
 
         if (totalCount > SEARCH_RESULT_LIMIT) {
-            return {
-                results: allResults.slice(0, SEARCH_RESULT_LIMIT),
-                truncated: true,
-                totalCount
-            };
+            return { results: allResults.slice(0, SEARCH_RESULT_LIMIT), truncated: true, totalCount };
         }
 
         return { results: allResults };

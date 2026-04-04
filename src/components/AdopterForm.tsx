@@ -6,16 +6,16 @@ import { saveAdopter, saveImage, searchAdopter } from "@/app/actions";
 import type { SearchResult } from "@/app/actions";
 import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
-import { CollapsibleSection } from '@/components/CollapsibleSection';
+
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
-import { formatDateTime, formatShortDate } from '@/lib/dates';
+
 import { getSourceIcon } from '@/lib/sourceIcons';
 import { getCountryByCode } from '@/config/countries';
-import { countRecordsInPeriod } from '@/lib/adoptionFilters';
+import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
 import { renderTextWithLinks } from '@/lib/textUtils';
 import { AdopterFlagging } from '@/components/AdopterFlagging';
 import type { AdopterFlaggingHandle } from '@/components/AdopterFlagging';
@@ -29,15 +29,17 @@ interface AdopterFormProps {
     images?: AdopterImage[];
     adopterId?: string;
     avgRating?: number | null;
+    profileViews?: number;
     flags?: AdopterFlag[];
     adoptions?: AdoptionRecord[];
     adoptionConfig?: AdoptionConfig;
     isAdmin?: boolean;
     formPrefill?: FormSubmissionPrefill | null;
     userNameMap?: Record<string, string>;
+    hasDuplicateBanner?: boolean;
 }
 
-export function AdopterForm({ initialData, history = [], currentUser, images = [], adopterId, avgRating, flags = [], adoptions = [], adoptionConfig, isAdmin: _isAdmin = false, formPrefill = null, userNameMap = {} }: AdopterFormProps) {
+export function AdopterForm({ initialData, history = [], currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin: _isAdmin = false, formPrefill = null, userNameMap = {}, hasDuplicateBanner = false }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -56,14 +58,19 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
         [currentUser, session]
     );
 
-    // Stable reference date for period filtering (avoids hydration mismatch)
-    const referenceDate = useMemo(() => new Date(), []);
+    // Sliding window logic strictly memoized to avoid expensive sorting on every render
     const periodDays = adoptionConfig?.periodDays || 90;
     const threshold = adoptionConfig?.threshold || 5;
-    const adoptionsInPeriod = countRecordsInPeriod(adoptions, 'adoption', periodDays, referenceDate);
     const requestsPeriodDays = adoptionConfig?.requestsPeriodDays || 30;
     const requestsThreshold = adoptionConfig?.requestsThreshold || 3;
-    const requestsInPeriod = countRecordsInPeriod(adoptions, 'adoption_request', requestsPeriodDays, referenceDate);
+
+    const adoptionsDensity = useMemo(() => {
+        return computeMaxDensityPeriod(adoptions, 'adoption', periodDays);
+    }, [adoptions, periodDays]);
+
+    const requestsDensity = useMemo(() => {
+        return computeMaxDensityPeriod(adoptions, 'adoption_request', requestsPeriodDays);
+    }, [adoptions, requestsPeriodDays]);
 
     const [isEditing, setIsEditing] = useState(isNew);
     const [loading, setLoading] = useState(false);
@@ -278,104 +285,8 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
             <form onSubmit={handleSave} className="p-5">
                 {/* ═══ IDENTITY HEADER ═══ */}
                 <div className="flex flex-col gap-3 mb-4">
-                    {/* Top row: actions (right-aligned) */}
-                    <div className="flex items-center justify-end gap-2">
-                        {isEditing ? (
-                            <>
-                                <button
-                                    type="button"
-                                    onClick={handleCancel}
-                                    className="px-3 py-1.5 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors"
-                                >
-                                    {t('common.cancel')}
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={loading}
-                                    className="px-4 py-1.5 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 focus:ring-4 focus:ring-teal-200 disabled:opacity-70 disabled:cursor-not-allowed transition-all shadow-lg shadow-teal-700/30 transform active:scale-95"
-                                >
-                                    {loading ? t('common.loading') : t('common.save')}
-                                </button>
-                            </>
-                        ) : (
-                            <>
-                                <button
-                                    type="button"
-                                    onClick={handleClickToEdit}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-lg transition-colors"
-                                >
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                                    {t('common.edit')}
-                                </button>
-                                {/* Overflow menu */}
-                                {!isNew && initialData && (
-                                    <div className="relative">
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowReportMenu(!showReportMenu)}
-                                            className="flex items-center gap-1 p-1.5 rounded-lg text-stone-500 bg-stone-50 hover:text-stone-600 hover:bg-stone-100 transition-all duration-150"
-                                            title={t('flagging.report_actions') || 'Report'}
-                                        >
-                                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                                                <circle cx="5" cy="12" r="2" />
-                                                <circle cx="12" cy="12" r="2" />
-                                                <circle cx="19" cy="12" r="2" />
-                                            </svg>
-                                        </button>
-                                        {showReportMenu && (
-                                            <>
-                                                <div className="fixed inset-0 z-40" onClick={() => setShowReportMenu(false)} />
-                                                <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-stone-200 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            if (!session?.user) { openLogin(); setShowReportMenu(false); return; }
-                                                            setShowReportMenu(false);
-                                                            flaggingRef.current?.openAction('duplicate');
-                                                        }}
-                                                        className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left"
-                                                    >
-                                                        <span className="text-lg mt-0.5">🔀</span>
-                                                        <div>
-                                                            <div className="text-sm font-semibold text-stone-900">{t('flagging.menu_duplicate') || 'Report Duplicate'}</div>
-                                                            <div className="text-xs text-stone-500 mt-0.5">{t('flagging.menu_duplicate_desc') || 'Flag as duplicate of another profile'}</div>
-                                                        </div>
-                                                    </button>
-                                                    <div className="border-t border-stone-100" />
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => { setShowReportMenu(false); flaggingRef.current?.openAction('inaccuracy'); }}
-                                                        className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left"
-                                                    >
-                                                        <span className="text-lg mt-0.5">✏️</span>
-                                                        <div>
-                                                            <div className="text-sm font-semibold text-stone-900">{t('flagging.menu_inaccuracy') || 'Report Inaccuracy'}</div>
-                                                            <div className="text-xs text-stone-500 mt-0.5">{t('flagging.menu_inaccuracy_desc') || 'Information about me is wrong'}</div>
-                                                        </div>
-                                                    </button>
-                                                    <div className="border-t border-stone-100" />
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => { setShowReportMenu(false); flaggingRef.current?.openAction('deletion'); }}
-                                                        className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left"
-                                                    >
-                                                        <span className="text-lg mt-0.5">🗑️</span>
-                                                        <div>
-                                                            <div className="text-sm font-semibold text-rose-700">{t('flagging.menu_deletion') || 'Request Removal'}</div>
-                                                            <div className="text-xs text-stone-500 mt-0.5">{t('flagging.menu_deletion_desc') || 'Remove my data from this platform'}</div>
-                                                        </div>
-                                                    </button>
-                                                </div>
-                                            </>
-                                        )}
-                                    </div>
-                                )}
-                            </>
-                        )}
-                    </div>
-
-                    {/* Identity row: avatar + name + metadata */}
-                    <div className="flex items-center gap-3">
+                    {/* Identity header row features avatar, name/input, and actions all inline */}
+                    <div className="flex items-start md:items-center gap-3">
                         {/* Avatar */}
                         {isNew && formPrefill?.selfieUrl ? (
                             <div className="w-11 h-11 md:w-14 md:h-14 rounded-xl bg-teal-100 overflow-hidden ring-2 ring-teal-200 shadow-sm flex-shrink-0">
@@ -405,45 +316,172 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                             );
                         })()}
                         <div className="min-w-0 flex-1">
-                            {/* Inline-editable name */}
-                            {isEditing ? (
-                                <input
-                                    type="text"
-                                    required
-                                    className="w-full text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight bg-transparent border-b-2 border-teal-300 focus:border-teal-500 outline-none py-0.5 placeholder-stone-500 transition-all"
-                                    value={data.name}
-                                    onChange={e => setData({ ...data, name: e.target.value })}
-                                    placeholder={t('adopter.placeholder_name_aliases')}
-                                    autoFocus
-                                />
-                            ) : (
-                                <h1 className="text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate">
-                                    {!isNew && initialData ? initialData.name : t('adopter.title_new')}
-                                </h1>
-                            )}
+                            {/* Inline-editable name + Actions */}
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0 flex-1">
+                                    {isEditing ? (
+                                        <input
+                                            type="text"
+                                            required
+                                            className="w-full text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight bg-transparent border-b-2 border-teal-300 focus:border-teal-500 outline-none py-0.5 placeholder-stone-500 transition-all"
+                                            value={data.name}
+                                            onChange={e => setData({ ...data, name: e.target.value })}
+                                            placeholder={t('adopter.placeholder_name_aliases')}
+                                            autoFocus
+                                        />
+                                    ) : (
+                                        <h1 className="text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate">
+                                            {!isNew && initialData ? initialData.name : t('adopter.title_new')}
+                                        </h1>
+                                    )}
+                                </div>
+                                {/* Actions (right-aligned inline) */}
+                                <div className="flex items-center justify-end gap-2 flex-shrink-0">
+                                    {isEditing ? (
+                                        <>
+                                            <button
+                                                type="button"
+                                                onClick={handleCancel}
+                                                className="px-3 py-1.5 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors"
+                                            >
+                                                {t('common.cancel')}
+                                            </button>
+                                            <button
+                                                type="submit"
+                                                disabled={loading}
+                                                className="px-4 py-1.5 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 focus:ring-4 focus:ring-teal-200 disabled:opacity-70 disabled:cursor-not-allowed transition-all shadow-lg shadow-teal-700/30 transform active:scale-95"
+                                            >
+                                                {loading ? t('common.loading') : t('common.save')}
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <button
+                                                type="button"
+                                                onClick={handleClickToEdit}
+                                                className="flex items-center justify-center w-8 h-8 text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-lg transition-colors"
+                                                title={t('common.edit') || 'Edit'}
+                                            >
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                            </button>
+                                            {/* Overflow menu */}
+                                            {!isNew && initialData && (
+                                                <div className="relative">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowReportMenu(!showReportMenu)}
+                                                        className="flex items-center gap-1 p-1.5 rounded-lg text-stone-500 bg-stone-50 hover:text-stone-600 hover:bg-stone-100 transition-all duration-150"
+                                                        title={t('flagging.report_actions') || 'Report'}
+                                                    >
+                                                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                                            <circle cx="5" cy="12" r="2" />
+                                                            <circle cx="12" cy="12" r="2" />
+                                                            <circle cx="19" cy="12" r="2" />
+                                                        </svg>
+                                                    </button>
+                                                    {showReportMenu && (
+                                                        <>
+                                                            <div className="fixed inset-0 z-40" onClick={() => setShowReportMenu(false)} />
+                                                            <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-stone-200 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
+                                                                {/* Share Profile */}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={async () => {
+                                                                        const url = `${window.location.origin}/adopter/${id}`;
+                                                                        if (navigator.share) {
+                                                                            try { await navigator.share({ title: initialData?.name || '', url }); } catch { /* cancelled */ }
+                                                                        } else {
+                                                                            try { await navigator.clipboard.writeText(url); } catch {
+                                                                                const ta = document.createElement('textarea'); ta.value = url; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+                                                                            }
+                                                                        }
+                                                                        setShowReportMenu(false);
+                                                                    }}
+                                                                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left"
+                                                                >
+                                                                    <span className="text-lg mt-0.5">🔗</span>
+                                                                    <div>
+                                                                        <div className="text-sm font-semibold text-stone-900">{t('common.share') || 'Share Profile'}</div>
+                                                                        <div className="text-xs text-stone-500 mt-0.5">{t('common.copy_link') || 'Copy link or share'}</div>
+                                                                    </div>
+                                                                </button>
+                                                                <div className="border-t border-stone-100" />
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        if (!session?.user) { openLogin(); setShowReportMenu(false); return; }
+                                                                        setShowReportMenu(false);
+                                                                        flaggingRef.current?.openAction('duplicate');
+                                                                    }}
+                                                                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left"
+                                                                >
+                                                                    <span className="text-lg mt-0.5">🔀</span>
+                                                                    <div>
+                                                                        <div className="text-sm font-semibold text-stone-900">{t('flagging.menu_duplicate') || 'Report Duplicate'}</div>
+                                                                        <div className="text-xs text-stone-500 mt-0.5">{t('flagging.menu_duplicate_desc') || 'Flag as duplicate of another profile'}</div>
+                                                                    </div>
+                                                                </button>
+                                                                <div className="border-t border-stone-100" />
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => { setShowReportMenu(false); flaggingRef.current?.openAction('inaccuracy'); }}
+                                                                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left"
+                                                                >
+                                                                    <span className="text-lg mt-0.5">✏️</span>
+                                                                    <div>
+                                                                        <div className="text-sm font-semibold text-stone-900">{t('flagging.menu_inaccuracy') || 'Report Inaccuracy'}</div>
+                                                                        <div className="text-xs text-stone-500 mt-0.5">{t('flagging.menu_inaccuracy_desc') || 'Information about me is wrong'}</div>
+                                                                    </div>
+                                                                </button>
+                                                                <div className="border-t border-stone-100" />
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => { setShowReportMenu(false); flaggingRef.current?.openAction('deletion'); }}
+                                                                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left"
+                                                                >
+                                                                    <span className="text-lg mt-0.5">🗑️</span>
+                                                                    <div>
+                                                                        <div className="text-sm font-semibold text-rose-700">{t('flagging.menu_deletion') || 'Request Removal'}</div>
+                                                                        <div className="text-xs text-stone-500 mt-0.5">{t('flagging.menu_deletion_desc') || 'Remove my data from this platform'}</div>
+                                                                    </div>
+                                                                </button>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            </div>
                             {/* Metadata row */}
                             {!isNew && (
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-xs">
-                                    <span className="text-stone-500 font-mono break-all">ID: {id}</span>
                                     {initialData?.country && (() => {
                                         const c = getCountryByCode(initialData.country!);
                                         if (!c) return null;
                                         return <span className="text-stone-500">{currentLocale === 'es' ? c.nameEs : c.name}</span>;
                                     })()}
+                                    {profileViews !== undefined && profileViews > 0 && (
+                                        <span className="text-stone-500 inline-flex items-center gap-1">
+                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                            {profileViews} {t('stats.views') || 'views'}
+                                        </span>
+                                    )}
                                     {initialData?.sourceUrl && (
                                         <a href={initialData.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 hover:underline font-medium transition-colors">
                                             {getSourceIcon(initialData.sourceUrl, 'w-3 h-3')}
                                             <span>{t('adopter.view_source') || 'Source'}</span>
                                         </a>
                                     )}
-                                    {/* Rating badge */}
+                                    {/* Rating badge — colored pill for severity visibility */}
                                     {avgRating !== null && avgRating !== undefined && (
                                         <div
                                             role="button"
                                             tabIndex={0}
                                             data-testid="rating-badge"
                                             onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
-                                            className="cursor-pointer hover:shadow-sm transition-shadow"
+                                            className="cursor-pointer hover:shadow-md transition-shadow"
                                         >
                                             <RatingBadge rating={avgRating} size="sm" />
                                         </div>
@@ -464,8 +502,9 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                             existingFlags={flags}
                             hasVerifiedAdoption={adoptions.some(a => a.identityVerified === 1)}
                             hasVerifiedAddress={adoptions.some(a => a.verifiedAddress && a.verifiedAddress.trim() !== '')}
-                            tooManyAdoptions={adoptionsInPeriod >= threshold ? { count: adoptionsInPeriod, threshold, periodDays } : undefined}
-                            tooManyRequests={requestsInPeriod >= requestsThreshold ? { count: requestsInPeriod, threshold: requestsThreshold, periodDays: requestsPeriodDays } : undefined}
+                            tooManyAdoptions={adoptionsDensity.count >= threshold ? { count: adoptionsDensity.count, actualSpanDays: adoptionsDensity.timeSpanDays, periodDays, startDate: adoptionsDensity.startDate, endDate: adoptionsDensity.endDate } : undefined}
+                            tooManyRequests={requestsDensity.count >= requestsThreshold ? { count: requestsDensity.count, actualSpanDays: requestsDensity.timeSpanDays, periodDays: requestsPeriodDays, startDate: requestsDensity.startDate, endDate: requestsDensity.endDate } : undefined}
+                            hasDuplicateBanner={hasDuplicateBanner}
                         />
                     </div>
                 )}
@@ -697,109 +736,6 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
                 </div>
             )}
 
-            {/* MERGED HISTORY LOG */}
-            {history && history.length > 0 && !isEditing && (
-                <CollapsibleSection
-                    title={t('audit.log_title')}
-                    count={history.length}
-                    defaultOpen={false}
-                    className="border-t border-teal-100/60 rounded-none shadow-none border-x-0 border-b-0"
-                >
-                    <div className="space-y-6 pb-6">
-                        {history.map((h) => {
-                            let changes = null;
-                            let eventType = 'update';
-                            try {
-                                const parsed = JSON.parse(h.changes as string);
-                                // Determine event type and data
-                                if (parsed.adoption_updated) {
-                                    eventType = 'adoption_updated';
-                                    changes = parsed.adoption_updated;
-                                } else if (parsed.adoption_added) {
-                                    eventType = 'adoption_added';
-                                    changes = parsed.adoption_added;
-                                } else if (parsed.adoption_deleted) {
-                                    eventType = 'adoption_deleted';
-                                    changes = parsed.adoption_deleted;
-                                } else if (parsed.image_deleted) {
-                                    eventType = 'image_deleted';
-                                    changes = parsed.image_deleted;
-                                } else {
-                                    // Fallback for old/direct profile updates
-                                    changes = parsed;
-                                }
-                            } catch (e) { console.warn('[AdopterForm] Failed to parse history changes', e); }
-
-                            return (
-                                <div key={h.id} className="text-sm border-l-4 border-teal-200 pl-4 py-3 bg-teal-50 rounded-r-lg mb-2">
-                                    <div className="flex justify-between items-start mb-2">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-teal-700 text-xs font-semibold uppercase tracking-wider">
-                                                {formatDateTime(new Date(h.changedAt as string | number))}
-                                            </span>
-                                            {/* Badge for event type */}
-                                            {eventType === 'adoption_added' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_adoption_added')}</span>}
-                                            {eventType === 'adoption_deleted' && <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_adoption_deleted')}</span>}
-                                            {eventType === 'image_deleted' && <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_image_deleted')}</span>}
-                                        </div>
-                                        <span className="text-xs px-2.5 py-0.5 bg-white border border-teal-100 rounded-full text-teal-700 font-medium shadow-sm">
-                                            {t('audit.by')} {(h.changedBy && userNameMap?.[h.changedBy]) || h.changedBy || t('common.anonymous')}
-                                        </span>
-                                    </div>
-
-                                    <div className="space-y-1.5">
-                                        {changes ? (
-                                            <>
-                                                {/* Profile Updates / Adoption Updates (Diffs) */}
-                                                {(eventType === 'update' || eventType === 'adoption_updated') && Object.entries(changes).map(([key, delta]: [string, any]) => (
-                                                    <div key={key} className="grid grid-cols-[120px_1fr] gap-3 items-start text-sm">
-                                                        <span className="font-semibold text-teal-800 capitalize truncate" title={key}>{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
-                                                        <div className="text-teal-700 break-words font-medium">
-                                                            <div className="line-through text-rose-400 text-xs mr-2 opacity-70 inline-block">
-                                                                {typeof delta.from === 'string' && delta.from.length > 30 ? delta.from.substring(0, 30) + '...' : (delta.from || t('audit.empty_val'))}
-                                                            </div>
-                                                            <span className="text-teal-700 mr-2">➜</span>
-                                                            <span className="text-teal-900 bg-teal-100 px-1.5 rounded">
-                                                                {delta.to || t('audit.empty_val')}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                ))}
-
-                                                {/* Added Adoption (Snapshot) */}
-                                                {eventType === 'adoption_added' && (
-                                                    <div className="text-teal-800 font-medium">
-                                                        {t('audit.desc_adoption_added')} <span className="font-semibold">{changes.animalName}</span> ({changes.species}) - {changes.status}
-                                                    </div>
-                                                )}
-
-                                                {/* Deleted Adoption (Snapshot) */}
-                                                {eventType === 'adoption_deleted' && (
-                                                    <div className="space-y-1 text-teal-800">
-                                                        <div><span className="font-semibold">{t('adoption.animal_name')}:</span> {changes.animalName} ({changes.species})</div>
-                                                        <div><span className="font-semibold">{t('adoption.status')}:</span> {changes.status}</div>
-                                                        <div className="flex items-center gap-1"><span className="font-semibold">{t('adoption.rating')}:</span> <RatingBadge rating={changes.rating} variant="inline" size="sm" /></div>
-                                                        {changes.details && <div className="text-xs italic mt-1">"{changes.details}"</div>}
-                                                    </div>
-                                                )}
-
-                                                {/* Deleted Image */}
-                                                {eventType === 'image_deleted' && (
-                                                    <div className="text-teal-800">
-                                                        {t('audit.desc_image_deleted')} <span className="italic opacity-75">"{changes.caption || t('common.untitled')}"</span> ({t('audit.by')} {formatShortDate(new Date(changes.uploadedAt))})
-                                                    </div>
-                                                )}
-                                            </>
-                                        ) : (
-                                            <span className="text-teal-700 italic text-xs">{t('audit.metadata_update')}</span>
-                                        )}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </CollapsibleSection>
-            )}
         </div>
     );
 }

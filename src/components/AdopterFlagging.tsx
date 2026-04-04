@@ -10,12 +10,13 @@ import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { zarazTrack } from '@/lib/zaraz';
+import { formatShortDate } from '@/lib/dates';
 
 export interface AdopterFlaggingHandle {
     openAction: (action: string) => void;
 }
 
-export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], hasVerifiedAdoption?: boolean, hasVerifiedAddress?: boolean, tooManyAdoptions?: { count: number; threshold: number; periodDays: number }, tooManyRequests?: { count: number; threshold: number; periodDays: number } }>(function AdopterFlagging({ adopterId, adopterName: _adopterName, existingFlags, hasVerifiedAdoption = false, hasVerifiedAddress = false, tooManyAdoptions, tooManyRequests }, ref) {
+export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], hasVerifiedAdoption?: boolean, hasVerifiedAddress?: boolean, tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, hasDuplicateBanner?: boolean }>(function AdopterFlagging({ adopterId, adopterName: _adopterName, existingFlags, hasVerifiedAdoption = false, hasVerifiedAddress = false, tooManyAdoptions, tooManyRequests, hasDuplicateBanner = false }, ref) {
     const router = useRouter();
     const { t } = useLanguage();
     const { data: _session } = useSession();
@@ -35,6 +36,13 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
     const [requesterName, setRequesterName] = useState('');
     const [requesterEmail, setRequesterEmail] = useState('');
     const [dataRequestSubmitted, setDataRequestSubmitted] = useState(false);
+    
+    // Tap-to-expand context hints for flags
+    const [showAdoptionsHint, setShowAdoptionsHint] = useState(false);
+    const [showRequestsHint, setShowRequestsHint] = useState(false);
+    const [showInaccurateHint, setShowInaccurateHint] = useState(false);
+    const [showIdentityHint, setShowIdentityHint] = useState(false);
+    const [showAddressHint, setShowAddressHint] = useState(false);
 
     // Fetch system-detected duplicate candidates on mount
     useEffect(() => {
@@ -44,7 +52,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
     const duplicateFlags = existingFlags.filter(f => f.reason === 'duplicate');
     const isFlaggedAsDuplicate = duplicateFlags.length > 0;
 
-    const inaccurateFlags = existingFlags.filter(f => f.reason === 'inaccurate_information');
+    const inaccurateFlags = existingFlags.filter(f => f.reason === 'inaccurate_information' || f.reason === 'inaccurate');
     const isFlaggedAsInaccurate = inaccurateFlags.length > 0;
 
     // Verification flags - include adoption-based verification
@@ -195,135 +203,172 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
 
 
 
-    const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+    const [showDuplicateHint, setShowDuplicateHint] = useState(false);
 
     return (
         <>
-            {/* Compact Flag Pills Row */}
-            <div className="flex flex-wrap items-center gap-2 mb-4">
-                {/* Inaccurate Information Flag */}
-                {isFlaggedAsInaccurate && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-100 text-rose-700 rounded-full text-xs font-semibold border border-rose-200 animate-in fade-in">
-                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
-                        {t('flags.inaccurate') || 'Inaccurate'}
-                    </span>
-                )}
-
-                {/* Duplicate - with See button */}
-                {isFlaggedAsDuplicate && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold border border-amber-200">
-                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L14 2.586A2 2 0 0012.586 2H9z" />
-                            <path d="M3 8a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
-                        </svg>
-                        {t('flags.duplicate') || 'Duplicate'}
-                        {duplicateFlags[0]?.targetAdopterId && (
+            {/* Flag Pills — split into warnings and verifications */}
+            <div className="space-y-2 mb-4">
+                {/* ⚠ Warnings: things that need attention */}
+                {(isFlaggedAsInaccurate || isFlaggedAsDuplicate || tooManyAdoptions || tooManyRequests) && (
+                    <div className="flex flex-wrap items-center gap-2">
+                        {/* Inaccurate Information Flag */}
+                        {isFlaggedAsInaccurate && (
                             <button
-                                onClick={() => setShowDuplicateModal(true)}
-                                className="ml-1 px-1.5 py-0.5 bg-amber-200 hover:bg-amber-300 text-amber-800 rounded text-xs font-semibold transition-colors"
+                                type="button"
+                                onClick={() => setShowInaccurateHint(!showInaccurateHint)}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${showInaccurateHint ? 'bg-rose-200 dark:bg-rose-900/40 text-rose-800 dark:text-rose-200 border-rose-300 dark:border-rose-700 shadow-inner' : 'bg-rose-100 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800 hover:bg-rose-200 dark:hover:bg-rose-900/40 hover:border-rose-300 dark:hover:border-rose-700'} animate-in fade-in`}
                             >
-                                {t('common.see') || 'See'}
+                                <svg className={`w-3.5 h-3.5 transform transition-transform ${showInaccurateHint ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
+                                {t('flags.inaccurate') || 'Inaccurate'}
                             </button>
                         )}
-                    </span>
-                )}
 
-                {/* Verified Identity */}
-                {identityVerified && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-100 text-teal-700 rounded-full text-xs font-semibold border border-teal-200">
-                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
-                        {t('flags.id_verified') || '✓ Identidad'}
-                    </span>
-                )}
-
-                {/* Verified Address */}
-                {addressVerified && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-100 text-teal-700 rounded-full text-xs font-semibold border border-teal-200">
-                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
-                        </svg>
-                        {t('flags.addr_verified') || '✓ Direccion'}
-                    </span>
-                )}
-
-                {/* Too Many Adoptions Warning */}
-                {tooManyAdoptions && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-100 text-orange-700 rounded-full text-xs font-semibold border border-orange-200">
-                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
-                        {`${tooManyAdoptions.count} ${t('stats.adoptions') || 'adoptions'} ${t('common.in') || 'in'} ${tooManyAdoptions.periodDays}d`}
-                    </span>
-                )}
-
-                {/* Too Many Requests Warning */}
-                {tooManyRequests && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-100 text-purple-700 rounded-full text-xs font-semibold border border-purple-200">
-                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
-                        {`${tooManyRequests.count} ${t('stats.requests') || 'requests'} ${t('common.in') || 'in'} ${tooManyRequests.periodDays}d`}
-                    </span>
-                )}
-            </div>
-
-            {/* Duplicate Details Modal */}
-            {showDuplicateModal && duplicateFlags[0]?.targetAdopterId && (
-                <div
-                    className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50"
-                    onClick={() => setShowDuplicateModal(false)}
-                >
-                    <div
-                        className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 border border-amber-200"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div className="flex justify-between items-start mb-4">
-                            <h3 className="text-lg font-semibold text-amber-800 flex items-center gap-2">
-                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        {/* Duplicate - click to expand hint */}
+                        {isFlaggedAsDuplicate && !hasDuplicateBanner && (
+                            <button
+                                type="button"
+                                onClick={() => setShowDuplicateHint(!showDuplicateHint)}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${showDuplicateHint ? 'bg-amber-200 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border-amber-300 dark:border-amber-700 shadow-inner' : 'bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 hover:bg-amber-200 dark:hover:bg-amber-900/40 hover:border-amber-300 dark:hover:border-amber-700'} animate-in fade-in`}
+                            >
+                                <svg className={`w-3.5 h-3.5 transform transition-transform ${showDuplicateHint ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
                                     <path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L14 2.586A2 2 0 0012.586 2H9z" />
                                     <path d="M3 8a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
                                 </svg>
-                                {t('flags.duplicate_detected') || 'Duplicate Detected'}
-                            </h3>
-                            <button
-                                onClick={() => setShowDuplicateModal(false)}
-                                className="text-stone-500 hover:text-stone-600"
-                            >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                {t('flags.duplicate') || 'Duplicate'}
                             </button>
-                        </div>
-
-                        <p className="text-sm text-stone-600 mb-4">
-                            {t('flags.duplicate_desc') || 'This profile may be a duplicate of another adopter.'}
-                        </p>
-
-                        {duplicateFlags[0].details && (
-                            <div className="bg-amber-50 rounded-lg p-3 mb-4 text-sm text-amber-800">
-                                <span className="font-medium">{t('common.details') || 'Details'}:</span> {duplicateFlags[0].details}
-                            </div>
                         )}
 
-                        <div className="flex gap-3">
-                            <a
-                                href={`/adopter/${duplicateFlags[0].targetAdopterId}`}
-                                className="flex-1 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium text-center transition-colors"
-                            >
-                                {t('flags.view_original') || 'View Original'}
-                            </a>
+                        {/* Too Many Adoptions Warning */}
+                        {tooManyAdoptions && (
                             <button
-                                onClick={() => setShowDuplicateModal(false)}
-                                className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-lg text-sm font-medium transition-colors"
+                                type="button"
+                                onClick={() => setShowAdoptionsHint(!showAdoptionsHint)}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${showAdoptionsHint ? 'bg-orange-200 dark:bg-orange-900/40 text-orange-800 dark:text-orange-200 border-orange-300 dark:border-orange-700 shadow-inner' : 'bg-orange-100 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800 hover:bg-orange-200 dark:hover:bg-orange-900/40 hover:border-orange-300 dark:hover:border-orange-700'} animate-in fade-in`}
                             >
-                                {t('common.close') || 'Close'}
+                                <svg className={`w-3.5 h-3.5 transform transition-transform ${showAdoptionsHint ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
+                                {tooManyAdoptions.count} {t('stats.adoptions') || 'adopciones'} {t('common.in') || 'en'} {Math.max(1, Math.round(tooManyAdoptions.actualSpanDays || tooManyAdoptions.periodDays))} {t('common.days') || 'días'}
                             </button>
-                        </div>
+                        )}
+
+                        {/* Too Many Requests Warning */}
+                        {tooManyRequests && (
+                            <button
+                                type="button"
+                                onClick={() => setShowRequestsHint(!showRequestsHint)}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${showRequestsHint ? 'bg-purple-200 dark:bg-purple-900/40 text-purple-800 dark:text-purple-200 border-purple-300 dark:border-purple-700 shadow-inner' : 'bg-purple-100 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800 hover:bg-purple-200 dark:hover:bg-purple-900/40 hover:border-purple-300 dark:hover:border-purple-700'} animate-in fade-in`}
+                            >
+                                <svg className={`w-3.5 h-3.5 transform transition-transform ${showRequestsHint ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
+                                {tooManyRequests.count} {t('stats.requests') || 'solicitudes'} {t('common.in') || 'en'} {Math.max(1, Math.round(tooManyRequests.actualSpanDays || tooManyRequests.periodDays))} {t('common.days') || 'días'}
+                            </button>
+                        )}
+                        
+                        {/* Context hints revealed on tap */}
+                        {showInaccurateHint && isFlaggedAsInaccurate && (
+                            <div className="w-full mt-1 p-3 bg-rose-50 dark:bg-stone-800/80 border border-rose-100 dark:border-rose-900/50 rounded-lg text-xs leading-relaxed text-rose-800 dark:text-rose-200 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
+                                <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-rose-100 dark:border-b-stone-700"></div>
+                                <span className="font-semibold text-rose-900 dark:text-rose-300 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
+                                {inaccurateFlags[0]?.details || t('flags.inaccurate_desc') || 'Este perfil fue reportado como inexacto.'}
+                            </div>
+                        )}
+                        {showDuplicateHint && isFlaggedAsDuplicate && !hasDuplicateBanner && (
+                            <div className="w-full mt-1 p-3 bg-amber-50 dark:bg-stone-800/80 border border-amber-100 dark:border-amber-900/50 rounded-lg text-xs leading-relaxed text-amber-800 dark:text-amber-200 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
+                                <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-amber-100 dark:border-b-stone-700"></div>
+                                <span className="font-semibold text-amber-900 dark:text-amber-300 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
+                                {t('flags.duplicate_desc') || 'Este perfil podría ser un duplicado de otro adoptante.'}
+                                {duplicateFlags[0]?.details && (
+                                    <span className="block mt-1 font-medium italic text-amber-700 dark:text-amber-400">"{duplicateFlags[0].details}"</span>
+                                )}
+                                {duplicateFlags[0]?.targetAdopterId && (
+                                    <a
+                                        href={`/adopter/${duplicateFlags[0].targetAdopterId}`}
+                                        className="inline-flex items-center gap-1 mt-2 text-amber-700 dark:text-amber-300 font-semibold hover:text-amber-900 dark:hover:text-amber-100 hover:underline transition-colors"
+                                    >
+                                        {t('flags.view_original') || 'View Original'}
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                                        </svg>
+                                    </a>
+                                )}
+                            </div>
+                        )}
+                        {showAdoptionsHint && tooManyAdoptions && (
+                            <div className="w-full mt-1 p-3 bg-orange-50 dark:bg-stone-800/80 border border-orange-100 dark:border-orange-900/50 rounded-lg text-xs leading-relaxed text-orange-800 dark:text-orange-200 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
+                                <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-orange-100 dark:border-b-stone-700"></div>
+                                <span className="font-semibold text-orange-900 dark:text-orange-300 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
+                                {t('flags.adoptions_warning_p1') || 'Registró '}{tooManyAdoptions.count}{t('flags.adoptions_warning_p2') || ' adopciones en '}{Math.max(1, Math.round(tooManyAdoptions.actualSpanDays || 0))}{t('flags.adoptions_warning_p3') || ' días'}
+                                {tooManyAdoptions.startDate && tooManyAdoptions.endDate && (
+                                    <> {t('flags.warning_dates') || '(ocurrido entre'} {formatShortDate(tooManyAdoptions.startDate)} {t('flags.and') || 'y'} {formatShortDate(tooManyAdoptions.endDate)})</>
+                                )}. {t('flags.adoptions_risk') || 'Una frecuencia inusualmente alta indica un posible riesgo de acumulación o falta de capacidad de seguimiento.'}
+                            </div>
+                        )}
+                        {showRequestsHint && tooManyRequests && (
+                            <div className="w-full mt-1 p-3 bg-purple-50 dark:bg-stone-800/80 border border-purple-100 dark:border-purple-900/50 rounded-lg text-xs leading-relaxed text-purple-800 dark:text-purple-200 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
+                                <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-purple-100 dark:border-b-stone-700"></div>
+                                <span className="font-semibold text-purple-900 dark:text-purple-300 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
+                                {t('flags.requests_warning_p1') || 'Registró '}{tooManyRequests.count}{t('flags.requests_warning_p2') || ' solicitudes en '}{Math.max(1, Math.round(tooManyRequests.actualSpanDays || 0))}{t('flags.requests_warning_p3') || ' días'}
+                                {tooManyRequests.startDate && tooManyRequests.endDate && (
+                                    <> {t('flags.warning_dates') || '(ocurrido entre'} {formatShortDate(tooManyRequests.startDate)} {t('flags.and') || 'y'} {formatShortDate(tooManyRequests.endDate)})</>
+                                )}. {t('flags.requests_risk') || 'Solicitar múltiples animales de forma simultánea requiere verificación adicional.'}
+                            </div>
+                        )}
                     </div>
-                </div>
-            )}
+                )}
+
+                {/* ✓ Verifications: inline interactive pills */}
+                {(identityVerified || addressVerified) && (
+                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                        {identityVerified && (
+                            <button
+                                type="button"
+                                onClick={() => setShowIdentityHint(!showIdentityHint)}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${showIdentityHint ? 'bg-teal-100 dark:bg-teal-900/40 text-teal-800 dark:text-teal-200 border-teal-200 dark:border-teal-700 shadow-inner' : 'bg-transparent text-teal-700 dark:text-teal-300 border-transparent hover:bg-teal-50 dark:hover:bg-teal-900/20'}`}
+                            >
+                                <svg className={`w-3.5 h-3.5 transform transition-transform ${showIdentityHint ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                </svg>
+                                {t('flags.id_verified') || '✓ Identity'}
+                            </button>
+                        )}
+                        {addressVerified && (
+                            <button
+                                type="button"
+                                onClick={() => setShowAddressHint(!showAddressHint)}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${showAddressHint ? 'bg-teal-100 dark:bg-teal-900/40 text-teal-800 dark:text-teal-200 border-teal-200 dark:border-teal-700 shadow-inner' : 'bg-transparent text-teal-700 dark:text-teal-300 border-transparent hover:bg-teal-50 dark:hover:bg-teal-900/20'}`}
+                            >
+                                <svg className={`w-3.5 h-3.5 transform transition-transform ${showAddressHint ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                                </svg>
+                                {t('flags.addr_verified') || '✓ Address'}
+                            </button>
+                        )}
+                    </div>
+                )}
+                
+                {/* Verification Context Hints */}
+                {showIdentityHint && identityVerified && (
+                    <div className="w-full mt-1 p-3 bg-teal-50 dark:bg-stone-800/80 border border-teal-100 dark:border-teal-900/50 rounded-lg text-xs leading-relaxed text-teal-800 dark:text-teal-200 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
+                        <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-teal-100 dark:border-b-stone-700"></div>
+                        <span className="font-semibold text-teal-900 dark:text-teal-300 block mb-0.5">{t('flags.id_verified') || 'Identidad Verificada'}</span>
+                        {identityVerifiedFlag?.details || t('flags.legend_verified') || 'Confirmamos que esta persona es quien dice ser.'}
+                    </div>
+                )}
+                {showAddressHint && addressVerified && (
+                    <div className="w-full mt-1 p-3 bg-teal-50 dark:bg-stone-800/80 border border-teal-100 dark:border-teal-900/50 rounded-lg text-xs leading-relaxed text-teal-800 dark:text-teal-200 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
+                        <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-teal-100 dark:border-b-stone-700"></div>
+                        <span className="font-semibold text-teal-900 dark:text-teal-300 block mb-0.5">{t('flags.addr_verified') || 'Dirección Verificada'}</span>
+                        {addressVerifiedFlag?.details || t('flags.legend_verified') || 'Confirmamos esta información mediante soporte documentario o visita.'}
+                    </div>
+                )}
+            </div>
+
+
 
 
             {/* Modal */}

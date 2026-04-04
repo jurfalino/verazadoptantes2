@@ -162,7 +162,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                 : `${t('adoption.verb_adopted') || 'adopted'} ${speciesLabel}`;
                             break;
                         case 'adoption_request':
-                            summary = `${t('adoption.verb_requested') || 'requested'} ${speciesLabel || animalName} ${t('adoption.word_adoption') ?? 'adoption'}`.trim();
+                            summary = `${t('adoption.verb_requested') || 'requested'} ${speciesLabel || animalName} ${t('adoption.word_adoption') || ''}`.trim();
                             break;
                         case 'observation':
                             summary = animalName

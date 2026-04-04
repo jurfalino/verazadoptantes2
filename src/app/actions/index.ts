@@ -3,7 +3,7 @@
 
 // Types
 export type { AdopterFlags } from '@/types/adopter';
-export type { SearchResult, SearchResponse } from './types';
+export type { SearchResult, SearchResponse, SnippetField, MatchSnippet } from './types';
 
 // DB helpers
 export { getDb, getUser, getIsAdmin } from './_db';

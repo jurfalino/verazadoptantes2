@@ -8,9 +8,6 @@ import { useSession } from 'next-auth/react';
 import { formatShortDate } from '@/lib/dates';
 import ShareMenu from '@/components/ShareMenu';
 import ShareFormMenu from '@/components/ShareFormMenu';
-import { deleteAnimalForAdoption } from '@/app/actions';
-import { useShowToast } from '@/components/ui/Toast';
-import { extractErrorId } from '@/lib/errorUtils';
 
 interface AnimalImage {
     id: string;
@@ -37,7 +34,6 @@ export default function MyAnimalsPage() {
     const { t, locale } = useLanguage();
     const searchParams = useSearchParams();
     const { data: session } = useSession();
-    const toast = useShowToast();
     const view = searchParams.get('view') || 'available';
     const userId = session?.user?.id || '';
 

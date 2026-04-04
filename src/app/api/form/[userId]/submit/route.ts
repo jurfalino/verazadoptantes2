@@ -102,7 +102,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         try {
             const { extractNameWords, extractPhones, extractPhoneSuffixes, extractEmails, normalizeText } = await import('@/lib/tokenizer');
             const { duplicateTokens } = await import('@/db/schema');
-            const { and: drizzleAnd, ne, inArray: drizzleInArray, or: drizzleOr, like } = await import('drizzle-orm');
+            const { inArray: drizzleInArray, or: drizzleOr, like } = await import('drizzle-orm');
             const { createNotification } = await import('@/app/actions/notifications');
 
             // Tokenize submitted data

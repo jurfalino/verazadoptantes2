@@ -93,7 +93,7 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ success: true, id: imageId, url: r2Url });
     } catch (error) {
-        const msg = error instanceof Error ? error.message : 'Unknown error';
+        const _msg = error instanceof Error ? error.message : 'Unknown error';
         const errorId = logger.error('Upload media failed', error, {});
         return NextResponse.json({ error: 'Upload failed', errorId }, { status: 500 });
     }

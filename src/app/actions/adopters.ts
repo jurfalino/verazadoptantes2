@@ -8,7 +8,7 @@ import { getDb, getUser } from './_db';
 import { ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
 import { tokenizeAdopter } from './duplicates';
 import { saveAdopterSchema } from './validation';
-import { RECORD_TYPES } from '@/domain/constants';
+
 
 export async function getAdopter(id: string) {
     try {

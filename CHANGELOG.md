@@ -2,8 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
-## [2.10.0-16] - 2026-03-28
+## [2.10.0-17] - 2026-04-04
 
+### Added
+- **Search relevance engine** — implemented robust cross-field query coverage bonus to ensure multi-token queries are ranked accurately.
+- **Multi-token highlighting** — modernized the snippet rendering architecture to support multi-token highlighting in search results.
+- **Duplicate Comparison Card** — new `DuplicateComparisonCard` component for side-by-side duplicate data evaluation.
+- **i18n translation tools** — added new development scripts for automated validation of translation keys.
+
+### Changed
+- **Comprehensive UI Internationalization** — extensive i18n localization added across forms and wizards (`AdopterForm`, `AdoptionForm`, `ReportInaccuracyForm`, `AdoptionWizard`, `ReportWizard`), completely replacing hardcoded labels.
+- **Search snippet rendering** — improved search results context by modernizing snippet rendering logic.
+
+### Fixed
+- **SQL Injection vulnerability** — secured `LIKE` patterns within the search engine and duplicates logic to prevent potential injection vectors.
+- **Lint warnings** — fixed unused variables across duplicates/mass-action routes and list components to meet deployment ratchet criteria.
+---
+
+## [2.10.0-16] - 2026-03-28
 ### Added
 - **Domain layer** — new `src/domain/` module with `constants.ts` (FLAG_REASONS, RECORD_TYPES, EVENT_TYPES), `flags.ts` (buildFlags), `stats.ts` (computeStats), `ratings.ts` (computeAvgRating) replacing 3 duplicated implementations
 - **AdminAdopterList component** — extracted client component from admin adopters page for cleaner separation

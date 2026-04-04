@@ -11,6 +11,12 @@ import { extractErrorId } from '@/lib/errorUtils';
 import LegalConsent from '@/components/LegalConsent';
 import DatePicker from '@/components/ui/DatePicker';
 import { RatingBadge } from '@/components/RatingBadge';
+import type { SnippetField } from '@/app/actions';
+
+const SNIPPET_ICONS: Record<SnippetField, string> = {
+    name: '👤', contact: '📞', address: '📍',
+    family: '👨‍👩‍👧', adoption: '🐾', history: '📝',
+};
 
 export default function AdoptionWizard() {
     const { t } = useLanguage();
@@ -341,8 +347,8 @@ export default function AdoptionWizard() {
                                         )}
                                         <div className="flex-1 min-w-0">
                                             <div className="font-semibold text-stone-800 text-lg">{previewAdopter.adopter.name}</div>
-                                            {previewAdopter.matchContext && (
-                                                <div className="text-xs text-teal-700">{t(`wizard.${previewAdopter.matchContext}`) || previewAdopter.matchContext}</div>
+                                            {previewAdopter.matchSnippet && (
+                                                <div className="text-xs text-teal-700">{SNIPPET_ICONS[previewAdopter.matchSnippet.field as SnippetField]} {t(`search.snippet_${previewAdopter.matchSnippet.field}`)}</div>
                                             )}
                                         </div>
                                     </div>
@@ -458,7 +464,7 @@ export default function AdoptionWizard() {
                                                         {res.stats?.adoptions > 0 && (
                                                             <span>{res.stats.adoptions} {t('wizard.adoptions_label') || 'adoptions'}</span>
                                                         )}
-                                                        {res.matchContext && <span className="text-teal-700">· {t(`wizard.${res.matchContext}`) || res.matchContext}</span>}
+                                                        {res.matchSnippet && <span className="text-teal-700">· {SNIPPET_ICONS[res.matchSnippet.field as SnippetField]} {t(`search.snippet_${res.matchSnippet.field}`)}</span>}
                                                     </div>
                                                 </button>
 
