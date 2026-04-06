@@ -36,7 +36,7 @@ export default function LoginModal() {
 
                 <div className="text-center mb-8">
                     <h2 className="text-2xl font-semibold text-teal-900 tracking-tight">{t('auth.login_title') || 'Sign In'}</h2>
-                    <p className="text-teal-700 text-sm mt-2">{t('auth.login_desc') || 'Sign in to access advanced features.'}</p>
+                    <p className="text-teal-700 text-sm mt-2">{t('auth.login_desc') || 'Sign in to access this information.'}</p>
                 </div>
 
                 <div className="space-y-4">

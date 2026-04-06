@@ -323,14 +323,6 @@ export default function SearchSection({ locale }: { locale?: string }) {
                         </div>
                     )}
 
-                    {/* Protected info banner for unauthenticated users */}
-                    {results.length > 0 && !session?.user && (
-                        <div className="bg-teal-50 border border-teal-200 rounded-xl px-4 py-3 text-center">
-                            <p className="text-teal-800 text-sm font-medium">
-                                🔒 {t('search.protected_info')}
-                            </p>
-                        </div>
-                    )}
 
                     {/* Flag legend toggle */}
                     {results.length > 0 && (
@@ -457,7 +449,7 @@ export default function SearchSection({ locale }: { locale?: string }) {
                                                     {s.field === 'history' ? (
                                                         <span className="italic">{t('search.snippet_history_generic')}</span>
                                                     ) : !isAuthenticated ? (
-                                                        <span className="italic">{(t('search.protected_info') || '').split('.')[0]}</span>
+                                                        <span className="italic">{t('search.protected_info') || 'Información protegida'}</span>
                                                     ) : (
                                                         renderHighlightedSnippet(s.snippet, s.highlights) || s.snippet
                                                     )}

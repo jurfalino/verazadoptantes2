@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.10.2] - 2026-04-05
+
+### Changed
+- **Search UX — Gradual Engagement** — Removed the pre-emptive "🔒 Información protegida" banner above search results for unauthenticated users. Users now discover the login requirement organically by clicking a result, which triggers the login modal at the moment of intent rather than upfront friction.
+- **Login Modal Copy** — Updated description from "Inicia sesión para acceder a funciones avanzadas" to "Inicia sesión para acceder a la información", directly matching the user's intent at the moment they hit the modal.
+
 ## [2.10.1] - 2026-04-04
 
 ### Changed
