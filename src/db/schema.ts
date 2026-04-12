@@ -223,6 +223,9 @@ export const userProfiles = sqliteTable("user_profiles", {
     timezone: text("timezone"), // IANA timezone (e.g. "America/Argentina/Buenos_Aires") — via cf-timezone
     lastActiveAt: integer("last_active_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    // Legal
+    termsAcceptedAt: integer("terms_accepted_at", { mode: "timestamp" }), // Unix timestamp when T&C were accepted
+    termsVersion: integer("terms_version"), // Version of T&C accepted (matches CURRENT_TERMS_VERSION)
 });
 
 export const auditLog = sqliteTable("audit_log", {

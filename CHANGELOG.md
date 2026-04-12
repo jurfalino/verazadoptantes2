@@ -2,6 +2,25 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.11.0] - 2026-04-12
+
+### Added
+- **Terms & Conditions acceptance on sign-up** — new users must explicitly accept the Terms of Use and Privacy Policy before completing onboarding. Acceptance is recorded in `user_profiles` with a timestamp and version number for legal auditability.
+- **Versioned T&C re-prompt** — `CURRENT_TERMS_VERSION` constant in `config/constants.ts`; bumping it forces all users to re-accept on next sign-in via a dedicated modal (not the country picker).
+- **Dedicated T&C update modal** — returning users who need to re-accept see a focused "We've updated our Terms" modal, not the full country-selection onboarding flow.
+- **`acceptTermsAndCountry` server action** — atomic write combining country confirmation + T&C acceptance in a single D1 upsert with audit log entry.
+- **`acceptTerms` server action** — lightweight re-acceptance action for returning users; does not touch country or `country_confirmed`.
+- **D1 migration `0033_add_terms_acceptance.sql`** — adds `terms_accepted_at` and `terms_version` columns to `user_profiles`; resets `country_confirmed = 0` for all existing users to trigger the re-prompt.
+
+### Changed
+- **Terms of Use page (`/terms`)** — Section 2 rewritten with explicit user obligations: legitimate basis requirement, consent of mentioned persons, image consent, sensitive data prohibition, and sole legal responsibility. Updated "last modified" date.
+- **`CountryConfirmBanner`** — T&C checkbox now appears before the country picker in all onboarding variants; quick-pick country buttons disabled until checkbox is checked; server action failures now surface an inline error with retry (banner no longer silently dismisses on failure); `max-h-[90vh] overflow-y-auto` prevents modal overflow on small screens; saving state replaced with a spinner.
+- **`getUserSettings`** — returns `termsVersion` so the banner can compare against `CURRENT_TERMS_VERSION` without an extra fetch.
+
+### Fixed
+- Removed `as unknown as` cast on `termsVersion` in `getUserSettings` Drizzle path — was always returning `null` in local dev, causing the banner to fire on every page load.
+- `acceptTerms` now uses `INSERT ... ON CONFLICT DO UPDATE` instead of a bare `UPDATE`, preventing a silent no-op when `user_profiles` row is missing.
+
 ## [2.10.2] - 2026-04-05
 
 ### Changed

@@ -22,7 +22,7 @@ export default function TermsPage() {
                 </div>
 
                 <div className="mt-6 text-center text-stone-500 text-xs">
-                    {t('legal.last_updated')}: 2026-02-09
+                    {t('legal.last_updated')}: 2026-04-12
                 </div>
             </div>
         </main>
@@ -45,13 +45,17 @@ function TermsES() {
                 prevenir adopciones irresponsables y proteger el bienestar animal.
             </p>
 
-            <h2>2. Registro de información</h2>
-            <p>Al registrar información sobre un adoptante en la plataforma, el usuario declara que:</p>
+            <h2 id="content-responsibility">2. Responsabilidad del usuario sobre el contenido</h2>
+            <p>Al registrar información sobre un adoptante u otra persona, el usuario declara y garantiza que:</p>
             <ul>
-                <li>La información proporcionada es <strong>verdadera y basada en su experiencia directa</strong>.</li>
+                <li>La información proporcionada es <strong>verdadera, basada en su experiencia directa</strong> e ingresada de buena fe.</li>
+                <li>Cuenta con una <strong>base legítima</strong> para publicar datos de terceros (relación previa de adopción, entrega en mano, interacción directa, etc.).</li>
+                <li>Ha <strong>obtenido el consentimiento</strong> de toda persona que pueda identificarse a partir del contenido publicado, o bien actúa bajo un interés legítimo de protección animal reconocido por la legislación vigente.</li>
+                <li>Las <strong>fotografías o imágenes</strong> de terceros que sube le fueron proporcionadas voluntariamente o fueron tomadas en contextos donde la persona prestó su consentimiento.</li>
+                <li>No publicará <strong>datos sensibles</strong> (salud, situación económica, orientación sexual, etc.) salvo que sean estrictamente necesarios para la finalidad de la plataforma y cuente con base legal para hacerlo.</li>
                 <li>No publicará información <strong>falsa, difamatoria o malintencionada</strong>.</li>
                 <li>Otorga a BuenAdoptante una <strong>licencia no exclusiva</strong> para almacenar, mostrar y procesar los datos proporcionados dentro de la plataforma.</li>
-                <li>Es <strong>responsable legal</strong> del contenido que publica. BuenAdoptante no verifica la exactitud de la información.</li>
+                <li>Es el <strong>único responsable legal</strong> del contenido que publica frente a los titulares de esos datos y frente a terceros. BuenAdoptante no asume ninguna responsabilidad por dicho contenido.</li>
             </ul>
 
             <h2>3. Precisión de la información</h2>
@@ -143,13 +147,17 @@ function TermsEN() {
                 preventing irresponsible adoptions and protecting animal welfare.
             </p>
 
-            <h2>2. Information registration</h2>
-            <p>By registering information about an adopter on the platform, the user declares that:</p>
+            <h2 id="content-responsibility">2. User responsibility for content</h2>
+            <p>By registering information about an adopter or any other individual, the user declares and warrants that:</p>
             <ul>
-                <li>The information provided is <strong>truthful and based on their direct experience</strong>.</li>
+                <li>The information provided is <strong>truthful, based on direct personal experience</strong>, and submitted in good faith.</li>
+                <li>They have a <strong>legitimate basis</strong> for publishing third-party data (prior adoption relationship, in-person handover, direct interaction, etc.).</li>
+                <li>They have <strong>obtained the consent</strong> of any person who may be identifiable from the published content, or are acting under a legitimate animal-welfare interest recognised by applicable law.</li>
+                <li>Any <strong>photographs or images</strong> of third parties were provided voluntarily or taken in contexts where the person gave their consent.</li>
+                <li>They will not publish <strong>sensitive data</strong> (health, financial situation, sexual orientation, etc.) unless strictly necessary for the platform&apos;s purpose and they have a legal basis to do so.</li>
                 <li>They will not publish <strong>false, defamatory, or malicious</strong> information.</li>
                 <li>They grant BuenAdoptante a <strong>non-exclusive license</strong> to store, display, and process the submitted data within the platform.</li>
-                <li>They are <strong>legally responsible</strong> for the content they publish. BuenAdoptante does not verify the accuracy of information.</li>
+                <li>They are the <strong>sole legally responsible party</strong> for the content they publish, both toward the data subjects and toward third parties. BuenAdoptante assumes no responsibility for such content.</li>
             </ul>
 
             <h2>3. Information accuracy</h2>

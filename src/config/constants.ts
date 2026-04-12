@@ -37,3 +37,12 @@ export const DASHBOARD_RECENT_ACTIVITY_LIMIT = 4;
  * Set to 10 years — effectively "never expire".
  */
 export const SESSION_MAX_AGE_SECONDS = 315_360_000;
+
+// ── Legal ────────────────────────────────────────────────────────
+/**
+ * Current Terms of Service version.
+ * Bump this number and deploy to force ALL users to re-accept the
+ * updated terms on their next sign-in (the onboarding modal will
+ * re-appear for anyone whose stored termsVersion is lower).
+ */
+export const CURRENT_TERMS_VERSION = 1;

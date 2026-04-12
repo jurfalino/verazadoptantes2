@@ -80,6 +80,11 @@ export const updateCountrySchema = z.object({
     country: z.string().length(2, 'Country code must be 2 characters (ISO 3166-1 alpha-2)'),
 });
 
+export const acceptTermsAndCountrySchema = z.object({
+    country: z.string().length(2, 'Country code must be 2 characters (ISO 3166-1 alpha-2)'),
+    version: z.number().int().min(1, 'Terms version must be a positive integer'),
+});
+
 // ── Adopters API (POST /api/adopters) ────────────────
 
 export const createAdopterApiSchema = z.object({
