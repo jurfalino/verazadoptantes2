@@ -206,10 +206,13 @@ export async function acceptTerms(version: number): Promise<{ success: boolean }
 
         // Upsert — safe even if the user_profiles row doesn't exist yet
         // (e.g. rare race condition during first sign-in).
+        // Also restores country_confirmed = 1 since the migration reset it to 0
+        // for all existing users; this brings them back to a fully clean state.
         await env.DB.prepare(
-            `INSERT INTO user_profiles (user_id, terms_accepted_at, terms_version)
-             VALUES (?, strftime('%s','now'), ?)
+            `INSERT INTO user_profiles (user_id, country_confirmed, terms_accepted_at, terms_version)
+             VALUES (?, 1, strftime('%s','now'), ?)
              ON CONFLICT(user_id) DO UPDATE SET
+               country_confirmed = 1,
                terms_accepted_at = strftime('%s','now'),
                terms_version = excluded.terms_version`
         ).bind(user.id, version).run();

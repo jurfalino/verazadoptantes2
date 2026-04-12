@@ -69,12 +69,14 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
             if (s) {
                 setSettings(s);
                 const termsUpToDate = (s.termsVersion ?? 0) >= CURRENT_TERMS_VERSION;
-                if (s.countryConfirmed && termsUpToDate) {
-                    // All good — safe to use cache
+                // Use !!s.country (not countryConfirmed) — the migration reset
+                // country_confirmed = 0 for all existing users, but their country
+                // is still set. country presence = went through onboarding before.
+                const hasCompletedOnboarding = s.countryConfirmed || !!s.country;
+                if (hasCompletedOnboarding && termsUpToDate) {
                     localStorage.setItem(storageKey, '1');
                     setDismissed(true);
                 } else {
-                    // Needs onboarding or T&C re-acceptance — clear stale cache
                     localStorage.removeItem(storageKey);
                 }
             } else {
@@ -89,10 +91,14 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
         });
     }, [email]);
 
-    // Derive display mode
+    // Derive display mode.
+    // Key insight: the migration reset country_confirmed = 0 for all existing users,
+    // so we cannot use countryConfirmed to detect "new vs returning". Instead we use
+    // settings.country: if a country is set, the user completed onboarding before.
     const needsTerms = !settings || (settings.termsVersion ?? 0) < CURRENT_TERMS_VERSION;
-    const isNewUser = !!settings && !settings.countryConfirmed;
-    const isTermsUpdate = !!settings && settings.countryConfirmed && needsTerms;
+    const hasSetCountryBefore = !!settings && !!settings.country;
+    const isNewUser     = !!settings && !settings.country;        // never been through onboarding
+    const isTermsUpdate = hasSetCountryBefore && needsTerms;      // returning user, T&C changed
     const shouldShow = !!email && !dismissed && loaded && !!settings && (isNewUser || isTermsUpdate);
 
     // Lock body scroll while modal is visible
