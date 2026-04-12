@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { CountrySelector } from '@/components/CountrySelector';
-import { getUserSettings, updateUserCountry, getUserName, updateUserName } from '@/app/actions/settings';
+import { getUserSettings, updateUserCountry, updateUserName } from '@/app/actions/settings';
 import { useShowToast } from '@/components/ui/Toast';
 
 export default function SettingsPage() {
@@ -37,15 +37,15 @@ export default function SettingsPage() {
     // Load settings + name
     useEffect(() => {
         if (status !== 'authenticated') return;
-        Promise.all([getUserSettings(), getUserName()]).then(([s, name]) => {
+        getUserSettings().then(s => {
             if (s) {
                 setCountry(s.country || '');
                 setDetectedCountry(s.country);
                 setGeoInfo({ province: s.province, city: s.city, timezone: s.timezone });
-            }
-            if (name) {
-                setDisplayName(name);
-                setOriginalName(name);
+                if (s.name) {
+                    setDisplayName(s.name);
+                    setOriginalName(s.name);
+                }
             }
             setLoading(false);
         });

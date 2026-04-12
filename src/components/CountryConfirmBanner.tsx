@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { getCountryByCode, countries, type Country } from '@/config/countries';
-import { getUserSettings, acceptTermsAndCountry, acceptTerms, getUserName, updateUserName } from '@/app/actions/settings';
+import { getUserSettings, acceptTermsAndCountry, acceptTerms, updateUserName } from '@/app/actions/settings';
 import { CountrySelector } from '@/components/CountrySelector';
 import { useRouter } from 'next/navigation';
 import { CURRENT_TERMS_VERSION } from '@/config/constants';
@@ -65,9 +65,10 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
         const storageKey = `country_confirmed_${email}`;
         setLoaded(false);
 
-        Promise.all([getUserSettings(), getUserName()]).then(([s, name]) => {
+        getUserSettings().then(s => {
             if (s) {
                 setSettings(s);
+                if (s.name) setUserName(s.name);
                 const termsUpToDate = (s.termsVersion ?? 0) >= CURRENT_TERMS_VERSION;
                 // Use !!s.country (not countryConfirmed) — the migration reset
                 // country_confirmed = 0 for all existing users, but their country
@@ -80,13 +81,15 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                     localStorage.removeItem(storageKey);
                 }
             } else {
-                setSettings({ country: null, countryConfirmed: false, termsVersion: null, province: null, provinceCode: null, city: null, timezone: null });
+                // getUserSettings returned null — no profile row yet (brand-new user)
+                // or DB unavailable. Do NOT default to new-user onboarding on error;
+                // keep the banner hidden to avoid overwriting an existing user's country.
+                setSettings(null);
             }
-            if (name) setUserName(name);
             setLoaded(true);
         }).catch(err => {
             console.error('[CountryBanner] getUserSettings error:', err);
-            setSettings({ country: null, countryConfirmed: false, termsVersion: null, province: null, provinceCode: null, city: null, timezone: null });
+            // On error, stay hidden — safer than showing onboarding to a returning user.
             setLoaded(true);
         });
     }, [email]);
