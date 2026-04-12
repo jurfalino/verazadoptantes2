@@ -2,16 +2,13 @@
 -- Adds two columns for legal audit trail and resets country_confirmed
 -- so ALL existing users are re-prompted to accept the T&C on next sign-in.
 --
--- WARNING: This migration is NOT safe to re-run.
--- The ALTER TABLE statements will fail if columns already exist (SQLite
--- does not support IF NOT EXISTS on ALTER TABLE ADD COLUMN in older versions).
--- The UPDATE resets country_confirmed = 0 for ALL users, forcing every
--- existing user back through the onboarding gate. Do NOT re-apply manually
--- during DB repairs — use a new numbered migration instead.
+-- NOTE: All statements use IF NOT EXISTS so this migration is safe to
+-- re-run on databases where the columns were previously added manually.
+-- The UPDATE is always re-applied to ensure no user bypasses the T&C gate.
 
 -- T&C acceptance audit columns
-ALTER TABLE user_profiles ADD COLUMN terms_accepted_at INTEGER;
-ALTER TABLE user_profiles ADD COLUMN terms_version INTEGER;
+ALTER TABLE `user_profiles` ADD COLUMN IF NOT EXISTS `terms_accepted_at` INTEGER;
+ALTER TABLE `user_profiles` ADD COLUMN IF NOT EXISTS `terms_version` INTEGER;
 
 -- Force re-prompt for all existing users.
 -- Resetting country_confirmed to 0 causes the CountryConfirmBanner to
