@@ -53,6 +53,7 @@ export default function SearchSection({ locale }: { locale?: string }) {
     const [truncatedInfo, setTruncatedInfo] = useState<{ truncated: boolean; totalCount: number } | null>(null);
     const [validationError, setValidationError] = useState<string | null>(null);
     const [showLegend, setShowLegend] = useState(false);
+    const [singleTokenResultCount, setSingleTokenResultCount] = useState<number | undefined>(undefined);
     const resultsRef = useRef<HTMLDivElement>(null);
 
     // Re-run search when returning to page with query in URL
@@ -61,6 +62,7 @@ export default function SearchSection({ locale }: { locale?: string }) {
         setLoading(true);
         setValidationError(null);
         setTruncatedInfo(null);
+        setSingleTokenResultCount(undefined);
         try {
             const response = await searchAdopter(searchQuery);
             if (!response) return;
@@ -69,6 +71,7 @@ export default function SearchSection({ locale }: { locale?: string }) {
                 setResults([]);
             } else {
                 setResults(response.results || []);
+                setSingleTokenResultCount(response.singleTokenResultCount);
                 if (response.truncated && response.totalCount) {
                     setTruncatedInfo({ truncated: true, totalCount: response.totalCount });
                 }
@@ -130,6 +133,7 @@ export default function SearchSection({ locale }: { locale?: string }) {
                 setResults([]);
             } else {
                 setResults(response.results || []);
+                setSingleTokenResultCount(response.singleTokenResultCount);
                 if (response.truncated && response.totalCount) {
                     setTruncatedInfo({ truncated: true, totalCount: response.totalCount });
                 }
@@ -155,6 +159,7 @@ export default function SearchSection({ locale }: { locale?: string }) {
         setResults(null);
         setValidationError(null);
         setTruncatedInfo(null);
+        setSingleTokenResultCount(undefined);
         // Clear URL param
         const url = new URL(window.location.href);
         url.searchParams.delete('q');
@@ -297,6 +302,7 @@ export default function SearchSection({ locale }: { locale?: string }) {
                 </div>
             )}
 
+
             {/* Truncation Warning Banner */}
             {truncatedInfo?.truncated && (
                 <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
@@ -308,6 +314,28 @@ export default function SearchSection({ locale }: { locale?: string }) {
 
             {results && (
                 <div ref={resultsRef} className="mt-8 space-y-4 scroll-mt-4">
+
+                    {/* Refinement Nudge — inside scroll target so mobile auto-scroll doesn't skip it (P1 fix)
+                        Amber palette to distinguish from the teal login_required banner (P2 fix) */}
+                    {results.length > 0 && singleTokenResultCount !== undefined && (
+                        <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
+                            <span className="text-amber-500 text-lg flex-shrink-0 mt-0.5">🔎</span>
+                            <div className="flex-1">
+                                <p className="text-amber-800 font-medium text-sm">
+                                    {locale === 'en'
+                                        ? `${singleTokenResultCount} results found for "${query}". Add a last name, phone, or address to narrow it down.`
+                                        : `Se encontraron ${singleTokenResultCount} resultados para "${query}". Agregá un apellido, teléfono o dirección para encontrar a quien buscás.`}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setSingleTokenResultCount(undefined)}
+                                className="text-amber-400 hover:text-amber-600 flex-shrink-0 transition-colors"
+                                aria-label="Cerrar sugerencia"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            </button>
+                        </div>
+                    )}
                     {results.length > 0 && (
                         <div className="flex justify-between items-center px-2">
                             <h3 className="text-lg font-semibold text-stone-800">

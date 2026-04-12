@@ -2,6 +2,27 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.11.1] - 2026-04-12
+
+### Added
+- **Confidence-based duplicate detection engine** — `checkTokenDuplicates` now returns a normalized `confidencePercent` (0–100%) alongside each match, derived from a weighted token score divided by `PRACTICAL_MAX_DUPLICATE = 12`. Replaces the previous ad-hoc `low/medium/high` string classification.
+- **Levenshtein fuzzy name matching** — name word tokens are compared at score time using edit-distance with strict length gates (1-edit for tokens >4 chars, 2-edit for tokens >7 chars). Enables `Jhon ↔ John`, `Perez ↔ Pérez` matching without any schema changes.
+- **NFD accent normalization** — `normalizeText()` upgraded from a manual `ACCENT_MAP` to Unicode NFD decomposition, covering the full Latin accent range including uppercase variants (Á, É, Ñ, Ü) and all cases the old map missed.
+- **`src/lib/scoring.ts`** — new shared module with `levenshtein()`, `fuzzyNameScore()`, `normalizeConfidence()`, `confidenceBand()`, and scoring constants (`PRACTICAL_MAX_DUPLICATE`, `SEARCH_SCORE_CEILING`). Pure TypeScript, zero dependencies, Edge-runtime safe.
+- **`relevancePercent`** on every `SearchResult` — normalized 0–100% from `relevanceScore / SEARCH_SCORE_CEILING`.
+- **Common-name refinement nudge** — when a single-token search (e.g. "Maria", "Juan") returns more than `REFINEMENT_NUDGE_THRESHOLD = 10` results, an amber dismissible banner appears inside the scroll target guiding the user to add a last name, phone, or address.
+- **`REFINEMENT_NUDGE_THRESHOLD`** and **`LOW_RELEVANCE_PERCENT_THRESHOLD`** constants in `src/config/constants.ts`.
+- **`lowRelevanceResults`** bucket in `SearchResponse` — multi-token results scoring below `LOW_RELEVANCE_PERCENT_THRESHOLD` are separated from the main list (not discarded).
+- **`singleTokenResultCount`** field in `SearchResponse` — triggers the refinement nudge UI when set.
+
+### Changed
+- **`< 15%` duplicate matches** are now filtered before being returned — a shared first name alone (e.g. "Juan Maldonado" vs "Juan Hualde") scores ~8% and is never surfaced as a warning, eliminating false-positive fatigue.
+- **Levenshtein query batching** — name_word tokens for all matched adopters are now fetched in a single `inArray` query instead of one query per adopter (N+1 fix).
+- **Fuzzy score bounded per input token** — only the best matching stored word is counted per input token (previously all pairs accumulated), preventing score inflation on profiles with many name words.
+- **`relevancePercent` suppressed for unauthenticated users** — zero-valued in the response payload to avoid revealing indirect information about system data density.
+- **Refinement nudge placement** — rendered inside the `resultsRef` scroll container so it's visible after mobile auto-scroll.
+- **Refinement nudge color** — changed from teal to amber to distinguish clearly from the `login_required` banner (which already owns teal).
+
 ## [2.11.0] - 2026-04-12
 
 ### Added

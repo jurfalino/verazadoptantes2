@@ -5,9 +5,10 @@ import { or, like, sql, and, isNull, inArray, eq } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
-import { SEARCH_RESULT_LIMIT, SEARCH_ENRICHMENT_LIMIT } from '@/config/constants';
+import { SEARCH_RESULT_LIMIT, SEARCH_ENRICHMENT_LIMIT, REFINEMENT_NUDGE_THRESHOLD, LOW_RELEVANCE_PERCENT_THRESHOLD } from '@/config/constants';
 import type { SearchResponse, MatchSnippet } from './types';
 import { enrichAdopters } from './enrichAdopters';
+import { normalizeConfidence, SEARCH_SCORE_CEILING } from '@/lib/scoring';
 
 const MIN_PHONE_DIGITS = 4;
 
@@ -461,10 +462,12 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
             }
 
             const isUnauthenticated = user === 'unknown';
+            const relevancePercent = normalizeConfidence(score, SEARCH_SCORE_CEILING);
             const result = {
                 adopter: { ...a },
                 matchSnippet: bestSnippet ? { ...bestSnippet } : null,
                 relevanceScore: score,
+                relevancePercent,
                 avgRating: enrichment?.avgRating ?? null,
                 thumbnail: enrichment?.thumbnail ?? null,
                 stats: enrichment?.stats ?? { searchHits: 0, profileViews: 0, requests: 0, adoptions: 0 },
@@ -492,6 +495,9 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
                     result.matchSnippet.snippet = "";
                     result.matchSnippet.highlights = [];
                 }
+
+                // Suppress relevance % — reveals indirect system knowledge (E3 fix)
+                result.relevancePercent = 0;
             }
 
             return result;
@@ -499,15 +505,34 @@ export async function searchAdopter(query: string): Promise<SearchResponse> {
 
         allResults.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
-        const totalCount = allResults.length;
+        // ── Low-relevance bucketing (multi-token queries only) ────────────
+        let mainResults = allResults;
+        let lowRelevanceResults: typeof allResults = [];
+        if (isMultiToken) {
+            mainResults = allResults.filter(r => r.relevancePercent >= LOW_RELEVANCE_PERCENT_THRESHOLD);
+            lowRelevanceResults = allResults.filter(r => r.relevancePercent < LOW_RELEVANCE_PERCENT_THRESHOLD);
+        }
+
+        // ── Refinement nudge signal (single-token queries only) ───────────
+        const isSingleToken = !isMultiToken;
+        const singleTokenResultCount = (isSingleToken && allResults.length > REFINEMENT_NUDGE_THRESHOLD)
+            ? allResults.length
+            : undefined;
+
+        const totalCount = mainResults.length;
         logger.info('Search', { query, tokens: tokens.length, resultCount: Math.min(totalCount, SEARCH_RESULT_LIMIT), truncated: totalCount > SEARCH_RESULT_LIMIT, user });
         logAudit({ userEmail: user, action: 'search', details: { query, resultCount: Math.min(totalCount, SEARCH_RESULT_LIMIT) } });
 
+        const response: SearchResponse = {
+            results: mainResults.slice(0, SEARCH_RESULT_LIMIT),
+            ...(lowRelevanceResults.length > 0 && { lowRelevanceResults: lowRelevanceResults.slice(0, SEARCH_RESULT_LIMIT) }),
+            ...(singleTokenResultCount !== undefined && { singleTokenResultCount }),
+        };
         if (totalCount > SEARCH_RESULT_LIMIT) {
-            return { results: allResults.slice(0, SEARCH_RESULT_LIMIT), truncated: true, totalCount };
+            response.truncated = true;
+            response.totalCount = totalCount;
         }
-
-        return { results: allResults };
+        return response;
 
     } catch (error) {
         const errorId = logger.error('Search failed', error, { query, user });

@@ -15,17 +15,19 @@ export interface Token {
 
 // ── Normalization ────────────────────────────────────────────────
 
-/** Map of accented characters to their ASCII equivalents */
-const ACCENT_MAP: Record<string, string> = {
-    'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u',
-    'ü': 'u', 'ñ': 'n', 'à': 'a', 'è': 'e', 'ì': 'i',
-    'ò': 'o', 'ù': 'u', 'â': 'a', 'ê': 'e', 'î': 'i',
-    'ô': 'o', 'û': 'u', 'ã': 'a', 'õ': 'o',
-};
-
-/** Lowercase, trim, and strip accents from text */
+/**
+ * Lowercase, trim, and strip diacritics from text using Unicode NFD decomposition.
+ * NFD splits accented characters into base + combining mark (e.g. 'á' → 'a' + ◌́),
+ * then the regex removes all combining marks in the U+0300–U+036F block.
+ * This covers the full Latin accent range including uppercase variants (Á, É, Ñ, Ü…)
+ * and edge cases the old ACCENT_MAP missed (e.g. Ç, œ, ß are handled by the base layer).
+ */
 export function normalizeText(s: string): string {
-    return s.toLowerCase().trim().replace(/[áéíóúüñàèìòùâêîôûãõ]/g, ch => ACCENT_MAP[ch] || ch);
+    return s
+        .toLowerCase()
+        .trim()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
 }
 
 // ── Phone Extraction ─────────────────────────────────────────────

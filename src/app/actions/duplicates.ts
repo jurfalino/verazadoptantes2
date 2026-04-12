@@ -1,10 +1,11 @@
 'use server';
 
 import { adopters, adoptions, duplicateTokens, duplicateCandidates } from '@/db/schema';
-import { eq, or, and } from 'drizzle-orm';
+import { eq, or, and, inArray } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { getDb } from './_db';
 import { extractTokens, computeTokenHash, normalizeText, extractPhones, extractEmails, extractSocials, type Token } from '@/lib/tokenizer';
+import { normalizeConfidence, confidenceBand, fuzzyNameScore, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 
 /**
  * Tokenize an adopter for duplicate detection.
@@ -141,6 +142,7 @@ export interface TokenMatchResult {
     adopterName: string;
     matchTypes: string[];
     score: number;
+    confidencePercent: number;
     confidence: 'high' | 'medium' | 'low';
 }
 
@@ -241,25 +243,73 @@ export async function checkTokenDuplicates(data: {
             )
         );
 
+        // ── Batch-fetch all stored name_word tokens for matched adopters (E1 fix) ──
+        // One single query replaces the previous per-adopter N+1 pattern.
+        const allStoredWords = matchedIds.length > 0
+            ? await db.select({ adopterId: duplicateTokens.adopterId, tokenValue: duplicateTokens.tokenValue })
+                .from(duplicateTokens)
+                .where(and(
+                    inArray(duplicateTokens.adopterId, matchedIds),
+                    eq(duplicateTokens.tokenType, 'name_word'),
+                ))
+                .all()
+            : [];
+        const storedWordsByAdopter = new Map<string, string[]>();
+        for (const row of allStoredWords) {
+            if (!storedWordsByAdopter.has(row.adopterId)) storedWordsByAdopter.set(row.adopterId, []);
+            storedWordsByAdopter.get(row.adopterId)!.push(row.tokenValue);
+        }
+
         const results: TokenMatchResult[] = [];
         for (const a of matchedAdopters) {
             if (!a) continue;
             const types = Array.from(matchMap.get(a.id) || []);
-            // Score: phone/email/social = 3 each, name_full = 2, name_word = 1
+
+            // Base weights — phone/email/social must always be exact (no fuzzy)
             const weights: Record<string, number> = {
                 phone: 3, phone_suffix: 2, email: 3, social: 3,
-                name_full: 2, name_word: 1, address_word: 1, source_url: 3,
+                name_full: 2, name_phonetic: 1.5,
+                name_word: 1, address_word: 1, source_url: 3,
             };
-            const score = types.reduce((s, t) => s + (weights[t] || 1), 0);
-            const confidence: 'high' | 'medium' | 'low' =
-                score >= 5 ? 'high' : score >= 3 ? 'medium' : 'low';
+            let score = types.reduce((s, t) => s + (weights[t] || 1), 0);
+
+            // ── Levenshtein fuzzy bonus for name_word tokens ──────────────
+            // For each input token, find the single best fuzzy match among stored tokens.
+            // Capped at 1.0 total per input token to prevent score inflation
+            // from profiles that happen to have many stored name words (E4 fix).
+            const inputNameWords = tokens
+                .filter(t => t.type === 'name_word')
+                .map(t => t.value);
+            const storedNameWords = storedWordsByAdopter.get(a.id) || [];
+
+            for (const input of inputNameWords) {
+                // Find the best (highest) fuzzy score across all stored words
+                let bestFuzzy = 0;
+                for (const stored of storedNameWords) {
+                    if (input === stored) continue; // exact match already counted
+                    const fuzzy = fuzzyNameScore(input, stored);
+                    if (fuzzy > bestFuzzy) bestFuzzy = fuzzy;
+                }
+                if (bestFuzzy > 0) {
+                    score += bestFuzzy;
+                    if (!types.includes('name_word_fuzzy')) types.push('name_word_fuzzy');
+                }
+            }
+
+            // ── Normalise to 0–100% and classify band ────────────────────
+            const confidencePercent = normalizeConfidence(score, PRACTICAL_MAX_DUPLICATE);
+            const band = confidenceBand(confidencePercent);
+
+            // Skip results too weak to surface — they'll never warrant a warning
+            if (band === 'none') continue;
 
             results.push({
                 adopterId: a.id,
                 adopterName: a.name,
                 matchTypes: types,
                 score,
-                confidence,
+                confidencePercent,
+                confidence: band as 'high' | 'medium' | 'low',
             });
         }
 
