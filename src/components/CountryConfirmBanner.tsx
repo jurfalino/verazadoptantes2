@@ -159,10 +159,12 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
     const quickCountries = countries.filter(c => ['AR', 'UY', 'CL', 'MX'].includes(c.code));
     const getName = (c: Country) => locale === 'es' ? c.nameEs : c.name;
 
+    // ── Shared sub-elements ────────────────────────────────────────────────────
+
     // Name editor section (shared between onboarding variants)
     const nameSection = (
-        <div className="mb-5 pb-5 border-b border-stone-200 dark:border-stone-600">
-            <label className="block text-xs font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-2">
+        <div className="mb-5 pb-5 border-b border-stone-200">
+            <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">
                 {locale === 'es' ? 'Tu nombre' : 'Your name'}
             </label>
             {editingName ? (
@@ -172,13 +174,13 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                         value={userName}
                         onChange={e => setUserName(e.target.value)}
                         maxLength={100}
-                        className="flex-1 px-3 py-2 text-sm rounded-lg border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none transition-all"
+                        className="flex-1 px-3 py-2 text-sm rounded-lg"
                         autoFocus
                     />
                     <button
                         type="button"
                         onClick={() => setEditingName(false)}
-                        className="px-3 py-2 text-xs font-medium text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-900/20 rounded-lg transition-colors"
+                        className="px-3 py-2 text-xs font-medium text-teal-700 hover:bg-teal-50 rounded-lg transition-colors"
                     >
                         {locale === 'es' ? 'Listo' : 'Done'}
                     </button>
@@ -187,12 +189,12 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                 <button
                     type="button"
                     onClick={() => setEditingName(true)}
-                    className="w-full flex items-center justify-between px-3 py-2.5 text-sm rounded-lg border border-stone-200 dark:border-stone-600 bg-stone-50 dark:bg-stone-700/50 hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors text-left group"
+                    className="w-full flex items-center justify-between px-3 py-2.5 text-sm rounded-lg border border-stone-200 bg-stone-50 hover:bg-stone-100 transition-colors text-left group"
                 >
-                    <span className="text-stone-800 dark:text-stone-200 font-medium truncate">
+                    <span className="text-stone-800 font-medium truncate">
                         {userName || (locale === 'es' ? 'Sin nombre' : 'No name')}
                     </span>
-                    <svg className="w-3.5 h-3.5 text-stone-400 group-hover:text-stone-600 dark:group-hover:text-stone-300 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-3.5 h-3.5 text-stone-400 group-hover:text-stone-600 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                     </svg>
                 </button>
@@ -210,7 +212,7 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                 aria-required="true"
                 className="mt-0.5 w-4 h-4 rounded border-stone-300 text-teal-600 focus:ring-teal-500 focus:ring-offset-0 cursor-pointer flex-shrink-0"
             />
-            <span className="text-sm text-stone-600 dark:text-stone-300 leading-snug">
+            <span className="text-sm text-stone-600 leading-snug">
                 {locale === 'es' ? 'Acepto los' : 'I accept the'}{' '}
                 <a href="/terms" target="_blank" rel="noopener noreferrer"
                    className="text-teal-700 underline underline-offset-2 hover:text-teal-800"
@@ -229,7 +231,7 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
 
     // Error + retry message
     const errorMessage = saveError && (
-        <p className="text-xs text-red-600 dark:text-red-400 text-center mt-2">
+        <p className="text-xs text-red-600 text-center mt-2">
             {locale === 'es'
                 ? 'Hubo un error al guardar. Por favor intentá de nuevo.'
                 : 'Something went wrong. Please try again.'}
@@ -244,17 +246,23 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
         </svg>
     );
 
+    // Shared overlay + card wrapper
+    const overlayClass = "fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200";
+    const backdropClass = "absolute inset-0 bg-black/40 backdrop-blur-sm";
+    const cardClass = "relative bg-white rounded-2xl shadow-2xl max-w-sm w-full border border-stone-200";
+
     // ── CASE 0: Returning user — T&C updated ──────────────────────────────────
     if (isTermsUpdate) {
         return (
-            <div className="fixed inset-0 bg-stone-950/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
-                <div className="bg-white dark:bg-stone-800 rounded-2xl shadow-2xl max-w-sm w-full p-8 border border-stone-200 dark:border-stone-700">
+            <div className={overlayClass}>
+                <div className={backdropClass} />
+                <div className={`${cardClass} p-8`}>
                     <div className="text-center mb-6">
                         <span className="text-5xl block mb-4">📋</span>
-                        <h2 className="text-xl font-semibold text-stone-800 dark:text-stone-100 tracking-tight">
+                        <h2 className="text-xl font-semibold text-stone-800 tracking-tight">
                             {locale === 'es' ? 'Actualizamos nuestros Términos' : "We've updated our Terms"}
                         </h2>
-                        <p className="text-stone-500 dark:text-stone-400 text-sm mt-2 leading-relaxed">
+                        <p className="text-stone-500 text-sm mt-2 leading-relaxed">
                             {locale === 'es'
                                 ? 'Revisamos los Términos de Uso y la Política de Privacidad. Por favor léelos y aceptalos para continuar.'
                                 : "We've revised our Terms of Use and Privacy Policy. Please review and accept them to continue."
@@ -287,14 +295,15 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
         if (!country) return null;
 
         return (
-            <div className="fixed inset-0 bg-stone-950/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
-                <div className="bg-white dark:bg-stone-800 rounded-2xl shadow-2xl max-w-sm w-full max-h-[90vh] overflow-y-auto p-8 border border-stone-200 dark:border-stone-700">
+            <div className={overlayClass}>
+                <div className={backdropClass} />
+                <div className={`${cardClass} max-h-[90vh] overflow-y-auto p-8`}>
                     <div className="text-center mb-6">
                         <span className="text-5xl block mb-4">{country.flag}</span>
-                        <h2 className="text-xl font-semibold text-stone-800 dark:text-stone-100 tracking-tight">
+                        <h2 className="text-xl font-semibold text-stone-800 tracking-tight">
                             {locale === 'es' ? '¡Bienvenido!' : 'Welcome!'}
                         </h2>
-                        <p className="text-stone-500 dark:text-stone-400 text-sm mt-2">
+                        <p className="text-stone-500 text-sm mt-2">
                             {locale === 'es'
                                 ? 'Confirmá tu información para empezar.'
                                 : 'Confirm your info to get started.'
@@ -305,7 +314,7 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                     {nameSection}
 
                     {/* T&C — before country confirm buttons */}
-                    <div className="mb-5 pb-5 border-b border-stone-200 dark:border-stone-600">
+                    <div className="mb-5 pb-5 border-b border-stone-200">
                         {termsCheckbox}
                     </div>
 
@@ -325,7 +334,7 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                         </button>
                         <button
                             onClick={() => setShowSelector(true)}
-                            className="w-full px-4 py-2.5 text-sm font-medium text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-700/50 rounded-xl transition-colors"
+                            className="w-full px-4 py-2.5 text-sm font-medium text-stone-600 hover:bg-stone-100 rounded-xl transition-colors"
                         >
                             {locale === 'es' ? 'No, elegir otro país' : 'No, choose a different country'}
                         </button>
@@ -338,14 +347,15 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
 
     // ── CASE 2: New user — no country detected, or clicked "change" ───────────
     return (
-        <div className="fixed inset-0 bg-stone-950/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-stone-800 rounded-2xl shadow-2xl max-w-sm w-full max-h-[90vh] overflow-y-auto p-8 border border-stone-200 dark:border-stone-700">
+        <div className={overlayClass}>
+            <div className={backdropClass} />
+            <div className={`${cardClass} max-h-[90vh] overflow-y-auto p-8`}>
                 <div className="text-center mb-6">
                     <span className="text-5xl block mb-4">🌎</span>
-                    <h2 className="text-xl font-semibold text-stone-800 dark:text-stone-100 tracking-tight">
+                    <h2 className="text-xl font-semibold text-stone-800 tracking-tight">
                         {locale === 'es' ? '¡Bienvenido!' : 'Welcome!'}
                     </h2>
-                    <p className="text-stone-500 dark:text-stone-400 text-sm mt-2">
+                    <p className="text-stone-500 text-sm mt-2">
                         {locale === 'es'
                             ? 'Completá tu información para empezar.'
                             : 'Complete your info to get started.'
@@ -356,11 +366,11 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                 {nameSection}
 
                 {/* T&C — BEFORE country picker so user accepts before selecting */}
-                <div className="mb-5 pb-5 border-b border-stone-200 dark:border-stone-600">
+                <div className="mb-5 pb-5 border-b border-stone-200">
                     {termsCheckbox}
                 </div>
 
-                <label className="block text-xs font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-3">
+                <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-3">
                     {locale === 'es' ? 'Tu país' : 'Your country'}
                 </label>
 
@@ -371,7 +381,7 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                             key={c.code}
                             onClick={() => handleSaveCountry(c.code)}
                             disabled={saving || !termsChecked}
-                            className="flex items-center gap-2 px-3 py-2.5 text-sm font-medium text-stone-700 dark:text-stone-200 bg-stone-50 dark:bg-stone-700/50 border border-stone-200 dark:border-stone-600 hover:bg-teal-50 hover:border-teal-300 dark:hover:bg-teal-900/20 dark:hover:border-teal-700 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="flex items-center gap-2 px-3 py-2.5 text-sm font-medium text-stone-700 bg-stone-50 border border-stone-200 hover:bg-teal-50 hover:border-teal-200 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                             <span className="text-lg">{c.flag}</span>
                             {getName(c)}
@@ -381,11 +391,11 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
 
                 {/* Divider */}
                 <div className="flex items-center gap-3 my-4">
-                    <div className="flex-1 h-px bg-stone-200 dark:bg-stone-600" />
-                    <span className="text-xs text-stone-500 dark:text-stone-500 uppercase tracking-wider">
+                    <div className="flex-1 h-px bg-stone-200" />
+                    <span className="text-xs text-stone-500 uppercase tracking-wider">
                         {locale === 'es' ? 'u otro país' : 'or another country'}
                     </span>
-                    <div className="flex-1 h-px bg-stone-200 dark:bg-stone-600" />
+                    <div className="flex-1 h-px bg-stone-200" />
                 </div>
 
                 {/* Full country selector */}
