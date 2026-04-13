@@ -5,7 +5,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { getCountryByCode, countries, type Country } from '@/config/countries';
 import { getUserSettings, acceptTermsAndCountry, acceptTerms, updateUserName } from '@/app/actions/settings';
 import { CountrySelector } from '@/components/CountrySelector';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { CURRENT_TERMS_VERSION } from '@/config/constants';
 
 interface CountryConfirmBannerProps {
@@ -15,6 +15,7 @@ interface CountryConfirmBannerProps {
 export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmBannerProps) {
     const { locale } = useLanguage();
     const router = useRouter();
+    const pathname = usePathname();
     const [email, setEmail] = useState<string | null>(serverEmail);
     const [settings, setSettings] = useState<{
         country: string | null;
@@ -102,7 +103,11 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
     const hasSetCountryBefore = !!settings && !!settings.country;
     const isNewUser     = !!settings && !settings.country;        // never been through onboarding
     const isTermsUpdate = hasSetCountryBefore && needsTerms;      // returning user, T&C changed
-    const shouldShow = !!email && !dismissed && loaded && !!settings && (isNewUser || isTermsUpdate);
+    
+    // Do not block the screen if they are actively trying to read the terms!
+    const isExemptRoute = pathname === '/terms' || pathname === '/privacy';
+    
+    const shouldShow = !!email && !dismissed && loaded && !!settings && (isNewUser || isTermsUpdate) && !isExemptRoute;
 
     // Lock body scroll while modal is visible
     useEffect(() => {
