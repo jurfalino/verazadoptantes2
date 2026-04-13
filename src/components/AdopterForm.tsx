@@ -143,10 +143,11 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
             setDuplicateSearching(true);
             try {
                 const response = await searchAdopter(query || data.name.trim());
-                if (response.validationError || !response.results?.length) {
+                const confident = (response.results || []).filter(r => r.relevancePercent >= 15);
+                if (response.validationError || !confident.length) {
                     setDuplicateResults(null);
                 } else {
-                    setDuplicateResults((response.results || []).slice(0, MAX_DUPLICATE_CARD_RESULTS));
+                    setDuplicateResults(confident.slice(0, MAX_DUPLICATE_CARD_RESULTS));
                 }
             } catch {
                 setDuplicateResults(null);
@@ -249,8 +250,9 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
             if (query.length >= MIN_NAME_LENGTH_FOR_SEARCH) {
                 try {
                     const response = await searchAdopter(query);
-                    if (!response.validationError && response.results?.length) {
-                        setSaveDuplicateModal({ matches: response.results });
+                    const confident = (response.results || []).filter(r => r.relevancePercent >= 15);
+                    if (!response.validationError && confident.length) {
+                        setSaveDuplicateModal({ matches: confident });
                         return;
                     }
                 } catch {

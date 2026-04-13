@@ -16,6 +16,53 @@ export interface AdopterFlaggingHandle {
     openAction: (action: string) => void;
 }
 
+/** Collapsible expander for < 15% confidence suggestions. */
+function ShowLowConfidenceSuggestions({ suppressed, targetAdopter, setTargetAdopter }: {
+    suppressed: DuplicateCandidate[];
+    targetAdopter: { id: string; name: string } | null;
+    setTargetAdopter: (v: { id: string; name: string }) => void;
+}) {
+    const [expanded, setExpanded] = useState(false);
+    return (
+        <div>
+            <button
+                type="button"
+                onClick={() => setExpanded(e => !e)}
+                className="text-xs text-stone-400 hover:text-stone-600 flex items-center gap-1 mt-1 transition-colors"
+            >
+                <svg className={`w-3 h-3 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+                {expanded ? 'Ocultar' : `Ver`} {suppressed.length} coincidencia{suppressed.length !== 1 ? 's' : ''} de baja confianza
+            </button>
+            {expanded && (
+                <div className="space-y-1.5 mt-1.5 opacity-70">
+                    {suppressed.map(sug => (
+                        <div
+                            key={sug.id}
+                            className={`p-3 border rounded-lg cursor-pointer text-sm transition-all ${targetAdopter?.id === sug.otherAdopterId
+                                ? 'bg-teal-100 border-teal-500 ring-1 ring-teal-500'
+                                : 'bg-stone-50 border-stone-200 hover:border-stone-400'
+                                }`}
+                            onClick={() => setTargetAdopter({ id: sug.otherAdopterId, name: sug.otherAdopterName })}
+                        >
+                            <div className="flex items-center justify-between">
+                                <span className="font-semibold text-stone-700">{sug.otherAdopterName}</span>
+                                <span className="text-xs px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500 font-medium">{sug.confidencePercent}% match</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                                {sug.matchTypes.map(type => (
+                                    <span key={type} className="text-xs px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500">{type.replace('_', ' ')}</span>
+                                ))}
+            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], hasVerifiedAdoption?: boolean, hasVerifiedAddress?: boolean, tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, hasDuplicateBanner?: boolean }>(function AdopterFlagging({ adopterId, adopterName: _adopterName, existingFlags, hasVerifiedAdoption = false, hasVerifiedAddress = false, tooManyAdoptions, tooManyRequests, hasDuplicateBanner = false }, ref) {
     const router = useRouter();
     const { t } = useLanguage();
@@ -432,33 +479,46 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                         </div>
 
                                         {/* System-suggested matches */}
-                                        {systemSuggestions.length > 0 && !searchTerm && (
-                                            <div className="mb-3">
-                                                <p className="text-xs font-medium text-stone-500 mb-1.5">🤖 {t('flagging.system_suggestions') || 'System-suggested matches'}</p>
-                                                <div className="space-y-1.5">
-                                                    {systemSuggestions.map(sug => (
-                                                        <div
-                                                            key={sug.id}
-                                                            className={`p-3 border rounded-lg cursor-pointer text-sm transition-all ${targetAdopter?.id === sug.otherAdopterId
-                                                                ? 'bg-teal-100 border-teal-500 ring-1 ring-teal-500'
-                                                                : 'bg-blue-50 border-blue-200 hover:border-blue-400 hover:shadow-sm'
-                                                                }`}
-                                                            onClick={() => setTargetAdopter({ id: sug.otherAdopterId, name: sug.otherAdopterName })}
-                                                        >
-                                                            <div className="flex items-center justify-between">
-                                                                <span className="font-semibold text-stone-900">{sug.otherAdopterName}</span>
-                                                                <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600 font-medium">🤖 auto</span>
+                                        {systemSuggestions.length > 0 && !searchTerm && (() => {
+                                            const LOW_CONFIDENCE_THRESHOLD = 15;
+                                            const sorted = [...systemSuggestions].sort((a, b) => b.confidencePercent - a.confidencePercent);
+                                            const visible = sorted.filter(s => s.confidencePercent >= LOW_CONFIDENCE_THRESHOLD);
+                                            const suppressed = sorted.filter(s => s.confidencePercent < LOW_CONFIDENCE_THRESHOLD);
+                                            return (
+                                                <div className="mb-3">
+                                                    <p className="text-xs font-medium text-stone-500 mb-1.5">🤖 {t('flagging.system_suggestions') || 'System-suggested matches'}</p>
+                                                    <div className="space-y-1.5">
+                                                        {visible.map(sug => (
+                                                            <div
+                                                                key={sug.id}
+                                                                className={`p-3 border rounded-lg cursor-pointer text-sm transition-all ${targetAdopter?.id === sug.otherAdopterId
+                                                                    ? 'bg-teal-100 border-teal-500 ring-1 ring-teal-500'
+                                                                    : 'bg-blue-50 border-blue-200 hover:border-blue-400 hover:shadow-sm'
+                                                                    }`}
+                                                                onClick={() => setTargetAdopter({ id: sug.otherAdopterId, name: sug.otherAdopterName })}
+                                                            >
+                                                                <div className="flex items-center justify-between">
+                                                                    <span className="font-semibold text-stone-900">{sug.otherAdopterName}</span>
+                                                                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                                                                        sug.confidencePercent >= 75 ? 'bg-red-100 text-red-700' :
+                                                                        sug.confidencePercent >= 40 ? 'bg-amber-100 text-amber-700' :
+                                                                        'bg-blue-100 text-blue-600'
+                                                                    }`}>{sug.confidencePercent}% match</span>
+                                                                </div>
+                                                                <div className="flex flex-wrap gap-1 mt-1">
+                                                                    {sug.matchTypes.map(type => (
+                                                                        <span key={type} className="text-xs px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-600">{type.replace('_', ' ')}</span>
+                                                                    ))}
+                                                                </div>
                                                             </div>
-                                                            <div className="flex flex-wrap gap-1 mt-1">
-                                                                {sug.matchTypes.map(type => (
-                                                                    <span key={type} className="text-xs px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-600">{type.replace('_', ' ')}</span>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    ))}
+                                                        ))}
+                                                        {suppressed.length > 0 && (
+                                                            <ShowLowConfidenceSuggestions suppressed={suppressed} targetAdopter={targetAdopter} setTargetAdopter={setTargetAdopter} />
+                                                        )}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        )}
+                                            );
+                                        })()}
 
                                         {searchTerm && !isSearching && searchResults.length === 0 && hasSearched && (
                                             <div className="text-center py-4 bg-white/50 rounded-lg border border-dashed border-teal-200/50">

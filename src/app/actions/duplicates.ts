@@ -69,6 +69,8 @@ export interface DuplicateCandidate {
     matchTypes: string[];
     score: number;
     confidence: string;
+    /** Normalised 0–100 confidence percentage derived from score / PRACTICAL_MAX_DUPLICATE. */
+    confidencePercent: number;
 }
 
 /**
@@ -117,17 +119,20 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
             if (a) nameMap.set(a.id, a.name);
         }
 
-        return candidates.map((c: { id: string; adopter1Id: string; adopter2Id: string; matchTypes: string; score: number; confidence: string }) => {
-            const otherId = c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id;
-            return {
-                id: c.id,
-                otherAdopterId: otherId,
-                otherAdopterName: nameMap.get(otherId) || 'Unknown',
-                matchTypes: JSON.parse(c.matchTypes || '[]') as string[],
-                score: c.score,
-                confidence: c.confidence,
-            };
-        });
+        return candidates
+            .map((c: { id: string; adopter1Id: string; adopter2Id: string; matchTypes: string; score: number; confidence: string }) => {
+                const otherId = c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id;
+                return {
+                    id: c.id,
+                    otherAdopterId: otherId,
+                    otherAdopterName: nameMap.get(otherId) || 'Unknown',
+                    matchTypes: JSON.parse(c.matchTypes || '[]') as string[],
+                    score: c.score,
+                    confidence: c.confidence,
+                    confidencePercent: normalizeConfidence(c.score, PRACTICAL_MAX_DUPLICATE),
+                };
+            })
+            .sort((a: DuplicateCandidate, b: DuplicateCandidate) => b.confidencePercent - a.confidencePercent);
     } catch (error) {
         logger.warn('getDuplicateCandidates failed', {
             adopterId,

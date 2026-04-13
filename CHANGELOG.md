@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.11.2] - 2026-04-13
+
+### Added
+- **Confidence bucketing in profile creation form** — the "Posibles perfiles coincidentes" inline card and the save-blocking modal both now filter out results below 15% relevance before display. False-positive matches (e.g. an adopter whose address field contains a matching word) are silently suppressed rather than shown as warnings.
+- **Confidence bucketing in admin duplicate flagging modal** — system-suggested matches now display a color-coded `% match` pill (red ≥75%, amber ≥40%, blue <40%) instead of a generic "auto" badge. Matches below 15% are collapsed behind a "Ver N coincidencias de baja confianza" expander and suppressed by default. Results are sorted highest confidence first.
+- **Confidence bucketing in ImportWizard Step 3 field-overlap hints** — field-overlap hints now show the confidence percentage alongside each match. Hints below 15% are collapsed into an expander, reducing noise for rescuers importing posts where a shared first name triggers a spurious warning.
+- **`confidencePercent` on `DuplicateCandidate`** — `getDuplicateCandidates` now computes and returns a normalized 0–100% confidence score derived from `score / PRACTICAL_MAX_DUPLICATE`, enabling confidence-aware UI rendering throughout the flagging flow.
+
 ## [2.11.1] - 2026-04-12
 
 ### Added

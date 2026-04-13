@@ -26,7 +26,41 @@ interface PersonMatch {
     matchReasons: string[];
 }
 
+/** Collapsible expander for < 15% confidence field-overlap hints in Step 3. */
+function ImportLowConfidenceHints({ suppressed, getMatchLabel, overlapLabel }: {
+    suppressed: TokenMatchResult[];
+    getMatchLabel: (mt: string) => string;
+    overlapLabel: string;
+}) {
+    const [expanded, setExpanded] = useState(false);
+    return (
+        <div>
+            <button
+                type="button"
+                onClick={() => setExpanded(e => !e)}
+                className="text-xs text-stone-400 hover:text-stone-600 flex items-center gap-1 mt-0.5 transition-colors"
+            >
+                <svg className={`w-3 h-3 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+                {expanded ? 'Ocultar' : 'Ver'} {suppressed.length} coincidencia{suppressed.length !== 1 ? 's' : ''} de baja confianza
+            </button>
+            {expanded && suppressed.map(hint => (
+                <p key={hint.adopterId} className="text-xs text-stone-400 flex items-center gap-1 mt-0.5">
+                    <span>·</span>
+                    <span>
+                        {hint.matchTypes.map(mt => getMatchLabel(mt)).join(', ')} {overlapLabel}{' '}
+                        <a href={`/adopter/${hint.adopterId}`} target="_blank" className="underline">{hint.adopterName}</a>
+                        <span className="ml-1">({hint.confidencePercent}%)</span>
+                    </span>
+                </p>
+            ))}
+        </div>
+    );
+}
+
 export default function ImportWizard() {
+
     const { t, locale } = useLanguage();
     const { data: _session } = useSession();
     const { openLogin: _openLogin } = useAuthContext();
@@ -1139,20 +1173,31 @@ export default function ImportWizard() {
                             className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm min-h-[80px] resize-y focus:ring-2 focus:ring-blue-500"
                             placeholder={t('import.contactPlaceholder') || 'Phones, emails, addresses, social profiles...'}
                         />
-                        {/* Field overlap hints */}
-                        {fieldOverlapHints.length > 0 && (
-                            <div className="mt-1.5 space-y-1">
-                                {fieldOverlapHints.slice(0, 2).map(hint => (
-                                    <p key={hint.adopterId} className="text-xs text-amber-700 flex items-center gap-1">
-                                        <span>⚠️</span>
-                                        <span>
-                                            {hint.matchTypes.map(mt => getMatchLabel(mt)).join(', ')} {t('import.overlap_match') || 'matches'}{' '}
-                                            <a href={`/adopter/${hint.adopterId}`} target="_blank" className="underline font-medium">{hint.adopterName}</a>
-                                        </span>
-                                    </p>
-                                ))}
-                            </div>
-                        )}
+                        {/* Field overlap hints — bucketed by confidence */}
+                        {fieldOverlapHints.length > 0 && (() => {
+                            const LOW_THRESHOLD = 15;
+                            const visible = fieldOverlapHints.filter(h => h.confidencePercent >= LOW_THRESHOLD).slice(0, 2);
+                            const suppressed = fieldOverlapHints.filter(h => h.confidencePercent < LOW_THRESHOLD);
+                            if (visible.length === 0 && suppressed.length === 0) return null;
+                            return (
+                                <div className="mt-1.5 space-y-1">
+                                    {visible.map(hint => (
+                                        <p key={hint.adopterId} className="text-xs text-amber-700 flex items-center gap-1">
+                                            <span>⚠️</span>
+                                            <span>
+                                                {hint.matchTypes.map(mt => getMatchLabel(mt)).join(', ')} {t('import.overlap_match') || 'matches'}{' '}
+                                                <a href={`/adopter/${hint.adopterId}`} target="_blank" className="underline font-medium">{hint.adopterName}</a>
+                                                <span className="ml-1 text-amber-500">({hint.confidencePercent}%)</span>
+                                            </span>
+                                        </p>
+                                    ))}
+                                    {suppressed.length > 0 && (
+                                        <ImportLowConfidenceHints suppressed={suppressed} getMatchLabel={getMatchLabel} overlapLabel={t('import.overlap_match') || 'matches'} />
+                                    )}
+                                </div>
+                            );
+                        })()}
+
                     </div>
 
                     {/* Notes */}
