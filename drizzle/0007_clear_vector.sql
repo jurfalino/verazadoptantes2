@@ -24,9 +24,9 @@ CREATE TABLE IF NOT EXISTS `organizations` (
 	`created_at` integer DEFAULT (strftime('%s', 'now'))
 );
 --> statement-breakpoint
-ALTER TABLE `notifications` ADD COLUMN IF NOT EXISTS `dismissed` integer DEFAULT 0;--> statement-breakpoint
+ALTER TABLE `notifications` ADD COLUMN `dismissed` integer DEFAULT 0;--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS `idx_notif_type` ON `notifications` (`type`,`created_at`);--> statement-breakpoint
-ALTER TABLE `user_profiles` ADD COLUMN IF NOT EXISTS `province` text;--> statement-breakpoint
-ALTER TABLE `user_profiles` ADD COLUMN IF NOT EXISTS `province_code` text;--> statement-breakpoint
-ALTER TABLE `user_profiles` ADD COLUMN IF NOT EXISTS `city` text;--> statement-breakpoint
-ALTER TABLE `user_profiles` ADD COLUMN IF NOT EXISTS `timezone` text;
+ALTER TABLE `user_profiles` ADD COLUMN `province` text;--> statement-breakpoint
+ALTER TABLE `user_profiles` ADD COLUMN `province_code` text;--> statement-breakpoint
+ALTER TABLE `user_profiles` ADD COLUMN `city` text;--> statement-breakpoint
+ALTER TABLE `user_profiles` ADD COLUMN `timezone` text;
