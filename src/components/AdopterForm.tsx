@@ -2,8 +2,8 @@
 
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { saveAdopter, saveImage, searchAdopter } from "@/app/actions";
-import type { SearchResult } from "@/app/actions";
+import { saveAdopter, saveImage, findAdopters } from "@/app/actions";
+import type { DiscoveryMatch } from "@/app/actions";
 import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
 
@@ -76,9 +76,9 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
     const [loading, setLoading] = useState(false);
 
     // Duplicate detection (create only): while-typing results + save confirmation modal
-    const [duplicateResults, setDuplicateResults] = useState<SearchResult[] | null>(null);
+    const [duplicateResults, setDuplicateResults] = useState<DiscoveryMatch[] | null>(null);
     const [duplicateSearching, setDuplicateSearching] = useState(false);
-    const [saveDuplicateModal, setSaveDuplicateModal] = useState<{ matches: SearchResult[] } | null>(null);
+    const [saveDuplicateModal, setSaveDuplicateModal] = useState<{ matches: DiscoveryMatch[] } | null>(null);
     const saveDuplicateModalRef = useRef<HTMLDivElement>(null);
     const createAnywayButtonRef = useRef<HTMLButtonElement>(null);
     const duplicateDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -142,8 +142,11 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
             duplicateDebounceRef.current = null;
             setDuplicateSearching(true);
             try {
-                const response = await searchAdopter(query || data.name.trim());
-                const confident = (response.results || []).filter(r => r.relevancePercent >= 15);
+                const response = await findAdopters(
+                    { raw: query || data.name.trim() },
+                    { mode: 'discovery', enrich: true, minRelevance: 15 },
+                );
+                const confident = (response.results as DiscoveryMatch[]);
                 if (response.validationError || !confident.length) {
                     setDuplicateResults(null);
                 } else {
@@ -249,8 +252,11 @@ export function AdopterForm({ initialData, history = [], currentUser, images = [
             const query = getDuplicateSearchQuery() || data.name.trim();
             if (query.length >= MIN_NAME_LENGTH_FOR_SEARCH) {
                 try {
-                    const response = await searchAdopter(query);
-                    const confident = (response.results || []).filter(r => r.relevancePercent >= 15);
+                    const response = await findAdopters(
+                        { raw: query },
+                        { mode: 'discovery', enrich: true, minRelevance: 15 },
+                    );
+                    const confident = response.results as DiscoveryMatch[];
                     if (!response.validationError && confident.length) {
                         setSaveDuplicateModal({ matches: confident });
                         return;

@@ -156,6 +156,10 @@ export interface TokenMatchResult {
  * Extracts tokens from the provided data and queries the token index.
  * Used by import wizard pre-save and real-time field hints.
  */
+/**
+ * @deprecated Use findAdopters({ mode: 'duplicate' }) for new call sites.
+ * Kept as a rollback reference — remove after v2.12.x staging validation.
+ */
 export async function checkTokenDuplicates(data: {
     name?: string;
     contactInfo?: string;

@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { searchAdopter, SearchResult } from '@/app/actions';
-import type { SnippetField } from '@/app/actions';
+import { findAdopters } from '@/app/actions';
+import type { DiscoveryMatch, SnippetField } from '@/app/actions';
 
 const SNIPPET_ICONS: Record<SnippetField, string> = {
     name: '👤', contact: '📞', address: '📍',
@@ -48,7 +48,7 @@ export default function SearchSection({ locale }: { locale?: string }) {
     // Initialize from URL params for back-navigation persistence
     const initialQuery = searchParams.get('q') || '';
     const [query, setQuery] = useState(initialQuery);
-    const [results, setResults] = useState<SearchResult[] | null>(null);
+    const [results, setResults] = useState<DiscoveryMatch[] | null>(null);
     const [loading, setLoading] = useState(false);
     const [truncatedInfo, setTruncatedInfo] = useState<{ truncated: boolean; totalCount: number } | null>(null);
     const [validationError, setValidationError] = useState<string | null>(null);
@@ -64,13 +64,16 @@ export default function SearchSection({ locale }: { locale?: string }) {
         setTruncatedInfo(null);
         setSingleTokenResultCount(undefined);
         try {
-            const response = await searchAdopter(searchQuery);
+            const response = await findAdopters(
+                { raw: searchQuery },
+                { mode: 'discovery', enrich: true },
+            );
             if (!response) return;
             if (response.validationError) {
                 setValidationError(response.validationError);
                 setResults([]);
             } else {
-                setResults(response.results || []);
+                setResults(response.results as DiscoveryMatch[]);
                 setSingleTokenResultCount(response.singleTokenResultCount);
                 if (response.truncated && response.totalCount) {
                     setTruncatedInfo({ truncated: true, totalCount: response.totalCount });
@@ -126,13 +129,16 @@ export default function SearchSection({ locale }: { locale?: string }) {
         setValidationError(null);
         setTruncatedInfo(null);
         try {
-            const response = await searchAdopter(query);
+            const response = await findAdopters(
+                { raw: query },
+                { mode: 'discovery', enrich: true },
+            );
             if (!response) throw new Error('No response from search');
             if (response.validationError) {
                 setValidationError(response.validationError);
                 setResults([]);
             } else {
-                setResults(response.results || []);
+                setResults(response.results as DiscoveryMatch[]);
                 setSingleTokenResultCount(response.singleTokenResultCount);
                 if (response.truncated && response.totalCount) {
                     setTruncatedInfo({ truncated: true, totalCount: response.totalCount });

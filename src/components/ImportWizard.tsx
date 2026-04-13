@@ -12,8 +12,9 @@ import type { MediaItem } from '@/components/ui/MediaLightbox';
 import LegalConsent from '@/components/LegalConsent';
 import { extractVideoThumbnail, extractVideoThumbnailFromUrl } from '@/lib/videoThumbnail';
 import { zarazTrack } from '@/lib/zaraz';
-import { checkTokenDuplicates } from '@/app/actions';
-import type { TokenMatchResult } from '@/app/actions';
+import { findAdopters } from '@/app/actions';
+import type { DuplicateMatch } from '@/app/actions';
+import { confidenceBand } from '@/lib/scoring';
 import type { ExtractedAdopterData } from '@/lib/gemini';
 
 interface PersonMatch {
@@ -28,7 +29,7 @@ interface PersonMatch {
 
 /** Collapsible expander for < 15% confidence field-overlap hints in Step 3. */
 function ImportLowConfidenceHints({ suppressed, getMatchLabel, overlapLabel }: {
-    suppressed: TokenMatchResult[];
+    suppressed: DuplicateMatch[];
     getMatchLabel: (mt: string) => string;
     overlapLabel: string;
 }) {
@@ -51,7 +52,7 @@ function ImportLowConfidenceHints({ suppressed, getMatchLabel, overlapLabel }: {
                     <span>
                         {hint.matchTypes.map(mt => getMatchLabel(mt)).join(', ')} {overlapLabel}{' '}
                         <a href={`/adopter/${hint.adopterId}`} target="_blank" className="underline">{hint.adopterName}</a>
-                        <span className="ml-1">({hint.confidencePercent}%)</span>
+                        <span className="ml-1">({hint.relevancePercent}%)</span>
                     </span>
                 </p>
             ))}
@@ -181,7 +182,7 @@ export default function ImportWizard() {
     const [personMatches, setPersonMatches] = useState<PersonMatch[]>([]);
     const [selectedMatch, setSelectedMatch] = useState<PersonMatch | null>(null);
     const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
-    const [fieldOverlapHints, setFieldOverlapHints] = useState<TokenMatchResult[]>([]);
+    const [fieldOverlapHints, setFieldOverlapHints] = useState<DuplicateMatch[]>([]);
     const [duplicateCheckFailed, setDuplicateCheckFailed] = useState(false);
 
     // Load shared images from Service Worker cache
@@ -508,11 +509,11 @@ export default function ImportWizard() {
         if (step !== 3 || !extractedData) return;
         const timer = setTimeout(async () => {
             try {
-                const results = await checkTokenDuplicates({
-                    name: extractedData.name,
-                    contactInfo: contactInfoText,
-                });
-                setFieldOverlapHints(results);
+                const response = await findAdopters(
+                    { name: extractedData.name, contactInfo: contactInfoText },
+                    { mode: 'duplicate' },
+                );
+                setFieldOverlapHints(response.results as DuplicateMatch[]);
             } catch {
                 setFieldOverlapHints([]);
             }
@@ -548,23 +549,26 @@ export default function ImportWizard() {
         // Check for person match via token index
         if (extractedData) {
             try {
-                const tokenResults = await checkTokenDuplicates({
-                    name: extractedData.name,
-                    contactInfo: contactInfoText,
-                    phones: extractedData.phones,
-                    emails: extractedData.emails,
-                    socials: extractedData.socialProfiles,
-                    addresses: extractedData.addresses,
-                });
+                const response = await findAdopters(
+                    {
+                        name: extractedData.name,
+                        contactInfo: contactInfoText,
+                        phones: extractedData.phones,
+                        emails: extractedData.emails,
+                        socials: extractedData.socialProfiles,
+                    },
+                    { mode: 'duplicate' },
+                );
+                const tokenResults = response.results as DuplicateMatch[];
                 if (tokenResults.length > 0) {
                     const matches: PersonMatch[] = tokenResults.map(r => ({
                         id: r.adopterId,
                         name: r.adopterName,
-                        confidence: r.confidence,
+                        confidence: confidenceBand(r.relevancePercent) as 'high' | 'medium' | 'low',
                         matchReasons: r.matchTypes.map(mt => getMatchLabel(mt)),
                     }));
                     setPersonMatches(matches);
-                    setSelectedMatch(matches[0]); // Pre-select best match
+                    setSelectedMatch(matches[0]);
                 }
             } catch (e) {
                 console.error('[ImportWizard] Token match check failed', e);
@@ -1176,8 +1180,8 @@ export default function ImportWizard() {
                         {/* Field overlap hints — bucketed by confidence */}
                         {fieldOverlapHints.length > 0 && (() => {
                             const LOW_THRESHOLD = 15;
-                            const visible = fieldOverlapHints.filter(h => h.confidencePercent >= LOW_THRESHOLD).slice(0, 2);
-                            const suppressed = fieldOverlapHints.filter(h => h.confidencePercent < LOW_THRESHOLD);
+                            const visible = fieldOverlapHints.filter(h => h.relevancePercent >= LOW_THRESHOLD).slice(0, 2);
+                            const suppressed = fieldOverlapHints.filter(h => h.relevancePercent < LOW_THRESHOLD);
                             if (visible.length === 0 && suppressed.length === 0) return null;
                             return (
                                 <div className="mt-1.5 space-y-1">
@@ -1187,7 +1191,7 @@ export default function ImportWizard() {
                                             <span>
                                                 {hint.matchTypes.map(mt => getMatchLabel(mt)).join(', ')} {t('import.overlap_match') || 'matches'}{' '}
                                                 <a href={`/adopter/${hint.adopterId}`} target="_blank" className="underline font-medium">{hint.adopterName}</a>
-                                                <span className="ml-1 text-amber-500">({hint.confidencePercent}%)</span>
+                                                <span className="ml-1 text-amber-500">({hint.relevancePercent}%)</span>
                                             </span>
                                         </p>
                                     ))}

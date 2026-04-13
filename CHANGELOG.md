@@ -2,6 +2,30 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.0] - 2026-04-13
+
+### Added
+- **`findAdopters` — unified search engine** — single exported function replacing the fragmented `searchAdopter` (discovery) and `checkTokenDuplicates` (duplicate detection) call sites. Mode-based dispatch: `mode: 'discovery'` executes the full enriched LIKE search with geo-filter, PII masking, and analytics logging; `mode: 'duplicate'` executes a lightweight token-index + LIKE fallback query with no auth, no enrichment, and no analytics noise.
+- **SQL gate fix** — name-word tokens in duplicate mode now use prefix-LIKE instead of exact-match SQL, ensuring the Levenshtein fuzzy scoring step always runs for typo variants (e.g. Jonatan/Jonathan, Pérez/Perez).
+- **`excludeAdopterId` on `FindAdoptersInput`** — duplicate mode accepts an ID to exclude from results, used by the contract route to prevent the just-created adopter from self-matching.
+- **Discriminated union types** — `DiscoveryMatch` (full adopter row, enrichment, non-optional `stats`/`flags`) and `DuplicateMatch` (lightweight, `relevancePercent` normalized to `PRACTICAL_MAX_DUPLICATE`). TypeScript now enforces field presence at compile time. `AdopterMatch` union exported for generic consumer code.
+- **Dead field fix in `AdopterFlagging`** — search result card referenced `res.adopter.email` and `res.adopter.phone` (fields that do not exist on the `adopters` table). Replaced with `res.adopter.contactInfo`.
+
+### Changed
+- **`SearchSection`** — migrated from `searchAdopter`/`SearchResult` to `findAdopters({ mode: 'discovery', enrich: true })`/`DiscoveryMatch`. Fixes the named-import hard break (SB1).
+- **`AdopterForm`** — creation-time duplicate check migrated to `findAdopters({ mode: 'discovery', minRelevance: 15 })`. Discovery mode retained because card rendering requires full adopter row.
+- **`AdoptionWizard` + `ReportWizard`** — migrated to `findAdopters({ mode: 'discovery', enrich: true })`. State typed as `DiscoveryMatch[]`; eliminates `any[]` escape hatch.
+- **`AdopterFlagging`** — migrated to `findAdopters({ mode: 'discovery', enrich: false })`. Enrichment disabled — card only needs `adopter.id` and `adopter.name`.
+- **`ImportWizard`** — both call sites migrated to `findAdopters({ mode: 'duplicate' })`. `confidence` band derived inline via `confidenceBand(r.relevancePercent)`. State typed as `DuplicateMatch[]`.
+
+### Deprecated
+- **`searchAdopter`** — rollback reference only. Remove after v2.12.x staging validation.
+- **`checkTokenDuplicates`** — rollback reference only. Remove after v2.12.x staging validation.
+
+### Not changed (deferred)
+- **`contract/submit/route.ts`** — inline dual-strategy block also drives notification + org fan-out; cannot be safely extracted to `findAdopters` without rearchitecting the notification pipeline. Deferred to follow-up PR.
+- **`getDuplicateCandidates`** / **admin batch scan** — out of scope; separate future quarter work.
+
 ## [2.11.2] - 2026-04-13
 
 ### Added

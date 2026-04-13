@@ -232,6 +232,10 @@ function buildProfileSearchConditions(tokens: string[]) {
 
 // ── Main search ─────────────────────────────────────────────────────
 
+/**
+ * @deprecated Use findAdopters({ mode: 'discovery' }) for new call sites.
+ * Kept as a rollback reference — remove after v2.12.x staging validation.
+ */
 export async function searchAdopter(query: string): Promise<SearchResponse> {
     let user = 'unknown';
     try {

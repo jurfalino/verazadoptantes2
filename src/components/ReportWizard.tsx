@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
-import { searchAdopter } from '@/app/actions';
+import { findAdopters } from '@/app/actions';
+import type { DiscoveryMatch, SnippetField } from '@/app/actions';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
@@ -11,7 +12,7 @@ import { extractErrorId } from '@/lib/errorUtils';
 import { StarRating } from '@/components/StarRating';
 import { RatingBadge } from '@/components/RatingBadge';
 import LegalConsent from '@/components/LegalConsent';
-import type { SnippetField } from '@/app/actions';
+
 
 const SNIPPET_ICONS: Record<SnippetField, string> = {
     name: '👤', contact: '📞', address: '📍',
@@ -32,8 +33,8 @@ export default function ReportWizard() {
     // Step 1: Adopter Data (search-first flow)
     const [selectedAdopterId, setSelectedAdopterId] = useState<string>('');
     const [adopterSearch, setAdopterSearch] = useState('');
-    const [searchResults, setSearchResults] = useState<any[]>([]);
-    const [previewAdopter, setPreviewAdopter] = useState<any>(null);
+    const [searchResults, setSearchResults] = useState<DiscoveryMatch[]>([]);
+    const [previewAdopter, setPreviewAdopter] = useState<DiscoveryMatch | null>(null);
     const [searchPerformed, setSearchPerformed] = useState(false);
 
     // Step 2: Observation Details
@@ -68,8 +69,11 @@ export default function ReportWizard() {
         setSelectedAdopterId('');
         setPreviewAdopter(null);
         if (term.length > 2) {
-            const response = await searchAdopter(term);
-            setSearchResults(response.results);
+            const response = await findAdopters(
+                { raw: term },
+                { mode: 'discovery', enrich: true },
+            );
+            setSearchResults(response.results as DiscoveryMatch[]);
             setSearchPerformed(true);
         } else {
             setSearchResults([]);

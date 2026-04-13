@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
-import { saveAdoption, searchAdopter, getAvailableAnimals } from '@/app/actions';
+import { saveAdoption, findAdopters, getAvailableAnimals } from '@/app/actions';
+import type { SnippetField, DiscoveryMatch } from '@/app/actions';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
@@ -11,7 +12,7 @@ import { extractErrorId } from '@/lib/errorUtils';
 import LegalConsent from '@/components/LegalConsent';
 import DatePicker from '@/components/ui/DatePicker';
 import { RatingBadge } from '@/components/RatingBadge';
-import type { SnippetField } from '@/app/actions';
+
 
 const SNIPPET_ICONS: Record<SnippetField, string> = {
     name: '👤', contact: '📞', address: '📍',
@@ -80,8 +81,8 @@ export default function AdoptionWizard() {
     // Step 2: Adopter Data (search-first flow)
     const [selectedAdopterId, setSelectedAdopterId] = useState<string>('');
     const [adopterSearch, setAdopterSearch] = useState('');
-    const [searchResults, setSearchResults] = useState<any[]>([]);
-    const [previewAdopter, setPreviewAdopter] = useState<any>(null);
+    const [searchResults, setSearchResults] = useState<DiscoveryMatch[]>([]);
+    const [previewAdopter, setPreviewAdopter] = useState<DiscoveryMatch | null>(null);
     const [searchPerformed, setSearchPerformed] = useState(false);
 
     const handleAnimalSelect = (id: string) => {
@@ -104,8 +105,11 @@ export default function AdoptionWizard() {
         setSelectedAdopterId('');
         setPreviewAdopter(null);
         if (term.length > 2) {
-            const response = await searchAdopter(term);
-            setSearchResults(response.results);
+            const response = await findAdopters(
+                { raw: term },
+                { mode: 'discovery', enrich: true },
+            );
+            setSearchResults(response.results as DiscoveryMatch[]);
             setSearchPerformed(true);
         } else {
             setSearchResults([]);

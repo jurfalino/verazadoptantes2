@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { flagAdopter, searchAdopter, getDuplicateCandidates } from '@/app/actions';
-import type { DuplicateCandidate } from '@/app/actions';
+import { flagAdopter, findAdopters, getDuplicateCandidates } from '@/app/actions';
+import type { DuplicateCandidate, DiscoveryMatch } from '@/app/actions';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
@@ -73,7 +73,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
     const [reason, setReason] = useState('duplicate');
     const [details, setDetails] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
-    const [searchResults, setSearchResults] = useState<any[]>([]);
+    const [searchResults, setSearchResults] = useState<DiscoveryMatch[]>([]);
     const [targetAdopter, setTargetAdopter] = useState<any>(null);
     const [isSearching, setIsSearching] = useState(false);
     const [hasSearched, setHasSearched] = useState(false);
@@ -120,8 +120,11 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
             if (searchTerm && reason === 'duplicate') {
                 setIsSearching(true);
                 try {
-                    const response = await searchAdopter(searchTerm);
-                    setSearchResults(response.results);
+                    const response = await findAdopters(
+                        { raw: searchTerm },
+                        { mode: 'discovery', enrich: false },
+                    );
+                    setSearchResults(response.results as DiscoveryMatch[]);
                     setHasSearched(true);
                 } catch (error) {
                     console.error("Search failed", error);
@@ -140,8 +143,11 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
         if (!searchTerm) return;
         setIsSearching(true);
         try {
-            const response = await searchAdopter(searchTerm);
-            setSearchResults(response.results);
+            const response = await findAdopters(
+                { raw: searchTerm },
+                { mode: 'discovery', enrich: false },
+            );
+            setSearchResults(response.results as DiscoveryMatch[]);
             setHasSearched(true);
         } catch (error) {
             console.error("Search failed", error);
@@ -537,7 +543,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                                         onClick={() => setTargetAdopter(res.adopter)}
                                                     >
                                                         <div className="font-semibold text-teal-900">{res.adopter.name}</div>
-                                                        <div className="text-teal-700 truncate">{res.adopter.email || res.adopter.phone}</div>
+                                                        <div className="text-teal-700 truncate">{res.adopter.contactInfo}</div>
                                                     </div>
                                                 ))}
                                             </div>
