@@ -1,2 +1,3 @@
--- Add identity_verified field to adoptions table
-ALTER TABLE adoptions ADD COLUMN identity_verified INTEGER;
+-- Deprecated: identity_verified was already added by 0004_cute_sunfire.sql.
+-- No-op to avoid duplicate-column error on databases where that migration ran first.
+SELECT 1;
