@@ -30,12 +30,23 @@ test.describe('Adopter Profile', () => {
         const uniqueName = `Test Persona ${Date.now()}`;
 
         await page.goto('/adopter/create');
+        await dismissCountryBanner(page);
 
         // In create mode, form is in editing mode with input fields
         await page.getByPlaceholder(/name|nombre/i).fill(uniqueName);
 
         // Submit the form
         await page.getByRole('button', { name: /save|guardar|create|crear/i }).click();
+
+        // Handle duplicate detection modal if it appears
+        // Wait up to 3s for it to appear; if it doesn't, assume no duplicates were found.
+        const createAnywayBtn = page.getByRole('button', { name: /Create new profile anyway|Crear perfil nuevo/i });
+        try {
+            await createAnywayBtn.waitFor({ state: 'visible', timeout: 3000 });
+            await createAnywayBtn.click();
+        } catch {
+            // Modal did not appear, which is fine
+        }
 
         // Should redirect to the new profile — name visible as h2 in view mode
         await expect(page.getByRole('heading', { name: uniqueName })).toBeVisible({ timeout: 15000 });

@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.0-3] - 2026-04-17
+
+### Changed
+- **CI/CD Pipeline Hardening** — Transitioned deployment workflow to a strictly-sequenced "Direct Upload" model via GitHub Actions (`npx @cloudflare/next-on-pages` then `wrangler pages deploy`). Removed `continue-on-error` from E2E job to unmask test failures.
+- **E2E Stability** — Upgraded local test server command to use the Node-compiled production build `npm run build && npm run start` (mitigating Next.js 15.1 dev-server memory leaks). Test db seed now automatically satisfies terms versions to unblock Playwright.
+
 ## [2.12.0] - 2026-04-13
 
 ### Added

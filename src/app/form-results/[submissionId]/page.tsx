@@ -82,13 +82,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
     } catch { /* keep defaults */ }
 
     // Load the full submission
-    let submission: {
-        id: string; selfieUrl: string | null; species: string | null; lifeStage: string | null;
-        specialNeeds: number | null; intent: string | null; household: string | null;
-        latitude: string | null; longitude: string | null; status: string | null;
-        linkedAdopterId: string | null; answersJson: string | null; createdAt: Date | null;
-    } | undefined;
-    submission = await db
+    const submission = await db
         .select({
             id: formSubmissions.id,
             selfieUrl: formSubmissions.selfieUrl,

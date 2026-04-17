@@ -92,3 +92,69 @@ jobs:
         run: npx wrangler d1 migrations apply pet-adoption-db-staging --remote
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+  # Deploy to Staging (Direct Upload)
+  deploy-staging:
+    name: 🚀 Deploy to Staging
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
+    needs: [build-and-lint, migrate-staging]
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build for Cloudflare Pages
+        run: npx @cloudflare/next-on-pages
+        env:
+          SKIP_ENV_VALIDATION: 'true'
+
+      - name: Deploy to Cloudflare Pages (Preview)
+        run: npx wrangler pages deploy .vercel/output/static --project-name="verazadoptantes2" --branch="staging"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  # Deploy to Production (Direct Upload)
+  deploy-production:
+    name: 🚀 Deploy to Production
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    needs: [build-and-lint, migrate-production]
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build for Cloudflare Pages
+        run: npx @cloudflare/next-on-pages
+        env:
+          SKIP_ENV_VALIDATION: 'true'
+
+      - name: Deploy to Cloudflare Pages (Production)
+        run: npx wrangler pages deploy .vercel/output/static --project-name="verazadoptantes2" --branch="master"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

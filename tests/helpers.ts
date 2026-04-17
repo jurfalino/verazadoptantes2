@@ -37,7 +37,8 @@ export const TEST_FAMILY = {
 } as const;
 
 /** Dismiss the country selector banner that appears on first page load.
- * Sets localStorage to suppress the banner for both test user emails. */
+ * Sets localStorage to suppress the banner for both test user emails.
+ * Also handles the T&C acceptance modal (added in migration 0033). */
 export async function dismissCountryBanner(page: Page) {
     await page.evaluate(() => {
         localStorage.setItem('country_confirmed_gatitosolivos@gmail.com', '1');
@@ -45,4 +46,16 @@ export async function dismissCountryBanner(page: Page) {
     });
     // Brief wait for React to re-render after localStorage change
     await page.waitForTimeout(500);
+
+    // Handle T&C modal if it appears (belt-and-suspenders — seed.sql sets terms_version,
+    // but if the modal still shows due to race conditions, accept it programmatically).
+    const termsCheckbox = page.locator('input[type="checkbox"][aria-required="true"]');
+    if (await termsCheckbox.isVisible({ timeout: 1000 }).catch(() => false)) {
+        await termsCheckbox.check();
+        const acceptBtn = page.getByRole('button', { name: /Accept and continue|Aceptar y continuar/i });
+        if (await acceptBtn.isEnabled({ timeout: 1000 }).catch(() => false)) {
+            await acceptBtn.click();
+            await page.waitForTimeout(500);
+        }
+    }
 }

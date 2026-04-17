@@ -30,8 +30,8 @@ test.describe('Unauthenticated User — PII Masking', () => {
 
         await expect(page.getByText(/found \d+ match|\d+ resultados encontrados/i)).toBeVisible({ timeout: 15000 });
 
-        // The 🔒 protected info banner should be visible
-        await expect(page.getByText('🔒')).toBeVisible();
+        // Unauthenticated users see "(login to view)" next to masked contact info
+        await expect(page.getByText(/login to view|iniciar sesión para ver/i).first()).toBeVisible();
     });
 
     test('Clicking search result card prompts login instead of navigating', async ({ page }) => {

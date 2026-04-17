@@ -9,13 +9,12 @@ import AdoptionHistory from '@/components/AdoptionHistory';
 import AdoptionForm from '@/components/AdoptionForm';
 import { ImageGallery } from '@/components/ImageGallery';
 import { useLanguage } from '@/context/LanguageContext';
-import { saveImage, deleteImage, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from '@/app/actions';
+import { saveImage, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from '@/app/actions';
 import { useShowToast } from '@/components/ui/Toast';
 import ReportInaccuracyForm from '@/components/ReportInaccuracyForm';
 import DuplicateComparisonCard from '@/components/DuplicateComparisonCard';
 import { RatingBadge } from '@/components/RatingBadge';
 import { formatDateTime, formatShortDate } from '@/lib/dates';
-import { getRecordTypeIcon } from '@/lib/recordTypeColors';
 import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, HistoryEntry, AdopterStats, AdoptionConfig, DuplicateCandidateInfo } from '@/types/adopter';
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 
@@ -36,12 +35,11 @@ interface AdopterProfileProps {
     isAdmin?: boolean;
     adoptionConfig?: AdoptionConfig;
     duplicateCandidates?: DuplicateCandidateInfo[];
-    linkedForms?: Array<{ id: string; species: string | null; lifeStage: string | null; notificationId: string | null; answersJson: string | null; createdAt: Date | null }>;
     formPrefill?: FormSubmissionPrefill | null;
     userNameMap?: Record<string, string>;
 }
 
-export function AdopterProfile({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [], linkedForms = [], formPrefill = null, userNameMap = {} }: AdopterProfileProps) {
+export function AdopterProfile({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {} }: AdopterProfileProps) {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const toast = useShowToast();
@@ -94,10 +92,6 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
             setDeleteLoading(false);
         }
     };
-
-    // Compute adoption/request counts from the adoptions array directly
-    const adoptionCount = adoptions.filter(a => a.recordType === 'adoption').length;
-    const requestCount = adoptions.filter(a => a.recordType === 'adoption_request').length;
 
     // Determine back link based on referrer
     const ref = searchParams.get('ref');

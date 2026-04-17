@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Non-blocking: test failures are visible but don't gate merges
-    continue-on-error: true
+    # Removed continue-on-error to prevent masked failures in CI
 
     steps:
       - name: Checkout code

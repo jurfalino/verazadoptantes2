@@ -89,12 +89,13 @@ INSERT OR REPLACE INTO user (id, name, email, emailVerified, image) VALUES
 INSERT OR REPLACE INTO user (id, name, email, emailVerified, image) VALUES
 ('test-user-id', 'Test User', 'testuser@example.com', strftime('%s','now'), NULL);
 
--- User profiles: country confirmed so CountryConfirmBanner doesn't block the page
-INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed) VALUES
-('test-admin-id', 'AR', 1);
+-- User profiles: country confirmed + terms accepted so CountryConfirmBanner doesn't block the page
+-- terms_version must match CURRENT_TERMS_VERSION (currently 1) from src/config/constants.ts
+INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed, terms_version, terms_accepted_at) VALUES
+('test-admin-id', 'AR', 1, 1, strftime('%s','now'));
 
-INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed) VALUES
-('test-user-id', 'AR', 1);
+INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed, terms_version, terms_accepted_at) VALUES
+('test-user-id', 'AR', 1, 1, strftime('%s','now'));
 
 -- ============================================================
 -- DUPLICATE DETECTION SEED DATA

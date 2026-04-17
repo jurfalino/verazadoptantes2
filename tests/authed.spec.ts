@@ -39,8 +39,9 @@ test.describe('Authenticated User', () => {
         await dismissCountryBanner(page);
         await expect(page.getByRole('heading', { name: TEST_NAMES.NUEVA })).toBeVisible({ timeout: 15000 });
 
-        // Step 2: Click the "+ New Interaction" heading/button to expand the form
-        const openFormBtn = page.getByText(/New Interaction|Nueva Interacci/i).first();
+        // Step 2: Click the "Log Activity" button to expand the form
+        // Match exactly the button label to avoid hitting the "Activity" section header.
+        const openFormBtn = page.getByRole('button', { name: /Log Activity|Registrar Actividad/i }).first();
         await expect(openFormBtn).toBeVisible({ timeout: 10000 });
         await openFormBtn.click({ force: true });
 
