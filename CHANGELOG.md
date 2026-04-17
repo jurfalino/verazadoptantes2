@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.0-4] - 2026-04-17
+
+### Fixed
+- **E2E Flakiness & Test Db Lock Races** — Decoupled the D1 database testing hydration from the concurrent Next.js Miniflare execution via a standalone `scripts/setup-test-db.js` hook in Playwright. Resolved SQLite database lock collisions that caused schema application drops (`D1_ERROR: no such column`).
+- **WebKit Mobile Target** — Re-injected `webkit` back into the CI runner dependency install targets to successfully process iOS/iPhone 14 responsive layout viewport tests.
+
 ## [2.12.0-3] - 2026-04-17
 
 ### Changed
