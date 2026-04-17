@@ -13,8 +13,7 @@ dotenv.config({ path: path.resolve(__dirname, '.env.local') });
  */
 export default defineConfig({
   testDir: './tests',
-  // Always run globalSetup to ensure test data is seeded
-  globalSetup: './tests/global-setup.ts',
+  // Database is now seeded natively during the webServer boot sequence to prevent lock conflicts
   /* Run tests in files in parallel */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
@@ -87,7 +86,7 @@ export default defineConfig({
 
   /* Run your local server before starting the tests */
   webServer: {
-    command: 'npx next dev',
+    command: 'node scripts/setup-test-db.js && npx next dev',
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
