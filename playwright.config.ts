@@ -87,9 +87,12 @@ export default defineConfig({
 
   /* Run your local server before starting the tests */
   webServer: {
-    command: 'npm run build && npm run start',
+    command: 'npx next dev',
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
+    env: {
+      NODE_OPTIONS: '--max-old-space-size=4096 --expose-gc'
+    }
   },
 });
