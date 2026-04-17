@@ -94,11 +94,70 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
   # Deploy to Staging (Direct Upload)
+  e2e:
+    name: 🎭 E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Non-blocking: test failures are visible but don't gate merges
+    # Removed continue-on-error to prevent masked failures in CI
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Create local D1 database
+        run: |
+          npx wrangler d1 execute DB --local --command="SELECT 1"
+          for f in drizzle/*.sql; do
+            echo "Applying migration: $f"
+            npx wrangler d1 execute DB --local --file="$f" || echo "⚠️ Migration $f had errors (likely pre-existing tables/columns), continuing..."
+          done
+
+      - name: Seed test data
+        run: npx wrangler d1 execute DB --local --file="tests/seed.sql"
+
+      - name: Seed local.db fallback (used by next dev)
+        run: |
+          sudo apt-get install -y sqlite3
+          for f in drizzle/*.sql; do
+            sqlite3 local.db < "$f" 2>/dev/null || true
+          done
+          sqlite3 local.db < tests/seed.sql
+
+
+
+      - name: Run Playwright tests
+        run: npx playwright test --project=unauthed --project=setup --project=authed
+        env:
+          CI: true
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          AUTH_URL: http://localhost:3000
+
+      - name: Upload test report
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
   deploy-staging:
     name: 🚀 Deploy to Staging
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
-    needs: [build-and-lint, migrate-staging]
+    needs: [build-and-lint, migrate-staging, e2e]
     concurrency:
       group: deploy-staging
       cancel-in-progress: true
@@ -131,7 +190,7 @@ jobs:
     name: 🚀 Deploy to Production
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-    needs: [build-and-lint, migrate-production]
+    needs: [build-and-lint, migrate-production, e2e]
     concurrency:
       group: deploy-production
       cancel-in-progress: true
@@ -158,3 +217,5 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+
