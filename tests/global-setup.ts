@@ -56,17 +56,19 @@ export default function globalSetup() {
                 .sort();
             for (const migration of migrations) {
                 const sql = fs.readFileSync(path.join(drizzleDir, migration), 'utf-8');
-                sql.split(';')
+                sql.replace(/--.*$/gm, '') // Strip all SQL comments completely
+                   .split(';')
                    .map(s => s.trim())
-                   .filter(s => s.length > 0 && !s.startsWith('--'))
+                   .filter(Boolean)
                    .forEach(s => schemaStatements.push(s));
             }
         }
 
         const seedSql = fs.readFileSync(seedFile, 'utf-8');
-        const seedStatements = seedSql.split(';')
+        const seedStatements = seedSql.replace(/--.*$/gm, '')
+            .split(';')
             .map(s => s.trim())
-            .filter(s => s.length > 0 && !s.startsWith('--'));
+            .filter(Boolean);
 
         for (const dbPath of dbPaths) {
             console.log(`[Global Setup] Seeding database at: ${path.basename(dbPath)}...`);
