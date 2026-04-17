@@ -242,7 +242,6 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                     <>
                         <AdopterForm
                             initialData={adopter}
-                            history={history}
                             currentUser={currentUser}
                             images={images}
                             adopterId={id}
@@ -253,7 +252,6 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                             adoptionConfig={adoptionConfig}
                             isAdmin={isAdmin}
                             formPrefill={formPrefill}
-                            userNameMap={userNameMap}
                             hasDuplicateBanner={visibleDuplicates.length > 0}
                         />
 
@@ -483,3 +481,4 @@ function getMatchBadgeStyle(type: string): string {
     };
     return styles[type] || 'bg-stone-100 text-stone-700';
 }
+
