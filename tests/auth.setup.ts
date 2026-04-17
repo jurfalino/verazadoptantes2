@@ -1,5 +1,4 @@
 import { test as setup, expect } from '@playwright/test';
-import { encode } from 'next-auth/jwt';
 
 const ADMIN_EMAIL = 'gatitosolivos@gmail.com';
 const AUTH_FILE = '.auth/admin.json';
@@ -20,6 +19,8 @@ setup('authenticate as admin', async ({ page, context }) => {
             'Set it in .env.local (local) or GitHub Actions secrets (CI).'
         );
     }
+
+    const { encode } = await import('next-auth/jwt');
 
     // Create a valid NextAuth session JWT
     const token = await encode({
@@ -76,6 +77,8 @@ setup('authenticate as user', async ({ page, context }) => {
     if (!secret) {
         throw new Error('AUTH_SECRET env var is required for auth setup.');
     }
+
+    const { encode } = await import('next-auth/jwt');
 
     const token = await encode({
         secret,

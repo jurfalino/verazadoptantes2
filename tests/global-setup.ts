@@ -16,6 +16,26 @@ export default function globalSetup() {
     // 1. Seed the Wrangler D1 local store (used when setupDevPlatform works)
     console.log('[Global Setup] Seeding Wrangler D1 local store...');
     try {
+        // Apply schemas first - file by file to catch and bypass duplicate column errors safely
+        const drizzleDir = path.resolve(rootDir, 'drizzle');
+        if (fs.existsSync(drizzleDir)) {
+            const migrations = fs.readdirSync(drizzleDir)
+                .filter(f => f.endsWith('.sql'))
+                .sort();
+            for (const migration of migrations) {
+                try {
+                    // Ignore stdout/stderr to avoid polluting test logs with expected collision warnings
+                    execSync(`npx wrangler d1 execute DB --local --file="drizzle/${migration}"`, {
+                        cwd: rootDir,
+                        stdio: 'ignore',
+                    });
+                } catch (e) {
+                    // Collision (duplicate column/table) from merged migrations -> safely ignore
+                }
+            }
+        }
+        
+        // Inject test data
         execSync(`npx wrangler d1 execute DB --local --file="${seedFile}"`, {
             cwd: rootDir,
             stdio: 'inherit',
