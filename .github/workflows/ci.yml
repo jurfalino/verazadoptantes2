@@ -18,7 +18,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20.18'
           cache: 'npm'
 
       - name: Install dependencies
@@ -58,7 +58,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20.18'
           cache: 'npm'
 
       - name: Install dependencies
@@ -82,7 +82,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20.18'
           cache: 'npm'
 
       - name: Install dependencies
@@ -108,40 +108,32 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20.18'
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ hashFiles('package-lock.json') }}
+
       - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install chromium --with-deps
 
-      - name: Create local D1 database
-        run: |
-          npx wrangler d1 execute DB --local --command="SELECT 1"
-          for f in drizzle/*.sql; do
-            echo "Applying migration: $f"
-            npx wrangler d1 execute DB --local --file="$f" || echo "⚠️ Migration $f had errors (likely pre-existing tables/columns), continuing..."
-          done
-
-      - name: Seed test data
-        run: npx wrangler d1 execute DB --local --file="tests/seed.sql"
-
-      - name: Seed local.db fallback (used by next dev)
-        run: |
-          sudo apt-get install -y sqlite3
-          for f in drizzle/*.sql; do
-            sqlite3 local.db < "$f" 2>/dev/null || true
-          done
-          sqlite3 local.db < tests/seed.sql
-
-
+      - name: Install Playwright system deps
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
 
       - name: Run Playwright tests
-        run: npx playwright test --project=unauthed --project=setup --project=authed
+        run: npx playwright test
         env:
           CI: true
+          SKIP_ENV_VALIDATION: 'true'
           AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
           AUTH_URL: http://localhost:3000
 
@@ -168,7 +160,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20.18'
           cache: 'npm'
 
       - name: Install dependencies
@@ -201,7 +193,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20.18'
           cache: 'npm'
 
       - name: Install dependencies
@@ -217,5 +209,6 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
 
 
