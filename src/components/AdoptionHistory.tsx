@@ -35,6 +35,8 @@ interface Adoption {
     color?: string | null;
     microchip?: string | null;
     images?: { id: string; url: string; caption?: string | null }[];
+    verifiedAddress?: string | null;
+    deliveredToHome?: boolean | number | null;
 }
 
 interface AdoptionImage {
@@ -249,6 +251,17 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                                     💉 {adoption.microchip}
                                                 </span>
                                             )}
+                                        </div>
+                                    )}
+
+                                    {/* Verified Address badge — teal verification pill + truncated address */}
+                                    {adoption.verifiedAddress && adoption.verifiedAddress.trim() !== '' && (
+                                        <div className="flex items-center gap-2 mt-2"> {/* gap-2 = 8px grid */}
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-700 flex-shrink-0"> {/* py-0.5: micro-spacing, matches animal detail pills */}
+                                                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" /></svg>
+                                                {t('flags.addr_verified') || 'Address'}
+                                            </span>
+                                            <span className="text-xs text-stone-500 truncate min-w-0" title={adoption.verifiedAddress}>{adoption.verifiedAddress}</span>
                                         </div>
                                     )}
 

@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.0-5] - 2026-04-18
+
+### Changed
+- **Verified Address flag** — removed from adopter search results and profile header; now displayed only on individual adoption record cards in the timeline, where address verification contextually belongs (tied to specific deliveries).
+- **Middleware domain redirect** — requests to `*.verazadoptantes2.pages.dev` are now 301-redirected to canonical custom domains (`buenadoptante.org` / `staging.buenadoptante.org`), preserving path and query string.
+
 ## [2.12.0-4] - 2026-04-17
 
 ### Fixed

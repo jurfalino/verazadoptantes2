@@ -455,9 +455,7 @@ export default function SearchSection({ locale }: { locale?: string }) {
                                             {res.flags.verified_identity && (
                                                 <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-teal-100 text-teal-700">✓ {t('flags.verified_identity') || 'Verified ID'}</span>
                                             )}
-                                            {res.flags.verified_address && (
-                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-teal-100 text-teal-700">✓ {t('flags.verified_address') || 'Verified Address'}</span>
-                                            )}
+
                                             {res.flags.tooManyAdoptions && (
                                                 <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">⚠ {t('flags.too_many_adoptions').replace('{count}', res.flags.tooManyAdoptions.count.toString()).replace('{days}', Math.round(res.flags.tooManyAdoptions.actualSpanDays || res.flags.tooManyAdoptions.periodDays).toString())}</span>
                                             )}
