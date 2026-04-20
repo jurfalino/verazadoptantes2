@@ -96,7 +96,7 @@ Staging URL: https://staging.verazadoptantes2.pages.dev
 Wait for the Cloudflare build to complete (~2-3 min). CI checks (build, tsc, lint) must pass.
 Ask the user to verify the changes on the staging URL.
 
-9. **WAIT FOR EXPLICIT MASTER PUSH APPROVAL.**
+9. **WAIT FOR EXPLICIT PRODUCTION DEPLOYMENT APPROVAL.**
 > ⚠️ The user MUST say one of these exact phrases before you push to master:
 > - "push to master"
 > - "merge to master"
@@ -106,11 +106,15 @@ Ask the user to verify the changes on the staging URL.
 > Asking to "tag a version", "looks good on staging", or any other phrasing does NOT count as approval.
 > **NEVER infer push-to-master approval. When in doubt, ASK.**
 
+Create a Pull Request from `staging` to `master` using the GitHub CLI:
+// turbo
 ```
-git push origin staging:master
+gh pr create --base master --head staging --title "chore: release v<version>" --body "Deploying v<version> to production."
 ```
+> If `gh` CLI fails (e.g. due to authentication), provide the user with the direct URL to open the PR themselves:
+> `https://github.com/jurfalino/verazadoptantes2/pull/new/staging`
 
-10. If tagging a version, tag AFTER the staging-to-master push:
+10. Wait for the PR to be merged by the user. If tagging a version, tag AFTER the staging-to-master merge:
 ```
 git tag -a v<version> -m "<message>"
 git push origin v<version>
@@ -159,4 +163,4 @@ These commands must NEVER be run without explicit user approval:
 - `git push origin master`
 - `git push origin HEAD:master`
 - Any push that targets the `master` branch directly
-- Running `git push origin staging:master` without user confirmation that staging looks good
+- Running `git push origin staging:master` (This is completely forbidden now, always use a PR to merge staging to master)
