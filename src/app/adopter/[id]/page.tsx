@@ -1,6 +1,7 @@
 export const runtime = 'edge';
 import { redirect } from 'next/navigation';
 import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getAdoptionConfig, getDuplicateCandidates } from '@/app/actions';
+import { resolveUserNames } from '@/app/actions/userNames';
 import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
 import { AdopterProfile } from '@/components/AdopterProfile';
 
@@ -58,6 +59,13 @@ export default async function AdopterPage({
         formPrefill = await getFormSubmissionPrefill(fromForm.trim());
     }
 
+    // Build userNameMap: collect all editor emails then resolve to display names in one batch
+    const editorEmails: string[] = [];
+    for (const h of history) { if (h.changedBy) editorEmails.push(h.changedBy); }
+    for (const a of adoptions) { if (a.addedBy) editorEmails.push(a.addedBy); }
+    for (const img of images) { if (img.addedBy) editorEmails.push(img.addedBy); }
+    const userNameMap = await resolveUserNames(editorEmails);
+
     return (
         <AdopterProfile
             id={id}
@@ -75,6 +83,7 @@ export default async function AdopterPage({
             adoptionConfig={adoptionConfig}
             duplicateCandidates={dupCandidates}
             formPrefill={formPrefill}
+            userNameMap={userNameMap}
         />
     );
 }

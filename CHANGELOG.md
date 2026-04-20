@@ -2,7 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-1] - 2026-04-19
+
+### Fixed
+- **Registro de Cambios showing raw emails** — the history log, activity card footer, and image gallery "added by" caption now resolve editor emails to their Google display name. Falls back to a masked email (`j***o@gmail.com`) when no display name is available, instead of exposing the full address.
+- **`resolveUserNames` now called from `/adopter/[id]/page.tsx`** — the existing server action was wired up to collect all `changedBy`/`addedBy` emails across history, adoptions, and images in a single batch request before rendering.
+
 ## [2.12.1] - 2026-04-18
+
 
 ### Changed
 - **Activity card CTA de-emphasis** — "Registrar Actividad" button changed from full-width bordered to a compact right-aligned ghost link, restoring correct visual hierarchy where existing records are the focal point.
