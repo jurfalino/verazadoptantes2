@@ -2,7 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1] - 2026-04-18
+
+### Changed
+- **Activity card CTA de-emphasis** — "Registrar Actividad" button changed from full-width bordered to a compact right-aligned ghost link, restoring correct visual hierarchy where existing records are the focal point.
+- **Rating badge inline** — star rating moved from a separate row below the summary to inline with the date/animal summary text, enabling faster visual scanning of record quality.
+- **Verified address badge** — changed from a solid teal pill (`bg-teal-100 text-teal-700`) to a dimmer outline style (`bg-teal-500/10 text-teal-600 border border-teal-500/20`), reducing visual competition with primary action elements.
+- **Email masking in card footer** — the "Agregado por" field now shows `j***o@gmail.com` style masked emails as fallback when no display name is available, reducing raw PII exposure in the UI.
+
+### Added
+- **Relative time on recent activity cards** — entries within the last 30 days now show a parenthetical like `(hace 2 días)` next to the absolute date, giving a faster sense of recency.
+- **`formatRelativeTime()`** — new utility in `lib/dates.ts` returning localized relative time strings (ES/EN) for dates within 30 days, null otherwise.
+- **`maskEmail()`** — new utility in `lib/dates.ts` for privacy-safe email display.
+
+### Removed
+- **"En Nombre De" field** — removed from the activity registration form and from all activity card displays. The `on_behalf_of` database column and search tokenization are preserved; existing data is unaffected.
+
 ## [2.12.0-5] - 2026-04-18
+
 
 ### Changed
 - **Verified Address flag** — removed from adopter search results and profile header; now displayed only on individual adoption record cards in the timeline, where address verification contextually belongs (tied to specific deliveries).

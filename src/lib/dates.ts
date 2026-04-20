@@ -40,3 +40,52 @@ export function formatDateTimeFull(input: Date | number | string): string {
         hour: '2-digit', minute: '2-digit', second: '2-digit',
     });
 }
+
+/**
+ * Return a human-readable relative time string for recent dates (within 30 days).
+ * Returns null for dates older than 30 days so callers can conditionally display it.
+ * @param lang - 'es' or 'en'
+ */
+export function formatRelativeTime(input: Date | number | string, lang: 'es' | 'en' = 'es'): string | null {
+    const date = input instanceof Date ? input : new Date(typeof input === 'number' && input < 1e12 ? input * 1000 : input);
+    if (isNaN(date.getTime())) return null;
+
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    if (diffMs < 0) return null; // future dates
+
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffDays > 30) return null;
+
+    if (lang === 'es') {
+        if (diffMins < 1) return 'justo ahora';
+        if (diffMins < 60) return `hace ${diffMins} min`;
+        if (diffHours < 24) return diffHours === 1 ? 'hace 1 hora' : `hace ${diffHours} horas`;
+        if (diffDays === 0) return 'hoy';
+        if (diffDays === 1) return 'ayer';
+        return `hace ${diffDays} días`;
+    }
+
+    // English
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins} min ago`;
+    if (diffHours < 24) return diffHours === 1 ? '1 hour ago' : `${diffHours} hours ago`;
+    if (diffDays === 0) return 'today';
+    if (diffDays === 1) return 'yesterday';
+    return `${diffDays} days ago`;
+}
+
+/**
+ * Mask an email address for privacy: "jurfalino@gmail.com" → "j***o@gmail.com"
+ */
+export function maskEmail(email: string): string {
+    const atIndex = email.indexOf('@');
+    if (atIndex <= 1) return email; // too short to mask
+    const local = email.substring(0, atIndex);
+    const domain = email.substring(atIndex);
+    if (local.length <= 2) return local[0] + '*' + domain;
+    return local[0] + '***' + local[local.length - 1] + domain;
+}

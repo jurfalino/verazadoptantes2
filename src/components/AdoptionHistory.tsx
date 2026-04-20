@@ -9,7 +9,7 @@ import { getRecordTypeIcon, getRecordTypeColors } from '@/lib/recordTypeColors';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { getSourceIcon, getSourceName } from '@/lib/sourceIcons';
-import { formatShortDate } from '@/lib/dates';
+import { formatShortDate, formatRelativeTime, maskEmail } from '@/lib/dates';
 import { isAdmin as isAdminEmail } from '@/config/admins-shared';
 import { MediaLightbox, MediaThumbnail } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
@@ -27,7 +27,7 @@ interface Adoption {
     comments: string | null;
     date: Date | null;
     addedBy: string | null;
-    onBehalfOf?: string | null;
+
     recordType?: string;
     sourceUrl?: string | null;
     age?: string | null;
@@ -162,6 +162,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                     // Build one-line summary: "{icon} {date} — {verb} {animal} ({species})"
                     const icon = getRecordTypeIcon(recordType);
                     const dateStr = adoption.date ? formatShortDate(new Date(adoption.date)) : '';
+                    const relativeTime = adoption.date ? formatRelativeTime(new Date(adoption.date), 'es') : null;
                     const animalName = adoption.animalName || '';
 
                     let summary = '';
@@ -211,20 +212,17 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                             {icon}
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-semibold text-stone-800 leading-snug">
-                                                <span className="md:hidden">{icon} </span>{dateStr}{dateStr ? ' — ' : ''}{summary}
-                                            </p>
-                                            {/* Stars + edit hint — below summary */}
-                                            <div className="flex items-center gap-2 mt-1">
+                                            <p className="text-sm font-semibold text-stone-800 leading-snug flex flex-wrap items-center gap-x-1.5">
+                                                <span className="md:hidden">{icon} </span>{dateStr}{relativeTime && <span className="text-xs font-normal text-stone-400">({relativeTime})</span>}{dateStr ? ' — ' : ''}{summary}
                                                 {adoption.rating != null && adoption.rating > 0 && (
                                                     <RatingBadge rating={adoption.rating} size="sm" />
                                                 )}
                                                 {canEdit && (
-                                                    <span className="text-teal-600 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex items-center">
+                                                    <span className="text-teal-600 md:opacity-0 md:group-hover:opacity-100 transition-opacity inline-flex items-center ml-0.5">
                                                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                                                     </span>
                                                 )}
-                                            </div>
+                                            </p>
                                         </div>
                                     </div>
 
@@ -256,8 +254,8 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
 
                                     {/* Verified Address badge — teal verification pill + truncated address */}
                                     {adoption.verifiedAddress && adoption.verifiedAddress.trim() !== '' && (
-                                        <div className="flex items-center gap-2 mt-2"> {/* gap-2 = 8px grid */}
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-700 flex-shrink-0"> {/* py-0.5: micro-spacing, matches animal detail pills */}
+                                        <div className="flex items-center gap-2 mt-2">
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-teal-500/10 text-teal-600 border border-teal-500/20 flex-shrink-0">
                                                 <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" /></svg>
                                                 {t('flags.addr_verified') || 'Address'}
                                             </span>
@@ -333,11 +331,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                     {/* Footer: date + onBehalfOf + source link + addedBy */}
                                     <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-500 font-medium">
 
-                                        {adoption.onBehalfOf && (
-                                            <span className="inline-flex items-center gap-1">
-                                                👤 {t('adoption.on_behalf_label') || 'En nombre de:'} {adoption.onBehalfOf}
-                                            </span>
-                                        )}
+
                                         {adoption.sourceUrl && !adoption.sourceUrl.startsWith('form:') && (
                                             <a
                                                 href={adoption.sourceUrl}
@@ -350,7 +344,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                             </a>
                                         )}
                                         {adoption.addedBy && !isAdminEmail(adoption.addedBy) && adoption.addedBy !== currentUser && (
-                                            <span>{t('common.added_by')} {userNameMap?.[adoption.addedBy] || adoption.addedBy}</span>
+                                            <span>{t('common.added_by')} {userNameMap?.[adoption.addedBy] || maskEmail(adoption.addedBy)}</span>
                                         )}
                                     </div>
                                 </div>
