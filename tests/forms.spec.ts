@@ -10,7 +10,7 @@ test.describe('External Form & Notifications Lifecycle', () => {
         await pageA.goto('/my-animals');
 
         // 1. Open the "Share application form" menu
-        const shareBtn = pageA.getByRole('button', { name: /Share application form|Compartir/i });
+        const shareBtn = pageA.getByRole('button', { name: /Share application form|Compartir formulario/i, exact: true });
         await expect(shareBtn).toBeVisible({ timeout: 30000 });
         await shareBtn.click();
 
@@ -24,8 +24,9 @@ test.describe('External Form & Notifications Lifecycle', () => {
         const userId = urlParams.get('u');
         expect(userId).toBeTruthy();
 
-        // Close the share modal
-        await pageA.click('.fixed.inset-0', { position: { x: 10, y: 10 } }); // click outside
+        // Close the share modal properly using Escape to ensure the animation finishes
+        await pageA.keyboard.press('Escape');
+        await expect(pageA.locator('.fixed.inset-0')).not.toBeVisible({ timeout: 10000 });
 
         // --- Context B: Anonymous User (API Level) ---
         const contextB = await browser.newContext(); // completely new unauthenticated context

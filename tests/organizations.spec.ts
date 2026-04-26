@@ -54,10 +54,9 @@ test.describe('Organizations & Multi-Tenancy', () => {
         await pageB.goto(inviteUrl);
         await dismissCountryBanner(pageB);
 
-        // Accept the invitation if prompted
-        const acceptBtn = pageB.getByRole('button', { name: /Accept Invitation|Aceptar Invitación/i });
-        await expect(acceptBtn).toBeVisible({ timeout: 30000 });
-        await acceptBtn.click();
+        // Accept the invitation if prompted (Auto-joins if authenticated)
+        // Just wait for the redirect to organizations page
+        await expect(pageB).toHaveURL(/\/organizations/, { timeout: 30000 });
 
         // Assert redirect to orgs page and the new org appears
         await expect(pageB).toHaveURL(/\/organizations/);
