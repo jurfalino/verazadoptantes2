@@ -66,10 +66,10 @@ test.describe('Organizations & Multi-Tenancy', () => {
         // User B modifies or adds a record, User A should see it if necessary.
         // For now, let's verify User B can see the org in their list.
         
+        // Handle JS confirm dialog automatically
+        pageA.once('dialog', dialog => dialog.accept());
         // Cleanup - User A deletes the org
         await orgCard.getByRole('button', { name: /Delete|Eliminar/i }).click();
-        // Handle JS confirm dialog automatically
-        pageA.on('dialog', dialog => dialog.accept());
         await pageA.waitForTimeout(1000);
     });
 });
