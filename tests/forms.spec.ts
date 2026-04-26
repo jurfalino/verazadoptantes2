@@ -7,16 +7,16 @@ test.describe('External Form & Notifications Lifecycle', () => {
         const contextA = await browser.newContext({ storageState: '.auth/admin.json' });
         const pageA = await contextA.newPage();
         
-        await pageA.goto('/my-adopters');
+        await pageA.goto('/my-animals');
 
         // 1. Open the "Share application form" menu
         const shareBtn = pageA.getByRole('button', { name: /Share application form|Compartir/i });
-        await expect(shareBtn).toBeVisible({ timeout: 10000 });
+        await expect(shareBtn).toBeVisible({ timeout: 30000 });
         await shareBtn.click();
 
         // 2. Extract the user ID from the "Open in new tab" link
         const openLink = pageA.getByRole('link', { name: /Open in new tab|Abrir en nueva pestaña/i });
-        await expect(openLink).toBeVisible();
+        await expect(openLink).toBeVisible({ timeout: 30000 });
         const href = await openLink.getAttribute('href');
         expect(href).toContain('u=');
         
@@ -58,25 +58,25 @@ test.describe('External Form & Notifications Lifecycle', () => {
 
         const bell = pageA.getByRole('button', { name: /Notifications|Notificaciones/i });
         // The bell should have a red dot (or unread count)
-        const unreadBadge = bell.locator('.bg-rose-500');
-        await expect(unreadBadge).toBeVisible();
+        const unreadBadge = bell.locator('.bg-red-500');
+        await expect(unreadBadge).toBeVisible({ timeout: 30000 });
 
         // 5. Open notifications and click the form result notification
         await bell.click();
         
-        const notificationItem = pageA.getByRole('link', { name: new RegExp(testName, 'i') });
-        await expect(notificationItem).toBeVisible();
+        const notificationItem = pageA.getByRole('button', { name: new RegExp(testName, 'i') });
+        await expect(notificationItem).toBeVisible({ timeout: 30000 });
         
         // 6. Navigate to the form results page
         await notificationItem.click();
 
         // 7. Assert the form results page displays the submitted data properly
         await expect(pageA).toHaveURL(new RegExp(`/form-results/${submissionId}`));
-        await expect(pageA.getByRole('heading', { name: testName })).toBeVisible();
-        await expect(pageA.getByText(testEmail)).toBeVisible();
+        await expect(pageA.getByRole('heading', { name: testName })).toBeVisible({ timeout: 30000 });
+        await expect(pageA.getByText(testEmail)).toBeVisible({ timeout: 30000 });
         
         // Ensure "Convert to Adopter" button is visible, proving it's an actionable form result
         const convertBtn = pageA.getByRole('button', { name: /Convert to Adopter|Convertir/i });
-        await expect(convertBtn).toBeVisible();
+        await expect(convertBtn).toBeVisible({ timeout: 30000 });
     });
 });

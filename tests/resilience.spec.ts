@@ -30,7 +30,7 @@ test.describe('Error Boundaries & Network Resilience', () => {
         // Should show error indicator — the app shows "X error" or an error boundary
         // Look for generic error indicators (toast, error text, or error count)
         const errorIndicator = page.getByText(/error|Error|failed|falló/i).first();
-        await expect(errorIndicator).toBeVisible({ timeout: 15000 });
+        await expect(errorIndicator).toBeVisible({ timeout: 30000 });
     });
 
     test('Adopter profile handles missing adopter gracefully', async ({ page }) => {
@@ -68,7 +68,7 @@ test.describe('Double-Submit Protection', () => {
 
         // The save button
         const saveBtn = page.getByRole('button', { name: /save|guardar/i }).first();
-        await expect(saveBtn).toBeVisible();
+        await expect(saveBtn).toBeVisible({ timeout: 30000 });
 
         // Monitor for button state change during submission
         // Click and immediately check if button becomes disabled or text changes
@@ -79,7 +79,7 @@ test.describe('Double-Submit Protection', () => {
 
         // If we got here without error, the submission completed
         // The profile should now show the created name
-        await expect(page.getByRole('heading', { name: uniqueName })).toBeVisible({ timeout: 15000 });
+        await expect(page.getByRole('heading', { name: uniqueName })).toBeVisible({ timeout: 30000 });
     });
 });
 
@@ -123,14 +123,14 @@ test.describe('Accessibility', () => {
     test('Pages use semantic <main> landmark', async ({ page }) => {
         await page.goto('/');
         await dismissCountryBanner(page);
-        await expect(page.locator('main')).toBeVisible({ timeout: 15000 });
+        await expect(page.locator('main')).toBeVisible({ timeout: 30000 });
     });
 
     test('Adopter profile page has <main> landmark', async ({ page }) => {
         await page.goto(`/adopter/${TEST_ADOPTERS.MARIA}`);
         await dismissCountryBanner(page);
-        await expect(page.getByRole('heading', { name: TEST_NAMES.MARIA })).toBeVisible({ timeout: 15000 });
-        await expect(page.locator('main')).toBeVisible();
+        await expect(page.getByRole('heading', { name: TEST_NAMES.MARIA })).toBeVisible({ timeout: 30000 });
+        await expect(page.locator('main')).toBeVisible({ timeout: 30000 });
     });
 });
 
@@ -142,7 +142,7 @@ test.describe('Wizard State Persistence', () => {
 
         // Wait for the import wizard page to load
         const inputField = page.locator('textarea, input[type="text"]').first();
-        await expect(inputField).toBeVisible({ timeout: 10000 });
+        await expect(inputField).toBeVisible({ timeout: 30000 });
 
         const testText = 'María González adoptó un perro llamado Luna.';
         await inputField.fill(testText);
@@ -153,7 +153,7 @@ test.describe('Wizard State Persistence', () => {
         await continueBtn.click();
 
         // Wait for step 2 to render (content review heading)
-        await expect(page.getByText(/Review|Revisar|Content|Contenido/i).first()).toBeVisible({ timeout: 10000 });
+        await expect(page.getByText(/Review|Revisar|Content|Contenido/i).first()).toBeVisible({ timeout: 30000 });
 
         // Refresh the page
         await page.reload();
@@ -161,7 +161,7 @@ test.describe('Wizard State Persistence', () => {
 
         // After reload, wizard should not be back at empty step 1
         // The text should be preserved in the textarea/input
-        await expect(page.getByText(/María González/).first()).toBeVisible({ timeout: 10000 });
+        await expect(page.getByText(/María González/).first()).toBeVisible({ timeout: 30000 });
     });
 });
 

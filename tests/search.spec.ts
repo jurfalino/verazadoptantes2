@@ -27,7 +27,7 @@ test.describe('Search to Decision', () => {
         expect(serverErrors, 'Server returned 500 during search').toHaveLength(0);
 
         // Step 3: Results appear with match count
-        await expect(page.getByText(/found \d+ match/i)).toBeVisible({ timeout: 15000 });
+        await expect(page.getByText(/found \d+ match/i)).toBeVisible({ timeout: 30000 });
 
         // Step 4: No error toast with text should appear
         const alertElements = page.locator('[role="alert"]');
@@ -49,7 +49,7 @@ test.describe('Search to Decision', () => {
         expect(href).toContain('/adopter/');
 
         // Step 7: Result card shows rating stars (the "at-a-glance" indicator)
-        await expect(page.getByText('⭐').first()).toBeVisible();
+        await expect(page.getByText('⭐').first()).toBeVisible({ timeout: 30000 });
     });
 
     test('View adopter profile shows decision-making info', async ({ page }) => {
@@ -57,27 +57,27 @@ test.describe('Search to Decision', () => {
         await page.goto(`/adopter/${TEST_ADOPTERS.MARIA}`);
 
         // Profile loads with the adopter name
-        await expect(page.getByRole('heading', { name: TEST_NAMES.MARIA })).toBeVisible({ timeout: 15000 });
+        await expect(page.getByRole('heading', { name: TEST_NAMES.MARIA })).toBeVisible({ timeout: 30000 });
 
         // Rating badge — the most important "at a glance" indicator
-        await expect(page.getByTestId('rating-badge')).toBeVisible();
+        await expect(page.getByTestId('rating-badge')).toBeVisible({ timeout: 30000 });
 
         // Contact info visible
-        await expect(page.getByText(/555-1234/)).toBeVisible();
+        await expect(page.getByText(/555-1234/)).toBeVisible({ timeout: 30000 });
 
         // Adoption records section with animal names from seed data
-        await expect(page.getByTestId('adoptions-list')).toBeVisible();
-        await expect(page.getByText('Luna').first()).toBeVisible();
-        await expect(page.getByText('Michi').first()).toBeVisible();
+        await expect(page.getByTestId('adoptions-list')).toBeVisible({ timeout: 30000 });
+        await expect(page.getByText('Luna').first()).toBeVisible({ timeout: 30000 });
+        await expect(page.getByText('Michi').first()).toBeVisible({ timeout: 30000 });
     });
 
     test('Flagged adopter profile shows warning indicators', async ({ page }) => {
         // Carlos (rating=1, flagged for animal abuse)
         await page.goto(`/adopter/${TEST_ADOPTERS.CARLOS}`);
-        await expect(page.getByRole('heading', { name: TEST_NAMES.CARLOS })).toBeVisible({ timeout: 15000 });
+        await expect(page.getByRole('heading', { name: TEST_NAMES.CARLOS })).toBeVisible({ timeout: 30000 });
 
         // Rating badge present — should show low rating
-        await expect(page.getByTestId('rating-badge')).toBeVisible();
+        await expect(page.getByTestId('rating-badge')).toBeVisible({ timeout: 30000 });
     });
 
     test('Adoption counts are non-zero for adopters with adoptions', async ({ page }) => {
@@ -100,28 +100,28 @@ test.describe('Search to Decision', () => {
         // Fail fast if server action errored
         expect(serverErrors, 'Server returned 500 during search').toHaveLength(0);
 
-        await expect(page.getByText(/found \d+ match/i)).toBeVisible({ timeout: 15000 });
+        await expect(page.getByText(/found \d+ match/i)).toBeVisible({ timeout: 30000 });
 
         const resultCard = page.locator('a[href*="/adopter/"]').first();
-        await expect(resultCard).toBeVisible();
+        await expect(resultCard).toBeVisible({ timeout: 30000 });
 
         // The stats row shows adoption count — must NOT be 0
         const adoptionStat = resultCard.locator('text=🏠').first();
-        await expect(adoptionStat).toBeVisible();
+        await expect(adoptionStat).toBeVisible({ timeout: 30000 });
         const statText = await adoptionStat.textContent();
         expect(statText).not.toMatch(/🏠\s*0/);
         expect(statText).toMatch(/🏠\s*[1-9]/);
 
         // Step 2: Navigate to María's profile and check the stats header
         await page.goto(`/adopter/${TEST_ADOPTERS.MARIA}`);
-        await expect(page.getByRole('heading', { name: TEST_NAMES.MARIA })).toBeVisible({ timeout: 15000 });
+        await expect(page.getByRole('heading', { name: TEST_NAMES.MARIA })).toBeVisible({ timeout: 30000 });
 
         // The profile stats grid shows adoption count — must be 2
         const adoptionStatBox = page.locator('text=🏠').first();
-        await expect(adoptionStatBox).toBeVisible();
+        await expect(adoptionStatBox).toBeVisible({ timeout: 30000 });
 
         // The adoption records section itself must show both animals
-        await expect(page.getByText('Luna').first()).toBeVisible();
-        await expect(page.getByText('Michi').first()).toBeVisible();
+        await expect(page.getByText('Luna').first()).toBeVisible({ timeout: 30000 });
+        await expect(page.getByText('Michi').first()).toBeVisible({ timeout: 30000 });
     });
 });

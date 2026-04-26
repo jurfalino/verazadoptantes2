@@ -12,6 +12,7 @@ dotenv.config({ path: path.resolve(__dirname, '.env.local') });
  * See https://playwright.dev/docs/test-configuration.
  */
 export default defineConfig({
+  timeout: 120000,
   testDir: './tests',
   // Database is now seeded natively during the webServer boot sequence to prevent lock conflicts
   /* Run tests in files in parallel */

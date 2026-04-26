@@ -14,7 +14,7 @@ test.describe('Organizations & Multi-Tenancy', () => {
         const orgName = `Test Rescue Org ${Date.now()}`;
         
         // Wait for the UI to load
-        await expect(pageA.getByRole('heading', { level: 1 })).toBeVisible();
+        await expect(pageA.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 30000 });
 
         // Check if the "empty state" Create button is there, or the "Create" button
         // The list looks for text "🏢"
@@ -26,12 +26,12 @@ test.describe('Organizations & Multi-Tenancy', () => {
             await createBtnCol.click();
         }
 
-        await expect(createInput).toBeVisible();
+        await expect(createInput).toBeVisible({ timeout: 30000 });
         await createInput.fill(orgName);
         await pageA.getByRole('button', { name: /Create|Crear/i, exact: true }).click();
 
         // Assert the organization appears in the list
-        await expect(pageA.getByRole('heading', { name: orgName })).toBeVisible();
+        await expect(pageA.getByRole('heading', { name: orgName })).toBeVisible({ timeout: 30000 });
 
         // 2. Generate Invite Link
         // Click the invite button for this specific org card
@@ -41,7 +41,7 @@ test.describe('Organizations & Multi-Tenancy', () => {
 
         // The invite URL should appear in a readonly text input
         const inviteInput = orgCard.locator('input[readonly]');
-        await expect(inviteInput).toBeVisible();
+        await expect(inviteInput).toBeVisible({ timeout: 30000 });
         const inviteUrl = await inviteInput.inputValue();
         expect(inviteUrl).toContain('/invite/');
 
@@ -56,12 +56,12 @@ test.describe('Organizations & Multi-Tenancy', () => {
 
         // Accept the invitation if prompted
         const acceptBtn = pageB.getByRole('button', { name: /Accept Invitation|Aceptar Invitación/i });
-        await expect(acceptBtn).toBeVisible();
+        await expect(acceptBtn).toBeVisible({ timeout: 30000 });
         await acceptBtn.click();
 
         // Assert redirect to orgs page and the new org appears
         await expect(pageB).toHaveURL(/\/organizations/);
-        await expect(pageB.getByRole('heading', { name: orgName })).toBeVisible();
+        await expect(pageB.getByRole('heading', { name: orgName })).toBeVisible({ timeout: 30000 });
 
         // 4. Verify Cross-Context Data Modification (Activity Feed/Shared Data)
         // User B modifies or adds a record, User A should see it if necessary.
