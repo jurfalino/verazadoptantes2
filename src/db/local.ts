@@ -1,7 +1,8 @@
 import * as schema from "./schema";
 
 // Cache the local DB instance to prevent creating new connections per request
-let cachedLocalDb: unknown = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let cachedLocalDb: any = null;
 
 export const createLocalDb = async (path: string) => {
     if (cachedLocalDb) return cachedLocalDb;

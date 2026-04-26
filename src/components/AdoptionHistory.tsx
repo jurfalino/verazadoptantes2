@@ -37,7 +37,7 @@ interface Adoption {
     sex?: string | null;
     color?: string | null;
     microchip?: string | null;
-    images?: { id: string; url: string; caption?: string | null }[];
+    images?: { id: string; url: string; caption?: string | null; mediaType?: 'image' | 'video' | null; thumbnailUrl?: string | null }[];
     verifiedAddress?: string | null;
     deliveredToHome?: boolean | number | null;
     species?: string | null;
@@ -47,7 +47,7 @@ interface AdoptionImage {
     id: string;
     url: string;
     caption?: string | null;
-    mediaType?: string | null;
+    mediaType?: 'image' | 'video' | null;
     thumbnailUrl?: string | null;
 }
 
