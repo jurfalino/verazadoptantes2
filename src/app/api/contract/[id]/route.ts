@@ -47,6 +47,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             details: animal.details,
             comments: animal.comments,
             age: animal.age,
+            estimatedBirthDate: animal.estimatedBirthDate,
+            neutered: animal.neutered,
             sex: animal.sex,
             color: animal.color,
             microchip: animal.microchip,

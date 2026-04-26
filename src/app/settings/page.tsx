@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { CountrySelector } from '@/components/CountrySelector';
 import { getUserSettings, updateUserCountry, updateUserName } from '@/app/actions/settings';
@@ -10,7 +9,6 @@ import { useShowToast } from '@/components/ui/Toast';
 
 export default function SettingsPage() {
     const { data: session, status } = useSession();
-    const router = useRouter();
     const { t } = useLanguage();
     const toast = useShowToast();
 
@@ -24,12 +22,7 @@ export default function SettingsPage() {
     const [originalName, setOriginalName] = useState('');
     const [savingName, setSavingName] = useState(false);
 
-    // Redirect if not authenticated
-    useEffect(() => {
-        if (status === 'unauthenticated') {
-            router.push('/');
-        }
-    }, [status, router]);
+
 
     // Geo info (read-only, auto-detected)
     const [geoInfo, setGeoInfo] = useState<{ province: string | null; city: string | null; timezone: string | null }>({ province: null, city: null, timezone: null });
@@ -92,7 +85,7 @@ export default function SettingsPage() {
         );
     }
 
-    if (status === 'unauthenticated') return null;
+
 
     return (
         <main className="flex-1 container mx-auto px-4 py-8 max-w-2xl">

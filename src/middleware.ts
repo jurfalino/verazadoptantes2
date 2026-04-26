@@ -20,6 +20,17 @@ export default auth((req) => {
         );
     }
 
+    // Protect private dashboard routes
+    const { nextUrl, auth: session } = req;
+    const protectedRoutes = ['/my-animals', '/my-adopters', '/my-adoptions', '/settings', '/admin'];
+    const isProtected = protectedRoutes.some(path => nextUrl.pathname.startsWith(path));
+
+    if (isProtected && !session) {
+        const callbackUrl = encodeURIComponent(nextUrl.pathname + nextUrl.search);
+        const redirectUrl = new URL(`/?callbackUrl=${callbackUrl}&authRequired=true`, nextUrl.origin);
+        return NextResponse.redirect(redirectUrl);
+    }
+
     // Default: let auth middleware handle the rest (session version check, etc.)
 });
 

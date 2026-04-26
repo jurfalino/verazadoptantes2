@@ -10,6 +10,7 @@ import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { getSourceIcon, getSourceName } from '@/lib/sourceIcons';
 import { formatShortDate, formatRelativeTime, maskEmail } from '@/lib/dates';
+import { formatAge } from '@/lib/ageUtils';
 import { isAdmin as isAdminEmail } from '@/config/admins-shared';
 import { MediaLightbox, MediaThumbnail } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
@@ -31,22 +32,27 @@ interface Adoption {
     recordType?: string;
     sourceUrl?: string | null;
     age?: string | null;
+    estimatedBirthDate?: number | null;
+    neutered?: number | null;
     sex?: string | null;
     color?: string | null;
     microchip?: string | null;
     images?: { id: string; url: string; caption?: string | null }[];
     verifiedAddress?: string | null;
     deliveredToHome?: boolean | number | null;
+    species?: string | null;
 }
 
 interface AdoptionImage {
     id: string;
     url: string;
     caption?: string | null;
+    mediaType?: string | null;
+    thumbnailUrl?: string | null;
 }
 
 export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, adopterAddress = '', userNameMap = {} }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, adopterAddress?: string, userNameMap?: Record<string, string> }) {
-    const { t } = useLanguage();
+    const { t, locale } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -156,7 +162,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                     const images = adoptionImages[adoption.id] || [];
                     const recordType = adoption.recordType || 'adoption';
                     const colors = getRecordTypeColors(recordType);
-                    const species = (adoption as any).species || '';
+                    const species = adoption.species || '';
                     const speciesLabel = species ? (t(`species.${species.toLowerCase()}`) || species) : '';
 
                     // Build one-line summary: "{icon} {date} — {verb} {animal} ({species})"
@@ -226,17 +232,29 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                         </div>
                                     </div>
 
-                                    {/* Animal details (sex, color, age, microchip) */}
-                                    {(adoption.age || adoption.sex || adoption.color || adoption.microchip) && (
+                                    {/* Animal details (sex, age, neutered, color, microchip) */}
+                                    {(adoption.estimatedBirthDate || adoption.age || adoption.sex || adoption.color || adoption.microchip || adoption.neutered != null) && (
                                         <div className="flex flex-wrap gap-1.5 mt-2">
                                             {adoption.sex && (
                                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
                                                     {['male', 'macho'].includes(adoption.sex.toLowerCase()) ? '♂️' : ['female', 'hembra'].includes(adoption.sex.toLowerCase()) ? '♀️' : ''} {t(`adoption.sex_${adoption.sex.toLowerCase()}`) || adoption.sex}
                                                 </span>
                                             )}
-                                            {adoption.age && (
+                                            {(adoption.estimatedBirthDate || adoption.age) && (
                                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
-                                                    🎂 {adoption.age}
+                                                    🎂 {adoption.estimatedBirthDate
+                                                        ? formatAge(adoption.estimatedBirthDate, locale as 'es' | 'en')
+                                                        : adoption.age}
+                                                </span>
+                                            )}
+                                            {adoption.neutered === 1 && (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                                                    ✓ {t('adoption.neutered') || 'Neutered'}
+                                                </span>
+                                            )}
+                                            {adoption.neutered === 0 && (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-500">
+                                                    ✗ {t('adoption.neutered_no_label') || 'Not neutered'}
                                                 </span>
                                             )}
                                             {adoption.color && (
@@ -315,8 +333,8 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                             {images.slice(0, 4).map((img) => (
                                                 <MediaThumbnail
                                                     key={img.id}
-                                                    item={{ url: img.url, caption: img.caption || undefined, mediaType: (img as any).mediaType || undefined, thumbnailUrl: ((img as any).thumbnailUrl && (img as any).thumbnailUrl !== 'null') ? (img as any).thumbnailUrl : undefined }}
-                                                    onClick={() => setLightboxItem({ url: img.url, caption: img.caption || undefined, mediaType: (img as any).mediaType || undefined, thumbnailUrl: ((img as any).thumbnailUrl && (img as any).thumbnailUrl !== 'null') ? (img as any).thumbnailUrl : undefined })}
+                                                    item={{ url: img.url, caption: img.caption || undefined, mediaType: img.mediaType || undefined, thumbnailUrl: (img.thumbnailUrl && img.thumbnailUrl !== 'null') ? img.thumbnailUrl : undefined }}
+                                                    onClick={() => setLightboxItem({ url: img.url, caption: img.caption || undefined, mediaType: img.mediaType || undefined, thumbnailUrl: (img.thumbnailUrl && img.thumbnailUrl !== 'null') ? img.thumbnailUrl : undefined })}
                                                     size="md"
                                                 />
                                             ))}

@@ -48,6 +48,9 @@ export const saveAdoptionSchema = z.object({
     verifiedAddress: z.string().max(2_000).optional().nullable(),
     identityVerified: z.number().int().min(0).max(1).optional().nullable(),
     sourceUrl: z.string().url().max(2_000).optional().nullable().or(z.literal('')),
+    age: z.string().max(100).optional().nullable(),
+    estimatedBirthDate: z.union([z.coerce.date(), z.number()]).optional().nullable(),
+    neutered: z.number().int().min(0).max(1).optional().nullable(),
 });
 
 // ── Search ───────────────────────────────────────────────────────

@@ -8,6 +8,7 @@ import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { saveAdoption, deleteAnimalForAdoption, deleteAnimalImage } from '@/app/actions';
 import { extractErrorId } from '@/lib/errorUtils';
+import { computeBirthDate, deriveAgeFromBirthDate, parseLegacyAge } from '@/lib/ageUtils';
 import Link from 'next/link';
 
 /** Compress image to max 1200px and JPEG 80% */
@@ -61,13 +62,15 @@ export default function NewAnimalPage() {
     const [pendingImages, setPendingImages] = useState<string[]>([]);
     const [existingImages, setExistingImages] = useState<ExistingImage[]>([]);
     const [customSpecies, setCustomSpecies] = useState(false);
+    const [ageValue, setAgeValue] = useState('');
+    const [ageUnit, setAgeUnit] = useState<'months' | 'years'>('months');
     const [formData, setFormData] = useState({
         animalName: '',
         species: 'cat',
         details: '',
         comments: '',
-        age: '',
         sex: '',
+        neutered: '' as '' | '1' | '0',
         color: '',
         microchip: '',
     });
@@ -80,7 +83,9 @@ export default function NewAnimalPage() {
             try {
                 const res = await fetch(`/api/my-animals?view=all`);
                 if (!res.ok) throw new Error('Failed to fetch');
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const animals = await res.json() as any[];
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const animal = animals.find((a: any) => a.id === editId);
                 if (animal) {
                     const knownSpecies = ['cat', 'dog', 'bird'];
@@ -92,11 +97,23 @@ export default function NewAnimalPage() {
                         species: animal.species || 'cat',
                         details: animal.details || '',
                         comments: animal.comments || '',
-                        age: animal.age || '',
                         sex: animal.sex || '',
+                        neutered: animal.neutered === 1 ? '1' : animal.neutered === 0 ? '0' : '',
                         color: animal.color || '',
                         microchip: animal.microchip || '',
                     });
+                    // Hydrate age fields from estimatedBirthDate or legacy age text
+                    if (animal.estimatedBirthDate) {
+                        const parsed = deriveAgeFromBirthDate(animal.estimatedBirthDate);
+                        setAgeValue(String(parsed.value));
+                        setAgeUnit(parsed.unit);
+                    } else if (animal.age) {
+                        const parsed = parseLegacyAge(animal.age);
+                        if (parsed) {
+                            setAgeValue(String(parsed.value));
+                            setAgeUnit(parsed.unit);
+                        }
+                    }
                     if (animal.images && animal.images.length > 0) {
                         setExistingImages(animal.images);
                     }
@@ -140,13 +157,21 @@ export default function NewAnimalPage() {
 
         setLoading(true);
         try {
+            // Compute estimated birth date from age input
+            const estimatedBirthDate = ageValue
+                ? computeBirthDate(Number(ageValue), ageUnit)
+                : null;
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const payload: any = {
                 animalName: formData.animalName,
                 species: formData.species,
                 details: formData.details,
                 comments: formData.comments,
-                age: formData.age || null,
+                age: null,
+                estimatedBirthDate,
                 sex: formData.sex || null,
+                neutered: formData.neutered === '1' ? 1 : formData.neutered === '0' ? 0 : null,
                 color: formData.color || null,
                 microchip: formData.microchip || null,
                 recordType: 'available',
@@ -281,24 +306,46 @@ export default function NewAnimalPage() {
                             )}
                         </div>
 
-                        {/* Age & Sex (side by side) */}
-                        <div className="grid grid-cols-2 gap-4">
+                        {/* Age, Sex & Neutered */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div>
-                                <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
+                                <label htmlFor="ageValue" className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
                                     {t('adoption.age') || 'Approximate Age'}
                                 </label>
-                                <input
-                                    className="w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm"
-                                    value={formData.age}
-                                    onChange={e => setFormData({ ...formData, age: e.target.value })}
-                                    placeholder={t('adoption.age_placeholder') || 'e.g. 2 years, 3 months'}
-                                />
+                                <div className="flex gap-2">
+                                    <input
+                                        id="ageValue"
+                                        type="number"
+                                        min="0"
+                                        max="99"
+                                        step="1"
+                                        inputMode="numeric"
+                                        className="flex-1 h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm"
+                                        value={ageValue}
+                                        onChange={e => setAgeValue(e.target.value.replace(/\D/g, ''))}
+                                        placeholder={t('adoption.age_placeholder') || 'e.g. 2'}
+                                    />
+                                    <div className="relative">
+                                        <select
+                                            className="h-10 pl-3 pr-8 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm"
+                                            value={ageUnit}
+                                            onChange={e => setAgeUnit(e.target.value as 'months' | 'years')}
+                                        >
+                                            <option value="months">{t('adoption.age_unit_months') || 'months'}</option>
+                                            <option value="years">{t('adoption.age_unit_years') || 'years'}</option>
+                                        </select>
+                                        <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none text-stone-500">
+                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
+                                <label htmlFor="sex" className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
                                     {t('adoption.sex') || 'Sex'}
                                 </label>
                                 <select
+                                    id="sex"
                                     className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm"
                                     value={formData.sex}
                                     onChange={e => setFormData({ ...formData, sex: e.target.value })}
@@ -308,15 +355,31 @@ export default function NewAnimalPage() {
                                     <option value="hembra">{t('adoption.sex_female') || 'Female ♀'}</option>
                                 </select>
                             </div>
+                            <div>
+                                <label htmlFor="neutered" className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
+                                    {t('adoption.neutered') || 'Neutered / Spayed'}
+                                </label>
+                                <select
+                                    id="neutered"
+                                    className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm"
+                                    value={formData.neutered}
+                                    onChange={e => setFormData({ ...formData, neutered: e.target.value as '' | '1' | '0' })}
+                                >
+                                    <option value="">{t('adoption.neutered_unknown') || '—'}</option>
+                                    <option value="1">{t('adoption.neutered_yes') || 'Yes ✓'}</option>
+                                    <option value="0">{t('adoption.neutered_no') || 'No'}</option>
+                                </select>
+                            </div>
                         </div>
 
                         {/* Color & Microchip (side by side) */}
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
+                                <label htmlFor="color" className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
                                     {t('adoption.color') || 'Color / Markings'}
                                 </label>
                                 <input
+                                    id="color"
                                     className="w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm"
                                     value={formData.color}
                                     onChange={e => setFormData({ ...formData, color: e.target.value })}
@@ -324,10 +387,11 @@ export default function NewAnimalPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
+                                <label htmlFor="microchip" className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
                                     {t('adoption.microchip') || 'Microchip N°'}
                                 </label>
                                 <input
+                                    id="microchip"
                                     className="w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm"
                                     value={formData.microchip}
                                     onChange={e => setFormData({ ...formData, microchip: e.target.value })}

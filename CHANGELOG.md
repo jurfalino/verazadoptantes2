@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-2] - 2026-04-26
+
+### Fixed
+- **Codebase Hygiene** - Resolved multiple ESLint warnings related to `any` type usage in `AdoptionForm`, `AdoptionHistory`, `my-animals` page, and `actions/adoptions`, reducing total warnings to 100. Fixed dynamic import pattern in local DB module.
+
+
 ## [2.12.1-1] - 2026-04-19
 
 ### Fixed

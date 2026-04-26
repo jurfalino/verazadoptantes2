@@ -13,6 +13,7 @@ import { extractErrorId } from '@/lib/errorUtils';
 import { MediaLightbox, isVideo as isVideoItem } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 import { formatShortDate } from '@/lib/dates';
+import { formatAge } from '@/lib/ageUtils';
 import DatePicker from '@/components/ui/DatePicker';
 import { extractVideoThumbnail } from '@/lib/videoThumbnail';
 import { zarazTrack } from '@/lib/zaraz';
@@ -52,10 +53,10 @@ function extractAddressFromContact(contactText: string): string {
     return '';
 }
 
-export default function AdoptionForm({ adopterId, initialData, onCancel, onSuccess, onDelete, availableAnimals = [], currentUser, adopterAddress = '' }: { adopterId: string, initialData?: any, onCancel?: () => void, onSuccess?: () => void, onDelete?: () => void, availableAnimals?: any[], currentUser?: string, adopterAddress?: string }) {
+export default function AdoptionForm({ adopterId, initialData, onCancel, onSuccess, onDelete, availableAnimals = [], currentUser, adopterAddress = '' }: { adopterId: string, initialData?: Record<string, unknown>, onCancel?: () => void, onSuccess?: () => void, onDelete?: () => void, availableAnimals?: Record<string, unknown>[], currentUser?: string, adopterAddress?: string }) {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const { t } = useLanguage();
+    const { t, locale } = useLanguage();
     const { data: session } = useSession();
     const { openLogin } = useAuthContext();
     const toast = useShowToast();
@@ -76,7 +77,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
     const [isOpen, setIsOpen] = useState(!!initialData || shouldOpenFromWizard);
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
-    const [adoptionImages, setAdoptionImages] = useState<any[]>([]);
+    const [adoptionImages, setAdoptionImages] = useState<Record<string, unknown>[]>([]);
     const [pendingImages, setPendingImages] = useState<Array<{ data: string; file?: File; isVideo: boolean; thumbnail?: string }>>([]);
     const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
     const [unknownAnimal, setUnknownAnimal] = useState(!initialData?.animalName && initialData?.id ? true : false);
@@ -295,6 +296,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                 deliveredToHome: formData.deliveredToHome ? 1 : 0,
                 verifiedAddress: formData.verifiedAddress || null,
                 identityVerified: formData.identityVerified ? 1 : 0
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             } as any);
 
             // Upload any pending media now that we have the adoption ID
@@ -488,16 +490,28 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                     </div>
 
                     {/* Animal details (read-only context when editing) */}
-                    {initialData && (initialData.age || initialData.sex || initialData.color || initialData.microchip) && (
+                    {initialData && (initialData.estimatedBirthDate || initialData.age || initialData.sex || initialData.color || initialData.microchip || initialData.neutered != null) && (
                         <div className="flex flex-wrap gap-1.5">
                             {initialData.sex && (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
                                     {['male', 'macho'].includes(initialData.sex.toLowerCase()) ? '♂️' : ['female', 'hembra'].includes(initialData.sex.toLowerCase()) ? '♀️' : ''} {t(`adoption.sex_${initialData.sex.toLowerCase()}`) || initialData.sex}
                                 </span>
                             )}
-                            {initialData.age && (
+                            {(initialData.estimatedBirthDate || initialData.age) && (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
-                                    🎂 {initialData.age}
+                                    🎂 {initialData.estimatedBirthDate
+                                        ? formatAge(initialData.estimatedBirthDate, locale as 'es' | 'en')
+                                        : initialData.age}
+                                </span>
+                            )}
+                            {initialData.neutered === 1 && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                                    ✓ {t('adoption.neutered') || 'Neutered'}
+                                </span>
+                            )}
+                            {initialData.neutered === 0 && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-500">
+                                    ✗ {t('adoption.neutered_no_label') || 'Not neutered'}
                                 </span>
                             )}
                             {initialData.color && (
@@ -671,7 +685,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                         {safeAdoptionImages.length > 0 && (
                             <div className="flex flex-wrap gap-2 mb-3">
                                 {safeAdoptionImages.map((img) => {
-                                    const imgIsVideo = isVideoItem({ url: img.url, mediaType: img.mediaType as any });
+                                    const imgIsVideo = isVideoItem({ url: img.url, mediaType: img.mediaType });
                                     return (
                                         <div key={img.id} className="relative group">
                                             {imgIsVideo ? (
