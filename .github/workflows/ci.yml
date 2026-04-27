@@ -134,7 +134,7 @@ jobs:
         env:
           CI: true
           SKIP_ENV_VALIDATION: 'true'
-          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET != '' && secrets.AUTH_SECRET || 'fallback_test_secret_for_ci_environments_only_32_chars' }}
           AUTH_URL: http://localhost:3000
 
       - name: Upload test report

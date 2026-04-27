@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-4] - 2026-04-27
+
+### Fixed
+- **Dependabot CI E2E Tests** — Added a fallback `AUTH_SECRET` to the Playwright E2E GitHub Actions job to prevent `Auth.js` crashes during test setup on PRs originating from Dependabot (which do not have access to standard GitHub repository secrets).
+
 ## [2.12.1-3] - 2026-04-27
 
 ### Fixed
