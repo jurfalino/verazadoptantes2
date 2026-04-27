@@ -241,7 +241,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         }), origin);
     } catch (error) {
         const errorId = logger.error('Form submission failed', error);
-        const errMsg = error instanceof Error ? error.message : 'Unknown error';
+        const errMsg = error instanceof Error ? `${error.message} - Cause: ${JSON.stringify(error.cause || error)}` : 'Unknown error';
         return withCors(NextResponse.json({
             error: `Form submission failed: ${errMsg} (Error ID: ${errorId})`,
         }, { status: 500 }), origin);

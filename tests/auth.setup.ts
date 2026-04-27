@@ -57,6 +57,7 @@ setup('authenticate as admin', async ({ page, context }) => {
     // Also force-set localStorage in case banner didn't appear (already confirmed)
     await page.evaluate((email) => {
         localStorage.setItem(`country_confirmed_${email}`, '1');
+        localStorage.setItem('playwright_test_mode', '1');
     }, ADMIN_EMAIL);
 
     // The admin email should appear in the nav (session is valid)
@@ -109,6 +110,7 @@ setup('authenticate as user', async ({ page, context }) => {
     // Also force-set localStorage in case banner didn't appear
     await page.evaluate((email) => {
         localStorage.setItem(`country_confirmed_${email}`, '1');
+        localStorage.setItem('playwright_test_mode', '1');
     }, USER_EMAIL);
 
     // Non-admin users don't have their name displayed prominently.

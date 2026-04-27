@@ -73,7 +73,9 @@ try {
                 if (err.message.includes('database is locked')) {
                     throw new Error('Fatal: SQLite is locked during sequential setup. Make sure no other instances of Miniflare are running.');
                 }
-                // Safely ignore duplicate collision warnings 
+                if (!err.message.includes('duplicate column') && !err.message.includes('already exists')) {
+                    console.error('[Setup Test DB] Schema migration warning:', err.message);
+                }
             }
         }
         

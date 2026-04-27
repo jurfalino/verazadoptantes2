@@ -34,20 +34,16 @@ export async function GET(request: Request) {
         const filter = (url.searchParams.get('filter') || 'all') as 'all' | 'unread' | 'archived';
         const type = url.searchParams.get('type') || undefined;
 
-        const [result, types, unreadCount] = await Promise.all([
-            getNotificationsPaginated(user, { page: parseInt(page, 10), filter, type }),
-            getNotificationTypes(user),
-            getUnreadCount(user),
-        ]);
+        const result = await getNotificationsPaginated(user, { page: parseInt(page, 10), filter, type });
+        const types = await getNotificationTypes(user);
+        const unreadCount = await getUnreadCount(user);
 
         return NextResponse.json({ ...result, types, unreadCount });
     }
 
     // Default: bell dropdown (latest 20, no dismissed)
-    const [items, unreadCount] = await Promise.all([
-        getNotifications(user),
-        getUnreadCount(user),
-    ]);
+    const items = await getNotifications(user);
+    const unreadCount = await getUnreadCount(user);
 
     return NextResponse.json({ items, unreadCount });
 }

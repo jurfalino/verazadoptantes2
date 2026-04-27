@@ -50,7 +50,7 @@ export default function NotificationBell() {
     const fetchCount = useCallback(async () => {
         if (!isAuthenticated) return;
         try {
-            const res = await fetch('/api/notifications?countOnly=true');
+            const res = await fetch(`/api/notifications?countOnly=true&_t=${Date.now()}`);
             if (!res.ok) return;
             const data = await res.json() as { unreadCount: number };
             const newCount = data.unreadCount || 0;
@@ -67,7 +67,7 @@ export default function NotificationBell() {
     const fetchFullList = useCallback(async () => {
         if (!isAuthenticated) return;
         try {
-            const res = await fetch('/api/notifications');
+            const res = await fetch(`/api/notifications?_t=${Date.now()}`);
             if (!res.ok) return;
             const data = await res.json() as { items: NotificationItem[]; unreadCount: number };
             setItems(data.items || []);

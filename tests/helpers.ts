@@ -43,6 +43,7 @@ export async function dismissCountryBanner(page: Page) {
     await page.evaluate(() => {
         localStorage.setItem('country_confirmed_gatitosolivos@gmail.com', '1');
         localStorage.setItem('country_confirmed_testuser@example.com', '1');
+        localStorage.setItem('playwright_test_mode', '1');
     });
     // Brief wait for React to re-render after localStorage change
     await page.waitForTimeout(500);

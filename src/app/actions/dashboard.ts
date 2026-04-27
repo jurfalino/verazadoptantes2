@@ -49,63 +49,56 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         if (adoptersList.length === 0) return [];
 
         // Batch queries: form submission counts + existing
-        const [adoptionConfig, allImages, allFlags, allAdoptionCounts, allStats, allAdoptionRecords, allFormCounts] = await Promise.all([
-            getAdoptionConfig(),
-            // Profile images (all profile images for these adopters)
-            db.select({
-                adopterId: adopterImages.adopterId,
-                url: adopterImages.url,
-                isProfilePicture: adopterImages.isProfilePicture,
-                uploadedAt: adopterImages.uploadedAt
-            }).from(adopterImages)
-                .where(and(inArray(adopterImages.adopterId, adopterIds), isNull(adopterImages.adoptionId)))
-                .orderBy(sql`${adopterImages.isProfilePicture} DESC, ${adopterImages.uploadedAt} DESC`)
-                .all(),
-            // All flags
-            db.select({
-                adopterId: adopterFlags.adopterId,
-                reason: adopterFlags.reason
-            }).from(adopterFlags)
-                .where(inArray(adopterFlags.adopterId, adopterIds))
-                .all(),
-            // Adoption + request counts per adopter per recordType
-            db.select({
-                adopterId: adoptions.adopterId,
-                recordType: adoptions.recordType,
-                count: sql<number>`COUNT(*)`
-            }).from(adoptions)
-                .where(inArray(adoptions.adopterId, adopterIds))
-                .groupBy(adoptions.adopterId, adoptions.recordType)
-                .all(),
-            // Stats per adopter per eventType (exclude admin activity)
-            db.select({
-                adopterId: adopterStats.adopterId,
-                eventType: adopterStats.eventType,
-                count: sql<number>`COUNT(*)`
-            }).from(adopterStats)
-                .where(and(
-                    inArray(adopterStats.adopterId, adopterIds),
-                    sql`(${adopterStats.userId} IS NULL OR ${adopterStats.userId} NOT IN (${sql.raw(ADMIN_STATS_EXCLUSION_SQL)}))`
-                ))
-                .groupBy(adopterStats.adopterId, adopterStats.eventType)
-                .all(),
-            // All adoption records for period calculations
-            db.select({
-                adopterId: adoptions.adopterId,
-                recordType: adoptions.recordType,
-                date: adoptions.date
-            }).from(adoptions)
-                .where(inArray(adoptions.adopterId, adopterIds))
-                .all(),
-            // Linked form submissions count per adopter
-            db.select({
-                linkedAdopterId: formSubmissions.linkedAdopterId,
-                count: sql<number>`COUNT(*)`
-            }).from(formSubmissions)
-                .where(inArray(formSubmissions.linkedAdopterId, adopterIds))
-                .groupBy(formSubmissions.linkedAdopterId)
-                .all()
-        ]);
+        // Running sequentially to prevent local D1 miniflare deadlocks
+        const adoptionConfig = await getAdoptionConfig();
+        const allImages = await db.select({
+            adopterId: adopterImages.adopterId,
+            url: adopterImages.url,
+            isProfilePicture: adopterImages.isProfilePicture,
+            uploadedAt: adopterImages.uploadedAt
+        }).from(adopterImages)
+            .where(and(inArray(adopterImages.adopterId, adopterIds), isNull(adopterImages.adoptionId)))
+            .orderBy(sql`${adopterImages.isProfilePicture} DESC, ${adopterImages.uploadedAt} DESC`)
+            .all();
+        const allFlags = await db.select({
+            adopterId: adopterFlags.adopterId,
+            reason: adopterFlags.reason
+        }).from(adopterFlags)
+            .where(inArray(adopterFlags.adopterId, adopterIds))
+            .all();
+        const allAdoptionCounts = await db.select({
+            adopterId: adoptions.adopterId,
+            recordType: adoptions.recordType,
+            count: sql<number>`COUNT(*)`
+        }).from(adoptions)
+            .where(inArray(adoptions.adopterId, adopterIds))
+            .groupBy(adoptions.adopterId, adoptions.recordType)
+            .all();
+        const allStats = await db.select({
+            adopterId: adopterStats.adopterId,
+            eventType: adopterStats.eventType,
+            count: sql<number>`COUNT(*)`
+        }).from(adopterStats)
+            .where(and(
+                inArray(adopterStats.adopterId, adopterIds),
+                sql`(${adopterStats.userId} IS NULL OR ${adopterStats.userId} NOT IN (${sql.raw(ADMIN_STATS_EXCLUSION_SQL)}))`
+            ))
+            .groupBy(adopterStats.adopterId, adopterStats.eventType)
+            .all();
+        const allAdoptionRecords = await db.select({
+            adopterId: adoptions.adopterId,
+            recordType: adoptions.recordType,
+            date: adoptions.date
+        }).from(adoptions)
+            .where(inArray(adoptions.adopterId, adopterIds))
+            .all();
+        const allFormCounts = await db.select({
+            linkedAdopterId: formSubmissions.linkedAdopterId,
+            count: sql<number>`COUNT(*)`
+        }).from(formSubmissions)
+            .where(inArray(formSubmissions.linkedAdopterId, adopterIds))
+            .groupBy(formSubmissions.linkedAdopterId)
+            .all();
 
         // Build lookup maps
         // Ratings: compute from allAdoptionRecords using domain function (replaces separate AVG SQL query)
@@ -275,32 +268,31 @@ export async function getMyAdoptions(filter: 'all' | 'adoption' | 'adoption_requ
         const results = await query.all();
 
         // Fetch images and adopter name for each adoption
-        const adoptionsWithDetails = await Promise.all(
-            results.map(async (adoption: typeof adoptions.$inferSelect) => {
-                // Fetch images
-                const images = await db.select({
-                    id: adopterImages.id,
-                    url: adopterImages.url,
-                    caption: adopterImages.caption
-                })
-                    .from(adopterImages)
-                    .where(eq(adopterImages.adoptionId, adoption.id))
-                    .limit(DASHBOARD_RECENT_ACTIVITY_LIMIT)
-                    .all();
-
-                // Fetch adopter name if linked
-                let adopterName: string | null = null;
-                if (adoption.adopterId) {
-                    const adopter = await db.select({ name: adopters.name })
-                        .from(adopters)
-                        .where(eq(adopters.id, adoption.adopterId))
-                        .get();
-                    adopterName = adopter?.name || null;
-                }
-
-                return { ...adoption, images, adopterName };
+        const adoptionsWithDetails = [];
+        for (const adoption of results) {
+            // Fetch images
+            const images = await db.select({
+                id: adopterImages.id,
+                url: adopterImages.url,
+                caption: adopterImages.caption
             })
-        );
+                .from(adopterImages)
+                .where(eq(adopterImages.adoptionId, adoption.id))
+                .limit(DASHBOARD_RECENT_ACTIVITY_LIMIT)
+                .all();
+
+            // Fetch adopter name if linked
+            let adopterName: string | null = null;
+            if (adoption.adopterId) {
+                const adopter = await db.select({ name: adopters.name })
+                    .from(adopters)
+                    .where(eq(adopters.id, adoption.adopterId))
+                    .get();
+                adopterName = adopter?.name || null;
+            }
+
+            adoptionsWithDetails.push({ ...adoption, images, adopterName });
+        }
 
         return adoptionsWithDetails;
     } catch (error) {

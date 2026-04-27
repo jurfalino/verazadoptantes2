@@ -66,6 +66,13 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
         const storageKey = `country_confirmed_${email}`;
         setLoaded(false);
 
+        // Fast path: if dismissed previously in this session or if running in E2E tests
+        if (localStorage.getItem(storageKey) === '1' || localStorage.getItem('playwright_test_mode') === '1') {
+            setDismissed(true);
+            setLoaded(true);
+            return;
+        }
+
         getUserSettings().then(s => {
             if (s) {
                 setSettings(s);

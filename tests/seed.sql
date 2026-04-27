@@ -79,6 +79,9 @@ INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES
 INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES
 ('ENABLE_AI_EXTRACTION', 'false', strftime('%s','now'), 'test-seed');
 
+INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES
+('ENABLE_ANIMALS_FOR_ADOPTION', 'true', strftime('%s','now'), 'test-seed');
+
 -- ============================================================
 -- USER (admin account for authenticated tests)
 -- ============================================================

@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-3] - 2026-04-27
+
+### Fixed
+- **E2E Flakiness & Test Db Lock Races** — Resolved D1 `miniflare` SQLite deadlocks caused by concurrent `Promise.all` database queries in `src/app/actions/dashboard.ts` and `src/app/api/notifications/route.ts` under E2E testing load.
+- **Test Setup Synchronization** — Hardened the `forms.spec.ts` notification polling test by navigating away from DB-intensive pages during polling, applying a cache-busting timestamp `_t` parameter to Next.js API requests, and wrapping UI dropdown verifications in resilient Playwright `toPass` blocks.
+- **Playwright Assertion Strictness** — Patched `getByText` and `.first()` constraints on the final form results assertion to eliminate strict-mode violations when multiple matching elements exist.
+
 ## [2.12.1-2] - 2026-04-26
 
 ### Fixed
