@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-10] - 2026-04-29
+
+### Changed
+- **CI** — Added `contract-app.yml` workflow: deploys contract app to Cloudflare Workers via CI on push to `staging` or `master`, but only when `contract-app/**` files change. Replaces Cloudflare Git integration auto-deploy.
+
 ## [2.12.1-9] - 2026-04-29
 
 ### Fixed

@@ -1,0 +1,36 @@
+name: Contract App
+
+on:
+  push:
+    branches: [master, staging]
+    paths:
+      - 'contract-app/**'
+
+jobs:
+  deploy:
+    name: 🚀 Deploy Contract App
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.18'
+          cache: 'npm'
+          cache-dependency-path: contract-app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: contract-app
+        run: npm ci
+
+      - name: Build
+        working-directory: contract-app
+        run: npm run build
+
+      - name: Deploy to Cloudflare Workers
+        working-directory: contract-app
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
