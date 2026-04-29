@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-14] - 2026-04-29
+
+### Fixed
+- **findAdopters D1 bug** — Replaced `inArray()` with per-ID `Promise.all(eq())` fan-out in both duplicate mode (name/token lookups) and discovery mode (extra profile fetch). `inArray()` silently returns wrong results on Cloudflare D1; search was missing adopters found via history/adoption text matches.
+
 ## [2.12.1-13] - 2026-04-29
 
 ### Fixed
