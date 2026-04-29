@@ -1,6 +1,4 @@
-// Force static pre-render at build time — avoids next-on-pages runtime-logic
-// detection on /_not-found caused by root layout's await auth() inheritance.
-export const dynamic = 'force-static';
+export const runtime = 'edge';
 
 export default function NotFound() {
     return (

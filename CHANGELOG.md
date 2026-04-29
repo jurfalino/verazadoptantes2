@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-9] - 2026-04-29
+
+### Fixed
+- **Cloudflare Build Error** — Pinned `next` back to `15.1.6`. The dependabot bump to `15.5.15` broke `@cloudflare/next-on-pages` v1.13.16 compatibility with the `/_not-found` route. Next.js 15.5.x changed how that route is compiled in a way the current next-on-pages version cannot handle.
+- Restored `export const runtime = 'edge'` on `not-found.tsx` (correct for next-on-pages with Next.js 15.1.x).
+
 ## [2.12.1-8] - 2026-04-29
 
 ### Fixed
