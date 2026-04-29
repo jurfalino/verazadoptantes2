@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-7] - 2026-04-29
+
+### Changed
+- **CI** — E2E tests now only run on `push` events (not on `pull_request`), eliminating duplicate runs per commit.
+- **CI** — E2E job now depends on `build-and-lint` (fail fast instead of wasting Playwright time on broken builds).
+- **CI** — Added `timeout-minutes` to all jobs that lacked one: `build-and-lint` (10 min), migrate jobs (10 min), deploy jobs (15 min).
+
 ## [2.12.1-6] - 2026-04-29
 
 ### Fixed

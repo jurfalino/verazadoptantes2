@@ -10,7 +10,7 @@ jobs:
   build-and-lint:
     name: Build & Lint
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -49,6 +49,7 @@ jobs:
   migrate-production:
     name: 🗃️ Apply D1 Migrations
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
     needs: [build-and-lint]
     steps:
@@ -73,6 +74,7 @@ jobs:
   migrate-staging:
     name: 🗃️ Apply Staging Migrations
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
     needs: [build-and-lint]
     steps:
@@ -98,6 +100,8 @@ jobs:
     name: 🎭 E2E Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    if: github.event_name == 'push'
+    needs: [build-and-lint]
     # Non-blocking: test failures are visible but don't gate merges
     # Removed continue-on-error to prevent masked failures in CI
 
@@ -148,6 +152,7 @@ jobs:
   deploy-staging:
     name: 🚀 Deploy to Staging
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
     needs: [build-and-lint, migrate-staging, e2e]
     concurrency:
@@ -181,6 +186,7 @@ jobs:
   deploy-production:
     name: 🚀 Deploy to Production
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
     needs: [build-and-lint, migrate-production, e2e]
     concurrency:
