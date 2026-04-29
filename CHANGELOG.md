@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-15] - 2026-04-29
+
+### Changed
+- **Cold start optimization** — Lazy-load NextAuth in `_db.ts` (`getUser`, `getIsAdmin`) and middleware so the NextAuth module graph is not parsed at worker startup. Anonymous requests (search, public pages) no longer initialize the auth subsystem.
+- **Middleware** — Restructured to skip auth entirely for public routes; auth check (including session version validation) only runs on protected routes (`/my-animals`, `/my-adopters`, `/my-adoptions`, `/settings`, `/admin`).
+
+### Removed
+- **`search.ts`** — Deleted deprecated `searchAdopter` legacy function (v2.12.x staging validation complete; all call sites use `findAdopters`).
+
+### Added
+- **Bundle analyzer** — `ANALYZE=true npm run build` now generates an interactive bundle treemap via `@next/bundle-analyzer`.
+
 ## [2.12.1-14] - 2026-04-29
 
 ### Fixed

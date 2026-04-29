@@ -44,6 +44,15 @@ const eslintConfig = [
       "react/no-unescaped-entities": "off",
       // Downgrade prefer-const
       "prefer-const": "warn",
+      // D1 incompatibility: inArray() silently returns wrong results on Cloudflare D1.
+      // Use Promise.all(ids.map(id => db...where(eq(col, id)))).flat() instead.
+      "no-restricted-imports": ["warn", {
+        paths: [{
+          name: "drizzle-orm",
+          importNames: ["inArray"],
+          message: "inArray() is broken on Cloudflare D1 — use Promise.all(ids.map(id => db...eq(id))).flat(). See docs/D1_COMPATIBILITY.md.",
+        }],
+      }],
     },
   },
 ];

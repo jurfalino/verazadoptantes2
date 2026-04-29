@@ -1,5 +1,8 @@
 import type { NextConfig } from "next";
 import path from "path";
+import bundleAnalyzer from "@next/bundle-analyzer";
+
+const withBundleAnalyzer = bundleAnalyzer({ enabled: process.env.ANALYZE === 'true' });
 
 // Enable local Cloudflare D1 development
 // Guard against repeated calls during HMR config re-evaluation
@@ -83,5 +86,5 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withBundleAnalyzer(nextConfig);
 

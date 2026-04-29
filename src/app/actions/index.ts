@@ -11,9 +11,6 @@ export { getDb, getUser, getIsAdmin } from './_db';
 // Config
 export { getAdoptionConfig } from './config';
 
-// Search (legacy — use findAdopters for new call sites)
-export { searchAdopter } from './search';
-
 // Unified search engine
 export { findAdopters } from './findAdopters';
 export type { FindAdoptersInput, FindAdoptersOptions, FindAdoptersResponse, DuplicateMatch, DiscoveryMatch, AdopterMatch, SearchMode } from './types';
