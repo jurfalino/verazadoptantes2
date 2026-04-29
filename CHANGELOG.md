@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-11] - 2026-04-29
+
+### Fixed
+- **Contract App CI** — Added missing `@types/react` and `@types/react-dom` devDependencies. Cloudflare Git integration had cached node_modules; CI's clean `npm ci` exposed the gap.
+
 ## [2.12.1-10] - 2026-04-29
 
 ### Changed
