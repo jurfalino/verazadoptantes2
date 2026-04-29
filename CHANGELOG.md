@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-8] - 2026-04-29
+
+### Fixed
+- **Cloudflare Build Error** — Replaced `export const runtime = 'edge'` with `export const dynamic = 'force-static'` on `not-found.tsx`. Static pre-render avoids next-on-pages' "runtime logic" detection caused by `await auth()` in the root layout being inherited into the `/_not-found` route.
+
 ## [2.12.1-7] - 2026-04-29
 
 ### Changed
