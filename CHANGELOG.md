@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-6] - 2026-04-29
+
+### Fixed
+- **Cloudflare Build Error** — Restored `export const runtime = 'edge'` on `app/not-found.tsx`; next-on-pages requires all non-static routes to use the Edge Runtime, so removing it caused the build to fail.
+- Updated lint warning ratchet threshold from 122 → 123.
+
 ## [2.12.1-5] - 2026-04-29
 
 ### Fixed
