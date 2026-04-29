@@ -438,7 +438,7 @@ export const es = {
         '1': '⭐',
         unknown: 'Desconocido',
         dangerous: 'Peligroso',
-        poor: 'Malo',
+        poor: 'Riesgoso',
         average: 'Promedio',
         good: 'Bueno',
         excellent: 'Excelente',

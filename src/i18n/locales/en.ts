@@ -439,7 +439,7 @@ export const en = {
         '1': '⭐',
         unknown: 'Unknown',
         dangerous: 'Dangerous',
-        poor: 'Poor',
+        poor: 'Risky',
         average: 'Average',
         good: 'Good',
         excellent: 'Excellent',

@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-12] - 2026-04-29
+
+### Added
+- **Adopter Profile V2** — New `/adopter2/[id]` route with `AdopterProfileV2`, `AdoptionFormEditV2`, and `AdoptionFormWizard` components (work in progress).
+- **`.gitattributes`** — Enforce LF line endings on all text files; eliminates CRLF noise on Windows/WSL2.
+
+### Fixed
+- **CollapsibleSection** — Removed `overflow-hidden` that was clipping border radius; proper rounded corners now applied per open/closed state.
+- **StarRating** — Uses named i18n keys (`dangerous`, `poor`, `average`, `good`, `excellent`) instead of numeric indices; star fill color now uses theme tokens.
+- **i18n** — Added missing `poor` rating label (EN: "Risky", ES: "Riesgoso").
+- **AdoptionHistory** — Accepts optional `editFormComponent` prop to allow V2 form injection without modifying the shared component.
+
+### Changed
+- Updated `.gitignore` to exclude `.wrangler/state/`, `*.sqlite`, and `.claude/settings.local.json`.
+- Updated app and public icons.
+
 ## [2.12.1-11] - 2026-04-29
 
 ### Fixed

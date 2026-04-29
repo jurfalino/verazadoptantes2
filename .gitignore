@@ -60,3 +60,6 @@ test-db.js
 
 # internal audits & notes
 docs/code_quality_audit.md
+*.sqlite
+.wrangler/state/
+.claude/settings.local.json
