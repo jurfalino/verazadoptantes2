@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-5] - 2026-04-29
+
+### Fixed
+- **Cloudflare Build Error** — Fixed `@cloudflare/next-on-pages` edge runtime validation error by removing `export const runtime = "edge"` from `app/not-found.tsx` to allow Next.js to properly prerender the not-found fallback as static content.
+
 ## [2.12.1-4] - 2026-04-27
 
 ### Fixed
