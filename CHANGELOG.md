@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-13] - 2026-04-29
+
+### Fixed
+- **contract-app deploy** — Removed `public/_redirects` (rule `/* /index.html 200` caused infinite loop error in wrangler v4+); SPA fallback already handled by `not_found_handling = "single-page-application"` in `wrangler.toml`.
+
 ## [2.12.1-12] - 2026-04-29
 
 ### Added
