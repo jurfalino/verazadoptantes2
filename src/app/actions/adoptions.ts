@@ -30,7 +30,7 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
             const changes: Record<string, any> = {};
             let hasChanges = false;
 
-            const fields = ['animalName', 'species', 'status', 'rating', 'details', 'adopterId', 'date', 'onBehalfOf', 'recordType', 'deliveredToHome', 'verifiedAddress', 'identityVerified'] as const;
+            const fields = ['animalName', 'species', 'status', 'rating', 'details', 'adopterId', 'date', 'onBehalfOf', 'recordType', 'deliveredToHome', 'verifiedAddress', 'identityVerified', 'estimatedBirthDate', 'neutered'] as const;
             for (const field of fields) {
                 // @ts-ignore
                 if (data[field] !== undefined && data[field] !== existing[field]) {

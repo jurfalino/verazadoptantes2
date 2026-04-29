@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { getDb } from '@/app/actions';
 import { adoptions, adopters } from '@/db/schema';
-import { eq, and, isNull, inArray, sql, count, not } from 'drizzle-orm';
+import { eq, and, isNull, inArray, count, not } from 'drizzle-orm';
 import { getFeatureFlag } from '@/config/features';
 import { getOrgMemberEmails } from '@/app/actions/organizations';
 import { logger } from '@/lib/logger';

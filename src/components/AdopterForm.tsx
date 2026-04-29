@@ -24,7 +24,6 @@ import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 
 interface AdopterFormProps {
     initialData?: Adopter | null;
-    history?: HistoryEntry[];
     currentUser?: string;
     images?: AdopterImage[];
     adopterId?: string;
@@ -35,11 +34,10 @@ interface AdopterFormProps {
     adoptionConfig?: AdoptionConfig;
     isAdmin?: boolean;
     formPrefill?: FormSubmissionPrefill | null;
-    userNameMap?: Record<string, string>;
     hasDuplicateBanner?: boolean;
 }
 
-export function AdopterForm({ initialData, history = [], currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin: _isAdmin = false, formPrefill = null, userNameMap = {}, hasDuplicateBanner = false }: AdopterFormProps) {
+export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin: _isAdmin = false, formPrefill = null, hasDuplicateBanner = false }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');

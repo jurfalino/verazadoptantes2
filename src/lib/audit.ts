@@ -7,6 +7,7 @@
 
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { headers } from 'next/headers';
+import { logger } from '@/lib/logger';
 
 export interface AuditEntry {
     userId?: string;
@@ -66,7 +67,7 @@ export async function logAudit(entry: AuditEntry) {
             ).run();
         } catch (e) {
             // Never let audit logging break the main flow
-            console.error('[Audit] Failed to log:', e);
+            logger.error('[Audit] Failed to log', { error: e instanceof Error ? e.message : String(e) });
         }
     };
 
@@ -165,7 +166,7 @@ export async function ensureUserProfile(userId: string, email?: string, name?: s
                  WHERE user_id = ?`
             ).bind(detectedProvince, detectedProvinceCode, detectedCity, detectedTimezone, resolvedId).run();
         } catch (e) {
-            console.error('[Audit] Failed to upsert user profile:', e);
+            logger.error('[Audit] Failed to upsert user profile', { error: e instanceof Error ? e.message : String(e) });
         }
     };
 

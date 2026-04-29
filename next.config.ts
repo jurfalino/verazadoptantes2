@@ -3,7 +3,7 @@ import path from "path";
 
 // Enable local Cloudflare D1 development
 // Guard against repeated calls during HMR config re-evaluation
-if (process.env.NODE_ENV === 'development') {
+if (process.env.NODE_ENV !== 'production') {
   const g = globalThis as any;
   if (!g.__cfDevPlatformSetup) {
     g.__cfDevPlatformSetup = true;

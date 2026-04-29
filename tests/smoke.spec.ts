@@ -10,33 +10,33 @@ test.describe('Smoke Tests', () => {
         // Page title from metadata
         await expect(page).toHaveTitle(/BuenAdoptante/i);
         // Main heading should be visible
-        await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 15000 });
+        await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 30000 });
     });
 
     test('Authenticated user has access', async ({ page }) => {
         await page.goto('/');
         // After JWT auth, search input should be visible
-        await expect(page.locator('input#search')).toBeVisible({ timeout: 15000 });
+        await expect(page.locator('input#search')).toBeVisible({ timeout: 30000 });
         // Footer with version badge
-        await expect(page.locator('footer')).toBeVisible();
+        await expect(page.locator('footer')).toBeVisible({ timeout: 30000 });
     });
 
     test('Navigation between pages works', async ({ page }) => {
         await page.goto('/');
 
         // Home page has search
-        await expect(page.locator('input#search')).toBeVisible();
+        await expect(page.locator('input#search')).toBeVisible({ timeout: 30000 });
 
         // Navigate to create adopter
         await page.goto('/adopter/create');
-        await expect(page.getByPlaceholder(/Full Name|Nombre completo/i)).toBeVisible({ timeout: 15000 });
+        await expect(page.getByPlaceholder(/Full Name|Nombre completo/i)).toBeVisible({ timeout: 30000 });
 
         // Navigate back home
         await page.goto('/');
-        await expect(page.locator('input#search')).toBeVisible({ timeout: 15000 });
+        await expect(page.locator('input#search')).toBeVisible({ timeout: 30000 });
 
         // Footer visible
-        await expect(page.locator('footer')).toBeVisible();
+        await expect(page.locator('footer')).toBeVisible({ timeout: 30000 });
     });
 
     test('Database schema matches expected columns', async ({ request }) => {

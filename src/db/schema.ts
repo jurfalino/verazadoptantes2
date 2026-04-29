@@ -81,7 +81,9 @@ export const adoptions = sqliteTable("adoptions", {
     verifiedAddress: text("verified_address"), // Snapshot of verified address at time of adoption
     identityVerified: integer("identity_verified"), // 1 if adopter identity was verified during this adoption
     sourceUrl: text("source_url"), // Link to original post/source for this specific record
-    age: text("age"), // Approximate age (e.g., "2 años", "3 meses")
+    age: text("age"), // Approximate age (e.g., "2 años", "3 meses") — DEPRECATED, prefer estimatedBirthDate
+    estimatedBirthDate: integer("estimated_birth_date", { mode: "timestamp" }), // Computed from age input
+    neutered: integer("neutered"), // 1 if neutered/spayed, 0 or null if not
     sex: text("sex"), // macho, hembra
     color: text("color"), // Color/markings description
     microchip: text("microchip"), // Microchip number if available

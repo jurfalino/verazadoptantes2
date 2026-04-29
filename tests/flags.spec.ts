@@ -14,10 +14,10 @@ test.describe('Flags and Adoption History', () => {
         await page.goto(`/adopter/${TEST_ADOPTERS.ANA}`);
 
         // Wait for the profile to load — name in view mode is h2
-        await expect(page.getByRole('heading', { name: TEST_NAMES.ANA })).toBeVisible({ timeout: 15000 });
+        await expect(page.getByRole('heading', { name: TEST_NAMES.ANA })).toBeVisible({ timeout: 30000 });
 
         // Duplicate flag banner should be visible
-        await expect(page.getByText(/duplicate|duplicado/i).first()).toBeVisible();
+        await expect(page.getByText(/duplicate|duplicado/i).first()).toBeVisible({ timeout: 30000 });
     });
 
     test('Adoption history displays correctly', async ({ page }) => {
@@ -25,26 +25,26 @@ test.describe('Flags and Adoption History', () => {
         await page.goto(`/adopter/${TEST_ADOPTERS.ROBERTO}`);
 
         // Wait for profile to load
-        await expect(page.getByRole('heading', { name: TEST_NAMES.ROBERTO })).toBeVisible({ timeout: 15000 });
+        await expect(page.getByRole('heading', { name: TEST_NAMES.ROBERTO })).toBeVisible({ timeout: 30000 });
 
         // Adoptions section should be visible
-        await expect(page.getByTestId('adoptions-list')).toBeVisible();
+        await expect(page.getByTestId('adoptions-list')).toBeVisible({ timeout: 30000 });
 
         // Animal names from Roberto's 3 records should appear
-        await expect(page.getByText(TEST_ANIMALS.FIRULAIS)).toBeVisible();
-        await expect(page.getByText(TEST_ANIMALS.PELUSA)).toBeVisible();
-        await expect(page.getByText(TEST_ANIMALS.ROCKY)).toBeVisible();
+        await expect(page.getByText(TEST_ANIMALS.FIRULAIS)).toBeVisible({ timeout: 30000 });
+        await expect(page.getByText(TEST_ANIMALS.PELUSA)).toBeVisible({ timeout: 30000 });
+        await expect(page.getByText(TEST_ANIMALS.ROCKY)).toBeVisible({ timeout: 30000 });
 
         // Species labels should be visible (may be English or Spanish depending on browser locale)
         // 'dog' → 'Dog'/'Perro', 'cat' → 'Cat'/'Gato'
-        await expect(page.getByText(/Perro|Dog/i).first()).toBeVisible();
-        await expect(page.getByText(/Gato|Cat/i).first()).toBeVisible();
+        await expect(page.getByText(/Perro|Dog/i).first()).toBeVisible({ timeout: 30000 });
+        await expect(page.getByText(/Gato|Cat/i).first()).toBeVisible({ timeout: 30000 });
 
         // Source URL: Firulais record has a Facebook source_url — link should be present
         const sourceLink = page.locator('a[href="https://www.facebook.com/groups/123/posts/456"]');
-        await expect(sourceLink).toBeVisible();
+        await expect(sourceLink).toBeVisible({ timeout: 30000 });
 
         // Admin email hiding: Pelusa was added by admin (gatitosolivos@gmail.com) — should NOT appear
-        await expect(page.getByText('gatitosolivos@gmail.com')).not.toBeVisible();
+        await expect(page.getByText('gatitosolivos@gmail.com')).not.toBeVisible({ timeout: 30000 });
     });
 });

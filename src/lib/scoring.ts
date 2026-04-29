@@ -87,7 +87,7 @@ export function levenshtein(a: string, b: string): number {
     if (a === b) return 0;
 
     // Single row DP
-    let row: number[] = Array.from({ length: la + 1 }, (_, i) => i);
+    const row: number[] = Array.from({ length: la + 1 }, (_, i) => i);
 
     for (let j = 1; j <= lb; j++) {
         let prev = row[0];

@@ -10,6 +10,7 @@ import { extractErrorId } from '@/lib/errorUtils';
 import { MediaLightbox, isVideo } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 import { extractVideoThumbnail } from '@/lib/videoThumbnail';
+import { maskEmail } from '@/lib/dates';
 
 /** Convert a data URL to a Blob for FormData upload */
 function dataUrlToBlob(dataUrl: string): Blob {
@@ -322,7 +323,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                                     {img.addedBy ? (
                                         <span className="flex items-center gap-1">
                                             <span className="opacity-75 font-normal">{t('common.added_by')}</span>
-                                            <span>{userNameMap?.[img.addedBy] || img.addedBy}</span>
+                                            <span>{userNameMap?.[img.addedBy] || maskEmail(img.addedBy)}</span>
                                         </span>
                                     ) : img.caption}
                                 </p>

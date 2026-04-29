@@ -1,8 +1,8 @@
 export const runtime = 'edge';
 import { redirect } from 'next/navigation';
-import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getAdoptionConfig, getDuplicateCandidates, getLinkedFormSubmissions } from '@/app/actions';
-import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
+import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getAdoptionConfig, getDuplicateCandidates } from '@/app/actions';
 import { resolveUserNames } from '@/app/actions/userNames';
+import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
 import { AdopterProfile } from '@/components/AdopterProfile';
 
 export default async function AdopterPage({
@@ -37,10 +37,9 @@ export default async function AdopterPage({
     let stats = null;
     let avgRating = null;
     let dupCandidates: any[] = [];
-    let linkedForms: any[] = [];
 
     if (!isNew) {
-        [adopter, history, adoptions, images, flags, stats, avgRating, availableAnimals, dupCandidates, linkedForms] = await Promise.all([
+        [adopter, history, adoptions, images, flags, stats, avgRating, availableAnimals, dupCandidates] = await Promise.all([
             getAdopter(id),
             getHistory(id),
             getAdoptions(id),
@@ -49,24 +48,23 @@ export default async function AdopterPage({
             getAdopterStats(id),
             getAverageRating(id),
             getAvailableAnimals(),
-            getDuplicateCandidates(id),
-            getLinkedFormSubmissions(id)
+            getDuplicateCandidates(id)
         ]);
     } else {
         availableAnimals = await getAvailableAnimals();
     }
 
-    // Resolve emails → display names for addedBy/changedBy fields
-    const allEmails = new Set<string>();
-    for (const h of history) { if (h.changedBy) allEmails.add(h.changedBy); }
-    for (const a of adoptions) { if (a.addedBy) allEmails.add(a.addedBy); }
-    for (const img of images) { if (img.addedBy) allEmails.add(img.addedBy); }
-    const userNameMap = allEmails.size > 0 ? await resolveUserNames([...allEmails]) : {};
-
     let formPrefill = null;
     if (isNew && fromForm?.trim()) {
         formPrefill = await getFormSubmissionPrefill(fromForm.trim());
     }
+
+    // Build userNameMap: collect all editor emails then resolve to display names in one batch
+    const editorEmails: string[] = [];
+    for (const h of history) { if (h.changedBy) editorEmails.push(h.changedBy); }
+    for (const a of adoptions) { if (a.addedBy) editorEmails.push(a.addedBy); }
+    for (const img of images) { if (img.addedBy) editorEmails.push(img.addedBy); }
+    const userNameMap = await resolveUserNames(editorEmails);
 
     return (
         <AdopterProfile
@@ -84,7 +82,6 @@ export default async function AdopterPage({
             isAdmin={isAdmin}
             adoptionConfig={adoptionConfig}
             duplicateCandidates={dupCandidates}
-            linkedForms={linkedForms}
             formPrefill={formPrefill}
             userNameMap={userNameMap}
         />

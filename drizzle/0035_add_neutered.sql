@@ -1,0 +1,1 @@
+ALTER TABLE adoptions ADD COLUMN neutered INTEGER;

@@ -9,13 +9,12 @@ import AdoptionHistory from '@/components/AdoptionHistory';
 import AdoptionForm from '@/components/AdoptionForm';
 import { ImageGallery } from '@/components/ImageGallery';
 import { useLanguage } from '@/context/LanguageContext';
-import { saveImage, deleteImage, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from '@/app/actions';
+import { saveImage, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from '@/app/actions';
 import { useShowToast } from '@/components/ui/Toast';
 import ReportInaccuracyForm from '@/components/ReportInaccuracyForm';
 import DuplicateComparisonCard from '@/components/DuplicateComparisonCard';
 import { RatingBadge } from '@/components/RatingBadge';
-import { formatDateTime, formatShortDate } from '@/lib/dates';
-import { getRecordTypeIcon } from '@/lib/recordTypeColors';
+import { formatDateTime, formatShortDate, maskEmail } from '@/lib/dates';
 import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, HistoryEntry, AdopterStats, AdoptionConfig, DuplicateCandidateInfo } from '@/types/adopter';
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 
@@ -36,12 +35,11 @@ interface AdopterProfileProps {
     isAdmin?: boolean;
     adoptionConfig?: AdoptionConfig;
     duplicateCandidates?: DuplicateCandidateInfo[];
-    linkedForms?: Array<{ id: string; species: string | null; lifeStage: string | null; notificationId: string | null; answersJson: string | null; createdAt: Date | null }>;
     formPrefill?: FormSubmissionPrefill | null;
     userNameMap?: Record<string, string>;
 }
 
-export function AdopterProfile({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [], linkedForms = [], formPrefill = null, userNameMap = {} }: AdopterProfileProps) {
+export function AdopterProfile({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {} }: AdopterProfileProps) {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const toast = useShowToast();
@@ -94,10 +92,6 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
             setDeleteLoading(false);
         }
     };
-
-    // Compute adoption/request counts from the adoptions array directly
-    const adoptionCount = adoptions.filter(a => a.recordType === 'adoption').length;
-    const requestCount = adoptions.filter(a => a.recordType === 'adoption_request').length;
 
     // Determine back link based on referrer
     const ref = searchParams.get('ref');
@@ -248,7 +242,6 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                     <>
                         <AdopterForm
                             initialData={adopter}
-                            history={history}
                             currentUser={currentUser}
                             images={images}
                             adopterId={id}
@@ -259,7 +252,6 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                             adoptionConfig={adoptionConfig}
                             isAdmin={isAdmin}
                             formPrefill={formPrefill}
-                            userNameMap={userNameMap}
                             hasDuplicateBanner={visibleDuplicates.length > 0}
                         />
 
@@ -349,7 +341,7 @@ export function AdopterProfile({ id, isNew, adopter, history, adoptions, images,
                                                     {eventType === 'image_deleted' && <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_image_deleted')}</span>}
                                                 </div>
                                                 <span className="text-xs px-2.5 py-0.5 bg-white border border-teal-100 rounded-full text-teal-700 font-medium shadow-sm">
-                                                    {t('audit.by')} {(h.changedBy && userNameMap?.[h.changedBy]) || h.changedBy || t('common.anonymous')}
+                                                    {t('audit.by')} {(h.changedBy && userNameMap?.[h.changedBy]) || (h.changedBy ? maskEmail(h.changedBy) : t('common.anonymous'))}
                                                 </span>
                                             </div>
                                             <div className="space-y-1.5">
@@ -489,3 +481,4 @@ function getMatchBadgeStyle(type: string): string {
     };
     return styles[type] || 'bg-stone-100 text-stone-700';
 }
+

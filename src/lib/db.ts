@@ -9,6 +9,7 @@
 
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { createDb } from '@/db';
+import { logger } from '@/lib/logger';
 
 export async function getDb() {
     try {
@@ -26,7 +27,7 @@ export async function getDb() {
             const { createLocalDb } = await import('@/db/local');
             return await createLocalDb('local.db');
         } catch (e) {
-            console.error("[getDb] Local DB Init Error:", e);
+            logger.error("[getDb] Local DB Init Error", { error: e instanceof Error ? e.message : String(e) });
         }
     }
     return undefined;

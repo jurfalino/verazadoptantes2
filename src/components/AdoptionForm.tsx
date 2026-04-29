@@ -13,6 +13,7 @@ import { extractErrorId } from '@/lib/errorUtils';
 import { MediaLightbox, isVideo as isVideoItem } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 import { formatShortDate } from '@/lib/dates';
+import { formatAge } from '@/lib/ageUtils';
 import DatePicker from '@/components/ui/DatePicker';
 import { extractVideoThumbnail } from '@/lib/videoThumbnail';
 import { zarazTrack } from '@/lib/zaraz';
@@ -52,10 +53,10 @@ function extractAddressFromContact(contactText: string): string {
     return '';
 }
 
-export default function AdoptionForm({ adopterId, initialData, onCancel, onSuccess, onDelete, availableAnimals = [], currentUser, adopterAddress = '' }: { adopterId: string, initialData?: any, onCancel?: () => void, onSuccess?: () => void, onDelete?: () => void, availableAnimals?: any[], currentUser?: string, adopterAddress?: string }) {
+export default function AdoptionForm({ adopterId, initialData, onCancel, onSuccess, onDelete, availableAnimals = [], currentUser, adopterAddress = '' }: { adopterId: string, /* eslint-disable-next-line @typescript-eslint/no-explicit-any */ initialData?: any, onCancel?: () => void, onSuccess?: () => void, onDelete?: () => void, /* eslint-disable-next-line @typescript-eslint/no-explicit-any */ availableAnimals?: any[], currentUser?: string, adopterAddress?: string }) {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const { t } = useLanguage();
+    const { t, locale } = useLanguage();
     const { data: session } = useSession();
     const { openLogin } = useAuthContext();
     const toast = useShowToast();
@@ -76,6 +77,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
     const [isOpen, setIsOpen] = useState(!!initialData || shouldOpenFromWizard);
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [adoptionImages, setAdoptionImages] = useState<any[]>([]);
     const [pendingImages, setPendingImages] = useState<Array<{ data: string; file?: File; isVideo: boolean; thumbnail?: string }>>([]);
     const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
@@ -102,7 +104,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
         adopterId: initialData?.adopterId || adopterId,
         recordType: prefillRecordType,
         date: initialData?.date ? new Date(initialData.date).toISOString().split('T')[0] : (prefillDate || ''),
-        onBehalfOf: initialData?.onBehalfOf || '',
+
         deliveredToHome: initialData?.deliveredToHome || false,
         verifiedAddress: initialData?.verifiedAddress || '',
         identityVerified: initialData?.identityVerified || false
@@ -128,7 +130,6 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
             adopterId: initialData.adopterId || adopterId,
             recordType: initialData.recordType || 'adoption',
             date: initialData.date ? new Date(initialData.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-            onBehalfOf: initialData.onBehalfOf || '',
             deliveredToHome: initialData.deliveredToHome || false,
             verifiedAddress: initialData.verifiedAddress || '',
             identityVerified: initialData.identityVerified || false
@@ -292,10 +293,11 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                 adopterId: adopterId,
                 rating: Number(formData.rating),
                 date: localDate,
-                onBehalfOf: formData.onBehalfOf || null,
+                onBehalfOf: null,
                 deliveredToHome: formData.deliveredToHome ? 1 : 0,
                 verifiedAddress: formData.verifiedAddress || null,
                 identityVerified: formData.identityVerified ? 1 : 0
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             } as any);
 
             // Upload any pending media now that we have the adoption ID
@@ -333,7 +335,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
             if (onSuccess) onSuccess();
             else {
                 setIsOpen(false);
-                setFormData({ id: undefined, animalName: '', details: '', status: 'completed', rating: 5, comments: '', species: '', adopterId, recordType: 'adoption', date: new Date().toISOString().split('T')[0], onBehalfOf: '', deliveredToHome: false, verifiedAddress: '', identityVerified: false });
+                setFormData({ id: undefined, animalName: '', details: '', status: 'completed', rating: 5, comments: '', species: '', adopterId, recordType: 'adoption', date: new Date().toISOString().split('T')[0], deliveredToHome: false, verifiedAddress: '', identityVerified: false });
                 setPendingImages([]);
                 await new Promise(resolve => setTimeout(resolve, 100));
                 router.refresh();
@@ -357,8 +359,9 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                 const isAuthenticated = (currentUser && currentUser !== '') || !!session?.user;
                 if (!isAuthenticated) { openLogin(); return; }
                 setIsOpen(true);
-            }} className="w-full py-3 border-2 border-teal-600 text-teal-700 font-semibold rounded-xl hover:bg-teal-50 transition-all duration-300 transform active:scale-[0.99] mb-4">
-                + {t('adoption.record_new')}
+            }} className="flex items-center gap-1.5 ml-auto py-2 px-4 text-sm text-teal-700 font-semibold rounded-lg hover:bg-teal-50 transition-all duration-200 mb-4">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                {t('adoption.record_new')}
             </button>
         )
     }
@@ -488,16 +491,28 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                     </div>
 
                     {/* Animal details (read-only context when editing) */}
-                    {initialData && (initialData.age || initialData.sex || initialData.color || initialData.microchip) && (
+                    {initialData && (initialData.estimatedBirthDate || initialData.age || initialData.sex || initialData.color || initialData.microchip || initialData.neutered != null) && (
                         <div className="flex flex-wrap gap-1.5">
                             {initialData.sex && (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
                                     {['male', 'macho'].includes(initialData.sex.toLowerCase()) ? '♂️' : ['female', 'hembra'].includes(initialData.sex.toLowerCase()) ? '♀️' : ''} {t(`adoption.sex_${initialData.sex.toLowerCase()}`) || initialData.sex}
                                 </span>
                             )}
-                            {initialData.age && (
+                            {(initialData.estimatedBirthDate || initialData.age) && (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
-                                    🎂 {initialData.age}
+                                    🎂 {initialData.estimatedBirthDate
+                                        ? formatAge(initialData.estimatedBirthDate, locale as 'es' | 'en')
+                                        : initialData.age}
+                                </span>
+                            )}
+                            {initialData.neutered === 1 && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                                    ✓ {t('adoption.neutered') || 'Neutered'}
+                                </span>
+                            )}
+                            {initialData.neutered === 0 && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-500">
+                                    ✗ {t('adoption.neutered_no_label') || 'Not neutered'}
                                 </span>
                             )}
                             {initialData.color && (
@@ -556,30 +571,17 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                         </div>
                     </div>
 
-                    {/* Date and On Behalf Of */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
-                                {t('adoption.date') || 'Date'}
-                            </label>
-                            <DatePicker
-                                value={formData.date}
-                                onChange={date => setFormData({ ...formData, date })}
-                                maxDate={new Date().toISOString().split('T')[0]}
-                                dayOptional
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
-                                {t('adoption.on_behalf_of') || 'On Behalf Of'}
-                            </label>
-                            <input
-                                className="w-full h-10 px-4 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm"
-                                value={formData.onBehalfOf}
-                                onChange={e => setFormData({ ...formData, onBehalfOf: e.target.value })}
-                                placeholder={t('adoption.on_behalf_placeholder') || 'Leave empty if recording for yourself'}
-                            />
-                        </div>
+                    {/* Date */}
+                    <div>
+                        <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
+                            {t('adoption.date') || 'Date'}
+                        </label>
+                        <DatePicker
+                            value={formData.date}
+                            onChange={date => setFormData({ ...formData, date })}
+                            maxDate={new Date().toISOString().split('T')[0]}
+                            dayOptional
+                        />
                     </div>
 
                     {/* Delivered to Home - Only for adoption record type */}
@@ -684,7 +686,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                         {safeAdoptionImages.length > 0 && (
                             <div className="flex flex-wrap gap-2 mb-3">
                                 {safeAdoptionImages.map((img) => {
-                                    const imgIsVideo = isVideoItem({ url: img.url, mediaType: img.mediaType as any });
+                                    const imgIsVideo = isVideoItem({ url: img.url, mediaType: img.mediaType });
                                     return (
                                         <div key={img.id} className="relative group">
                                             {imgIsVideo ? (

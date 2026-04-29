@@ -51,7 +51,11 @@ export default function Home() {
       // Extract the pathname from the callbackUrl for redirect after login
       try {
         const url = new URL(callbackUrl, window.location.origin);
-        openLogin(url.pathname || '/');
+        // Ensure we preserve the search params (e.g. ?edit=123) and don't append a blank ?
+        const fullPath = url.pathname === '/' && url.search === '' 
+            ? '/' 
+            : url.pathname + url.search;
+        openLogin(fullPath);
       } catch {
         openLogin(callbackUrl);
       }

@@ -2,6 +2,100 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-10] - 2026-04-29
+
+### Changed
+- **CI** — Added `contract-app.yml` workflow: deploys contract app to Cloudflare Workers via CI on push to `staging` or `master`, but only when `contract-app/**` files change. Replaces Cloudflare Git integration auto-deploy.
+
+## [2.12.1-9] - 2026-04-29
+
+### Fixed
+- **Cloudflare Build Error** — Pinned `next` back to `15.1.6`. The dependabot bump to `15.5.15` broke `@cloudflare/next-on-pages` v1.13.16 compatibility with the `/_not-found` route. Next.js 15.5.x changed how that route is compiled in a way the current next-on-pages version cannot handle.
+- Restored `export const runtime = 'edge'` on `not-found.tsx` (correct for next-on-pages with Next.js 15.1.x).
+
+## [2.12.1-8] - 2026-04-29
+
+### Fixed
+- **Cloudflare Build Error** — Replaced `export const runtime = 'edge'` with `export const dynamic = 'force-static'` on `not-found.tsx`. Static pre-render avoids next-on-pages' "runtime logic" detection caused by `await auth()` in the root layout being inherited into the `/_not-found` route.
+
+## [2.12.1-7] - 2026-04-29
+
+### Changed
+- **CI** — E2E tests now only run on `push` events (not on `pull_request`), eliminating duplicate runs per commit.
+- **CI** — E2E job now depends on `build-and-lint` (fail fast instead of wasting Playwright time on broken builds).
+- **CI** — Added `timeout-minutes` to all jobs that lacked one: `build-and-lint` (10 min), migrate jobs (10 min), deploy jobs (15 min).
+
+## [2.12.1-6] - 2026-04-29
+
+### Fixed
+- **Cloudflare Build Error** — Restored `export const runtime = 'edge'` on `app/not-found.tsx`; next-on-pages requires all non-static routes to use the Edge Runtime, so removing it caused the build to fail.
+- Updated lint warning ratchet threshold from 122 → 123.
+
+## [2.12.1-5] - 2026-04-29
+
+### Fixed
+- **Cloudflare Build Error** — Fixed `@cloudflare/next-on-pages` edge runtime validation error by removing `export const runtime = "edge"` from `app/not-found.tsx` to allow Next.js to properly prerender the not-found fallback as static content.
+
+## [2.12.1-4] - 2026-04-27
+
+### Fixed
+- **Dependabot CI E2E Tests** — Added a fallback `AUTH_SECRET` to the Playwright E2E GitHub Actions job to prevent `Auth.js` crashes during test setup on PRs originating from Dependabot (which do not have access to standard GitHub repository secrets).
+
+## [2.12.1-3] - 2026-04-27
+
+### Fixed
+- **E2E Flakiness & Test Db Lock Races** — Resolved D1 `miniflare` SQLite deadlocks caused by concurrent `Promise.all` database queries in `src/app/actions/dashboard.ts` and `src/app/api/notifications/route.ts` under E2E testing load.
+- **Test Setup Synchronization** — Hardened the `forms.spec.ts` notification polling test by navigating away from DB-intensive pages during polling, applying a cache-busting timestamp `_t` parameter to Next.js API requests, and wrapping UI dropdown verifications in resilient Playwright `toPass` blocks.
+- **Playwright Assertion Strictness** — Patched `getByText` and `.first()` constraints on the final form results assertion to eliminate strict-mode violations when multiple matching elements exist.
+
+## [2.12.1-2] - 2026-04-26
+
+### Fixed
+- **Codebase Hygiene** - Resolved multiple ESLint warnings related to `any` type usage in `AdoptionForm`, `AdoptionHistory`, `my-animals` page, and `actions/adoptions`, reducing total warnings to 100. Fixed dynamic import pattern in local DB module.
+
+
+## [2.12.1-1] - 2026-04-19
+
+### Fixed
+- **Registro de Cambios showing raw emails** — the history log, activity card footer, and image gallery "added by" caption now resolve editor emails to their Google display name. Falls back to a masked email (`j***o@gmail.com`) when no display name is available, instead of exposing the full address.
+- **`resolveUserNames` now called from `/adopter/[id]/page.tsx`** — the existing server action was wired up to collect all `changedBy`/`addedBy` emails across history, adoptions, and images in a single batch request before rendering.
+
+## [2.12.1] - 2026-04-18
+
+
+### Changed
+- **Activity card CTA de-emphasis** — "Registrar Actividad" button changed from full-width bordered to a compact right-aligned ghost link, restoring correct visual hierarchy where existing records are the focal point.
+- **Rating badge inline** — star rating moved from a separate row below the summary to inline with the date/animal summary text, enabling faster visual scanning of record quality.
+- **Verified address badge** — changed from a solid teal pill (`bg-teal-100 text-teal-700`) to a dimmer outline style (`bg-teal-500/10 text-teal-600 border border-teal-500/20`), reducing visual competition with primary action elements.
+- **Email masking in card footer** — the "Agregado por" field now shows `j***o@gmail.com` style masked emails as fallback when no display name is available, reducing raw PII exposure in the UI.
+
+### Added
+- **Relative time on recent activity cards** — entries within the last 30 days now show a parenthetical like `(hace 2 días)` next to the absolute date, giving a faster sense of recency.
+- **`formatRelativeTime()`** — new utility in `lib/dates.ts` returning localized relative time strings (ES/EN) for dates within 30 days, null otherwise.
+- **`maskEmail()`** — new utility in `lib/dates.ts` for privacy-safe email display.
+
+### Removed
+- **"En Nombre De" field** — removed from the activity registration form and from all activity card displays. The `on_behalf_of` database column and search tokenization are preserved; existing data is unaffected.
+
+## [2.12.0-5] - 2026-04-18
+
+
+### Changed
+- **Verified Address flag** — removed from adopter search results and profile header; now displayed only on individual adoption record cards in the timeline, where address verification contextually belongs (tied to specific deliveries).
+- **Middleware domain redirect** — requests to `*.verazadoptantes2.pages.dev` are now 301-redirected to canonical custom domains (`buenadoptante.org` / `staging.buenadoptante.org`), preserving path and query string.
+
+## [2.12.0-4] - 2026-04-17
+
+### Fixed
+- **E2E Flakiness & Test Db Lock Races** — Decoupled the D1 database testing hydration from the concurrent Next.js Miniflare execution via a standalone `scripts/setup-test-db.js` hook in Playwright. Resolved SQLite database lock collisions that caused schema application drops (`D1_ERROR: no such column`).
+- **WebKit Mobile Target** — Re-injected `webkit` back into the CI runner dependency install targets to successfully process iOS/iPhone 14 responsive layout viewport tests.
+
+## [2.12.0-3] - 2026-04-17
+
+### Changed
+- **CI/CD Pipeline Hardening** — Transitioned deployment workflow to a strictly-sequenced "Direct Upload" model via GitHub Actions (`npx @cloudflare/next-on-pages` then `wrangler pages deploy`). Removed `continue-on-error` from E2E job to unmask test failures.
+- **E2E Stability** — Upgraded local test server command to use the Node-compiled production build `npm run build && npm run start` (mitigating Next.js 15.1 dev-server memory leaks). Test db seed now automatically satisfies terms versions to unblock Playwright.
+
 ## [2.12.0] - 2026-04-13
 
 ### Added

@@ -6,8 +6,43 @@
  */
 
 import { getRequestContext } from '@cloudflare/next-on-pages';
+import { logger } from '@/lib/logger';
 
 const R2_PUBLIC_URL = 'https://pub-bb28dd8b1e674fc189252b0000a7b573.r2.dev';
+
+const ALLOWED_DOMAINS = [
+    '.fbcdn.net',
+    '.fbsbx.com',
+    '.cdninstagram.com',
+    '.googleusercontent.com',
+    '.r2.dev',
+    '.cloudflarestorage.com',
+];
+
+/**
+ * Validate magic bytes to prevent masqueraded executable uploads
+ */
+function isAllowedMediaType(header: Uint8Array): boolean {
+    if (header.length < 4) return false;
+
+    // JPEG: FF D8 FF
+    if (header[0] === 0xFF && header[1] === 0xD8 && header[2] === 0xFF) return true;
+    // PNG: 89 50 4E 47
+    if (header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47) return true;
+    // GIF: 47 49 46 38 (GIF8)
+    if (header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x38) return true;
+    // WEBP: 52 49 46 46 (RIFF)
+    if (header[0] === 0x52 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x46) return true;
+    // MP4: usually 00 00 00 xx 66 74 79 70 (ftyp)
+    if (header.length >= 8 && header[4] === 0x66 && header[5] === 0x74 && header[6] === 0x79 && header[7] === 0x70) return true;
+    // WebM: 1A 45 DF A3
+    if (header[0] === 0x1A && header[1] === 0x45 && header[2] === 0xDF && header[3] === 0xA3) return true;
+    // MOV (QuickTime): xx xx xx xx 6d 6f 6f 76 (moov) or mdat or ftypqt
+    if (header.length >= 8 && header[4] === 0x6D && header[5] === 0x6F && header[6] === 0x6F && header[7] === 0x76) return true;
+    if (header.length >= 8 && header[4] === 0x6D && header[5] === 0x64 && header[6] === 0x61 && header[7] === 0x74) return true;
+    
+    return false;
+}
 
 /**
  * Check if a URL is an external CDN URL that should be persisted to R2.
@@ -20,7 +55,16 @@ export function isExternalImageUrl(url: string): boolean {
     if (url.includes('r2.dev')) return false;
     if (url.includes('buenadoptante')) return false;
     if (url.startsWith('/')) return false;
-    return url.startsWith('http://') || url.startsWith('https://');
+    if (!url.startsWith('http://') && !url.startsWith('https://')) return false;
+
+    try {
+        const urlObj = new URL(url);
+        if (urlObj.protocol !== 'https:') return false; // Strict HTTPS
+        const hostname = urlObj.hostname.toLowerCase();
+        return ALLOWED_DOMAINS.some(d => hostname.endsWith(d));
+    } catch {
+        return false;
+    }
 }
 
 /**
@@ -58,7 +102,7 @@ export async function uploadToR2(
     const bucket = (env as unknown as Record<string, unknown>).IMAGES_BUCKET as R2Bucket | undefined;
 
     if (!bucket) {
-        console.warn('[R2] IMAGES_BUCKET binding not available, falling back to original URL');
+        logger.warn('[R2] IMAGES_BUCKET binding not available, falling back to original URL');
         throw new Error('R2 bucket not configured');
     }
 
@@ -76,7 +120,7 @@ export async function uploadToR2(
         } catch (err) {
             if (attempt === MAX_RETRIES) throw err;
             const delay = 500 * Math.pow(2, attempt); // 500ms, 1000ms
-            console.warn(`[R2] Upload attempt ${attempt + 1} failed, retrying in ${delay}ms...`, (err as Error).message);
+            logger.warn(`[R2] Upload attempt ${attempt + 1} failed, retrying in ${delay}ms...`, { error: (err as Error).message });
             await new Promise(r => setTimeout(r, delay));
         }
     }
@@ -104,7 +148,7 @@ export async function persistImageToR2(
         });
 
         if (!response.ok) {
-            console.warn(`[R2] Failed to download image: ${response.status} for ${externalUrl.substring(0, 80)}`);
+            logger.warn(`[R2] Failed to download image`, { status: response.status, externalUrl: externalUrl.substring(0, 80) });
             return null;
         }
 
@@ -116,17 +160,23 @@ export async function persistImageToR2(
 
         const arrayBuffer = await response.arrayBuffer();
 
+        // Magic Bytes Validation 
+        const header = new Uint8Array(arrayBuffer.slice(0, 12));
+        if (!isAllowedMediaType(header)) {
+            logger.error('[R2] Invalid media type magic bytes', { externalUrl });
+            return null;
+        }
+
         // Skip if too small (likely a 1x1 pixel or error response) — but not for videos
         if (!isVideo && arrayBuffer.byteLength < 1000) {
-            console.warn(`[R2] Image too small (${arrayBuffer.byteLength} bytes), skipping: ${externalUrl.substring(0, 80)}`);
+            logger.warn(`[R2] Image too small, skipping`, { bytes: arrayBuffer.byteLength, externalUrl: externalUrl.substring(0, 80) });
             return null;
         }
 
         const r2Url = await uploadToR2(key, arrayBuffer, contentType);
-        console.log(`[R2] Persisted media: ${externalUrl.substring(0, 60)} → ${key} (${Math.round(arrayBuffer.byteLength / 1024)}KB)`);
         return r2Url;
     } catch (error) {
-        console.error(`[R2] Error persisting image:`, error);
+        logger.error(`[R2] Error persisting image`, { error: error instanceof Error ? error.message : String(error) });
         return null;
     }
 }
@@ -155,7 +205,7 @@ export async function processImageForStorage(
             const r2Url = await uploadDataUrlToR2(url, adopterId, imageId);
             if (r2Url) return r2Url;
         } catch (e) {
-            console.error('[R2] Failed to upload video data URL to R2:', (e as Error).message);
+            logger.error('[R2] Failed to upload video data URL to R2', { error: (e as Error).message });
         }
     }
 
@@ -189,6 +239,5 @@ async function uploadDataUrlToR2(
     }
 
     const r2Url = await uploadToR2(key, bytes, contentType);
-    console.log(`[R2] Uploaded video data URL → ${key} (${Math.round(bytes.byteLength / 1024)}KB)`);
     return r2Url;
 }

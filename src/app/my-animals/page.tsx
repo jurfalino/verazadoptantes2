@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { formatShortDate } from '@/lib/dates';
+import { formatAge } from '@/lib/ageUtils';
 import ShareMenu from '@/components/ShareMenu';
 import ShareFormMenu from '@/components/ShareFormMenu';
 
@@ -25,6 +26,8 @@ interface Animal {
     adopterName: string | null;
     date: number | null;
     age: string | null;
+    estimatedBirthDate: number | null;
+    neutered: number | null;
     sex: string | null;
     color: string | null;
     images: AnimalImage[];
@@ -303,8 +306,8 @@ export default function MyAnimalsPage() {
                                         <p className="text-sm text-stone-500 mb-2 line-clamp-2">{animal.details}</p>
                                     )}
 
-                                    {/* Age / Sex / Color pills */}
-                                    {(animal.age || animal.sex || animal.color) && (
+                                    {/* Animal detail pills */}
+                                    {(animal.estimatedBirthDate || animal.age || animal.sex || animal.neutered != null || animal.color) && (
                                         <div className="flex flex-wrap gap-1.5 mb-3">
                                             {animal.sex && (
                                                 <span className="px-2 py-0.5 bg-stone-100 text-stone-600 rounded-full text-xs font-medium">
@@ -313,9 +316,21 @@ export default function MyAnimalsPage() {
                                                         : animal.sex}
                                                 </span>
                                             )}
-                                            {animal.age && (
+                                            {(animal.estimatedBirthDate || animal.age) && (
                                                 <span className="px-2 py-0.5 bg-stone-100 text-stone-600 rounded-full text-xs font-medium">
-                                                    {animal.age}
+                                                    🎂 {animal.estimatedBirthDate
+                                                        ? formatAge(animal.estimatedBirthDate, locale as 'es' | 'en')
+                                                        : animal.age}
+                                                </span>
+                                            )}
+                                            {animal.neutered === 1 && (
+                                                <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                                                    ✓ {t('adoption.neutered') || 'Neutered'}
+                                                </span>
+                                            )}
+                                            {animal.neutered === 0 && (
+                                                <span className="px-2 py-0.5 bg-stone-100 text-stone-500 rounded-full text-xs font-medium">
+                                                    ✗ {t('adoption.neutered_no_label') || 'Not neutered'}
                                                 </span>
                                             )}
                                             {animal.color && (

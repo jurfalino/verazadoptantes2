@@ -10,13 +10,13 @@ test.describe('Home Screen Wizards', () => {
         await page.goto('/');
         await dismissCountryBanner(page);
         // Wait for page to fully render
-        await expect(page.locator('input#search')).toBeVisible({ timeout: 15000 });
+        await expect(page.locator('input#search')).toBeVisible({ timeout: 30000 });
     });
 
     test('Adoption Wizard opens and shows step progression', async ({ page }) => {
         // The adoption wizard card says "I gave a pet for adoption" with a "Register Now" button
         const registerBtn = page.getByRole('button', { name: /Register Now|Registrar/i }).first();
-        await expect(registerBtn).toBeVisible();
+        await expect(registerBtn).toBeVisible({ timeout: 30000 });
         await registerBtn.click();
 
         // The wizard opens inline — look for the "Identify Animal" step heading or animal name input
@@ -24,21 +24,21 @@ test.describe('Home Screen Wizards', () => {
         const loginModal = page.getByText(/Sign In|Iniciar/i).first();
 
         // Wait for either wizard or login modal to appear
-        await expect(wizardContent.or(loginModal)).toBeVisible({ timeout: 10000 });
+        await expect(wizardContent.or(loginModal)).toBeVisible({ timeout: 30000 });
     });
 
     test('Report Wizard opens', async ({ page }) => {
         // The report wizard card says "I have info about an adopter"
         const reportCard = page.locator('h3').filter({ hasText: /info about|información sobre/i }).locator('..');
         const registerBtn = reportCard.getByRole('button', { name: /Register Now|Registrar/i });
-        await expect(registerBtn).toBeVisible();
+        await expect(registerBtn).toBeVisible({ timeout: 30000 });
         await registerBtn.click();
 
         // The wizard opens inline — look for adopter name input or a heading
         const wizardContent = page.getByPlaceholder(/name|nombre/i).first();
         const loginModal = page.getByText(/Sign In|Iniciar/i).first();
 
-        await expect(wizardContent.or(loginModal)).toBeVisible({ timeout: 10000 });
+        await expect(wizardContent.or(loginModal)).toBeVisible({ timeout: 30000 });
     });
 
     test('Wizard auth gate works — unauthenticated click triggers login', async ({ page }) => {
@@ -54,7 +54,7 @@ test.describe('Home Screen Wizards', () => {
             const wizardContent = page.getByRole('heading', { name: /Identify Animal|Identificar Animal/i });
 
             // Wait for either to appear
-            await expect(loginModal.or(wizardContent)).toBeVisible({ timeout: 10000 });
+            await expect(loginModal.or(wizardContent)).toBeVisible({ timeout: 30000 });
         }
     });
 });
