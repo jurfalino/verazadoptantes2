@@ -41,6 +41,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const toast = useShowToast();
+    const [activeTab, setActiveTab] = useState<'photos' | 'history'>('photos');
     const [dismissedDuplicates, setDismissedDuplicates] = useState<Set<string>>(new Set());
     const [expandedDuplicateId, setExpandedDuplicateId] = useState<string | null>(null);
     const visibleDuplicates = duplicateCandidates.filter(c => !dismissedDuplicates.has(c.id));
@@ -221,32 +222,57 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     </div>
                 )}
 
-                {/* Photos */}
+                {/* Photos / History tabs */}
                 {!isNew && adopter && (
-                    <CollapsibleSection title={t('common.photos') || 'Photos'} count={images.length} defaultOpen={false}>
-                        <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-5">
-                            <ImageGallery
-                                adopterId={id}
-                                initialImages={images as any}
-                                onUpload={async (adopterId, url, caption, mediaType) => {
-                                    return await saveImage(adopterId, url, caption, undefined, mediaType);
-                                }}
-                                currentUser={currentUser}
-                                userNameMap={userNameMap}
-                                isAdmin={isAdmin}
-                            />
+                    <>
+                        <div className="flex overflow-x-auto no-scrollbar gap-1.5 bg-white rounded-xl border border-stone-200 p-1.5 shadow-sm snap-x snap-mandatory">
+                            <button
+                                onClick={() => setActiveTab('photos')}
+                                className={`flex-none min-w-[max-content] sm:flex-1 flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap snap-start ${
+                                    activeTab === 'photos'
+                                        ? 'bg-teal-600 text-white shadow-sm ring-1 ring-teal-700/50'
+                                        : 'text-stone-600 hover:bg-stone-50 hover:text-stone-900 border border-transparent'
+                                }`}
+                            >
+                                <svg className="w-4 h-4 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                {t('common.photos') || 'Photos'}
+                                {images.length > 0 && (
+                                    <span className={`text-xs px-2 py-0.5 rounded-full font-bold ml-1 ${activeTab === 'photos' ? 'bg-white/20 text-white' : 'bg-stone-100 text-stone-600'}`}>{images.length}</span>
+                                )}
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('history')}
+                                className={`flex-none min-w-[max-content] sm:flex-1 flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap snap-start ${
+                                    activeTab === 'history'
+                                        ? 'bg-teal-600 text-white shadow-sm ring-1 ring-teal-700/50'
+                                        : 'text-stone-600 hover:bg-stone-50 hover:text-stone-900 border border-transparent'
+                                }`}
+                            >
+                                <svg className="w-4 h-4 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                {t('audit.log_title') || 'History'}
+                                {history.length > 0 && (
+                                    <span className={`text-xs px-2 py-0.5 rounded-full font-bold ml-1 ${activeTab === 'history' ? 'bg-white/20 text-white' : 'bg-stone-100 text-stone-600'}`}>{history.length}</span>
+                                )}
+                            </button>
                         </div>
-                    </CollapsibleSection>
-                )}
 
-                {/* History */}
-                {!isNew && adopter && (
-                    <CollapsibleSection
-                        title={t('audit.log_title') || 'History'}
-                        count={history.length}
-                        defaultOpen={false}
-                    >
-                        <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-5">
+                        {activeTab === 'photos' && (
+                            <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-5">
+                                <ImageGallery
+                                    adopterId={id}
+                                    initialImages={images as any}
+                                    onUpload={async (adopterId, url, caption, mediaType) => {
+                                        return await saveImage(adopterId, url, caption, undefined, mediaType);
+                                    }}
+                                    currentUser={currentUser}
+                                    userNameMap={userNameMap}
+                                    isAdmin={isAdmin}
+                                />
+                            </div>
+                        )}
+
+                        {activeTab === 'history' && (
+                            <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-5">
                             {history.length > 0 ? (
                                 <div className="space-y-4">
                                     {history.map((h) => {
@@ -323,8 +349,9 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             ) : (
                                 <p className="text-stone-500 text-sm italic">{t('audit.metadata_update') || 'No history entries.'}</p>
                             )}
-                        </div>
-                    </CollapsibleSection>
+                            </div>
+                        )}
+                    </>
                 )}
 
                 {/* Delete record — owner only */}

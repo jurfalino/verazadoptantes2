@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-17] - 2026-04-30
+
+### Changed
+- **Adopter profile** — Photos and History Log now rendered as tabs (Photos | History) below the Adoptions section, replacing the previous collapsible sections for those two panels.
+
 ## [2.12.1-16] - 2026-04-29
 
 ### Changed
