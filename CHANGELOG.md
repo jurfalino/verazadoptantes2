@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-16] - 2026-04-29
+
+### Changed
+- **Adopter profile** — Replaced `/adopter` with the V2 approach: collapsible sections for Adoptions, Photos, and History (replacing fixed tabs); `AdoptionFormWizard` for new records; `AdoptionFormEditV2` for editing. Duplicate detection banner and delete functionality fully ported from old profile. `/adopter2` route removed.
+
+### Removed
+- **`AdopterProfile`** — Old tab-based profile component deleted; `AdopterProfileV2` is now the single profile component.
+- **`/adopter2` route** — Experimental route removed; `/adopter` now uses the V2 layout.
+
 ## [2.12.1-15] - 2026-04-29
 
 ### Changed
