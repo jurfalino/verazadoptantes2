@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-19] - 2026-04-30
+
+### Changed
+- **Adopter profile** — `/adopter` now uses `AdopterProfileV2` (collapsible sections: Adoptions, Photos, History; `AdoptionFormWizard` for new records; `AdoptionFormEditV2` for editing). History log and delete record button added to `AdopterProfileV2`.
+
+### Removed
+- **`/adopter2` route** — deprecated; `/adopter` is now the canonical profile page.
+- **`AdopterProfile` component** — replaced by `AdopterProfileV2`.
+
 ## [2.12.1-18] - 2026-04-30
 
 ### Reverted
