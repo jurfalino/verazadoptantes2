@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-18] - 2026-04-30
+
+### Reverted
+- **Adopter profile changes** — Rolled back all modifications to `/adopter`, `/adopter2`, `AdopterProfile`, and `AdopterProfileV2` introduced in v2.12.1-16 and v2.12.1-17. Both routes restored to their pre-v2.12.1-16 state.
+
 ## [2.12.1-17] - 2026-04-30
 
 ### Changed

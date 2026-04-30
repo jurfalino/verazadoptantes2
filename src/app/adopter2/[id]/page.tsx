@@ -3,9 +3,9 @@ import { redirect } from 'next/navigation';
 import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getAdoptionConfig, getDuplicateCandidates } from '@/app/actions';
 import { resolveUserNames } from '@/app/actions/userNames';
 import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
-import { AdopterProfile } from '@/components/AdopterProfile';
+import { AdopterProfileV2 } from '@/components/AdopterProfileV2';
 
-export default async function AdopterPage({
+export default async function AdopterPage2({
     params,
     searchParams,
 }: {
@@ -16,7 +16,6 @@ export default async function AdopterPage({
     const { fromForm } = await searchParams;
     const isNew = id === 'create';
 
-    // Batch 1: Auth + config (lightweight, no DB-heavy queries)
     let currentUser = '';
     let isAdmin = false;
     let adoptionConfig: any = null;
@@ -24,10 +23,9 @@ export default async function AdopterPage({
         [currentUser, isAdmin, adoptionConfig] = await Promise.all([getUser(), getIsAdmin(), getAdoptionConfig()]);
     } catch (e: any) {
         if (e?.digest?.startsWith('NEXT_REDIRECT')) throw e;
-        redirect(`/?authRequired=1&callbackUrl=${encodeURIComponent(`/adopter/${id}`)}`);
+        redirect(`/?authRequired=1&callbackUrl=${encodeURIComponent(`/adopter2/${id}`)}`);
     }
 
-    // Batch 2: All data queries in parallel (including availableAnimals to avoid a 3rd sequential await)
     let adopter = null;
     let history: any[] = [];
     let adoptions: any[] = [];
@@ -40,15 +38,8 @@ export default async function AdopterPage({
 
     if (!isNew) {
         [adopter, history, adoptions, images, flags, stats, avgRating, availableAnimals, dupCandidates] = await Promise.all([
-            getAdopter(id),
-            getHistory(id),
-            getAdoptions(id),
-            getImages(id),
-            getFlags(id),
-            getAdopterStats(id),
-            getAverageRating(id),
-            getAvailableAnimals(),
-            getDuplicateCandidates(id)
+            getAdopter(id), getHistory(id), getAdoptions(id), getImages(id), getFlags(id),
+            getAdopterStats(id), getAverageRating(id), getAvailableAnimals(), getDuplicateCandidates(id)
         ]);
     } else {
         availableAnimals = await getAvailableAnimals();
@@ -59,7 +50,6 @@ export default async function AdopterPage({
         formPrefill = await getFormSubmissionPrefill(fromForm.trim());
     }
 
-    // Build userNameMap: collect all editor emails then resolve to display names in one batch
     const editorEmails: string[] = [];
     for (const h of history) { if (h.changedBy) editorEmails.push(h.changedBy); }
     for (const a of adoptions) { if (a.addedBy) editorEmails.push(a.addedBy); }
@@ -67,24 +57,11 @@ export default async function AdopterPage({
     const userNameMap = await resolveUserNames(editorEmails);
 
     return (
-        <AdopterProfile
-            id={id}
-            isNew={isNew}
-            adopter={adopter}
-            history={history}
-            adoptions={adoptions}
-            images={images}
-            flags={flags}
-            currentUser={currentUser}
-            availableAnimals={availableAnimals}
-            stats={stats}
-            avgRating={avgRating}
-            isAdmin={isAdmin}
-            adoptionConfig={adoptionConfig}
-            duplicateCandidates={dupCandidates}
-            formPrefill={formPrefill}
-            userNameMap={userNameMap}
+        <AdopterProfileV2
+            id={id} isNew={isNew} adopter={adopter} history={history} adoptions={adoptions}
+            images={images} flags={flags} currentUser={currentUser} availableAnimals={availableAnimals}
+            stats={stats} avgRating={avgRating} isAdmin={isAdmin} adoptionConfig={adoptionConfig}
+            duplicateCandidates={dupCandidates} formPrefill={formPrefill} userNameMap={userNameMap}
         />
     );
 }
-
