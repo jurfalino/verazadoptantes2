@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-27] - 2026-05-02
+
+### Added
+- **`ENABLE_SEARCH_CARD_METADATA` feature flag** — gates the profile-views (`👁`) counter and the bottom-row dates (`📅` added, `✏️` updated) on each search result card on the home page. Default **ON** (preserves current UI). Togglable from Admin UI (`/admin/config`); registered in `src/config/features.ts`, `src/app/admin/config/page.tsx` (4 spots), `src/app/api/admin/config/route.ts` GET response, and the public `src/app/api/config/route.ts` whitelist + defaults so the homepage can read it without admin auth. `SearchSection` accepts a new `showCardMetadata?: boolean` prop (default `true`); home page passes `appConfig.ENABLE_SEARCH_CARD_METADATA !== 'false'` to it.
+
 ## [2.12.1-26] - 2026-05-02
 
 ### Fixed

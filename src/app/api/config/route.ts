@@ -13,6 +13,7 @@ import { inArray } from "drizzle-orm";
 const PUBLIC_FLAG_KEYS = [
     'ENABLE_CONTENT_IMPORT',
     'ENABLE_ANIMALS_FOR_ADOPTION',
+    'ENABLE_SEARCH_CARD_METADATA',
     'SOCIAL_PROOF_ENABLED',
     'SOCIAL_PROOF_MESSAGES',
 ] as const;
@@ -20,6 +21,7 @@ const PUBLIC_FLAG_KEYS = [
 const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
     ENABLE_CONTENT_IMPORT: 'false',
     ENABLE_ANIMALS_FOR_ADOPTION: 'false',
+    ENABLE_SEARCH_CARD_METADATA: 'true',
     SOCIAL_PROOF_ENABLED: 'false',
     SOCIAL_PROOF_MESSAGES: '[]',
 };
