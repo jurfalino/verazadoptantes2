@@ -295,6 +295,21 @@ button {
   border-color: var(--border-default) !important;
 }
 
+/* ── Opacity variants (Tailwind /N suffix classes) ──
+   Tailwind's bg-white/80 etc. compile to standalone classes that the
+   bare-class remaps above don't reach. Translate them to themed surfaces.
+   bg-black/X is left alone — it's used as a dimming overlay/scrim and the
+   intent (darken the content underneath) is correct in both themes. */
+[data-theme="dark"] .bg-white\/90 {
+  background-color: rgba(30, 41, 59, 0.9) !important; /* surface-card @ 90% */
+}
+[data-theme="dark"] .bg-white\/80 {
+  background-color: rgba(30, 41, 59, 0.8) !important; /* surface-card @ 80% */
+}
+[data-theme="dark"] .bg-white\/20 {
+  background-color: rgba(30, 41, 59, 0.4) !important; /* slightly lifted overlay */
+}
+
 /* ── Accent (Teal → theme-aware) ── */
 [data-theme="dark"] .bg-teal-50,
 [data-theme="light"] .bg-teal-50 {

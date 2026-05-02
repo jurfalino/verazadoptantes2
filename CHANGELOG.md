@@ -2,7 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
-## [2.12.1-25] - 2026-05-02
+## [2.12.1-26] - 2026-05-02
+
+### Fixed
+- **`ThemeSelector` labels are now i18n'd** — `Claro`/`Azul Noche` and the `title`/`aria-label` `Cambiar tema` were Spanish-only string literals; replaced with `theme.light` / `theme.dark` / `theme.change` keys (ES + EN both).
+- **`bg-white/{80,90,20}` opacity variants** now flip correctly under `[data-theme="dark"]`. Tailwind compiles these to standalone classes (`.bg-white\/80`) that the bare-class palette remap in `globals.css` doesn't reach. Added explicit dark rules mapping them to `surface-card` with the same opacity. (`bg-black/X` left alone — it's used as a dimming overlay/scrim and the intent works in both themes.)
+- **`src/app/global-error.tsx` is now theme-aware.** The root error boundary runs outside the app shell so it can't rely on `globals.css` or `ThemeContext` (the error itself may have prevented them from mounting). Reads `localStorage['theme']` directly on mount and picks light/dark hex values from a static palette table.
+
+
 
 ### Changed
 - **Skipped 2 duplicate banner tests** in `tests/duplicates.spec.ts` ("appears on profile with candidates" + "can be dismissed") via `test.skip()`. They track a real regression introduced in v2.12.1-19 (the system-detected duplicate banner was removed when `AdopterProfile.tsx` was deleted and never ported into `AdopterProfileV2`). Skipping unblocks CI deploy gating; re-enable when the banner is restored.

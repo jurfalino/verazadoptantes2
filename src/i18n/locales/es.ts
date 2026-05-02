@@ -1103,5 +1103,10 @@ export const es = {
         scraper_desc: 'Extracción de datos desde redes sociales',
         schema_drift: 'Desincronización detectada en {count} tabla(s)',
     },
+    theme: {
+        change: 'Cambiar tema',
+        light: 'Claro',
+        dark: 'Azul Noche',
+    },
 };
 

@@ -1105,4 +1105,9 @@ export const en = {
         scraper_desc: 'Social media data extraction',
         schema_drift: 'Schema drift detected in {count} table(s)',
     },
+    theme: {
+        change: 'Change theme',
+        light: 'Light',
+        dark: 'Night Blue',
+    },
 };
