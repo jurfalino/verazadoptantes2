@@ -136,7 +136,7 @@ All flag reasons and record types must come from `src/domain/constants.ts` (`FLA
 Branch → deploy mapping:
 - `master` → `buenadoptante.org` (production)
 - `staging` → `staging.verazadoptantes2.pages.dev` (test with OAuth)
-- `feature/*` → random preview URL (OAuth does **not** work here)
+- `feature/*` → **not deployed** (no CI job triggers on `feature/*`)
 
 **Every deployment requires a version bump** (see `.agents/workflows/deploy.md` for the full mandatory workflow):
 ```bash
@@ -145,9 +145,21 @@ git commit -m "v<version>: <description>"
 git push origin HEAD:staging                # NEVER push directly to master
 ```
 
-Lint warnings must not exceed the current ratchet threshold (currently **122**). CI runs build → tsc → lint → D1 migrations on push to `staging` or `master`. D1 migrations auto-apply — no manual step needed. CLOUDFLARE_API_TOKEN GitHub secret is required for CI migrations.
+Lint warnings must not exceed the current ratchet threshold (currently **122**).
 
-**Workflow:** feature branch → merge to `staging` → verify → PR to `master`.
+**Cloudflare auto-deploy is OFF.** All deploys run through the GitHub Actions pipeline (`.github/workflows/ci.yml`). On push to `staging` or `master` the pipeline runs:
+
+```
+build-and-lint  →  migrate-{staging|production}  →  e2e (Playwright, blocking)  →  deploy-{staging|production}
+```
+
+The `deploy-*` job runs `npx @cloudflare/next-on-pages` then `npx wrangler pages deploy`. End-to-end takes **~8–15 min**. **Pushing to a branch alone does not deploy** — if any prior job fails (build, lint, migration, e2e), the deploy job is skipped and the branch URL keeps serving the previous build. Track with `gh run list --branch <branch> --limit 3` and `gh run watch <run-id>`.
+
+D1 migrations are applied by the `migrate-*` jobs before deploy — no manual step needed. `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` GitHub secrets are required.
+
+**Workflow:** feature branch → merge to `staging` → wait for green pipeline → verify on staging URL → PR to `master`.
+
+**Emergency rollback:** Cloudflare Dashboard → Pages → `verazadoptantes2` → Deployments → "Rollback to this deployment" is the fastest path (bypasses CI). Use `git revert` only when you also want migrations/tests to re-run on the rollback.
 
 ## Edge Runtime
 

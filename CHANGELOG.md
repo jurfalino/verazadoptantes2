@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-23] - 2026-05-01
+
+### Changed
+- **Deployment guidance updated** — `CLAUDE.md` and `.agents/workflows/deploy.md` now reflect that Cloudflare git auto-deploy is OFF; all deploys run via the GitHub Actions pipeline (`build-and-lint` → `migrate-*` → `e2e` blocking → `deploy-*`), end-to-end ~8–15 min, with rollback via Cloudflare Dashboard as the fastest path.
+
+### Reverted
+- **All work between v2.12.1-19 and v2.12.1-22** rolled back via `git reset --hard pre-c1-trust-snapshot`. This drops:
+  - The C1 Trust Snapshot dark launch (v2.12.1-20) — already deprecated.
+  - The `DuplicateBanner` regression fix (v2.12.1-21) — **the system-detected duplicate banner is missing again on `/adopter/[id]` profiles**, and the 3 duplicate/wizard e2e tests will fail until re-applied.
+  - The wizard test update for `tests/authed.spec.ts` (v2.12.1-21) — also lost.
+- The `pre-c1-trust-snapshot` git tag is preserved.
+
 ## [2.12.1-19] - 2026-04-30
 
 ### Changed
