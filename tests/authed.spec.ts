@@ -39,41 +39,47 @@ test.describe('Authenticated User', () => {
         await dismissCountryBanner(page);
         await expect(page.getByRole('heading', { name: TEST_NAMES.NUEVA })).toBeVisible({ timeout: 30000 });
 
-        // Step 2: Click the "Log Activity" button to expand the form
-        // Match exactly the button label to avoid hitting the "Activity" section header.
+        // Step 2: Click "Log Activity" / "Registrar Actividad" to open the wizard
         const openFormBtn = page.getByRole('button', { name: /Log Activity|Registrar Actividad/i }).first();
         await expect(openFormBtn).toBeVisible({ timeout: 30000 });
         await openFormBtn.click({ force: true });
 
-        // Step 3: Click "Create New" tab to show the create form (form defaults to "Select Existing" if animals exist)
+        // ─── WIZARD STEP 1: record type + animal ───
+        // Click "Create New" tab if it's offered (only shown when there are existing animals)
         const createNewBtn = page.getByRole('button', { name: /Create New|Crear Nuevo/i });
         if (await createNewBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
             await createNewBtn.click();
         }
 
-        // Step 4: Fill in the adoption form
-        // Animal name — the text input with Luna placeholder
+        // Animal name — placeholder hint contains "Luna"
         const animalInput = page.getByPlaceholder(/Luna/i);
         await expect(animalInput).toBeVisible({ timeout: 30000 });
         await animalInput.fill(animalName);
+        await expect(animalInput).toHaveValue(animalName);
 
-        // Species — target the visible species select (avoid hidden stats-period-select)
+        // Species — first visible select on the page is the wizard's species dropdown
         const speciesSelect = page.getByRole('combobox').first();
         await expect(speciesSelect).toBeVisible({ timeout: 30000 });
         await speciesSelect.selectOption('dog');
 
-        // Verify the animal name was filled correctly
-        await expect(animalInput).toHaveValue(animalName);
+        // Advance to step 2
+        const nextBtn1 = page.getByRole('button', { name: /Siguiente|Next/i }).first();
+        await expect(nextBtn1).toBeVisible({ timeout: 30000 });
+        await nextBtn1.click();
 
-        // Step 5: Verify the submit button is visible and has correct text
-        const submitBtn = page.getByRole('button', { name: /Record Adoption|Registrar Adopción/i });
-        await expect(submitBtn).toBeVisible({ timeout: 30000 });
+        // ─── WIZARD STEP 2: details (date + rating + notes default to acceptable values) ───
+        // Just advance — defaults work for happy path
+        const nextBtn2 = page.getByRole('button', { name: /Siguiente|Next/i }).first();
+        await expect(nextBtn2).toBeVisible({ timeout: 30000 });
+        await nextBtn2.click();
 
-        // Step 6: Click submit and verify the form submits (button becomes disabled or hidden)
-        await submitBtn.click();
+        // ─── WIZARD STEP 3: save ───
+        const saveBtn = page.getByRole('button', { name: /Guardar Registro|Save Record/i });
+        await expect(saveBtn).toBeVisible({ timeout: 30000 });
+        await saveBtn.click();
 
-        // The form should close or reset after submission
-        await expect(submitBtn).not.toBeVisible({ timeout: 30000 });
+        // After submission the wizard closes — save button no longer visible
+        await expect(saveBtn).not.toBeVisible({ timeout: 30000 });
     });
 
     test('Import Wizard: text input reaches Step 2', async ({ page }) => {

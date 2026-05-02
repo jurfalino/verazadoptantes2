@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-24] - 2026-05-01
+
+### Changed
+- **`tests/authed.spec.ts` "Full adoption record" test** rewritten to walk the 3-step `AdoptionFormWizard` (record type → details → save) instead of the removed single-form `AdoptionForm`. Re-applied from the v2.12.1-21 work (which was rolled back in v23).
+
+### Known failing tests (intentional, not re-applied from v21)
+- `duplicates.spec.ts` "System duplicate banner appears on profile with candidates" and "System duplicate banner can be dismissed" still fail — the underlying app regression (missing system-detected duplicate banner on `/adopter/[id]`) was deliberately left in place when v21 was rolled back.
+
 ## [2.12.1-23] - 2026-05-01
 
 ### Changed
