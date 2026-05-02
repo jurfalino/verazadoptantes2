@@ -531,6 +531,7 @@ export const en = {
     wizard: {
         step_adopter: 'Identify Adopter',
         step_observation: 'Observation Details',
+        observation_no_animal_hint: 'An observation is a note about the adopter — no animal needed.',
         identify_animal: 'Identify Animal',
         new_animal: 'New Animal',
         existing_animal: 'Existing',
@@ -864,6 +865,8 @@ export const en = {
         contactPlaceholder: 'Phones, emails, addresses, social profiles...',
         attachedImages: 'Attached Images',
         notes: 'Notes',
+        initial_observation: 'Initial observation',
+        initial_observation_placeholder: 'Saved as an observation record on the new profile.',
         commaSeparated: 'Comma separated',
         confidence: 'confidence',
         adoptionDetected: '🐾 Adoption Detected',

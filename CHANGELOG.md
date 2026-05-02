@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-28] - 2026-05-02
+
+### Changed
+- **Adopter `notes` field deprecated** at the profile-header level. The free-text "Notas" box is removed from `AdopterForm`. Existing data is migrated automatically to dedicated observation records (`adoptions.recordType = 'observation'`, id prefix `obs-migrated-`) by a new Drizzle migration `0036_backfill_adopter_notes_to_observations.sql` (idempotent — re-runs are no-ops). Validation, save action, duplicates merge route, and the `/api/adopters` import endpoint all stop writing to `adopter.notes`. ImportWizard's AI-extracted "notes" are now persisted as a separate observation adoption record alongside any imported adoption record. The DB column itself stays in place for one release as a safety net before being dropped in a follow-up.
+- **Observation records lose the animal selection step** in `AdoptionFormWizard` and `AdoptionFormEditV2`. When `recordType === 'observation'`, the existing/new mode switcher, the animal-selector dropdown, and the animal-name + species inputs are hidden. A short hint ("Una observación es una nota sobre el adoptante — no requiere un animal.") replaces them in step 1. Stale animal data is cleared via a `useEffect` when the user switches to observation type so the saved record doesn't carry over animalName/species. Step 1 validation is skipped for observations. `required` HTML attributes on the now-hidden inputs are also conditionally disabled to avoid silent submit failures.
+
+### Added
+- Migration `drizzle/0036_backfill_adopter_notes_to_observations.sql`.
+- i18n keys: `wizard.observation_no_animal_hint`, `import.initial_observation`, `import.initial_observation_placeholder` (ES + EN).
+
+### Internal
+- Defense-in-depth strip of `notes` from any `saveAdopter` payload (legacy clients can't write to the deprecated column).
+
 ## [2.12.1-27] - 2026-05-02
 
 ### Added

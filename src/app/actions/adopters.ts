@@ -28,6 +28,12 @@ export async function getAdopter(id: string) {
 }
 
 export async function saveAdopter(data: typeof adopters.$inferInsert) {
+    // Defense-in-depth: notes field deprecated in v2.12.1-28 (backfilled into
+    // observation records). Strip from any incoming payload before validation
+    // so legacy clients can't write to it.
+    if (data && 'notes' in data) {
+        delete (data as Record<string, unknown>).notes;
+    }
     // Validate input
     const parsed = saveAdopterSchema.safeParse(data);
     if (!parsed.success) {
@@ -55,7 +61,7 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
             const changes: Record<string, any> = {};
             let hasChanges = false;
 
-            const fields = ['name', 'contactInfo', 'status', 'familyMembers', 'notes'] as const;
+            const fields = ['name', 'contactInfo', 'status', 'familyMembers'] as const;
             for (const field of fields) {
                 // @ts-ignore
                 if (data[field] !== undefined && data[field] !== existing[field]) {

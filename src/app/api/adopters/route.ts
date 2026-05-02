@@ -233,11 +233,11 @@ export async function POST(request: Request) {
         } catch { /* best-effort */ }
 
         // Insert adopter record
+        // notes deprecated v2.12.1-28 — handled below as a dedicated observation record.
         await db.insert(adopters).values({
             id: newId,
             name,
             contactInfo: contactInfoStr || null,
-            notes: notes || null,
             familyMembers: null,
             status: '5', // Default neutral/good
             addedBy: session.user.email || 'anonymous',
@@ -325,9 +325,12 @@ export async function POST(request: Request) {
         // Create interaction record if adoption data provided
         let adoptionId: string | null = null;
         if (adoption) {
-            // Pack notes and contact info into details for searchability
+            // Pack notes (only if this adoption IS the observation) and contact info into
+            // details for searchability. If recordType !== 'observation', notes is handled
+            // separately below as its own observation record.
             const detailsParts: string[] = [];
-            if (notes) detailsParts.push(notes);
+            const adoptionRecordType = adoption.recordType || 'adoption';
+            if (notes && adoptionRecordType === 'observation') detailsParts.push(notes);
             if (contactInfoStr) detailsParts.push(`Contact: ${contactInfoStr}`);
 
             adoptionId = crypto.randomUUID();
@@ -339,7 +342,7 @@ export async function POST(request: Request) {
                 status: 'completed',
                 rating: adoption.rating || 2,
                 addedBy: session.user.email || 'anonymous',
-                recordType: adoption.recordType || 'adoption',
+                recordType: adoptionRecordType,
                 date: adoption.date ? new Date(adoption.date) : new Date(),
                 sourceUrl: sourceUrl || null,
                 details: detailsParts.length > 0 ? detailsParts.join('\n') : null
@@ -358,6 +361,22 @@ export async function POST(request: Request) {
                 adoptionId,
                 mediaLinked: savedImageCount,
                 user: session.user.email
+            });
+        }
+
+        // Auto-create observation record when notes provided but the main adoption
+        // (if any) was not itself an observation. Replaces the deprecated adopter.notes
+        // write. v2.12.1-28.
+        if (notes && (!adoption || (adoption.recordType || 'adoption') !== 'observation')) {
+            await db.insert(adoptions).values({
+                id: crypto.randomUUID(),
+                adopterId: newId,
+                details: notes,
+                status: null,
+                addedBy: session.user.email || 'anonymous',
+                recordType: 'observation',
+                date: new Date(),
+                sourceUrl: sourceUrl || null,
             });
         }
 

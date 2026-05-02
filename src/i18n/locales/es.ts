@@ -530,6 +530,7 @@ export const es = {
     wizard: {
         step_adopter: 'Identificar Adoptante',
         step_observation: 'Detalles de Observación',
+        observation_no_animal_hint: 'Una observación es una nota sobre el adoptante — no requiere un animal.',
         identify_animal: 'Identificar animal',
         new_animal: 'Nuevo animal',
         existing_animal: 'Existente',
@@ -862,6 +863,8 @@ export const es = {
         contactPlaceholder: 'Teléfonos, emails, direcciones, redes sociales...',
         attachedImages: 'Imágenes adjuntas',
         notes: 'Notas',
+        initial_observation: 'Observación inicial',
+        initial_observation_placeholder: 'Se guarda como un registro de observación en el nuevo perfil.',
         commaSeparated: 'Separados por comas',
         confidence: 'confianza',
         adoptionDetected: '🐾 Adopción Detectada',

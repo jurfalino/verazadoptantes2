@@ -1204,13 +1204,14 @@ export default function ImportWizard() {
 
                     </div>
 
-                    {/* Notes */}
+                    {/* Initial observation — saved as a separate observation record on import */}
                     <div>
-                        <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.notes') || 'Notes'}</label>
+                        <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.initial_observation') || 'Initial observation'}</label>
                         <textarea
                             value={extractedData.notes || ''}
                             onChange={e => setExtractedData({ ...extractedData, notes: e.target.value })}
                             className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm min-h-[80px] resize-y focus:ring-2 focus:ring-blue-500"
+                            placeholder={t('import.initial_observation_placeholder') || 'Saved as an observation record on the new profile.'}
                         />
                     </div>
 

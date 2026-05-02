@@ -133,8 +133,19 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
     };
 
     const safeAvailableAnimals = Array.isArray(availableAnimals) ? availableAnimals : [];
-    const showModeSwitcher = !shouldOpenFromWizard && safeAvailableAnimals.length > 0;
+    const isObservation = formData.recordType === 'observation';
+    const showModeSwitcher = !shouldOpenFromWizard && safeAvailableAnimals.length > 0 && !isObservation;
     const effectiveMode = showModeSwitcher ? mode : 'new';
+
+    // Clear stale animal data when user switches to observation type so the saved record
+    // doesn't carry over animalName/species from a previously-selected adoption type.
+    useEffect(() => {
+        if (isObservation && (formData.animalId || formData.animalName || formData.species)) {
+            setFormData(d => ({ ...d, animalId: '', animalName: '', species: '' }));
+            setUnknownAnimal(false);
+            setCustomSpecies(false);
+        }
+    }, [isObservation, formData.animalId, formData.animalName, formData.species]);
 
     const handleSelectExisting = (animalId: string) => {
         if (!animalId) return;
@@ -246,10 +257,13 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
     const goBack = () => { setDirection('back'); setStep(s => Math.max(1, s - 1)); };
 
     const checkStep1Valid = () => {
+        // Observations are about the adopter, not an animal — no animal selection required.
+        if (isObservation) return true;
+
         const isValid = effectiveMode === 'existing'
             ? !!formData.animalId
             : (unknownAnimal || !!formData.animalName.trim()) && !!formData.species.trim();
-            
+
         if (!isValid) {
             toast.warning(t('common.error'), t('adoption.fill_required'));
             return false;
@@ -352,7 +366,13 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
                                 </div>
                             )}
 
-                            {effectiveMode === 'existing' && (
+                            {isObservation && (
+                                <div className="text-sm text-stone-600 italic bg-teal-50/50 border border-teal-100 rounded-lg p-3">
+                                    👁️ {t('wizard.observation_no_animal_hint')}
+                                </div>
+                            )}
+
+                            {!isObservation && effectiveMode === 'existing' && (
                                 <div>
                                     <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.select_animal')}</label>
                                     <select className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm" onChange={(e) => handleSelectExisting(e.target.value)} value={formData.animalId || ''}>
@@ -362,7 +382,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
                                 </div>
                             )}
 
-                            {effectiveMode === 'new' && (
+                            {!isObservation && effectiveMode === 'new' && (
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
                                         <div className="flex items-center justify-between mb-1.5">

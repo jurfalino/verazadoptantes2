@@ -363,9 +363,21 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
         )
     }
 
+    const isObservation = formData.recordType === 'observation';
     // Hide switcher when wizard already made the new/existing choice (newAdoptionParam or continueToAdoption)
-    const showModeSwitcher = !initialData && !shouldOpenFromWizard && availableAnimals && (availableAnimals?.length ?? 0) > 0;
+    // and always for observation records (no animal involved).
+    const showModeSwitcher = !initialData && !shouldOpenFromWizard && availableAnimals && (availableAnimals?.length ?? 0) > 0 && !isObservation;
     const effectiveMode = showModeSwitcher ? mode : 'new';
+
+    // Clear animal fields when user switches to observation type so saved record
+    // doesn't carry over animalName/species from a previously-selected adoption type.
+    useEffect(() => {
+        if (isObservation && (formData.animalName || formData.species)) {
+            setFormData(prev => ({ ...prev, animalName: '', species: '' }));
+            setUnknownAnimal(false);
+            setCustomSpecies(false);
+        }
+    }, [isObservation, formData.animalName, formData.species]);
 
     // Defensive: ensure all arrays are actually arrays (guards against undefined from any source)
     const safeAdoptionImages = Array.isArray(adoptionImages) ? adoptionImages : [];
@@ -391,7 +403,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                 )}
 
                 <form onSubmit={handleSubmit} className="space-y-4">
-                    {effectiveMode === 'existing' && (
+                    {!isObservation && effectiveMode === 'existing' && (
                         <div className="mb-4">
                             <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.select_animal') || 'Select Animal'}</label>
                             <select className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm" onChange={(e) => handleSelectExisting(e.target.value)} value={formData.id || ''}>
@@ -401,8 +413,8 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                         </div>
                     )}
 
-                    {/* Block 1: Core Details */}
-                    <div className="bg-stone-50/50 p-4 rounded-xl border border-stone-200/60 space-y-4">
+                    {/* Block 1: Core Details — animal inputs hidden for observations */}
+                    <div className="bg-stone-50/50 p-4 rounded-xl border border-stone-200/60 space-y-4" style={isObservation ? { display: 'none' } : undefined}>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <div className="flex items-center justify-between mb-1.5">
@@ -428,8 +440,8 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                                     )}
                                 </div>
                                 <input
-                                    required={!unknownAnimal}
-                                    disabled={unknownAnimal}
+                                    required={!unknownAnimal && !isObservation}
+                                    disabled={unknownAnimal || isObservation}
                                     className={`w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm ${unknownAnimal ? 'bg-stone-100 text-stone-500 cursor-not-allowed' : 'bg-white'}`}
                                     value={unknownAnimal ? '' : formData.animalName}
                                     onChange={e => setFormData({ ...formData, animalName: e.target.value })}
@@ -444,7 +456,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                             {customSpecies ? (
                                 <div className="flex gap-2">
                                     <input
-                                        required
+                                        required={!isObservation}
                                         autoFocus
                                         className="flex-1 h-10 px-4 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm"
                                         value={formData.species}
@@ -466,7 +478,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                             ) : (
                                 <div className="relative">
                                     <select
-                                        required
+                                        required={!isObservation}
                                         className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-white text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm"
                                         value={formData.species.toLowerCase() || 'cat'}
                                         onChange={e => {

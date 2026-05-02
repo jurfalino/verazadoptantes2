@@ -99,12 +99,6 @@ export default function DemoProfilePage() {
                                 {adopter.familyMembers}
                             </pre>
                         </div>
-                        <div>
-                            <h3 className="text-xs font-medium text-stone-500 uppercase tracking-wider mb-1">{t('adopter.notes')}</h3>
-                            <pre className="text-sm text-stone-700 whitespace-pre-wrap font-sans bg-stone-50 rounded-lg p-3 border border-stone-100">
-                                {adopter.notes}
-                            </pre>
-                        </div>
                     </div>
                 </div>
 
