@@ -160,6 +160,16 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
         }
     }, [shouldOpenFromWizard]);
 
+    // Clear animal fields when user switches to observation type so saved record
+    // doesn't carry over animalName/species from a previously-selected adoption type.
+    useEffect(() => {
+        if (formData.recordType === 'observation' && (formData.animalName || formData.species)) {
+            setFormData(prev => ({ ...prev, animalName: '', species: '' }));
+            setUnknownAnimal(false);
+            setCustomSpecies(false);
+        }
+    }, [formData.recordType, formData.animalName, formData.species]);
+
     const handleSelectExisting = (animalId: string) => {
         if (!animalId) return;
         const animal = availableAnimals.find(a => a.id === animalId);
@@ -368,16 +378,6 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
     // and always for observation records (no animal involved).
     const showModeSwitcher = !initialData && !shouldOpenFromWizard && availableAnimals && (availableAnimals?.length ?? 0) > 0 && !isObservation;
     const effectiveMode = showModeSwitcher ? mode : 'new';
-
-    // Clear animal fields when user switches to observation type so saved record
-    // doesn't carry over animalName/species from a previously-selected adoption type.
-    useEffect(() => {
-        if (isObservation && (formData.animalName || formData.species)) {
-            setFormData(prev => ({ ...prev, animalName: '', species: '' }));
-            setUnknownAnimal(false);
-            setCustomSpecies(false);
-        }
-    }, [isObservation, formData.animalName, formData.species]);
 
     // Defensive: ensure all arrays are actually arrays (guards against undefined from any source)
     const safeAdoptionImages = Array.isArray(adoptionImages) ? adoptionImages : [];

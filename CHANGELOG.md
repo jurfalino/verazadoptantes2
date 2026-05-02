@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-29] - 2026-05-02
+
+### Fixed
+- **CI lint failure on v2.12.1-28** — `react-hooks/rules-of-hooks` flagged the new observation `useEffect` in `AdoptionFormEditV2.tsx` as "called conditionally" because it was placed after computed values (`isObservation`, `showModeSwitcher`, etc.) instead of grouped with the other hooks. Moved it up to sit right after the existing `useEffect(... [shouldOpenFromWizard])` block. No functional change — pure positional refactor. v28's CI lint job blocked the deploy; this lands the v28 work plus the lint fix.
+
 ## [2.12.1-28] - 2026-05-02
 
 ### Changed
