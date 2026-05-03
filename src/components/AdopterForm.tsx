@@ -10,6 +10,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { RatingBadge } from '@/components/RatingBadge';
+import { DisclaimerInfoButton } from '@/components/DisclaimerInfoButton';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 
@@ -480,14 +481,17 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                     )}
                                     {/* Rating badge — colored pill for severity visibility */}
                                     {avgRating !== null && avgRating !== undefined && (
-                                        <div
-                                            role="button"
-                                            tabIndex={0}
-                                            data-testid="rating-badge"
-                                            onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
-                                            className="cursor-pointer hover:shadow-md transition-shadow"
-                                        >
-                                            <RatingBadge rating={avgRating} size="sm" />
+                                        <div className="flex items-center gap-1">
+                                            <div
+                                                role="button"
+                                                tabIndex={0}
+                                                data-testid="rating-badge"
+                                                onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
+                                                className="cursor-pointer hover:shadow-md transition-shadow"
+                                            >
+                                                <RatingBadge rating={avgRating} size="sm" />
+                                            </div>
+                                            <DisclaimerInfoButton />
                                         </div>
                                     )}
                                 </div>

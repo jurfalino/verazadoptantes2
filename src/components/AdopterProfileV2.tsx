@@ -10,7 +10,7 @@ import AdoptionFormEditV2 from '@/components/AdoptionFormEditV2';
 import { useLanguage } from '@/context/LanguageContext';
 import { saveImage, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from '@/app/actions';
 import { ImageGallery } from '@/components/ImageGallery';
-import ReportInaccuracyForm from '@/components/ReportInaccuracyForm';
+import { DisclaimerToast } from '@/components/DisclaimerToast';
 import { RatingBadge } from '@/components/RatingBadge';
 import { useShowToast } from '@/components/ui/Toast';
 import { formatDateTime, formatShortDate, maskEmail } from '@/lib/dates';
@@ -94,14 +94,15 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
         <main className="min-h-screen bg-teal-50 py-12 px-4 relative">
             <div className="max-w-3xl mx-auto space-y-5">
 
+                {/* One-time legal disclaimer (localStorage-gated) */}
+                {!isNew && adopter && <DisclaimerToast />}
+
                 {/* Back Navigation */}
                 <div className="mb-2">
                     <a href={backHref} className="inline-flex items-center gap-2 text-sm text-teal-700 hover:text-teal-800 transition-colors font-medium group">
                         <svg className="w-4 h-4 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
                         {backLabel}
                     </a>
-                    {/* V2 badge */}
-                    <span className="ml-3 text-xs px-2 py-0.5 bg-violet-100 text-violet-700 rounded-full font-semibold">v2 Wizard</span>
                 </div>
 
                 {/* Profile Form */}
@@ -119,10 +120,6 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     formPrefill={formPrefill}
                     hasDuplicateBanner={false}
                 />
-
-                {!isNew && adopter && (
-                    <ReportInaccuracyForm adopterId={id} adopterName={adopter.name} />
-                )}
 
                 {/* Adoptions — with Wizard Form */}
                 {!isNew && adopter && (

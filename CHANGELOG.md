@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-30] - 2026-05-03
+
+### Removed
+- **`v2 Wizard` violet pill** in the back-nav row of `AdopterProfileV2` — leftover developer artifact.
+- **`ReportInaccuracyForm` component** (the misnamed disclaimer banner) deleted; its rendering on the profile is replaced by the new `DisclaimerToast` + `DisclaimerInfoButton` UX described below.
+
+### Changed
+- **Legal disclaimer relocated** from a passive grey banner below the form into an **informed-consent moment + persistent reference**:
+  - New `DisclaimerToast` component renders at the top of the adopter profile on first visit per browser. Acknowledged via `localStorage['disclaimerAcknowledged']` and never shown again to that user. Includes "Entendido" primary button + ✕ dismiss; both set the storage key. `aria-live="polite"` + `role="status"` for screen readers.
+  - New `DisclaimerInfoButton` (small `ⓘ` icon) rendered next to the rating badge in `AdopterForm`. Opens a centered modal with the full disclaimer text — discoverable re-entry point after the toast is dismissed.
+  - The toast stops occupying screen real estate after acknowledgment, but the disclaimer remains one click away — better than the previous always-on banner (banner blindness) AND better than burying it in a footer (no CX value).
+
+### Added
+- `src/components/DisclaimerToast.tsx`, `src/components/DisclaimerInfoButton.tsx`
+- i18n keys `legal.disclaimer_ack`, `legal.disclaimer_aria`, `legal.disclaimer_dismiss` (ES + EN)
+
 ## [2.12.1-29] - 2026-05-02
 
 ### Fixed
