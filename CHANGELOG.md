@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-36] - 2026-05-04
+
+### Changed
+- **`DisclaimerToast` redesign — slim notice strip instead of a card.** Removed the heavy padding, shadow, and `Entendido` button. Now: single row with info SVG + text + close SVG. Same informed-consent semantics (localStorage-gated, `aria-live` polite), ~60% less vertical space, lower visual weight (a one-time notice should look like a notice, not a primary content card).
+- **All emoji glyphs in disclaimer components replaced with inline SVG**: `ℹ️` info icon → stroke `<svg>` (circle + i path); `✕` close → stroke `<svg>`; `ⓘ` info-button trigger → same info SVG. SVG inherits theme colors via `currentColor` and renders consistently across OS/browser, unlike emoji.
+
+### Internal
+- Memory note saved at `feedback_svg_over_emoji.md` documenting the SVG-over-emoji rule for functional icons (close, info, action affordances). Decorative emoji next to text labels (🐱 species marker etc.) remain acceptable.
+
 ## [2.12.1-35] - 2026-05-03
 
 ### Fixed

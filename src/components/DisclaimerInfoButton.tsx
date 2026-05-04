@@ -3,8 +3,22 @@
 import { useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 
+const InfoIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
+    <svg
+        className={className}
+        viewBox="0 0 20 20"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        aria-hidden="true"
+    >
+        <circle cx="10" cy="10" r="8" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M10 9.5v4M10 6.5h.01" />
+    </svg>
+);
+
 /**
- * Small ⓘ icon button rendered next to the rating. Clicking opens a centered
+ * Small info-icon button rendered next to the rating. Clicking opens a centered
  * modal with the full legal disclaimer. Pairs with DisclaimerToast — that one
  * fires on first profile view; this one is the "find it again later" entry point.
  */
@@ -20,7 +34,7 @@ export function DisclaimerInfoButton() {
                 aria-label={t('legal.disclaimer_aria') || 'Information disclaimer'}
                 className="inline-flex items-center justify-center w-5 h-5 rounded-full text-stone-500 hover:text-stone-700 hover:bg-stone-100 transition-colors"
             >
-                <span aria-hidden="true" className="text-sm">ⓘ</span>
+                <InfoIcon className="w-3.5 h-3.5" />
             </button>
 
             {open && (
@@ -42,7 +56,7 @@ export function DisclaimerInfoButton() {
                         }}
                     >
                         <div className="flex items-start gap-3">
-                            <span className="text-2xl shrink-0" aria-hidden="true">ℹ️</span>
+                            <InfoIcon className="w-6 h-6 shrink-0 mt-0.5" />
                             <p className="text-sm leading-relaxed">
                                 {t('legal.disclaimer') || 'Information is provided by community users. BuenAdoptante does not verify its accuracy.'}
                             </p>
