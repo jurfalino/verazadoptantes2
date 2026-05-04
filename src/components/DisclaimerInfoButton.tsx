@@ -18,7 +18,7 @@ export function DisclaimerInfoButton() {
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setOpen(true); }}
                 aria-label={t('legal.disclaimer_aria') || 'Information disclaimer'}
-                className="inline-flex items-center justify-center w-5 h-5 rounded-full text-stone-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                className="inline-flex items-center justify-center w-5 h-5 rounded-full text-stone-500 hover:text-stone-700 hover:bg-stone-100 transition-colors"
             >
                 <span aria-hidden="true" className="text-sm">ⓘ</span>
             </button>
@@ -34,11 +34,16 @@ export function DisclaimerInfoButton() {
                 >
                     <div
                         onClick={(e) => e.stopPropagation()}
-                        className="bg-blue-50 border border-blue-200 rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4"
+                        className="rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 border"
+                        style={{
+                            background: 'var(--status-info-bg)',
+                            borderColor: 'var(--status-info-border)',
+                            color: 'var(--text-primary)',
+                        }}
                     >
                         <div className="flex items-start gap-3">
                             <span className="text-2xl shrink-0" aria-hidden="true">ℹ️</span>
-                            <p className="text-sm text-blue-900 leading-relaxed">
+                            <p className="text-sm leading-relaxed">
                                 {t('legal.disclaimer') || 'Information is provided by community users. BuenAdoptante does not verify its accuracy.'}
                             </p>
                         </div>
@@ -46,7 +51,13 @@ export function DisclaimerInfoButton() {
                             <button
                                 type="button"
                                 onClick={() => setOpen(false)}
-                                className="px-4 py-2 text-sm font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                className="px-4 py-2 text-sm font-semibold rounded-lg transition-colors"
+                                style={{
+                                    background: 'var(--btn-primary-bg)',
+                                    color: 'var(--btn-primary-text)',
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--btn-primary-hover)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--btn-primary-bg)'; }}
                             >
                                 {t('common.close') || 'Close'}
                             </button>

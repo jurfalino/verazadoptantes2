@@ -40,18 +40,29 @@ export function DisclaimerToast() {
             role="status"
             aria-live="polite"
             aria-label={t('legal.disclaimer_aria') || 'Information disclaimer'}
-            className="bg-blue-50 border border-blue-200 rounded-xl p-4 shadow-sm flex items-start gap-3"
+            className="rounded-xl p-4 shadow-sm flex items-start gap-3 border"
+            style={{
+                background: 'var(--status-info-bg)',
+                borderColor: 'var(--status-info-border)',
+                color: 'var(--text-primary)',
+            }}
         >
             <span className="text-xl shrink-0 mt-0.5" aria-hidden="true">ℹ️</span>
             <div className="flex-1 min-w-0">
-                <p className="text-sm text-blue-900 leading-relaxed">
+                <p className="text-sm leading-relaxed">
                     {t('legal.disclaimer') || 'Information is provided by community users. BuenAdoptante does not verify its accuracy.'}
                 </p>
                 <div className="flex justify-end mt-3">
                     <button
                         type="button"
                         onClick={acknowledge}
-                        className="px-4 py-1.5 text-sm font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        className="px-4 py-1.5 text-sm font-semibold rounded-lg transition-colors"
+                        style={{
+                            background: 'var(--btn-primary-bg)',
+                            color: 'var(--btn-primary-text)',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--btn-primary-hover)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--btn-primary-bg)'; }}
                     >
                         {t('legal.disclaimer_ack') || 'Got it'}
                     </button>
@@ -61,7 +72,8 @@ export function DisclaimerToast() {
                 type="button"
                 onClick={acknowledge}
                 aria-label={t('legal.disclaimer_dismiss') || 'Dismiss notice'}
-                className="text-blue-500 hover:text-blue-700 p-1 transition-colors shrink-0"
+                className="p-1 transition-colors shrink-0"
+                style={{ color: 'var(--text-secondary)' }}
             >
                 ✕
             </button>

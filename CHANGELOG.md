@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-32] - 2026-05-03
+
+### Fixed
+- **`DisclaimerToast` and `DisclaimerInfoButton` now adapt to the active color theme.** The v30 implementation used hardcoded `bg-blue-50`, `text-blue-900`, `bg-blue-600`, etc. — `globals.css` only remaps the stone/teal/rose palettes (per the documented theme architecture), so blue stayed blue under `[data-theme="dark"]` and contrast broke. Replaced with inline CSS variables: `var(--status-info-bg)` + `var(--status-info-border)` for the surface, `var(--text-primary)` for body text, `var(--btn-primary-bg)` / `var(--btn-primary-text)` / `var(--btn-primary-hover)` for the action button, `var(--text-secondary)` for the dismiss `✕`. The `ⓘ` trigger icon now uses `text-stone-*` (already remapped) instead of `text-blue-600`.
+
 ## [2.12.1-31] - 2026-05-03
 
 ### Added
