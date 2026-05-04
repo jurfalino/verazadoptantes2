@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-33] - 2026-05-03
+
+### Fixed
+- **Silent error swallowing in 3 hot paths** — error catches that were either dropping all context or saying nothing at all are now logged with the original operation's input:
+  - `formSubmission.ts:41` — household JSON parse failure now logs a warn with a snippet of the malformed body. Previously: `} catch { /* ignore */ }` (silent).
+  - `findAdopters.ts:295/301/447` — three D1 `.catch(() => [])` fallbacks now log the `adopterId` (and `userCountry` for the third) at warn level. Previously a D1 outage looked like "no results" instead of an alert.
+  - `enrichAdopters.ts:50/55/63/76` — same treatment via a reusable `logD1Fallback(op, adopterId)` helper.
+  - `adopters.ts:405` — the deletion-request notification fire-and-forget `.catch(() => {})` now logs `adopterId` + `actorEmail`.
+  - `config.ts:30` — `getAdoptionConfig` catch now flags `fallbackUsed: true` so flaky DB → silent default-thresholds is visible.
+  - `delete-adopter/route.ts:63` — final catch now includes `adopterId` + `actorEmail` (declared outside the try so they're in scope for the catch).
+  - `duplicates.ts:327` — `checkTokenDuplicates` catch now logs `name`, `hasContactInfo`, `hasAddresses`.
+  - `/api/config/route.ts` — the silent `} catch { ... default config ... }` now logs the underlying error at warn level.
+
+### Added
+- **Logging Conventions** section in `CLAUDE.md` documenting the two rules: (1) catches re-emit operation context (declare input vars outside `try` so they're in scope), (2) never silently swallow — log at warn or error. Includes the standard `.catch(e => { logger.warn(...); return [] })` pattern for D1 fallbacks and a privacy note about `maskEmail`.
+
 ## [2.12.1-32] - 2026-05-03
 
 ### Fixed

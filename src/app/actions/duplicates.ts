@@ -325,6 +325,9 @@ export async function checkTokenDuplicates(data: {
         return results.sort((a, b) => b.score - a.score).slice(0, 5);
     } catch (error) {
         logger.warn('checkTokenDuplicates failed', {
+            name: data.name,
+            hasContactInfo: !!data.contactInfo,
+            hasAddresses: Array.isArray(data.addresses) && data.addresses.length > 0,
             error: error instanceof Error ? error.message : String(error),
         });
         return [];

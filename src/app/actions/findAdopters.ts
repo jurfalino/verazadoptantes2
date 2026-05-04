@@ -292,13 +292,26 @@ async function runDuplicateMode(
     const [nameRows, storedWordRows] = await Promise.all([
         Promise.all(matchedIds.map(id =>
             db.select({ id: adopters.id, name: adopters.name }).from(adopters)
-                .where(eq(adopters.id, id)).catch(() => [])
+                .where(eq(adopters.id, id))
+                .catch((e: unknown) => {
+                    logger.warn('findAdopters: D1 fallback hit (adopter name lookup)', {
+                        adopterId: id,
+                        error: e instanceof Error ? e.message : String(e),
+                    });
+                    return [];
+                })
         )).then(r => r.flat()),
         Promise.all(matchedIds.map(id =>
             db.select({ adopterId: duplicateTokens.adopterId, tokenValue: duplicateTokens.tokenValue })
                 .from(duplicateTokens)
                 .where(and(eq(duplicateTokens.adopterId, id), eq(duplicateTokens.tokenType, 'name_word')))
-                .catch(() => [])
+                .catch((e: unknown) => {
+                    logger.warn('findAdopters: D1 fallback hit (name_word tokens)', {
+                        adopterId: id,
+                        error: e instanceof Error ? e.message : String(e),
+                    });
+                    return [];
+                })
         )).then(r => r.flat()),
     ]);
 
@@ -431,7 +444,14 @@ async function runDiscoveryMode(
             Array.from(extraIds).map(id => {
                 const conds: any[] = [eq(adopters.id, id)];
                 if (userCountry) conds.push(eq(adopters.country, userCountry));
-                return db.select().from(adopters).where(and(...conds)).catch(() => []);
+                return db.select().from(adopters).where(and(...conds)).catch((e: unknown) => {
+                    logger.warn('findAdopters: D1 fallback hit (extra adopter profile lookup)', {
+                        adopterId: id,
+                        userCountry,
+                        error: e instanceof Error ? e.message : String(e),
+                    });
+                    return [];
+                });
             })
         );
         extraProfiles = extraProfileResults.flat();

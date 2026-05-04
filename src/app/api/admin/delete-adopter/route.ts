@@ -10,9 +10,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAdminAsync } from "@/config/admins";
 
 export async function POST(request: NextRequest) {
+    let adopterId: string | undefined;
+    let actorEmail: string | undefined;
     try {
         const body = await request.json() as { adopterId?: string };
-        const adopterId = body.adopterId;
+        adopterId = body.adopterId;
 
         logger.info('Delete adopter API called', { adopterId, user: 'pre-auth' });
 
@@ -28,6 +30,8 @@ export async function POST(request: NextRequest) {
             userEmail: session?.user?.email || 'no-email',
             isAdminUser: await isAdminAsync(session?.user?.email)
         });
+
+        actorEmail = session?.user?.email || undefined;
 
         if (!session?.user?.email || !await isAdminAsync(session.user.email)) {
             logger.warn('Unauthorized delete attempt', {
@@ -59,8 +63,7 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({ success: true });
     } catch (error) {
-        // logger.error already called below
-        logger.error('Delete adopter failed', error);
+        logger.error('Delete adopter failed', error, { adopterId, actorEmail });
         return NextResponse.json({ error: 'Delete failed' }, { status: 500 });
     }
 }

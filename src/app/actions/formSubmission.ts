@@ -3,6 +3,7 @@
 import { formSubmissions, adoptions } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
+import { logger } from '@/lib/logger';
 
 // ── Human-readable label helpers ──────────────────────────────────
 
@@ -38,7 +39,14 @@ function buildDetailedDescription(formRow: {
             if (Array.isArray(items) && items.length > 0) {
                 lines.push(`Hogar: ${items.map((h: string) => HOUSEHOLD_LABELS[h] || h).join(', ')}`);
             }
-        } catch { /* ignore */ }
+        } catch (e) {
+            // Malformed household JSON degrades the prefilled adopter description.
+            // Surface it so we don't silently lose form-submission data quality.
+            logger.warn('formSubmission.buildDetailedDescription: household JSON parse failed', {
+                householdSnippet: formRow.household.slice(0, 100),
+                error: e instanceof Error ? e.message : String(e),
+            });
+        }
     }
     return lines.join('\n');
 }
