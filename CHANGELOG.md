@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-37] - 2026-05-04
+
+### Removed
+- **`DisclaimerInfoButton` (the ⓘ icon next to the rating badge)** deleted entirely. The icon's modal opened to the same global disclaimer text already shown by the first-view `DisclaimerToast` — pure duplicate content, no extra context. Worse, putting a generic info icon adjacent to the rating implied "more info about this rating" but delivered a generic legal blurb (misleading affordance), and competed for attention with one of the highest-value trust signals on the page. Long-term reference for the disclaimer text already lives at `/terms`, linked from the homepage footer — no per-profile re-discovery affordance is needed.
+- `src/components/AdopterForm.tsx` — drop the import + render; restore the simpler rating wrapper (no flex container needed once the icon is gone).
+
 ## [2.12.1-36] - 2026-05-04
 
 ### Changed

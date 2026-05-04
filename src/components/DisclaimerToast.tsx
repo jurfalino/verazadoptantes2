@@ -11,8 +11,10 @@ const STORAGE_KEY = 'disclaimerAcknowledged';
  * never shown again to that browser.
  *
  * Compact strip layout (v2.12.1-36): info icon + text + close, single row, low
- * visual weight. The persistent DisclaimerInfoButton next to the rating is the
- * "find it again later" entry point.
+ * visual weight. Long-term reference for the disclaimer text lives at /terms,
+ * linked from the homepage footer — no per-profile re-discovery affordance is
+ * needed (the previous DisclaimerInfoButton ⓘ was redundant and was removed in
+ * v2.12.1-37).
  */
 export function DisclaimerToast() {
     const { t } = useLanguage();
