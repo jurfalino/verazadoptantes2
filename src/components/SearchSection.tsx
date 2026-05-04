@@ -90,10 +90,15 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
     }, []);
 
     useEffect(() => {
-        if (initialQuery && !results) {
+        // Only auto-run when arriving with ?q=… and no results yet AND no in-flight search.
+        // The `!loading` guard prevents a double-fire when handleSearch updates the URL via
+        // history.replaceState — that URL change re-triggers useSearchParams and would
+        // otherwise fire a second findAdopters call (one audit row per call → duplicates
+        // in /admin/audit). v2.12.1-35.
+        if (initialQuery && !results && !loading) {
             runSearch(initialQuery);
         }
-    }, [initialQuery, results, runSearch]);
+    }, [initialQuery, results, runSearch, loading]);
 
     const handleCreateNew = (e: React.MouseEvent) => {
         e.preventDefault();
@@ -120,11 +125,6 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
         e.preventDefault();
         if (!query.trim()) return;
 
-        // Update URL with query for back-navigation
-        const url = new URL(window.location.href);
-        url.searchParams.set('q', query.trim());
-        window.history.replaceState({}, '', url.toString());
-
         setLoading(true);
         setValidationError(null);
         setTruncatedInfo(null);
@@ -143,6 +143,12 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                 if (response.truncated && response.totalCount) {
                     setTruncatedInfo({ truncated: true, totalCount: response.totalCount });
                 }
+                // Update URL with query for back-navigation. Done AFTER setResults so that
+                // useSearchParams' re-trigger sees results !== null and the auto-run effect
+                // skips. v2.12.1-35.
+                const url = new URL(window.location.href);
+                url.searchParams.set('q', query.trim());
+                window.history.replaceState({}, '', url.toString());
                 // Track search event in Amplitude via Zaraz
                 zarazTrack('search_performed', {
                     resultCount: (response.results || []).length,

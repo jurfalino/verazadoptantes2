@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-35] - 2026-05-03
+
+### Fixed
+- **`/admin/audit` showed search actions twice per submit.** `SearchSection.handleSearch` was updating the URL via `window.history.replaceState(...)` BEFORE awaiting the search. The URL change re-triggered `useSearchParams()` → `initialQuery` recomputed → the auto-run `useEffect` saw `initialQuery && !results` (results not yet set) and fired a second `findAdopters` call independently. Both calls hit `logAudit({ action: 'search' })` → two audit_log rows per user search. Fix: (1) move the URL update to AFTER `setResults` so the effect's `!results` guard succeeds when `useSearchParams` re-fires; (2) add `!loading` to the effect's guard for defense-in-depth so an in-flight search can never trigger a duplicate.
+
 ## [2.12.1-34] - 2026-05-03
 
 ### Added
