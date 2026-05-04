@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-40] - 2026-05-04
+
+### Fixed
+- **Smoke test caught up with v2.12.1-39 hero removal.** `tests/smoke.spec.ts:13` was asserting `getByRole('heading', { level: 1 }).toBeVisible()` — but v39 deleted the H1 in favor of the search-first homepage. Replaced with two stronger checks: search input visibility (the actual primary anchor) + the `home.value_main` text (proves layout + i18n loaded). The previous assertion blocked v39's e2e job; this should let the hero-slim-down deploy.
+
 ## [2.12.1-39] - 2026-05-04
 
 ### Changed
