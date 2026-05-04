@@ -85,10 +85,15 @@ export default defineConfig({
     },
   ],
 
-  /* Run your local server before starting the tests */
+  /* Run your local server before starting the tests.
+   * webServer.url polls /api/ready (strict readiness probe — 200 ONLY when the
+   * D1 binding can answer a query) instead of just '/' (which would 200 as soon
+   * as Next.js bound the port, before miniflare's D1 was alive). Eliminates the
+   * miniflare ECONNRESET race that intermittently wedged the e2e job (see
+   * v2.12.1-30 CI failure analysis). */
   webServer: {
     command: 'node scripts/setup-test-db.js && npx next dev',
-    url: 'http://localhost:3000',
+    url: 'http://localhost:3000/api/ready',
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
     env: {

@@ -10,6 +10,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { RatingBadge } from '@/components/RatingBadge';
+import { DisclaimerInfoButton } from '@/components/DisclaimerInfoButton';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 
@@ -115,7 +116,6 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         contactInfo: initialData?.contactInfo || formPrefill?.contactInfo || '',
 
         familyMembers: initialData?.familyMembers || '',
-        notes: initialData?.notes || formPrefill?.notes || '',
     });
 
     // Build search query from name + contact for duplicate check
@@ -279,7 +279,6 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                 contactInfo: initialData?.contactInfo || formPrefill?.contactInfo || '',
 
                 familyMembers: initialData?.familyMembers || '',
-                notes: initialData?.notes || formPrefill?.notes || '',
             });
             setIsEditing(false);
         }
@@ -482,14 +481,17 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                     )}
                                     {/* Rating badge — colored pill for severity visibility */}
                                     {avgRating !== null && avgRating !== undefined && (
-                                        <div
-                                            role="button"
-                                            tabIndex={0}
-                                            data-testid="rating-badge"
-                                            onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
-                                            className="cursor-pointer hover:shadow-md transition-shadow"
-                                        >
-                                            <RatingBadge rating={avgRating} size="sm" />
+                                        <div className="flex items-center gap-1">
+                                            <div
+                                                role="button"
+                                                tabIndex={0}
+                                                data-testid="rating-badge"
+                                                onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
+                                                className="cursor-pointer hover:shadow-md transition-shadow"
+                                            >
+                                                <RatingBadge rating={avgRating} size="sm" />
+                                            </div>
+                                            <DisclaimerInfoButton />
                                         </div>
                                     )}
                                 </div>
@@ -635,38 +637,6 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                         )}
                     </div>
 
-                    {/* Notes (Full Width) */}
-                    <div className="md:col-span-2">
-                        <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.notes') || 'Notes'}</h3>
-                        {isEditing ? (
-                            <textarea
-                                rows={3}
-                                className="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-y min-h-[80px]"
-                                value={data.notes}
-                                onChange={e => setData({ ...data, notes: e.target.value })}
-                                placeholder={t('adopter.placeholder_notes') || 'Additional observations, age, behavior, etc.'}
-                            />
-                        ) : (
-                            data.notes ? (
-                                <div
-                                    className="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 font-medium leading-relaxed min-h-[60px] cursor-pointer hover:border-teal-400 transition-colors"
-                                    style={{ overflowWrap: 'anywhere' }}
-                                    onClick={handleClickToEdit}
-                                    title={t('common.edit') || 'Click to edit'}
-                                >
-                                    {renderTextWithLinks(data.notes, { emptyLabel: t('audit.empty_val') })}
-                                </div>
-                            ) : (
-                                <div
-                                    className="text-stone-500 italic p-4 rounded-xl border border-dashed border-teal-200 bg-white cursor-pointer hover:border-teal-400 transition-colors"
-                                    onClick={handleClickToEdit}
-                                    title={t('common.edit') || 'Click to edit'}
-                                >
-                                    {t('adopter.no_notes') || 'No notes.'}
-                                </div>
-                            )
-                        )}
-                    </div>
                 </div>
             </form>
 

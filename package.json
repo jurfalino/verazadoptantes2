@@ -1,6 +1,6 @@
 {
   "name": "buenadoptante",
-  "version": "2.12.1-10",
+  "version": "2.12.1-31",
   "private": true,
   "scripts": {
     "dev": "set NODE_OPTIONS=--max-old-space-size=2048 --expose-gc&& next dev",
@@ -28,6 +28,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260118.0",
+    "@next/bundle-analyzer": "^16.2.4",
     "@playwright/test": "^1.58.0",
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^7.6.13",

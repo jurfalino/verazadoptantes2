@@ -14,7 +14,7 @@
  */
 
 import { adopters, searches, adopterHistory, adoptions, adopterStats, duplicateTokens } from '@/db/schema';
-import { or, like, sql, and, isNull, inArray, eq, ne } from 'drizzle-orm';
+import { or, like, sql, and, isNull, eq, ne } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
@@ -287,14 +287,19 @@ async function runDuplicateMode(
     if (matchMap.size === 0) return [];
 
     // Fetch adopter names + stored name_word tokens for Levenshtein scoring
+    // D1-compatible: fan out with eq() per ID instead of inArray() which silently breaks on D1
     const matchedIds = Array.from(matchMap.keys());
     const [nameRows, storedWordRows] = await Promise.all([
-        db.select({ id: adopters.id, name: adopters.name }).from(adopters)
-            .where(inArray(adopters.id, matchedIds)).all(),
-        db.select({ adopterId: duplicateTokens.adopterId, tokenValue: duplicateTokens.tokenValue })
-            .from(duplicateTokens)
-            .where(and(inArray(duplicateTokens.adopterId, matchedIds), eq(duplicateTokens.tokenType, 'name_word')))
-            .all(),
+        Promise.all(matchedIds.map(id =>
+            db.select({ id: adopters.id, name: adopters.name }).from(adopters)
+                .where(eq(adopters.id, id)).catch(() => [])
+        )).then(r => r.flat()),
+        Promise.all(matchedIds.map(id =>
+            db.select({ adopterId: duplicateTokens.adopterId, tokenValue: duplicateTokens.tokenValue })
+                .from(duplicateTokens)
+                .where(and(eq(duplicateTokens.adopterId, id), eq(duplicateTokens.tokenType, 'name_word')))
+                .catch(() => [])
+        )).then(r => r.flat()),
     ]);
 
     const storedWordsByAdopter = new Map<string, string[]>();
@@ -419,11 +424,17 @@ async function runDiscoveryMode(
     const extraIds = new Set([...historyIds, ...adoptionIds]);
     directResults.forEach((r: any) => extraIds.delete(r.id));
 
+    // D1-compatible: fan out with eq() per ID instead of inArray() which silently breaks on D1
     let extraProfiles: typeof adopters.$inferSelect[] = [];
     if (extraIds.size > 0) {
-        const extraConds: any[] = [inArray(adopters.id, Array.from(extraIds))];
-        if (userCountry) extraConds.push(eq(adopters.country, userCountry));
-        extraProfiles = await db.select().from(adopters).where(and(...extraConds));
+        const extraProfileResults = await Promise.all(
+            Array.from(extraIds).map(id => {
+                const conds: any[] = [eq(adopters.id, id)];
+                if (userCountry) conds.push(eq(adopters.country, userCountry));
+                return db.select().from(adopters).where(and(...conds)).catch(() => []);
+            })
+        );
+        extraProfiles = extraProfileResults.flat();
     }
 
     const allProfiles = [...directResults, ...extraProfiles];

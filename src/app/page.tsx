@@ -106,7 +106,7 @@ export default function Home() {
     <main className="min-h-screen bg-stone-50 py-6 px-4 relative">
       <div className="max-w-3xl mx-auto space-y-6">
         <div id="search-section">
-          <SearchSection locale={locale} />
+          <SearchSection locale={locale} showCardMetadata={appConfig.ENABLE_SEARCH_CARD_METADATA !== 'false'} />
         </div>
 
         {/* Social proof + milestone — below search for mobile-first */}

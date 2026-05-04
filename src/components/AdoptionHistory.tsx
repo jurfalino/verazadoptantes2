@@ -51,7 +51,7 @@ interface AdoptionImage {
     thumbnailUrl?: string | null;
 }
 
-export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, adopterAddress = '', userNameMap = {} }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, adopterAddress?: string, userNameMap?: Record<string, string> }) {
+export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, adopterAddress = '', userNameMap = {}, editFormComponent }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, editFormComponent?: any }) {
     const { t, locale } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
@@ -142,18 +142,23 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                     if (editingId === adoption.id) {
                         return (
                             <div key={adoption.id} id={`adoption-${adoption.id}`} className="relative ml-6 md:ml-10">
-                                <AdoptionForm
-                                    adopterId={adopterId}
-                                    initialData={adoption}
-                                    onCancel={() => setEditingId(null)}
-                                    onSuccess={() => {
-                                        setEditingId(null);
-                                        router.refresh();
-                                    }}
-                                    onDelete={() => handleDelete(adoption.id)}
-                                    currentUser={currentUser}
-                                    adopterAddress={adopterAddress}
-                                />
+                                {(() => {
+                                    const EditComponent = editFormComponent || AdoptionForm;
+                                    return (
+                                        <EditComponent
+                                            adopterId={adopterId}
+                                            initialData={adoption}
+                                            onCancel={() => setEditingId(null)}
+                                            onSuccess={() => {
+                                                setEditingId(null);
+                                                router.refresh();
+                                            }}
+                                            onDelete={() => handleDelete(adoption.id)}
+                                            currentUser={currentUser}
+                                            adopterAddress={adopterAddress}
+                                        />
+                                    );
+                                })()}
                             </div>
                         );
                     }

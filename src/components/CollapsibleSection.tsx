@@ -13,8 +13,8 @@ interface CollapsibleSectionProps {
 
 export function CollapsibleSection({ title, count, subtitle, defaultOpen = true, children, className = "" }: CollapsibleSectionProps) {
     return (
-        <details className={`bg-white rounded-2xl shadow-sm border border-teal-100 overflow-hidden group ${className}`} open={defaultOpen}>
-            <summary className="p-5 cursor-pointer list-none flex justify-between items-center hover:bg-teal-50 transition-colors">
+        <details className={`bg-white rounded-2xl shadow-sm border border-teal-100 group ${className}`} open={defaultOpen}>
+            <summary className="p-5 cursor-pointer list-none flex justify-between items-center hover:bg-teal-50 transition-colors rounded-2xl group-open:rounded-t-2xl group-open:rounded-b-none">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 flex-1 min-w-0">
                     <h3 className="text-xl font-semibold text-teal-900 tracking-tight">{title}</h3>
                     {count !== undefined && (
@@ -33,7 +33,7 @@ export function CollapsibleSection({ title, count, subtitle, defaultOpen = true,
                 </svg>
             </summary>
 
-            <div className="px-5 pb-5 border-t border-teal-100 pt-5 animate-in slide-in-from-top-2 fade-in duration-200">
+            <div className="px-5 pb-5 border-t border-teal-100 pt-5 animate-in slide-in-from-top-2 fade-in duration-200 rounded-b-2xl">
                 {children}
             </div>
         </details>

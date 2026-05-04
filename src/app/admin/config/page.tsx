@@ -19,6 +19,7 @@ interface ConfigData {
         too_many_requests_period_days?: string;
         ENABLE_CONTENT_IMPORT?: string;
         ENABLE_ANIMALS_FOR_ADOPTION?: string;
+        ENABLE_SEARCH_CARD_METADATA?: string;
         SOCIAL_PROOF_ENABLED?: string;
         SOCIAL_PROOF_MESSAGES?: string;
     };
@@ -35,6 +36,7 @@ interface PurgeData {
 const FEATURE_FLAGS = [
     { key: 'ENABLE_CONTENT_IMPORT', label: 'Content Import', description: 'Show the Import Content button on the home page for importing from any URL, text, or images using AI' },
     { key: 'ENABLE_ANIMALS_FOR_ADOPTION', label: 'Animals for Adoption', description: 'Allow users to list animals for adoption and share adoption contracts with potential adopters' },
+    { key: 'ENABLE_SEARCH_CARD_METADATA', label: 'Search Card Metadata', description: 'Show profile views (👁) and the bottom row dates (📅 added, ✏️ updated) on each search result card on the home page. Default ON.' },
 ];
 
 export default function AdminConfigPage() {
@@ -48,6 +50,7 @@ export default function AdminConfigPage() {
     const [featureFlags, setFeatureFlags] = useState<Record<string, boolean>>({
         ENABLE_CONTENT_IMPORT: false,
         ENABLE_ANIMALS_FOR_ADOPTION: false,
+        ENABLE_SEARCH_CARD_METADATA: true,
     });
     const [socialProofEnabled, setSocialProofEnabled] = useState(false);
     const [socialProofMessages, setSocialProofMessages] = useState<SocialProofMessage[]>([]);
@@ -77,6 +80,7 @@ export default function AdminConfigPage() {
                     setFeatureFlags({
                         ENABLE_CONTENT_IMPORT: data.config?.ENABLE_CONTENT_IMPORT === 'true',
                         ENABLE_ANIMALS_FOR_ADOPTION: data.config?.ENABLE_ANIMALS_FOR_ADOPTION === 'true',
+                        ENABLE_SEARCH_CARD_METADATA: data.config?.ENABLE_SEARCH_CARD_METADATA !== 'false',
                     });
                     // Social proof config
                     setSocialProofEnabled(data.config?.SOCIAL_PROOF_ENABLED === 'true');

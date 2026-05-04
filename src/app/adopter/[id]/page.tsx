@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getAdoptionConfig, getDuplicateCandidates } from '@/app/actions';
 import { resolveUserNames } from '@/app/actions/userNames';
 import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
-import { AdopterProfile } from '@/components/AdopterProfile';
+import { AdopterProfileV2 } from '@/components/AdopterProfileV2';
 
 export default async function AdopterPage({
     params,
@@ -67,7 +67,7 @@ export default async function AdopterPage({
     const userNameMap = await resolveUserNames(editorEmails);
 
     return (
-        <AdopterProfile
+        <AdopterProfileV2
             id={id}
             isNew={isNew}
             adopter={adopter}

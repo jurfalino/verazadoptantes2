@@ -203,6 +203,9 @@ export const es = {
         and: 'y la',
         privacy_link: 'Política de Privacidad',
         disclaimer: 'La información es proporcionada por usuarios de la comunidad. BuenAdoptante no verifica su exactitud.',
+        disclaimer_ack: 'Entendido',
+        disclaimer_aria: 'Aviso de información',
+        disclaimer_dismiss: 'Cerrar aviso',
         report_error: 'Reportar un error',
         last_updated: 'Última actualización',
         privacy: 'Privacidad',
@@ -438,7 +441,7 @@ export const es = {
         '1': '⭐',
         unknown: 'Desconocido',
         dangerous: 'Peligroso',
-        poor: 'Malo',
+        poor: 'Riesgoso',
         average: 'Promedio',
         good: 'Bueno',
         excellent: 'Excelente',
@@ -530,6 +533,7 @@ export const es = {
     wizard: {
         step_adopter: 'Identificar Adoptante',
         step_observation: 'Detalles de Observación',
+        observation_no_animal_hint: 'Una observación es una nota sobre el adoptante — no requiere un animal.',
         identify_animal: 'Identificar animal',
         new_animal: 'Nuevo animal',
         existing_animal: 'Existente',
@@ -862,6 +866,8 @@ export const es = {
         contactPlaceholder: 'Teléfonos, emails, direcciones, redes sociales...',
         attachedImages: 'Imágenes adjuntas',
         notes: 'Notas',
+        initial_observation: 'Observación inicial',
+        initial_observation_placeholder: 'Se guarda como un registro de observación en el nuevo perfil.',
         commaSeparated: 'Separados por comas',
         confidence: 'confianza',
         adoptionDetected: '🐾 Adopción Detectada',
@@ -1102,6 +1108,11 @@ export const es = {
         scraper: 'AI Import',
         scraper_desc: 'Extracción de datos desde redes sociales',
         schema_drift: 'Desincronización detectada en {count} tabla(s)',
+    },
+    theme: {
+        change: 'Cambiar tema',
+        light: 'Claro',
+        dark: 'Azul Noche',
     },
 };
 

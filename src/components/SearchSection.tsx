@@ -37,7 +37,7 @@ import { zarazTrack } from '@/lib/zaraz';
 import { ShieldPawIcon } from '@/components/Logo';
 import Link from 'next/link';
 
-export default function SearchSection({ locale }: { locale?: string }) {
+export default function SearchSection({ locale, showCardMetadata = true }: { locale?: string; showCardMetadata?: boolean }) {
     const { t } = useLanguage();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -438,7 +438,9 @@ export default function SearchSection({ locale }: { locale?: string }) {
 
                                     {/* Stats Row */}
                                     <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
-                                        <span>👁 {res.stats.profileViews} {t('stats.views')}</span>
+                                        {showCardMetadata && (
+                                            <span>👁 {res.stats.profileViews} {t('stats.views')}</span>
+                                        )}
                                         <span>📋 {res.stats.requests} {t('stats.requests')}</span>
                                         <span>🏠 {res.stats.adoptions} {t('stats.adoptions')}</span>
                                         {/* Flag indicators */}
@@ -491,14 +493,16 @@ export default function SearchSection({ locale }: { locale?: string }) {
                                     })()}
 
                                     {/* Dates Row - bottom right */}
-                                    <div className="flex justify-end gap-3 mt-2 pt-2 border-t border-stone-100 text-xs text-stone-500">
-                                        {addedDate && (
-                                            <span>📅 {addedDate}</span>
-                                        )}
-                                        {updatedDate && (
-                                            <span>✏️ {updatedDate}</span>
-                                        )}
-                                    </div>
+                                    {showCardMetadata && (addedDate || updatedDate) && (
+                                        <div className="flex justify-end gap-3 mt-2 pt-2 border-t border-stone-100 text-xs text-stone-500">
+                                            {addedDate && (
+                                                <span>📅 {addedDate}</span>
+                                            )}
+                                            {updatedDate && (
+                                                <span>✏️ {updatedDate}</span>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             </a>
                         );

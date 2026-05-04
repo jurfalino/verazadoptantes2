@@ -95,11 +95,10 @@ export async function POST(request: Request) {
                 : secondary.familyMembers;
         }
 
-        if (secondary.notes) {
-            updates.notes = primary.notes
-                ? `${primary.notes}\n--- Merged from ${secondary.name} ---\n${secondary.notes}`
-                : secondary.notes;
-        }
+        // notes field deprecated in v2.12.1-28 — backfill migration lifted both
+        // adopters' notes into observation records before this merge runs, and the
+        // adoption_id reassignment below moves the secondary's observations onto
+        // the primary, so notes carry over automatically.
 
         // Source URL: keep if primary doesn't have one
         if (secondary.sourceUrl && !primary.sourceUrl) {

@@ -22,7 +22,8 @@ export const saveAdopterSchema = z.object({
     contactInfo: optionalText,
     addressInfo: optionalText,
     familyMembers: optionalText,
-    notes: optionalText,
+    // notes: deprecated in v2.12.1-28 — backfilled into observation adoption records.
+    // Field stripped server-side in saveAdopter as defense-in-depth.
     status: z.string().regex(/^[1-5]$/).optional().nullable(),
     sourceUrl: z.string().url().max(2_000).optional().nullable().or(z.literal('')),
     country: z.string().length(2).optional().nullable(),
