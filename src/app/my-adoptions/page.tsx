@@ -47,10 +47,13 @@ export default function MyAdoptionsPage() {
     const { data: session } = useSession();
     const currentEmail = session?.user?.email || '';
     const searchParams = useSearchParams();
-    const filterParam = searchParams.get('filter') || 'all';
+    // Default to the Adoption tab so the page matches the "Mis Adopciones" label
+    // and the homepage chip count. Other record types remain reachable via tabs.
+    // Fixed in v2.12.1-41.
+    const filterParam = searchParams.get('filter') || 'adoption';
     const filter: RecordTypeFilter = RECORD_TYPES.includes(filterParam as RecordTypeFilter)
         ? (filterParam as RecordTypeFilter)
-        : 'all';
+        : 'adoption';
 
     const [adoptions, setAdoptions] = useState<Adoption[]>([]);
     const [loading, setLoading] = useState(true);

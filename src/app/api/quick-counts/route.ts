@@ -2,10 +2,11 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { getDb } from '@/app/actions';
 import { adoptions, adopters } from '@/db/schema';
-import { eq, and, isNull, inArray, count, not } from 'drizzle-orm';
+import { eq, and, isNull, inArray, count } from 'drizzle-orm';
 import { getFeatureFlag } from '@/config/features';
 import { getOrgMemberEmails } from '@/app/actions/organizations';
 import { logger } from '@/lib/logger';
+import { RECORD_TYPES } from '@/domain/constants';
 
 export const runtime = 'edge';
 
@@ -28,13 +29,16 @@ export async function GET() {
             .from(adopters)
             .where(inArray(adopters.addedBy, memberEmails));
 
-        // 2. My Adoptions (all adoptions where recordType != 'available')
-        // Using same logic as getMyAdoptions('all')
+        // 2. My Adoptions — strictly recordType='adoption'.
+        // The chip is labeled "Mis Adopciones" — it should count true adoptions only,
+        // not requests/observations/follow-ups/returns. Those types remain visible
+        // via the tabs on /my-adoptions; the chip + page default just narrow to
+        // adoptions to match the label. Fixed in v2.12.1-41.
         const [adoptionCount] = await db.select({ value: count() })
             .from(adoptions)
             .where(and(
                 inArray(adoptions.addedBy, memberEmails),
-                not(eq(adoptions.recordType, 'available'))
+                eq(adoptions.recordType, RECORD_TYPES.ADOPTION)
             ));
 
         // 3. My Animals (Pending)

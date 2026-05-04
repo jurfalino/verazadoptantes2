@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-41] - 2026-05-04
+
+### Fixed
+- **Homepage "Mis Adopciones" chip count + page now match the label.** The chip on the QuickAccessStrip was counting all interaction types (adoption + adoption_request + observation + follow_up + returned_pet) — anything except `available` — but the label said "Adopciones." A user with 4 adoptions and 8 observations saw a chip of "12" → clicked → landed on `/my-adoptions` with the All tab preselected, also showing 12 mixed records. Honest CX failure: label and data disagreed at both ends.
+  - **`src/app/api/quick-counts/route.ts:31-37`** — narrowed the count to `recordType = 'adoption'` (using the `RECORD_TYPES.ADOPTION` constant). Dropped the now-unused `not` import; added `RECORD_TYPES` import.
+  - **`src/app/my-adoptions/page.tsx:50`** — default `filter` param changed from `'all'` to `'adoption'` so the Adoption tab is preselected on direct navigation. Other types remain reachable via the existing tabs (no functionality lost). URL `?filter=all` still works for users who explicitly want the everything view.
+  - Net: chip count = number of records visible on the default-loaded `/my-adoptions` page = number of true adoptions. The label is finally honest.
+- **No downstream breakage.** Verified `dashboard.ts:188` uses a per-adopter `counts` object that's already correctly recordType-filtered (different scope than `/api/quick-counts`); `MilestoneBadge` uses its own `/api/dashboard/milestone` endpoint unaffected by this change.
+
 ## [2.12.1-40] - 2026-05-04
 
 ### Fixed
