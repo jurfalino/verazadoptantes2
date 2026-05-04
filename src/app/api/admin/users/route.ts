@@ -15,19 +15,47 @@ export async function GET(_request: Request) {
         const { env } = getRequestContext();
         if (!env?.DB) return NextResponse.json({ error: "No database" }, { status: 500 });
 
-        // Get all users joined with their profiles
+        // Get all users joined with their profiles + real org memberships.
+        // The legacy user_profiles.organization free-text column was deprecated
+        // in v2.12.1-34 (migration 0037). org membership now comes from the
+        // org_members → organizations join.
         const users = await env.DB.prepare(`
-            SELECT 
+            SELECT
                 u.id, u.name, u.email, u.image,
-                p.organization, p.role, p.notes, p.comms_opt_in,
+                p.role, p.notes, p.comms_opt_in,
                 p.last_active_at, p.created_at as first_sign_in,
-                p.country
+                p.country,
+                (
+                    SELECT json_group_array(json_object('id', o.id, 'name', o.name, 'role', om.role))
+                    FROM org_members om
+                    JOIN organizations o ON o.id = om.org_id
+                    WHERE om.user_email = u.email
+                ) AS org_memberships_json
             FROM user u
             LEFT JOIN user_profiles p ON u.id = p.user_id
             ORDER BY COALESCE(p.last_active_at, 0) DESC
         `).all();
 
-        return NextResponse.json({ users: users.results || [] });
+        // Parse the JSON aggregate into an array per user.
+        const rows = (users.results || []) as Array<Record<string, unknown>>;
+        const out = rows.map((r) => {
+            let orgMemberships: Array<{ id: string; name: string; role: string | null }> = [];
+            try {
+                const raw = r.org_memberships_json;
+                if (typeof raw === 'string' && raw !== '[]') {
+                    orgMemberships = JSON.parse(raw);
+                }
+            } catch (e) {
+                logger.warn('Admin users: org_memberships JSON parse failed', {
+                    userId: r.id,
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            }
+            const { org_memberships_json: _, ...rest } = r;
+            return { ...rest, orgMemberships };
+        });
+
+        return NextResponse.json({ users: out });
     } catch (error) {
         const errorId = logger.error('Get users failed', error);
         return NextResponse.json({ error: "Failed to fetch users", errorId }, { status: 500 });
@@ -46,7 +74,8 @@ export async function PUT(request: Request) {
 
         const body = await request.json() as {
             userId: string;
-            organization?: string;
+            // organization?: string  — DEPRECATED in v2.12.1-34. Real org membership is
+            // managed via the /admin/organizations page (org_members table).
             role?: string;
             notes?: string;
             commsOptIn?: boolean;
@@ -59,11 +88,10 @@ export async function PUT(request: Request) {
 
         // Update fields
         await env.DB.prepare(`
-            UPDATE user_profiles 
-            SET organization = ?, role = ?, notes = ?, comms_opt_in = ?
+            UPDATE user_profiles
+            SET role = ?, notes = ?, comms_opt_in = ?
             WHERE user_id = ?
         `).bind(
-            body.organization || null,
             body.role || 'viewer',
             body.notes || null,
             body.commsOptIn ? 1 : 0,

@@ -14,6 +14,7 @@ const NAV_ITEMS = [
     { href: '/admin/data-requests', label: 'Data Requests', icon: '📬' },
     { href: '/admin/notifications', label: 'Communications', icon: '📡' },
     { href: '/admin/users', label: 'Users', icon: '👥' },
+    { href: '/admin/organizations', label: 'Organizations', icon: '🏢' },
     { href: '/admin/audit', label: 'Audit Log', icon: '📋' },
     { href: '/admin/health', label: 'System Health', icon: '🩺' },
     { href: '/admin/data', label: 'Data Migration', icon: '📦' },

@@ -34,25 +34,31 @@ function CopyIdButton({ id, className = '' }: { id: string; className?: string }
     );
 }
 
+interface OrgMembership {
+    id: string;
+    name: string;
+    role: string | null;
+}
+
 interface UserProfile {
     id: string;
     name: string;
     email: string;
     image: string | null;
-    organization: string | null;
     role: string | null;
     notes: string | null;
     comms_opt_in: number;
     last_active_at: number | null;
     first_sign_in: number | null;
     country: string | null;
+    orgMemberships: OrgMembership[];
 }
 
 export default function AdminUsersPage() {
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [loading, setLoading] = useState(true);
     const [editingId, setEditingId] = useState<string | null>(null);
-    const [editForm, setEditForm] = useState({ organization: '', role: 'viewer', notes: '', commsOptIn: false });
+    const [editForm, setEditForm] = useState({ role: 'viewer', notes: '', commsOptIn: false });
     const [saving, setSaving] = useState(false);
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const [filter, setFilter] = useState('');
@@ -79,7 +85,6 @@ export default function AdminUsersPage() {
     const startEdit = (user: UserProfile) => {
         setEditingId(user.id);
         setEditForm({
-            organization: user.organization || '',
             role: user.role || 'viewer',
             notes: user.notes || '',
             commsOptIn: !!user.comms_opt_in,
@@ -97,7 +102,6 @@ export default function AdminUsersPage() {
             // Update local state
             setUsers(prev => prev.map(u => u.id === userId ? {
                 ...u,
-                organization: editForm.organization || null,
                 role: editForm.role,
                 notes: editForm.notes || null,
                 comms_opt_in: editForm.commsOptIn ? 1 : 0,
@@ -141,7 +145,7 @@ export default function AdminUsersPage() {
         const q = filter.toLowerCase();
         return u.name?.toLowerCase().includes(q) ||
             u.email?.toLowerCase().includes(q) ||
-            u.organization?.toLowerCase().includes(q);
+            (u.orgMemberships || []).some(o => o.name.toLowerCase().includes(q));
     });
 
     if (loading) return <div className="p-8 text-stone-500">Loading users...</div>;
@@ -183,7 +187,7 @@ export default function AdminUsersPage() {
                         <tr>
                             <th className="px-4 py-3 text-left">User</th>
                             <th className="px-4 py-3 text-left">ID</th>
-                            <th className="px-4 py-3 text-left">Organization</th>
+                            <th className="px-4 py-3 text-left">Organizations</th>
                             <th className="px-4 py-3 text-left">Role</th>
                             <th className="px-4 py-3 text-left">Country</th>
                             <th className="px-4 py-3 text-left">First Sign In</th>
@@ -215,16 +219,21 @@ export default function AdminUsersPage() {
                                     <CopyIdButton id={user.id} />
                                 </td>
                                 <td className="px-4 py-3">
-                                    {editingId === user.id ? (
-                                        <input
-                                            type="text"
-                                            value={editForm.organization}
-                                            onChange={e => setEditForm({ ...editForm, organization: e.target.value })}
-                                            placeholder="Organization name"
-                                            className="px-2 py-1 border border-stone-200 rounded text-sm w-full"
-                                        />
+                                    {(user.orgMemberships || []).length > 0 ? (
+                                        <div className="flex flex-wrap gap-1">
+                                            {user.orgMemberships.map(o => (
+                                                <a
+                                                    key={o.id}
+                                                    href={`/admin/organizations?highlight=${o.id}`}
+                                                    title={`Manage ${o.name}${o.role ? ` (${o.role})` : ''}`}
+                                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 hover:bg-teal-100 border border-teal-200 text-xs font-medium transition-colors"
+                                                >
+                                                    🏢 {o.name}
+                                                </a>
+                                            ))}
+                                        </div>
                                     ) : (
-                                        <span className="text-stone-600">{user.organization || '—'}</span>
+                                        <span className="text-stone-300 text-xs">—</span>
                                     )}
                                 </td>
                                 <td className="px-4 py-3">
@@ -355,16 +364,6 @@ export default function AdminUsersPage() {
                         {editingId === user.id ? (
                             <div className="space-y-3 bg-stone-50 rounded-lg p-3 mb-3">
                                 <div>
-                                    <label className="text-xs text-stone-500 font-medium block mb-1">Organization</label>
-                                    <input
-                                        type="text"
-                                        value={editForm.organization}
-                                        onChange={e => setEditForm({ ...editForm, organization: e.target.value })}
-                                        placeholder="Organization name"
-                                        className="px-3 py-2 border border-stone-200 rounded-lg text-sm w-full"
-                                    />
-                                </div>
-                                <div>
                                     <label className="text-xs text-stone-500 font-medium block mb-1">Role</label>
                                     <select
                                         value={editForm.role}
@@ -398,11 +397,21 @@ export default function AdminUsersPage() {
                                     <span className="text-stone-500">ID:</span>
                                     <CopyIdButton id={user.id} className="flex-1 min-w-0" />
                                 </div>
-                                <div className="grid grid-cols-2 gap-2 text-xs mb-3">
-                                    <div>
-                                        <span className="text-stone-500">Org: </span>
-                                        <span className="text-stone-600">{user.organization || '—'}</span>
+                                {(user.orgMemberships || []).length > 0 && (
+                                    <div className="mb-3">
+                                        <span className="text-stone-500 text-xs block mb-1">Organizations</span>
+                                        <div className="flex flex-wrap gap-1">
+                                            {user.orgMemberships.map(o => (
+                                                <a
+                                                    key={o.id}
+                                                    href={`/admin/organizations?highlight=${o.id}`}
+                                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200 text-xs font-medium"
+                                                >🏢 {o.name}</a>
+                                            ))}
+                                        </div>
                                     </div>
+                                )}
+                                <div className="grid grid-cols-2 gap-2 text-xs mb-3">
                                     <div>
                                         <span className="text-stone-500">First: </span>
                                         <span className="text-stone-500">{formatDate(user.first_sign_in)}</span>

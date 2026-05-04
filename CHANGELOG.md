@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-34] - 2026-05-03
+
+### Added
+- **`/admin/organizations` page** — admin can now see every organization users created via `/organizations`, with owner email, member count, pending-invite count, and creation date. Click any row to expand and see the full member list + pending invites; admin actions include rename, transfer ownership (changes `created_by`), remove individual members, and delete the org entirely. Sidebar entry under "Users".
+- **`GET /api/admin/organizations`** — lists all orgs with member/invite counts.
+- **`GET /api/admin/organizations/[id]`** — fetches members + invites for one org.
+- **`PATCH /api/admin/organizations/[id]`** — rename or transfer ownership.
+- **`DELETE /api/admin/organizations/[id]?memberId=…`** — remove a single member.
+- **`DELETE /api/admin/organizations?id=…`** — hard-delete an org (cascades through `org_invites` + `org_members`; adopter records owned by members are unaffected).
+- **Org membership chips on `/admin/users`** — the "Organization" column now reads from the real `org_members` → `organizations` join (`json_group_array` aggregate in the GET query). Each chip links to `/admin/organizations?highlight=<orgId>` so admins can pivot from a user to their org context in one click. Filter by org name still works.
+
+### Removed
+- **`user_profiles.organization` legacy free-text column** dropped via migration `0037_drop_user_profiles_organization.sql`. It was only ever written by the `/admin/users` edit form and was never synced with the user-facing `/organizations` system, so the column displayed empty for everyone except users an admin manually annotated. The admin form's "Organization" input is also removed (desktop column + mobile card + edit modal). The `PUT /api/admin/users` body no longer accepts an `organization` field.
+
 ## [2.12.1-33] - 2026-05-03
 
 ### Fixed
