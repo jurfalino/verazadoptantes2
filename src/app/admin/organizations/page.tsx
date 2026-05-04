@@ -157,8 +157,8 @@ export default function AdminOrganizationsPage() {
                 />
             </div>
 
-            <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                <table className="w-full text-sm">
+            <div className="bg-white rounded-xl border border-stone-200 overflow-x-auto">
+                <table className="w-full text-sm min-w-[640px]">
                     <thead className="bg-stone-50 text-stone-600 text-xs uppercase tracking-wider">
                         <tr>
                             <th className="px-4 py-3 text-left">Name</th>
@@ -339,6 +339,7 @@ export default function AdminOrganizationsPage() {
                     </tbody>
                 </table>
             </div>
+            <p className="md:hidden text-xs text-stone-400 text-center pt-2">← desliza para ver más →</p>
         </div>
     );
 }

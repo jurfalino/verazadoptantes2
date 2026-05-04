@@ -397,7 +397,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                     {effectiveMode === 'existing' && (
                         <div className="mb-4">
                             <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.select_animal') || 'Select Animal'}</label>
-                            <select className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm" onChange={(e) => handleSelectExisting(e.target.value)} value={formData.id || ''}>
+                            <select className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-base md:text-sm" onChange={(e) => handleSelectExisting(e.target.value)} value={formData.id || ''}>
                                 <option value="">{t('adoption.choose_animal') || '-- Choose an animal --'}</option>
                                 {safeAvailableAnimals.map(a => (<option key={a.id} value={a.id}>{a.animalName} ({a.species}) - {formatShortDate(new Date(a.date))}</option>))}
                             </select>
@@ -466,7 +466,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                                 <div className="relative">
                                     <select
                                         required
-                                        className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-white text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm"
+                                        className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-white text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-base md:text-sm"
                                         value={formData.species.toLowerCase() || 'cat'}
                                         onChange={e => {
                                             if (e.target.value === '_other') {
@@ -618,7 +618,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                                         {t('adoption.verify_address') || 'Verify Address'}
                                     </label>
                                     <textarea
-                                        className="w-full p-3 rounded-lg border border-blue-200 bg-white text-blue-950 placeholder-blue-800/40 font-medium focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none resize-none text-sm"
+                                        className="w-full p-3 rounded-lg border border-blue-200 bg-white text-blue-950 placeholder-blue-800/40 font-medium focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none resize-none text-base md:text-sm"
                                         rows={2}
                                         value={formData.verifiedAddress}
                                         onChange={e => setFormData({ ...formData, verifiedAddress: e.target.value })}
@@ -672,7 +672,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
 
                     <div>
                         <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.notes')}</label>
-                        <textarea className="w-full p-3 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-none text-sm" rows={3} value={formData.details} onChange={e => setFormData({ ...formData, details: e.target.value })} placeholder={t('adoption.notes_placeholder')} />
+                        <textarea className="w-full p-3 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-none text-base md:text-sm" rows={3} value={formData.details} onChange={e => setFormData({ ...formData, details: e.target.value })} placeholder={t('adoption.notes_placeholder')} />
                     </div>
 
                     {/* Photo Upload */}
@@ -729,7 +729,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                                                         toast.error('Error', 'Failed to delete media', extractErrorId(e));
                                                     }
                                                 }}
-                                                className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
+                                                className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-semibold md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
                                                 title="Delete"
                                             >
                                                 ×
@@ -768,7 +768,7 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                                         <button
                                             type="button"
                                             onClick={() => setPendingImages(prev => prev.filter((_, i) => i !== idx))}
-                                            className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
+                                            className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-semibold md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
                                             title="Remove"
                                         >
                                             ×

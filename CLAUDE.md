@@ -72,6 +72,7 @@ The canonical database accessor is `src/lib/db.ts` — `getDb()`. It auto-detect
 - `contract-app/` — Standalone Vite app for PDF contract signing
 - `.agents/workflows/` — Mandatory agent workflows (deploy, code-quality, schema-sync, ui-review)
 - `docs/design-style-guide.md` — Canonical UI design system (8px grid, color tokens, button matrix, typography scale)
+- `docs/ux-ui-guidelines.md` — Decision-making framework: principles, patterns, persona conventions, anti-patterns we've walked back
 - `docs/D1_COMPATIBILITY.md` — Full D1 SQLite quirks and safe query patterns
 - `docs/code_quality_audit.md` — Dated full-codebase audit with security findings and tech-debt roadmap
 

@@ -2,6 +2,33 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.2] - 2026-05-04
+
+Minor version bump: comprehensive mobile breakpoint remediation across the user-facing
+app + admin pages, executing the plan in
+`.agents/audits/2026-05-04-mobile-breakpoint-comprehensive-plan.md`.
+
+### Fixed (P0 — blocking mobile experience)
+- **iOS Safari auto-zoom on form inputs eliminated.** Every `<input>`, `<textarea>`, and `<select>` in the adoption forms (10 sites across `AdoptionForm.tsx`, `AdoptionFormWizard.tsx`, `AdoptionFormEditV2.tsx`) had `text-sm` (14px), triggering iOS's auto-zoom on focus. Replaced with `text-base md:text-sm` — 16px on mobile (no zoom), 14px on desktop (unchanged). Per-component fix instead of a global `!important` rule to avoid blast radius on other text-sizing overrides.
+- **NotificationBell dropdown reworked as a bottom sheet on mobile.** Was using `fixed inset-x-0 top-14`, covering content with no scroll-back when opened mid-scroll. Now `fixed inset-x-0 bottom-0 max-h-[80vh] rounded-t-2xl` on mobile (slide-up sheet) and unchanged `sm:absolute sm:right-0 sm:mt-2` on desktop. Includes `paddingBottom: env(safe-area-inset-bottom)` so the iOS home indicator doesn't clip the last notification.
+- **`/admin/organizations` table now horizontally scrollable on mobile** (`overflow-x-auto` wrapper + `min-w-[640px]` on the table) with a "← desliza para ver más →" hint visible only at `<md`. Other admin pages already had card fallbacks; this one didn't.
+- **AdoptionFormEditV2 sticky save bar respects iOS safe-area-inset.** Added `paddingBottom: max(1rem, env(safe-area-inset-bottom))` so the bar clears the home indicator and stays above the soft keyboard.
+
+### Fixed (P1 — significant polish)
+- **Image delete buttons visible on touch.** 9 sites across `ImageGallery.tsx` (delete + set-as-profile), `AdoptionForm.tsx`, `AdoptionFormWizard.tsx`, `AdoptionFormEditV2.tsx`, `ImportWizard.tsx` had `opacity-0 group-hover:opacity-100` — invisible on touch. Replaced with `md:opacity-0 md:group-hover:opacity-100` so they're visible by default on mobile, hover-only on desktop. The 2 magnify icons (decorative cues, not actions) deliberately left hover-only to avoid visual clutter on every thumbnail.
+- **NotificationBell "Mark all read" tap target ≥44px** on mobile via `min-h-[44px] sm:min-h-0 px-2 -mr-2`. Per WCAG 2.5.5 / Apple HIG.
+- **Pink palette dark-theme remap added** in `globals.css` for ContactPills' "social" type (`bg-pink-50/100`, `text-pink-700`, `border-pink-200`). The audit had flagged blue/amber/red/purple/orange as broken in dark mode, but on inspection those palettes are already remapped — pink was the only genuine gap.
+
+### Added (documentation, bundled with this release)
+- `docs/ux-ui-guidelines.md` — decision-making framework: principles, patterns, persona conventions, anti-patterns we've walked back. Complements the existing `design-style-guide.md` (visual tokens) and the two `.agents/workflows/` review files (ui-review, ux-review).
+- `.agents/audits/2026-05-04-mobile-breakpoint-audit.md` — focused first-pass mobile audit (May 4 morning).
+- `.agents/audits/2026-05-04-mobile-breakpoint-comprehensive-plan.md` — whole-app comprehensive audit + phased remediation plan (May 4 afternoon). This release executes Phases 1 + 2 of that plan.
+- `.agents/workflows/ux-review.md` — humanistic UX review prompt (separate from the mechanical compliance lint at `.agents/workflows/ui-review.md`).
+- `CLAUDE.md` — Key Directories updated with pointer to `docs/ux-ui-guidelines.md`.
+
+### Internal
+- Phase 3 items deferred (not part of this release): mobile card layout for `/admin/organizations`, sticky/z-index stacking documentation, `inputMode`/`autocomplete` sweep on numeric/email/tel fields. See the comprehensive plan for context.
+
 ## [2.12.1-42] - 2026-05-04
 
 ### Added

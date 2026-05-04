@@ -375,7 +375,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
                             {!isObservation && effectiveMode === 'existing' && (
                                 <div>
                                     <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.select_animal')}</label>
-                                    <select className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm" onChange={(e) => handleSelectExisting(e.target.value)} value={formData.animalId || ''}>
+                                    <select className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-base md:text-sm" onChange={(e) => handleSelectExisting(e.target.value)} value={formData.animalId || ''}>
                                         <option value="">{t('adoption.choose_animal')}</option>
                                         {safeAvailableAnimals.map(a => (<option key={a.id} value={a.id}>{a.animalName} ({a.species})</option>))}
                                     </select>
@@ -394,18 +394,18 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
                                                 </button>
                                             </label>
                                         </div>
-                                        <input required={!unknownAnimal} disabled={unknownAnimal} className={`w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm ${unknownAnimal ? 'bg-stone-100 text-stone-500 cursor-not-allowed' : 'bg-white'}`} value={unknownAnimal ? '' : formData.animalName} onChange={e => setFormData(d => ({ ...d, animalName: e.target.value }))} placeholder={unknownAnimal ? (t('adoption.unknown_animal')) : t('adoption.animal_placeholder')} />
+                                        <input required={!unknownAnimal} disabled={unknownAnimal} className={`w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-base md:text-sm ${unknownAnimal ? 'bg-stone-100 text-stone-500 cursor-not-allowed' : 'bg-white'}`} value={unknownAnimal ? '' : formData.animalName} onChange={e => setFormData(d => ({ ...d, animalName: e.target.value }))} placeholder={unknownAnimal ? (t('adoption.unknown_animal')) : t('adoption.animal_placeholder')} />
                                     </div>
                                     <div>
                                         <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.species')}</label>
                                         {customSpecies ? (
                                             <div className="flex gap-2">
-                                                <input required autoFocus className="flex-1 h-10 px-4 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm" value={formData.species} onChange={e => setFormData(d => ({ ...d, species: e.target.value }))} placeholder={t('adoption.species_other_placeholder')} />
+                                                <input required autoFocus className="flex-1 h-10 px-4 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-base md:text-sm" value={formData.species} onChange={e => setFormData(d => ({ ...d, species: e.target.value }))} placeholder={t('adoption.species_other_placeholder')} />
                                                 <button type="button" onClick={() => { setCustomSpecies(false); setFormData(d => ({ ...d, species: 'cat' })); }} className="px-3 h-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-700 text-xs font-medium hover:bg-teal-100 transition-colors whitespace-nowrap" title={t('adoption.species_select_preset')}>↩ {t('adoption.species_presets')}</button>
                                             </div>
                                         ) : (
                                             <div className="relative">
-                                                <select required className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-white text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm" value={formData.species.toLowerCase() || 'cat'} onChange={e => { if (e.target.value === '_other') { setCustomSpecies(true); setFormData(d => ({ ...d, species: '' })); } else { setFormData(d => ({ ...d, species: e.target.value })); } }}>
+                                                <select required className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-white text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-base md:text-sm" value={formData.species.toLowerCase() || 'cat'} onChange={e => { if (e.target.value === '_other') { setCustomSpecies(true); setFormData(d => ({ ...d, species: '' })); } else { setFormData(d => ({ ...d, species: e.target.value })); } }}>
                                                     <option value="cat">{t('species.cat')} 🐱</option>
                                                     <option value="dog">{t('species.dog')} 🐶</option>
                                                     <option value="bird">{t('species.bird')} 🐦</option>
@@ -442,7 +442,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
 
                             <div>
                                 <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.notes')}</label>
-                                <textarea className="w-full p-3 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-none text-sm" rows={3} value={formData.details} onChange={e => setFormData(d => ({ ...d, details: e.target.value }))} placeholder={t('adoption.notes_placeholder')} />
+                                <textarea className="w-full p-3 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-none text-base md:text-sm" rows={3} value={formData.details} onChange={e => setFormData(d => ({ ...d, details: e.target.value }))} placeholder={t('adoption.notes_placeholder')} />
                             </div>
 
                             {/* Conditional Delivery / Verification Toggles */}
@@ -460,7 +460,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
                                     {formData.deliveredToHome && (
                                         <div className="mt-4 pt-4 border-t border-blue-100">
                                             <label className="block text-xs font-semibold text-blue-800 mb-1.5 uppercase tracking-wider flex items-center gap-1"><span>📍</span> {t('adoption.verify_address')}</label>
-                                            <textarea className="w-full p-3 rounded-lg border border-blue-200 bg-white text-blue-950 placeholder-blue-800/40 font-medium focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none resize-none text-sm" rows={2} value={formData.verifiedAddress} onChange={e => setFormData(d => ({ ...d, verifiedAddress: e.target.value }))} placeholder={t('adoption.address_placeholder')} />
+                                            <textarea className="w-full p-3 rounded-lg border border-blue-200 bg-white text-blue-950 placeholder-blue-800/40 font-medium focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none resize-none text-base md:text-sm" rows={2} value={formData.verifiedAddress} onChange={e => setFormData(d => ({ ...d, verifiedAddress: e.target.value }))} placeholder={t('adoption.address_placeholder')} />
                                         </div>
                                     )}
                                 </div>
@@ -529,7 +529,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
                                                 ) : (
                                                     <img src={pending.data} alt={`Pending photo ${idx + 1}`} className="w-20 h-20 object-cover rounded-lg border border-amber-300 ring-2 ring-amber-200" />
                                                 )}
-                                                <button type="button" onClick={() => setPendingImages(prev => prev.filter((_, i) => i !== idx))} className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow">×</button>
+                                                <button type="button" onClick={() => setPendingImages(prev => prev.filter((_, i) => i !== idx))} className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-semibold md:opacity-0 md:group-hover:opacity-100 transition-opacity flex items-center justify-center shadow">×</button>
                                             </div>
                                         ))}
                                     </div>

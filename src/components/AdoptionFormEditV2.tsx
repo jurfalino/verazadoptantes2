@@ -406,7 +406,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                     {!isObservation && effectiveMode === 'existing' && (
                         <div className="mb-4">
                             <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.select_animal') || 'Select Animal'}</label>
-                            <select className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm" onChange={(e) => handleSelectExisting(e.target.value)} value={formData.id || ''}>
+                            <select className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-base md:text-sm" onChange={(e) => handleSelectExisting(e.target.value)} value={formData.id || ''}>
                                 <option value="">{t('adoption.choose_animal') || '-- Choose an animal --'}</option>
                                 {safeAvailableAnimals.map(a => (<option key={a.id} value={a.id}>{a.animalName} ({a.species}) - {formatShortDate(new Date(a.date))}</option>))}
                             </select>
@@ -479,7 +479,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                                 <div className="relative">
                                     <select
                                         required={!isObservation}
-                                        className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-white text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm"
+                                        className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-white text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-base md:text-sm"
                                         value={formData.species.toLowerCase() || 'cat'}
                                         onChange={e => {
                                             if (e.target.value === '_other') {
@@ -631,7 +631,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                                         {t('adoption.verify_address') || 'Verify Address'}
                                     </label>
                                     <textarea
-                                        className="w-full p-3 rounded-lg border border-blue-200 bg-white text-blue-950 placeholder-blue-800/40 font-medium focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none resize-none text-sm"
+                                        className="w-full p-3 rounded-lg border border-blue-200 bg-white text-blue-950 placeholder-blue-800/40 font-medium focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none resize-none text-base md:text-sm"
                                         rows={2}
                                         value={formData.verifiedAddress}
                                         onChange={e => setFormData({ ...formData, verifiedAddress: e.target.value })}
@@ -686,7 +686,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
 
                     <div>
                         <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.notes')}</label>
-                        <textarea className="w-full p-3 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-none text-sm" rows={3} value={formData.details} onChange={e => setFormData({ ...formData, details: e.target.value })} placeholder={t('adoption.notes_placeholder')} />
+                        <textarea className="w-full p-3 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-none text-base md:text-sm" rows={3} value={formData.details} onChange={e => setFormData({ ...formData, details: e.target.value })} placeholder={t('adoption.notes_placeholder')} />
                     </div>
 
                     {/* Photo Upload */}
@@ -743,7 +743,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                                                         toast.error('Error', 'Failed to delete media', extractErrorId(e));
                                                     }
                                                 }}
-                                                className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
+                                                className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-semibold md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
                                                 title="Delete"
                                             >
                                                 ×
@@ -782,7 +782,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                                         <button
                                             type="button"
                                             onClick={() => setPendingImages(prev => prev.filter((_, i) => i !== idx))}
-                                            className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
+                                            className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-semibold md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
                                             title="Remove"
                                         >
                                             ×
@@ -806,8 +806,9 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                         </div>
                     </div>
 
-                    {/* Sticky Bottom Actions Bar */}
-                    <div className="sticky bottom-4 left-0 right-0 z-20 mt-6 bg-white/80 backdrop-blur-xl border border-teal-200 shadow-xl shadow-teal-900/5 p-4 rounded-xl flex justify-between items-center">
+                    {/* Sticky Bottom Actions Bar — pb adds safe-area inset on iOS so the bar
+                        clears the home indicator and stays above the soft keyboard. */}
+                    <div className="sticky bottom-4 left-0 right-0 z-20 mt-6 bg-white/80 backdrop-blur-xl border border-teal-200 shadow-xl shadow-teal-900/5 p-4 rounded-xl flex justify-between items-center" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
                         {onDelete && initialData && (
                             <button type="button" onClick={onDelete} className="px-4 py-2 text-sm font-semibold text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title={t('common.delete')}>
                                 {/* Trash Icon */}

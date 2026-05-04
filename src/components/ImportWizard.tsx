@@ -896,7 +896,7 @@ export default function ImportWizard() {
                                         )}
                                         <button
                                             onClick={() => removeImage(i)}
-                                            className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                                            className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs md:opacity-0 md:group-hover:opacity-100 transition-opacity"
                                         >
                                             ✕
                                         </button>
@@ -1043,7 +1043,7 @@ export default function ImportWizard() {
                                                     e.stopPropagation();
                                                     setLightboxItem({ url: `/api/proxy-image?url=${encodeURIComponent(url)}`, mediaType: 'image' });
                                                 }}
-                                                className="absolute bottom-1 left-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 hover:bg-black/80 transition-opacity cursor-pointer"
+                                                className="absolute bottom-1 left-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center text-xs md:opacity-0 md:group-hover:opacity-100 hover:bg-black/80 transition-opacity cursor-pointer"
                                                 title="Expand image"
                                             >
                                                 ⤢
@@ -1102,7 +1102,7 @@ export default function ImportWizard() {
                                         <img src={img.preview} alt="" className="w-full h-20 object-cover rounded-lg" />
                                         <button
                                             onClick={() => removeImage(i)}
-                                            className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                                            className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs md:opacity-0 md:group-hover:opacity-100 transition-opacity"
                                         >
                                             ✕
                                         </button>
