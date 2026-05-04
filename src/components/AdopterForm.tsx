@@ -83,6 +83,65 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
 
     const DUPLICATE_DEBOUNCE_MS = 350;
 
+    // ── Avatar profile-photo upload (empty-state only) ──────────────────────
+    // When an adopter has no photo yet, the initials placeholder is clickable
+    // for any authenticated user. Funnels into the same saveImage pipeline used
+    // by ImageGallery; flagged isProfilePicture so the avatar fills immediately.
+    const avatarFileInputRef = useRef<HTMLInputElement>(null);
+    const [avatarUploading, setAvatarUploading] = useState(false);
+
+    const compressAvatar = (file: File): Promise<string> => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                if (!ctx) { reject(new Error('Canvas context failed')); return; }
+                const max = 1200;
+                let w = img.width, h = img.height;
+                if (w > h) { if (w > max) { h = (h * max) / w; w = max; } }
+                else { if (h > max) { w = (w * max) / h; h = max; } }
+                canvas.width = w; canvas.height = h;
+                ctx.drawImage(img, 0, 0, w, h);
+                resolve(canvas.toDataURL('image/jpeg', 0.85));
+            };
+            img.onerror = () => reject(new Error('Image decode failed'));
+            img.src = e.target?.result as string;
+        };
+        reader.onerror = () => reject(new Error('File read failed'));
+        reader.readAsDataURL(file);
+    });
+
+    const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            toast.error(t('common.error') || 'Error', t('adopter.upload_invalid_type') || 'Please choose an image file.');
+            return;
+        }
+        if (!id) {
+            // Brand-new adopter being created — no id to attach to yet.
+            toast.warning(t('common.error') || 'Heads up', t('adopter.upload_save_first') || 'Save the profile first, then add a photo.');
+            return;
+        }
+        setAvatarUploading(true);
+        try {
+            const dataUrl = await compressAvatar(file);
+            await saveImage(id, dataUrl, t('adopter.profile_photo_caption') || 'Profile photo', undefined, 'image', true);
+            toast.success('✓', t('adopter.upload_success') || 'Profile photo updated.');
+            // Refresh the page so the server-fetched images list (and the avatar) updates.
+            window.location.reload();
+        } catch (err) {
+            console.error('[AdopterForm] avatar upload failed:', err);
+            toast.error(t('common.error') || 'Error', t('adopter.upload_failed') || 'Could not upload the photo. Try again.');
+        } finally {
+            setAvatarUploading(false);
+            // Reset the input so picking the same file again still triggers onChange
+            if (avatarFileInputRef.current) avatarFileInputRef.current.value = '';
+        }
+    };
+
     // Focus "Create new profile anyway" when save duplicate modal opens (accessibility)
     useEffect(() => {
         if (saveDuplicateModal) {
@@ -313,9 +372,55 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                             }
                             const name = initialData?.name || '';
                             const initials = name.split(' ').filter(Boolean).map((w: string) => w[0]).slice(0, 2).join('').toUpperCase();
+                            const placeholder = (
+                                <div className="w-11 h-11 md:w-14 md:h-14 rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm">
+                                    {avatarUploading ? (
+                                        <svg className="w-5 h-5 text-white animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" />
+                                            <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                                        </svg>
+                                    ) : (
+                                        <span className="text-white font-semibold text-sm md:text-lg">{initials || '?'}</span>
+                                    )}
+                                </div>
+                            );
+                            // Only authenticated users see the upload affordance.
+                            // Anonymous viewers get a non-interactive placeholder.
+                            if (!isAuthenticated) {
+                                return <div className="flex-shrink-0">{placeholder}</div>;
+                            }
                             return (
-                                <div className="w-11 h-11 md:w-14 md:h-14 rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center flex-shrink-0 shadow-sm">
-                                    <span className="text-white font-semibold text-sm md:text-lg">{initials || '?'}</span>
+                                <div className="relative flex-shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={() => avatarFileInputRef.current?.click()}
+                                        disabled={avatarUploading}
+                                        aria-label={t('adopter.add_profile_photo') || 'Add profile photo'}
+                                        title={t('adopter.add_profile_photo') || 'Add profile photo'}
+                                        className="block rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 hover:opacity-90 transition-opacity"
+                                    >
+                                        {placeholder}
+                                    </button>
+                                    {/* Camera badge — bottom-right of the avatar circle.
+                                        Persistent (not hover-only) so it works on touch. */}
+                                    {!avatarUploading && (
+                                        <span
+                                            className="pointer-events-none absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-white border border-stone-200 flex items-center justify-center shadow-sm text-stone-600"
+                                            aria-hidden="true"
+                                        >
+                                            <svg className="w-3 h-3" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M3 7a1 1 0 0 1 1-1h2.5l1-1.5h5l1 1.5H16a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7Z" />
+                                                <circle cx="10" cy="11" r="2.5" />
+                                            </svg>
+                                        </span>
+                                    )}
+                                    <input
+                                        ref={avatarFileInputRef}
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={handleAvatarFileChange}
+                                    />
                                 </div>
                             );
                         })()}

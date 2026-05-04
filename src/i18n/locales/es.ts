@@ -221,6 +221,12 @@ export const es = {
     adopter: {
         identifications: 'Identificaciones',
         image_expired: 'Imagen expirada',
+        add_profile_photo: 'Agregar foto de perfil',
+        profile_photo_caption: 'Foto de perfil',
+        upload_invalid_type: 'Por favor elegí un archivo de imagen.',
+        upload_save_first: 'Guardá el perfil primero, luego podés agregar una foto.',
+        upload_success: 'Foto de perfil actualizada.',
+        upload_failed: 'No se pudo subir la foto. Probá de nuevo.',
         title_new: 'Nuevo Adoptante',
         title_profile: 'Perfil de Adoptante',
         id: 'ID',

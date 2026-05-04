@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-38] - 2026-05-04
+
+### Added
+- **Click-the-initials avatar to upload a profile photo.** When an adopter has no profile picture yet, the teal initials placeholder in the profile header is now a button (only for authenticated users). Clicking it opens the OS file picker; the chosen image is compressed client-side (max 1200px JPEG @ 0.85 quality) and uploaded via the existing `saveImage` pipeline with `isProfilePicture: true` so the avatar fills immediately on reload. A small camera SVG badge sits at the bottom-right of the avatar circle as a persistent affordance (mobile-friendly — no hover required). Loading state replaces the initials with a spinner during upload. Anonymous viewers see a non-interactive placeholder (no fake CTA that gates on click).
+
+### Changed
+- **`saveImage` action** gains an optional 6th param `isProfilePicture?: boolean`. Default false (backward compatible — all 7 existing call sites unaffected). When true, the action atomically demotes any existing profile picture before inserting the new one, so the "exactly one profile picture per adopter" invariant holds without a follow-up `setProfilePicture` round-trip. Triggers `revalidatePath` for the adopter page so the new photo appears on next render.
+
+### Internal
+- New i18n keys: `adopter.add_profile_photo`, `adopter.profile_photo_caption`, `adopter.upload_invalid_type`, `adopter.upload_save_first`, `adopter.upload_success`, `adopter.upload_failed` (ES + EN).
+
 ## [2.12.1-37] - 2026-05-04
 
 ### Removed

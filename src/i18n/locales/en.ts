@@ -220,6 +220,12 @@ export const en = {
         send_report: 'Send Report',
     },
     adopter: {
+        add_profile_photo: 'Add profile photo',
+        profile_photo_caption: 'Profile photo',
+        upload_invalid_type: 'Please choose an image file.',
+        upload_save_first: 'Save the profile first, then add a photo.',
+        upload_success: 'Profile photo updated.',
+        upload_failed: 'Could not upload the photo. Try again.',
         title_new: 'New Adopter',
         title_profile: 'Adopter Profile',
         id: 'ID',
