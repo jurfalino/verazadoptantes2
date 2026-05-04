@@ -222,6 +222,8 @@ export const en = {
     },
     adopter: {
         add_profile_photo: 'Add profile photo',
+        view_profile_photo: 'View profile photo',
+        change_profile_photo: 'Change photo',
         profile_photo_caption: 'Profile photo',
         upload_invalid_type: 'Please choose an image file.',
         upload_save_first: 'Save the profile first, then add a photo.',

@@ -223,6 +223,8 @@ export const es = {
         identifications: 'Identificaciones',
         image_expired: 'Imagen expirada',
         add_profile_photo: 'Agregar foto de perfil',
+        view_profile_photo: 'Ver foto de perfil',
+        change_profile_photo: 'Cambiar foto',
         profile_photo_caption: 'Foto de perfil',
         upload_invalid_type: 'Por favor elegí un archivo de imagen.',
         upload_save_first: 'Guardá el perfil primero, luego podés agregar una foto.',

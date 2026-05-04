@@ -10,6 +10,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { RatingBadge } from '@/components/RatingBadge';
+import { MediaLightbox, type MediaItem } from '@/components/ui/MediaLightbox';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 
@@ -89,6 +90,8 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     // by ImageGallery; flagged isProfilePicture so the avatar fills immediately.
     const avatarFileInputRef = useRef<HTMLInputElement>(null);
     const [avatarUploading, setAvatarUploading] = useState(false);
+    // Lightbox for the filled-state profile photo (tap to view; "Cambiar" inside replaces).
+    const [profilePhotoLightboxItem, setProfilePhotoLightboxItem] = useState<MediaItem | null>(null);
 
     const compressAvatar = (file: File): Promise<string> => new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -345,6 +348,43 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     return (
         <div className={`bg-white rounded-2xl shadow-sm border border-stone-200 relative group transition-all duration-300 overflow-hidden ${isEditing ? 'ring-4 ring-teal-50/50' : ''}`}>
 
+            {/* Hoisted hidden file input — triggered by both the empty-state camera button
+                AND the "Cambiar foto" action inside the profile-photo lightbox. Single ref,
+                single handler, two callers. */}
+            {isAuthenticated && !isNew && (
+                <input
+                    ref={avatarFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleAvatarFileChange}
+                />
+            )}
+
+            {/* Profile photo lightbox — opens when user taps the filled avatar.
+                Header injects "Cambiar foto" for authenticated users. */}
+            <MediaLightbox
+                item={profilePhotoLightboxItem}
+                onClose={() => setProfilePhotoLightboxItem(null)}
+                actions={isAuthenticated && !isNew ? (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setProfilePhotoLightboxItem(null);
+                            avatarFileInputRef.current?.click();
+                        }}
+                        disabled={avatarUploading}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-white/15 text-white hover:bg-white/25 transition-colors backdrop-blur-sm"
+                    >
+                        <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M3 7a1 1 0 0 1 1-1h2.5l1-1.5h5l1 1.5H16a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7Z" />
+                            <circle cx="10" cy="11" r="2.5" />
+                        </svg>
+                        {t('adopter.change_profile_photo') || 'Change photo'}
+                    </button>
+                ) : undefined}
+            />
+
             <form onSubmit={handleSave} className="p-5">
                 {/* ═══ IDENTITY HEADER ═══ */}
                 <div className="flex flex-col gap-3 mb-4">
@@ -364,10 +404,22 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                 ? (images.find(img => img.isProfilePicture === 1) || images[0])
                                 : null;
                             if (profilePic) {
-                                return (
-                                    <div className="w-11 h-11 md:w-14 md:h-14 rounded-xl bg-teal-100 overflow-hidden ring-2 ring-teal-200 shadow-sm flex-shrink-0">
-                                        <img src={profilePic.url.includes('r2.dev') ? `/api/proxy-image?url=${encodeURIComponent(profilePic.url)}` : profilePic.url} alt="" className="w-full h-full object-cover" />
+                                const displayUrl = profilePic.url.includes('r2.dev') ? `/api/proxy-image?url=${encodeURIComponent(profilePic.url)}` : profilePic.url;
+                                const photoEl = (
+                                    <div className="w-11 h-11 md:w-14 md:h-14 rounded-xl bg-teal-100 overflow-hidden ring-2 ring-teal-200 shadow-sm">
+                                        <img src={displayUrl} alt="" className="w-full h-full object-cover" />
                                     </div>
+                                );
+                                return (
+                                    <button
+                                        type="button"
+                                        onClick={() => setProfilePhotoLightboxItem({ url: displayUrl, mediaType: 'image' })}
+                                        aria-label={t('adopter.view_profile_photo') || 'View profile photo'}
+                                        title={t('adopter.view_profile_photo') || 'View profile photo'}
+                                        className="flex-shrink-0 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 hover:opacity-90 transition-opacity"
+                                    >
+                                        {photoEl}
+                                    </button>
                                 );
                             }
                             const name = initialData?.name || '';
@@ -414,13 +466,6 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                             </svg>
                                         </span>
                                     )}
-                                    <input
-                                        ref={avatarFileInputRef}
-                                        type="file"
-                                        accept="image/*"
-                                        className="hidden"
-                                        onChange={handleAvatarFileChange}
-                                    />
                                 </div>
                             );
                         })()}

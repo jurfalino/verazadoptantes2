@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-42] - 2026-05-04
+
+### Added
+- **Tap a filled profile-photo avatar to open it in a lightbox view.** Previously the avatar was a dead element once filled — only the empty initials placeholder was clickable (for upload). This fixes the inconsistent affordance: the avatar slot now does something useful in both states. Mobile users finally get a usable enlarged view of the face for trust judgement.
+- **"Cambiar foto" action inside the lightbox** — small button in the lightbox header (next to the close X) for authenticated users. Triggers the same hidden file input + `saveImage(..., isProfilePicture: true)` pipeline used by empty-state upload (atomic replace, previous photo automatically demoted). Anonymous viewers see the lightbox view-only without the change action.
+- Remove-photo intentionally NOT added to the lightbox in this release — destructive action with no undo, kept in the existing Photos collapsible to avoid one-tap accidental removals. Can be added later with a confirmation step if users complain it's hard to find.
+
+### Changed
+- **`MediaLightbox` gains an optional `actions?: ReactNode` prop** for header injection. Backward-compatible — all existing consumers (AdoptionForm, AdoptionHistory, etc.) call without the prop and render unchanged. Caller is responsible for layout/styling of injected nodes.
+- **`AdopterForm` hoists the hidden file input** out of the empty-state render branch to a stable location at the top of the form. Single ref + handler now serves both the empty-state camera button (v38) and the lightbox replace button (v42). Avoids the "two `<input>` elements sharing one ref" anti-pattern.
+
+### Added (i18n)
+- `adopter.view_profile_photo` (ES: "Ver foto de perfil" / EN: "View profile photo") — aria-label/title for the filled-avatar button.
+- `adopter.change_profile_photo` (ES: "Cambiar foto" / EN: "Change photo") — lightbox-internal replace button.
+
 ## [2.12.1-41] - 2026-05-04
 
 ### Fixed
