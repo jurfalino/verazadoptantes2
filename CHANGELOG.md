@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-31] - 2026-05-03
+
+### Added
+- **`/api/ready` strict readiness probe** — returns 200 ONLY when the D1 binding can actually answer a query. Edge runtime, no caching, ~1 cheap `SELECT … LIMIT 1` against `appConfig`. Distinct from `/api/health` (which probes external services with their own timeouts) and `/api/config` (which falls back to defaults on DB failure).
+
+### Fixed
+- **Intermittent CI e2e failure** — Playwright's `webServer.url` now polls `/api/ready` instead of `/`, eliminating the boot race between Next.js (binding port 3000) and miniflare (wiring up D1). Previously Playwright would proceed as soon as the port responded, sometimes before miniflare's D1 worker was healthy — causing cascading `AssertionError [ERR_ASSERTION]: false == true` failures from `SynchronousFetcher.fetch` on every server action that touched the DB. Surfaced sporadically (~10% rate) in v2.12.1-20 and v2.12.1-30 e2e runs.
+
 ## [2.12.1-30] - 2026-05-03
 
 ### Removed
