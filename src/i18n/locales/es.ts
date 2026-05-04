@@ -196,6 +196,7 @@ export const es = {
         hero_features: 'Funcionalidades',
         value_verify: 'Buscá, verificá y reportá adoptantes',
         value_register: 'Registrá adopciones y pedidos de adopción',
+        value_main: 'Busca adoptantes y Registra adopciones',
     },
     legal: {
         consent_checkbox: 'Al guardar, aceptás los',

@@ -197,6 +197,7 @@ export const en = {
         hero_features: 'Features',
         value_verify: 'Search, verify, and report adopters',
         value_register: 'Record adoptions and adoption requests',
+        value_main: 'Search adopters and record adoptions',
     },
     legal: {
         consent_checkbox: 'By saving, you agree to the',

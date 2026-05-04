@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.1-39] - 2026-05-04
+
+### Changed
+- **Homepage hero slimmed down to a single value-prop line.** Removed the 40px hero shield-paw icon (already shown in the sticky nav above), the H1 "Registro de Adopciones", both existing value-prop lines (verifier + recorder), and both pill links. Replaced with one combined line above the search: **"Busca adoptantes y Registra adopciones"** (ES) / **"Search adopters and record adoptions"** (EN). Pulls the search input above the fold on mobile and eliminates the double-branding with the sticky nav. The `hidden md:block` collapse-on-mobile-when-results-visible behavior is preserved.
+- **Adoption Guide and Funcionalidades links moved to the homepage footer**, alongside Privacy / Terms / Contact, with the same `·` separator pattern. Guide remains locale-aware (`/guia` ES, `/guide` EN).
+
+### Added
+- New i18n key `home.value_main` (ES + EN) for the combined value-prop line.
+
+### Internal
+- Dropped now-unused imports from `SearchSection.tsx`: `ShieldPawIcon` (still used by the global nav `Logo` component, just not here) and `Link` (no remaining `<Link>` usage in this file).
+- Orphaned (NOT deleted): `home.title`, `home.value_verify`, `home.value_register`. Defer cleanup to a separate housekeeping commit after a release with no regressions.
+
 ## [2.12.1-38] - 2026-05-04
 
 ### Added

@@ -34,8 +34,6 @@ import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { formatShortDate } from '@/lib/dates';
 import { zarazTrack } from '@/lib/zaraz';
-import { ShieldPawIcon } from '@/components/Logo';
-import Link from 'next/link';
 
 export default function SearchSection({ locale, showCardMetadata = true }: { locale?: string; showCardMetadata?: boolean }) {
     const { t } = useLanguage();
@@ -183,32 +181,12 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
 
     return (
         <div className="w-full">
-            {/* Hero header — outside the card, hides when results visible */}
-            <div className={`text-center mb-5 ${hasResults ? 'hidden md:block' : ''}`}>
-                <ShieldPawIcon className="w-10 h-10 mx-auto mb-2" />
-                <h1 className="text-3xl font-extrabold text-stone-900 mb-2 tracking-tight">{t('home.title')}</h1>
-                <div className="flex flex-col items-center gap-1 mb-3">
-                    <p className="text-stone-500 text-sm font-medium flex items-center gap-2">
-                        <svg className="w-4 h-4 text-teal-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
-                        {t('home.value_verify')}
-                    </p>
-                    <p className="text-stone-500 text-sm font-medium flex items-center gap-2">
-                        <svg className="w-4 h-4 text-teal-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
-                        {t('home.value_register')}
-                    </p>
-                </div>
-                <div className="flex items-center justify-center gap-2 flex-wrap">
-                    <Link href={locale === 'en' ? '/guide' : '/guia'} className="hero-pill group">
-                        <svg className="w-3.5 h-3.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" /></svg>
-                        <span>{t('home.hero_guide')}</span>
-                        <svg className="w-3 h-3 opacity-40 group-hover:opacity-70 group-hover:translate-x-0.5 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
-                    </Link>
-                    <Link href="/funcionalidades" className="hero-pill group">
-                        <svg className="w-3.5 h-3.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" /></svg>
-                        <span>{t('home.hero_features')}</span>
-                        <svg className="w-3 h-3 opacity-40 group-hover:opacity-70 group-hover:translate-x-0.5 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
-                    </Link>
-                </div>
+            {/* Slim hero — single value-prop line above the search.
+                Collapses on mobile when results are visible (existing pattern). */}
+            <div className={`text-center mb-4 ${hasResults ? 'hidden md:block' : ''}`}>
+                <p className="text-stone-600 text-sm md:text-base font-medium">
+                    {t('home.value_main')}
+                </p>
             </div>
 
             {/* Search card — just the search tool */}
