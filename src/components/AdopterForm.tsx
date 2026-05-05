@@ -120,12 +120,12 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         const file = e.target.files?.[0];
         if (!file) return;
         if (!file.type.startsWith('image/')) {
-            toast.error(t('common.error') || 'Error', t('adopter.upload_invalid_type') || 'Please choose an image file.');
+            toast.error(t('errors.generic'), t('adopter.upload_invalid_type') || 'Please choose an image file.');
             return;
         }
         if (!id) {
             // Brand-new adopter being created — no id to attach to yet.
-            toast.warning(t('common.error') || 'Heads up', t('adopter.upload_save_first') || 'Save the profile first, then add a photo.');
+            toast.warning(t('errors.generic'), t('adopter.upload_save_first') || 'Save the profile first, then add a photo.');
             return;
         }
         setAvatarUploading(true);
@@ -137,7 +137,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             window.location.reload();
         } catch (err) {
             console.error('[AdopterForm] avatar upload failed:', err);
-            toast.error(t('common.error') || 'Error', t('adopter.upload_failed') || 'Could not upload the photo. Try again.');
+            toast.error(t('errors.generic'), t('adopter.upload_failed') || 'Could not upload the photo. Try again.');
         } finally {
             setAvatarUploading(false);
             // Reset the input so picking the same file again still triggers onChange
@@ -291,11 +291,11 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                 }
             } else {
                 console.error("[ADOPTER FORM] Save failed - no success flag");
-                toast.error('Error', 'Failed to save adopter profile.');
+                toast.error(t('errors.generic'), t('errors.save_adopter_failed'));
             }
         } catch (err: any) {
             console.error("Save Error:", err);
-            toast.error('Save Error', err?.message || 'An unexpected error occurred while saving.', extractErrorId(err));
+            toast.error(t('toast.save_error_title'), err?.message || t('errors.unexpected'), extractErrorId(err));
         } finally {
             setLoading(false);
         }

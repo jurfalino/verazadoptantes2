@@ -104,7 +104,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
     }, [editAdoptionParam, editingId]);
 
     const handleDelete = async (adoptionId: string) => {
-        if (!confirm('Are you sure you want to delete this adoption record? This action cannot be undone.')) return;
+        if (!confirm(t('dialogs.confirm_delete_record'))) return;
 
         setDeletingId(adoptionId);
         try {
@@ -112,7 +112,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
             router.refresh();
         } catch (error) {
             console.error('Failed to delete adoption:', error);
-            toast.error('Error', 'Failed to delete adoption record.', extractErrorId(error));
+            toast.error(t('errors.generic'), t('errors.delete_record_failed'), extractErrorId(error));
         } finally {
             setDeletingId(null);
         }

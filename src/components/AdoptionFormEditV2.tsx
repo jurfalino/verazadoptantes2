@@ -222,13 +222,13 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
 
         // Validate file type
         if (!file.type.startsWith('image/') && !isVideoFile) {
-            toast.error('Invalid File', 'Please select an image or video file.');
+            toast.error(t('toast.invalid_file_title'), t('errors.upload_invalid_file'));
             return;
         }
 
         // Video size limit: 50MB
         if (isVideoFile && file.size > 50 * 1024 * 1024) {
-            toast.warning('Video Too Large', 'Maximum video size is 50MB.');
+            toast.warning(t('toast.video_too_large_title'), t('errors.upload_video_too_large'));
             return;
         }
 
@@ -281,7 +281,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
             }
         } catch (error) {
             console.error('Upload error:', error instanceof Error ? error.message : error);
-            toast.error('Upload Failed', 'Could not upload the file. Please try again.', extractErrorId(error));
+            toast.error(t('toast.upload_failed_title'), t('errors.upload_failed'), extractErrorId(error));
         } finally {
             setUploading(false);
         }
@@ -349,7 +349,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
             }
         } catch (err) {
             console.error(err);
-            toast.error('Error', 'Failed to save adoption record. Please try again.', extractErrorId(err));
+            toast.error(t('errors.generic'), t('errors.save_adoption_failed'), extractErrorId(err));
         } finally {
             setLoading(false);
         }
@@ -735,16 +735,16 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                                             <button
                                                 type="button"
                                                 onClick={async () => {
-                                                    if (!confirm('Delete this media?')) return;
+                                                    if (!confirm(t('dialogs.confirm_delete_media'))) return;
                                                     try {
                                                         await deleteImage(img.id, adopterId);
                                                         setAdoptionImages(prev => prev.filter(i => i.id !== img.id));
                                                     } catch (e) {
-                                                        toast.error('Error', 'Failed to delete media', extractErrorId(e));
+                                                        toast.error(t('errors.generic'), t('errors.delete_media_failed'), extractErrorId(e));
                                                     }
                                                 }}
                                                 className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-semibold md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
-                                                title="Delete"
+                                                title={t('common.delete')}
                                             >
                                                 ×
                                             </button>
@@ -783,7 +783,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                                             type="button"
                                             onClick={() => setPendingImages(prev => prev.filter((_, i) => i !== idx))}
                                             className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-semibold md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
-                                            title="Remove"
+                                            title={t('common.delete')}
                                         >
                                             ×
                                         </button>

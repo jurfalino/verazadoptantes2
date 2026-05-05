@@ -116,7 +116,7 @@ export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
 
                         {showQr ? (
                             <div className="p-5 flex flex-col items-center">
-                                <p className="text-xs text-stone-500 mb-3 text-center">Que el adoptante escanee para abrir el formulario</p>
+                                <p className="text-xs text-stone-500 mb-3 text-center">{t('share.form_qr_hint')}</p>
                                 <img src={getQrImageSrc(fullUrl)} alt="QR del enlace" className="rounded-xl border border-stone-200 bg-white" width={220} height={220} />
                                 <p className="text-xs text-stone-400 mt-3 truncate max-w-full px-2">{fullUrl}</p>
                             </div>
@@ -135,8 +135,8 @@ export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                                 </div>
                                 <div>
-                                    <p className="text-sm font-semibold text-stone-900">Abrir en nueva pestaña</p>
-                                    <p className="text-xs text-stone-500">Ver el formulario como lo verá el adoptante</p>
+                                    <p className="text-sm font-semibold text-stone-900">{t('share.open_in_new_tab')}</p>
+                                    <p className="text-xs text-stone-500">{t('share.form_preview_hint')}</p>
                                 </div>
                             </a>
 
@@ -160,7 +160,7 @@ export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
                                 <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center text-lg flex-shrink-0">💬</div>
                                 <div>
                                     <p className="text-sm font-semibold text-stone-900">WhatsApp</p>
-                                    <p className="text-xs text-stone-500">Enviar por mensaje</p>
+                                    <p className="text-xs text-stone-500">{t('share.via_message')}</p>
                                 </div>
                             </button>
 
@@ -171,7 +171,7 @@ export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
                                 <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-lg flex-shrink-0">📧</div>
                                 <div>
                                     <p className="text-sm font-semibold text-stone-900">Email</p>
-                                    <p className="text-xs text-stone-500">Enviar por correo electrónico</p>
+                                    <p className="text-xs text-stone-500">{t('share.via_email')}</p>
                                 </div>
                             </button>
 
@@ -183,8 +183,8 @@ export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
                                     <svg className="w-5 h-5 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
                                 </div>
                                 <div>
-                                    <p className="text-sm font-semibold text-stone-900">Código QR</p>
-                                    <p className="text-xs text-stone-500">Mostrar QR para escanear</p>
+                                    <p className="text-sm font-semibold text-stone-900">{t('common.qr_code')}</p>
+                                    <p className="text-xs text-stone-500">{t('share.qr_show')}</p>
                                 </div>
                             </button>
 
@@ -196,7 +196,7 @@ export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
                                     <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center text-lg flex-shrink-0">📤</div>
                                     <div>
                                         <p className="text-sm font-semibold text-stone-900">Más opciones...</p>
-                                        <p className="text-xs text-stone-500">Compartir usando apps del sistema</p>
+                                        <p className="text-xs text-stone-500">{t('share.more_options')}</p>
                                     </div>
                                 </button>
                             )}
@@ -205,7 +205,7 @@ export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
                         {/* Footer */}
                         <div className="px-5 pb-4 pt-1">
                             <p className="text-xs text-stone-500 text-center">
-                                El adoptante podrá completar el formulario desde este enlace
+                                {t('share.form_footer_hint')}
                             </p>
                         </div>
                         </>

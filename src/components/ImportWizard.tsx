@@ -1044,7 +1044,7 @@ export default function ImportWizard() {
                                                     setLightboxItem({ url: `/api/proxy-image?url=${encodeURIComponent(url)}`, mediaType: 'image' });
                                                 }}
                                                 className="absolute bottom-1 left-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center text-xs md:opacity-0 md:group-hover:opacity-100 hover:bg-black/80 transition-opacity cursor-pointer"
-                                                title="Expand image"
+                                                title={t('nav.expand_image')}
                                             >
                                                 ⤢
                                             </div>

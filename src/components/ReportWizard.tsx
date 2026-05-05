@@ -117,7 +117,7 @@ export default function ReportWizard() {
 
         } catch (e) {
             console.error(e);
-            toast.error('Error', 'Something went wrong. Please try again.', extractErrorId(e));
+            toast.error(t('errors.generic'), t('errors.unexpected'), extractErrorId(e));
         } finally {
             setLoading(false);
         }

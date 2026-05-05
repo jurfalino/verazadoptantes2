@@ -9,7 +9,7 @@ const languages = [
 ];
 
 export function LanguageSwitcher() {
-    const { locale, setLocale } = useLanguage();
+    const { locale, setLocale, t } = useLanguage();
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -30,8 +30,8 @@ export function LanguageSwitcher() {
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 className="p-2 rounded-xl hover:bg-stone-200/50 transition-colors flex items-center gap-1"
-                title="Change language"
-                aria-label="Change language"
+                title={t('nav.change_language')}
+                aria-label={t('nav.change_language')}
             >
                 <span className="text-lg">{currentLang.flag}</span>
                 <span className="text-xs font-semibold text-stone-500 uppercase">{currentLang.id}</span>

@@ -81,7 +81,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
             }
         } catch (err) {
             console.error(err);
-            toast.error('Search Failed', 'An error occurred while searching. Please try again.', extractErrorId(err));
+            toast.error(t('toast.search_failed_title'), t('errors.search_failed'), extractErrorId(err));
         } finally {
             setLoading(false);
         }
@@ -158,7 +158,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
             }
         } catch (err) {
             console.error(err);
-            toast.error('Search Failed', 'An error occurred while searching. Please try again.');
+            toast.error(t('toast.search_failed_title'), t('errors.search_failed'));
         } finally {
             setLoading(false);
         }
@@ -320,7 +320,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                             <button
                                 onClick={() => setSingleTokenResultCount(undefined)}
                                 className="text-amber-400 hover:text-amber-600 flex-shrink-0 transition-colors"
-                                aria-label="Cerrar sugerencia"
+                                aria-label={t('nav.close_suggestion')}
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                             </button>

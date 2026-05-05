@@ -171,11 +171,11 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                     resetAndClose();
                     router.refresh();
                 } else {
-                    toast.error('Error', 'Failed to submit report.');
+                    toast.error(t('errors.generic'), t('errors.submit_report_failed'));
                 }
             } catch (e) {
                 console.error(e);
-                toast.error('Error', 'Error submitting report.', extractErrorId(e));
+                toast.error(t('errors.generic'), t('errors.report_error'), extractErrorId(e));
             } finally {
                 setSubmitLoading(false);
             }
@@ -202,10 +202,10 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                     zarazTrack('flag_submitted', { flagType: reason });
                     setDataRequestSubmitted(true);
                 } else {
-                    toast.error('Error', 'Failed to submit request.');
+                    toast.error(t('errors.generic'), t('errors.submit_request_failed'));
                 }
             } catch {
-                toast.error('Error', 'Error submitting request.');
+                toast.error(t('errors.generic'), t('errors.request_error'));
             } finally {
                 setSubmitLoading(false);
             }
@@ -222,11 +222,11 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                 resetAndClose();
                 router.refresh();
             } else {
-                toast.error('Error', 'Failed to submit report.');
+                toast.error(t('errors.generic'), t('errors.submit_report_failed'));
             }
         } catch (e) {
             console.error(e);
-            toast.error('Error', 'Error submitting report.', extractErrorId(e));
+            toast.error(t('errors.generic'), t('errors.report_error'), extractErrorId(e));
         } finally {
             setSubmitLoading(false);
         }

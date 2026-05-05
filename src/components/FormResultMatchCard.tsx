@@ -83,7 +83,7 @@ export default function FormResultMatchCard({
                 );
                 setTimeout(() => router.push(`/adopter/${profile.id}`), 400);
             } else {
-                toast.error('Error', L('link_error'));
+                toast.error(t('errors.generic'), L('link_error'));
                 setLinking(false);
             }
         } catch (e) {

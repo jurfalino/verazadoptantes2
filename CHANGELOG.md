@@ -2,6 +2,35 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.3] - 2026-05-04
+
+Minor version bump: i18n sweep across user-facing components — Spanish users no longer
+see English error messages, English users no longer see Spanish share menus, and the
+adoption wizard buttons (Siguiente / Atrás / Guardar Registro) finally translate.
+
+### Added (i18n keys, ES + EN)
+- **`errors.*`** namespace expanded with ~35 specific action-failure keys: `upload_failed`, `upload_invalid_file`, `upload_invalid_image`, `upload_video_too_large`, `upload_process_failed`, `save_adoption_failed`, `save_adopter_failed`, `save_failed_generic`, `save_animal_failed`, `delete_media_failed`, `delete_record_failed`, `delete_image_failed`, `delete_photo_failed`, `delete_failed_generic`, `delete_request_failed`, `set_profile_pic_failed`, `search_failed`, `submit_report_failed`, `submit_request_failed`, `report_error`, `request_error`, `not_found_animal`, `load_animal_failed`, `unexpected`, `action_failed`, `unknown_error`, plus several admin-only keys for future Phase 5.
+- **`toast.*`** namespace (new): toast titles like `upload_failed_title`, `invalid_file_title`, `video_too_large_title`, `not_found_title`, `save_error_title`, `search_failed_title`, `delete_failed_title`, `action_failed_title`, `purge_complete_title`, `stats_purged_title`, `saved_title`, plus messages for the success cases.
+- **`dialogs.*`** namespace (new): browser-dialog confirm/alert text (`confirm_delete_media`, `confirm_delete_record`, `confirm_delete_adopter`, `confirm_merge`, `confirm_purge_stats`, `confirm_delete_audit`, `confirm_dismiss_duplicate`, `alert_merge_failed`, etc.).
+- **`share.*`** namespace (new): all 10 ShareMenu/ShareFormMenu strings (`open_in_new_tab`, `via_message`, `via_email`, `qr_show`, `more_options`, `contract_preview_hint`, `contract_qr_hint`, `form_preview_hint`, `form_qr_hint`, `form_footer_hint`).
+- **`wizard.back`** + **`wizard.save_record`** in the existing wizard namespace.
+- **`nav.*`** additions: `change_language`, `dismiss`, `open_menu`, `close_menu`, `expand_image`, `permanently_delete_adopter`, `close_suggestion`, `confirm_code_placeholder`, `type_to_confirm`.
+
+### Changed
+- **All hardcoded toast titles + messages in user-facing components** now go through `t()`. Affected: `AdoptionForm.tsx` (5 sites), `AdoptionFormEditV2.tsx` (5), `AdoptionFormWizard.tsx` (3), `AdopterFlagging.tsx` (6), `AdopterForm.tsx` (6 — also fixed broken `t('common.error') || 'Error'` fallback to use `t('errors.generic')`), `ImageGallery.tsx` (4), `SearchSection.tsx` (2), `ReportWizard.tsx` (1), `AdoptionHistory.tsx` (1), `AdopterProfileV2.tsx` (3), `FormResultMatchCard.tsx` (2). ~38 toast call sites updated.
+- **Browser `confirm()` dialogs** in user-facing flows now go through `t()`: `AdoptionForm.tsx`, `AdoptionFormEditV2.tsx` ("Delete this media?"), `AdoptionHistory.tsx` ("Are you sure you want to delete this adoption record?").
+- **`ShareMenu.tsx` + `ShareFormMenu.tsx`** — all 14 hardcoded Spanish strings (open in new tab, send by message, send by email, QR show, more options, preview/QR/footer hints) replaced with `t('share.*')`. English users finally see English share menus.
+- **Wizard step buttons** (`Siguiente →`, `← Atrás`, `💾 Guardar Registro`) in `AdoptionFormWizard.tsx` now use `t('wizard.next')`, `t('wizard.back')`, `t('wizard.save_record')`. English users see "Next →", "← Back", "💾 Save Record".
+- **`aria-label` / `title` attributes**: `LanguageSwitcher.tsx` ("Change language"), `ReferralBanner.tsx` + `SocialProofBanner.tsx` ("Dismiss"), `SearchSection.tsx` ("Cerrar sugerencia"), `AdoptionForm.tsx` + `AdoptionFormEditV2.tsx` ("Delete" / "Remove"), `ImportWizard.tsx` ("Expand image") — all now via `t()`.
+
+### Out of scope (deferred to future PR)
+- **Admin pages** (`/admin/*` UI text, ~15 strings) — admins are typically English-comfortable, and most admin components don't have `useLanguage` imported. Phase 5 in the original i18n audit; defer until multi-language admin support is a real requirement.
+- **`DeleteAdopterButton`, `AdminAdopterList`, `AdminDangerZone`, `DuplicateMergeModal`, `LinkFormToList`** — toast/confirm calls in these. Either admin-only or lack `useLanguage` import; deferred as Phase 5 work.
+- **`my-animals/new`** — already does manual `locale === 'es' ? 'es-text' : 'en-text'` for its dialogs. Bilingual already, just hand-rolled. Acceptable as-is.
+
+### Documentation note
+The audit at `.agents/audits/2026-05-04-mobile-breakpoint-comprehensive-plan.md` did NOT cover i18n — that was a separate question. If a similar i18n audit is wanted in the future, the framework is the same: grep for hardcoded literals in JSX/attributes/dialogs and bucket by user-facing surface.
+
 ## [2.12.2] - 2026-05-04
 
 Minor version bump: comprehensive mobile breakpoint remediation across the user-facing

@@ -179,7 +179,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
         const file = e.target.files?.[0];
         if (!file) return;
         const isVideoFile = file.type.startsWith('video/');
-        if (!file.type.startsWith('image/') && !isVideoFile) { toast.error(t('errors.generic'), 'Select image or video.'); return; }
+        if (!file.type.startsWith('image/') && !isVideoFile) { toast.error(t('errors.generic'), t('errors.upload_invalid_file')); return; }
         if (isVideoFile && file.size > 50 * 1024 * 1024) { toast.warning(t('adopter.video_too_large'), t('adopter.video_too_large_desc')); return; }
         e.target.value = '';
         setUploading(true);
@@ -197,7 +197,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
                 setPendingImages(prev => [...prev, { data: base64, isVideo: false }]);
             }
         } catch (error) {
-            toast.error('Upload Failed', 'Could not process file.', extractErrorId(error));
+            toast.error(t('toast.upload_failed_title'), t('errors.upload_process_failed'), extractErrorId(error));
         } finally {
             setUploading(false);
         }
@@ -247,7 +247,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
             await new Promise(r => setTimeout(r, 100));
             router.refresh();
         } catch (err) {
-            toast.error('Error', 'Failed to save. Please try again.', extractErrorId(err));
+            toast.error(t('errors.generic'), t('errors.save_failed_generic'), extractErrorId(err));
         } finally {
             setLoading(false);
         }
@@ -422,7 +422,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
 
                             <div className="flex justify-between items-center pt-4 border-t border-teal-100/50">
                                 <button type="button" onClick={() => setIsOpen(false)} className="px-4 py-2 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors">{t('common.cancel')}</button>
-                                <button type="button" onClick={handleNextStep1} className="px-6 py-2 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 shadow-md shadow-teal-700/20 transition-all">Siguiente →</button>
+                                <button type="button" onClick={handleNextStep1} className="px-6 py-2 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 shadow-md shadow-teal-700/20 transition-all">{t('wizard.next')} →</button>
                             </div>
                         </div>
                     )}
@@ -481,8 +481,8 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
                             )}
 
                             <div className="flex justify-between items-center pt-4 border-t border-teal-100/50">
-                                <button type="button" onClick={goBack} className="px-4 py-2 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors">← Atrás</button>
-                                <button type="button" onClick={goNext} className="px-6 py-2 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 shadow-md shadow-teal-700/20 transition-all">Siguiente →</button>
+                                <button type="button" onClick={goBack} className="px-4 py-2 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors">← {t('wizard.back')}</button>
+                                <button type="button" onClick={goNext} className="px-6 py-2 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 shadow-md shadow-teal-700/20 transition-all">{t('wizard.next')} →</button>
                             </div>
                         </div>
                     )}
@@ -545,10 +545,10 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
                             </div>
 
                             <div className="flex justify-between items-center pt-4 border-t border-teal-100/50">
-                                <button type="button" onClick={goBack} className="px-4 py-2 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors">← Atrás</button>
+                                <button type="button" onClick={goBack} className="px-4 py-2 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors">← {t('wizard.back')}</button>
                                 <button type="button" disabled={loading} onClick={handleSubmit} className="px-6 py-2 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 shadow-md shadow-teal-700/20 disabled:opacity-50 transition-all flex items-center gap-2">
                                     {loading ? t('adoption.saving') : (
-                                        <>💾 Guardar Registro</>
+                                        <>💾 {t('wizard.save_record')}</>
                                     )}
                                 </button>
                             </div>
