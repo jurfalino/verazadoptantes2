@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.5] - 2026-05-05
+
+### Removed
+- **`src/components/AdoptionForm.tsx` deleted as dead code** (~830 lines). Audit yesterday assumed it was the creation form on the adopter profile; it isn't. The actual creation flow uses `AdoptionFormWizard.tsx` (multi-step). `AdoptionForm.tsx`'s only consumer was `AdoptionHistory.tsx` as a *fallback edit component*, but the only caller of `AdoptionHistory` (`AdopterProfileV2.tsx`) always passes `editFormComponent={AdoptionFormEditV2}` as override — so the fallback never fired.
+- **The "promote sticky bar to creation form" change in v2.12.4 was modifying this dead file**; it had no user-visible effect. Removing the file removes the confusion.
+
+### Changed
+- **`AdoptionHistory.tsx`**: `editFormComponent` prop is now required (not optional) and properly typed as `ComponentType<{...}>` instead of `any`. Fallback removed. Inline IIFE around the edit component dropped (no longer needed).
+
 ## [2.12.4] - 2026-05-04
 
 UI cleanup pass on the adoption record forms (creation + edit). Senior-UI

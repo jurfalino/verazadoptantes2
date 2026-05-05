@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ComponentType } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import { deleteAdoption, getAdoptionImages } from '@/app/actions';
@@ -14,10 +14,6 @@ import { formatAge } from '@/lib/ageUtils';
 import { isAdmin as isAdminEmail } from '@/config/admins-shared';
 import { MediaLightbox, MediaThumbnail } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
-
-import AdoptionForm from './AdoptionForm';
-
-
 
 interface Adoption {
     id: string;
@@ -51,7 +47,7 @@ interface AdoptionImage {
     thumbnailUrl?: string | null;
 }
 
-export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, adopterAddress = '', userNameMap = {}, editFormComponent }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, editFormComponent?: any }) {
+export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, adopterAddress = '', userNameMap = {}, editFormComponent: EditComponent }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, editFormComponent: ComponentType<{ adopterId: string; initialData: Adoption; onCancel: () => void; onSuccess: () => void; onDelete: () => void; currentUser?: string; adopterAddress?: string }> }) {
     const { t, locale } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
@@ -142,23 +138,18 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                     if (editingId === adoption.id) {
                         return (
                             <div key={adoption.id} id={`adoption-${adoption.id}`} className="relative ml-6 md:ml-10">
-                                {(() => {
-                                    const EditComponent = editFormComponent || AdoptionForm;
-                                    return (
-                                        <EditComponent
-                                            adopterId={adopterId}
-                                            initialData={adoption}
-                                            onCancel={() => setEditingId(null)}
-                                            onSuccess={() => {
-                                                setEditingId(null);
-                                                router.refresh();
-                                            }}
-                                            onDelete={() => handleDelete(adoption.id)}
-                                            currentUser={currentUser}
-                                            adopterAddress={adopterAddress}
-                                        />
-                                    );
-                                })()}
+                                <EditComponent
+                                    adopterId={adopterId}
+                                    initialData={adoption}
+                                    onCancel={() => setEditingId(null)}
+                                    onSuccess={() => {
+                                        setEditingId(null);
+                                        router.refresh();
+                                    }}
+                                    onDelete={() => handleDelete(adoption.id)}
+                                    currentUser={currentUser}
+                                    adopterAddress={adopterAddress}
+                                />
                             </div>
                         );
                     }
