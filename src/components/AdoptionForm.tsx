@@ -788,16 +788,18 @@ export default function AdoptionForm({ adopterId, initialData, onCancel, onSucce
                         </div>
                     </div>
 
-                    <div className="flex justify-between items-center pt-4 border-t border-teal-100/50">
+                    {/* Sticky Bottom Actions Bar — pb adds safe-area inset on iOS so the bar
+                        clears the home indicator and stays above the soft keyboard. */}
+                    <div className="sticky bottom-4 left-0 right-0 z-20 mt-6 bg-white/80 backdrop-blur-xl border border-teal-200 shadow-xl shadow-teal-900/5 p-4 rounded-xl flex justify-between items-center" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
                         {onDelete && initialData && (
-                            <button type="button" onClick={onDelete} className="px-4 py-2 text-sm font-semibold text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title={t('common.delete')}>
+                            <button type="button" onClick={onDelete} className="px-4 py-2 text-sm font-semibold text-stone-500 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title={t('common.delete')}>
                                 {/* Trash Icon */}
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                             </button>
                         )}
                         <div className={`flex gap-3 ${(!onDelete || !initialData) ? 'w-full justify-end' : ''}`}>
                             <button type="button" onClick={handleCancel} className="px-4 py-2 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors">{t('common.cancel')}</button>
-                            <button type="submit" disabled={loading} className="px-6 py-2 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 shadow-md shadow-teal-700/20 disabled:opacity-50 transition-all active:scale-95">{loading ? t('adoption.saving') : t('adoption.submit')}</button>
+                            <button type="submit" disabled={loading || uploading} className="px-6 py-2 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 shadow-md shadow-teal-700/20 disabled:opacity-50 transition-all active:scale-95">{loading ? t('adoption.saving') : t('adoption.submit')}</button>
                         </div>
                     </div>
                 </form>

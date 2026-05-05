@@ -414,7 +414,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                     )}
 
                     {/* Block 1: Core Details — animal inputs hidden for observations */}
-                    <div className="bg-stone-50/50 p-4 rounded-xl border border-stone-200/60 space-y-4" style={isObservation ? { display: 'none' } : undefined}>
+                    <div className="space-y-4" style={isObservation ? { display: 'none' } : undefined}>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <div className="flex items-center justify-between mb-1.5">
@@ -505,7 +505,9 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
 
                     {/* Animal details (read-only context when editing) */}
                     {initialData && (initialData.estimatedBirthDate || initialData.age || initialData.sex || initialData.color || initialData.microchip || initialData.neutered != null) && (
-                        <div className="flex flex-wrap gap-1.5">
+                        <div>
+                            <p className="text-xs font-semibold text-stone-500 mb-1.5 uppercase tracking-wider">{t('adoption.animal_info') || 'Animal Info'}</p>
+                            <div className="flex flex-wrap gap-1.5">
                             {initialData.sex && (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600">
                                     {['male', 'macho'].includes(initialData.sex.toLowerCase()) ? '♂️' : ['female', 'hembra'].includes(initialData.sex.toLowerCase()) ? '♀️' : ''} {t(`adoption.sex_${initialData.sex.toLowerCase()}`) || initialData.sex}
@@ -538,8 +540,11 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                                     💉 {initialData.microchip}
                                 </span>
                             )}
+                            </div>
                         </div>
                     )}
+                    </div>
+                    {/* End of Block 1 — animal-specific fields hidden for observations */}
 
                     {/* Contract screenshot link */}
                     {initialData?.comments && (() => {
@@ -679,9 +684,8 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                             value={formData.rating}
                             onChange={(r) => setFormData({ ...formData, rating: r })}
                             size="lg"
-                            showLabel={true}
                         />
-                    </div>
+                        <p className="text-xs text-stone-500 mt-1">1 = {t('ratings.dangerous') || 'Dangerous'}, 5 = {t('ratings.excellent') || 'Excellent'}</p>
                     </div>
 
                     <div>
@@ -810,7 +814,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                         clears the home indicator and stays above the soft keyboard. */}
                     <div className="sticky bottom-4 left-0 right-0 z-20 mt-6 bg-white/80 backdrop-blur-xl border border-teal-200 shadow-xl shadow-teal-900/5 p-4 rounded-xl flex justify-between items-center" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
                         {onDelete && initialData && (
-                            <button type="button" onClick={onDelete} className="px-4 py-2 text-sm font-semibold text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title={t('common.delete')}>
+                            <button type="button" onClick={onDelete} className="px-4 py-2 text-sm font-semibold text-stone-500 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title={t('common.delete')}>
                                 {/* Trash Icon */}
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                             </button>

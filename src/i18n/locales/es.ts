@@ -440,6 +440,7 @@ export const es = {
         age_placeholder: 'ej. 2',
         age_unit_months: 'meses',
         age_unit_years: 'años',
+        animal_info: 'Info del Animal',
         sex: 'Sexo',
         sex_male: 'Macho ♂',
         sex_female: 'Hembra ♀',

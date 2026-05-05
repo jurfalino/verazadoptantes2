@@ -441,6 +441,7 @@ export const en = {
         age_placeholder: 'e.g. 2',
         age_unit_months: 'months',
         age_unit_years: 'years',
+        animal_info: 'Animal Info',
         sex: 'Sex',
         sex_male: 'Male ♂',
         sex_female: 'Female ♀',

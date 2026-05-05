@@ -2,7 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
-## [2.12.3] - 2026-05-04
+## [2.12.4] - 2026-05-04
+
+UI cleanup pass on the adoption record forms (creation + edit). Senior-UI
+audit surfaced 8 inconsistencies between the two forms; all addressed.
+
+### Changed
+- **Sticky save bar promoted to creation form** — `AdoptionForm.tsx` now uses the same floating sticky pill (`bottom-4 bg-white/80 backdrop-blur-xl border border-teal-200 shadow-xl rounded-xl`) as the edit form. Cancel/save are always reachable on long forms; matches edit-form paradigm.
+- **Trash icon toned down** — `text-rose-500` → `text-stone-500 hover:text-rose-500` on both forms. No longer the loudest element in the action bar.
+- **Rating helper text restored on edit form** — replaced inline `showLabel={true}` with a `1 = Dangerous, 5 = Excellent` hint below stars (matches creation-form presentation).
+- **Animal info pills now grouped** — added small uppercase `ANIMAL INFO` label above the read-only sex/age/neutered/color/microchip pills row in edit form. Pills no longer float orphaned in midair.
+- **Creation submit guarded against mid-upload submit** — `disabled={loading}` → `disabled={loading || uploading}` (parity with edit form).
+
+### Fixed
+- **Edit form: editing an Observation no longer hides Date / Identity Verified / Rating** — Block 1 wrapper (which sets `display:none` for observations) now closes after the animal-name/species/pills section instead of after Rating. Date, Identity, and Rating remain visible regardless of record type.
+- **Edit-form interaction wrapper background mismatch** — dropped the muted `bg-stone-50/50 ... border border-stone-200/60` inner box on Block 1 so the edit form sits flush on the white card like the creation form does.
+
+### i18n
+- Added `adoption.animal_info` key to ES + EN locale files for the new pills section label.
+
+
 
 Minor version bump: i18n sweep across user-facing components — Spanish users no longer
 see English error messages, English users no longer see Spanish share menus, and the
