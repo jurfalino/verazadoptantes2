@@ -13,6 +13,7 @@ import LoginModal from '@/components/LoginModal';
 import { ToastProvider } from '@/components/ui/Toast';
 import ClientErrorReporter from '@/components/ClientErrorReporter';
 import InstallPrompt from '@/components/InstallPrompt';
+import Footer from '@/components/Footer';
 import { CountryConfirmBanner } from '@/components/CountryConfirmBanner';
 import NotificationBell from '@/components/NotificationBell';
 import ZarazIdentify from '@/components/ZarazIdentify';
@@ -140,6 +141,7 @@ export default async function RootLayout({
                     <LoginModal />
                     <InstallPrompt />
                     {children}
+                    <Footer />
                   </div>
                 </AuthProvider>
               </ToastProvider>

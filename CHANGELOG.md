@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.1] - 2026-05-06
+
+### Fixed
+- **Footer reachable from every public page**, not just the homepage. Privacy, terms, contact, and the deployed version string were stranded on `/` because the footer JSX was inlined inside `src/app/page.tsx` instead of in the shared shell. Extracted to `src/components/Footer.tsx` (client component, reads `usePathname` to suppress itself on the routes that have their own footers / no footer): `/admin/*`, `/keystatic/*`, `/health`, `/contract/*`, `/contract-results/*`. Mounted in `src/app/layout.tsx` below `{children}`. Removed the unused `packageJson` import from `page.tsx`.
+
 ## [2.14.0] - 2026-05-06
 
 Visit-intent prompt on adopter profiles — admin-toggleable card that asks why a visiting rescuer is on the profile and routes them to the matching wizard.

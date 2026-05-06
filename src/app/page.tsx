@@ -10,7 +10,6 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import AdoptionWizard from '@/components/AdoptionWizard';
 import ReportWizard from '@/components/ReportWizard';
-import packageJson from '../../package.json';
 import { useEffect, useState } from 'react';
 import InstallCTA from '@/components/InstallCTA';
 import SocialProofBanner from '@/components/SocialProofBanner';
@@ -149,32 +148,6 @@ export default function Home() {
         {/* Referral banner — logged-in users only */}
         <ReferralBanner />
 
-        <footer className="mt-10 text-center text-stone-500 text-sm space-y-2">
-
-          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs">
-            <a href={locale === 'en' ? '/guide' : '/guia'} className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
-              {t('home.hero_guide')}
-            </a>
-            <span className="text-stone-300">·</span>
-            <a href="/funcionalidades" className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
-              {t('home.hero_features')}
-            </a>
-            <span className="text-stone-300">·</span>
-            <a href="/privacy" className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
-              {t('legal.privacy')}
-            </a>
-            <span className="text-stone-300">·</span>
-            <a href="/terms" className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
-              {t('legal.terms')}
-            </a>
-            <span className="text-stone-300">·</span>
-            <a href="mailto:privacidad@buenadoptante.com" className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
-              {t('legal.contact')}
-            </a>
-          </div>
-          <p>{t('home.footer')}</p>
-          <p className="text-stone-500 text-xs">v{packageJson.version}</p>
-        </footer>
       </div>
     </main>
   );
