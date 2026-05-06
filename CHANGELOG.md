@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.8] - 2026-05-06
+
+### Fixed
+- **Rating popover stole click → navigated to profile.** In `SearchSection`, each card is wrapped in `<a href={`/adopter/${id}`}>`. The `RatingExplainer` button rendered inside that anchor; on click the popover opened correctly but the click also triggered the anchor's default action and the page navigated to the adopter profile. `stopPropagation` alone wasn't enough — the browser's anchor navigation is a default action, not a React handler. Fix: added `e.preventDefault()` (alongside `stopPropagation`) on the wrapper `<div>` of `RatingExplainer`, which catches all bubbled clicks (trigger button, close button, mobile backdrop) and suppresses navigation.
+
 ## [2.12.6] - 2026-05-06
 
 UX: rating labels and click-to-explain popover on search results.
