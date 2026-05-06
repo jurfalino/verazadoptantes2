@@ -2,6 +2,35 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.0] - 2026-05-06
+
+Visit-intent prompt on adopter profiles — admin-toggleable card that asks why a visiting rescuer is on the profile and routes them to the matching wizard.
+
+### Added
+- **`VisitIntentCard`** (`src/components/VisitIntentCard.tsx`) — non-blocking inline card pinned at the top of the Adoptions section on adopter profiles. Asks "¿Estás visitando este perfil porque:" with three options:
+  - A. Me solicitó un animal en adopción → opens wizard with `recordType='adoption_request'`
+  - B. Le di un animal en adopción → opens wizard with `recordType='adoption'`
+  - C. Quiero reportar una observación sobre esta persona → opens wizard with `recordType='observation'`
+  - "Solo estoy mirando, cerrar" dismisses without scolding.
+- **Feature flag `ENABLE_VISIT_INTENT_PROMPT`** — DB-backed via `appConfig`, toggleable in `/admin/config`. Default off; admin opts in.
+- **i18n keys** under `visitIntent.*` in both `es.ts` and `en.ts` (Spanish primary).
+- **Telemetry**: `visit_intent_shown`, `visit_intent_selected`, `visit_intent_dismissed` via `zarazTrack` — gives shown→selected conversion per option.
+
+### Visibility logic
+The card renders only when **all** of the following are true: feature flag enabled, not the profile owner (`adopter.addedBy !== currentUser`), user is authenticated, no recent dismissal (per-(adopter, user) localStorage key with 7-day TTL — mirrors `InstallPrompt`), and at least one option is not suppressed by recent matching records (30-day window). Per-option suppression: A hidden if user logged an `adoption_request` for this adopter in 30d; B hidden for `adoption`; C never hidden (observations are unbounded over time). If all three would be hidden, the whole card is hidden.
+
+### Changed
+- **`AdoptionFormWizard`** — added opt-in `initialRecordType?`, `autoOpen?`, and `onClose?` props. Pre-seeds the recordType so the user doesn't pick it twice. Step 1 still renders so adoption / adoption_request flows can pick an animal — observation flows just click "next." `onClose` lets `VisitIntentCard` know when to clear its own state. No behavior change for existing callers (all props optional).
+- **`AdopterProfileV2`** — added `enableVisitIntent` prop, mounts `VisitIntentCard` above the existing `AdoptionFormWizard` button inside the Adoptions `CollapsibleSection`. The existing button stays — it's still the universal entry point for users who dismiss the card or want a different recordType.
+- **`adopter/[id]/page.tsx`** — reads `getFeatureFlag('ENABLE_VISIT_INTENT_PROMPT')` in the existing `Promise.all` batch (no extra round-trip), passes through to `AdopterProfileV2`.
+
+### CX framing
+The four risks of funnel features are addressed in `docs/error_logging_audit.md`-style depth in `~/.claude-personal/plans/wondrous-noodling-fern.md`:
+- **Pop-up fatigue** → 7-day per-(adopter, user) localStorage dismissal.
+- **Wrong intent** → explicit "solo estoy mirando" + 1-line description per option.
+- **Owner self-view** → suppressed when `adopter.addedBy === currentUser`.
+- **Already-acted** → per-option 30-day suppression based on `adoptions[]` already fetched server-side (no extra query).
+
 ## [2.13.0] - 2026-05-06
 
 Error logging audit: every error now writes to Axiom with a stable id surfaced to the user.

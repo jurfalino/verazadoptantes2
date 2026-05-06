@@ -7,6 +7,7 @@ import { CollapsibleSection } from '@/components/CollapsibleSection';
 import AdoptionHistory from '@/components/AdoptionHistory';
 import AdoptionFormWizard from '@/components/AdoptionFormWizard';
 import AdoptionFormEditV2 from '@/components/AdoptionFormEditV2';
+import VisitIntentCard from '@/components/VisitIntentCard';
 import { useLanguage } from '@/context/LanguageContext';
 import { saveImage, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from '@/app/actions';
 import { ImageGallery } from '@/components/ImageGallery';
@@ -35,9 +36,10 @@ interface AdopterProfileV2Props {
     duplicateCandidates?: DuplicateCandidateInfo[];
     formPrefill?: FormSubmissionPrefill | null;
     userNameMap?: Record<string, string>;
+    enableVisitIntent?: boolean;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, formPrefill = null, userNameMap = {} }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, formPrefill = null, userNameMap = {}, enableVisitIntent = false }: AdopterProfileV2Props) {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const toast = useShowToast();
@@ -130,6 +132,15 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             count={adoptions.length}
                             defaultOpen={true}
                         >
+                            <VisitIntentCard
+                                enabled={enableVisitIntent}
+                                adopterId={id}
+                                currentUser={currentUser}
+                                isOwner={isOwner}
+                                adoptions={adoptions}
+                                availableAnimals={availableAnimals}
+                                adopterAddress={adopter?.contactInfo || ''}
+                            />
                             <AdoptionFormWizard
                                 adopterId={id}
                                 availableAnimals={availableAnimals}

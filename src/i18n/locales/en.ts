@@ -2,6 +2,7 @@ export const en = {
     common: {
         save: 'Save',
         cancel: 'Cancel',
+        error: 'Error',
         loading: 'Loading...',
         search: 'Search',
         searching: 'Searching...',
@@ -387,6 +388,7 @@ export const en = {
     },
     adoption: {
         title: 'Activity',
+        fill_required: 'Please fill in the required fields before continuing.',
         history_title: 'Adoption History',
         record_new: 'Log Activity',
         record_edit: 'Edit Adoption Record',
@@ -653,6 +655,9 @@ export const en = {
         share_buttons_hint: 'Share the form with people interested in adopting; when they complete it the system will notify you. On each animal, share the contract when you have an adopter.',
     },
     wizard: {
+        step_what: 'What happened',
+        step_details: 'Details',
+        step_evidence: 'Evidence',
         step_adopter: 'Identify Adopter',
         step_observation: 'Observation Details',
         observation_no_animal_hint: 'An observation is a note about the adopter — no animal needed.',
@@ -1238,5 +1243,15 @@ export const en = {
         change: 'Change theme',
         light: 'Light',
         dark: 'Night Blue',
+    },
+    visitIntent: {
+        title: 'You\'re visiting this profile because:',
+        option_a: 'They requested an animal for adoption',
+        option_a_hint: 'Log the adoption request this person made to you',
+        option_b: 'I gave them an animal in adoption',
+        option_b_hint: 'Log an adoption you already completed',
+        option_c: 'I want to report an observation about this person',
+        option_c_hint: 'Share what you know with the rescue community',
+        dismiss: 'Just looking, dismiss',
     },
 };

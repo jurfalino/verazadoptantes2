@@ -52,12 +52,24 @@ const RECORD_TYPES = [
     { value: 'returned_pet', icon: '↩️', labelKey: 'adoption.type_returned', fallback: 'Returned' },
 ] as const;
 
-export default function AdoptionFormWizard({ adopterId, availableAnimals = [], currentUser, adopterAddress = '' }: {
+export default function AdoptionFormWizard({ adopterId, availableAnimals = [], currentUser, adopterAddress = '', initialRecordType, autoOpen = false, onClose }: {
     adopterId: string;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     availableAnimals?: any[];
     currentUser?: string;
     adopterAddress?: string;
+    /**
+     * Pre-select the record type when the wizard mounts. Skips the user
+     * having to tap the chip in step 1 (used by VisitIntentCard which already
+     * captured the user's intent). Step 1 still renders so adoption /
+     * adoption_request flows can pick an animal — observation flows just
+     * click "next".
+     */
+    initialRecordType?: 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet';
+    /** Open the wizard immediately on mount (paired with initialRecordType). */
+    autoOpen?: boolean;
+    /** Called when the wizard closes (cancel or save). Lets the parent re-render the entry CTA. */
+    onClose?: () => void;
 }) {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -71,12 +83,13 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
     const shouldOpenFromWizard = !!newAdoptionParam || continueToAdoption;
     const prefillAnimalName = searchParams.get('animalName') || '';
     const prefillSpecies = searchParams.get('species') || 'cat';
-    const prefillRecordType = newAdoptionParam === 'observation' ? 'observation' : 'adoption';
+    const prefillRecordType = initialRecordType
+        || (newAdoptionParam === 'observation' ? 'observation' : 'adoption');
     const prefillRating = searchParams.get('rating');
     const prefillDetails = searchParams.get('details') || '';
     const prefillDate = searchParams.get('date') || '';
 
-    const [isOpen, setIsOpen] = useState(shouldOpenFromWizard);
+    const [isOpen, setIsOpen] = useState(shouldOpenFromWizard || autoOpen);
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
@@ -112,8 +125,8 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
     // Focus management and scrolling
     useEffect(() => {
         if (isOpen && stepContainerRef.current) {
-            // Scroll if opened via URL param
-            if (shouldOpenFromWizard && step === 1) {
+            // Scroll if opened via URL param or programmatically (VisitIntentCard)
+            if ((shouldOpenFromWizard || autoOpen) && step === 1) {
                 setTimeout(() => stepContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
             }
             // Move focus to container on step change for screen readers
@@ -121,7 +134,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
                 stepContainerRef.current?.focus();
             }, 50);
         }
-    }, [isOpen, step, shouldOpenFromWizard]);
+    }, [isOpen, step, shouldOpenFromWizard, autoOpen]);
 
     const resetForm = () => {
         setFormData({ animalId: '', animalName: '', details: '', status: 'completed', rating: 5, comments: '', species: 'cat', adopterId, recordType: 'adoption', date: new Date().toISOString().split('T')[0], deliveredToHome: false, verifiedAddress: '', identityVerified: false });
@@ -244,6 +257,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
             
             resetForm();
             setIsOpen(false);
+            onClose?.();
             await new Promise(r => setTimeout(r, 100));
             router.refresh();
         } catch (err) {
@@ -421,7 +435,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
                             )}
 
                             <div className="flex justify-between items-center pt-4 border-t border-teal-100/50">
-                                <button type="button" onClick={() => setIsOpen(false)} className="px-4 py-2 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors">{t('common.cancel')}</button>
+                                <button type="button" onClick={() => { setIsOpen(false); onClose?.(); }} className="px-4 py-2 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors">{t('common.cancel')}</button>
                                 <button type="button" onClick={handleNextStep1} className="px-6 py-2 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 shadow-md shadow-teal-700/20 transition-all">{t('wizard.next')} →</button>
                             </div>
                         </div>

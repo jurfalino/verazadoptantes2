@@ -46,6 +46,7 @@ const FEATURE_FLAGS = [
     { key: 'ENABLE_CONTENT_IMPORT', label: 'Content Import', description: 'Show the Import Content button on the home page for importing from any URL, text, or images using AI' },
     { key: 'ENABLE_ANIMALS_FOR_ADOPTION', label: 'Animals for Adoption', description: 'Allow users to list animals for adoption and share adoption contracts with potential adopters' },
     { key: 'ENABLE_SEARCH_CARD_METADATA', label: 'Search Card Metadata', description: 'Show profile views (👁) and the bottom row dates (📅 added, ✏️ updated) on each search result card on the home page. Default ON.' },
+    { key: 'ENABLE_VISIT_INTENT_PROMPT', label: 'Visit Intent Prompt', description: 'On adopter profiles, ask visiting users why they\'re there (received request / gave adoption / want to record observation) and route them to the matching wizard. Suppressed for the profile owner and after recent matching records.' },
 ];
 
 export default function AdminConfigPage() {

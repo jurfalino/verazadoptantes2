@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getAdoptionConfig, getDuplicateCandidates } from '@/app/actions';
 import { resolveUserNames } from '@/app/actions/userNames';
 import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
+import { getFeatureFlag } from '@/config/features';
 import { AdopterProfileV2 } from '@/components/AdopterProfileV2';
 
 export default async function AdopterPage({
@@ -20,8 +21,14 @@ export default async function AdopterPage({
     let currentUser = '';
     let isAdmin = false;
     let adoptionConfig: any = null;
+    let enableVisitIntent = false;
     try {
-        [currentUser, isAdmin, adoptionConfig] = await Promise.all([getUser(), getIsAdmin(), getAdoptionConfig()]);
+        [currentUser, isAdmin, adoptionConfig, enableVisitIntent] = await Promise.all([
+            getUser(),
+            getIsAdmin(),
+            getAdoptionConfig(),
+            getFeatureFlag('ENABLE_VISIT_INTENT_PROMPT'),
+        ]);
     } catch (e: any) {
         if (e?.digest?.startsWith('NEXT_REDIRECT')) throw e;
         redirect(`/?authRequired=1&callbackUrl=${encodeURIComponent(`/adopter/${id}`)}`);
@@ -84,6 +91,7 @@ export default async function AdopterPage({
             duplicateCandidates={dupCandidates}
             formPrefill={formPrefill}
             userNameMap={userNameMap}
+            enableVisitIntent={enableVisitIntent}
         />
     );
 }

@@ -2,6 +2,7 @@ export const es = {
     common: {
         save: 'Guardar',
         cancel: 'Cancelar',
+        error: 'Error',
         loading: 'Cargando...',
         search: 'Buscar',
         searching: 'Buscando...',
@@ -386,6 +387,7 @@ export const es = {
     },
     adoption: {
         title: 'Actividad',
+        fill_required: 'Completá los campos requeridos antes de continuar.',
         history_title: 'Historial de Adopciones',
         record_new: 'Registrar Actividad',
         record_edit: 'Editar Registro',
@@ -652,6 +654,9 @@ export const es = {
         share_buttons_hint: 'Compartí el formulario con los interesados en adoptar, cuando lo completen el sistema te notificará. En cada animal, compartí el contrato cuando tengas un adoptante.',
     },
     wizard: {
+        step_what: 'Qué pasó',
+        step_details: 'Detalles',
+        step_evidence: 'Evidencia',
         step_adopter: 'Identificar Adoptante',
         step_observation: 'Detalles de Observación',
         observation_no_animal_hint: 'Una observación es una nota sobre el adoptante — no requiere un animal.',
@@ -1236,6 +1241,16 @@ export const es = {
         change: 'Cambiar tema',
         light: 'Claro',
         dark: 'Azul Noche',
+    },
+    visitIntent: {
+        title: 'Estás visitando este perfil porque:',
+        option_a: 'Me solicitó un animal en adopción',
+        option_a_hint: 'Registrá la solicitud que esta persona te hizo',
+        option_b: 'Le di un animal en adopción',
+        option_b_hint: 'Registrá la adopción que ya concretaste',
+        option_c: 'Quiero reportar una observación sobre esta persona',
+        option_c_hint: 'Compartí lo que sabés con la comunidad rescatista',
+        dismiss: 'Solo estoy mirando, cerrar',
     },
 };
 
