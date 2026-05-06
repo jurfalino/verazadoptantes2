@@ -49,7 +49,7 @@ export function DisclaimerToast() {
             style={{
                 background: 'var(--status-info-bg)',
                 borderColor: 'var(--status-info-border)',
-                color: 'var(--text-secondary)',
+                color: 'var(--status-info-text)',
             }}
         >
             <svg

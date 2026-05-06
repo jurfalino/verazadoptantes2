@@ -7,6 +7,18 @@
  * the stored timestamp, and produce locale-aware display strings.
  */
 
+// Coerce the heterogeneous shapes a birth date can take at runtime — Drizzle
+// returns Date, raw integer columns surface as number, and `NextResponse.json`
+// stringifies Date to ISO — into a single Date object. Numbers <1e12 are
+// treated as Unix seconds (matching the schema's epoch-seconds storage).
+function toDate(value: Date | number | string): Date {
+    if (value instanceof Date) return value;
+    if (typeof value === 'number') {
+        return new Date(value < 1e12 ? value * 1000 : value);
+    }
+    return new Date(value);
+}
+
 /**
  * Compute an estimated birth date by subtracting an age from a reference date.
  * @param value - The numeric age value (e.g. 3)
@@ -30,13 +42,13 @@ export function computeBirthDate(
 
 /**
  * Derive age value + unit from a birth date (for edit-mode hydration).
- * @param birthDate - Unix timestamp (seconds) or Date
+ * @param birthDate - Unix timestamp (seconds), Date, or ISO string (as returned by JSON APIs)
  * @returns { value, unit } suitable for the form inputs
  */
 export function deriveAgeFromBirthDate(
-    birthDate: number | Date
+    birthDate: number | Date | string
 ): { value: number; unit: 'months' | 'years' } {
-    const birth = typeof birthDate === 'number' ? new Date(birthDate * 1000) : birthDate;
+    const birth = toDate(birthDate);
     const now = new Date();
     const diffMs = now.getTime() - birth.getTime();
     const diffMonths = Math.round(diffMs / (30.44 * 24 * 60 * 60 * 1000));
@@ -49,17 +61,18 @@ export function deriveAgeFromBirthDate(
 
 /**
  * Format a birth date into a human-readable approximate age string.
- * @param birthDate - Unix timestamp (seconds), Date, or null
+ * @param birthDate - Unix timestamp (seconds), Date, ISO string (as returned by JSON APIs), or null
  * @param locale    - 'es' or 'en'
  * @returns Formatted string like "~3 meses" or null if no birth date
  */
 export function formatAge(
-    birthDate: Date | number | null | undefined,
+    birthDate: Date | number | string | null | undefined,
     locale: 'es' | 'en' = 'es'
 ): string | null {
     if (birthDate == null) return null;
 
-    const birth = typeof birthDate === 'number' ? new Date(birthDate * 1000) : birthDate;
+    const birth = toDate(birthDate);
+    if (isNaN(birth.getTime())) return null;
     const now = new Date();
     const diffMs = now.getTime() - birth.getTime();
     const diffMonths = Math.round(diffMs / (30.44 * 24 * 60 * 60 * 1000));
