@@ -7,7 +7,7 @@ import { logger } from '@/lib/logger';
 import { getDb, getUser } from './_db';
 import { processImageForStorage } from '@/lib/r2';
 
-export async function saveImage(adopterId: string, url: string, caption?: string, adoptionId?: string, mediaType?: string) {
+export async function saveImage(adopterId: string, url: string, caption?: string, adoptionId?: string, mediaType?: string, isProfilePicture?: boolean) {
     try {
         const db = await getDb();
         if (!db) throw new Error("No database");
@@ -18,6 +18,17 @@ export async function saveImage(adopterId: string, url: string, caption?: string
         // Persist external URLs (Facebook CDN etc.) to R2 for permanent storage
         const persistedUrl = await processImageForStorage(url, adopterId, id);
 
+        // If marking this image as the profile picture, demote any existing one first
+        // so the "exactly one profile picture per adopter" invariant holds.
+        if (isProfilePicture) {
+            await db.update(adopterImages)
+                .set({ isProfilePicture: 0 })
+                .where(and(
+                    eq(adopterImages.adopterId, adopterId),
+                    eq(adopterImages.isProfilePicture, 1)
+                ));
+        }
+
         await db.insert(adopterImages).values({
             id,
             adopterId,
@@ -27,11 +38,16 @@ export async function saveImage(adopterId: string, url: string, caption?: string
             uploadedAt: new Date(),
             addedBy,
             mediaType: mediaType || 'image',
+            isProfilePicture: isProfilePicture ? 1 : 0,
         });
+
+        if (isProfilePicture) {
+            revalidatePath(`/adopter/${adopterId}`);
+        }
 
         return { success: true, id };
     } catch (error) {
-        const errorId = logger.error('Save image failed', error, { adopterId });
+        const errorId = logger.error('Save image failed', error, { adopterId, isProfilePicture: !!isProfilePicture });
         throw new Error(`Failed to save image (Error ID: ${errorId})`);
     }
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type ReactNode } from 'react';
 
 export interface MediaItem {
     url: string;
@@ -12,6 +12,9 @@ export interface MediaItem {
 interface MediaLightboxProps {
     item: MediaItem | null;
     onClose: () => void;
+    /** Optional header actions (e.g. "Change photo" button) rendered to the left of the close button.
+     *  Caller is responsible for layout/styling of injected nodes. */
+    actions?: ReactNode;
 }
 
 /**
@@ -35,7 +38,7 @@ export function isVideo(item: MediaItem): boolean {
  * - Loading spinner while video is downloading
  * - Blob URL cleanup on close
  */
-export function MediaLightbox({ item, onClose }: MediaLightboxProps) {
+export function MediaLightbox({ item, onClose, actions }: MediaLightboxProps) {
     const [videoLoading, setVideoLoading] = useState(false);
     const [blobUrl, setBlobUrl] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -91,13 +94,17 @@ export function MediaLightbox({ item, onClose }: MediaLightboxProps) {
             className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
             onClick={handleClose}
         >
-            {/* Close button */}
-            <button
-                className="absolute top-4 right-4 text-white text-3xl hover:text-stone-300 z-10"
-                onClick={handleClose}
-            >
-                ×
-            </button>
+            {/* Header: optional caller actions + close button */}
+            <div className="absolute top-4 right-4 flex items-center gap-3 z-10" onClick={e => e.stopPropagation()}>
+                {actions}
+                <button
+                    className="text-white text-3xl hover:text-stone-300"
+                    onClick={handleClose}
+                    aria-label="Close"
+                >
+                    ×
+                </button>
+            </div>
 
             {/* Content */}
             {videoLoading ? (

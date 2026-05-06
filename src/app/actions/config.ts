@@ -27,7 +27,11 @@ export async function getAdoptionConfig() {
             requestsPeriodDays: parseInt(config['too_many_requests_period_days'] || '30', 10)
         };
     } catch (error) {
-        logger.error('Get adoption config failed', error);
+        // Falls back to hardcoded defaults — log so a flaky DB doesn't silently
+        // serve stale thresholds across the whole app.
+        logger.error('getAdoptionConfig failed — falling back to hardcoded defaults', error, {
+            fallbackUsed: true,
+        });
         return {
             threshold: 5,
             periodDays: 90,

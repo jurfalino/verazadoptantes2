@@ -312,7 +312,7 @@ export default function MyAdoptersPage() {
 
                                         {/* Rating */}
                                         <div className="col-span-2 flex justify-center">
-                                            {adopter.avgRating !== null && <RatingBadge rating={adopter.avgRating} size="sm" />}
+                                            {adopter.avgRating !== null && <RatingBadge rating={adopter.avgRating} size="sm" label="short" />}
                                         </div>
 
                                         {/* Stats */}
@@ -379,7 +379,7 @@ export default function MyAdoptersPage() {
                                                 <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', adopter.addedBy)}</div>
                                             )}
                                         </div>
-                                        {adopter.avgRating !== null && <RatingBadge rating={adopter.avgRating} size="sm" />}
+                                        {adopter.avgRating !== null && <RatingBadge rating={adopter.avgRating} size="sm" label="short" />}
                                     </div>
 
                                     {/* Stats Row */}

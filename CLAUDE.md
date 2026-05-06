@@ -72,6 +72,7 @@ The canonical database accessor is `src/lib/db.ts` — `getDb()`. It auto-detect
 - `contract-app/` — Standalone Vite app for PDF contract signing
 - `.agents/workflows/` — Mandatory agent workflows (deploy, code-quality, schema-sync, ui-review)
 - `docs/design-style-guide.md` — Canonical UI design system (8px grid, color tokens, button matrix, typography scale)
+- `docs/ux-ui-guidelines.md` — Decision-making framework: principles, patterns, persona conventions, anti-patterns we've walked back
 - `docs/D1_COMPATIBILITY.md` — Full D1 SQLite quirks and safe query patterns
 - `docs/code_quality_audit.md` — Dated full-codebase audit with security findings and tech-debt roadmap
 
@@ -125,7 +126,27 @@ db.select().from(table).where(inArray(table.id, ids))
 await Promise.all(ids.map(id => db.select().from(table).where(eq(table.id, id))))
 ```
 
-When fetching related data for multiple records, fan out with nested `Promise.all` calls. Use `.catch(() => [])` inline to prevent one failing sub-query from rejecting the whole batch. See `docs/D1_COMPATIBILITY.md` for the full reference.
+When fetching related data for multiple records, fan out with nested `Promise.all` calls. Use `.catch(...)` inline to prevent one failing sub-query from rejecting the whole batch — but **always log the fallback** (see Logging Conventions below). See `docs/D1_COMPATIBILITY.md` for the full reference.
+
+### Logging Conventions
+
+Logger lives at `src/lib/logger.ts` — `logger.info / warn / error / debug`. The `error` method auto-generates an 8-char `errorId` and returns it for surfacing to users.
+
+**Two rules every catch block must follow:**
+
+1. **Re-emit operation context.** If the surrounding handler logs `{ adopterId, user }` on the happy path, the catch must include the same fields. Catch blocks that log only the error message lose all triage context — declare any input variables (e.g. `adopterId`, `actorEmail`) outside the `try { ... }` so they're in scope for the `catch`.
+
+2. **Never silently swallow.** `} catch { /* ignore */ }` and `.catch(() => [])` are landmines — a real DB outage looks like "no results" instead of an alert. The exceptions are: intentional health-check probes (`/api/health`) and SSR-safe `localStorage` reads. Everywhere else, log at `warn` (degraded) or `error` (broken). For D1 fallbacks, use the pattern:
+   ```ts
+   .catch((e) => {
+     logger.warn('descriptiveOp: D1 fallback hit', { adopterId, error: e instanceof Error ? e.message : String(e) });
+     return [];
+   })
+   ```
+
+A reusable helper like `enrichAdopters.ts:logD1Fallback` is fine when the same op repeats inside one function.
+
+**Privacy:** never log full contact info, family members, notes, raw tokens, or other adopters' emails. The actor's own session email is OK as an audit-trail field. `maskEmail` from `src/lib/dates.ts` redacts when needed.
 
 ### Constants — No Magic Strings
 

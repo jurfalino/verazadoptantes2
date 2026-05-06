@@ -38,7 +38,7 @@ export default function ReferralBanner() {
             <button
                 onClick={dismiss}
                 className="referral-dismiss"
-                aria-label="Dismiss"
+                aria-label={t('nav.dismiss')}
             >
                 ✕
             </button>

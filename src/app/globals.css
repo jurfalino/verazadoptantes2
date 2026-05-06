@@ -766,6 +766,18 @@ button {
   color: var(--status-cyan-text) !important;
 }
 
+/* ── Pink Colors (contact pills — "social" type) ── */
+[data-theme="dark"] .bg-pink-50,
+[data-theme="dark"] .bg-pink-100 {
+  background-color: rgba(236, 72, 153, 0.12) !important;
+}
+[data-theme="dark"] .text-pink-700 {
+  color: #f9a8d4 !important;
+}
+[data-theme="dark"] .border-pink-200 {
+  border-color: rgba(236, 72, 153, 0.3) !important;
+}
+
 /* ── Gray Colors (legacy) ── */
 [data-theme="dark"] .bg-gray-50,
 [data-theme="dark"] .bg-gray-100 {

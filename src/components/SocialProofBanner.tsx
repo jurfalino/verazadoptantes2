@@ -63,7 +63,7 @@ export default function SocialProofBanner({ config }: { config?: Record<string, 
             <button
                 onClick={dismiss}
                 className="social-proof-dismiss"
-                aria-label="Dismiss"
+                aria-label={t('nav.dismiss')}
             >
                 ✕
             </button>

@@ -3,6 +3,7 @@ import { getDb } from "@/app/actions";
 import { appConfig } from "@/db/schema";
 import { NextResponse } from "next/server";
 import { inArray } from "drizzle-orm";
+import { logger } from "@/lib/logger";
 
 /**
  * Public endpoint: returns only whitelisted UI feature flags.
@@ -42,7 +43,12 @@ export async function GET() {
         }
 
         return NextResponse.json({ config });
-    } catch {
+    } catch (e) {
+        // Falls back to PUBLIC_FLAG_DEFAULTS — log so a flaky DB doesn't silently
+        // serve default config to every public page load.
+        logger.warn('GET /api/config failed — serving PUBLIC_FLAG_DEFAULTS', {
+            error: e instanceof Error ? e.message : String(e),
+        });
         return NextResponse.json({ config: { ...PUBLIC_FLAG_DEFAULTS } });
     }
 }

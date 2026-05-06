@@ -213,7 +213,10 @@ export const verificationTokens = sqliteTable(
 
 export const userProfiles = sqliteTable("user_profiles", {
     userId: text("user_id").primaryKey(),
-    organization: text("organization"),
+    // organization: text("organization") — DEPRECATED & DROPPED in v2.12.1-34 (migration 0037).
+    // Real org membership lives in `organizations` + `org_members` tables. The legacy
+    // column was a free-text annotation only the admin form ever wrote to and was never
+    // synced with the user-facing /organizations system.
     role: text("role").default("viewer"), // viewer, contributor, admin
     notes: text("notes"),
     commsOptIn: integer("comms_opt_in").default(0),

@@ -11,6 +11,16 @@ import { computeStats } from '@/domain/stats';
 import { buildFlags } from '@/domain/flags';
 import { RECORD_TYPES } from '@/domain/constants';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
+import { logger } from '@/lib/logger';
+
+const logD1Fallback = (op: string, adopterId: string) => (e: unknown) => {
+    logger.warn('enrichAdopters: D1 fallback hit', {
+        op,
+        adopterId,
+        error: e instanceof Error ? e.message : String(e),
+    });
+    return [];
+};
 
 export interface EnrichmentResult {
     avgRating: number | null;
@@ -47,12 +57,12 @@ export async function enrichAdopters(
                 rating: adoptions.rating,
                 recordType: adoptions.recordType,
                 date: adoptions.date
-            }).from(adoptions).where(eq(adoptions.adopterId, adopterId)).catch(() => []),
+            }).from(adoptions).where(eq(adoptions.adopterId, adopterId)).catch(logD1Fallback('adoptions', adopterId)),
 
             // Flags
             db.select({ reason: adopterFlags.reason })
                 .from(adopterFlags)
-                .where(eq(adopterFlags.adopterId, adopterId)).catch(() => []),
+                .where(eq(adopterFlags.adopterId, adopterId)).catch(logD1Fallback('flags', adopterId)),
 
             // Stats (exclude admin activity)
             db.select({ eventType: adopterStats.eventType })
@@ -60,7 +70,7 @@ export async function enrichAdopters(
                 .where(and(
                     eq(adopterStats.adopterId, adopterId),
                     sql`(${adopterStats.userId} IS NULL OR ${adopterStats.userId} NOT IN (${sql.raw(ADMIN_STATS_EXCLUSION_SQL)}))`
-                )).catch(() => []),
+                )).catch(logD1Fallback('stats', adopterId)),
 
             // Images
             db.select({
@@ -73,7 +83,7 @@ export async function enrichAdopters(
                     isNull(adopterImages.adoptionId)
                 ))
                 .orderBy(sql`${adopterImages.isProfilePicture} DESC, ${adopterImages.uploadedAt} DESC`)
-                .limit(1).catch(() => []),
+                .limit(1).catch(logD1Fallback('images', adopterId)),
 
             // System-detected duplicates (medium/high confidence only)
             db.select({ count: sql<number>`COUNT(*)` })

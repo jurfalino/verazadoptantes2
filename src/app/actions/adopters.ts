@@ -402,7 +402,13 @@ export async function requestAdopterDeletion(adopterId: string) {
                 url: '/admin/data-requests',
                 icon: '🗑️',
                 metadata: { adopterId },
-            }).catch(() => {});
+            }).catch((e) => {
+                logger.warn('notifyAdmins (deletion_request) fire-and-forget failed', {
+                    adopterId,
+                    actorEmail: user,
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            });
         });
 
         return { success: true };

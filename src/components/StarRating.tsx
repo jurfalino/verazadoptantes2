@@ -2,6 +2,7 @@
 
 import { useLanguage } from '@/context/LanguageContext';
 import { getRatingColors } from '@/lib/ratingColors';
+import { getRatingLabelKey } from '@/domain/ratings';
 
 interface StarRatingProps {
     value: number;
@@ -26,14 +27,7 @@ export function StarRating({ value, onChange, size = 'md', showLabel = false }: 
 
     // We use the text color from getRatingColors to fill the stars for consistency
 
-    const labelKeyMap: Record<number, string> = {
-        1: 'dangerous',
-        2: 'poor',
-        3: 'average',
-        4: 'good',
-        5: 'excellent',
-    };
-    const labelKey = labelKeyMap[clamped] || 'unknown';
+    const labelKey = getRatingLabelKey(clamped);
     const label = t(`ratings.${labelKey}` as any) || '';
 
     return (

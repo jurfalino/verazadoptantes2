@@ -99,7 +99,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
 
         // Check file type
         if (!file.type.startsWith('image/') && !isVideoFile) {
-            toast.warning('Invalid File', 'Please select an image or video file.');
+            toast.warning(t('toast.invalid_file_title'), t('errors.upload_invalid_file'));
             return;
         }
 
@@ -163,7 +163,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
             }, ...images]);
         } catch (error) {
             console.error('Media upload failed:', error instanceof Error ? error.message : error);
-            toast.error('Upload Failed', 'Failed to upload. Please try again.', extractErrorId(error));
+            toast.error(t('toast.upload_failed_title'), t('errors.upload_failed'), extractErrorId(error));
         } finally {
             setUploading(false);
         }
@@ -185,7 +185,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
             })));
         } catch (err) {
             console.error('Failed to set profile picture:', err);
-            toast.error('Error', 'Failed to set profile picture.', extractErrorId(err));
+            toast.error(t('errors.generic'), t('errors.set_profile_pic_failed'), extractErrorId(err));
         } finally {
             setSettingProfile(null);
         }
@@ -265,7 +265,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                                             if (img.id) await handleSetProfilePicture(img.id);
                                         }}
                                         disabled={settingProfile === img.id}
-                                        className="absolute top-0 left-0 m-2 px-2 py-1 bg-white/90 hover:bg-teal-500 hover:text-white text-teal-700 text-xs font-semibold rounded-lg shadow-md opacity-0 group-hover:opacity-100 transition-all flex items-center gap-1 backdrop-blur-sm"
+                                        className="absolute top-0 left-0 m-2 px-2 py-1 bg-white/90 hover:bg-teal-500 hover:text-white text-teal-700 text-xs font-semibold rounded-lg shadow-md md:opacity-0 md:group-hover:opacity-100 transition-all flex items-center gap-1 backdrop-blur-sm"
                                         title={t('adopter.set_as_profile') || 'Set as Profile Picture'}
                                     >
                                         {settingProfile === img.id ? (
@@ -300,10 +300,10 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                                             }
                                         } catch (err) {
                                             console.error(err);
-                                            toast.error('Error', 'Failed to delete image.', extractErrorId(err));
+                                            toast.error(t('errors.generic'), t('errors.delete_image_failed'), extractErrorId(err));
                                         }
                                     }}
-                                    className="absolute top-0 right-0 m-2 p-2 bg-white/90 hover:bg-white text-rose-600 rounded-xl shadow-md z-10 transition-all hover:scale-105 backdrop-blur-sm opacity-0 group-hover:opacity-100"
+                                    className="absolute top-0 right-0 m-2 p-2 bg-white/90 hover:bg-white text-rose-600 rounded-xl shadow-md z-10 transition-all hover:scale-105 backdrop-blur-sm md:opacity-0 md:group-hover:opacity-100"
                                     title={t('common.delete')}
                                 >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>

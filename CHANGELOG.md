@@ -2,6 +2,216 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.6] - 2026-05-06
+
+UX: rating labels and click-to-explain popover on search results.
+
+### Added
+- **`RatingBadge` `label` prop** — `'none'` (default, backward compatible), `'short'` (e.g. "Bueno"), or `'search'` (e.g. "Buen Adoptante"). Display sites use `'short'`; search-result cards use `'search'`.
+- **`RatingExplainer` (new component)** — wraps the rating in search results; click opens a popover (bottom-sheet on mobile) listing all 5 levels with their color and explanation, with the current rating highlighted via `ring-2`. Educational tool so new users understand the full scale at a glance.
+- **i18n keys** under `ratings`: `search_label.*` (long form), `explanation.*` (popover text), `scale_title`. Added in both `es` and `en`.
+- **`StarRating` `showLabel` enabled** in all 4 edit sites (wizard creation, edit, observation, import) — replaces the inline "1=Dangerous, 5=Excellent" helper text in `AdoptionFormEditV2`, `ReportWizard`, `ImportWizard`.
+
+### Changed
+- **Level 3 label**: ES `"Promedio"` → `"Regular"`, EN `"Average"` → `"Fair"`. Matches the canonical scale terminology.
+- **Centralized rating metadata** in `src/domain/ratings.ts` (`RATING_LEVELS`, `RATING_LABEL_KEYS`, `getRatingLabelKey`) — eliminates the duplicated 1→5 → label-key map that existed in both `StarRating.tsx` and `lib/ratingColors.ts`. `getRatingDescription` is now a re-export.
+
+### Notes
+- No new field on the adopter — the rating shown is still the computed average of the recorded interactions (`computeAvgRating`).
+- The 5 status colors (red/orange/amber/lime/green) used by the popover aren't yet remapped for Azul Noche — that fix is part of Phase 2 of the mobile remediation plan.
+
+## [2.12.5] - 2026-05-05
+
+### Removed
+- **`src/components/AdoptionForm.tsx` deleted as dead code** (~830 lines). Audit yesterday assumed it was the creation form on the adopter profile; it isn't. The actual creation flow uses `AdoptionFormWizard.tsx` (multi-step). `AdoptionForm.tsx`'s only consumer was `AdoptionHistory.tsx` as a *fallback edit component*, but the only caller of `AdoptionHistory` (`AdopterProfileV2.tsx`) always passes `editFormComponent={AdoptionFormEditV2}` as override — so the fallback never fired.
+- **The "promote sticky bar to creation form" change in v2.12.4 was modifying this dead file**; it had no user-visible effect. Removing the file removes the confusion.
+
+### Changed
+- **`AdoptionHistory.tsx`**: `editFormComponent` prop is now required (not optional) and properly typed as `ComponentType<{...}>` instead of `any`. Fallback removed. Inline IIFE around the edit component dropped (no longer needed).
+
+## [2.12.4] - 2026-05-04
+
+UI cleanup pass on the adoption record forms (creation + edit). Senior-UI
+audit surfaced 8 inconsistencies between the two forms; all addressed.
+
+### Changed
+- **Sticky save bar promoted to creation form** — `AdoptionForm.tsx` now uses the same floating sticky pill (`bottom-4 bg-white/80 backdrop-blur-xl border border-teal-200 shadow-xl rounded-xl`) as the edit form. Cancel/save are always reachable on long forms; matches edit-form paradigm.
+- **Trash icon toned down** — `text-rose-500` → `text-stone-500 hover:text-rose-500` on both forms. No longer the loudest element in the action bar.
+- **Rating helper text restored on edit form** — replaced inline `showLabel={true}` with a `1 = Dangerous, 5 = Excellent` hint below stars (matches creation-form presentation).
+- **Animal info pills now grouped** — added small uppercase `ANIMAL INFO` label above the read-only sex/age/neutered/color/microchip pills row in edit form. Pills no longer float orphaned in midair.
+- **Creation submit guarded against mid-upload submit** — `disabled={loading}` → `disabled={loading || uploading}` (parity with edit form).
+
+### Fixed
+- **Edit form: editing an Observation no longer hides Date / Identity Verified / Rating** — Block 1 wrapper (which sets `display:none` for observations) now closes after the animal-name/species/pills section instead of after Rating. Date, Identity, and Rating remain visible regardless of record type.
+- **Edit-form interaction wrapper background mismatch** — dropped the muted `bg-stone-50/50 ... border border-stone-200/60` inner box on Block 1 so the edit form sits flush on the white card like the creation form does.
+
+### i18n
+- Added `adoption.animal_info` key to ES + EN locale files for the new pills section label.
+
+
+
+Minor version bump: i18n sweep across user-facing components — Spanish users no longer
+see English error messages, English users no longer see Spanish share menus, and the
+adoption wizard buttons (Siguiente / Atrás / Guardar Registro) finally translate.
+
+### Added (i18n keys, ES + EN)
+- **`errors.*`** namespace expanded with ~35 specific action-failure keys: `upload_failed`, `upload_invalid_file`, `upload_invalid_image`, `upload_video_too_large`, `upload_process_failed`, `save_adoption_failed`, `save_adopter_failed`, `save_failed_generic`, `save_animal_failed`, `delete_media_failed`, `delete_record_failed`, `delete_image_failed`, `delete_photo_failed`, `delete_failed_generic`, `delete_request_failed`, `set_profile_pic_failed`, `search_failed`, `submit_report_failed`, `submit_request_failed`, `report_error`, `request_error`, `not_found_animal`, `load_animal_failed`, `unexpected`, `action_failed`, `unknown_error`, plus several admin-only keys for future Phase 5.
+- **`toast.*`** namespace (new): toast titles like `upload_failed_title`, `invalid_file_title`, `video_too_large_title`, `not_found_title`, `save_error_title`, `search_failed_title`, `delete_failed_title`, `action_failed_title`, `purge_complete_title`, `stats_purged_title`, `saved_title`, plus messages for the success cases.
+- **`dialogs.*`** namespace (new): browser-dialog confirm/alert text (`confirm_delete_media`, `confirm_delete_record`, `confirm_delete_adopter`, `confirm_merge`, `confirm_purge_stats`, `confirm_delete_audit`, `confirm_dismiss_duplicate`, `alert_merge_failed`, etc.).
+- **`share.*`** namespace (new): all 10 ShareMenu/ShareFormMenu strings (`open_in_new_tab`, `via_message`, `via_email`, `qr_show`, `more_options`, `contract_preview_hint`, `contract_qr_hint`, `form_preview_hint`, `form_qr_hint`, `form_footer_hint`).
+- **`wizard.back`** + **`wizard.save_record`** in the existing wizard namespace.
+- **`nav.*`** additions: `change_language`, `dismiss`, `open_menu`, `close_menu`, `expand_image`, `permanently_delete_adopter`, `close_suggestion`, `confirm_code_placeholder`, `type_to_confirm`.
+
+### Changed
+- **All hardcoded toast titles + messages in user-facing components** now go through `t()`. Affected: `AdoptionForm.tsx` (5 sites), `AdoptionFormEditV2.tsx` (5), `AdoptionFormWizard.tsx` (3), `AdopterFlagging.tsx` (6), `AdopterForm.tsx` (6 — also fixed broken `t('common.error') || 'Error'` fallback to use `t('errors.generic')`), `ImageGallery.tsx` (4), `SearchSection.tsx` (2), `ReportWizard.tsx` (1), `AdoptionHistory.tsx` (1), `AdopterProfileV2.tsx` (3), `FormResultMatchCard.tsx` (2). ~38 toast call sites updated.
+- **Browser `confirm()` dialogs** in user-facing flows now go through `t()`: `AdoptionForm.tsx`, `AdoptionFormEditV2.tsx` ("Delete this media?"), `AdoptionHistory.tsx` ("Are you sure you want to delete this adoption record?").
+- **`ShareMenu.tsx` + `ShareFormMenu.tsx`** — all 14 hardcoded Spanish strings (open in new tab, send by message, send by email, QR show, more options, preview/QR/footer hints) replaced with `t('share.*')`. English users finally see English share menus.
+- **Wizard step buttons** (`Siguiente →`, `← Atrás`, `💾 Guardar Registro`) in `AdoptionFormWizard.tsx` now use `t('wizard.next')`, `t('wizard.back')`, `t('wizard.save_record')`. English users see "Next →", "← Back", "💾 Save Record".
+- **`aria-label` / `title` attributes**: `LanguageSwitcher.tsx` ("Change language"), `ReferralBanner.tsx` + `SocialProofBanner.tsx` ("Dismiss"), `SearchSection.tsx` ("Cerrar sugerencia"), `AdoptionForm.tsx` + `AdoptionFormEditV2.tsx` ("Delete" / "Remove"), `ImportWizard.tsx` ("Expand image") — all now via `t()`.
+
+### Out of scope (deferred to future PR)
+- **Admin pages** (`/admin/*` UI text, ~15 strings) — admins are typically English-comfortable, and most admin components don't have `useLanguage` imported. Phase 5 in the original i18n audit; defer until multi-language admin support is a real requirement.
+- **`DeleteAdopterButton`, `AdminAdopterList`, `AdminDangerZone`, `DuplicateMergeModal`, `LinkFormToList`** — toast/confirm calls in these. Either admin-only or lack `useLanguage` import; deferred as Phase 5 work.
+- **`my-animals/new`** — already does manual `locale === 'es' ? 'es-text' : 'en-text'` for its dialogs. Bilingual already, just hand-rolled. Acceptable as-is.
+
+### Documentation note
+The audit at `.agents/audits/2026-05-04-mobile-breakpoint-comprehensive-plan.md` did NOT cover i18n — that was a separate question. If a similar i18n audit is wanted in the future, the framework is the same: grep for hardcoded literals in JSX/attributes/dialogs and bucket by user-facing surface.
+
+## [2.12.2] - 2026-05-04
+
+Minor version bump: comprehensive mobile breakpoint remediation across the user-facing
+app + admin pages, executing the plan in
+`.agents/audits/2026-05-04-mobile-breakpoint-comprehensive-plan.md`.
+
+### Fixed (P0 — blocking mobile experience)
+- **iOS Safari auto-zoom on form inputs eliminated.** Every `<input>`, `<textarea>`, and `<select>` in the adoption forms (10 sites across `AdoptionForm.tsx`, `AdoptionFormWizard.tsx`, `AdoptionFormEditV2.tsx`) had `text-sm` (14px), triggering iOS's auto-zoom on focus. Replaced with `text-base md:text-sm` — 16px on mobile (no zoom), 14px on desktop (unchanged). Per-component fix instead of a global `!important` rule to avoid blast radius on other text-sizing overrides.
+- **NotificationBell dropdown reworked as a bottom sheet on mobile.** Was using `fixed inset-x-0 top-14`, covering content with no scroll-back when opened mid-scroll. Now `fixed inset-x-0 bottom-0 max-h-[80vh] rounded-t-2xl` on mobile (slide-up sheet) and unchanged `sm:absolute sm:right-0 sm:mt-2` on desktop. Includes `paddingBottom: env(safe-area-inset-bottom)` so the iOS home indicator doesn't clip the last notification.
+- **`/admin/organizations` table now horizontally scrollable on mobile** (`overflow-x-auto` wrapper + `min-w-[640px]` on the table) with a "← desliza para ver más →" hint visible only at `<md`. Other admin pages already had card fallbacks; this one didn't.
+- **AdoptionFormEditV2 sticky save bar respects iOS safe-area-inset.** Added `paddingBottom: max(1rem, env(safe-area-inset-bottom))` so the bar clears the home indicator and stays above the soft keyboard.
+
+### Fixed (P1 — significant polish)
+- **Image delete buttons visible on touch.** 9 sites across `ImageGallery.tsx` (delete + set-as-profile), `AdoptionForm.tsx`, `AdoptionFormWizard.tsx`, `AdoptionFormEditV2.tsx`, `ImportWizard.tsx` had `opacity-0 group-hover:opacity-100` — invisible on touch. Replaced with `md:opacity-0 md:group-hover:opacity-100` so they're visible by default on mobile, hover-only on desktop. The 2 magnify icons (decorative cues, not actions) deliberately left hover-only to avoid visual clutter on every thumbnail.
+- **NotificationBell "Mark all read" tap target ≥44px** on mobile via `min-h-[44px] sm:min-h-0 px-2 -mr-2`. Per WCAG 2.5.5 / Apple HIG.
+- **Pink palette dark-theme remap added** in `globals.css` for ContactPills' "social" type (`bg-pink-50/100`, `text-pink-700`, `border-pink-200`). The audit had flagged blue/amber/red/purple/orange as broken in dark mode, but on inspection those palettes are already remapped — pink was the only genuine gap.
+
+### Added (documentation, bundled with this release)
+- `docs/ux-ui-guidelines.md` — decision-making framework: principles, patterns, persona conventions, anti-patterns we've walked back. Complements the existing `design-style-guide.md` (visual tokens) and the two `.agents/workflows/` review files (ui-review, ux-review).
+- `.agents/audits/2026-05-04-mobile-breakpoint-audit.md` — focused first-pass mobile audit (May 4 morning).
+- `.agents/audits/2026-05-04-mobile-breakpoint-comprehensive-plan.md` — whole-app comprehensive audit + phased remediation plan (May 4 afternoon). This release executes Phases 1 + 2 of that plan.
+- `.agents/workflows/ux-review.md` — humanistic UX review prompt (separate from the mechanical compliance lint at `.agents/workflows/ui-review.md`).
+- `CLAUDE.md` — Key Directories updated with pointer to `docs/ux-ui-guidelines.md`.
+
+### Internal
+- Phase 3 items deferred (not part of this release): mobile card layout for `/admin/organizations`, sticky/z-index stacking documentation, `inputMode`/`autocomplete` sweep on numeric/email/tel fields. See the comprehensive plan for context.
+
+## [2.12.1-42] - 2026-05-04
+
+### Added
+- **Tap a filled profile-photo avatar to open it in a lightbox view.** Previously the avatar was a dead element once filled — only the empty initials placeholder was clickable (for upload). This fixes the inconsistent affordance: the avatar slot now does something useful in both states. Mobile users finally get a usable enlarged view of the face for trust judgement.
+- **"Cambiar foto" action inside the lightbox** — small button in the lightbox header (next to the close X) for authenticated users. Triggers the same hidden file input + `saveImage(..., isProfilePicture: true)` pipeline used by empty-state upload (atomic replace, previous photo automatically demoted). Anonymous viewers see the lightbox view-only without the change action.
+- Remove-photo intentionally NOT added to the lightbox in this release — destructive action with no undo, kept in the existing Photos collapsible to avoid one-tap accidental removals. Can be added later with a confirmation step if users complain it's hard to find.
+
+### Changed
+- **`MediaLightbox` gains an optional `actions?: ReactNode` prop** for header injection. Backward-compatible — all existing consumers (AdoptionForm, AdoptionHistory, etc.) call without the prop and render unchanged. Caller is responsible for layout/styling of injected nodes.
+- **`AdopterForm` hoists the hidden file input** out of the empty-state render branch to a stable location at the top of the form. Single ref + handler now serves both the empty-state camera button (v38) and the lightbox replace button (v42). Avoids the "two `<input>` elements sharing one ref" anti-pattern.
+
+### Added (i18n)
+- `adopter.view_profile_photo` (ES: "Ver foto de perfil" / EN: "View profile photo") — aria-label/title for the filled-avatar button.
+- `adopter.change_profile_photo` (ES: "Cambiar foto" / EN: "Change photo") — lightbox-internal replace button.
+
+## [2.12.1-41] - 2026-05-04
+
+### Fixed
+- **Homepage "Mis Adopciones" chip count + page now match the label.** The chip on the QuickAccessStrip was counting all interaction types (adoption + adoption_request + observation + follow_up + returned_pet) — anything except `available` — but the label said "Adopciones." A user with 4 adoptions and 8 observations saw a chip of "12" → clicked → landed on `/my-adoptions` with the All tab preselected, also showing 12 mixed records. Honest CX failure: label and data disagreed at both ends.
+  - **`src/app/api/quick-counts/route.ts:31-37`** — narrowed the count to `recordType = 'adoption'` (using the `RECORD_TYPES.ADOPTION` constant). Dropped the now-unused `not` import; added `RECORD_TYPES` import.
+  - **`src/app/my-adoptions/page.tsx:50`** — default `filter` param changed from `'all'` to `'adoption'` so the Adoption tab is preselected on direct navigation. Other types remain reachable via the existing tabs (no functionality lost). URL `?filter=all` still works for users who explicitly want the everything view.
+  - Net: chip count = number of records visible on the default-loaded `/my-adoptions` page = number of true adoptions. The label is finally honest.
+- **No downstream breakage.** Verified `dashboard.ts:188` uses a per-adopter `counts` object that's already correctly recordType-filtered (different scope than `/api/quick-counts`); `MilestoneBadge` uses its own `/api/dashboard/milestone` endpoint unaffected by this change.
+
+## [2.12.1-40] - 2026-05-04
+
+### Fixed
+- **Smoke test caught up with v2.12.1-39 hero removal.** `tests/smoke.spec.ts:13` was asserting `getByRole('heading', { level: 1 }).toBeVisible()` — but v39 deleted the H1 in favor of the search-first homepage. Replaced with two stronger checks: search input visibility (the actual primary anchor) + the `home.value_main` text (proves layout + i18n loaded). The previous assertion blocked v39's e2e job; this should let the hero-slim-down deploy.
+
+## [2.12.1-39] - 2026-05-04
+
+### Changed
+- **Homepage hero slimmed down to a single value-prop line.** Removed the 40px hero shield-paw icon (already shown in the sticky nav above), the H1 "Registro de Adopciones", both existing value-prop lines (verifier + recorder), and both pill links. Replaced with one combined line above the search: **"Busca adoptantes y Registra adopciones"** (ES) / **"Search adopters and record adoptions"** (EN). Pulls the search input above the fold on mobile and eliminates the double-branding with the sticky nav. The `hidden md:block` collapse-on-mobile-when-results-visible behavior is preserved.
+- **Adoption Guide and Funcionalidades links moved to the homepage footer**, alongside Privacy / Terms / Contact, with the same `·` separator pattern. Guide remains locale-aware (`/guia` ES, `/guide` EN).
+
+### Added
+- New i18n key `home.value_main` (ES + EN) for the combined value-prop line.
+
+### Internal
+- Dropped now-unused imports from `SearchSection.tsx`: `ShieldPawIcon` (still used by the global nav `Logo` component, just not here) and `Link` (no remaining `<Link>` usage in this file).
+- Orphaned (NOT deleted): `home.title`, `home.value_verify`, `home.value_register`. Defer cleanup to a separate housekeeping commit after a release with no regressions.
+
+## [2.12.1-38] - 2026-05-04
+
+### Added
+- **Click-the-initials avatar to upload a profile photo.** When an adopter has no profile picture yet, the teal initials placeholder in the profile header is now a button (only for authenticated users). Clicking it opens the OS file picker; the chosen image is compressed client-side (max 1200px JPEG @ 0.85 quality) and uploaded via the existing `saveImage` pipeline with `isProfilePicture: true` so the avatar fills immediately on reload. A small camera SVG badge sits at the bottom-right of the avatar circle as a persistent affordance (mobile-friendly — no hover required). Loading state replaces the initials with a spinner during upload. Anonymous viewers see a non-interactive placeholder (no fake CTA that gates on click).
+
+### Changed
+- **`saveImage` action** gains an optional 6th param `isProfilePicture?: boolean`. Default false (backward compatible — all 7 existing call sites unaffected). When true, the action atomically demotes any existing profile picture before inserting the new one, so the "exactly one profile picture per adopter" invariant holds without a follow-up `setProfilePicture` round-trip. Triggers `revalidatePath` for the adopter page so the new photo appears on next render.
+
+### Internal
+- New i18n keys: `adopter.add_profile_photo`, `adopter.profile_photo_caption`, `adopter.upload_invalid_type`, `adopter.upload_save_first`, `adopter.upload_success`, `adopter.upload_failed` (ES + EN).
+
+## [2.12.1-37] - 2026-05-04
+
+### Removed
+- **`DisclaimerInfoButton` (the ⓘ icon next to the rating badge)** deleted entirely. The icon's modal opened to the same global disclaimer text already shown by the first-view `DisclaimerToast` — pure duplicate content, no extra context. Worse, putting a generic info icon adjacent to the rating implied "more info about this rating" but delivered a generic legal blurb (misleading affordance), and competed for attention with one of the highest-value trust signals on the page. Long-term reference for the disclaimer text already lives at `/terms`, linked from the homepage footer — no per-profile re-discovery affordance is needed.
+- `src/components/AdopterForm.tsx` — drop the import + render; restore the simpler rating wrapper (no flex container needed once the icon is gone).
+
+## [2.12.1-36] - 2026-05-04
+
+### Changed
+- **`DisclaimerToast` redesign — slim notice strip instead of a card.** Removed the heavy padding, shadow, and `Entendido` button. Now: single row with info SVG + text + close SVG. Same informed-consent semantics (localStorage-gated, `aria-live` polite), ~60% less vertical space, lower visual weight (a one-time notice should look like a notice, not a primary content card).
+- **All emoji glyphs in disclaimer components replaced with inline SVG**: `ℹ️` info icon → stroke `<svg>` (circle + i path); `✕` close → stroke `<svg>`; `ⓘ` info-button trigger → same info SVG. SVG inherits theme colors via `currentColor` and renders consistently across OS/browser, unlike emoji.
+
+### Internal
+- Memory note saved at `feedback_svg_over_emoji.md` documenting the SVG-over-emoji rule for functional icons (close, info, action affordances). Decorative emoji next to text labels (🐱 species marker etc.) remain acceptable.
+
+## [2.12.1-35] - 2026-05-03
+
+### Fixed
+- **`/admin/audit` showed search actions twice per submit.** `SearchSection.handleSearch` was updating the URL via `window.history.replaceState(...)` BEFORE awaiting the search. The URL change re-triggered `useSearchParams()` → `initialQuery` recomputed → the auto-run `useEffect` saw `initialQuery && !results` (results not yet set) and fired a second `findAdopters` call independently. Both calls hit `logAudit({ action: 'search' })` → two audit_log rows per user search. Fix: (1) move the URL update to AFTER `setResults` so the effect's `!results` guard succeeds when `useSearchParams` re-fires; (2) add `!loading` to the effect's guard for defense-in-depth so an in-flight search can never trigger a duplicate.
+
+## [2.12.1-34] - 2026-05-03
+
+### Added
+- **`/admin/organizations` page** — admin can now see every organization users created via `/organizations`, with owner email, member count, pending-invite count, and creation date. Click any row to expand and see the full member list + pending invites; admin actions include rename, transfer ownership (changes `created_by`), remove individual members, and delete the org entirely. Sidebar entry under "Users".
+- **`GET /api/admin/organizations`** — lists all orgs with member/invite counts.
+- **`GET /api/admin/organizations/[id]`** — fetches members + invites for one org.
+- **`PATCH /api/admin/organizations/[id]`** — rename or transfer ownership.
+- **`DELETE /api/admin/organizations/[id]?memberId=…`** — remove a single member.
+- **`DELETE /api/admin/organizations?id=…`** — hard-delete an org (cascades through `org_invites` + `org_members`; adopter records owned by members are unaffected).
+- **Org membership chips on `/admin/users`** — the "Organization" column now reads from the real `org_members` → `organizations` join (`json_group_array` aggregate in the GET query). Each chip links to `/admin/organizations?highlight=<orgId>` so admins can pivot from a user to their org context in one click. Filter by org name still works.
+
+### Removed
+- **`user_profiles.organization` legacy free-text column** dropped via migration `0037_drop_user_profiles_organization.sql`. It was only ever written by the `/admin/users` edit form and was never synced with the user-facing `/organizations` system, so the column displayed empty for everyone except users an admin manually annotated. The admin form's "Organization" input is also removed (desktop column + mobile card + edit modal). The `PUT /api/admin/users` body no longer accepts an `organization` field.
+
+## [2.12.1-33] - 2026-05-03
+
+### Fixed
+- **Silent error swallowing in 3 hot paths** — error catches that were either dropping all context or saying nothing at all are now logged with the original operation's input:
+  - `formSubmission.ts:41` — household JSON parse failure now logs a warn with a snippet of the malformed body. Previously: `} catch { /* ignore */ }` (silent).
+  - `findAdopters.ts:295/301/447` — three D1 `.catch(() => [])` fallbacks now log the `adopterId` (and `userCountry` for the third) at warn level. Previously a D1 outage looked like "no results" instead of an alert.
+  - `enrichAdopters.ts:50/55/63/76` — same treatment via a reusable `logD1Fallback(op, adopterId)` helper.
+  - `adopters.ts:405` — the deletion-request notification fire-and-forget `.catch(() => {})` now logs `adopterId` + `actorEmail`.
+  - `config.ts:30` — `getAdoptionConfig` catch now flags `fallbackUsed: true` so flaky DB → silent default-thresholds is visible.
+  - `delete-adopter/route.ts:63` — final catch now includes `adopterId` + `actorEmail` (declared outside the try so they're in scope for the catch).
+  - `duplicates.ts:327` — `checkTokenDuplicates` catch now logs `name`, `hasContactInfo`, `hasAddresses`.
+  - `/api/config/route.ts` — the silent `} catch { ... default config ... }` now logs the underlying error at warn level.
+
+### Added
+- **Logging Conventions** section in `CLAUDE.md` documenting the two rules: (1) catches re-emit operation context (declare input vars outside `try` so they're in scope), (2) never silently swallow — log at warn or error. Includes the standard `.catch(e => { logger.warn(...); return [] })` pattern for D1 fallbacks and a privacy note about `maskEmail`.
+
+## [2.12.1-32] - 2026-05-03
+
+### Fixed
+- **`DisclaimerToast` and `DisclaimerInfoButton` now adapt to the active color theme.** The v30 implementation used hardcoded `bg-blue-50`, `text-blue-900`, `bg-blue-600`, etc. — `globals.css` only remaps the stone/teal/rose palettes (per the documented theme architecture), so blue stayed blue under `[data-theme="dark"]` and contrast broke. Replaced with inline CSS variables: `var(--status-info-bg)` + `var(--status-info-border)` for the surface, `var(--text-primary)` for body text, `var(--btn-primary-bg)` / `var(--btn-primary-text)` / `var(--btn-primary-hover)` for the action button, `var(--text-secondary)` for the dismiss `✕`. The `ⓘ` trigger icon now uses `text-stone-*` (already remapped) instead of `text-blue-600`.
+
 ## [2.12.1-31] - 2026-05-03
 
 ### Added

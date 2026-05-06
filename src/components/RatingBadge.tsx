@@ -1,13 +1,18 @@
+'use client';
 
 import { getRatingColors } from '@/lib/ratingColors';
+import { getRatingLabelKey } from '@/domain/ratings';
+import { useLanguage } from '@/context/LanguageContext';
 
 interface RatingBadgeProps {
     rating: number | string; // Supports '1'-'5' or 1-5 (including decimals like 4.2)
     size?: 'sm' | 'md' | 'lg';
     variant?: 'badge' | 'inline'; // badge = colored pill with number, inline = compact ⭐ + number
+    label?: 'none' | 'short' | 'search'; // none = no label (default), short = "Bueno", search = "Buen Adoptante"
 }
 
-export function RatingBadge({ rating, size = 'md', variant = 'badge' }: RatingBadgeProps) {
+export function RatingBadge({ rating, size = 'md', variant = 'badge', label = 'none' }: RatingBadgeProps) {
+    const { t } = useLanguage();
     const numRating = Number(rating);
     const isValid = !isNaN(numRating) && numRating >= 1 && numRating <= 5;
 
@@ -15,6 +20,12 @@ export function RatingBadge({ rating, size = 'md', variant = 'badge' }: RatingBa
 
     const colors = getRatingColors(numRating);
     const display = numRating % 1 !== 0 ? numRating.toFixed(1) : `${numRating}.0`;
+
+    const labelKey = getRatingLabelKey(numRating);
+    const labelText =
+        label === 'short' ? (t(`ratings.${labelKey}` as any) || '')
+        : label === 'search' ? (t(`ratings.search_label.${labelKey}` as any) || '')
+        : '';
 
     if (variant === 'inline') {
         const inlineSizes = {
@@ -24,7 +35,8 @@ export function RatingBadge({ rating, size = 'md', variant = 'badge' }: RatingBa
         }[size];
         return (
             <span className={`inline-flex items-center gap-0.5 font-semibold ${colors.text} ${inlineSizes}`}>
-                <span>⭐</span>{display}
+                <span>⭐</span><span>{display}</span>
+                {labelText && <span className="ml-1">{labelText}</span>}
             </span>
         );
     }
@@ -38,7 +50,7 @@ export function RatingBadge({ rating, size = 'md', variant = 'badge' }: RatingBa
     return (
         <div className={`inline-flex items-center gap-1 rounded-full font-semibold shadow-sm ${colors.bg} ${colors.text} ${colors.border} border ${sizeClasses.pad} ${sizeClasses.text}`}>
             <span>⭐</span><span>{display}</span>
+            {labelText && <span className="ml-0.5">· {labelText}</span>}
         </div>
     );
 }
-

@@ -9,8 +9,10 @@ test.describe('Smoke Tests', () => {
         await page.goto('/');
         // Page title from metadata
         await expect(page).toHaveTitle(/BuenAdoptante/i);
-        // Main heading should be visible
-        await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 30000 });
+        // The search input is the homepage's primary anchor (no H1 since v2.12.1-39).
+        await expect(page.locator('input#search')).toBeVisible({ timeout: 30000 });
+        // Value-prop line above the search proves i18n + layout rendered.
+        await expect(page.getByText(/Busca adoptantes y Registra adopciones|Search adopters and record adoptions/i)).toBeVisible({ timeout: 30000 });
     });
 
     test('Authenticated user has access', async ({ page }) => {

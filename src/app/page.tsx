@@ -151,7 +151,15 @@ export default function Home() {
 
         <footer className="mt-10 text-center text-stone-500 text-sm space-y-2">
 
-          <div className="flex items-center justify-center gap-3 text-xs">
+          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs">
+            <a href={locale === 'en' ? '/guide' : '/guia'} className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
+              {t('home.hero_guide')}
+            </a>
+            <span className="text-stone-300">·</span>
+            <a href="/funcionalidades" className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
+              {t('home.hero_features')}
+            </a>
+            <span className="text-stone-300">·</span>
             <a href="/privacy" className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
               {t('legal.privacy')}
             </a>

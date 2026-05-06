@@ -53,7 +53,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             setDeleteCheck(result);
             setDeleteModalOpen(true);
         } catch {
-            toast.error('Error', t('adopter.delete_error_check'));
+            toast.error(t('errors.generic'), t('adopter.delete_error_check'));
         } finally {
             setDeleteLoading(false);
         }
@@ -66,7 +66,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             toast.success('✓', t('adopter.delete_success'));
             window.location.href = '/';
         } catch {
-            toast.error('Error', t('adopter.delete_error_failed'));
+            toast.error(t('errors.generic'), t('errors.delete_failed_generic'));
             setDeleteLoading(false);
         }
     };
@@ -78,7 +78,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             toast.success('✓', t('adopter.delete_request_success'));
             setDeleteModalOpen(false);
         } catch {
-            toast.error('Error', t('adopter.delete_error_request'));
+            toast.error(t('errors.generic'), t('errors.delete_request_failed'));
         } finally {
             setDeleteLoading(false);
         }

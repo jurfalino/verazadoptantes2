@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ComponentType } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import { deleteAdoption, getAdoptionImages } from '@/app/actions';
@@ -14,10 +14,6 @@ import { formatAge } from '@/lib/ageUtils';
 import { isAdmin as isAdminEmail } from '@/config/admins-shared';
 import { MediaLightbox, MediaThumbnail } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
-
-import AdoptionForm from './AdoptionForm';
-
-
 
 interface Adoption {
     id: string;
@@ -51,7 +47,7 @@ interface AdoptionImage {
     thumbnailUrl?: string | null;
 }
 
-export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, adopterAddress = '', userNameMap = {}, editFormComponent }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, editFormComponent?: any }) {
+export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, adopterAddress = '', userNameMap = {}, editFormComponent: EditComponent }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, editFormComponent: ComponentType<{ adopterId: string; initialData: Adoption; onCancel: () => void; onSuccess: () => void; onDelete: () => void; currentUser?: string; adopterAddress?: string }> }) {
     const { t, locale } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
@@ -104,7 +100,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
     }, [editAdoptionParam, editingId]);
 
     const handleDelete = async (adoptionId: string) => {
-        if (!confirm('Are you sure you want to delete this adoption record? This action cannot be undone.')) return;
+        if (!confirm(t('dialogs.confirm_delete_record'))) return;
 
         setDeletingId(adoptionId);
         try {
@@ -112,7 +108,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
             router.refresh();
         } catch (error) {
             console.error('Failed to delete adoption:', error);
-            toast.error('Error', 'Failed to delete adoption record.', extractErrorId(error));
+            toast.error(t('errors.generic'), t('errors.delete_record_failed'), extractErrorId(error));
         } finally {
             setDeletingId(null);
         }
@@ -142,23 +138,18 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                     if (editingId === adoption.id) {
                         return (
                             <div key={adoption.id} id={`adoption-${adoption.id}`} className="relative ml-6 md:ml-10">
-                                {(() => {
-                                    const EditComponent = editFormComponent || AdoptionForm;
-                                    return (
-                                        <EditComponent
-                                            adopterId={adopterId}
-                                            initialData={adoption}
-                                            onCancel={() => setEditingId(null)}
-                                            onSuccess={() => {
-                                                setEditingId(null);
-                                                router.refresh();
-                                            }}
-                                            onDelete={() => handleDelete(adoption.id)}
-                                            currentUser={currentUser}
-                                            adopterAddress={adopterAddress}
-                                        />
-                                    );
-                                })()}
+                                <EditComponent
+                                    adopterId={adopterId}
+                                    initialData={adoption}
+                                    onCancel={() => setEditingId(null)}
+                                    onSuccess={() => {
+                                        setEditingId(null);
+                                        router.refresh();
+                                    }}
+                                    onDelete={() => handleDelete(adoption.id)}
+                                    currentUser={currentUser}
+                                    adopterAddress={adopterAddress}
+                                />
                             </div>
                         );
                     }
@@ -226,7 +217,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                             <p className="text-sm font-semibold text-stone-800 leading-snug flex flex-wrap items-center gap-x-1.5">
                                                 <span className="md:hidden">{icon} </span>{dateStr}{relativeTime && <span className="text-xs font-normal text-stone-400">({relativeTime})</span>}{dateStr ? ' — ' : ''}{summary}
                                                 {adoption.rating != null && adoption.rating > 0 && (
-                                                    <RatingBadge rating={adoption.rating} size="sm" />
+                                                    <RatingBadge rating={adoption.rating} size="sm" label="short" />
                                                 )}
                                                 {canEdit && (
                                                     <span className="text-teal-600 md:opacity-0 md:group-hover:opacity-100 transition-opacity inline-flex items-center ml-0.5">

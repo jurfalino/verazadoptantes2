@@ -182,12 +182,13 @@ export default function NotificationBell() {
             {/* Dropdown Panel — uses inline styles with CSS vars for theme safety */}
             {open && (
                 <div
-                    className="fixed inset-x-0 top-14 mx-4 sm:absolute sm:inset-auto sm:right-0 sm:top-auto sm:mt-2 sm:mx-0 sm:w-96 rounded-2xl shadow-2xl overflow-hidden z-50"
+                    className="fixed inset-x-0 bottom-0 max-h-[80vh] rounded-t-2xl sm:absolute sm:inset-auto sm:right-0 sm:top-auto sm:bottom-auto sm:mt-2 sm:max-h-none sm:w-96 sm:rounded-2xl shadow-2xl overflow-hidden z-50 flex flex-col"
                     style={{
                         background: 'var(--surface-card)',
                         color: 'var(--text-primary)',
                         border: '1px solid var(--border-default)',
                         backdropFilter: 'blur(20px)',
+                        paddingBottom: 'env(safe-area-inset-bottom)',
                     }}
                 >
                     {/* Header */}
@@ -201,7 +202,7 @@ export default function NotificationBell() {
                         {unreadCount > 0 && (
                             <button
                                 onClick={handleMarkAllRead}
-                                className="text-xs font-medium transition-colors"
+                                className="text-xs font-medium transition-colors min-h-[44px] sm:min-h-0 px-2 -mr-2"
                                 style={{ color: 'var(--brand)' }}
                             >
                                 {isEs ? 'Marcar todo leído' : 'Mark all read'}
