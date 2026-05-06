@@ -11,6 +11,7 @@ import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { StarRating } from '@/components/StarRating';
 import { RatingBadge } from '@/components/RatingBadge';
+import { RatingExplainer } from '@/components/RatingExplainer';
 import LegalConsent from '@/components/LegalConsent';
 
 
@@ -189,7 +190,9 @@ export default function ReportWizard() {
                                         )}
                                         <div className="flex gap-4 text-sm">
                                             {previewAdopter.avgRating != null && (
-                                                <RatingBadge rating={previewAdopter.avgRating} variant="inline" size="sm" />
+                                                <RatingExplainer rating={previewAdopter.avgRating}>
+                                                    <RatingBadge rating={previewAdopter.avgRating} variant="inline" size="sm" label="search" />
+                                                </RatingExplainer>
                                             )}
                                             {previewAdopter.stats?.adoptions != null && (
                                                 <div className="text-stone-500">
@@ -285,7 +288,7 @@ export default function ReportWizard() {
                                                     <div className="font-semibold text-sm text-stone-800 truncate">{res.adopter.name}</div>
                                                     <div className="flex items-center gap-2 text-xs text-stone-500">
                                                         {res.avgRating != null && (
-                                                            <RatingBadge rating={res.avgRating} variant="inline" size="sm" />
+                                                            <RatingBadge rating={res.avgRating} variant="inline" size="sm" label="short" />
                                                         )}
                                                         {res.stats?.adoptions > 0 && (
                                                             <span>{res.stats.adoptions} {t('wizard.adoptions_label') || 'adoptions'}</span>
@@ -352,8 +355,8 @@ export default function ReportWizard() {
                                 value={observationData.rating}
                                 onChange={(r) => setObservationData({ ...observationData, rating: r })}
                                 size="lg"
+                                showLabel
                             />
-                            <p className="text-xs text-stone-500 mt-1">1 = {t('ratings.dangerous') || 'Dangerous'}, 5 = {t('ratings.excellent') || 'Excellent'}</p>
                         </div>
 
                         {/* Details */}

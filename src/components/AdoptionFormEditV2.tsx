@@ -684,8 +684,8 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                             value={formData.rating}
                             onChange={(r) => setFormData({ ...formData, rating: r })}
                             size="lg"
+                            showLabel
                         />
-                        <p className="text-xs text-stone-500 mt-1">1 = {t('ratings.dangerous') || 'Dangerous'}, 5 = {t('ratings.excellent') || 'Excellent'}</p>
                     </div>
 
                     <div>

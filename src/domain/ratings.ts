@@ -12,3 +12,19 @@ export function computeAvgRating(
     if (rated.length === 0) return null;
     return rated.reduce((sum, r) => sum + r.rating!, 0) / rated.length;
 }
+
+export const RATING_LEVELS = [1, 2, 3, 4, 5] as const;
+export type RatingLevel = typeof RATING_LEVELS[number];
+
+export const RATING_LABEL_KEYS: Record<RatingLevel, string> = {
+    1: 'dangerous',
+    2: 'poor',
+    3: 'average',
+    4: 'good',
+    5: 'excellent',
+};
+
+export function getRatingLabelKey(rating: number): string {
+    const r = Math.max(1, Math.min(5, Math.round(Number(rating) || 0))) as RatingLevel;
+    return RATING_LABEL_KEYS[r];
+}

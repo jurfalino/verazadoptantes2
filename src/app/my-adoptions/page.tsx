@@ -258,7 +258,7 @@ export default function MyAdoptionsPage() {
                                                 {adoption.date ? formatShortDate(adoption.date) : t('dashboard.na')}
                                             </td>
                                             <td className="py-3 px-4">
-                                                {adoption.rating && <RatingBadge rating={adoption.rating} size="sm" />}
+                                                {adoption.rating && <RatingBadge rating={adoption.rating} size="sm" label="short" />}
                                             </td>
                                         </tr>
                                         );
@@ -312,7 +312,7 @@ export default function MyAdoptionsPage() {
                                                 {getTypeLabel(adoption.recordType || 'adoption')}
                                             </span>
                                         </div>
-                                        {adoption.rating && <RatingBadge rating={adoption.rating} size="sm" />}
+                                        {adoption.rating && <RatingBadge rating={adoption.rating} size="sm" label="short" />}
                                     </div>
 
                                     {/* Info section - stacked on mobile to avoid cramped layout */}

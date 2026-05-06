@@ -14,15 +14,4 @@ export function getRatingColors(rating: number): { bg: string; text: string; bor
     return colors[roundedRating] || colors[3];
 }
 
-// Get a simple description for the rating
-export function getRatingDescription(rating: number): string {
-    const roundedRating = Math.round(rating);
-    const descriptions: Record<number, string> = {
-        1: 'dangerous',
-        2: 'poor',
-        3: 'average',
-        4: 'good',
-        5: 'excellent',
-    };
-    return descriptions[roundedRating] || 'unknown';
-}
+export { getRatingLabelKey as getRatingDescription } from '@/domain/ratings';

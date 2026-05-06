@@ -113,7 +113,7 @@ export default function DemoProfilePage() {
                                         <span className="text-lg">{a.species === 'cat' ? '🐱' : '🐶'}</span>
                                         <span className="font-semibold text-stone-800">{a.animalName}</span>
                                     </div>
-                                    <RatingBadge rating={a.rating} variant="inline" size="sm" />
+                                    <RatingBadge rating={a.rating} variant="inline" size="sm" label="short" />
                                 </div>
                                 <p className="text-xs text-stone-500 mb-2">📅 {a.date}</p>
                                 <p className="text-sm text-stone-600">{a.comments}</p>

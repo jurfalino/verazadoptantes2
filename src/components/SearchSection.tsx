@@ -26,6 +26,7 @@ function renderHighlightedSnippet(snippet: string, highlights: { start: number; 
     return <>{parts}</>;
 }
 import { RatingBadge } from './RatingBadge';
+import { RatingExplainer } from './RatingExplainer';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
@@ -416,7 +417,9 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                                         </div>
                                         {/* Rating Badge */}
                                         {res.avgRating !== null && (
-                                            <RatingBadge rating={res.avgRating} size="sm" />
+                                            <RatingExplainer rating={res.avgRating}>
+                                                <RatingBadge rating={res.avgRating} size="sm" label="search" />
+                                            </RatingExplainer>
                                         )}
                                     </div>
 

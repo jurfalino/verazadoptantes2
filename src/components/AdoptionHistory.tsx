@@ -217,7 +217,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                             <p className="text-sm font-semibold text-stone-800 leading-snug flex flex-wrap items-center gap-x-1.5">
                                                 <span className="md:hidden">{icon} </span>{dateStr}{relativeTime && <span className="text-xs font-normal text-stone-400">({relativeTime})</span>}{dateStr ? ' — ' : ''}{summary}
                                                 {adoption.rating != null && adoption.rating > 0 && (
-                                                    <RatingBadge rating={adoption.rating} size="sm" />
+                                                    <RatingBadge rating={adoption.rating} size="sm" label="short" />
                                                 )}
                                                 {canEdit && (
                                                     <span className="text-teal-600 md:opacity-0 md:group-hover:opacity-100 transition-opacity inline-flex items-center ml-0.5">

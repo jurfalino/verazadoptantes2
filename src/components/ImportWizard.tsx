@@ -1296,8 +1296,8 @@ export default function ImportWizard() {
                                     value={extractedData.adoptionRating || 2}
                                     onChange={(r: number) => setExtractedData({ ...extractedData, adoptionRating: r })}
                                     size="md"
+                                    showLabel
                                 />
-                                <p className="text-xs text-stone-500 mt-0.5">1 = {t('import.ratingLow') || 'Concerning'}, 5 = {t('import.ratingHigh') || 'Excellent'}</p>
                             </div>
 
                             {/* Adoption Date */}

@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.12.6] - 2026-05-06
+
+UX: rating labels and click-to-explain popover on search results.
+
+### Added
+- **`RatingBadge` `label` prop** — `'none'` (default, backward compatible), `'short'` (e.g. "Bueno"), or `'search'` (e.g. "Buen Adoptante"). Display sites use `'short'`; search-result cards use `'search'`.
+- **`RatingExplainer` (new component)** — wraps the rating in search results; click opens a popover (bottom-sheet on mobile) listing all 5 levels with their color and explanation, with the current rating highlighted via `ring-2`. Educational tool so new users understand the full scale at a glance.
+- **i18n keys** under `ratings`: `search_label.*` (long form), `explanation.*` (popover text), `scale_title`. Added in both `es` and `en`.
+- **`StarRating` `showLabel` enabled** in all 4 edit sites (wizard creation, edit, observation, import) — replaces the inline "1=Dangerous, 5=Excellent" helper text in `AdoptionFormEditV2`, `ReportWizard`, `ImportWizard`.
+
+### Changed
+- **Level 3 label**: ES `"Promedio"` → `"Regular"`, EN `"Average"` → `"Fair"`. Matches the canonical scale terminology.
+- **Centralized rating metadata** in `src/domain/ratings.ts` (`RATING_LEVELS`, `RATING_LABEL_KEYS`, `getRatingLabelKey`) — eliminates the duplicated 1→5 → label-key map that existed in both `StarRating.tsx` and `lib/ratingColors.ts`. `getRatingDescription` is now a re-export.
+
+### Notes
+- No new field on the adopter — the rating shown is still the computed average of the recorded interactions (`computeAvgRating`).
+- The 5 status colors (red/orange/amber/lime/green) used by the popover aren't yet remapped for Azul Noche — that fix is part of Phase 2 of the mobile remediation plan.
+
 ## [2.12.5] - 2026-05-05
 
 ### Removed

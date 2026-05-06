@@ -12,6 +12,7 @@ import { extractErrorId } from '@/lib/errorUtils';
 import LegalConsent from '@/components/LegalConsent';
 import DatePicker from '@/components/ui/DatePicker';
 import { RatingBadge } from '@/components/RatingBadge';
+import { RatingExplainer } from '@/components/RatingExplainer';
 
 
 const SNIPPET_ICONS: Record<SnippetField, string> = {
@@ -367,7 +368,9 @@ export default function AdoptionWizard() {
                                         )}
                                         <div className="flex gap-4 text-sm">
                                             {previewAdopter.avgRating != null && (
-                                                <RatingBadge rating={previewAdopter.avgRating} variant="inline" size="sm" />
+                                                <RatingExplainer rating={previewAdopter.avgRating}>
+                                                    <RatingBadge rating={previewAdopter.avgRating} variant="inline" size="sm" label="search" />
+                                                </RatingExplainer>
                                             )}
                                             {previewAdopter.stats?.adoptions != null && (
                                                 <div className="text-stone-500">
@@ -463,7 +466,7 @@ export default function AdoptionWizard() {
                                                     <div className="font-semibold text-sm text-stone-800 truncate">{res.adopter.name}</div>
                                                     <div className="flex items-center gap-2 text-xs text-stone-500">
                                                         {res.avgRating != null && (
-                                                            <RatingBadge rating={res.avgRating} variant="inline" size="sm" />
+                                                            <RatingBadge rating={res.avgRating} variant="inline" size="sm" label="short" />
                                                         )}
                                                         {res.stats?.adoptions > 0 && (
                                                             <span>{res.stats.adoptions} {t('wizard.adoptions_label') || 'adoptions'}</span>

@@ -218,7 +218,7 @@ export default function AdminAdopterList({ adopters, countries: _countries }: Pr
                                 )}
                                 {/* Rating Badge */}
                                 {avgRating !== null && (
-                                    <RatingBadge rating={avgRating} size="sm" />
+                                    <RatingBadge rating={avgRating} size="sm" label="short" />
                                 )}
                             </div>
 
