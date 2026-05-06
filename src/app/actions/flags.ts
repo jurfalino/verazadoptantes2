@@ -55,7 +55,13 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
                 url: `/adopter/${adopterId}`,
                 icon: '🚩',
                 metadata: { adopterId, reason, details },
-            }).catch(() => {});
+            }).catch((e) => {
+                logger.warn('flagAdopter: notifyAdmins failed', {
+                    adopterId,
+                    flaggedBy,
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            });
         });
 
         return { success: true, id };

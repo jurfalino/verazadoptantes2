@@ -16,7 +16,7 @@ export async function GET(_request: NextRequest) {
         const adopters = await getMyAdopters('date');
         return NextResponse.json(adopters);
     } catch (error) {
-        logger.error('API my-adopters error', error);
-        return NextResponse.json([], { status: 500 });
+        const errorId = logger.error('API my-adopters error', error, { userEmail: session.user.email });
+        return NextResponse.json({ error: 'Failed to load adopters', errorId }, { status: 500 });
     }
 }

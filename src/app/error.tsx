@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { extractErrorId } from '@/lib/errorUtils';
+import { reportClientError } from '@/lib/clientErrorReporter';
 
 export default function Error({
     error,
@@ -11,10 +12,23 @@ export default function Error({
     reset: () => void;
 }) {
     const [copied, setCopied] = useState(false);
-    const errorId = extractErrorId(error) || error.digest?.slice(0, 8) || crypto.randomUUID().slice(0, 8);
+    // The id is generated once and never changes — it's what the user copies
+    // and what the server uses when writing to Axiom, so they match by
+    // construction (server-thrown errors that already carry an id keep it).
+    const [errorId] = useState<string>(() =>
+        extractErrorId(error) || error.digest?.slice(0, 8) || crypto.randomUUID().slice(0, 8)
+    );
 
     useEffect(() => {
-        console.error(`[PAGE ERROR] (ID: ${errorId})`, error);
+        // Already-logged server errors carry their id in the message — skip the POST.
+        if (extractErrorId(error)) return;
+        void reportClientError({
+            errorId,
+            message: error.message,
+            stack: error.stack,
+            source: 'boundary',
+            digest: error.digest,
+        });
     }, [error, errorId]);
 
     const handleCopy = () => {

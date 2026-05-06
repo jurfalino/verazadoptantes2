@@ -7,6 +7,8 @@ import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { RatingBadge } from '@/components/RatingBadge';
 import { formatShortDate } from '@/lib/dates';
+import { useShowToast } from '@/components/ui/Toast';
+import { extractErrorId } from '@/lib/errorUtils';
 
 import type { AdopterFlags } from '@/types/adopter';
 
@@ -93,6 +95,7 @@ function FlagBadges({ flags, t }: { flags: AdopterFlags; t: (key: string) => str
 export default function MyAdoptersPage() {
     const { t } = useLanguage();
     const { data: session } = useSession();
+    const toast = useShowToast();
     const currentEmail = session?.user?.email || '';
     const [adopters, setAdopters] = useState<Adopter[]>([]);
     const [unlinkedForms, setUnlinkedForms] = useState<UnlinkedForm[]>([]);
@@ -109,27 +112,29 @@ export default function MyAdoptersPage() {
                     const data = await adoptersRes.json() as Adopter[];
                     const byId = new Map<string, Adopter>();
                     data.forEach((a) => { if (!byId.has(a.id)) byId.set(a.id, a); });
-                    if (data.length !== byId.size) {
-                        console.warn('[My Adopters] Dropped duplicate adopter ids', { total: data.length, unique: byId.size });
-                    }
                     setAdopters(Array.from(byId.values()));
+                } else {
+                    const body = await adoptersRes.json().catch(() => ({})) as { error?: string; errorId?: string };
+                    toast.error(t('errors.generic') || 'Error', body.error || 'Failed to load adopters.', body.errorId);
                 }
                 if (formsRes.ok) {
                     const forms = await formsRes.json() as UnlinkedForm[];
                     const byId = new Map<string, UnlinkedForm>();
                     forms.forEach((f) => { if (!byId.has(f.id)) byId.set(f.id, f); });
-                    if (forms.length !== byId.size) {
-                        console.warn('[My Adopters] Dropped duplicate form submission ids', { total: forms.length, unique: byId.size });
-                    }
                     setUnlinkedForms(Array.from(byId.values()));
+                } else {
+                    const body = await formsRes.json().catch(() => ({})) as { error?: string; errorId?: string };
+                    toast.error(t('errors.generic') || 'Error', body.error || 'Failed to load form submissions.', body.errorId);
                 }
             } catch (e) {
-                console.error('Failed to fetch data:', e);
+                toast.error(t('errors.generic') || 'Error', 'Failed to load data.', extractErrorId(e));
             } finally {
                 setLoading(false);
             }
         }
         fetchData();
+        // toast/t are stable for this page; intentional one-time fetch on mount
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     if (loading) {

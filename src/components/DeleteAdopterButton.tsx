@@ -28,15 +28,14 @@ export default function DeleteAdopterButton({ adopterId, adopterName }: DeleteBu
                 body: JSON.stringify({ adopterId }),
             });
 
-            const data = await response.json() as { success?: boolean; error?: string };
+            const data = await response.json() as { success?: boolean; error?: string; errorId?: string };
 
             if (data.success) {
                 router.refresh();
             } else {
-                toast.error('Delete Failed', data.error || 'Unknown error');
+                toast.error('Delete Failed', data.error || 'Unknown error', data.errorId);
             }
         } catch (error) {
-            console.error('Delete error:', error);
             toast.error('Delete Failed', 'An unexpected error occurred. Check console for details.', extractErrorId(error));
         } finally {
             setLoading(false);

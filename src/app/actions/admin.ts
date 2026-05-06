@@ -119,10 +119,12 @@ export async function deleteAdopter(adopterId: string) {
 }
 
 export async function purgeAllData(confirmationCode: string) {
+    let actorEmail: string | undefined;
     try {
         const session = await auth();
+        actorEmail = session?.user?.email || undefined;
         // Strict Admin Check
-        if (!session?.user?.email || !await checkIsAdminAsync(session.user.email)) {
+        if (!actorEmail || !await checkIsAdminAsync(actorEmail)) {
             throw new Error("Unauthorized");
         }
 
@@ -161,7 +163,7 @@ export async function purgeAllData(confirmationCode: string) {
         revalidatePath('/');
         return { success: true, message: "All data has been purged" };
     } catch (error) {
-        const errorId = logger.error('Purge all data failed', error);
+        const errorId = logger.error('Purge all data failed', error, { actorEmail });
         throw new Error(`Failed to purge data (Error ID: ${errorId})`);
     }
 }

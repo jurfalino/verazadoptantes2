@@ -82,7 +82,10 @@ export default function NewAnimalPage() {
             setLoadingData(true);
             try {
                 const res = await fetch(`/api/my-animals?view=all`);
-                if (!res.ok) throw new Error('Failed to fetch');
+                if (!res.ok) {
+                    const body = await res.json().catch(() => ({})) as { error?: string; errorId?: string };
+                    throw new Error(body.error ? `${body.error} (Error ID: ${body.errorId || 'n/a'})` : 'Failed to fetch animals');
+                }
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const animals = await res.json() as any[];
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -10,6 +10,7 @@ import AdoptionFormEditV2 from '@/components/AdoptionFormEditV2';
 import { useLanguage } from '@/context/LanguageContext';
 import { saveImage, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from '@/app/actions';
 import { ImageGallery } from '@/components/ImageGallery';
+import { extractErrorId } from '@/lib/errorUtils';
 import { DisclaimerToast } from '@/components/DisclaimerToast';
 import { RatingBadge } from '@/components/RatingBadge';
 import { useShowToast } from '@/components/ui/Toast';
@@ -52,8 +53,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             const result = await checkAdopterDeletable(id);
             setDeleteCheck(result);
             setDeleteModalOpen(true);
-        } catch {
-            toast.error(t('errors.generic'), t('adopter.delete_error_check'));
+        } catch (e) {
+            toast.error(t('errors.generic'), t('adopter.delete_error_check'), extractErrorId(e));
         } finally {
             setDeleteLoading(false);
         }
@@ -65,8 +66,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             await deleteOwnAdopter(id);
             toast.success('✓', t('adopter.delete_success'));
             window.location.href = '/';
-        } catch {
-            toast.error(t('errors.generic'), t('errors.delete_failed_generic'));
+        } catch (e) {
+            toast.error(t('errors.generic'), t('errors.delete_failed_generic'), extractErrorId(e));
             setDeleteLoading(false);
         }
     };
@@ -77,8 +78,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             await requestAdopterDeletion(id);
             toast.success('✓', t('adopter.delete_request_success'));
             setDeleteModalOpen(false);
-        } catch {
-            toast.error(t('errors.generic'), t('errors.delete_request_failed'));
+        } catch (e) {
+            toast.error(t('errors.generic'), t('errors.delete_request_failed'), extractErrorId(e));
         } finally {
             setDeleteLoading(false);
         }

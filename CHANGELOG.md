@@ -2,6 +2,27 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.13.0] - 2026-05-06
+
+Error logging audit: every error now writes to Axiom with a stable id surfaced to the user.
+
+### Added
+- **`/api/log-client-error` (edge route).** Accepts `{ errorId?, message, stack?, source, ... }` from the browser, calls `logger.error`, and returns the resulting id. When the client supplies a hex id, the server uses it verbatim — so what the user copies is exactly the row admins query in Axiom.
+- **`ClientErrorReporter` (mounted in `app/layout.tsx`).** Registers `window.addEventListener('error', ...)` and `unhandledrejection`. Generates an id locally, shows it in a toast immediately, then POSTs to `/api/log-client-error` under that same id. Skips events whose error already carries an embedded `Error ID:` (server-thrown errors already logged upstream).
+- **`reportClientError` helper.** 30s in-memory dedup so a misbehaving extension can't flood the endpoint.
+
+### Changed
+- **`error.tsx` / `global-error.tsx`.** Id is generated once via `useState(() => …)` — no more inline `crypto.randomUUID()` flipping the id between renders. Sends the id to `/api/log-client-error` so the user-visible id matches the Axiom row by construction.
+- **`logger.error`** now accepts an optional pre-generated id via the `data.errorId` field (used by `/api/log-client-error`). Server-side callers that omit it keep the previous behavior.
+- **5 API routes that returned `[]` on 500** (`my-animals`, `my-adopters`, `my-adoptions`, `my-form-submissions/unlinked`, `dashboard/milestone`) now return `{ error, errorId }` so the client can surface the id via `toast.error`. This was the proximate cause of the unrecoverable `/my-animals` triage in v2.12.7 — the error was logged but never showed up to the user.
+- **~25 `toast.error(...)` callers** updated to pass `extractErrorId(err)` or the response-body errorId, so the user-facing toast shows an id whenever one was logged. Touches admin/config, settings, organizations, AdminAdopterList, AdopterFlagging, AdopterProfileV2, AdopterForm, SearchSection, DeleteAdopterButton, FormResultMatchCard, my-animals/my-adopters/my-adoptions pages.
+- **Server actions in `organizations.ts`, `settings.ts`** updated to (a) use the correct `logger.error(msg, error, data)` signature instead of treating the error as data, and (b) return `{ success: false, error, errorId }` so the page can render the id.
+- **Silent swallows in `formSubmission.ts`, `notifications.ts`, `organizations.ts`, `admin/notifications/page.tsx`, `dashboard/milestone`, `form/[userId]`, `contract/[id]/submit`, `form/[userId]/submit`** now log at warn or error with operation context.
+- **Operation-context sweep** on `dashboard.ts`, `settings.ts`, `admin.ts`, `audit/route.ts`, `import/route.ts` — `logger.error` now re-emits `userEmail`/`actorEmail` and other in-scope inputs to make Axiom rows triagable.
+
+### Audited
+- See `docs/error_logging_audit.md` for the full breakdown of findings, fixes, and the few remaining acceptable bare catches (auth fallbacks, health probes, SSR-safe `localStorage` reads).
+
 ## [2.12.8] - 2026-05-06
 
 ### Fixed

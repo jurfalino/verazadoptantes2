@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useShowToast } from '@/components/ui/Toast';
+import { extractErrorId } from '@/lib/errorUtils';
 import { RatingBadge } from '@/components/RatingBadge';
 import { formatShortDate } from '@/lib/dates';
 import type { EnrichmentResult } from '@/app/actions/enrichAdopters';
@@ -116,7 +117,7 @@ export default function AdminAdopterList({ adopters, countries: _countries }: Pr
                 body: JSON.stringify({ action, adopterIds: ids, ...(country && { country }) }),
             });
 
-            const data = await res.json() as { success: boolean; processedCount: number; errors?: string[] };
+            const data = await res.json() as { success: boolean; processedCount: number; errors?: string[]; errorId?: string };
 
             if (data.success) {
                 toast.success(
@@ -126,11 +127,10 @@ export default function AdminAdopterList({ adopters, countries: _countries }: Pr
                 clearSelection();
                 router.refresh();
             } else {
-                toast.error('Action Failed', data.errors?.join(', ') || 'Unknown error');
+                toast.error('Action Failed', data.errors?.join(', ') || 'Unknown error', data.errorId);
             }
         } catch (e) {
-            console.error('Mass action error:', e);
-            toast.error('Action Failed', 'An unexpected error occurred.');
+            toast.error('Action Failed', 'An unexpected error occurred.', extractErrorId(e));
         } finally {
             setLoading(false);
         }

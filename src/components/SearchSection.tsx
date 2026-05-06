@@ -158,8 +158,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                 setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
             }
         } catch (err) {
-            console.error(err);
-            toast.error(t('toast.search_failed_title'), t('errors.search_failed'));
+            toast.error(t('toast.search_failed_title'), t('errors.search_failed'), extractErrorId(err));
         } finally {
             setLoading(false);
         }

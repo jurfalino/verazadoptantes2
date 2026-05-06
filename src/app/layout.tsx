@@ -11,6 +11,7 @@ import { SessionProvider } from 'next-auth/react';
 import { AuthProvider } from '@/context/AuthContext';
 import LoginModal from '@/components/LoginModal';
 import { ToastProvider } from '@/components/ui/Toast';
+import ClientErrorReporter from '@/components/ClientErrorReporter';
 import InstallPrompt from '@/components/InstallPrompt';
 import { CountryConfirmBanner } from '@/components/CountryConfirmBanner';
 import NotificationBell from '@/components/NotificationBell';
@@ -123,6 +124,7 @@ export default async function RootLayout({
           <LanguageProvider>
             <ThemeProvider>
               <ToastProvider>
+                <ClientErrorReporter />
                 <AuthProvider>
                   <div className="min-h-screen flex flex-col bg-stone-50">
                     <nav className="bg-white/80 border-b border-stone-200 sticky top-0 z-50 backdrop-blur-md">

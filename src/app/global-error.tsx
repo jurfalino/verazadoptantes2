@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { extractErrorId } from '@/lib/errorUtils';
+import { reportClientError } from '@/lib/clientErrorReporter';
 
 type Palette = {
     pageBg: string;
@@ -43,15 +45,27 @@ export default function GlobalError({
     error: Error & { digest?: string };
     reset: () => void;
 }) {
-    const errorId = error.digest?.slice(0, 8) || crypto.randomUUID().slice(0, 8);
+    // Generated once; the same id is sent to /api/log-client-error and stored
+    // in Axiom, so what the user copies is exactly what an admin can look up.
+    const [errorId] = useState<string>(() =>
+        extractErrorId(error) || error.digest?.slice(0, 8) || crypto.randomUUID().slice(0, 8)
+    );
     const [palette, setPalette] = useState(PALETTES.light);
 
     useEffect(() => {
-        console.error(`[GLOBAL ERROR] (ID: ${errorId})`, error);
         try {
             const stored = localStorage.getItem('theme');
             if (stored === 'dark') setPalette(PALETTES.dark);
         } catch { /* localStorage unavailable */ }
+
+        if (extractErrorId(error)) return;
+        void reportClientError({
+            errorId,
+            message: error.message,
+            stack: error.stack,
+            source: 'global-error',
+            digest: error.digest,
+        });
     }, [error, errorId]);
 
     return (

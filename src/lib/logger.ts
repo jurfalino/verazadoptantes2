@@ -199,7 +199,12 @@ export const logger = {
     },
 
     error(message: string, error?: Error | unknown, data?: Record<string, unknown>): string {
-        const errorId = generateErrorId();
+        // Allow callers to supply a pre-generated errorId so the id displayed
+        // to the user is the same one stored in Axiom (e.g. client-side error
+        // boundaries generate the id locally, then POST it to be logged).
+        const suppliedId = typeof data?.errorId === 'string' ? data.errorId : undefined;
+        const errorId = suppliedId || generateErrorId();
+        const { errorId: _omit, ...restData } = data || {};
         const envInfo = getEnvironmentInfo();
         const entry: LogEntry = {
             _time: new Date().toISOString(),
@@ -207,7 +212,7 @@ export const logger = {
             message,
             errorId,
             ...envInfo,
-            ...data
+            ...restData
         };
 
         if (error instanceof Error) {

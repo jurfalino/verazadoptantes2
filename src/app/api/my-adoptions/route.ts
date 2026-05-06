@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
         const adoptions = await getMyAdoptions(filter as any, 'date');
         return NextResponse.json(adoptions);
     } catch (error) {
-        logger.error('API my-adoptions error', error);
-        return NextResponse.json([], { status: 500 });
+        const errorId = logger.error('API my-adoptions error', error, { userEmail: session.user.email });
+        return NextResponse.json({ error: 'Failed to load adoptions', errorId }, { status: 500 });
     }
 }

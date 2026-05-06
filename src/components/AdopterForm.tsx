@@ -136,8 +136,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             // Refresh the page so the server-fetched images list (and the avatar) updates.
             window.location.reload();
         } catch (err) {
-            console.error('[AdopterForm] avatar upload failed:', err);
-            toast.error(t('errors.generic'), t('adopter.upload_failed') || 'Could not upload the photo. Try again.');
+            toast.error(t('errors.generic'), t('adopter.upload_failed') || 'Could not upload the photo. Try again.', extractErrorId(err));
         } finally {
             setAvatarUploading(false);
             // Reset the input so picking the same file again still triggers onChange

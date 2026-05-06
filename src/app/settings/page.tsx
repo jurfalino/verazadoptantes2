@@ -52,7 +52,7 @@ export default function SettingsPage() {
             localStorage.setItem(`country_confirmed_${session?.user?.email}`, '1');
             toast.success(t('settings.saved') || 'Saved!');
         } else {
-            toast.error('Error');
+            toast.error('Error', t('errors.unexpected') || 'Could not save country', result.errorId);
         }
         setSavingCountry(false);
     };
@@ -66,7 +66,7 @@ export default function SettingsPage() {
             setOriginalName(trimmed);
             toast.success(t('settings.saved') || 'Saved!');
         } else {
-            toast.error('Error');
+            toast.error('Error', t('errors.unexpected') || 'Could not save name', result.errorId);
         }
         setSavingName(false);
     };

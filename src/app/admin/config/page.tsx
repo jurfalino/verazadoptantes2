@@ -4,6 +4,15 @@ export const runtime = 'edge';
 import { useState, useEffect } from 'react';
 import { useShowToast } from '@/components/ui/Toast';
 import { formatShortDate } from '@/lib/dates';
+import { extractErrorId } from '@/lib/errorUtils';
+
+async function readErrorBody(res: Response): Promise<{ error?: string; errorId?: string }> {
+    try {
+        return await res.json() as { error?: string; errorId?: string };
+    } catch {
+        return {};
+    }
+}
 
 interface SocialProofMessage {
     city: string;
@@ -111,11 +120,11 @@ export default function AdminConfigPage() {
             if (res.ok) {
                 toast.success('Saved', 'Configuration saved successfully.');
             } else {
-                toast.error('Error', 'Failed to save configuration.');
+                const body = await readErrorBody(res);
+                toast.error('Error', body.error || 'Failed to save configuration.', body.errorId);
             }
         } catch (e) {
-            console.error(e);
-            toast.error('Error', 'Error saving configuration.');
+            toast.error('Error', 'Error saving configuration.', extractErrorId(e));
         } finally {
             setSaving(false);
         }
@@ -132,11 +141,11 @@ export default function AdminConfigPage() {
             if (res.ok) {
                 setFeatureFlags(prev => ({ ...prev, [flagKey]: newValue }));
             } else {
-                toast.error('Error', 'Failed to save feature flag.');
+                const body = await readErrorBody(res);
+                toast.error('Error', body.error || 'Failed to save feature flag.', body.errorId);
             }
         } catch (e) {
-            console.error(e);
-            toast.error('Error', 'Error saving feature flag.');
+            toast.error('Error', 'Error saving feature flag.', extractErrorId(e));
         } finally {
             setSavingFlags(false);
         }
@@ -156,11 +165,11 @@ export default function AdminConfigPage() {
             if (res.ok) {
                 toast.success('Saved', 'Social proof banner updated.');
             } else {
-                toast.error('Error', 'Failed to save social proof settings.');
+                const body = await readErrorBody(res);
+                toast.error('Error', body.error || 'Failed to save social proof settings.', body.errorId);
             }
         } catch (e) {
-            console.error(e);
-            toast.error('Error', 'Error saving social proof settings.');
+            toast.error('Error', 'Error saving social proof settings.', extractErrorId(e));
         } finally {
             setSavingSocialProof(false);
         }
@@ -202,11 +211,11 @@ export default function AdminConfigPage() {
                     setOldestStat(configData.oldestStat ?? null);
                 }
             } else {
-                toast.error('Error', 'Failed to purge stats.');
+                const body = await readErrorBody(res);
+                toast.error('Error', body.error || 'Failed to purge stats.', body.errorId);
             }
         } catch (e) {
-            console.error(e);
-            toast.error('Error', 'Error purging stats.');
+            toast.error('Error', 'Error purging stats.', extractErrorId(e));
         } finally {
             setPurging(false);
         }

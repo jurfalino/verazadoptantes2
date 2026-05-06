@@ -18,21 +18,23 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Feature disabled' }, { status: 403 });
     }
 
+    const userEmail = session.user.email;
+    if (!userEmail) {
+        return NextResponse.json({ error: 'No email in session' }, { status: 401 });
+    }
+    const { searchParams } = new URL(request.url);
+    const view = searchParams.get('view') || 'available'; // 'available', 'adopted', or 'all'
+
     try {
         const { getDb } = await import('@/app/actions');
         const db = await getDb();
-        if (!db) return NextResponse.json([], { status: 500 });
+        if (!db) {
+            const errorId = logger.error('API my-animals: db unavailable', new Error('getDb returned null'), { userEmail, view });
+            return NextResponse.json({ error: 'Database unavailable', errorId }, { status: 500 });
+        }
 
         const { adoptions, adopterImages, adopters } = await import('@/db/schema');
         const { eq, sql, and, isNull, isNotNull } = await import('drizzle-orm');
-
-        const userEmail = session.user.email;
-        if (!userEmail) {
-            return NextResponse.json({ error: 'No email in session' }, { status: 401 });
-        }
-
-        const { searchParams } = new URL(request.url);
-        const view = searchParams.get('view') || 'available'; // 'available', 'adopted', or 'all'
 
         let results;
         if (view === 'adopted') {
@@ -107,7 +109,7 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json(deduped);
     } catch (error) {
-        logger.error('API my-animals error', error);
-        return NextResponse.json([], { status: 500 });
+        const errorId = logger.error('API my-animals error', error, { userEmail, view });
+        return NextResponse.json({ error: 'Failed to load animals', errorId }, { status: 500 });
     }
 }

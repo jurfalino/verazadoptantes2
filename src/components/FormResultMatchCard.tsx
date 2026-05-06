@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useShowToast } from '@/components/ui/Toast';
+import { extractErrorId } from '@/lib/errorUtils';
 import { useState } from 'react';
 import { en } from '@/i18n/locales/en';
 
@@ -83,12 +84,11 @@ export default function FormResultMatchCard({
                 );
                 setTimeout(() => router.push(`/adopter/${profile.id}`), 400);
             } else {
-                toast.error(t('errors.generic'), L('link_error'));
+                toast.error(t('errors.generic'), L('link_error'), result.errorId);
                 setLinking(false);
             }
         } catch (e) {
-            console.error(e);
-            toast.error('Error', L('link_error'));
+            toast.error('Error', L('link_error'), extractErrorId(e));
             setLinking(false);
         }
     };

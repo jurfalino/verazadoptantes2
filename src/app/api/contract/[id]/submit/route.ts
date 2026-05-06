@@ -310,7 +310,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                         url: `/adopter/${adopterId}`,
                         icon: '📝',
                         metadata: { adopterId, adopterName: fullName, animalName: animal.animalName },
-                    }).catch(() => {});
+                    }).catch((e) => {
+                        logger.warn('contract submit: notifyOrgMembers failed', {
+                            adopterId,
+                            animalId,
+                            rescuerEmail,
+                            error: e instanceof Error ? e.message : String(e),
+                        });
+                    });
                 });
             }
         } catch (searchErr) {

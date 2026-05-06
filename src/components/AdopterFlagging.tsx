@@ -202,10 +202,11 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                     zarazTrack('flag_submitted', { flagType: reason });
                     setDataRequestSubmitted(true);
                 } else {
-                    toast.error(t('errors.generic'), t('errors.submit_request_failed'));
+                    const body = await res.json().catch(() => ({})) as { error?: string; errorId?: string };
+                    toast.error(t('errors.generic'), body.error || t('errors.submit_request_failed'), body.errorId);
                 }
-            } catch {
-                toast.error(t('errors.generic'), t('errors.request_error'));
+            } catch (e) {
+                toast.error(t('errors.generic'), t('errors.request_error'), extractErrorId(e));
             } finally {
                 setSubmitLoading(false);
             }

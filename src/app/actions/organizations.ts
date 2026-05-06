@@ -26,14 +26,15 @@ export interface OrgMember {
 
 // ── Create ───────────────────────────────────────────────────────
 
-export async function createOrganization(name: string): Promise<{ success: boolean; id?: string; error?: string }> {
+export async function createOrganization(name: string): Promise<{ success: boolean; id?: string; error?: string; errorId?: string }> {
     const trimmed = name.trim();
     if (!trimmed || trimmed.length > 100) {
         return { success: false, error: 'Name must be 1–100 characters' };
     }
 
+    let user: string | undefined;
     try {
-        const user = await getUser();
+        user = await getUser();
         const db = await getDb();
         if (!db) return { success: false, error: 'Database unavailable' };
         const orgId = crypto.randomUUID();
@@ -54,8 +55,8 @@ export async function createOrganization(name: string): Promise<{ success: boole
 
         return { success: true, id: orgId };
     } catch (error) {
-        logger.error('createOrganization failed', { error: error instanceof Error ? error.message : String(error) });
-        return { success: false, error: 'Failed to create organization' };
+        const errorId = logger.error('createOrganization failed', error, { user, name: trimmed });
+        return { success: false, error: 'Failed to create organization', errorId };
     }
 }
 
@@ -107,14 +108,14 @@ export async function getMyOrganizations(): Promise<Organization[]> {
                 })),
         }));
     } catch (error) {
-        logger.error('getMyOrganizations failed', { error: error instanceof Error ? error.message : String(error) });
+        logger.error('getMyOrganizations failed', error, { user });
         return [];
     }
 }
 
 // ── Update ───────────────────────────────────────────────────────
 
-export async function updateOrganizationName(orgId: string, name: string): Promise<{ success: boolean; error?: string }> {
+export async function updateOrganizationName(orgId: string, name: string): Promise<{ success: boolean; error?: string; errorId?: string }> {
     const user = await getUser();
     const db = await getDb();
     if (!db) return { success: false, error: 'Database unavailable' };
@@ -136,14 +137,14 @@ export async function updateOrganizationName(orgId: string, name: string): Promi
         await db.update(organizations).set({ name: trimmed }).where(eq(organizations.id, orgId));
         return { success: true };
     } catch (error) {
-        logger.error('updateOrganizationName failed', { error: error instanceof Error ? error.message : String(error) });
-        return { success: false, error: 'Failed to update name' };
+        const errorId = logger.error('updateOrganizationName failed', error, { user, orgId });
+        return { success: false, error: 'Failed to update name', errorId };
     }
 }
 
 // ── Leave / Delete ───────────────────────────────────────────────
 
-export async function leaveOrganization(orgId: string): Promise<{ success: boolean; deleted?: boolean; error?: string }> {
+export async function leaveOrganization(orgId: string): Promise<{ success: boolean; deleted?: boolean; error?: string; errorId?: string }> {
     const user = await getUser();
     const db = await getDb();
     if (!db) return { success: false, error: 'Database unavailable' };
@@ -177,14 +178,14 @@ export async function leaveOrganization(orgId: string): Promise<{ success: boole
 
         return { success: true, deleted: false };
     } catch (error) {
-        logger.error('leaveOrganization failed', { error: error instanceof Error ? error.message : String(error) });
-        return { success: false, error: 'Failed to leave organization' };
+        const errorId = logger.error('leaveOrganization failed', error, { user, orgId });
+        return { success: false, error: 'Failed to leave organization', errorId };
     }
 }
 
 // ── Invite ───────────────────────────────────────────────────────
 
-export async function getInviteLink(orgId: string): Promise<{ success: boolean; url?: string; error?: string }> {
+export async function getInviteLink(orgId: string): Promise<{ success: boolean; url?: string; error?: string; errorId?: string }> {
     const user = await getUser();
     const db = await getDb();
     if (!db) return { success: false, error: 'Database unavailable' };
@@ -220,14 +221,14 @@ export async function getInviteLink(orgId: string): Promise<{ success: boolean; 
         const baseUrl = process.env.AUTH_URL || process.env.NEXTAUTH_URL || 'https://buenadoptante.com';
         return { success: true, url: `${baseUrl}/invite/${inviteId}` };
     } catch (error) {
-        logger.error('getInviteLink failed', { error: error instanceof Error ? error.message : String(error) });
-        return { success: false, error: 'Failed to generate invite link' };
+        const errorId = logger.error('getInviteLink failed', error, { user, orgId });
+        return { success: false, error: 'Failed to generate invite link', errorId };
     }
 }
 
 // ── Join via Invite ──────────────────────────────────────────────
 
-export async function joinOrganization(inviteToken: string): Promise<{ success: boolean; orgName?: string; error?: string }> {
+export async function joinOrganization(inviteToken: string): Promise<{ success: boolean; orgName?: string; error?: string; errorId?: string }> {
     const user = await getUser();
     const db = await getDb();
     if (!db) return { success: false, error: 'Database unavailable' };
@@ -277,13 +278,19 @@ export async function joinOrganization(inviteToken: string): Promise<{ success: 
                 url: '/organizations',
                 icon: '👋',
                 metadata: { orgId: invite.orgId, orgName: org?.name },
-            }).catch(() => {});
+            }).catch((e) => {
+                logger.warn('joinOrganization: notifyOrgMembers failed', {
+                    actorEmail: user,
+                    orgId: invite.orgId,
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            });
         });
 
         return { success: true, orgName: org?.name || 'Organization' };
     } catch (error) {
-        logger.error('joinOrganization failed', { error: error instanceof Error ? error.message : String(error) });
-        return { success: false, error: 'Failed to join organization' };
+        const errorId = logger.error('joinOrganization failed', error, { user, inviteToken });
+        return { success: false, error: 'Failed to join organization', errorId };
     }
 }
 
@@ -310,7 +317,11 @@ export async function getInvitePreview(inviteToken: string): Promise<{ orgName: 
             .where(eq(orgMembers.orgId, invite.orgId));
 
         return { orgName: org.name, memberCount: members.length };
-    } catch {
+    } catch (e) {
+        logger.warn('getInvitePreview failed', {
+            inviteToken,
+            error: e instanceof Error ? e.message : String(e),
+        });
         return null;
     }
 }
@@ -345,7 +356,7 @@ export async function getOrgMemberEmails(): Promise<string[]> {
         emails.add(user); // always include self
         return Array.from(emails);
     } catch (error) {
-        logger.error('getOrgMemberEmails failed', { error: error instanceof Error ? error.message : String(error) });
+        logger.error('getOrgMemberEmails failed', error, { user });
         return [user]; // fallback to just the current user
     }
 }
@@ -376,7 +387,7 @@ export async function getOrgMemberEmailsFor(email: string): Promise<string[]> {
         emails.add(email);
         return Array.from(emails);
     } catch (error) {
-        logger.error('getOrgMemberEmailsFor failed', { error: error instanceof Error ? error.message : String(error) });
+        logger.error('getOrgMemberEmailsFor failed', error, { email });
         return [email];
     }
 }

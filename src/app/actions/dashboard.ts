@@ -15,12 +15,14 @@ import { RECORD_TYPES } from '@/domain/constants';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
 
 export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
+    let userEmail: string | undefined;
     try {
         const db = await getDb();
         if (!db) return [];
 
         const session = await auth();
         if (!session?.user?.email) return [];
+        userEmail = session.user.email;
 
         // Scope by org membership: show records from all org members
         const memberEmails = await getOrgMemberEmails();
@@ -195,17 +197,19 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
 
         return enrichedAdopters;
     } catch (error) {
-        logger.error('getMyAdopters failed', error);
+        logger.error('getMyAdopters failed', error, { userEmail, sort });
         return [];
     }
 }
 
 export async function getMyUnlinkedFormSubmissions(): Promise<Array<{ id: string; name: string; email: string | null; notificationId: string | null; createdAt: Date | null }>> {
+    let userEmail: string | undefined;
     try {
         const db = await getDb();
         if (!db) return [];
         const session = await auth();
         if (!session?.user?.email) return [];
+        userEmail = session.user.email;
 
         const rows = await db
             .select({
@@ -235,17 +239,19 @@ export async function getMyUnlinkedFormSubmissions(): Promise<Array<{ id: string
 
         return rows;
     } catch (error) {
-        logger.error('getMyUnlinkedFormSubmissions failed', error);
+        logger.error('getMyUnlinkedFormSubmissions failed', error, { userEmail });
         return [];
     }
 }
 
 export async function getMyAdoptions(filter: 'all' | 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet' = 'all', sort: 'date' | 'name' = 'date') {
+    let userEmail: string | undefined;
     try {
         const db = await getDb();
         if (!db) return [];
         const session = await auth();
         if (!session?.user?.email) return [];
+        userEmail = session.user.email;
 
         // Scope by org membership
         const memberEmails = await getOrgMemberEmails();
@@ -296,7 +302,7 @@ export async function getMyAdoptions(filter: 'all' | 'adoption' | 'adoption_requ
 
         return adoptionsWithDetails;
     } catch (error) {
-        logger.error('getMyAdoptions failed', error);
+        logger.error('getMyAdoptions failed', error, { userEmail, filter, sort });
         return [];
     }
 }

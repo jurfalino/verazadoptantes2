@@ -229,7 +229,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     url: `/form-results/${submissionId}`,
                     icon: '📋',
                     metadata: { submissionId, submitterName: name },
-                }).catch(() => {});
+                }).catch((e) => {
+                    logger.warn('form submit: notifyOrgMembers failed', {
+                        submissionId,
+                        rescuerEmail,
+                        error: e instanceof Error ? e.message : String(e),
+                    });
+                });
             });
         } catch (searchErr) {
             logger.warn('Form fuzzy search/notification failed (non-blocking)', { error: (searchErr as Error).message, submissionId });

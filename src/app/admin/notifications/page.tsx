@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { reportClientError } from '@/lib/clientErrorReporter';
 
 interface NotificationPreview {
     id: string;
@@ -67,11 +68,18 @@ export default function AdminNotificationsPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ [`NOTIF_ENABLED_${type}`]: newValue ? 'true' : 'false' })
             });
-            if (!res.ok) throw new Error('Failed to update config');
-        } catch {
+            if (!res.ok) throw new Error(`Failed to update config (HTTP ${res.status})`);
+        } catch (e) {
             // Revert
             setTypes(prev => prev.map(t => t.type === type ? { ...t, isEnabled: currentEnabled } : t));
-            alert('Failed to update global toggle.');
+            const message = e instanceof Error ? e.message : 'Failed to update global toggle';
+            const errorId = await reportClientError({
+                message,
+                stack: e instanceof Error ? e.stack : undefined,
+                source: 'admin-notifications-toggle',
+                extra: { type, newValue },
+            });
+            alert(`Failed to update global toggle.${errorId ? ` Error ID: ${errorId}` : ''}`);
         }
     };
 

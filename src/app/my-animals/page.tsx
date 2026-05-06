@@ -9,6 +9,8 @@ import { formatShortDate } from '@/lib/dates';
 import { formatAge } from '@/lib/ageUtils';
 import ShareMenu from '@/components/ShareMenu';
 import ShareFormMenu from '@/components/ShareFormMenu';
+import { useShowToast } from '@/components/ui/Toast';
+import { extractErrorId } from '@/lib/errorUtils';
 
 interface AnimalImage {
     id: string;
@@ -37,6 +39,7 @@ export default function MyAnimalsPage() {
     const { t, locale } = useLanguage();
     const searchParams = useSearchParams();
     const { data: session } = useSession();
+    const toast = useShowToast();
     const view = searchParams.get('view') || 'available';
     const userId = session?.user?.id || '';
 
@@ -60,10 +63,12 @@ export default function MyAnimalsPage() {
                     // Deduplicate by id to prevent React key warnings
                     const unique = Array.from(new Map(data.map(a => [a.id, a])).values());
                     setAnimals(unique);
+                } else {
+                    const body = await res.json().catch(() => ({})) as { error?: string; errorId?: string };
+                    toast.error(t('errors.generic') || 'Error', body.error || 'Failed to load animals.', body.errorId);
                 }
             } catch (e) {
-                console.error('Failed to fetch animals:', e);
-                setError('Failed to load animals.');
+                toast.error(t('errors.generic') || 'Error', 'Failed to load animals.', extractErrorId(e));
             } finally {
                 setLoading(false);
             }
@@ -72,6 +77,7 @@ export default function MyAnimalsPage() {
         // Reset filters when switching tabs
         setSearchQuery('');
         setSpeciesFilter('all');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [view]);
 
     // Derive unique species from data

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { withCors, corsPreflightResponse } from '@/lib/cors';
+import { logger } from '@/lib/logger';
 
 export const runtime = 'edge';
 
@@ -19,7 +20,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
     try {
         const { getDb } = await import('@/lib/db');
         const db = await getDb();
-        if (!db) return withCors(NextResponse.json({ valid: false }, { status: 500 }), origin);
+        if (!db) {
+            const errorId = logger.error('api/form/[userId]: db unavailable', new Error('getDb returned null'), { userId });
+            return withCors(NextResponse.json({ valid: false, errorId }, { status: 500 }), origin);
+        }
 
         const { users } = await import('@/db/schema');
         const { eq } = await import('drizzle-orm');
@@ -34,7 +38,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
             valid: !!user,
             userName: user?.name || null,
         }), origin);
-    } catch {
-        return withCors(NextResponse.json({ valid: false }), origin);
+    } catch (e) {
+        const errorId = logger.error('api/form/[userId] failed', e, { userId });
+        return withCors(NextResponse.json({ valid: false, errorId }, { status: 500 }), origin);
     }
 }
