@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.5] - 2026-05-07
+
+### Fixed
+- **e2e: `tests/wizards.spec.ts:30 "Report Wizard opens"` failed on v2.14.3.** The SEO commit (`7ad23ef`) demoted the action-card headings from `<h3>` → `<h2>` for proper hierarchy under the new sr-only `h1`, but two Playwright selectors in `wizards.spec.ts` were still pinned to `h3` (lines 32 and 46). The test for "I have info about an adopter" failed deterministically; the test for "I gave a pet" was guarded by an `if (await registerBtn.isVisible({ timeout: 5000 }).catch(() => false))` so it silently passed without exercising the assertion. Fixed both. CLAUDE memory note about "grep tests before changing UI elements" applies — the SEO commit should have updated these selectors in the same change.
+
+### Known flake (not addressed in this turn)
+- `tests/search.spec.ts:13 "Search returns results"` flaked on the same run (passed on retry) with `page.goto: net::ERR_ABORTED` and the dev server logging `[TypeError: controller[kState].transformAlgorithm is not a function]`. That's a Node.js web-streams error from React Server Components, not caused by recent changes. CI's retry caught it; if it becomes deterministic we'll need to widen the `beforeEach` timeout or pin Node version.
+
 ## [2.14.4] - 2026-05-06
 
 ### Fixed
