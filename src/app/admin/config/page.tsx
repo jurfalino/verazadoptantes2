@@ -29,6 +29,7 @@ interface ConfigData {
         ENABLE_CONTENT_IMPORT?: string;
         ENABLE_ANIMALS_FOR_ADOPTION?: string;
         ENABLE_SEARCH_CARD_METADATA?: string;
+        ENABLE_VISIT_INTENT_PROMPT?: string;
         SOCIAL_PROOF_ENABLED?: string;
         SOCIAL_PROOF_MESSAGES?: string;
     };
@@ -61,6 +62,7 @@ export default function AdminConfigPage() {
         ENABLE_CONTENT_IMPORT: false,
         ENABLE_ANIMALS_FOR_ADOPTION: false,
         ENABLE_SEARCH_CARD_METADATA: true,
+        ENABLE_VISIT_INTENT_PROMPT: false,
     });
     const [socialProofEnabled, setSocialProofEnabled] = useState(false);
     const [socialProofMessages, setSocialProofMessages] = useState<SocialProofMessage[]>([]);
@@ -91,6 +93,7 @@ export default function AdminConfigPage() {
                         ENABLE_CONTENT_IMPORT: data.config?.ENABLE_CONTENT_IMPORT === 'true',
                         ENABLE_ANIMALS_FOR_ADOPTION: data.config?.ENABLE_ANIMALS_FOR_ADOPTION === 'true',
                         ENABLE_SEARCH_CARD_METADATA: data.config?.ENABLE_SEARCH_CARD_METADATA !== 'false',
+                        ENABLE_VISIT_INTENT_PROMPT: data.config?.ENABLE_VISIT_INTENT_PROMPT === 'true',
                     });
                     // Social proof config
                     setSocialProofEnabled(data.config?.SOCIAL_PROOF_ENABLED === 'true');

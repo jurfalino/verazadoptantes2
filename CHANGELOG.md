@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.4] - 2026-05-06
+
+### Fixed
+- **`ENABLE_VISIT_INTENT_PROMPT` toggle in `/admin/config` showed OFF after reload, even when the flag was actually set in the DB.** The flag was being persisted correctly (the `/api/admin/config` POST is generic), but the GET response shape (`route.ts:43-46`) hardcoded which keys to return and didn't include the new flag — so the admin UI hydrated `featureFlags.ENABLE_VISIT_INTENT_PROMPT` to `undefined` and rendered the toggle as off. The server-side `getFeatureFlag` call read directly from `appConfig` and returned the correct value, which is why the visit-intent card was actually rendering on adopter profiles even though the admin UI claimed the flag was off.
+- Added `ENABLE_VISIT_INTENT_PROMPT` to the four duplicated lists: GET response shape, admin page `useState` initializer, fetch-hydration mapping, and `ConfigData` interface. Left a comment in `route.ts` calling out the four-place duplication for the next person who adds a flag.
+
+### Known wart (not fixed in this turn)
+- Adding a new feature flag still requires editing four places: `src/config/features.ts` (`FEATURE_FLAGS` const + `getAllFeatureFlags` defaults), `src/app/api/admin/config/route.ts` (GET response shape), `src/app/admin/config/page.tsx` (`useState` initializer + `setFeatureFlags` hydration + `FEATURE_FLAGS` admin toggle list + `ConfigData` interface). Worth refactoring to derive everything from the `FEATURE_FLAGS` const, but out of scope for a one-line bug fix.
+
 ## [2.14.3] - 2026-05-06
 
 Two cleanup passes: finishing the i18n sweep started in v2.12.3, plus Tier-1 of an SEO audit. No functional behavior changes for logged-in users; SEO/discoverability changes only.

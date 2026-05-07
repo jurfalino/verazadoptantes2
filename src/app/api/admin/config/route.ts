@@ -40,10 +40,15 @@ export async function GET() {
             too_many_adoptions_period_days: config['too_many_adoptions_period_days'] || '90',
             too_many_requests_threshold: config['too_many_requests_threshold'] || '3',
             too_many_requests_period_days: config['too_many_requests_period_days'] || '30',
-            // Feature flags (from DB)
+            // Feature flags (from DB). Adding a new flag here requires also
+            // updating src/config/features.ts (FEATURE_FLAGS const + default in
+            // getAllFeatureFlags) and src/app/admin/config/page.tsx (useState
+            // initializer + fetch hydration + admin toggle list). The four-place
+            // duplication is a known wart — see CHANGELOG v2.14.3.
             ENABLE_CONTENT_IMPORT: config['ENABLE_CONTENT_IMPORT'] || 'false',
             ENABLE_ANIMALS_FOR_ADOPTION: config['ENABLE_ANIMALS_FOR_ADOPTION'] || 'false',
             ENABLE_SEARCH_CARD_METADATA: config['ENABLE_SEARCH_CARD_METADATA'] || 'true',
+            ENABLE_VISIT_INTENT_PROMPT: config['ENABLE_VISIT_INTENT_PROMPT'] || 'false',
             // Social proof banner
             SOCIAL_PROOF_ENABLED: config['SOCIAL_PROOF_ENABLED'] || 'false',
             SOCIAL_PROOF_MESSAGES: config['SOCIAL_PROOF_MESSAGES'] || '[]',
