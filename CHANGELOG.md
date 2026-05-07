@@ -2,6 +2,25 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.2] - 2026-05-06
+
+Diagnostic plumbing for the v2.13.0 audit's blind spot: when Axiom env vars are missing on a deployed environment, errors silently fall back to worker stdout and the user-visible error id stops matching any Axiom row. Three changes make that drift impossible to miss.
+
+### Added
+- **`probeAxiom()` in `/api/admin/health/route.ts`** — checks `AXIOM_DATASET` and `AXIOM_TOKEN` presence and pings `GET https://api.axiom.co/v1/datasets/<dataset>` with the token (3s timeout). Reports `{ configured, reachable, dataset, datasetSet, tokenSet, latencyMs, statusCode?, error? }` in the health response. Token is never returned to the client.
+- **`AdminEnvWarnings` (`src/components/AdminEnvWarnings.tsx`)** — mounted in `src/app/admin/layout.tsx` above page content. Fetches `/api/admin/health` once on mount and renders a red banner if Axiom is unconfigured ("Axiom logging is disabled in this environment — errors fall back to worker console; user-visible error IDs will not match any Axiom row") or an amber banner if configured but unreachable. Lists which env var is missing.
+- **`AXIOM_DATASET` / `AXIOM_TOKEN` added to the env-var presence list** returned by `/api/admin/health` so the existing health UI surfaces them too.
+
+### Changed
+- **`src/lib/logger.ts`** — when `sendToAxiom` falls back to console (env vars missing) and the runtime env is not `local`, emit one `console.warn` per worker boot: `[Logger] Axiom config missing in env="<env>" — errors fall back to worker console only.` Surfaces in `wrangler tail` immediately on a misconfigured deployment instead of waiting for the first user error.
+- **`src/app/adopter/[id]/page.tsx`** — split the auth + config `Promise.all` into two:
+  - **Auth (`getUser` + `getIsAdmin`)** still redirects to login on failure (mandatory).
+  - **Config (`getAdoptionConfig` + `getFeatureFlag`)** now degrades to defaults with `logger.warn` on failure. Previously a transient D1 outage on a config fetch would bounce the user to `/?authRequired=1` as if their session expired — which was misleading and possibly the failure mode behind the v2.14.0 visit-intent staging incident report.
+
+### How to use the new signals
+- Open `/admin` in any environment. If you see the red Axiom banner, **the user-visible error IDs are NOT in Axiom** — fix the missing secret in Cloudflare Pages → Settings → Variables and Secrets for that environment before relying on Axiom for triage.
+- Tail the worker (`npx wrangler pages deployment tail --project-name verazadoptantes2 --environment=preview`) and look for `[Logger] Axiom config missing` on first deploy of a fresh environment.
+
 ## [2.14.1] - 2026-05-06
 
 ### Fixed

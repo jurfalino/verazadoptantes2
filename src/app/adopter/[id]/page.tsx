@@ -4,6 +4,7 @@ import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, get
 import { resolveUserNames } from '@/app/actions/userNames';
 import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
 import { getFeatureFlag } from '@/config/features';
+import { logger } from '@/lib/logger';
 import { AdopterProfileV2 } from '@/components/AdopterProfileV2';
 
 export default async function AdopterPage({
@@ -17,21 +18,32 @@ export default async function AdopterPage({
     const { fromForm } = await searchParams;
     const isNew = id === 'create';
 
-    // Batch 1: Auth + config (lightweight, no DB-heavy queries)
+    // Batch 1a: Auth (mandatory — failure means redirect to login)
     let currentUser = '';
     let isAdmin = false;
-    let adoptionConfig: any = null;
-    let enableVisitIntent = false;
     try {
-        [currentUser, isAdmin, adoptionConfig, enableVisitIntent] = await Promise.all([
-            getUser(),
-            getIsAdmin(),
-            getAdoptionConfig(),
-            getFeatureFlag('ENABLE_VISIT_INTENT_PROMPT'),
-        ]);
+        [currentUser, isAdmin] = await Promise.all([getUser(), getIsAdmin()]);
     } catch (e: any) {
         if (e?.digest?.startsWith('NEXT_REDIRECT')) throw e;
         redirect(`/?authRequired=1&callbackUrl=${encodeURIComponent(`/adopter/${id}`)}`);
+    }
+
+    // Batch 1b: Config (degrade-on-failure — page renders with defaults if these throw,
+    // since a config-fetch error is not an auth error and should not bounce the user).
+    let adoptionConfig: any = null;
+    let enableVisitIntent = false;
+    try {
+        [adoptionConfig, enableVisitIntent] = await Promise.all([
+            getAdoptionConfig(),
+            getFeatureFlag('ENABLE_VISIT_INTENT_PROMPT'),
+        ]);
+    } catch (e) {
+        if ((e as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw e;
+        logger.warn('adopter page: config fetch failed, using defaults', {
+            adopterId: id,
+            userEmail: currentUser,
+            error: e instanceof Error ? e.message : String(e),
+        });
     }
 
     // Batch 2: All data queries in parallel (including availableAnimals to avoid a 3rd sequential await)

@@ -99,10 +99,25 @@ function getEnvironmentInfo(): { env: string; domain?: string; branch?: string; 
     }
 }
 
+// One-time warning per worker boot when Axiom env is missing in a non-local
+// environment. Surfaces in `wrangler tail` so a misconfigured deploy is
+// visible immediately instead of only on the first error a user hits.
+let _axiomMissingWarned = false;
+
+function warnIfAxiomMissingInProduction(envName: string) {
+    if (_axiomMissingWarned) return;
+    if (envName === 'local') return;
+    _axiomMissingWarned = true;
+    console.warn(`[Logger] Axiom config missing in env="${envName}" — errors fall back to worker console only. Set AXIOM_DATASET and AXIOM_TOKEN in Cloudflare Pages environment variables.`);
+}
+
 // Send log to Axiom (using waitUntil to keep worker alive on Edge)
 async function sendToAxiom(entries: LogEntry[]) {
     const config = getAxiomConfig();
     if (!config.dataset || !config.token) {
+        // Surface the misconfiguration once per worker boot (no-op locally).
+        const envName = entries[0]?.env as string | undefined;
+        if (envName) warnIfAxiomMissingInProduction(envName);
         // Local dev fallback: compact one-liner per entry
         for (const entry of entries) {
             const { level, message, _time, error: _err, ...rest } = entry;

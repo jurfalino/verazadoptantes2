@@ -195,12 +195,64 @@ function checkEnvironment() {
         'AUTH_GOOGLE_ID',
         'AUTH_GOOGLE_SECRET',
         'GEMINI_API_KEY',
+        'AXIOM_DATASET',
+        'AXIOM_TOKEN',
     ];
     const vars: Record<string, boolean> = {};
     for (const key of keys) {
         vars[key] = !!process.env[key];
     }
     return vars;
+}
+
+/**
+ * Probe Axiom: confirm both env vars are present and the dataset is reachable
+ * with the supplied token. Fails fast (3s timeout) and never exposes the token.
+ * If `configured === false`, errors emitted by the worker fall back to console
+ * only — admins should see the banner immediately.
+ */
+async function probeAxiom() {
+    const dataset = process.env.AXIOM_DATASET || '';
+    const token = process.env.AXIOM_TOKEN || '';
+    const configured = !!dataset && !!token;
+    if (!configured) {
+        return {
+            configured,
+            reachable: false,
+            dataset: dataset || null,
+            datasetSet: !!dataset,
+            tokenSet: !!token,
+            latencyMs: 0,
+        };
+    }
+    const start = performance.now();
+    try {
+        const res = await fetch(`https://api.axiom.co/v1/datasets/${encodeURIComponent(dataset)}`, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${token}` },
+            signal: AbortSignal.timeout(3000),
+        });
+        const latencyMs = Math.round(performance.now() - start);
+        return {
+            configured,
+            reachable: res.ok,
+            dataset,
+            datasetSet: true,
+            tokenSet: true,
+            latencyMs,
+            statusCode: res.status,
+        };
+    } catch (e) {
+        return {
+            configured,
+            reachable: false,
+            dataset,
+            datasetSet: true,
+            tokenSet: true,
+            latencyMs: Math.round(performance.now() - start),
+            error: e instanceof Error ? e.message : String(e),
+        };
+    }
 }
 
 export async function GET() {
@@ -223,7 +275,7 @@ export async function GET() {
         const contractUrl = process.env.NEXT_PUBLIC_CONTRACT_URL || 'https://adoptions.pages.dev';
         const scraperUrl = process.env.SCRAPER_URL;
 
-        const [dbResult, storageResult, migrationsResult, petshieldResult, scraperResult] = await Promise.allSettled([
+        const [dbResult, storageResult, migrationsResult, petshieldResult, scraperResult, axiomResult] = await Promise.allSettled([
             probeDatabase(env.DB),
             probeStorage(env),
             getMigrations(env.DB),
@@ -249,6 +301,7 @@ export async function GET() {
                     return { status: 'down', latencyMs: 0, url: `${scraperUrl}/health`, error: e instanceof Error ? e.message : String(e) };
                 }
             })(),
+            probeAxiom(),
         ]);
 
         // Unpack results with safe defaults
@@ -257,6 +310,7 @@ export async function GET() {
         const migrations = migrationsResult.status === 'fulfilled' ? migrationsResult.value : { applied: [], count: 0 };
         const petshield = petshieldResult.status === 'fulfilled' ? petshieldResult.value : { status: 'down' as ServiceStatus, latencyMs: 0 };
         const scraper = scraperResult.status === 'fulfilled' ? scraperResult.value : { status: 'down' as ServiceStatus, latencyMs: 0 };
+        const axiom = axiomResult.status === 'fulfilled' ? axiomResult.value : { configured: false, reachable: false, dataset: null, datasetSet: false, tokenSet: false, latencyMs: 0 };
 
         // Platform status = DB + R2 combined
         const hasDrift = db.tables.some(t => t.status !== 'ok');
@@ -275,6 +329,7 @@ export async function GET() {
                 error: storage.ok ? undefined : (storage as { error?: string }).error,
             },
             migrations,
+            axiom,
             environment: {
                 version: '2.10.0-8',
                 runtime: 'edge',
