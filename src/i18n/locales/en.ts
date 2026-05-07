@@ -1246,13 +1246,16 @@ export const en = {
         dark: 'Night Blue',
     },
     visitIntent: {
-        title: 'You\'re visiting this profile because:',
+        title: 'Why are you visiting this profile?',
         option_a: 'They requested an animal for adoption',
+        option_a_short: 'Request',
         option_a_hint: 'Log the adoption request this person made to you',
         option_b: 'I gave them an animal in adoption',
+        option_b_short: 'Adoption',
         option_b_hint: 'Log an adoption you already completed',
         option_c: 'I want to report an observation about this person',
+        option_c_short: 'Observation',
         option_c_hint: 'Share what you know with the rescue community',
-        dismiss: 'Just looking, dismiss',
+        dismiss: 'Dismiss',
     },
 };

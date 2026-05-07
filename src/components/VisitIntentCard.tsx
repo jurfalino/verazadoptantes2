@@ -42,13 +42,15 @@ function isWithinWindow(date: number | Date | string | null | undefined, windowM
 }
 
 /**
- * Inline prompt that appears at the top of the Adoptions section on adopter
- * profiles, asking the visiting user why they're here and routing them to
- * the matching wizard with the recordType pre-selected.
+ * Compact one-line prompt rendered above the activity section. Uses theme
+ * CSS variables only (works under any [data-theme] palette) and animates in
+ * on mount. The card asks the visitor's intent and routes to the matching
+ * wizard with the recordType pre-selected.
  *
- * Visibility matrix (all must be true): feature flag enabled, not the profile
- * owner, current user authenticated, no recent dismissal (7d TTL), at least
- * one of the three options not suppressed by recent matching records (30d).
+ * Visibility matrix: feature flag enabled, current user authenticated, not
+ * the profile owner, no recent dismissal (per-(adopter, user) localStorage
+ * with 7-day TTL), and at least one option not suppressed by recent matching
+ * records (30-day window for A and B; C is always available).
  */
 export default function VisitIntentCard({ enabled, adopterId, currentUser, isOwner, adoptions, availableAnimals, adopterAddress = '' }: Props) {
     const { t } = useLanguage();
@@ -75,7 +77,6 @@ export default function VisitIntentCard({ enabled, adopterId, currentUser, isOwn
     const showC = true;
     const anyVisible = showA || showB || showC;
 
-    // Read dismissal flag on mount
     useEffect(() => {
         if (!baseEligible) return;
         try {
@@ -86,10 +87,9 @@ export default function VisitIntentCard({ enabled, adopterId, currentUser, isOwn
                     setHidden(true);
                 }
             }
-        } catch { /* localStorage unavailable (private-mode browsers) — show as default */ }
+        } catch { /* localStorage unavailable */ }
     }, [adopterId, currentUser, baseEligible]);
 
-    // Telemetry: fire shown event once when card actually renders
     useEffect(() => {
         if (!baseEligible || hidden || !anyVisible || trackedShown || openedRecordType) return;
         zarazTrack('visit_intent_shown', {
@@ -102,7 +102,6 @@ export default function VisitIntentCard({ enabled, adopterId, currentUser, isOwn
 
     if (!baseEligible || hidden || !anyVisible) return null;
 
-    // When an option is picked, render the wizard pre-bound to that recordType.
     if (openedRecordType) {
         return (
             <AdoptionFormWizard
@@ -113,7 +112,6 @@ export default function VisitIntentCard({ enabled, adopterId, currentUser, isOwn
                 initialRecordType={openedRecordType}
                 autoOpen
                 onClose={() => {
-                    // The card has done its job; don't re-prompt for this profile in this session.
                     setOpenedRecordType(null);
                     setHidden(true);
                 }}
@@ -129,93 +127,74 @@ export default function VisitIntentCard({ enabled, adopterId, currentUser, isOwn
     const handleDismiss = () => {
         try {
             localStorage.setItem(dismissalKey(adopterId, currentUser), String(Date.now()));
-        } catch { /* localStorage unavailable; dismissal is per-mount only */ }
+        } catch { /* localStorage unavailable */ }
         zarazTrack('visit_intent_dismissed', { adopter_id: adopterId });
         setHidden(true);
     };
 
+    const chips: Array<{ visible: boolean; intent: IntentType; emoji: string; labelKey: 'option_a_short' | 'option_b_short' | 'option_c_short'; titleKey: 'option_a_hint' | 'option_b_hint' | 'option_c_hint' }> = [
+        { visible: showA, intent: 'adoption_request', emoji: '📝', labelKey: 'option_a_short', titleKey: 'option_a_hint' },
+        { visible: showB, intent: 'adoption', emoji: '🏠', labelKey: 'option_b_short', titleKey: 'option_b_hint' },
+        { visible: showC, intent: 'observation', emoji: '👁️', labelKey: 'option_c_short', titleKey: 'option_c_hint' },
+    ];
+
     return (
         <div
             role="region"
-            aria-label={t('visitIntent.title') || 'Why are you visiting?'}
-            className="rounded-xl border px-4 py-4 mb-4 relative"
+            aria-label={t('visitIntent.title')}
+            className="rounded-xl border px-3 py-2 mb-3 flex items-center gap-2 sm:gap-3 animate-in fade-in slide-in-from-top-2 duration-300"
             style={{
-                background: 'var(--status-info-bg)',
-                borderColor: 'var(--status-info-border)',
-                color: 'var(--status-info-text)',
+                background: 'var(--surface-card)',
+                borderColor: 'var(--border-default)',
+                color: 'var(--text-primary)',
             }}
         >
-            <button
-                type="button"
-                onClick={handleDismiss}
-                aria-label={t('visitIntent.dismiss') || 'Dismiss'}
-                className="absolute top-2 right-2 p-1.5 rounded-md hover:opacity-70 transition-opacity"
+            <span
+                className="hidden sm:inline text-xs font-medium shrink-0"
+                style={{ color: 'var(--text-secondary)' }}
             >
-                <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                    <path strokeLinecap="round" d="M6 6l8 8M14 6l-8 8" />
-                </svg>
-            </button>
-
-            <p className="text-sm font-semibold mb-3 pr-8">
                 {t('visitIntent.title')}
-            </p>
+            </span>
 
-            <div className="flex flex-col gap-2">
-                {showA && (
+            <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto sm:overflow-visible">
+                {chips.filter(c => c.visible).map((chip, idx) => (
                     <button
+                        key={chip.intent}
                         type="button"
-                        onClick={() => handleSelect('adoption_request')}
-                        className="text-left rounded-lg px-3 py-2.5 bg-white/70 hover:bg-white border border-current/10 hover:border-current/20 transition-colors"
+                        title={t(`visitIntent.${chip.titleKey}` as never)}
+                        aria-label={t(`visitIntent.${chip.titleKey}` as never)}
+                        onClick={() => handleSelect(chip.intent)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200 hover:scale-[1.04] active:scale-[0.97] focus:outline-none focus-visible:ring-2 animate-in fade-in slide-in-from-right-1"
+                        style={{
+                            background: 'var(--accent-subtle-bg)',
+                            color: 'var(--accent-subtle-text)',
+                            animationDelay: `${idx * 60}ms`,
+                            animationFillMode: 'backwards',
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'var(--accent-badge-bg)';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'var(--accent-subtle-bg)';
+                        }}
                     >
-                        <span className="flex items-center gap-2">
-                            <span className="text-base shrink-0" aria-hidden="true">📝</span>
-                            <span className="flex-1">
-                                <span className="block text-sm font-semibold">{t('visitIntent.option_a')}</span>
-                                <span className="block text-xs opacity-75">{t('visitIntent.option_a_hint')}</span>
-                            </span>
-                        </span>
+                        <span aria-hidden="true">{chip.emoji}</span>
+                        <span>{t(`visitIntent.${chip.labelKey}` as never)}</span>
                     </button>
-                )}
-
-                {showB && (
-                    <button
-                        type="button"
-                        onClick={() => handleSelect('adoption')}
-                        className="text-left rounded-lg px-3 py-2.5 bg-white/70 hover:bg-white border border-current/10 hover:border-current/20 transition-colors"
-                    >
-                        <span className="flex items-center gap-2">
-                            <span className="text-base shrink-0" aria-hidden="true">🏠</span>
-                            <span className="flex-1">
-                                <span className="block text-sm font-semibold">{t('visitIntent.option_b')}</span>
-                                <span className="block text-xs opacity-75">{t('visitIntent.option_b_hint')}</span>
-                            </span>
-                        </span>
-                    </button>
-                )}
-
-                {showC && (
-                    <button
-                        type="button"
-                        onClick={() => handleSelect('observation')}
-                        className="text-left rounded-lg px-3 py-2.5 bg-white/70 hover:bg-white border border-current/10 hover:border-current/20 transition-colors"
-                    >
-                        <span className="flex items-center gap-2">
-                            <span className="text-base shrink-0" aria-hidden="true">👁️</span>
-                            <span className="flex-1">
-                                <span className="block text-sm font-semibold">{t('visitIntent.option_c')}</span>
-                                <span className="block text-xs opacity-75">{t('visitIntent.option_c_hint')}</span>
-                            </span>
-                        </span>
-                    </button>
-                )}
+                ))}
             </div>
 
             <button
                 type="button"
                 onClick={handleDismiss}
-                className="mt-3 text-xs underline opacity-75 hover:opacity-100 transition-opacity"
+                aria-label={t('visitIntent.dismiss')}
+                title={t('visitIntent.dismiss')}
+                className="shrink-0 p-1 rounded-md transition-opacity opacity-50 hover:opacity-100 focus:outline-none focus-visible:opacity-100"
+                style={{ color: 'var(--text-secondary)' }}
             >
-                {t('visitIntent.dismiss')}
+                <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                    <path strokeLinecap="round" d="M6 6l8 8M14 6l-8 8" />
+                </svg>
             </button>
         </div>
     );

@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.6] - 2026-05-07
+
+VisitIntentCard redesign — UX feedback was that v2.14.0's full-card-with-paragraphs design was too tall (forced scrolling on mobile to see all options), used hardcoded white/`--status-info-*` tokens that didn't read well in the Azul Noche dark theme, and lived inside the Adoptions section (felt like part of the activity list rather than a context-setting prompt).
+
+### Changed
+- **Placement**: card moved from inside the Adoptions `CollapsibleSection` to **above its title**. It now reads as a prompt that introduces the section, not as an item within it.
+- **Layout**: collapsed from a vertical card with three paragraph-style buttons into a **single compact row**: question on the left (hidden on mobile to save space), three pill chips, dismiss icon on the right. Total height ≈ 40px instead of ~200px. No scrolling required.
+- **Theme**: every color now uses a CSS variable that's already remapped per `[data-theme]` in `globals.css` (`--surface-card`, `--border-default`, `--text-primary`, `--text-secondary`, `--accent-subtle-bg`, `--accent-subtle-text`, `--accent-badge-bg`). No more `bg-white/70` or `--status-info-*` — the card now blends into Claro and Azul Noche by construction.
+- **Animation**: the container fades + slides in from the top (`animate-in fade-in slide-in-from-top-2 duration-300`) and each chip slides in from the right with a 60ms stagger so the row populates left-to-right.
+- **Chip labels**: shortened to single words (`Solicitud` / `Adopción` / `Observación` in Spanish; `Request` / `Adoption` / `Observation` in English). The longer hint copy moved into `title=` and `aria-label=` so it's still discoverable via tooltip and screen readers but doesn't bloat the line. Title trimmed from "Estás visitando este perfil porque:" to "¿Para qué visitás este perfil?". Dismiss button label trimmed to "Cerrar" / "Dismiss".
+- **Hover/active**: each chip scales subtly (`hover:scale-[1.04] active:scale-[0.97]`) and shifts to `--accent-badge-bg`. Focus ring uses theme `--ring-focus`.
+- Mobile: question text hidden via `hidden sm:inline`, chip row gets `overflow-x-auto` so it gracefully scrolls if labels are translated longer than expected.
+
+### Same as before (no regression)
+- Visibility matrix (feature flag, owner suppression, 7-day per-(adopter, user) localStorage dismissal, 30-day per-option suppression for A/B based on recent matching records).
+- Telemetry events (`visit_intent_shown` / `visit_intent_selected` / `visit_intent_dismissed`).
+- Wizard launch contract (option click → `AdoptionFormWizard` mounted with `initialRecordType` + `autoOpen`, card hides for the rest of the session).
+
 ## [2.14.5] - 2026-05-07
 
 ### Fixed

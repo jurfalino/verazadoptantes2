@@ -127,20 +127,22 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                 {/* Adoptions — with Wizard Form */}
                 {!isNew && adopter && (
                     <div id="adoptions-section" data-testid="adoptions-list">
+                        {/* Visit-intent prompt sits above the section title — context-setting,
+                            not part of the activity list. Suppressed for owners and recently-acted users. */}
+                        <VisitIntentCard
+                            enabled={enableVisitIntent}
+                            adopterId={id}
+                            currentUser={currentUser}
+                            isOwner={isOwner}
+                            adoptions={adoptions}
+                            availableAnimals={availableAnimals}
+                            adopterAddress={adopter?.contactInfo || ''}
+                        />
                         <CollapsibleSection
                             title={t('adoption.title')}
                             count={adoptions.length}
                             defaultOpen={true}
                         >
-                            <VisitIntentCard
-                                enabled={enableVisitIntent}
-                                adopterId={id}
-                                currentUser={currentUser}
-                                isOwner={isOwner}
-                                adoptions={adoptions}
-                                availableAnimals={availableAnimals}
-                                adopterAddress={adopter?.contactInfo || ''}
-                            />
                             <AdoptionFormWizard
                                 adopterId={id}
                                 availableAnimals={availableAnimals}

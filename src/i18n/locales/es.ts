@@ -1244,14 +1244,17 @@ export const es = {
         dark: 'Azul Noche',
     },
     visitIntent: {
-        title: 'Estás visitando este perfil porque:',
+        title: '¿Para qué visitás este perfil?',
         option_a: 'Me solicitó un animal en adopción',
+        option_a_short: 'Solicitud',
         option_a_hint: 'Registrá la solicitud que esta persona te hizo',
         option_b: 'Le di un animal en adopción',
+        option_b_short: 'Adopción',
         option_b_hint: 'Registrá la adopción que ya concretaste',
         option_c: 'Quiero reportar una observación sobre esta persona',
+        option_c_short: 'Observación',
         option_c_hint: 'Compartí lo que sabés con la comunidad rescatista',
-        dismiss: 'Solo estoy mirando, cerrar',
+        dismiss: 'Cerrar',
     },
 };
 
