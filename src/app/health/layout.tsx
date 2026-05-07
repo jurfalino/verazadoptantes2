@@ -21,6 +21,9 @@ export const metadata: Metadata = {
     alternates: {
         canonical: 'https://buenadoptante.org/health',
     },
+    robots: {
+        index: false,
+    },
 };
 
 export default function HealthLayout({ children }: { children: React.ReactNode }) {

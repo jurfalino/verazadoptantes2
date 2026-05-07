@@ -267,6 +267,7 @@ export const en = {
     },
     home: {
         title: 'Adoption Registry',
+        h1: 'Vet adopters before placing the animal — collaborative database for shelters and rescuers',
         tagline: 'Search, verify, and report adopters to ensure every pet reaches the home they deserve.',
         action_register_title: 'I gave a pet for adoption',
         action_register_desc: 'Record who adopted the pet and how the experience went.',

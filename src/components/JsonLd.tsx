@@ -2,6 +2,7 @@
  * Reusable JSON-LD structured data component for SEO and GEO (Generative Engine Optimization).
  * Renders a <script type="application/ld+json"> tag with the provided schema.
  */
+import { version as PKG_VERSION } from '../../package.json';
 
 type JsonLdProps = {
     data: Record<string, unknown>;
@@ -53,8 +54,8 @@ export function WebApplicationJsonLd() {
                     'Sistema de notificaciones in-app',
                     'Aplicación web progresiva (PWA) con soporte offline',
                 ],
-                'screenshot': 'https://buenadoptante.org/icon-512.png',
-                'softwareVersion': '2.9.0',
+                'screenshot': 'https://buenadoptante.org/og-image.png',
+                'softwareVersion': PKG_VERSION,
             }}
         />
     );
@@ -77,7 +78,6 @@ export function OrganizationJsonLd() {
                     '@type': 'Place',
                     'name': 'Buenos Aires, Argentina',
                 },
-                'sameAs': [],
             }}
         />
     );

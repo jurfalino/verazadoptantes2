@@ -1,7 +1,7 @@
 {
     "name": "BuenAdoptante",
     "short_name": "BuenAdoptante",
-    "description": "Pet adoption vetting platform — verify adopters and ensure safe homes",
+    "description": "Plataforma de verificación de adoptantes — para que cada animal llegue al hogar correcto",
     "start_url": "/",
     "display": "standalone",
     "orientation": "portrait-primary",

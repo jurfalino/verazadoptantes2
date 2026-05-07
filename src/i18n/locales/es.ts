@@ -266,6 +266,7 @@ export const es = {
     },
     home: {
         title: 'Registro de Adopciones',
+        h1: 'Verificá adoptantes antes de entregar el animal — base de datos colaborativa para refugios y rescatistas',
         tagline: 'Buscá, verificá y reportá adoptantes para asegurar que cada mascota llegue al hogar que merece.',
         action_register_title: 'Di un animal en adopción',
         action_register_desc: 'Registrá quién adoptó la mascota y cómo fue la experiencia.',

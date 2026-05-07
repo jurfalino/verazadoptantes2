@@ -190,7 +190,7 @@ export default function AdoptionWizard() {
                 <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4 text-teal-700 group-hover:scale-110 transition-transform">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 </div>
-                <h3 className="text-xl font-semibold text-stone-900 mb-2">{t('home.action_register_title')}</h3>
+                <h2 className="text-xl font-semibold text-stone-900 mb-2">{t('home.action_register_title')}</h2>
                 <p className="text-stone-500 mb-4 text-sm">{t('home.action_register_desc')}</p>
                 <button
                     className="inline-block px-6 py-2.5 bg-teal-200 text-teal-900 font-semibold rounded-xl hover:bg-teal-300 transition-colors shadow-sm"

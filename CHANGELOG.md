@@ -2,6 +2,32 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.3] - 2026-05-06
+
+Two cleanup passes: finishing the i18n sweep started in v2.12.3, plus Tier-1 of an SEO audit. No functional behavior changes for logged-in users; SEO/discoverability changes only.
+
+### Fixed
+- **5 missing translation keys** the v2.12.3 sweep (`fcd73e2`) overlooked: `wizard.step_what`, `wizard.step_details`, `wizard.step_evidence`, `common.error`, `adoption.fill_required`. Spanish/English users were seeing raw key paths in the adoption-wizard step indicator and one validation toast. Added a CI-style scan (`/tmp/find_missing_keys.py`) that confirmed these were the only remaining gaps.
+
+### Added — SEO Tier 1
+- **Restored `<h1>` on home** (sr-only, keyword-rich). Removed in v2.12.1-39 for the slim search-first hero; the visual decision is preserved, but crawlers and screen readers get a primary heading again. New i18n key `home.h1`.
+- **Generated missing icons**: `public/apple-touch-icon.png` (180×180) and `public/icon-192.png` (192×192) — both were referenced from `layout.tsx` and `manifest.json` but didn't exist, 404ing on every page load. New `scripts/generate-icons.cjs` regenerates them from `icon-512.png`.
+- **HowTo + FAQ JSON-LD wired server-side** on `/guia` and `/guia/faq`. `GuideHowToJsonLd` and `FaqPageJsonLd` were exported from `JsonLd.tsx` but never imported — guide pages had zero structured data. Content extracted to `src/content/guide-data.ts` so both the API route and the layouts share one source of truth.
+- **Page-level `robots: { index: false }`** on `/health`, `/notificaciones`, `/organizations` (the last two were soft-auth-gated client-side but crawlable, would have ranked for nothing).
+- **Sitemap fixes**: added `/funcionalidades` (had its own metadata + canonical but was missing from sitemap), and replaced per-request `lastModified: new Date()` with a build-time-frozen constant so crawlers stop seeing the sitemap "change" on every fetch.
+- **Robots disallow extended** to cover `/contract`, `/contract-results`, `/form-results`, `/invite`, `/notificaciones`, `/organizations`, `/health`.
+- **Demoted action-card `<h3>`s → `<h2>`** on home, AdoptionWizard, ReportWizard so heading hierarchy stays sane after the new h1.
+
+### Changed
+- **`WebApplicationJsonLd`** — `softwareVersion` now reads from `package.json` instead of the stale hardcoded `'2.9.0'`. `screenshot` URL switched from `/icon-512.png` (an icon, not a screenshot) to `/og-image.png`. Empty `sameAs: []` removed from `OrganizationJsonLd` (weak signal).
+- **`public/manifest.json`** — description translated to Spanish (was English on a `lang: 'es'` site).
+
+### Deferred (Tier 2 — documented in `.agents/plans/seo-audit.md`)
+- Removing `dynamic = 'force-dynamic'` from root layout (highest-leverage win, but session-cache edge cases warrant a dedicated PR with monitoring).
+- Bilingual hreflang / `/en` URL tree (architectural decision: commit to bilingual SEO or drop the `alternateLocale` claim).
+- Dynamic `<html lang>` (couples with the bilingual decision).
+- Promoting `/notificaciones` & `/organizations` to `PROTECTED_ROUTES` (UX change — Tier-1 noindex resolves the SEO half safely).
+
 ## [2.14.2] - 2026-05-06
 
 Diagnostic plumbing for the v2.13.0 audit's blind spot: when Axiom env vars are missing on a deployed environment, errors silently fall back to worker stdout and the user-visible error id stops matching any Axiom row. Three changes make that drift impossible to miss.

@@ -104,6 +104,7 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-stone-50 py-6 px-4 relative">
       <div className="max-w-3xl mx-auto space-y-6">
+        <h1 className="sr-only">{t('home.h1')}</h1>
         <div id="search-section">
           <SearchSection locale={locale} showCardMetadata={appConfig.ENABLE_SEARCH_CARD_METADATA !== 'false'} />
         </div>
@@ -129,7 +130,7 @@ export default function Home() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
               </div>
-              <h3 className="text-lg font-semibold text-stone-900 mb-1">{t('home.action_import_title')}</h3>
+              <h2 className="text-lg font-semibold text-stone-900 mb-1">{t('home.action_import_title')}</h2>
               <p className="text-stone-500 text-sm mb-3">{t('home.action_import_desc')}</p>
               <span className="inline-block px-4 py-2 bg-teal-600 text-white rounded-xl font-semibold text-sm group-hover:bg-teal-700 transition-colors">{t('home.action_import_btn')}</span>
             </div>
