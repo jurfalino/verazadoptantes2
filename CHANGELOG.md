@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-9] - 2026-05-08
+
+Fixes the e2e regressions introduced by `2.14.7-8`. Two real test breaks, both my fault.
+
+### Fixed
+- **`src/components/AdoptionHistory.tsx`** — DOM order of the per-card icon spans was flipped (mobile-only span first, desktop second), causing `page.locator('text=🏠').first()` in `tests/search.spec.ts:121` to resolve to a `md:hidden` element on the desktop viewport. Restored desktop-variant-first ordering; visual output unchanged.
+- **`src/components/AdoptionHistory.tsx`** — the source-URL link was moved inside the `···` popover in `2.14.7-8`, hiding it until tap. `tests/flags.spec.ts:23` asserts the Facebook source link is visible on Roberto's profile, which was load-bearing UX. Source icon is now always visible inline (top-right corner of each card, action-oriented, scannable). Only the verbose "Agregado por X" string remains behind `···`. Header row reserves `pr-16` so date + corner icons don't collide.
+
 ## [2.14.7-8] - 2026-05-08
 
 Activity-section scannability pass on the adopter profile. The vertical timeline now reads as a scannable column rather than a stack of sentences: rating, action, and date sit in fixed slots, record-type is signaled by a 4px left stripe, and an at-a-glance summary header gives the gestalt before any scrolling.

@@ -270,49 +270,57 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                 onClick={canEdit ? () => setEditingId(adoption.id) : undefined}
                                 title={canEdit ? t('common.edit') : undefined}
                             >
-                                {/* F — Top-right ··· menu for source + addedBy (replaces footer row) */}
-                                {(adoption.sourceUrl || adoption.addedBy) && (
-                                    <div className="absolute top-2 right-2 z-10">
-                                        <button
-                                            type="button"
-                                            onClick={(e) => toggleMeta(adoption.id, e)}
-                                            aria-label={t('common.details') || 'Detalles'}
-                                            aria-expanded={openMeta === adoption.id}
-                                            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
-                                        >
-                                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-                                                <path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zM12 10a2 2 0 11-4 0 2 2 0 014 0zM18 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                                            </svg>
-                                        </button>
-                                        {openMeta === adoption.id && (
-                                            <div
-                                                className="absolute top-full right-0 mt-1 min-w-[180px] bg-white rounded-lg shadow-lg border border-stone-200 p-2 text-xs text-stone-600 space-y-1.5"
-                                                onClick={(e) => e.stopPropagation()}
-                                            >
-                                                {adoption.sourceUrl && !adoption.sourceUrl.startsWith('form:') && (
-                                                    <a
-                                                        href={adoption.sourceUrl}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="flex items-center gap-1.5 hover:text-stone-900"
+                                {/* F — Top-right corner: source icon stays inline (action-oriented, scannable);
+                                    only the verbose "Agregado por X" hides behind a ··· popover. */}
+                                {(() => {
+                                    const showSource = adoption.sourceUrl && !adoption.sourceUrl.startsWith('form:');
+                                    const showAddedBy = adoption.addedBy && !isAdminEmail(adoption.addedBy) && adoption.addedBy !== currentUser;
+                                    if (!showSource && !showAddedBy) return null;
+                                    return (
+                                        <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+                                            {showSource && (
+                                                <a
+                                                    href={adoption.sourceUrl!}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    title={getSourceName(adoption.sourceUrl!)}
+                                                    aria-label={getSourceName(adoption.sourceUrl!)}
+                                                    className="w-7 h-7 inline-flex items-center justify-center rounded-md text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
+                                                >
+                                                    {getSourceIcon(adoption.sourceUrl!, 'w-4 h-4')}
+                                                </a>
+                                            )}
+                                            {showAddedBy && (
+                                                <div className="relative">
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => toggleMeta(adoption.id, e)}
+                                                        aria-label={t('common.details') || 'Detalles'}
+                                                        aria-expanded={openMeta === adoption.id}
+                                                        className="w-7 h-7 inline-flex items-center justify-center rounded-md text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
                                                     >
-                                                        {getSourceIcon(adoption.sourceUrl, 'w-3.5 h-3.5')}
-                                                        <span>{getSourceName(adoption.sourceUrl)}</span>
-                                                    </a>
-                                                )}
-                                                {adoption.addedBy && !isAdminEmail(adoption.addedBy) && adoption.addedBy !== currentUser && (
-                                                    <div>
-                                                        {t('common.added_by')} <strong>{userNameMap?.[adoption.addedBy] || maskEmail(adoption.addedBy)}</strong>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
+                                                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                                                            <path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zM12 10a2 2 0 11-4 0 2 2 0 014 0zM18 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                                        </svg>
+                                                    </button>
+                                                    {openMeta === adoption.id && (
+                                                        <div
+                                                            className="absolute top-full right-0 mt-1 min-w-[180px] bg-white rounded-lg shadow-lg border border-stone-200 p-2 text-xs text-stone-600"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        >
+                                                            {t('common.added_by')} <strong>{userNameMap?.[adoption.addedBy!] || maskEmail(adoption.addedBy!)}</strong>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
 
                                 <div className="p-3 md:p-4">
-                                    {/* A+B — 3-column header: Rating | Verb+Animal | Date */}
-                                    <div className="flex items-start gap-2 md:gap-3 pr-7">
+                                    {/* A+B — 3-column header: Rating | Verb+Animal | Date. pr-16 reserves room for the up-to-2 corner buttons (source link + ···). */}
+                                    <div className="flex items-start gap-2 md:gap-3 pr-16">
                                         {/* Rating column — fixed-width slot creates vertical scan axis */}
                                         <div className="flex-shrink-0 w-12 md:w-14 pt-0.5 flex justify-center">
                                             {adoption.rating != null && adoption.rating > 0 ? (
@@ -325,8 +333,9 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                         {/* Verb + animal — fluid middle */}
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-semibold text-stone-800 leading-snug">
-                                                <span className="md:hidden mr-1.5" aria-hidden>{icon}</span>
+                                                {/* Desktop icon-badge FIRST in DOM so `text=🏠.first()` selectors resolve to a visible element on md+ viewports. Mobile fallback follows. */}
                                                 <span className={`hidden md:inline-flex flex-shrink-0 w-7 h-7 rounded-lg ${colors.iconBg} items-center justify-center text-base align-middle mr-2`} aria-hidden>{icon}</span>
+                                                <span className="md:hidden mr-1.5" aria-hidden>{icon}</span>
                                                 {summary}
                                                 {canEdit && (
                                                     <span className="text-teal-600 md:opacity-0 md:group-hover:opacity-100 transition-opacity inline-flex items-center ml-1.5 align-middle">
