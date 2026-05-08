@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-11] - 2026-05-08
+
+Fix the rescuer name shown in the public contract (Vite app at adoptions.pages.dev). It was rendering the email local-part — the chosen display name now comes through.
+
+### Fixed
+- **`src/app/api/contract/[id]/route.ts`** — `rescuerName` was built as `animal.addedBy.split('@')[0]`. The Vite contract page (`contract-app/src/ContractPage.tsx`) reads that field and displays it as the rescatista. Now we look up `user.name` (the display name set in `/settings`) for the `addedBy` email and only fall back to the email-prefix when no name is set or the DB lookup fails. The catch logs `animalId` + `addedBy` per the project logging rule (re-emit operation context, never silently swallow).
+
 ## [2.14.7-10] - 2026-05-08
 
 Audit-trail visibility restored on activity cards, and prominent emoji icons converted to inline SVG. Walks back the `···` popover from `2.14.7-9` — for a vetting tool, knowing the creator of a record is at-a-glance audit info, not metadata.
