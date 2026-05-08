@@ -50,9 +50,13 @@ export async function GET() {
             ENABLE_SEARCH_CARD_METADATA: config['ENABLE_SEARCH_CARD_METADATA'] || 'true',
             ENABLE_VISIT_INTENT_PROMPT: config['ENABLE_VISIT_INTENT_PROMPT'] || 'false',
             ENABLE_CHAT_WIDGET: config['ENABLE_CHAT_WIDGET'] || 'false',
-            // Telegram support chat — admin's personal chat_id (NOT the bot
-            // token; that's a Cloudflare secret).
+            // Telegram support chat — chat_id is non-sensitive and returned
+            // verbatim. The bot token and webhook secret are sensitive: never
+            // returned to the client. Instead we expose a *_SET indicator so
+            // the UI can show "(configured)" without leaking the value.
             TELEGRAM_ADMIN_CHAT_ID: config['TELEGRAM_ADMIN_CHAT_ID'] || '',
+            TELEGRAM_BOT_TOKEN_SET: config['TELEGRAM_BOT_TOKEN'] ? 'true' : 'false',
+            TELEGRAM_WEBHOOK_SECRET_SET: config['TELEGRAM_WEBHOOK_SECRET'] ? 'true' : 'false',
             // Social proof banner
             SOCIAL_PROOF_ENABLED: config['SOCIAL_PROOF_ENABLED'] || 'false',
             SOCIAL_PROOF_MESSAGES: config['SOCIAL_PROOF_MESSAGES'] || '[]',

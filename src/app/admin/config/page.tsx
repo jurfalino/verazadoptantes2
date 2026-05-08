@@ -32,6 +32,8 @@ interface ConfigData {
         ENABLE_VISIT_INTENT_PROMPT?: string;
         ENABLE_CHAT_WIDGET?: string;
         TELEGRAM_ADMIN_CHAT_ID?: string;
+        TELEGRAM_BOT_TOKEN_SET?: string;
+        TELEGRAM_WEBHOOK_SECRET_SET?: string;
         SOCIAL_PROOF_ENABLED?: string;
         SOCIAL_PROOF_MESSAGES?: string;
     };
@@ -69,7 +71,12 @@ export default function AdminConfigPage() {
         ENABLE_CHAT_WIDGET: false,
     });
     const [telegramAdminChatId, setTelegramAdminChatId] = useState('');
+    const [telegramBotToken, setTelegramBotToken] = useState('');
+    const [telegramWebhookSecret, setTelegramWebhookSecret] = useState('');
+    const [telegramBotTokenSet, setTelegramBotTokenSet] = useState(false);
+    const [telegramWebhookSecretSet, setTelegramWebhookSecretSet] = useState(false);
     const [savingTelegram, setSavingTelegram] = useState(false);
+    const [telegramSetupResult, setTelegramSetupResult] = useState<string | null>(null);
     const [socialProofEnabled, setSocialProofEnabled] = useState(false);
     const [socialProofMessages, setSocialProofMessages] = useState<SocialProofMessage[]>([]);
     const [savingSocialProof, setSavingSocialProof] = useState(false);
@@ -103,6 +110,8 @@ export default function AdminConfigPage() {
                         ENABLE_CHAT_WIDGET: data.config?.ENABLE_CHAT_WIDGET === 'true',
                     });
                     setTelegramAdminChatId(data.config?.TELEGRAM_ADMIN_CHAT_ID || '');
+                    setTelegramBotTokenSet(data.config?.TELEGRAM_BOT_TOKEN_SET === 'true');
+                    setTelegramWebhookSecretSet(data.config?.TELEGRAM_WEBHOOK_SECRET_SET === 'true');
                     // Social proof config
                     setSocialProofEnabled(data.config?.SOCIAL_PROOF_ENABLED === 'true');
                     try {
@@ -283,15 +292,51 @@ export default function AdminConfigPage() {
                     Telegram Support Chat
                 </h3>
                 <p className="text-sm text-stone-500 mb-4">
-                    Routing target for the floating chat widget. The bot token + webhook secret are
-                    Cloudflare secrets (<code className="px-1 bg-stone-100 rounded text-xs">TELEGRAM_BOT_TOKEN</code>,{' '}
-                    <code className="px-1 bg-stone-100 rounded text-xs">TELEGRAM_WEBHOOK_SECRET</code>) and are set
-                    via <code className="px-1 bg-stone-100 rounded text-xs">wrangler secret put</code> or the Cloudflare
-                    dashboard, never in this UI. The chat_id below identifies which Telegram chat receives forwarded
-                    messages — typically your personal chat with the bot. See{' '}
-                    <code className="px-1 bg-stone-100 rounded text-xs">docs/CHAT_SETUP.md</code> for the BotFather + setWebhook walkthrough.
+                    Routes the floating chat widget to your personal Telegram. After filling in the bot token, webhook
+                    secret, and chat_id, click <strong>Save &amp; register webhook</strong> — the server stores the values and
+                    immediately calls Telegram&apos;s <code className="px-1 bg-stone-100 rounded text-xs">setWebhook</code> for you.
+                    Walk-through (BotFather, capturing chat_id):{' '}
+                    <code className="px-1 bg-stone-100 rounded text-xs">docs/CHAT_SETUP.md</code>.
                 </p>
-                <div className="p-4 bg-stone-50 rounded-xl space-y-3">
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5 mb-4">
+                    <strong>Security note.</strong> Saved values are stored in the app database. They&apos;re visible to
+                    anyone with admin DB access. For higher isolation, set them as Cloudflare secrets
+                    (<code className="px-1 bg-white border border-amber-200 rounded">wrangler pages secret put TELEGRAM_BOT_TOKEN</code>)
+                    and leave the fields blank — the app reads DB first, then the Cloudflare secret as a fallback.
+                </p>
+                <div className="p-4 bg-stone-50 rounded-xl space-y-4">
+                    <div>
+                        <label className="block text-xs font-semibold text-stone-700 mb-1.5 uppercase tracking-wider">
+                            Bot token
+                            {telegramBotTokenSet && <span className="ml-2 text-emerald-600 normal-case font-normal">(currently set)</span>}
+                        </label>
+                        <input
+                            type="password"
+                            autoComplete="new-password"
+                            value={telegramBotToken}
+                            onChange={(e) => setTelegramBotToken(e.target.value)}
+                            placeholder={telegramBotTokenSet ? '•••••••• (leave blank to keep current value)' : 'e.g. 1234567890:AAH...XYZ'}
+                            className="w-full h-10 px-4 rounded-lg border border-stone-200 bg-white text-stone-950 font-mono text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold text-stone-700 mb-1.5 uppercase tracking-wider">
+                            Webhook secret
+                            {telegramWebhookSecretSet && <span className="ml-2 text-emerald-600 normal-case font-normal">(currently set)</span>}
+                        </label>
+                        <input
+                            type="password"
+                            autoComplete="new-password"
+                            value={telegramWebhookSecret}
+                            onChange={(e) => setTelegramWebhookSecret(e.target.value)}
+                            placeholder={telegramWebhookSecretSet ? '•••••••• (leave blank to keep current value)' : 'e.g. 32+ random hex chars'}
+                            className="w-full h-10 px-4 rounded-lg border border-stone-200 bg-white text-stone-950 font-mono text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none"
+                        />
+                        <p className="text-xs text-stone-500 mt-1.5">
+                            Random string the server uses to authenticate inbound webhook calls. Generate with
+                            {' '}<code className="px-1 bg-white border border-stone-200 rounded">openssl rand -hex 32</code>.
+                        </p>
+                    </div>
                     <div>
                         <label className="block text-xs font-semibold text-stone-700 mb-1.5 uppercase tracking-wider">Admin chat_id</label>
                         <input
@@ -304,36 +349,103 @@ export default function AdminConfigPage() {
                             className="w-full h-10 px-4 rounded-lg border border-stone-200 bg-white text-stone-950 font-mono text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none"
                         />
                         <p className="text-xs text-stone-500 mt-1.5">
-                            Capture this once by sending <code className="px-1 bg-white border border-stone-200 rounded">/start</code> to your bot —
-                            the first webhook delivery includes <code className="px-1 bg-white border border-stone-200 rounded">message.chat.id</code>.
+                            Send <code className="px-1 bg-white border border-stone-200 rounded">/start</code> to your bot, then
+                            open <code className="px-1 bg-white border border-stone-200 rounded">/getUpdates</code> in a browser to capture this number.
+                            Do this <em>before</em> registering the webhook.
                         </p>
                     </div>
-                    <button
-                        onClick={async () => {
-                            setSavingTelegram(true);
-                            try {
-                                const res = await fetch('/api/admin/config', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ TELEGRAM_ADMIN_CHAT_ID: telegramAdminChatId.trim() }),
-                                });
-                                if (res.ok) {
-                                    toast.success('Saved', 'Telegram chat_id updated.');
-                                } else {
-                                    const body = await readErrorBody(res);
-                                    toast.error('Error', body.error || 'Failed to save.', body.errorId);
+                    {telegramSetupResult && (
+                        <p className={`text-sm rounded-lg p-2.5 border ${telegramSetupResult.startsWith('✓')
+                            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                            : 'bg-rose-50 border-rose-200 text-rose-800'}`}>
+                            {telegramSetupResult}
+                        </p>
+                    )}
+                    <div className="flex gap-2">
+                        <button
+                            onClick={async () => {
+                                setSavingTelegram(true);
+                                setTelegramSetupResult(null);
+                                try {
+                                    // Only send fields the user actually edited — empty bot/secret means "keep current".
+                                    const payload: Record<string, unknown> = {
+                                        TELEGRAM_ADMIN_CHAT_ID: telegramAdminChatId.trim(),
+                                        registerWebhook: true,
+                                    };
+                                    if (telegramBotToken) payload.TELEGRAM_BOT_TOKEN = telegramBotToken;
+                                    if (telegramWebhookSecret) payload.TELEGRAM_WEBHOOK_SECRET = telegramWebhookSecret;
+
+                                    const res = await fetch('/api/admin/telegram/setup', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify(payload),
+                                    });
+                                    const data = await res.json().catch(() => ({}));
+                                    if (!res.ok) {
+                                        const errMsg = (data as { error?: string }).error || 'Setup failed';
+                                        setTelegramSetupResult(`✗ ${errMsg}`);
+                                        toast.error('Error', errMsg, (data as { errorId?: string }).errorId);
+                                        return;
+                                    }
+                                    // Clear sensitive inputs after a successful save
+                                    setTelegramBotToken('');
+                                    setTelegramWebhookSecret('');
+                                    const result = data as { status?: { botTokenSet?: boolean; webhookSecretSet?: boolean; adminChatIdSet?: boolean }; webhook?: { ok?: boolean; error?: string; description?: string; url?: string } | null };
+                                    setTelegramBotTokenSet(!!result.status?.botTokenSet);
+                                    setTelegramWebhookSecretSet(!!result.status?.webhookSecretSet);
+                                    if (result.webhook == null) {
+                                        setTelegramSetupResult('✓ Saved.');
+                                    } else if (result.webhook.ok) {
+                                        setTelegramSetupResult(`✓ Saved + webhook registered at ${result.webhook.url}.`);
+                                    } else {
+                                        setTelegramSetupResult(`Saved, but webhook registration failed: ${result.webhook.error || 'unknown error'}.`);
+                                    }
+                                    toast.success('Saved', 'Telegram configuration updated.');
+                                } catch (e) {
+                                    setTelegramSetupResult(`✗ ${e instanceof Error ? e.message : 'Network error'}`);
+                                } finally {
+                                    setSavingTelegram(false);
                                 }
-                            } catch (e) {
-                                toast.error('Error', 'Network error', e instanceof Error ? e.message : undefined);
-                            } finally {
-                                setSavingTelegram(false);
-                            }
-                        }}
-                        disabled={savingTelegram}
-                        className="px-5 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-                    >
-                        {savingTelegram ? 'Saving…' : 'Save chat_id'}
-                    </button>
+                            }}
+                            disabled={savingTelegram}
+                            className="px-5 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                        >
+                            {savingTelegram ? 'Saving…' : 'Save & register webhook'}
+                        </button>
+                        <button
+                            onClick={async () => {
+                                setSavingTelegram(true);
+                                setTelegramSetupResult(null);
+                                try {
+                                    const res = await fetch('/api/admin/telegram/setup', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ registerWebhook: true }),
+                                    });
+                                    const data = await res.json().catch(() => ({}));
+                                    if (!res.ok) {
+                                        const errMsg = (data as { error?: string }).error || 'Failed to register webhook';
+                                        setTelegramSetupResult(`✗ ${errMsg}`);
+                                        return;
+                                    }
+                                    const result = data as { webhook?: { ok?: boolean; error?: string; url?: string } | null };
+                                    if (result.webhook?.ok) {
+                                        setTelegramSetupResult(`✓ Webhook registered at ${result.webhook.url}.`);
+                                    } else {
+                                        setTelegramSetupResult(`✗ ${result.webhook?.error || 'unknown error'}`);
+                                    }
+                                } catch (e) {
+                                    setTelegramSetupResult(`✗ ${e instanceof Error ? e.message : 'Network error'}`);
+                                } finally {
+                                    setSavingTelegram(false);
+                                }
+                            }}
+                            disabled={savingTelegram}
+                            className="px-5 py-2 bg-stone-100 text-stone-700 text-sm font-semibold rounded-lg hover:bg-stone-200 transition-colors disabled:opacity-50 border border-stone-200"
+                        >
+                            Re-register webhook
+                        </button>
+                    </div>
                 </div>
             </div>
 

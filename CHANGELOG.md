@@ -2,6 +2,31 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-6] - 2026-05-08
+
+Chat setup is now fully UI-driven. Bot token + webhook secret can be saved from `/admin/config`, and the same Save button calls Telegram's `setWebhook` for you — no curl, no shell.
+
+### Changed
+- **`src/lib/telegram.ts`**: secrets resolved DB-first, Cloudflare-env fallback. `getTelegramConfig()` returns `{ botToken, webhookSecret, adminChatId }` from `appConfig` rows; missing rows fall back to the Cloudflare secret. `verifyWebhookSecret` and `sendTelegramMessage` are now async; both accept an optional pre-resolved config to avoid double DB lookups in handlers that need multiple Telegram calls.
+- **New `registerWebhook(webhookUrl, config?)`** in `src/lib/telegram.ts`: thin wrapper around Telegram's `setWebhook` API. Idempotent.
+- **New endpoint `POST /api/admin/telegram/setup`**: admin-only. Accepts any subset of `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_ADMIN_CHAT_ID` plus a `registerWebhook` flag (default `true`). Empty string clears the DB row (falls back to Cloudflare secret). When `registerWebhook=true`, derives the webhook URL from the request host (`x-forwarded-proto` + `x-forwarded-host` or `host`) and calls Telegram. Returns `{ status, webhook }` so the UI can surface "saved" and "registered" independently.
+- **Admin UI redesign** for the Telegram panel in `/admin/config`:
+  - Three password-style inputs: bot token, webhook secret, admin chat_id. The first two show "(currently set)" when populated and accept blank to mean "keep current value".
+  - Single **Save & register webhook** button — sends the form to `/api/admin/telegram/setup` with `registerWebhook: true`. Surfaces success or specific Telegram-API error inline (green ✓ or red ✗ panel below the inputs).
+  - Secondary **Re-register webhook** button — calls the same endpoint with no config changes, just kicks Telegram's `setWebhook` again. Useful after env migration or secret rotation.
+  - Inline amber "Security note" callout: explains that DB-stored secrets are visible to anyone with admin DB access and points to the Cloudflare-secret path for higher isolation.
+- **Masked GET response** in `/api/admin/config`: `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` are never returned to the client. The route now exposes only `TELEGRAM_BOT_TOKEN_SET` / `TELEGRAM_WEBHOOK_SECRET_SET` boolean indicators so the UI can render "(currently set)" without leaking the value.
+
+### Path matrix
+- **Path A (UI-only)**: paste all three into the admin form, hit Save & register. Stored in DB. One-step setup.
+- **Path B (Cloudflare-secret)**: `wrangler pages secret put TELEGRAM_BOT_TOKEN` etc., leave the password fields blank in the UI, paste only the chat_id. App reads DB-first, env-fallback so this still works seamlessly.
+
+### Docs
+- **`docs/CHAT_SETUP.md`** rewritten around the two paths. Removes the long curl/setWebhook section since the admin UI handles it.
+
+### Migration
+- No schema change. The endpoint is purely additive; existing deployments continue to read Cloudflare secrets if they were configured that way.
+
 ## [2.14.7-5] - 2026-05-08
 
 Floating support chat widget routed to admin's personal Telegram. Visitors (anon or signed-in) can chat with the admin without exposing the admin's IP. Off by default; enabled via `ENABLE_CHAT_WIDGET` flag in admin/config and Telegram secrets on Cloudflare.

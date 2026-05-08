@@ -23,8 +23,8 @@ import { eq, and, gt, asc } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { chatConversations, chatMessages, appConfig } from '@/db/schema';
-import { isTelegramConfigured, sendTelegramMessage, formatForwardedMessage } from '@/lib/telegram';
+import { chatConversations, chatMessages } from '@/db/schema';
+import { getTelegramConfig, sendTelegramMessage, formatForwardedMessage } from '@/lib/telegram';
 import { getFeatureFlag } from '@/config/features';
 
 const RATE_LIMIT_MIN_GAP_MS = 5_000;
@@ -32,11 +32,6 @@ const RATE_LIMIT_HOUR_MAX = 30;
 const RATE_LIMIT_HOUR_WINDOW_MS = 60 * 60 * 1000;
 const MAX_BODY_LEN = 2000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-async function getAdminChatId(db: NonNullable<Awaited<ReturnType<typeof getDb>>>): Promise<string> {
-    const row = await db.select().from(appConfig).where(eq(appConfig.key, 'TELEGRAM_ADMIN_CHAT_ID')).get();
-    return row?.value || '';
-}
 
 export async function POST(request: NextRequest) {
     let conversationId: string | undefined;
@@ -133,26 +128,22 @@ export async function POST(request: NextRequest) {
         });
 
         // Forward to admin's Telegram. Failure here doesn't fail the user
-        // request — we still recorded the message; admin will see it on
-        // their next /api/chat poll if they're also reading from the app
-        // side, and the failure is logged for triage.
-        let telegramMessageId: number | undefined;
-        if (isTelegramConfigured()) {
-            const adminChatId = await getAdminChatId(db);
-            if (!adminChatId) {
-                logger.warn('chat.POST: TELEGRAM_ADMIN_CHAT_ID not set in appConfig', { conversationId });
-            } else {
-                const text = formatForwardedMessage(conversationId, effectiveLabel, messageBody);
-                const tg = await sendTelegramMessage(adminChatId, text);
-                if (tg.ok && tg.messageId) {
-                    telegramMessageId = tg.messageId;
-                    await db.update(chatMessages).set({ telegramMessageId }).where(eq(chatMessages.id, messageId));
-                } else {
-                    logger.warn('chat.POST: telegram forward failed', { conversationId, error: tg.error });
-                }
-            }
-        } else {
+        // request — we still recorded the message; the failure is logged
+        // for triage and the visitor sees their message in their own chat
+        // history (history is sourced from D1, not from Telegram).
+        const tgConfig = await getTelegramConfig();
+        if (!tgConfig.botToken) {
             logger.warn('chat.POST: TELEGRAM_BOT_TOKEN not set; message stored but not forwarded', { conversationId });
+        } else if (!tgConfig.adminChatId) {
+            logger.warn('chat.POST: TELEGRAM_ADMIN_CHAT_ID not set; message stored but not forwarded', { conversationId });
+        } else {
+            const text = formatForwardedMessage(conversationId, effectiveLabel, messageBody);
+            const tg = await sendTelegramMessage(tgConfig.adminChatId, text, tgConfig);
+            if (tg.ok && tg.messageId) {
+                await db.update(chatMessages).set({ telegramMessageId: tg.messageId }).where(eq(chatMessages.id, messageId));
+            } else {
+                logger.warn('chat.POST: telegram forward failed', { conversationId, error: tg.error });
+            }
         }
 
         return NextResponse.json({ ok: true, id: messageId });
