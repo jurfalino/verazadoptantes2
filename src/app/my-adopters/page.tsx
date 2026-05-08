@@ -230,8 +230,8 @@ export default function MyAdoptersPage() {
                                     key={`unlinked-${form.id}-${i}`}
                                     className="bg-white rounded-xl p-4 shadow-sm border border-stone-200"
                                 >
-                                    <div className="font-medium text-stone-900 mb-1">{form.name}</div>
-                                    <div className="text-sm text-stone-600 mb-2">{form.email || t('dashboard.no_contact')}</div>
+                                    <div className="font-medium text-stone-900 mb-1 truncate" title={form.name}>{form.name}</div>
+                                    <div className="text-sm text-stone-600 mb-2 break-all">{form.email || t('dashboard.no_contact')}</div>
                                     <div className="text-xs text-stone-500 mb-3">
                                         {form.createdAt != null ? formatShortDate(form.createdAt) : '—'}
                                     </div>

@@ -2,6 +2,40 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-13] - 2026-05-08
+
+Text-overflow sweep across user-facing surfaces. Long names, emails, IANA timezones, and free-text audit fields were silently breaking layouts on mobile and modals. The fix is a four-strategy taxonomy applied per-surface based on the user's task at that screen — not a blanket `truncate`.
+
+### Strategy
+
+| Strategy | Where |
+|---|---|
+| `line-clamp-2 break-words` + `title` | Vetting-decision surfaces where the user has to compare/judge full content (contract-results match cards, merge modal, import preview, wizard previews) |
+| `truncate` + `title` | Compact list rows that click through to full data (my-adopters list, flagging suggestions, admin user names) |
+| `break-words` | Free-text body the user wants to read in full (toasts, notification body, change-log fields, search snippets) |
+| `break-all` | Opaque strings in tight cells where word-breaks aren't possible (admin emails, IANA timezones, masked-email fallbacks) |
+| `min-w-0 flex-1` (structural) | Nested flex children where text needs to truncate/wrap (settings tiles, admin user column, ImportWizard match) |
+
+### Fixed
+- **`src/app/contract-results/[notificationId]/page.tsx:169-171`** — match-card `profile.name` was rendered raw; now `line-clamp-2 break-words` + `title`. `contactInfo` got `break-words` added alongside the existing `line-clamp-2`. Vetting-decision context — single-line truncation could cause merge-the-wrong-person errors.
+- **`src/app/admin/users/page.tsx:210-214`** — desktop email row was inconsistent with the mobile view (mobile had `truncate block`, desktop had nothing). Inner column now `min-w-0 flex-1`, name `truncate` + `title`, email `break-all` (NOT truncate — admins need full email visible before destructive actions).
+- **`src/components/DuplicateMergeModal.tsx:146-149`** — destructive merge decision modal: name + contact now `line-clamp-2 break-words` + `title`. Truncating identity strings on a destructive action was unsafe.
+- **`src/components/AdoptionWizard.tsx:354, 430` and `src/components/ReportWizard.tsx:176, 252`** — wizard "selected adopter" preview is the last-confirmation step before a write. Same vetting-decision class as the merge modal: `line-clamp-2 break-words` + `title`. Originally proposed as `truncate` + `title` but UI-manager review caught that single-line truncation could lead a user to confirm against the wrong adopter (e.g. mid-string name collision).
+- **`src/components/AdopterFlagging.tsx:553-554`** — flagging-suggestion cards: `truncate` + `title` on name + contact. Click-through to full profile mitigates truncation risk here.
+- **`src/components/ImportWizard.tsx:1454-1461`** — import-preview match cards: `min-w-0 flex-1` on inner div, `line-clamp-2 break-words` + `title` on name (vetting-decision class).
+- **`src/app/my-adopters/page.tsx:233-234`** — list-card name `truncate` + `title`; email `break-all`.
+- **`src/components/AdopterProfileV2.tsx:233-262`** — change log diff renderer: removed the JS-side `delta.from.substring(0, 30) + '...'` clamp (it was a pre-existing constraint of unknown vintage that hid load-bearing audit data on one half of every diff but not the other). Both `delta.from` and `delta.to` now render in full with `break-all line-clamp-3` and a `title` attribute for hover-to-see-everything. Vetting tools need complete audit trails; CSS clamping bounds vertical sprawl without hiding content. Event-description bolded names (animal name, image caption) get `break-all`. Adoption-deletion notes get `line-clamp-3 break-words` + `title`.
+- **`src/app/settings/page.tsx:144-178`** — geo-detected location tiles (province, city, timezone). Inner `<div>` was missing `min-w-0`, so a 32-char IANA timezone like `America/Argentina/Buenos_Aires` overflowed the 190px-wide `sm:grid-cols-3` cells. Now `min-w-0 flex-1` on the inner div and `break-all` on the value (NOT truncate — the panel exists for the user to verify auto-detection, mobile has no hover to reveal a truncated string). Tile heights now diverge slightly when long values wrap to two lines; acceptable trade-off for full visibility.
+- **`src/components/ui/Toast.tsx:134-136`** — toast title + message: `break-words` (NOT truncate — when an error toast appears, the user wants to read it).
+- **`src/components/NotificationBell.tsx:251-255`** — notification dropdown title + body: `break-words` on both (body keeps the existing `line-clamp-2`).
+- **`src/components/AdoptionHistory.tsx:489`** — activity-section "Agregado por X" footer (added in v2.14.7-12): `break-all` on the `<strong>` so masked-email fallbacks (`j••••@gmail.com`) break cleanly mid-string instead of forcing the whole label to wrap.
+- **`src/components/SearchSection.tsx:403, 408, 467`** — search-result card name + contact get `title` for hover-discoverability of truncated values; deep match-snippet block adds `break-words`.
+
+### Notes
+- **No new tests in this PR.** All edits are CSS class additions or `title` attribute additions; existing Playwright selectors (text-content, role-based, URL-based) are unaffected — verified via grep across `tests/`. Adding `truncate` doesn't change innerText, only overflow-CSS, so `getByText` selectors keep working.
+- **Methodology lesson saved to memory** (`feedback_overflow_audit_method.md`): pure grep-driven overflow audits miss JS-side truncation, deeply-nested flex children without `min-w-0`, and small-grid-tile patterns. Future overflow audits should include a screen-by-screen walkthrough with stress-test data (50-char names, 30+ char timezones, multi-sentence notes), not just grep.
+- **Manual verification on staging recommended:** load the adopter profile change log, settings page (mobile viewport), notification dropdown with a long-name notification, and the contract-results page with a long-name match.
+
 ## [2.14.7-12] - 2026-05-08
 
 Fix the "two Jorge Hu profiles in the contract-results page" bug at the architectural root: contract-submit and form-submit notifications were running their own bespoke fuzzy matchers that diverged from the canonical `findAdopters` engine — missing the soft-delete filter, missing geo-filter, missing relevance scoring, and silently broken on D1 (`inArray()` returned wrong results). Both routes now go through `findAdopters({ mode: 'duplicate' })`, so soft-deleted (merged-duplicate) adopters never appear in match notifications, and behavior stays consistent across discovery search and duplicate detection going forward. Defense-in-depth filter on the result-page reads also retroactively cleans every existing stale notification.

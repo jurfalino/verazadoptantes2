@@ -248,10 +248,10 @@ export default function NotificationBell() {
                                         <div className="flex items-start gap-2.5">
                                             <span className="text-lg flex-shrink-0 mt-0.5">{item.icon}</span>
                                             <div className="flex-1 min-w-0">
-                                                <p className={`text-sm leading-snug ${!item.read ? 'font-semibold' : 'font-medium'}`} style={{ color: 'var(--text-primary)' }}>
+                                                <p className={`text-sm leading-snug break-words ${!item.read ? 'font-semibold' : 'font-medium'}`} style={{ color: 'var(--text-primary)' }}>
                                                     {item.title}
                                                 </p>
-                                                <p className="text-xs leading-relaxed mt-0.5 line-clamp-2" style={{ color: 'var(--text-muted)' }}>
+                                                <p className="text-xs leading-relaxed mt-0.5 line-clamp-2 break-words" style={{ color: 'var(--text-muted)' }}>
                                                     {item.body}
                                                 </p>
                                                 <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>

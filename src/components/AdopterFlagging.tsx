@@ -550,8 +550,8 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                                             : 'bg-white border-teal-100 hover:border-teal-300 hover:shadow-sm'}`}
                                                         onClick={() => setTargetAdopter(res.adopter)}
                                                     >
-                                                        <div className="font-semibold text-teal-900">{res.adopter.name}</div>
-                                                        <div className="text-teal-700 truncate">{res.adopter.contactInfo}</div>
+                                                        <div className="font-semibold text-teal-900 truncate" title={res.adopter.name}>{res.adopter.name}</div>
+                                                        <div className="text-teal-700 truncate" title={res.adopter.contactInfo || undefined}>{res.adopter.contactInfo}</div>
                                                     </div>
                                                 ))}
                                             </div>

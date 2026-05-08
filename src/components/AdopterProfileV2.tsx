@@ -233,31 +233,31 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                             {(eventType === 'update' || eventType === 'adoption_updated') && Object.entries(changes).map(([key, delta]: [string, any]) => (
                                                                 <div key={key} className="grid grid-cols-[120px_1fr] gap-3 items-start text-sm">
                                                                     <span className="font-semibold text-teal-800 capitalize truncate" title={key}>{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
-                                                                    <div className="text-teal-700 break-words font-medium">
-                                                                        <div className="line-through text-rose-400 text-xs mr-2 opacity-70 inline-block">
-                                                                            {typeof delta.from === 'string' && delta.from.length > 30 ? delta.from.substring(0, 30) + '...' : (delta.from || t('audit.empty_val'))}
+                                                                    <div className="text-teal-700 break-words font-medium min-w-0">
+                                                                        <div className="line-through text-rose-400 text-xs mr-2 opacity-70 inline-block max-w-full break-all line-clamp-3" title={typeof delta.from === 'string' ? delta.from : undefined}>
+                                                                            {delta.from || t('audit.empty_val')}
                                                                         </div>
                                                                         <span className="text-teal-700 mr-2">➜</span>
-                                                                        <span className="text-teal-900 bg-teal-100 px-1.5 rounded">{delta.to || t('audit.empty_val')}</span>
+                                                                        <span className="text-teal-900 bg-teal-100 px-1.5 rounded inline-block max-w-full break-all line-clamp-3 align-bottom" title={typeof delta.to === 'string' ? delta.to : undefined}>{delta.to || t('audit.empty_val')}</span>
                                                                     </div>
                                                                 </div>
                                                             ))}
                                                             {eventType === 'adoption_added' && (
-                                                                <div className="text-teal-800 font-medium">
-                                                                    {t('audit.desc_adoption_added')} <span className="font-semibold">{changes.animalName}</span> ({changes.species}) - {changes.status}
+                                                                <div className="text-teal-800 font-medium break-words">
+                                                                    {t('audit.desc_adoption_added')} <span className="font-semibold break-all">{changes.animalName}</span> ({changes.species}) - {changes.status}
                                                                 </div>
                                                             )}
                                                             {eventType === 'adoption_deleted' && (
-                                                                <div className="space-y-1 text-teal-800">
-                                                                    <div><span className="font-semibold">{t('adoption.animal_name')}:</span> {changes.animalName} ({changes.species})</div>
+                                                                <div className="space-y-1 text-teal-800 break-words">
+                                                                    <div><span className="font-semibold">{t('adoption.animal_name')}:</span> <span className="break-all">{changes.animalName}</span> ({changes.species})</div>
                                                                     <div><span className="font-semibold">{t('adoption.status')}:</span> {changes.status}</div>
                                                                     <div className="flex items-center gap-1"><span className="font-semibold">{t('adoption.rating')}:</span> <RatingBadge rating={changes.rating} variant="inline" size="sm" /></div>
-                                                                    {changes.details && <div className="text-xs italic mt-1">"{changes.details}"</div>}
+                                                                    {changes.details && <div className="text-xs italic mt-1 line-clamp-3 break-words" title={changes.details}>"{changes.details}"</div>}
                                                                 </div>
                                                             )}
                                                             {eventType === 'image_deleted' && (
-                                                                <div className="text-teal-800">
-                                                                    {t('audit.desc_image_deleted')} <span className="italic opacity-75">"{changes.caption || t('common.untitled')}"</span> ({t('audit.by')} {formatShortDate(new Date(changes.uploadedAt))})
+                                                                <div className="text-teal-800 break-words">
+                                                                    {t('audit.desc_image_deleted')} <span className="italic opacity-75 break-all">"{changes.caption || t('common.untitled')}"</span> ({t('audit.by')} {formatShortDate(new Date(changes.uploadedAt))})
                                                                 </div>
                                                             )}
                                                         </>

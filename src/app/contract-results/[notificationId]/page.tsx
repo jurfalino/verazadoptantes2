@@ -166,9 +166,9 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                             >
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-semibold text-stone-800">{profile.name}</p>
+                                        <p className="text-sm font-semibold text-stone-800 line-clamp-2 break-words" title={profile.name}>{profile.name}</p>
                                         {profile.contactInfo && (
-                                            <p className="text-xs text-stone-500 mt-0.5 line-clamp-2">{profile.contactInfo}</p>
+                                            <p className="text-xs text-stone-500 mt-0.5 line-clamp-2 break-words">{profile.contactInfo}</p>
                                         )}
                                         {/* Match reasons */}
                                         <div className="flex flex-wrap gap-1.5 mt-2">

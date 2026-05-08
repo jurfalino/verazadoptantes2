@@ -207,9 +207,9 @@ export default function AdminUsersPage() {
                                                 {(user.name || user.email || '?')[0].toUpperCase()}
                                             </div>
                                         )}
-                                        <div>
-                                            <div className="font-medium text-stone-900">{user.name || 'Unknown'}</div>
-                                            <a href={`mailto:${user.email}`} className="text-xs text-blue-600 hover:underline">
+                                        <div className="min-w-0 flex-1">
+                                            <div className="font-medium text-stone-900 truncate" title={user.name || 'Unknown'}>{user.name || 'Unknown'}</div>
+                                            <a href={`mailto:${user.email}`} className="text-xs text-blue-600 hover:underline break-all">
                                                 {user.email}
                                             </a>
                                         </div>

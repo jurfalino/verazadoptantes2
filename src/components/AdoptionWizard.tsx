@@ -351,7 +351,7 @@ export default function AdoptionWizard() {
                                             </div>
                                         )}
                                         <div className="flex-1 min-w-0">
-                                            <div className="font-semibold text-stone-800 text-lg">{previewAdopter.adopter.name}</div>
+                                            <div className="font-semibold text-stone-800 text-lg line-clamp-2 break-words" title={previewAdopter.adopter.name}>{previewAdopter.adopter.name}</div>
                                             {previewAdopter.matchSnippet && (
                                                 <div className="text-xs text-teal-700">{SNIPPET_ICONS[previewAdopter.matchSnippet.field as SnippetField]} {t(`search.snippet_${previewAdopter.matchSnippet.field}`)}</div>
                                             )}
@@ -426,7 +426,7 @@ export default function AdoptionWizard() {
                                 {selectedAdopterId && (
                                     <div className="flex items-center gap-2 px-3 py-2 bg-teal-50 border border-teal-200 rounded-xl">
                                         <svg className="w-5 h-5 text-teal-700 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                        <span className="text-sm font-semibold text-teal-800 flex-1">
+                                        <span className="text-sm font-semibold text-teal-800 flex-1 min-w-0 line-clamp-2 break-words" title={searchResults.find(r => r.adopter.id === selectedAdopterId)?.adopter.name || ''}>
                                             {searchResults.find(r => r.adopter.id === selectedAdopterId)?.adopter.name || (t('wizard.adopter_selected') || 'Adopter selected')}
                                         </span>
                                         <button onClick={() => setSelectedAdopterId('')} className="text-teal-700 hover:text-teal-700 text-xs font-semibold">✕</button>

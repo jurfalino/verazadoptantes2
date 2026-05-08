@@ -486,7 +486,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                                 {showAddedBy && (
                                                     <span className="inline-flex items-center gap-1">
                                                         <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-                                                        {t('common.added_by')} <strong className="font-medium text-stone-700">{userNameMap?.[adoption.addedBy!] || maskEmail(adoption.addedBy!)}</strong>
+                                                        {t('common.added_by')} <strong className="font-medium text-stone-700 break-all">{userNameMap?.[adoption.addedBy!] || maskEmail(adoption.addedBy!)}</strong>
                                                     </span>
                                                 )}
                                             </div>
