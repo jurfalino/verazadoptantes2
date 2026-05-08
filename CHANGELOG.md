@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-8] - 2026-05-08
+
+Activity-section scannability pass on the adopter profile. The vertical timeline now reads as a scannable column rather than a stack of sentences: rating, action, and date sit in fixed slots, record-type is signaled by a 4px left stripe, and an at-a-glance summary header gives the gestalt before any scrolling.
+
+### Changed
+- **`src/components/AdoptionHistory.tsx`**:
+  - **3-column card header.** Rating moves to a fixed-width left column (or em-dash placeholder), the verb+animal sits in the fluid middle, the date is right-aligned and muted. Relative time moved off the line into the date's `title` attribute on hover. The eye can now scan a vertical column of stars/dates without parsing prose.
+  - **4px colored left stripe per record type** (`border-l-{teal/sky/amber/violet/rose}-500`), keyed off `recordType`. Replaces the unified-color border. Adoptions, requests, observations, follow-ups, and returns are pre-attentively distinguishable.
+  - **Activity summary above the timeline.** One-line counts per record type with hue-matched numerals, plus average rating on the right. Captures "3 adopciones · 2 solicitudes · 1 devolución · ⭐ 3.8" in a single saccade.
+  - **Notes clamped to 2 lines** with a `leer más / leer menos` toggle (uses a per-card expanded set in component state, only shown when the note exceeds ~120 chars). Long notes no longer break timeline rhythm.
+  - **Bottom audit-trail footer removed** (sourceUrl icon + "Agregado por X"). Replaced with a `···` button in the card's top-right corner that toggles a small popover containing the same info. Audit metadata is one tap away when needed and out of the scan path otherwise.
+  - **Timeline rail recolored** from the teal→violet→teal gradient to a neutral `bg-stone-200`. Categorical color now lives only on the dots and stripes, so it carries information instead of decoration.
+- **`src/i18n/locales/{es,en}.ts`**: new keys `common.show_more`, `common.show_less`, `stats.observations`, `stats.follow_ups`, `stats.returns`, `stats.rating_avg_short`. Added to both locales together.
+
+### Notes
+- Animal-attribute pills (sex / age / neutered / color / microchip) intentionally left in place this pass; the broader question of whether animal facts belong on an adopter profile screen is deferred.
+
 ## [2.14.7-7] - 2026-05-08
 
 Profile-screen color/theme fidelity pass. Status pills now go through the design-token system, the info family no longer collides with brand teal in dark mode, and `text-stone-*` Tailwind classes now resolve consistently across both themes.
