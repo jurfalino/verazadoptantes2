@@ -52,7 +52,7 @@ const RECORD_TYPES = [
     { value: 'returned_pet', icon: '↩️', labelKey: 'adoption.type_returned', fallback: 'Returned' },
 ] as const;
 
-export default function AdoptionFormWizard({ adopterId, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '', initialRecordType, autoOpen = false, onClose }: {
+export default function AdoptionFormWizard({ adopterId, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '', initialRecordType, autoOpen = false, hideOpenButton = false, onClose }: {
     adopterId: string;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     availableAnimals?: any[];
@@ -76,6 +76,12 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], a
     initialRecordType?: 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet';
     /** Open the wizard immediately on mount (paired with initialRecordType). */
     autoOpen?: boolean;
+    /**
+     * Suppress the closed-state "Registrar actividad" entry button when
+     * something else (e.g. VisitIntentCard) is already serving as the entry
+     * point. The wizard still mounts so URL-driven autoOpen flows work.
+     */
+    hideOpenButton?: boolean;
     /** Called when the wizard closes (cancel or save). Lets the parent re-render the entry CTA. */
     onClose?: () => void;
 }) {
@@ -355,6 +361,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], a
     };
 
     if (!isOpen) {
+        if (hideOpenButton) return null;
         return (
             <button
                 id="wizard-open-btn"

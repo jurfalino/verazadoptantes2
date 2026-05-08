@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-4] - 2026-05-08
+
+VisitIntentCard layout cleanup + entry-point dedup.
+
+### Changed
+- **Back arrow inline with the buttons**. In the "Otro motivo" submenu, the back affordance moved out of the header and now sits at the start of the buttons row — icon-only on desktop (square 36px, accent-bordered), icon + "Volver" label on mobile where the buttons stack. The buttons row layout switched from `grid grid-cols-3` to `flex flex-col sm:flex-row` with `flex-1` on each option button so the back button can claim a smaller width without distorting the others.
+- **Removed the X dismiss button**. There's no manual dismiss anymore — the prompt is intentionally sticky until the user picks an option AND closes the launched wizard. The localStorage 7-day TTL, `dismissalKey`, the corresponding `useEffect`, and the `visit_intent_dismissed` zaraz event were all removed (no callers left). The `visitIntent.dismiss` i18n key is now unused but kept for now.
+- **Hide standalone "Registrar actividad" CTA when the prompt is showing**. New `hideOpenButton` prop on `AdoptionFormWizard` causes its closed-state entry button to render `null`. `AdopterProfileV2` lifts a `visitIntentDismissed` state and computes `visitIntentVisible = enableVisitIntent && !!currentUser && !!adopter && !isNew && !visitIntentDismissed`; passes this as `hideOpenButton` to the wizard. `VisitIntentCard` gained an `onHide` callback that fires when its inner wizard closes, flipping the parent state — so the standalone CTA reappears exactly when the prompt goes away. URL-driven autoOpen still works because the wizard's open state is independent of the entry-button render.
+
 ## [2.14.7-3] - 2026-05-08
 
 Wizards now treat follow-ups and returned pets as events tied to a past adoption, not to the rescuer's unlinked inventory.

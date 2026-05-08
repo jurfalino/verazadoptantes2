@@ -49,6 +49,13 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
 
     const isOwner = adopter?.addedBy === currentUser;
 
+    // VisitIntentCard is sticky (no manual dismiss) — it stays visible until
+    // the user picks an option AND closes the resulting wizard. While it's
+    // showing, suppress the standalone "Registrar actividad" CTA below so
+    // there aren't two competing entry points.
+    const [visitIntentDismissed, setVisitIntentDismissed] = useState(false);
+    const visitIntentVisible = enableVisitIntent && !!currentUser && !!adopter && !isNew && !visitIntentDismissed;
+
     const handleDeleteClick = async () => {
         setDeleteLoading(true);
         try {
@@ -137,6 +144,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             adoptions={adoptions}
                             availableAnimals={availableAnimals}
                             adopterAddress={adopter?.contactInfo || ''}
+                            onHide={() => setVisitIntentDismissed(true)}
                         />
                         <CollapsibleSection
                             title={t('adoption.title')}
@@ -149,6 +157,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                 adopterAdoptions={adoptions}
                                 currentUser={currentUser}
                                 adopterAddress={adopter?.contactInfo || ''}
+                                hideOpenButton={visitIntentVisible}
                             />
                             <AdoptionHistory
                                 adoptions={adoptions as any}

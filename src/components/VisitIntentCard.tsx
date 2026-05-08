@@ -24,14 +24,15 @@ interface Props {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     availableAnimals?: any[];
     adopterAddress?: string;
+    /**
+     * Called when the card transitions from rendered to hidden (currently:
+     * after the launched wizard closes). Lets the parent un-suppress sibling
+     * UI like the standalone "Registrar actividad" CTA.
+     */
+    onHide?: () => void;
 }
 
-const DISMISSAL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const ALREADY_ACTED_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
-
-function dismissalKey(adopterId: string, currentUser: string): string {
-    return `visit_intent_dismissed_${adopterId}_${currentUser}`;
-}
 
 function isWithinWindow(date: number | Date | string | null | undefined, windowMs: number): boolean {
     if (date == null) return false;
@@ -44,17 +45,18 @@ function isWithinWindow(date: number | Date | string | null | undefined, windowM
 }
 
 /**
- * Compact one-line prompt rendered above the activity section. Uses theme
- * CSS variables only (works under any [data-theme] palette) and animates in
- * on mount. The card asks the visitor's intent and routes to the matching
- * wizard with the recordType pre-selected.
+ * Prominent prompt rendered above the activity section. Uses theme CSS
+ * variables only (works under any [data-theme] palette) and animates in on
+ * mount. The card asks the visitor's intent and routes to the matching wizard
+ * with the recordType pre-selected.
  *
- * Visibility matrix: feature flag enabled, current user authenticated, no
- * recent dismissal (per-(adopter, user) localStorage with 7-day TTL), and at
+ * Visibility matrix: feature flag enabled, current user authenticated, and at
  * least one option not suppressed by recent matching records (30-day window
- * for A and B; C is always available).
+ * for A and B; C is always available). The card stays visible until the user
+ * picks an option AND closes the resulting wizard — there is no manual
+ * dismiss; the prompt is intentionally sticky.
  */
-export default function VisitIntentCard({ enabled, adopterId, adopterName, currentUser, adoptions, availableAnimals, adopterAddress = '' }: Props) {
+export default function VisitIntentCard({ enabled, adopterId, adopterName, currentUser, adoptions, availableAnimals, adopterAddress = '', onHide }: Props) {
     const { t } = useLanguage();
     const [hidden, setHidden] = useState(false);
     const [openedRecordType, setOpenedRecordType] = useState<IntentType | null>(null);
@@ -81,19 +83,6 @@ export default function VisitIntentCard({ enabled, adopterId, adopterName, curre
     const anyVisible = showA || showB || showC;
 
     useEffect(() => {
-        if (!baseEligible) return;
-        try {
-            const raw = localStorage.getItem(dismissalKey(adopterId, currentUser));
-            if (raw) {
-                const ts = Number(raw);
-                if (Number.isFinite(ts) && Date.now() - ts < DISMISSAL_TTL_MS) {
-                    setHidden(true);
-                }
-            }
-        } catch { /* localStorage unavailable */ }
-    }, [adopterId, currentUser, baseEligible]);
-
-    useEffect(() => {
         if (!baseEligible || hidden || !anyVisible || trackedShown || openedRecordType) return;
         zarazTrack('visit_intent_shown', {
             adopter_id: adopterId,
@@ -118,6 +107,7 @@ export default function VisitIntentCard({ enabled, adopterId, adopterName, curre
                 onClose={() => {
                     setOpenedRecordType(null);
                     setHidden(true);
+                    onHide?.();
                 }}
             />
         );
@@ -126,14 +116,6 @@ export default function VisitIntentCard({ enabled, adopterId, adopterName, curre
     const handleSelect = (intent: IntentType) => {
         zarazTrack('visit_intent_selected', { adopter_id: adopterId, intent_type: intent });
         setOpenedRecordType(intent);
-    };
-
-    const handleDismiss = () => {
-        try {
-            localStorage.setItem(dismissalKey(adopterId, currentUser), String(Date.now()));
-        } catch { /* localStorage unavailable */ }
-        zarazTrack('visit_intent_dismissed', { adopter_id: adopterId });
-        setHidden(true);
     };
 
     const renderIcon = (kind: IconKind) => {
@@ -236,41 +218,42 @@ export default function VisitIntentCard({ enabled, adopterId, adopterName, curre
             }}
         >
             <div className="flex items-center gap-2">
-                {view === 'other' && (
-                    <button
-                        type="button"
-                        onClick={handleBack}
-                        aria-label={t('visitIntent.back')}
-                        title={t('visitIntent.back')}
-                        className="shrink-0 p-1 rounded-md transition-opacity opacity-70 hover:opacity-100 focus:outline-none focus-visible:opacity-100"
-                        style={{ color: 'var(--accent-strong)' }}
-                    >
-                        <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4l-6 6 6 6" />
-                        </svg>
-                    </button>
-                )}
                 <span
                     className="text-base font-semibold flex-1 min-w-0"
                     style={{ color: 'var(--accent-strong)' }}
                 >
                     {titleText}
                 </span>
-                <button
-                    type="button"
-                    onClick={handleDismiss}
-                    aria-label={t('visitIntent.dismiss')}
-                    title={t('visitIntent.dismiss')}
-                    className="shrink-0 p-1 rounded-md transition-opacity opacity-60 hover:opacity-100 focus:outline-none focus-visible:opacity-100"
-                    style={{ color: 'var(--accent-strong)' }}
-                >
-                    <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                        <path strokeLinecap="round" d="M6 6l8 8M14 6l-8 8" />
-                    </svg>
-                </button>
             </div>
 
-            <div key={view} className="grid grid-cols-1 sm:grid-cols-3 gap-2 animate-slideDown">
+            <div key={view} className="flex flex-col sm:flex-row gap-2 animate-slideDown">
+                {view === 'other' && (
+                    <button
+                        type="button"
+                        onClick={handleBack}
+                        aria-label={t('visitIntent.back')}
+                        title={t('visitIntent.back')}
+                        className="inline-flex items-center justify-center gap-1.5 sm:gap-0 sm:w-9 px-3 py-2 sm:px-0 rounded-lg text-sm font-medium transition-all duration-150 hover:-translate-y-0.5 active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 shrink-0"
+                        style={{
+                            background: 'transparent',
+                            color: 'var(--accent-strong)',
+                            border: '1px solid var(--accent)',
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'var(--accent)';
+                            e.currentTarget.style.color = '#ffffff';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'transparent';
+                            e.currentTarget.style.color = 'var(--accent-strong)';
+                        }}
+                    >
+                        <svg className="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4l-6 6 6 6" />
+                        </svg>
+                        <span className="sm:hidden">{t('visitIntent.back')}</span>
+                    </button>
+                )}
                 {visibleButtons.map((btn) => (
                     <button
                         key={btn.intent}
@@ -278,7 +261,7 @@ export default function VisitIntentCard({ enabled, adopterId, adopterName, curre
                         title={t(`visitIntent.${btn.titleKey}` as never)}
                         aria-label={t(`visitIntent.${btn.labelKey}` as never)}
                         onClick={() => handleButtonClick(btn.intent)}
-                        className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 hover:-translate-y-0.5 active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+                        className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 hover:-translate-y-0.5 active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 flex-1 min-w-0"
                         style={{
                             background: 'var(--surface-card)',
                             color: 'var(--accent-strong)',
