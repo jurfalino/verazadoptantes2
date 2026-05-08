@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { en } from '@/i18n/locales/en';
 
 const MATCH_TYPE_KEYS: Record<string, string> = {
+    // Legacy prefixed taxonomy (notifications written by the bespoke matcher pre-v2.14.7-12)
     'token:name_full': 'match_name_full',
     'token:name_word': 'match_name_word',
     'token:phone': 'match_phone',
@@ -18,6 +19,15 @@ const MATCH_TYPE_KEYS: Record<string, string> = {
     'token:social': 'match_social',
     'like:name': 'match_like_name',
     'like:contact': 'match_like_contact',
+    // Unprefixed taxonomy emitted by findAdopters duplicate-mode (v2.14.7-12+)
+    name_full: 'match_name_full',
+    name_word: 'match_name_word',
+    name_word_fuzzy: 'match_name_word',
+    phone: 'match_phone',
+    phone_suffix: 'match_phone_suffix',
+    email: 'match_email',
+    social: 'match_social',
+    like_fallback: 'match_like_contact',
 };
 
 // Single source of truth: fallbacks from English locale
@@ -48,8 +58,9 @@ function DataRow({ label, value }: { label: string; value: string | null | undef
 }
 
 function isStrongMatch(matchTypes: string[]): boolean {
-    const hasEmail = matchTypes.includes('token:email');
-    const hasFullName = matchTypes.includes('token:name_full');
+    // Accept both prefixed legacy taxonomy and unprefixed taxonomy emitted by findAdopters.
+    const hasEmail = matchTypes.includes('token:email') || matchTypes.includes('email');
+    const hasFullName = matchTypes.includes('token:name_full') || matchTypes.includes('name_full');
     return matchTypes.length >= 3 || (hasEmail && hasFullName);
 }
 

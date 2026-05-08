@@ -132,173 +132,83 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         });
 
         // 7b. Fire-and-forget: fuzzy search + notification for the rescuer
-        // This NEVER blocks the response — adopter gets success regardless
+        // This NEVER blocks the response — adopter gets success regardless.
+        // Backed by findAdopters({ mode: 'duplicate' }) — single source of truth shared with
+        // ImportWizard / AdopterFlagging / form submit. minRelevance:0 preserves recall (vetting wants
+        // to surface even weak matches; missing a duplicate is worse than a false positive).
         try {
             const rescuerEmail = animal.addedBy;
             if (rescuerEmail && rescuerEmail !== 'anonymous' && rescuerEmail !== 'contract') {
-                const { extractNameWords, extractPhones, extractPhoneSuffixes, extractEmails, extractSocials, normalizeText } = await import('@/lib/tokenizer');
-                const { duplicateTokens } = await import('@/db/schema');
-                const { and: drizzleAnd, ne, inArray: drizzleInArray, or: drizzleOr } = await import('drizzle-orm');
+                const { findAdopters } = await import('@/app/actions/findAdopters');
+                const { extractPhones, extractEmails, extractSocials } = await import('@/lib/tokenizer');
                 const { createNotification } = await import('@/app/actions/notifications');
 
-                // Tokenize submitted data
-                const tokens: Array<{ type: string; value: string }> = [];
-                const nameWords = extractNameWords(fullName);
-                nameWords.forEach(w => tokens.push({ type: 'name_word', value: w }));
-                if (fullName.trim()) tokens.push({ type: 'name_full', value: normalizeText(fullName) });
+                // Build duplicate-mode inputs.
+                // DNI is appended to phones because the bespoke matcher historically treated DNI as a
+                // phone-token; preserving that semantic keeps DNI-only matches working.
+                const phonesIn = phone ? extractPhones(phone) : [];
+                const dniDigits = dni ? dni.replace(/\D/g, '') : '';
+                if (dniDigits.length >= 5) phonesIn.push(dniDigits);
 
-                if (phone) {
-                    const phones = extractPhones(phone);
-                    phones.forEach(p => tokens.push({ type: 'phone', value: p }));
-                    extractPhoneSuffixes(phones).forEach(s => tokens.push({ type: 'phone_suffix', value: s }));
+                const dupResult = await findAdopters(
+                    {
+                        name: fullName,
+                        phones: phonesIn,
+                        emails: email ? extractEmails(email) : [],
+                        socials: socialNetworks ? extractSocials(socialNetworks) : [],
+                        excludeAdopterId: adopterId,
+                    },
+                    { mode: 'duplicate', minRelevance: 0, limit: 5 },
+                );
+                const matches = dupResult.results as Array<{ adopterId: string; adopterName: string; matchTypes: string[] }>;
+                const matchCount = matches.length;
+                const animalName = animal.animalName || 'Animal';
+                const notificationId = crypto.randomUUID();
+
+                if (matchCount > 0) {
+                    await createNotification({
+                        id: notificationId,
+                        userId: rescuerEmail,
+                        type: 'contract_result',
+                        title: `⚠️ ${matchCount} coincidencia${matchCount > 1 ? 's' : ''} para ${fullName}`,
+                        body: `${animalName} fue adoptado por ${fullName}. Se encontraron posibles registros previos. Tocá para revisar.`,
+                        url: `/contract-results/${notificationId}`,
+                        icon: '⚠️',
+                        metadata: {
+                            notificationId,
+                            animalId,
+                            animalName,
+                            adopterId,
+                            adopterName: fullName,
+                            matchCount,
+                            matchedAdopters: matches.map(m => ({
+                                id: m.adopterId,
+                                name: m.adopterName,
+                                matchTypes: m.matchTypes,
+                            })),
+                            submittedData: { name: fullName, phone, email, dni, address, socialNetworks },
+                        },
+                    });
+                } else {
+                    await createNotification({
+                        id: notificationId,
+                        userId: rescuerEmail,
+                        type: 'contract_result',
+                        title: `✅ ${animalName} adoptado por ${fullName}`,
+                        body: `No se encontraron registros previos para ${fullName}. Todo en orden.`,
+                        icon: '✅',
+                        metadata: {
+                            animalId,
+                            animalName,
+                            adopterId,
+                            adopterName: fullName,
+                            matchCount: 0,
+                            submittedData: { name: fullName, phone, email, dni, address, socialNetworks },
+                        },
+                    });
                 }
-                if (email) {
-                    extractEmails(email).forEach(e => tokens.push({ type: 'email', value: e }));
-                }
-                if (socialNetworks) {
-                    extractSocials(socialNetworks).forEach(s => tokens.push({ type: 'social', value: s }));
-                }
-                if (dni) {
-                    tokens.push({ type: 'phone', value: dni.replace(/\D/g, '') }); // DNI as digit sequence
-                }
 
-                if (tokens.length > 0) {
-                    const tokenValues = tokens.map(t => t.value).filter(v => v.length >= 3);
-
-                    // Accumulate matching adopter IDs from multiple search strategies
-                    const adopterMatches = new Map<string, Set<string>>();
-
-                    // Strategy 1: Token-based matching (pre-indexed)
-                    if (tokenValues.length > 0) {
-                        const tokenMatches = await db
-                            .select({
-                                adopterId: duplicateTokens.adopterId,
-                                tokenType: duplicateTokens.tokenType,
-                                tokenValue: duplicateTokens.tokenValue,
-                            })
-                            .from(duplicateTokens)
-                            .where(
-                                drizzleAnd(
-                                    drizzleInArray(duplicateTokens.tokenValue, tokenValues),
-                                    ne(duplicateTokens.adopterId, adopterId)
-                                )!
-                            )
-                            .all();
-
-                        for (const m of tokenMatches) {
-                            if (!adopterMatches.has(m.adopterId)) adopterMatches.set(m.adopterId, new Set());
-                            adopterMatches.get(m.adopterId)!.add(`token:${m.tokenType}`);
-                        }
-                    }
-
-                    // Strategy 2: Direct LIKE search on adopters table (catches untokenized profiles)
-                    const { like } = await import('drizzle-orm');
-                    const likeQueries: Array<{ field: string; value: string }> = [];
-
-                    // Search by each name word
-                    const nameWords = extractNameWords(fullName);
-                    for (const word of nameWords) {
-                        if (word.length >= 3) likeQueries.push({ field: 'name', value: `%${word}%` });
-                    }
-                    // Search by phone digits
-                    if (phone) {
-                        const digits = phone.replace(/\D/g, '');
-                        if (digits.length >= 6) likeQueries.push({ field: 'contact', value: `%${digits.slice(-8)}%` });
-                    }
-                    // Search by email
-                    if (email && email.includes('@')) {
-                        likeQueries.push({ field: 'contact', value: `%${email.toLowerCase()}%` });
-                    }
-                    // Search by DNI
-                    if (dni) {
-                        const dniClean = dni.replace(/\D/g, '');
-                        if (dniClean.length >= 5) likeQueries.push({ field: 'contact', value: `%${dniClean}%` });
-                    }
-                    // Search by social networks
-                    if (socialNetworks) {
-                        const socials = extractSocials(socialNetworks);
-                        for (const s of socials) {
-                            if (s.length >= 4) likeQueries.push({ field: 'contact', value: `%${s}%` });
-                        }
-                    }
-
-                    // Run LIKE queries in parallel
-                    const likeResults = await Promise.all(
-                        likeQueries.map(async (q) => {
-                            const col = q.field === 'name' ? adopters.name : adopters.contactInfo;
-                            const results = await db
-                                .select({ id: adopters.id })
-                                .from(adopters)
-                                .where(drizzleAnd(like(col, q.value), ne(adopters.id, adopterId))!)
-                                .all();
-                            return { field: q.field, value: q.value, ids: results.map((r: { id: string }) => r.id) };
-                        })
-                    );
-
-                    for (const lr of likeResults) {
-                        for (const id of lr.ids) {
-                            if (!adopterMatches.has(id)) adopterMatches.set(id, new Set());
-                            adopterMatches.get(id)!.add(`like:${lr.field}`);
-                        }
-                    }
-
-                    const matchCount = adopterMatches.size;
-                    const animalName = animal.animalName || 'Animal';
-                    const notificationId = crypto.randomUUID();
-
-                    if (matchCount > 0) {
-                        // Fetch matched adopter names for the notification
-                        const matchedIds = Array.from(adopterMatches.keys()).slice(0, 5);
-                        const matchedAdopters = await db
-                            .select({ id: adopters.id, name: adopters.name })
-                            .from(adopters)
-                            .where(drizzleOr(...matchedIds.map(id => eq(adopters.id, id)))!)
-                            .all();
-
-                        await createNotification({
-                            id: notificationId,
-                            userId: rescuerEmail,
-                            type: 'contract_result',
-                            title: `⚠️ ${matchCount} coincidencia${matchCount > 1 ? 's' : ''} para ${fullName}`,
-                            body: `${animalName} fue adoptado por ${fullName}. Se encontraron posibles registros previos. Tocá para revisar.`,
-                            url: `/contract-results/${notificationId}`,
-                            icon: '⚠️',
-                            metadata: {
-                                notificationId,
-                                animalId,
-                                animalName,
-                                adopterId,
-                                adopterName: fullName,
-                                matchCount,
-                                matchedAdopters: matchedAdopters.map((a: { id: string; name: string }) => ({
-                                    id: a.id,
-                                    name: a.name,
-                                    matchTypes: Array.from(adopterMatches.get(a.id) || []),
-                                })),
-                                submittedData: { name: fullName, phone, email, dni, address, socialNetworks },
-                            },
-                        });
-                    } else {
-                        await createNotification({
-                            id: notificationId,
-                            userId: rescuerEmail,
-                            type: 'contract_result',
-                            title: `✅ ${animalName} adoptado por ${fullName}`,
-                            body: `No se encontraron registros previos para ${fullName}. Todo en orden.`,
-                            icon: '✅',
-                            metadata: {
-                                animalId,
-                                animalName,
-                                adopterId,
-                                adopterName: fullName,
-                                matchCount: 0,
-                                submittedData: { name: fullName, phone, email, dni, address, socialNetworks },
-                            },
-                        });
-                    }
-
-                    logger.info('Contract fuzzy search completed', { animalId, adopterId, matchCount, tokenCount: tokenValues.length });
-                }
+                logger.info('Contract fuzzy search completed', { animalId, adopterId, matchCount });
 
                 // Fan-out to org members (fire-and-forget)
                 import('@/app/actions/notifications').then(({ notifyOrgMembers }) => {

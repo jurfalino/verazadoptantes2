@@ -106,10 +106,12 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
     let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; addressInfo: string | null; status: string | null; profileImageUrl: string | null }> = [];
     if (metadata.matchedAdopters && metadata.matchedAdopters.length > 0) {
         const adopterIds = metadata.matchedAdopters.map(a => a.id);
+        // Filter soft-deleted (merged-duplicate) adopters at read time so even legacy
+        // notifications whose stored matchedAdopters contains since-deleted IDs render correctly.
         const rows = await db
             .select({ id: adopters.id, name: adopters.name, contactInfo: adopters.contactInfo, addressInfo: adopters.addressInfo, status: adopters.status })
             .from(adopters)
-            .where(or(...adopterIds.map(id => eq(adopters.id, id)))!)
+            .where(and(or(...adopterIds.map(id => eq(adopters.id, id)))!, isNull(adopters.deletedAt)))
             .all();
         // Profile images: one per adopter (prefer isProfilePicture=1)
         const imageRows = await db

@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-12] - 2026-05-08
+
+Fix the "two Jorge Hu profiles in the contract-results page" bug at the architectural root: contract-submit and form-submit notifications were running their own bespoke fuzzy matchers that diverged from the canonical `findAdopters` engine — missing the soft-delete filter, missing geo-filter, missing relevance scoring, and silently broken on D1 (`inArray()` returned wrong results). Both routes now go through `findAdopters({ mode: 'duplicate' })`, so soft-deleted (merged-duplicate) adopters never appear in match notifications, and behavior stays consistent across discovery search and duplicate detection going forward. Defense-in-depth filter on the result-page reads also retroactively cleans every existing stale notification.
+
+### Fixed
+- **`src/app/contract-results/[notificationId]/page.tsx`** (read-site filter) — the matched-profile SELECT now filters `isNull(adopters.deletedAt)`. This is what unblocks the immediate user-visible Jorge Hu bug: even legacy notifications whose `metadata.matchedAdopters` JSON still contains since-deleted IDs render only the live profiles. Added `like_fallback` and `name_word_fuzzy` entries to `MATCH_TYPE_LABELS` so the new findAdopters-emitted match types render localized labels instead of raw strings.
+- **`src/app/form-results/[submissionId]/page.tsx`** — same read-site filter on the matched-profile SELECT.
+
+### Changed
+- **`src/app/actions/findAdopters.ts`** — `runDuplicateMode` now filters `isNull(adopters.deletedAt)` on both the LIKE strategy WHERE clause and the per-id `nameRows` fetch. Cross-cutting: this is the canonical duplicate-detection engine; the same filter now applies to **every** caller (`ImportWizard`, `AdopterFlagging`, `AdopterForm` creation check, contract submit, form submit). The behavior change is desirable everywhere — you don't want to dedupe imports against soft-deleted records or surface merged-away duplicates in flagging suggestions — but worth flagging for future maintainers.
+- **`src/app/api/contract/[id]/submit/route.ts`** — bespoke fuzzy matcher (~140 lines of token + LIKE strategy code) replaced with a single `findAdopters({ name, phones, emails, socials, excludeAdopterId }, { mode: 'duplicate', minRelevance: 0, limit: 5 })` call. Output mapped to the existing `notification.metadata.matchedAdopters` shape. DNI digits appended into the `phones` array to preserve the historical "DNI as phone-token" semantic. `minRelevance: 0` chosen for vetting recall: surface even weak matches rather than risk dropping a real one. `logger.info('Contract fuzzy search completed', { animalId, adopterId, matchCount })` preserved for observability.
+- **`src/app/api/form/[userId]/submit/route.ts`** — same swap. Form schema has no DNI/socials, so the call passes only `{ name, phones, emails }`.
+- **`src/components/FormResultMatchCard.tsx`** — `MATCH_TYPE_KEYS` extended to handle the unprefixed match-type taxonomy emitted by `findAdopters` (`'name_full'` / `'phone'` / `'email'` / `'like_fallback'` / `'name_word_fuzzy'`) alongside the legacy prefixed taxonomy (`'token:phone'` / `'like:name'`). Same dual-taxonomy support added to `isStrongMatch`. Old notifications written by the bespoke matcher continue to render with their original labels; new notifications get the unprefixed labels.
+
+### Notes
+- **D1 `inArray()` bug fixed for free.** The bespoke matcher used `drizzleInArray(duplicateTokens.tokenValue, tokenValues)` at `submit/route.ts:182` — silently broken on Cloudflare D1 per `docs/D1_COMPATIBILITY.md` (D1 binds only the first array element). `findAdopters` was already D1-safe by design (one query per token via a for loop). Going through it eliminates the bug at the source rather than patching one site.
+- **Levenshtein fuzzy matching is now active on contract/form submissions.** `findAdopters` duplicate-mode includes name-token fuzzy scoring (e.g. `Jonathan` ↔ `Jonatan`), which the bespoke matcher lacked. Net new match surface — minor false-positive uptick is expected; this is desirable for vetting recall but worth knowing.
+- **TICKET-B (D1 inArray fix in submit routes) is obsolete** — covered by this refactor.
+- **Regression test for soft-deleted exclusion deferred to TICKET-C.** Manual verification on staging Jorge Hu URLs (`/adopter/085706cb-3c7b-4221-93fa-d0904e2563d2` lives, `9fd1025e-940e-4aa3-84c3-771476602101` soft-deleted) — only the live profile should now appear on the contract-results page.
+
 ## [2.14.7-11] - 2026-05-08
 
 Fix the rescuer name shown in the public contract (Vite app at adoptions.pages.dev). It was rendering the email local-part — the chosen display name now comes through.

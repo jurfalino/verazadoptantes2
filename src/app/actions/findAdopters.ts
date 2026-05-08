@@ -275,7 +275,8 @@ async function runDuplicateMode(
     }
 
     if (likeConditions.length > 0) {
-        let likeWhere = or(...likeConditions) as any;
+        // Filter soft-deleted on the LIKE strategy directly so we never hand merged duplicates upstream.
+        let likeWhere: any = and(or(...likeConditions), isNull(adopters.deletedAt));
         if (excludeId) likeWhere = and(likeWhere, ne(adopters.id, excludeId));
         const likeRows = await db.select({ id: adopters.id }).from(adopters).where(likeWhere).limit(20);
         for (const r of likeRows) {
@@ -286,13 +287,15 @@ async function runDuplicateMode(
 
     if (matchMap.size === 0) return [];
 
-    // Fetch adopter names + stored name_word tokens for Levenshtein scoring
-    // D1-compatible: fan out with eq() per ID instead of inArray() which silently breaks on D1
+    // Fetch adopter names + stored name_word tokens for Levenshtein scoring.
+    // D1-compatible: fan out with eq() per ID instead of inArray() which silently breaks on D1.
+    // The eq+isNull guard drops soft-deleted IDs that may have entered matchMap via the token-index
+    // strategy (Strategy 1 doesn't join against adopters, so its candidates aren't pre-filtered).
     const matchedIds = Array.from(matchMap.keys());
     const [nameRows, storedWordRows] = await Promise.all([
         Promise.all(matchedIds.map(id =>
             db.select({ id: adopters.id, name: adopters.name }).from(adopters)
-                .where(eq(adopters.id, id))
+                .where(and(eq(adopters.id, id), isNull(adopters.deletedAt)))
                 .catch((e: unknown) => {
                     logger.warn('findAdopters: D1 fallback hit (adopter name lookup)', {
                         adopterId: id,

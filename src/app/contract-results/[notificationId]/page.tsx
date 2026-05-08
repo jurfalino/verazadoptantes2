@@ -3,7 +3,7 @@ export const runtime = 'edge';
 import { redirect } from 'next/navigation';
 import { getDb } from '@/lib/db';
 import { notifications, adopters } from '@/db/schema';
-import { eq, or } from 'drizzle-orm';
+import { eq, or, and, isNull } from 'drizzle-orm';
 import { getUser } from '@/app/actions/_db';
 import { markNotificationRead } from '@/app/actions/notifications';
 import Link from 'next/link';
@@ -44,14 +44,16 @@ const MATCH_TYPE_LABELS: Record<string, { icon: string; es: string; en: string }
     // LIKE-based matches
     'like:name': { icon: '👤', es: 'Nombre', en: 'Name' },
     'like:contact': { icon: '📱', es: 'Contacto', en: 'Contact' },
-    // Legacy (no prefix)
+    // Unprefixed taxonomy (emitted by findAdopters duplicate-mode)
     name_full: { icon: '👤', es: 'Nombre completo', en: 'Full name' },
     name_word: { icon: '📝', es: 'Nombre parcial', en: 'Partial name' },
+    name_word_fuzzy: { icon: '✨', es: 'Nombre similar', en: 'Similar name' },
     phone: { icon: '📱', es: 'Teléfono', en: 'Phone' },
     phone_suffix: { icon: '📞', es: 'Teléfono (sufijo)', en: 'Phone (suffix)' },
     email: { icon: '📧', es: 'Email', en: 'Email' },
     social: { icon: '🌐', es: 'Red social', en: 'Social network' },
     address_word: { icon: '📍', es: 'Dirección', en: 'Address' },
+    like_fallback: { icon: '🔍', es: 'Coincidencia general', en: 'General match' },
 };
 
 export default async function ContractResultsPage({ params }: { params: Promise<{ notificationId: string }> }) {
@@ -90,10 +92,12 @@ export default async function ContractResultsPage({ params }: { params: Promise<
     let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; status: string | null }> = [];
     if (metadata.matchedAdopters && metadata.matchedAdopters.length > 0) {
         const adopterIds = metadata.matchedAdopters.map(a => a.id);
+        // Filter soft-deleted (merged-duplicate) adopters at read time so even legacy
+        // notifications whose stored matchedAdopters contains since-deleted IDs render correctly.
         matchedProfiles = await db
             .select({ id: adopters.id, name: adopters.name, contactInfo: adopters.contactInfo, status: adopters.status })
             .from(adopters)
-            .where(or(...adopterIds.map(id => eq(adopters.id, id)))!)
+            .where(and(or(...adopterIds.map(id => eq(adopters.id, id)))!, isNull(adopters.deletedAt)))
             .all();
     }
 
