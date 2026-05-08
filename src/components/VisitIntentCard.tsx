@@ -220,7 +220,7 @@ export default function VisitIntentCard({ enabled, adopterId, adopterName, curre
             <div className="flex items-center gap-2">
                 <span
                     className="text-base font-semibold flex-1 min-w-0"
-                    style={{ color: 'var(--accent-strong)' }}
+                    style={{ color: 'var(--accent)' }}
                 >
                     {titleText}
                 </span>
@@ -236,7 +236,7 @@ export default function VisitIntentCard({ enabled, adopterId, adopterName, curre
                         className="inline-flex items-center justify-center gap-1.5 sm:gap-0 sm:w-9 px-3 py-2 sm:px-0 rounded-lg text-sm font-medium transition-all duration-150 hover:-translate-y-0.5 active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 shrink-0"
                         style={{
                             background: 'transparent',
-                            color: 'var(--accent-strong)',
+                            color: 'var(--accent)',
                             border: '1px solid var(--accent)',
                         }}
                         onMouseEnter={(e) => {
@@ -245,7 +245,7 @@ export default function VisitIntentCard({ enabled, adopterId, adopterName, curre
                         }}
                         onMouseLeave={(e) => {
                             e.currentTarget.style.background = 'transparent';
-                            e.currentTarget.style.color = 'var(--accent-strong)';
+                            e.currentTarget.style.color = 'var(--accent)';
                         }}
                     >
                         <svg className="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -264,7 +264,7 @@ export default function VisitIntentCard({ enabled, adopterId, adopterName, curre
                         className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 hover:-translate-y-0.5 active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 flex-1 min-w-0"
                         style={{
                             background: 'var(--surface-card)',
-                            color: 'var(--accent-strong)',
+                            color: 'var(--accent)',
                             border: '1px solid var(--accent)',
                             boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
                         }}
@@ -275,7 +275,7 @@ export default function VisitIntentCard({ enabled, adopterId, adopterName, curre
                         }}
                         onMouseLeave={(e) => {
                             e.currentTarget.style.background = 'var(--surface-card)';
-                            e.currentTarget.style.color = 'var(--accent-strong)';
+                            e.currentTarget.style.color = 'var(--accent)';
                             e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.04)';
                         }}
                     >

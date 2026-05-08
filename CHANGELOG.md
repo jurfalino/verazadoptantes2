@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-7] - 2026-05-08
+
+Profile-screen color/theme fidelity pass. Status pills now go through the design-token system, the info family no longer collides with brand teal in dark mode, and `text-stone-*` Tailwind classes now resolve consistently across both themes.
+
+### Changed
+- **`src/app/globals.css`** — `--status-info-*` retuned to the sky-400 family in both themes (was teal-bg + blue-text in light, all-teal in dark which collided with `--accent`). Legal notice (`DisclaimerToast`) and any other info surface now reads as a single hue family. Added `[data-theme="light"]` overrides for `text-stone-400/600/700/800/900` mirroring the existing dark-theme block, so the same `text-stone-*` Tailwind class no longer renders warm-grey in light vs slate-blue in dark.
+- **`src/components/AdopterFlagging.tsx`** — four warning pills (inaccurate / duplicate / too-many-adoptions / too-many-requests) replaced hardcoded Tailwind `bg-rose/amber/orange/purple-100` chains with token-driven inline styles. Active state now uses `aria-pressed` + `shadow-inner`; hover via `hover:opacity-90`. Too-many-adoptions collapsed onto `--status-warning-*` (no separate orange family — the warning hue carries both signals).
+- **`src/components/VisitIntentCard.tsx`** — title and intent-button labels switched from `var(--accent-strong)` (`#042f2e`, reads as black in light) to `var(--accent)` (`#0f766e`, visibly teal). Hover-fill behavior unchanged.
+
 ## [2.14.7-6] - 2026-05-08
 
 Chat setup is now fully UI-driven. Bot token + webhook secret can be saved from `/admin/config`, and the same Save button calls Telegram's `setWebhook` for you — no curl, no shell.

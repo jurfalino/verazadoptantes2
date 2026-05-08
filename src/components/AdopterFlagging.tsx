@@ -271,7 +271,13 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                             <button
                                 type="button"
                                 onClick={() => setShowInaccurateHint(!showInaccurateHint)}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${showInaccurateHint ? 'bg-rose-200 dark:bg-rose-900/40 text-rose-800 dark:text-rose-200 border-rose-300 dark:border-rose-700 shadow-inner' : 'bg-rose-100 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800 hover:bg-rose-200 dark:hover:bg-rose-900/40 hover:border-rose-300 dark:hover:border-rose-700'} animate-in fade-in`}
+                                aria-pressed={showInaccurateHint}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all hover:opacity-90 ${showInaccurateHint ? 'shadow-inner' : ''} animate-in fade-in`}
+                                style={{
+                                    background: 'var(--status-error-bg)',
+                                    color: 'var(--status-error-text)',
+                                    borderColor: 'var(--status-error-border)',
+                                }}
                             >
                                 <svg className={`w-3.5 h-3.5 transform transition-transform ${showInaccurateHint ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
                                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
@@ -285,7 +291,13 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                             <button
                                 type="button"
                                 onClick={() => setShowDuplicateHint(!showDuplicateHint)}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${showDuplicateHint ? 'bg-amber-200 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border-amber-300 dark:border-amber-700 shadow-inner' : 'bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 hover:bg-amber-200 dark:hover:bg-amber-900/40 hover:border-amber-300 dark:hover:border-amber-700'} animate-in fade-in`}
+                                aria-pressed={showDuplicateHint}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all hover:opacity-90 ${showDuplicateHint ? 'shadow-inner' : ''} animate-in fade-in`}
+                                style={{
+                                    background: 'var(--status-warning-bg)',
+                                    color: 'var(--status-warning-text)',
+                                    borderColor: 'var(--status-warning-border)',
+                                }}
                             >
                                 <svg className={`w-3.5 h-3.5 transform transition-transform ${showDuplicateHint ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
                                     <path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L14 2.586A2 2 0 0012.586 2H9z" />
@@ -300,7 +312,13 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                             <button
                                 type="button"
                                 onClick={() => setShowAdoptionsHint(!showAdoptionsHint)}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${showAdoptionsHint ? 'bg-orange-200 dark:bg-orange-900/40 text-orange-800 dark:text-orange-200 border-orange-300 dark:border-orange-700 shadow-inner' : 'bg-orange-100 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800 hover:bg-orange-200 dark:hover:bg-orange-900/40 hover:border-orange-300 dark:hover:border-orange-700'} animate-in fade-in`}
+                                aria-pressed={showAdoptionsHint}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all hover:opacity-90 ${showAdoptionsHint ? 'shadow-inner' : ''} animate-in fade-in`}
+                                style={{
+                                    background: 'var(--status-warning-bg)',
+                                    color: 'var(--status-warning-text)',
+                                    borderColor: 'var(--status-warning-border)',
+                                }}
                             >
                                 <svg className={`w-3.5 h-3.5 transform transition-transform ${showAdoptionsHint ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
                                     <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
@@ -314,7 +332,13 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                             <button
                                 type="button"
                                 onClick={() => setShowRequestsHint(!showRequestsHint)}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${showRequestsHint ? 'bg-purple-200 dark:bg-purple-900/40 text-purple-800 dark:text-purple-200 border-purple-300 dark:border-purple-700 shadow-inner' : 'bg-purple-100 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800 hover:bg-purple-200 dark:hover:bg-purple-900/40 hover:border-purple-300 dark:hover:border-purple-700'} animate-in fade-in`}
+                                aria-pressed={showRequestsHint}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all hover:opacity-90 ${showRequestsHint ? 'shadow-inner' : ''} animate-in fade-in`}
+                                style={{
+                                    background: 'var(--status-purple-bg)',
+                                    color: 'var(--status-purple-text)',
+                                    borderColor: 'var(--status-purple-border)',
+                                }}
                             >
                                 <svg className={`w-3.5 h-3.5 transform transition-transform ${showRequestsHint ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
                                     <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
