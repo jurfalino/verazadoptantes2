@@ -5,7 +5,9 @@ import { useLanguage } from '@/context/LanguageContext';
 import { zarazTrack } from '@/lib/zaraz';
 import AdoptionFormWizard from './AdoptionFormWizard';
 
-type IntentType = 'adoption' | 'adoption_request' | 'observation';
+type IntentType = 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet';
+type IconKind = IntentType | 'other';
+type View = 'main' | 'other';
 
 interface AdoptionLite {
     addedBy?: string | null;
@@ -57,6 +59,7 @@ export default function VisitIntentCard({ enabled, adopterId, adopterName, curre
     const [hidden, setHidden] = useState(false);
     const [openedRecordType, setOpenedRecordType] = useState<IntentType | null>(null);
     const [trackedShown, setTrackedShown] = useState(false);
+    const [view, setView] = useState<View>('main');
 
     const baseEligible = enabled && !!currentUser;
 
@@ -132,9 +135,9 @@ export default function VisitIntentCard({ enabled, adopterId, adopterName, curre
         setHidden(true);
     };
 
-    const renderIcon = (intent: IntentType) => {
+    const renderIcon = (kind: IconKind) => {
         // 20×20 outline icons, currentColor — render legibly at button text size.
-        switch (intent) {
+        switch (kind) {
             case 'adoption_request':
                 // Speech bubble — adopter asked / requested
                 return (
@@ -143,32 +146,82 @@ export default function VisitIntentCard({ enabled, adopterId, adopterName, curre
                     </svg>
                 );
             case 'adoption':
-                // House — adoption completed (animal found a home)
+                // House — adoption completed
                 return (
                     <svg className="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M3 9.5L10 4l7 5.5V16a1 1 0 0 1-1 1h-3v-4H8v4H4a1 1 0 0 1-1-1V9.5z" />
                     </svg>
                 );
-            case 'observation':
-            default:
-                // Pencil — write something else
+            case 'other':
+                // Three-dot ellipsis — "more options"
+                return (
+                    <svg className="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                        <circle cx="5" cy="10" r="1.4" />
+                        <circle cx="10" cy="10" r="1.4" />
+                        <circle cx="15" cy="10" r="1.4" />
+                    </svg>
+                );
+            case 'follow_up':
+                // Phone receiver — follow-up call
                 return (
                     <svg className="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 3.5l3 3M4 16l1-3 8.5-8.5 3 3L8 16H4z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4.5C4 3.67 4.67 3 5.5 3H7.7l1.2 3.4-1.7 1A9 9 0 0 0 12.6 12l1-1.7 3.4 1.2v2.2c0 .83-.67 1.5-1.5 1.5C8.5 15.2 4 10.7 4 4.5z" />
+                    </svg>
+                );
+            case 'returned_pet':
+                // U-turn arrow — pet returned
+                return (
+                    <svg className="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M7 12L3 8l4-4M3 8h9a4.5 4.5 0 0 1 0 9H8" />
+                    </svg>
+                );
+            case 'observation':
+            default:
+                // Note / document with lines
+                return (
+                    <svg className="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 3h7l3 3v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z M12 3v3h3 M7 9h6 M7 12h6 M7 15h4" />
                     </svg>
                 );
         }
     };
 
-    const buttons: Array<{ visible: boolean; intent: IntentType; labelKey: 'option_a' | 'option_b' | 'option_c'; titleKey: 'option_a_hint' | 'option_b_hint' | 'option_c_hint' }> = [
+    type ButtonDef = {
+        intent: IntentType | 'other';
+        labelKey: 'option_a' | 'option_b' | 'option_c' | 'option_followup' | 'option_returned' | 'option_observation';
+        titleKey: 'option_a_hint' | 'option_b_hint' | 'option_c_hint' | 'option_followup_hint' | 'option_returned_hint' | 'option_observation_hint';
+    };
+
+    const mainButtons: Array<ButtonDef & { visible: boolean }> = [
         { visible: showA, intent: 'adoption_request', labelKey: 'option_a', titleKey: 'option_a_hint' },
         { visible: showB, intent: 'adoption', labelKey: 'option_b', titleKey: 'option_b_hint' },
-        { visible: showC, intent: 'observation', labelKey: 'option_c', titleKey: 'option_c_hint' },
+        { visible: showC, intent: 'other', labelKey: 'option_c', titleKey: 'option_c_hint' },
     ];
+
+    const otherButtons: ButtonDef[] = [
+        { intent: 'follow_up', labelKey: 'option_followup', titleKey: 'option_followup_hint' },
+        { intent: 'returned_pet', labelKey: 'option_returned', titleKey: 'option_returned_hint' },
+        { intent: 'observation', labelKey: 'option_observation', titleKey: 'option_observation_hint' },
+    ];
+
+    const visibleButtons: ButtonDef[] = view === 'main'
+        ? mainButtons.filter(b => b.visible)
+        : otherButtons;
 
     const firstName = (adopterName ?? '').trim().split(/\s+/)[0] || '';
     const subject = firstName || t('visitIntent.title_fallback_subject');
     const titleText = `${t('visitIntent.title_prefix')} ${subject}?`;
+
+    const handleButtonClick = (intent: IntentType | 'other') => {
+        if (intent === 'other') {
+            zarazTrack('visit_intent_other_opened', { adopter_id: adopterId });
+            setView('other');
+            return;
+        }
+        handleSelect(intent);
+    };
+
+    const handleBack = () => setView('main');
 
     return (
         <div
@@ -182,6 +235,20 @@ export default function VisitIntentCard({ enabled, adopterId, adopterName, curre
             }}
         >
             <div className="flex items-center gap-2">
+                {view === 'other' && (
+                    <button
+                        type="button"
+                        onClick={handleBack}
+                        aria-label={t('visitIntent.back')}
+                        title={t('visitIntent.back')}
+                        className="shrink-0 p-1 rounded-md transition-opacity opacity-70 hover:opacity-100 focus:outline-none focus-visible:opacity-100"
+                        style={{ color: 'var(--accent-strong)' }}
+                    >
+                        <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4l-6 6 6 6" />
+                        </svg>
+                    </button>
+                )}
                 <span
                     className="text-base font-semibold flex-1 min-w-0"
                     style={{ color: 'var(--accent-strong)' }}
@@ -202,14 +269,14 @@ export default function VisitIntentCard({ enabled, adopterId, adopterName, curre
                 </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                {buttons.filter(b => b.visible).map((btn) => (
+            <div key={view} className="grid grid-cols-1 sm:grid-cols-3 gap-2 animate-slideDown">
+                {visibleButtons.map((btn) => (
                     <button
                         key={btn.intent}
                         type="button"
                         title={t(`visitIntent.${btn.titleKey}` as never)}
                         aria-label={t(`visitIntent.${btn.labelKey}` as never)}
-                        onClick={() => handleSelect(btn.intent)}
+                        onClick={() => handleButtonClick(btn.intent)}
                         className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 hover:-translate-y-0.5 active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
                         style={{
                             background: 'var(--surface-card)',

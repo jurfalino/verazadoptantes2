@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-2] - 2026-05-08
+
+VisitIntentCard "Otro motivo" now drills into a submenu instead of jumping straight to the observation wizard.
+
+### Changed
+- **Top-level option C** ("Otro motivo") icon switched from pencil to a three-dot ellipsis to signal "more options". Clicking it fires a new `visit_intent_other_opened` analytics event and swaps the buttons to a submenu — no longer auto-opens the observation wizard.
+- **Submenu options**: `Hice un seguimiento` (phone icon → `follow_up` wizard), `Me devolvió un animal` (U-turn arrow → `returned_pet` wizard), `Quiero dejar una observación` (note/document icon → `observation` wizard). All three record types were already accepted by `AdoptionFormWizard.initialRecordType`.
+- **Submenu header** gains a left-arrow back button next to the title; click returns to the main 3-button view. The dismiss (X) and the localStorage dismissal contract are unchanged.
+- **Animation**: the buttons grid is keyed by `view`, so React remounts on swap and the existing `animate-slideDown` keyframe replays — soft fade-down on every view change.
+
+### i18n
+- Replaced `option_c_hint` ("Compartí lo que sabés…") — that string moved to `option_observation_hint`. New keys: `option_followup`, `option_followup_hint`, `option_returned`, `option_returned_hint`, `option_observation`, `option_observation_hint`, `back`. ES + EN both updated in the same commit.
+
 ## [2.14.7-1] - 2026-05-07
 
 VisitIntentCard prominence + button redesign. Feedback: the card was less visually present than the legal disclaimer below it, which was the wrong hierarchy — the disclaimer is passive info, this is an active CTA.
