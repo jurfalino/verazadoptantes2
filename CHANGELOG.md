@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-10] - 2026-05-08
+
+Audit-trail visibility restored on activity cards, and prominent emoji icons converted to inline SVG. Walks back the `···` popover from `2.14.7-9` — for a vetting tool, knowing the creator of a record is at-a-glance audit info, not metadata.
+
+### Changed
+- **`src/components/AdoptionHistory.tsx`** — bottom-of-card audit footer restored. Source link (icon + name) and "Agregado por X" (with a small user-silhouette SVG) are both always visible on a single compact row, separated from the body by a hairline `border-t border-stone-100`. The `···` corner button and `openMeta` state are gone.
+- **`src/components/AdoptionHistory.tsx`** — record-type icons converted from emoji (🏠 / 📝 / 👁️ / 🔄 / ↩️) to inline SVG (Lucide-style strokes, `currentColor`-driven so the badge text color flows through). Emoji rendered inconsistently across OS / browser; SVG looks the same in Linux/Windows/Apple. The icon component lives at the top of the file as `RecordTypeIcon`. `getRecordTypeIcon` (string-emoji helper) is still used by `AdoptionFormWizard` and stays in `src/lib/recordTypeColors.ts`.
+- **`src/components/AdoptionHistory.tsx`** — affordance icons converted to SVG: `✓ / ✗` neutered chips → check / x strokes; `📋` "Ver contrato firmado" → clipboard SVG; `📝` "Ver formulario completado" → document SVG. Small attribute markers (🎂 age, 🎨 color, 💉 microchip, ♂️/♀️ sex) intentionally left as emoji per the project rule "emoji OK as decorative subject markers next to text labels."
+
+### Fixed
+- **`tests/search.spec.ts:120`** — sentinel was `page.locator('text=🏠').first()`. With record-type emoji removed from cards, that selector no longer resolves. Replaced with `page.getByTestId('adoptions-list')` which asserts the same intent (activity timeline rendered) more robustly.
+
 ## [2.14.7-9] - 2026-05-08
 
 Fixes the e2e regressions introduced by `2.14.7-8`. Two real test breaks, both my fault.

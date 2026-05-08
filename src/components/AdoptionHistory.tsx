@@ -5,7 +5,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import { deleteAdoption, getAdoptionImages } from '@/app/actions';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { getRecordTypeIcon, getRecordTypeColors } from '@/lib/recordTypeColors';
+import { getRecordTypeColors } from '@/lib/recordTypeColors';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { getSourceIcon, getSourceName } from '@/lib/sourceIcons';
@@ -56,6 +56,36 @@ const STRIPE_BY_TYPE: Record<string, string> = {
     returned_pet: 'border-l-rose-500',
 };
 
+// Inline SVG record-type icons. Lucide-style strokes; inherit color from parent via currentColor
+// so the surrounding badge's text color drives the icon hue.
+function RecordTypeIcon({ type, className }: { type: string; className?: string }) {
+    const cls = className || 'w-4 h-4';
+    const common = {
+        viewBox: '0 0 24 24',
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: 2,
+        strokeLinecap: 'round' as const,
+        strokeLinejoin: 'round' as const,
+        'aria-hidden': true,
+        className: cls,
+    };
+    switch (type) {
+        case 'adoption':
+            return (<svg {...common}><path d="M3 9.5L12 2l9 7.5V20a2 2 0 0 1-2 2h-4v-7h-6v7H5a2 2 0 0 1-2-2V9.5z" /></svg>);
+        case 'adoption_request':
+            return (<svg {...common}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>);
+        case 'observation':
+            return (<svg {...common}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>);
+        case 'follow_up':
+            return (<svg {...common}><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>);
+        case 'returned_pet':
+            return (<svg {...common}><polyline points="9 14 4 9 9 4" /><path d="M20 20v-7a4 4 0 0 0-4-4H4" /></svg>);
+        default:
+            return (<svg {...common}><rect x="4" y="4" width="16" height="16" rx="2" /></svg>);
+    }
+}
+
 export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, adopterAddress = '', userNameMap = {}, editFormComponent: EditComponent }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, editFormComponent: ComponentType<{ adopterId: string; initialData: Adoption; onCancel: () => void; onSuccess: () => void; onDelete: () => void; currentUser?: string; adopterAddress?: string; adopterAdoptions?: Adoption[] }> }) {
     const { t, locale } = useLanguage();
     const toast = useShowToast();
@@ -65,7 +95,6 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
     const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
     const [adoptionImages, setAdoptionImages] = useState<Record<string, AdoptionImage[]>>({});
     const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
-    const [openMeta, setOpenMeta] = useState<string | null>(null);
 
     const toggleNote = (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
@@ -74,11 +103,6 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
             if (next.has(id)) next.delete(id); else next.add(id);
             return next;
         });
-    };
-
-    const toggleMeta = (id: string, e: React.MouseEvent) => {
-        e.stopPropagation();
-        setOpenMeta(prev => (prev === id ? null : id));
     };
 
     // G — Activity summary above the timeline
@@ -224,8 +248,6 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                     const species = adoption.species || '';
                     const speciesLabel = species ? (t(`species.${species.toLowerCase()}`) || species) : '';
 
-                    // Build one-line summary: "{icon} {date} — {verb} {animal} ({species})"
-                    const icon = getRecordTypeIcon(recordType);
                     const dateStr = adoption.date ? formatShortDate(new Date(adoption.date)) : '';
                     const relativeTime = adoption.date ? formatRelativeTime(new Date(adoption.date), 'es') : null;
                     const animalName = adoption.animalName || '';
@@ -270,57 +292,9 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                 onClick={canEdit ? () => setEditingId(adoption.id) : undefined}
                                 title={canEdit ? t('common.edit') : undefined}
                             >
-                                {/* F — Top-right corner: source icon stays inline (action-oriented, scannable);
-                                    only the verbose "Agregado por X" hides behind a ··· popover. */}
-                                {(() => {
-                                    const showSource = adoption.sourceUrl && !adoption.sourceUrl.startsWith('form:');
-                                    const showAddedBy = adoption.addedBy && !isAdminEmail(adoption.addedBy) && adoption.addedBy !== currentUser;
-                                    if (!showSource && !showAddedBy) return null;
-                                    return (
-                                        <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
-                                            {showSource && (
-                                                <a
-                                                    href={adoption.sourceUrl!}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    title={getSourceName(adoption.sourceUrl!)}
-                                                    aria-label={getSourceName(adoption.sourceUrl!)}
-                                                    className="w-7 h-7 inline-flex items-center justify-center rounded-md text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
-                                                >
-                                                    {getSourceIcon(adoption.sourceUrl!, 'w-4 h-4')}
-                                                </a>
-                                            )}
-                                            {showAddedBy && (
-                                                <div className="relative">
-                                                    <button
-                                                        type="button"
-                                                        onClick={(e) => toggleMeta(adoption.id, e)}
-                                                        aria-label={t('common.details') || 'Detalles'}
-                                                        aria-expanded={openMeta === adoption.id}
-                                                        className="w-7 h-7 inline-flex items-center justify-center rounded-md text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
-                                                    >
-                                                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-                                                            <path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zM12 10a2 2 0 11-4 0 2 2 0 014 0zM18 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                                                        </svg>
-                                                    </button>
-                                                    {openMeta === adoption.id && (
-                                                        <div
-                                                            className="absolute top-full right-0 mt-1 min-w-[180px] bg-white rounded-lg shadow-lg border border-stone-200 p-2 text-xs text-stone-600"
-                                                            onClick={(e) => e.stopPropagation()}
-                                                        >
-                                                            {t('common.added_by')} <strong>{userNameMap?.[adoption.addedBy!] || maskEmail(adoption.addedBy!)}</strong>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })()}
-
                                 <div className="p-3 md:p-4">
-                                    {/* A+B — 3-column header: Rating | Verb+Animal | Date. pr-16 reserves room for the up-to-2 corner buttons (source link + ···). */}
-                                    <div className="flex items-start gap-2 md:gap-3 pr-16">
+                                    {/* A+B — 3-column header: Rating | Verb+Animal | Date */}
+                                    <div className="flex items-start gap-2 md:gap-3">
                                         {/* Rating column — fixed-width slot creates vertical scan axis */}
                                         <div className="flex-shrink-0 w-12 md:w-14 pt-0.5 flex justify-center">
                                             {adoption.rating != null && adoption.rating > 0 ? (
@@ -333,9 +307,13 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                         {/* Verb + animal — fluid middle */}
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-semibold text-stone-800 leading-snug">
-                                                {/* Desktop icon-badge FIRST in DOM so `text=🏠.first()` selectors resolve to a visible element on md+ viewports. Mobile fallback follows. */}
-                                                <span className={`hidden md:inline-flex flex-shrink-0 w-7 h-7 rounded-lg ${colors.iconBg} items-center justify-center text-base align-middle mr-2`} aria-hidden>{icon}</span>
-                                                <span className="md:hidden mr-1.5" aria-hidden>{icon}</span>
+                                                {/* SVG record-type icon. Desktop renders inside a colored badge; mobile renders as an inline-tinted icon. */}
+                                                <span className={`hidden md:inline-flex flex-shrink-0 w-7 h-7 rounded-lg ${colors.iconBg} ${colors.text} items-center justify-center align-middle mr-2`} aria-hidden>
+                                                    <RecordTypeIcon type={recordType} className="w-4 h-4" />
+                                                </span>
+                                                <span className={`md:hidden inline-flex align-middle mr-1.5 ${colors.text}`} aria-hidden>
+                                                    <RecordTypeIcon type={recordType} className="w-4 h-4" />
+                                                </span>
                                                 {summary}
                                                 {canEdit && (
                                                     <span className="text-teal-600 md:opacity-0 md:group-hover:opacity-100 transition-opacity inline-flex items-center ml-1.5 align-middle">
@@ -371,12 +349,14 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                             )}
                                             {adoption.neutered === 1 && (
                                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                                                    ✓ {t('adoption.neutered') || 'Neutered'}
+                                                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>
+                                                    {t('adoption.neutered') || 'Neutered'}
                                                 </span>
                                             )}
                                             {adoption.neutered === 0 && (
                                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-500">
-                                                    ✗ {t('adoption.neutered_no_label') || 'Not neutered'}
+                                                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                                                    {t('adoption.neutered_no_label') || 'Not neutered'}
                                                 </span>
                                             )}
                                             {adoption.color && (
@@ -438,9 +418,9 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                                         className="flex items-center gap-2 mt-2.5 p-2 bg-teal-50 rounded-lg hover:bg-teal-100 transition-colors"
                                                         onClick={e => e.stopPropagation()}
                                                     >
-                                                        <span className="text-sm">📋</span>
+                                                        <svg className="w-4 h-4 text-teal-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="2" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="9" y1="12" x2="15" y2="12" /><line x1="9" y1="16" x2="13" y2="16" /></svg>
                                                         <span className="text-sm font-medium text-teal-700">{t('dashboard.view_signed_contract') || 'View Signed Contract'}</span>
-                                                        <svg className="w-3.5 h-3.5 ml-auto text-teal-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                                        <svg className="w-3.5 h-3.5 ml-auto text-teal-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                                                     </a>
                                                 );
                                             }
@@ -457,9 +437,9 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                                 className="flex items-center gap-2 mt-2.5 p-2 bg-teal-50 rounded-lg hover:bg-teal-100 transition-colors"
                                                 onClick={e => e.stopPropagation()}
                                             >
-                                                <span className="text-sm">📝</span>
+                                                <svg className="w-4 h-4 text-teal-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" /></svg>
                                                 <span className="text-sm font-medium text-teal-700">{t('adopter.form_view_responses') || 'Ver formulario completado'}</span>
-                                                <svg className="w-3.5 h-3.5 ml-auto text-teal-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                                <svg className="w-3.5 h-3.5 ml-auto text-teal-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                                             </a>
                                         );
                                     })()}
@@ -483,6 +463,35 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                         </div>
                                     )}
 
+                                    {/* F — Compact audit-trail footer: source link + creator. Both always visible (vetting requires audit at-a-glance). */}
+                                    {(() => {
+                                        const showSource = adoption.sourceUrl && !adoption.sourceUrl.startsWith('form:');
+                                        const showAddedBy = adoption.addedBy && !isAdminEmail(adoption.addedBy) && adoption.addedBy !== currentUser;
+                                        if (!showSource && !showAddedBy) return null;
+                                        return (
+                                            <div className="mt-2.5 pt-2 border-t border-stone-100 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-stone-500">
+                                                {showSource && (
+                                                    <a
+                                                        href={adoption.sourceUrl!}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        title={getSourceName(adoption.sourceUrl!)}
+                                                        className="inline-flex items-center gap-1 text-stone-500 hover:text-stone-800 transition-colors"
+                                                    >
+                                                        {getSourceIcon(adoption.sourceUrl!, 'w-3.5 h-3.5')}
+                                                        <span>{getSourceName(adoption.sourceUrl!)}</span>
+                                                    </a>
+                                                )}
+                                                {showAddedBy && (
+                                                    <span className="inline-flex items-center gap-1">
+                                                        <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+                                                        {t('common.added_by')} <strong className="font-medium text-stone-700">{userNameMap?.[adoption.addedBy!] || maskEmail(adoption.addedBy!)}</strong>
+                                                    </span>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                             </div>
                         </div>

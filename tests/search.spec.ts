@@ -116,9 +116,8 @@ test.describe('Search to Decision', () => {
         await page.goto(`/adopter/${TEST_ADOPTERS.MARIA}`);
         await expect(page.getByRole('heading', { name: TEST_NAMES.MARIA })).toBeVisible({ timeout: 30000 });
 
-        // The profile stats grid shows adoption count — must be 2
-        const adoptionStatBox = page.locator('text=🏠').first();
-        await expect(adoptionStatBox).toBeVisible({ timeout: 30000 });
+        // The activity timeline must render before we assert on its contents
+        await expect(page.getByTestId('adoptions-list')).toBeVisible({ timeout: 30000 });
 
         // The adoption records section itself must show both animals
         await expect(page.getByText('Luna').first()).toBeVisible({ timeout: 30000 });
