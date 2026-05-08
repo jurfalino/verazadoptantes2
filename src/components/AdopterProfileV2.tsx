@@ -146,6 +146,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             <AdoptionFormWizard
                                 adopterId={id}
                                 availableAnimals={availableAnimals}
+                                adopterAdoptions={adoptions}
                                 currentUser={currentUser}
                                 adopterAddress={adopter?.contactInfo || ''}
                             />

@@ -47,7 +47,7 @@ interface AdoptionImage {
     thumbnailUrl?: string | null;
 }
 
-export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, adopterAddress = '', userNameMap = {}, editFormComponent: EditComponent }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, editFormComponent: ComponentType<{ adopterId: string; initialData: Adoption; onCancel: () => void; onSuccess: () => void; onDelete: () => void; currentUser?: string; adopterAddress?: string }> }) {
+export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, adopterAddress = '', userNameMap = {}, editFormComponent: EditComponent }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, editFormComponent: ComponentType<{ adopterId: string; initialData: Adoption; onCancel: () => void; onSuccess: () => void; onDelete: () => void; currentUser?: string; adopterAddress?: string; adopterAdoptions?: Adoption[] }> }) {
     const { t, locale } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
@@ -149,6 +149,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                     onDelete={() => handleDelete(adoption.id)}
                                     currentUser={currentUser}
                                     adopterAddress={adopterAddress}
+                                    adopterAdoptions={initialAdoptions}
                                 />
                             </div>
                         );

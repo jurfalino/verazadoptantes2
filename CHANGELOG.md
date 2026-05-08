@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-3] - 2026-05-08
+
+Wizards now treat follow-ups and returned pets as events tied to a past adoption, not to the rescuer's unlinked inventory.
+
+### Changed
+- **Animal-picker source for `follow_up` / `returned_pet`** (both new and edit wizards): the existing-mode dropdown now lists adoption-table rows where `adopterId = this adopter && recordType === 'adoption'` (i.e., animals this person already adopted) instead of `availableAnimals` (the rescuer's unlinked inventory). Other record types (`adoption`, `adoption_request`, `observation`) keep the previous source.
+- **Picker label**: shows "Animal ya adoptado por esta persona" / "Animal already adopted by this person" instead of the generic "Select Animal" when in follow-up/return mode. Each option appends the past adoption's date.
+- **New wizard — dual-record creation**: when the user picks "Create new" for a follow-up or return (i.e., the animal isn't yet in the system), step 2 now shows two date pickers — `Fecha de adopción` and `Fecha del seguimiento`/`Fecha de la devolución`. Both are required; both reuse the existing `DatePicker` with `dayOptional` so users can enter month + year if they don't recall the exact day. On save we issue two `saveAdoption` calls: first the parent adoption (`status='completed'`, `recordType='adoption'`, the new animal's name/species), then the follow-up/return event with the same name/species — two independent rows, no FK linkage (matches existing schema; records associate by name/species/adopterId).
+- **Critical guard**: when the picker is sourced from past adoptions, selecting an option no longer sets `submitData.id` to that past row's primary key. Doing so would have caused `saveAdoption` to UPDATE the parent adoption, flipping its `recordType` to `follow_up` and silently destroying the original record. The wizard now forces `id=undefined` for follow_up/returned_pet inserts; the edit wizard preserves the record being edited's own id.
+
+### Plumbing
+- New `adopterAdoptions` prop on `AdoptionFormWizard` and `AdoptionFormEditV2`. Threaded through `AdopterProfileV2` (passes `adoptions` directly) and `AdoptionHistory` (passes `initialAdoptions` to the edit component, with the `editFormComponent` ComponentType extended to declare the optional prop). `VisitIntentCard` forwards its existing `adoptions` prop to the wizard so submenu launches (follow_up / returned_pet) get the right source list.
+- New i18n keys (es + en): `adoption_date`, `followup_event_date`, `return_event_date`, `dual_date_hint`, `previous_adoption_picker_label`.
+- Edit-wizard scope is intentionally limited: source list swaps for follow-ups/returns, but the dual-record flow is new-wizard only — editing a follow-up that switches to a brand-new animal still updates only that one record, no parent auto-creation.
+
 ## [2.14.7-2] - 2026-05-08
 
 VisitIntentCard "Otro motivo" now drills into a submenu instead of jumping straight to the observation wizard.

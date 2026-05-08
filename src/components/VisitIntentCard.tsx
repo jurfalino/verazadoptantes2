@@ -110,6 +110,7 @@ export default function VisitIntentCard({ enabled, adopterId, adopterName, curre
             <AdoptionFormWizard
                 adopterId={adopterId}
                 availableAnimals={availableAnimals}
+                adopterAdoptions={adoptions}
                 currentUser={currentUser}
                 adopterAddress={adopterAddress}
                 initialRecordType={openedRecordType}

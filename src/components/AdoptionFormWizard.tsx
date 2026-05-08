@@ -52,10 +52,18 @@ const RECORD_TYPES = [
     { value: 'returned_pet', icon: '↩️', labelKey: 'adoption.type_returned', fallback: 'Returned' },
 ] as const;
 
-export default function AdoptionFormWizard({ adopterId, availableAnimals = [], currentUser, adopterAddress = '', initialRecordType, autoOpen = false, onClose }: {
+export default function AdoptionFormWizard({ adopterId, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '', initialRecordType, autoOpen = false, onClose }: {
     adopterId: string;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     availableAnimals?: any[];
+    /**
+     * All existing adoption-table rows for this adopter. Used as the picker
+     * source when the user is logging a follow_up / returned_pet — those flows
+     * reference an animal *already* adopted by this person, not the rescuer's
+     * unlinked inventory (`availableAnimals`).
+     */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    adopterAdoptions?: any[];
     currentUser?: string;
     adopterAddress?: string;
     /**
@@ -110,6 +118,11 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
         adopterId: adopterId,
         recordType: prefillRecordType,
         date: prefillDate,
+        // Companion date used only for the dual-record follow_up/returned_pet
+        // flow — when the user is logging an event for a brand-new animal that
+        // wasn't previously in the system, we ask for both the original
+        // adoption date and the event date so two records can be created.
+        adoptionDate: '',
         deliveredToHome: false,
         verifiedAddress: '',
         identityVerified: false,
@@ -137,7 +150,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
     }, [isOpen, step, shouldOpenFromWizard, autoOpen]);
 
     const resetForm = () => {
-        setFormData({ animalId: '', animalName: '', details: '', status: 'completed', rating: 5, comments: '', species: 'cat', adopterId, recordType: 'adoption', date: new Date().toISOString().split('T')[0], deliveredToHome: false, verifiedAddress: '', identityVerified: false });
+        setFormData({ animalId: '', animalName: '', details: '', status: 'completed', rating: 5, comments: '', species: 'cat', adopterId, recordType: 'adoption', date: new Date().toISOString().split('T')[0], adoptionDate: '', deliveredToHome: false, verifiedAddress: '', identityVerified: false });
         setPendingImages([]);
         setUnknownAnimal(false);
         setCustomSpecies(false);
@@ -146,9 +159,23 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
     };
 
     const safeAvailableAnimals = Array.isArray(availableAnimals) ? availableAnimals : [];
+    const safeAdopterAdoptions = Array.isArray(adopterAdoptions) ? adopterAdoptions : [];
     const isObservation = formData.recordType === 'observation';
-    const showModeSwitcher = !shouldOpenFromWizard && safeAvailableAnimals.length > 0 && !isObservation;
+    const isFollowUpOrReturn = formData.recordType === 'follow_up' || formData.recordType === 'returned_pet';
+
+    // For follow_up / returned_pet, the picker should source from animals this
+    // adopter has actually adopted — not the rescuer's unlinked inventory.
+    const previousAdoptionsForAdopter = isFollowUpOrReturn
+        ? safeAdopterAdoptions.filter(a => a && a.recordType === 'adoption' && a.animalName)
+        : [];
+    const effectiveAnimalsList = isFollowUpOrReturn ? previousAdoptionsForAdopter : safeAvailableAnimals;
+    const showModeSwitcher = !shouldOpenFromWizard && effectiveAnimalsList.length > 0 && !isObservation;
     const effectiveMode = showModeSwitcher ? mode : 'new';
+
+    // Dual-record flow: user is logging a follow_up/returned_pet for an animal
+    // that wasn't previously in the system — we'll create the parent adoption
+    // and the event record together, so we need two dates.
+    const showDualDate = isFollowUpOrReturn && effectiveMode === 'new';
 
     // Clear stale animal data when user switches to observation type so the saved record
     // doesn't carry over animalName/species from a previously-selected adoption type.
@@ -162,7 +189,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
 
     const handleSelectExisting = (animalId: string) => {
         if (!animalId) return;
-        const animal = safeAvailableAnimals.find(a => a.id === animalId);
+        const animal = effectiveAnimalsList.find(a => a.id === animalId);
         if (animal) setFormData(prev => ({ ...prev, animalId: animal.id, animalName: animal.animalName, species: animal.species }));
     };
 
@@ -219,14 +246,49 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
     const handleSubmit = async () => {
         const isAuthenticated = (currentUser && currentUser !== '') || !!session?.user;
         if (!isAuthenticated) { openLogin(); return; }
+
+        // Dual-date validation: both required when logging a brand-new follow-up/return.
+        if (showDualDate && !formData.adoptionDate) {
+            toast.warning(t('common.error'), t('adoption.fill_required'));
+            return;
+        }
+
         setLoading(true);
         try {
-            const dateParts = formData.date.split('-').map(Number);
-            const localDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2] || 1, 12, 0, 0);
-            
+            const parseLocalDate = (s: string) => {
+                const [y, m, d] = s.split('-').map(Number);
+                return new Date(y, (m || 1) - 1, d || 1, 12, 0, 0);
+            };
+            const localDate = parseLocalDate(formData.date);
+
+            // For follow_up / returned_pet, animalId on the form refers to a
+            // *previous adoption record* — we copy its name/species but must
+            // create a NEW row for the event (never UPDATE the parent adoption).
+            const idForSubmit = isFollowUpOrReturn ? undefined : (formData.animalId || undefined);
+
+            // Dual-record path: create the parent adoption first, then the event.
+            if (showDualDate) {
+                const adoptionLocalDate = parseLocalDate(formData.adoptionDate);
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                await saveAdoption({
+                    animalName: formData.animalName,
+                    species: formData.species,
+                    details: '',
+                    status: 'completed',
+                    rating: Number(formData.rating),
+                    adopterId,
+                    recordType: 'adoption',
+                    date: adoptionLocalDate,
+                    onBehalfOf: null,
+                    deliveredToHome: 0,
+                    verifiedAddress: null,
+                    identityVerified: 0,
+                } as any);
+            }
+
             const submitData = {
                 ...formData,
-                id: formData.animalId || undefined,
+                id: idForSubmit,
                 rating: Number(formData.rating),
                 date: localDate,
                 onBehalfOf: null,
@@ -234,10 +296,13 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
                 verifiedAddress: formData.verifiedAddress || null,
                 identityVerified: formData.identityVerified ? 1 : 0
             };
-            
+            // `adoptionDate` is wizard-only state, not a column.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            delete (submitData as any).adoptionDate;
+
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const result = await saveAdoption(submitData as any);
-            
+
             if (pendingImages.length > 0 && result?.id) {
                 const uploadPromises = pendingImages.map(async (pending) => {
                     if (pending.isVideo && pending.file) {
@@ -372,7 +437,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
                             {showModeSwitcher && (
                                 <div className="flex gap-2 p-1 bg-teal-50 rounded-lg">
                                     <button type="button" onClick={() => setMode('existing')} className={`flex-1 py-1.5 text-sm font-semibold rounded-md transition-all ${effectiveMode === 'existing' ? 'bg-white text-teal-700 shadow-sm' : 'text-teal-600 hover:text-teal-800'}`}>
-                                        {t('adoption.select_existing')} ({safeAvailableAnimals.length})
+                                        {t('adoption.select_existing')} ({effectiveAnimalsList.length})
                                     </button>
                                     <button type="button" onClick={() => { setMode('new'); setFormData(d => ({ ...d, animalId: '', animalName: '', species: 'cat' })); }} className={`flex-1 py-1.5 text-sm font-semibold rounded-md transition-all ${effectiveMode === 'new' ? 'bg-white text-teal-700 shadow-sm' : 'text-teal-600 hover:text-teal-800'}`}>
                                         {t('adoption.create_new')}
@@ -388,10 +453,17 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
 
                             {!isObservation && effectiveMode === 'existing' && (
                                 <div>
-                                    <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.select_animal')}</label>
+                                    <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
+                                        {isFollowUpOrReturn ? t('adoption.previous_adoption_picker_label') : t('adoption.select_animal')}
+                                    </label>
                                     <select className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-base md:text-sm" onChange={(e) => handleSelectExisting(e.target.value)} value={formData.animalId || ''}>
                                         <option value="">{t('adoption.choose_animal')}</option>
-                                        {safeAvailableAnimals.map(a => (<option key={a.id} value={a.id}>{a.animalName} ({a.species})</option>))}
+                                        {effectiveAnimalsList.map(a => {
+                                            const dateLabel = isFollowUpOrReturn && a.date ? ` — ${formatShortDate(a.date)}` : '';
+                                            return (
+                                                <option key={a.id} value={a.id}>{a.animalName} ({a.species}){dateLabel}</option>
+                                            );
+                                        })}
                                     </select>
                                 </div>
                             )}
@@ -444,8 +516,27 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
                     {/* ===== STEP 2: Details ===== */}
                     {step === 2 && (
                         <div className="space-y-4">
+                            {showDualDate && (
+                                <div className="text-xs text-teal-800 bg-teal-50/70 border border-teal-100 rounded-lg p-2.5">
+                                    {t('adoption.dual_date_hint')}
+                                </div>
+                            )}
+
+                            {showDualDate && (
+                                <div>
+                                    <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.adoption_date')}</label>
+                                    <DatePicker value={formData.adoptionDate} onChange={date => setFormData(d => ({ ...d, adoptionDate: date }))} maxDate={new Date().toISOString().split('T')[0]} dayOptional />
+                                </div>
+                            )}
+
                             <div>
-                                <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.date')}</label>
+                                <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
+                                    {formData.recordType === 'follow_up'
+                                        ? t('adoption.followup_event_date')
+                                        : formData.recordType === 'returned_pet'
+                                            ? t('adoption.return_event_date')
+                                            : t('adoption.date')}
+                                </label>
                                 <DatePicker value={formData.date} onChange={date => setFormData(d => ({ ...d, date }))} maxDate={new Date().toISOString().split('T')[0]} dayOptional />
                             </div>
 
