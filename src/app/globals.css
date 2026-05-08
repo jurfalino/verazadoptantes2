@@ -1116,6 +1116,26 @@ button {
   animation: slide-down 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+@keyframes visit-intent-enter {
+  0%   { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+@keyframes visit-intent-glow {
+  0%, 100% { box-shadow: 0 0 0 0   rgba(var(--accent-glow-rgb), 0);    }
+  50%      { box-shadow: 0 0 0 4px rgba(var(--accent-glow-rgb), 0.18); }
+}
+
+.visit-intent-card {
+  animation:
+    visit-intent-enter 0.45s cubic-bezier(0.16, 1, 0.3, 1) both,
+    visit-intent-glow 2.2s ease-in-out 0.45s 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .visit-intent-card { animation: none; }
+}
+
 /* ════════════════════════════════════════════════════════════
    STATS PREMIUM — Glass & Glow Architecture
    Self-contained component styles for the profile stats card.

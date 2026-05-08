@@ -16,8 +16,8 @@ interface AdoptionLite {
 interface Props {
     enabled: boolean;
     adopterId: string;
+    adopterName?: string | null;
     currentUser: string;
-    isOwner: boolean;
     adoptions: AdoptionLite[];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     availableAnimals?: any[];
@@ -47,18 +47,18 @@ function isWithinWindow(date: number | Date | string | null | undefined, windowM
  * on mount. The card asks the visitor's intent and routes to the matching
  * wizard with the recordType pre-selected.
  *
- * Visibility matrix: feature flag enabled, current user authenticated, not
- * the profile owner, no recent dismissal (per-(adopter, user) localStorage
- * with 7-day TTL), and at least one option not suppressed by recent matching
- * records (30-day window for A and B; C is always available).
+ * Visibility matrix: feature flag enabled, current user authenticated, no
+ * recent dismissal (per-(adopter, user) localStorage with 7-day TTL), and at
+ * least one option not suppressed by recent matching records (30-day window
+ * for A and B; C is always available).
  */
-export default function VisitIntentCard({ enabled, adopterId, currentUser, isOwner, adoptions, availableAnimals, adopterAddress = '' }: Props) {
+export default function VisitIntentCard({ enabled, adopterId, adopterName, currentUser, adoptions, availableAnimals, adopterAddress = '' }: Props) {
     const { t } = useLanguage();
     const [hidden, setHidden] = useState(false);
     const [openedRecordType, setOpenedRecordType] = useState<IntentType | null>(null);
     const [trackedShown, setTrackedShown] = useState(false);
 
-    const baseEligible = enabled && !isOwner && !!currentUser;
+    const baseEligible = enabled && !!currentUser;
 
     const userActedRequest = useMemo(() => adoptions.some(
         a => a.addedBy === currentUser
@@ -132,44 +132,60 @@ export default function VisitIntentCard({ enabled, adopterId, currentUser, isOwn
         setHidden(true);
     };
 
-    const chips: Array<{ visible: boolean; intent: IntentType; emoji: string; labelKey: 'option_a_short' | 'option_b_short' | 'option_c_short'; titleKey: 'option_a_hint' | 'option_b_hint' | 'option_c_hint' }> = [
-        { visible: showA, intent: 'adoption_request', emoji: '📝', labelKey: 'option_a_short', titleKey: 'option_a_hint' },
-        { visible: showB, intent: 'adoption', emoji: '🏠', labelKey: 'option_b_short', titleKey: 'option_b_hint' },
-        { visible: showC, intent: 'observation', emoji: '👁️', labelKey: 'option_c_short', titleKey: 'option_c_hint' },
+    const chips: Array<{ visible: boolean; intent: IntentType; labelKey: 'option_a' | 'option_b' | 'option_c'; titleKey: 'option_a_hint' | 'option_b_hint' | 'option_c_hint' }> = [
+        { visible: showA, intent: 'adoption_request', labelKey: 'option_a', titleKey: 'option_a_hint' },
+        { visible: showB, intent: 'adoption', labelKey: 'option_b', titleKey: 'option_b_hint' },
+        { visible: showC, intent: 'observation', labelKey: 'option_c', titleKey: 'option_c_hint' },
     ];
+
+    const firstName = (adopterName ?? '').trim().split(/\s+/)[0] || '';
+    const subject = firstName || t('visitIntent.title_fallback_subject');
+    const titleText = `${t('visitIntent.title_prefix')} ${subject}?`;
 
     return (
         <div
             role="region"
-            aria-label={t('visitIntent.title')}
-            className="rounded-xl border px-3 py-2 mb-3 flex items-center gap-2 sm:gap-3 animate-in fade-in slide-in-from-top-2 duration-300"
+            aria-label={titleText}
+            className="visit-intent-card rounded-xl px-3 py-2.5 mb-3 flex flex-col gap-2"
             style={{
                 background: 'var(--surface-card)',
-                borderColor: 'var(--border-default)',
+                border: '2px solid var(--border-accent)',
                 color: 'var(--text-primary)',
             }}
         >
-            <span
-                className="hidden sm:inline text-xs font-medium shrink-0"
-                style={{ color: 'var(--text-secondary)' }}
-            >
-                {t('visitIntent.title')}
-            </span>
+            <div className="flex items-center gap-2">
+                <span
+                    className="text-sm font-semibold flex-1 min-w-0"
+                    style={{ color: 'var(--accent-heading)' }}
+                >
+                    {titleText}
+                </span>
+                <button
+                    type="button"
+                    onClick={handleDismiss}
+                    aria-label={t('visitIntent.dismiss')}
+                    title={t('visitIntent.dismiss')}
+                    className="shrink-0 p-1 rounded-md transition-opacity opacity-50 hover:opacity-100 focus:outline-none focus-visible:opacity-100"
+                    style={{ color: 'var(--text-secondary)' }}
+                >
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                        <path strokeLinecap="round" d="M6 6l8 8M14 6l-8 8" />
+                    </svg>
+                </button>
+            </div>
 
-            <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto sm:overflow-visible">
-                {chips.filter(c => c.visible).map((chip, idx) => (
+            <div className="flex flex-wrap items-center gap-1.5">
+                {chips.filter(c => c.visible).map((chip) => (
                     <button
                         key={chip.intent}
                         type="button"
                         title={t(`visitIntent.${chip.titleKey}` as never)}
-                        aria-label={t(`visitIntent.${chip.titleKey}` as never)}
+                        aria-label={t(`visitIntent.${chip.labelKey}` as never)}
                         onClick={() => handleSelect(chip.intent)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200 hover:scale-[1.04] active:scale-[0.97] focus:outline-none focus-visible:ring-2 animate-in fade-in slide-in-from-right-1"
+                        className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 hover:scale-[1.03] active:scale-[0.97] focus:outline-none focus-visible:ring-2"
                         style={{
                             background: 'var(--accent-subtle-bg)',
                             color: 'var(--accent-subtle-text)',
-                            animationDelay: `${idx * 60}ms`,
-                            animationFillMode: 'backwards',
                         }}
                         onMouseEnter={(e) => {
                             e.currentTarget.style.background = 'var(--accent-badge-bg)';
@@ -178,24 +194,10 @@ export default function VisitIntentCard({ enabled, adopterId, currentUser, isOwn
                             e.currentTarget.style.background = 'var(--accent-subtle-bg)';
                         }}
                     >
-                        <span aria-hidden="true">{chip.emoji}</span>
-                        <span>{t(`visitIntent.${chip.labelKey}` as never)}</span>
+                        {t(`visitIntent.${chip.labelKey}` as never)}
                     </button>
                 ))}
             </div>
-
-            <button
-                type="button"
-                onClick={handleDismiss}
-                aria-label={t('visitIntent.dismiss')}
-                title={t('visitIntent.dismiss')}
-                className="shrink-0 p-1 rounded-md transition-opacity opacity-50 hover:opacity-100 focus:outline-none focus-visible:opacity-100"
-                style={{ color: 'var(--text-secondary)' }}
-            >
-                <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                    <path strokeLinecap="round" d="M6 6l8 8M14 6l-8 8" />
-                </svg>
-            </button>
         </div>
     );
 }

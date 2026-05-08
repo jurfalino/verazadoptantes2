@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7] - 2026-05-07
+
+VisitIntentCard copy + visibility tweaks. Goal: make the prompt feel like an active call-to-action tied to the specific adopter (not a generic banner), surface it on freshly-created profiles, and replace the previous (non-functional in Tailwind 4) `animate-in` classes with a real keyframe animation.
+
+### Changed
+- **Title**: now reads `¿Qué pasó con {firstName}?` (en: `What happened with {firstName}?`) instead of `¿Para qué visitás este perfil?`. Falls back to `esta persona` / `this person` when the adopter has no name. Always visible — the previous `hidden sm:inline` was dropped so mobile users see it too.
+- **Button labels**: full long labels in every viewport — `Me pidió un animal en adopción` / `Le dí un animal en adopción` / `Otro motivo`. Dropped the `option_*_short` keys and the chip emojis; the row now uses `flex-wrap` so labels wrap on narrow screens instead of horizontal-scrolling.
+- **Border + animation**: container border bumped to 2px and recolored to `--border-accent`. Added real `@keyframes visit-intent-enter` (fade + slide + subtle scale) and `visit-intent-glow` (two pulses of accent box-shadow) in `globals.css`, wired via the new `.visit-intent-card` class. The previous `animate-in fade-in slide-in-from-top-2` Tailwind classes weren't backed by any plugin in this Tailwind 4 install — the card wasn't actually animating before. `prefers-reduced-motion` opts out.
+- **Visibility**: removed the owner suppression. Owners now see the prompt like everyone else, which is what makes it appear on **newly-created profiles** (creator lands on `/adopter/{id}` post-create as the owner). The `forceShow` / `?justCreated=1` plumbing initially scaffolded for the create-flow was dropped as redundant once the owner gate was gone.
+
+### Same as before (no regression)
+- Feature flag (`ENABLE_VISIT_INTENT_PROMPT`), 7-day per-(adopter, user) localStorage dismissal, 30-day per-option suppression for A/B based on recent matching records, and the always-visible C option.
+- Telemetry events (`visit_intent_shown` / `visit_intent_selected` / `visit_intent_dismissed`).
+- Wizard launch contract (option click → `AdoptionFormWizard` with `initialRecordType` + `autoOpen`).
+
 ## [2.14.6] - 2026-05-07
 
 VisitIntentCard redesign — UX feedback was that v2.14.0's full-card-with-paragraphs design was too tall (forced scrolling on mobile to see all options), used hardcoded white/`--status-info-*` tokens that didn't read well in the Azul Noche dark theme, and lived inside the Adoptions section (felt like part of the activity list rather than a context-setting prompt).
