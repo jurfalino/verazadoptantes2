@@ -1250,6 +1250,17 @@ export const en = {
         light: 'Light',
         dark: 'Night Blue',
     },
+    chat: {
+        open: 'Open support chat',
+        close: 'Close chat',
+        title: 'Support chat',
+        subtitle: "We'll get back to you as soon as we can",
+        placeholder: 'Type your message…',
+        send: 'Send',
+        empty_state: 'Hi 👋 How can we help?',
+        unread_indicator: 'Unread message',
+        error_send: "Couldn't send the message. Try again.",
+    },
     visitIntent: {
         title_prefix: 'What happened with',
         title_fallback_subject: 'this person',

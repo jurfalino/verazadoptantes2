@@ -2,6 +2,30 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-5] - 2026-05-08
+
+Floating support chat widget routed to admin's personal Telegram. Visitors (anon or signed-in) can chat with the admin without exposing the admin's IP. Off by default; enabled via `ENABLE_CHAT_WIDGET` flag in admin/config and Telegram secrets on Cloudflare.
+
+### Added
+- **Schema** (migration `0039_chat_tables.sql`): `chat_conversations` (id = visitor's localStorage anchor; `user_email`, `user_label`, `last_message_at`, `blocked`, `hour_count`, `hour_window_start`) and `chat_messages` (`conversation_id`, `direction` ∈ `user|admin`, `body`, `telegram_message_id` for admin-Reply routing).
+- **`src/lib/telegram.ts`**: thin Telegram Bot API wrapper. `sendTelegramMessage(chatId, text)`, `verifyWebhookSecret(headers)`, `formatForwardedMessage` (prepends `[#xxxxxxxx]` routing tag), `extractConversationTag` (parses tag from `reply_to_message.text`). Reads `TELEGRAM_BOT_TOKEN` / `TELEGRAM_WEBHOOK_SECRET` from the Cloudflare runtime env with `process.env` fallback.
+- **`/api/chat` (edge)**: `POST` validates conversationId (UUID v4), enforces rate limit (≤1 msg / 5s, ≤30 / rolling hour, per conversation), drops blocked conversations silently, writes the user message to D1, forwards to admin's Telegram with the routing prefix, persists the returned `message_id`. Honeypot field on the request body discards bot submissions. `GET ?conversationId&since` returns admin replies newer than `since`.
+- **`/api/telegram/webhook` (edge)**: verifies `X-Telegram-Bot-Api-Secret-Token` (constant-time-ish compare) before doing any work, parses the Telegram update, extracts the `[#xxxxxxxx]` prefix from `reply_to_message.text`, looks up the conversation by 8-char prefix (UUID v4 → 32-bit prefix → effectively collision-free at this scale), inserts the admin message. Plain (non-Reply) admin messages get a guidance reply. Admin can send `/block` or `/unblock` as a reply to mute a conversation.
+- **`ChatWidget.tsx`**: client component, mounted once in root layout when `ENABLE_CHAT_WIDGET` is on. Floating bubble bottom-right, `z-[80]` (below toasts, above content); panel slides up; localStorage stores conversationId (UUID v4) + `last_seen_at`; polls `/api/chat` every 4s while open AND `document.visibilityState === 'visible'` (no background traffic); unread red dot when admin replies arrive while panel is closed; visually-hidden honeypot input. Uses theme tokens only (`--surface-card`, `--accent`, `--border-default`, `--text-primary`, `--surface-base`, `--surface-muted`) so it matches both Claro and Azul Noche by construction.
+- **Feature flag** `ENABLE_CHAT_WIDGET` wired through the four-place duplication: `src/config/features.ts` (FEATURE_FLAGS const + getAllFeatureFlags default), `src/app/api/admin/config/route.ts` (GET response shape), `src/app/admin/config/page.tsx` (useState initializer + fetch hydration + admin toggle list + ConfigData interface).
+- **Admin config UI**: new "Telegram Support Chat" panel on `/admin/config` with a `TELEGRAM_ADMIN_CHAT_ID` input (numeric chat_id, NOT the bot token — that lives only as a Cloudflare secret) and a Save button hitting the existing config POST endpoint.
+- **`docs/CHAT_SETUP.md`**: end-to-end one-time setup walkthrough — BotFather, capturing chat_id via `getUpdates`, generating the webhook secret, `wrangler pages secret put`, registering the webhook with Telegram, smoke-test, troubleshooting, and how to rotate secrets if a token leaks.
+- **i18n**: new `chat.*` keys in `es` and `en` (`open`, `close`, `title`, `subtitle`, `placeholder`, `send`, `empty_state`, `unread_indicator`, `error_send`).
+
+### Privacy guarantees
+- Browser only contacts `/api/chat` on the app's own origin. Admin's IP never appears in any client-visible network request.
+- Admin's Telegram client only contacts Telegram's servers. The app's worker is the only thing that talks to both Telegram and the visitor.
+- Bot token + webhook secret are stored as Cloudflare secrets, never in `wrangler.toml`, never in the DB, never reachable from client code.
+
+### Defaults
+- Off behind `ENABLE_CHAT_WIDGET` (flag default `false`). Even with the flag on, the API endpoint refuses messages until `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ADMIN_CHAT_ID` are both set — degrades gracefully (logs a warning, stores the message, returns ok to the visitor) rather than crashing.
+- This commit changes no visible behavior on the live site until the flag is enabled in admin/config.
+
 ## [2.14.7-4] - 2026-05-08
 
 VisitIntentCard layout cleanup + entry-point dedup.

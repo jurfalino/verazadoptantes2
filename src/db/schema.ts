@@ -332,3 +332,35 @@ export const orgInvites = sqliteTable("org_invites", {
 }, (table) => ({
     orgIdx: index("idx_org_invite_org").on(table.orgId),
 }));
+
+// ── Support Chat ─────────────────────────────────────────────────
+// Floating chat widget routed to admin via Telegram bot.
+// `id` doubles as the conversationId held in the user's localStorage; the
+// first 8 hex chars are embedded in every Telegram-forwarded message so the
+// admin's reply (via Telegram's Reply gesture) can be attributed back to the
+// right conversation in the webhook handler.
+
+export const chatConversations = sqliteTable("chat_conversations", {
+    id: text("id").primaryKey(),
+    userEmail: text("user_email"),                          // null for anonymous visitors
+    userLabel: text("user_label"),                          // human label shown to the admin in Telegram
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    lastMessageAt: integer("last_message_at", { mode: "timestamp" }),
+    blocked: integer("blocked").default(0),                 // admin can mute a conversation via /block
+    hourCount: integer("hour_count").default(0),            // rolling per-hour message counter (rate limit)
+    hourWindowStart: integer("hour_window_start", { mode: "timestamp" }),
+}, (table) => ({
+    lastMessageIdx: index("idx_chat_conv_last").on(table.lastMessageAt),
+}));
+
+export const chatMessages = sqliteTable("chat_messages", {
+    id: text("id").primaryKey(),
+    conversationId: text("conversation_id").notNull(),
+    direction: text("direction").notNull(),                 // 'user' | 'admin'
+    body: text("body").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    telegramMessageId: integer("telegram_message_id"),      // Telegram message_id for the bot's forwarded message — admin reply-to anchor
+}, (table) => ({
+    convIdx: index("idx_chat_msgs_conv").on(table.conversationId),
+    convCreatedIdx: index("idx_chat_msgs_conv_created").on(table.conversationId, table.createdAt),
+}));

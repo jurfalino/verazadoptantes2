@@ -49,6 +49,10 @@ export async function GET() {
             ENABLE_ANIMALS_FOR_ADOPTION: config['ENABLE_ANIMALS_FOR_ADOPTION'] || 'false',
             ENABLE_SEARCH_CARD_METADATA: config['ENABLE_SEARCH_CARD_METADATA'] || 'true',
             ENABLE_VISIT_INTENT_PROMPT: config['ENABLE_VISIT_INTENT_PROMPT'] || 'false',
+            ENABLE_CHAT_WIDGET: config['ENABLE_CHAT_WIDGET'] || 'false',
+            // Telegram support chat — admin's personal chat_id (NOT the bot
+            // token; that's a Cloudflare secret).
+            TELEGRAM_ADMIN_CHAT_ID: config['TELEGRAM_ADMIN_CHAT_ID'] || '',
             // Social proof banner
             SOCIAL_PROOF_ENABLED: config['SOCIAL_PROOF_ENABLED'] || 'false',
             SOCIAL_PROOF_MESSAGES: config['SOCIAL_PROOF_MESSAGES'] || '[]',

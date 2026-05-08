@@ -1248,6 +1248,17 @@ export const es = {
         light: 'Claro',
         dark: 'Azul Noche',
     },
+    chat: {
+        open: 'Abrir chat de soporte',
+        close: 'Cerrar chat',
+        title: 'Chat de soporte',
+        subtitle: 'Te respondemos lo antes posible',
+        placeholder: 'Escribí tu mensaje…',
+        send: 'Enviar',
+        empty_state: 'Hola 👋 ¿En qué te podemos ayudar?',
+        unread_indicator: 'Mensaje sin leer',
+        error_send: 'No se pudo enviar el mensaje. Intentá de nuevo.',
+    },
     visitIntent: {
         title_prefix: '¿Qué pasó con',
         title_fallback_subject: 'esta persona',

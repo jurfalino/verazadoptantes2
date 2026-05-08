@@ -18,6 +18,8 @@ import { CountryConfirmBanner } from '@/components/CountryConfirmBanner';
 import NotificationBell from '@/components/NotificationBell';
 import ZarazIdentify from '@/components/ZarazIdentify';
 import { WebApplicationJsonLd, OrganizationJsonLd } from '@/components/JsonLd';
+import ChatWidget from '@/components/ChatWidget';
+import { getFeatureFlag } from '@/config/features';
 
 export const runtime = "edge";
 export const dynamic = 'force-dynamic';
@@ -88,6 +90,16 @@ export default async function RootLayout({
     logger.warn('Layout auth check failed', { error: e instanceof Error ? e.message : String(e) });
   }
 
+  // Feature flag for the floating support chat. Reads DB → env → default.
+  // Falls open to false if the flag lookup fails so the widget can't
+  // accidentally appear on misconfigured deployments.
+  let chatEnabled = false;
+  try {
+    chatEnabled = await getFeatureFlag('ENABLE_CHAT_WIDGET');
+  } catch (e) {
+    logger.warn('Layout chat-flag lookup failed', { error: e instanceof Error ? e.message : String(e) });
+  }
+
 
   return (
     <html lang="es" suppressHydrationWarning>
@@ -143,6 +155,7 @@ export default async function RootLayout({
                     {children}
                     <Footer />
                   </div>
+                  {chatEnabled && <ChatWidget />}
                 </AuthProvider>
               </ToastProvider>
             </ThemeProvider>

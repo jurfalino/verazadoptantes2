@@ -30,6 +30,8 @@ interface ConfigData {
         ENABLE_ANIMALS_FOR_ADOPTION?: string;
         ENABLE_SEARCH_CARD_METADATA?: string;
         ENABLE_VISIT_INTENT_PROMPT?: string;
+        ENABLE_CHAT_WIDGET?: string;
+        TELEGRAM_ADMIN_CHAT_ID?: string;
         SOCIAL_PROOF_ENABLED?: string;
         SOCIAL_PROOF_MESSAGES?: string;
     };
@@ -48,6 +50,7 @@ const FEATURE_FLAGS = [
     { key: 'ENABLE_ANIMALS_FOR_ADOPTION', label: 'Animals for Adoption', description: 'Allow users to list animals for adoption and share adoption contracts with potential adopters' },
     { key: 'ENABLE_SEARCH_CARD_METADATA', label: 'Search Card Metadata', description: 'Show profile views (👁) and the bottom row dates (📅 added, ✏️ updated) on each search result card on the home page. Default ON.' },
     { key: 'ENABLE_VISIT_INTENT_PROMPT', label: 'Visit Intent Prompt', description: 'On adopter profiles, ask visiting users why they\'re there (received request / gave adoption / want to record observation) and route them to the matching wizard. Suppressed for the profile owner and after recent matching records.' },
+    { key: 'ENABLE_CHAT_WIDGET', label: 'Support Chat Widget', description: 'Floating chat icon at bottom-right that routes visitor messages to the admin\'s Telegram. Requires TELEGRAM_BOT_TOKEN + TELEGRAM_WEBHOOK_SECRET set as Cloudflare secrets and TELEGRAM_ADMIN_CHAT_ID below. See docs/CHAT_SETUP.md.' },
 ];
 
 export default function AdminConfigPage() {
@@ -63,7 +66,10 @@ export default function AdminConfigPage() {
         ENABLE_ANIMALS_FOR_ADOPTION: false,
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_VISIT_INTENT_PROMPT: false,
+        ENABLE_CHAT_WIDGET: false,
     });
+    const [telegramAdminChatId, setTelegramAdminChatId] = useState('');
+    const [savingTelegram, setSavingTelegram] = useState(false);
     const [socialProofEnabled, setSocialProofEnabled] = useState(false);
     const [socialProofMessages, setSocialProofMessages] = useState<SocialProofMessage[]>([]);
     const [savingSocialProof, setSavingSocialProof] = useState(false);
@@ -94,7 +100,9 @@ export default function AdminConfigPage() {
                         ENABLE_ANIMALS_FOR_ADOPTION: data.config?.ENABLE_ANIMALS_FOR_ADOPTION === 'true',
                         ENABLE_SEARCH_CARD_METADATA: data.config?.ENABLE_SEARCH_CARD_METADATA !== 'false',
                         ENABLE_VISIT_INTENT_PROMPT: data.config?.ENABLE_VISIT_INTENT_PROMPT === 'true',
+                        ENABLE_CHAT_WIDGET: data.config?.ENABLE_CHAT_WIDGET === 'true',
                     });
+                    setTelegramAdminChatId(data.config?.TELEGRAM_ADMIN_CHAT_ID || '');
                     // Social proof config
                     setSocialProofEnabled(data.config?.SOCIAL_PROOF_ENABLED === 'true');
                     try {
@@ -265,6 +273,67 @@ export default function AdminConfigPage() {
                             </button>
                         </div>
                     ))}
+                </div>
+            </div>
+
+            {/* Telegram support chat */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200">
+                <h3 className="text-lg font-semibold text-stone-900 mb-4 flex items-center gap-2">
+                    <span className="text-xl">💬</span>
+                    Telegram Support Chat
+                </h3>
+                <p className="text-sm text-stone-500 mb-4">
+                    Routing target for the floating chat widget. The bot token + webhook secret are
+                    Cloudflare secrets (<code className="px-1 bg-stone-100 rounded text-xs">TELEGRAM_BOT_TOKEN</code>,{' '}
+                    <code className="px-1 bg-stone-100 rounded text-xs">TELEGRAM_WEBHOOK_SECRET</code>) and are set
+                    via <code className="px-1 bg-stone-100 rounded text-xs">wrangler secret put</code> or the Cloudflare
+                    dashboard, never in this UI. The chat_id below identifies which Telegram chat receives forwarded
+                    messages — typically your personal chat with the bot. See{' '}
+                    <code className="px-1 bg-stone-100 rounded text-xs">docs/CHAT_SETUP.md</code> for the BotFather + setWebhook walkthrough.
+                </p>
+                <div className="p-4 bg-stone-50 rounded-xl space-y-3">
+                    <div>
+                        <label className="block text-xs font-semibold text-stone-700 mb-1.5 uppercase tracking-wider">Admin chat_id</label>
+                        <input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="-?\d+"
+                            value={telegramAdminChatId}
+                            onChange={(e) => setTelegramAdminChatId(e.target.value)}
+                            placeholder="e.g. 123456789"
+                            className="w-full h-10 px-4 rounded-lg border border-stone-200 bg-white text-stone-950 font-mono text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none"
+                        />
+                        <p className="text-xs text-stone-500 mt-1.5">
+                            Capture this once by sending <code className="px-1 bg-white border border-stone-200 rounded">/start</code> to your bot —
+                            the first webhook delivery includes <code className="px-1 bg-white border border-stone-200 rounded">message.chat.id</code>.
+                        </p>
+                    </div>
+                    <button
+                        onClick={async () => {
+                            setSavingTelegram(true);
+                            try {
+                                const res = await fetch('/api/admin/config', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ TELEGRAM_ADMIN_CHAT_ID: telegramAdminChatId.trim() }),
+                                });
+                                if (res.ok) {
+                                    toast.success('Saved', 'Telegram chat_id updated.');
+                                } else {
+                                    const body = await readErrorBody(res);
+                                    toast.error('Error', body.error || 'Failed to save.', body.errorId);
+                                }
+                            } catch (e) {
+                                toast.error('Error', 'Network error', e instanceof Error ? e.message : undefined);
+                            } finally {
+                                setSavingTelegram(false);
+                            }
+                        }}
+                        disabled={savingTelegram}
+                        className="px-5 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                    >
+                        {savingTelegram ? 'Saving…' : 'Save chat_id'}
+                    </button>
                 </div>
             </div>
 
