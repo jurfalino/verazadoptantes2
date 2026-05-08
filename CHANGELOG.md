@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-1] - 2026-05-07
+
+VisitIntentCard prominence + button redesign. Feedback: the card was less visually present than the legal disclaimer below it, which was the wrong hierarchy — the disclaimer is passive info, this is an active CTA.
+
+### Changed
+- **Container**: background switched from `--surface-card` to `--accent-subtle-bg`; border bumped to a vivid `2px solid var(--accent)`; padding to `px-4 py-3`; title to `text-base font-semibold` in `--accent-strong`. Reads as a tinted callout instead of a neutral panel.
+- **Buttons**: pill chips replaced with proper rectangular buttons (`rounded-lg`, `px-3 py-2`, `text-sm font-medium`). White-ish `--surface-card` fill with 1px `--accent` border on the tinted card gives clear click affordance; hover inverts to filled `--accent` with accent-glow shadow and a small upward translate. Layout moved from `flex-wrap` to `grid grid-cols-1 sm:grid-cols-3` so labels stack full-width on mobile and sit in equal columns on desktop.
+- **Icons**: leading inline SVGs (currentColor, 16×16, no emoji per the no-emoji-for-functional-affordances convention) — speech bubble for A (request), house for B (adoption completed), pencil for C (other reason).
+
 ## [2.14.7] - 2026-05-07
 
 VisitIntentCard copy + visibility tweaks. Goal: make the prompt feel like an active call-to-action tied to the specific adopter (not a generic banner), surface it on freshly-created profiles, and replace the previous (non-functional in Tailwind 4) `animate-in` classes with a real keyframe animation.

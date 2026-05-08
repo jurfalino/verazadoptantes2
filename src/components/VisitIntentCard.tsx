@@ -132,7 +132,35 @@ export default function VisitIntentCard({ enabled, adopterId, adopterName, curre
         setHidden(true);
     };
 
-    const chips: Array<{ visible: boolean; intent: IntentType; labelKey: 'option_a' | 'option_b' | 'option_c'; titleKey: 'option_a_hint' | 'option_b_hint' | 'option_c_hint' }> = [
+    const renderIcon = (intent: IntentType) => {
+        // 20×20 outline icons, currentColor — render legibly at button text size.
+        switch (intent) {
+            case 'adoption_request':
+                // Speech bubble — adopter asked / requested
+                return (
+                    <svg className="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-4 4v-4H5a2 2 0 0 1-2-2V5z" />
+                    </svg>
+                );
+            case 'adoption':
+                // House — adoption completed (animal found a home)
+                return (
+                    <svg className="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 9.5L10 4l7 5.5V16a1 1 0 0 1-1 1h-3v-4H8v4H4a1 1 0 0 1-1-1V9.5z" />
+                    </svg>
+                );
+            case 'observation':
+            default:
+                // Pencil — write something else
+                return (
+                    <svg className="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 3.5l3 3M4 16l1-3 8.5-8.5 3 3L8 16H4z" />
+                    </svg>
+                );
+        }
+    };
+
+    const buttons: Array<{ visible: boolean; intent: IntentType; labelKey: 'option_a' | 'option_b' | 'option_c'; titleKey: 'option_a_hint' | 'option_b_hint' | 'option_c_hint' }> = [
         { visible: showA, intent: 'adoption_request', labelKey: 'option_a', titleKey: 'option_a_hint' },
         { visible: showB, intent: 'adoption', labelKey: 'option_b', titleKey: 'option_b_hint' },
         { visible: showC, intent: 'observation', labelKey: 'option_c', titleKey: 'option_c_hint' },
@@ -146,17 +174,17 @@ export default function VisitIntentCard({ enabled, adopterId, adopterName, curre
         <div
             role="region"
             aria-label={titleText}
-            className="visit-intent-card rounded-xl px-3 py-2.5 mb-3 flex flex-col gap-2"
+            className="visit-intent-card rounded-xl px-4 py-3 mb-3 flex flex-col gap-3"
             style={{
-                background: 'var(--surface-card)',
-                border: '2px solid var(--border-accent)',
+                background: 'var(--accent-subtle-bg)',
+                border: '2px solid var(--accent)',
                 color: 'var(--text-primary)',
             }}
         >
             <div className="flex items-center gap-2">
                 <span
-                    className="text-sm font-semibold flex-1 min-w-0"
-                    style={{ color: 'var(--accent-heading)' }}
+                    className="text-base font-semibold flex-1 min-w-0"
+                    style={{ color: 'var(--accent-strong)' }}
                 >
                     {titleText}
                 </span>
@@ -165,36 +193,43 @@ export default function VisitIntentCard({ enabled, adopterId, adopterName, curre
                     onClick={handleDismiss}
                     aria-label={t('visitIntent.dismiss')}
                     title={t('visitIntent.dismiss')}
-                    className="shrink-0 p-1 rounded-md transition-opacity opacity-50 hover:opacity-100 focus:outline-none focus-visible:opacity-100"
-                    style={{ color: 'var(--text-secondary)' }}
+                    className="shrink-0 p-1 rounded-md transition-opacity opacity-60 hover:opacity-100 focus:outline-none focus-visible:opacity-100"
+                    style={{ color: 'var(--accent-strong)' }}
                 >
-                    <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                    <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                         <path strokeLinecap="round" d="M6 6l8 8M14 6l-8 8" />
                     </svg>
                 </button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-1.5">
-                {chips.filter(c => c.visible).map((chip) => (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {buttons.filter(b => b.visible).map((btn) => (
                     <button
-                        key={chip.intent}
+                        key={btn.intent}
                         type="button"
-                        title={t(`visitIntent.${chip.titleKey}` as never)}
-                        aria-label={t(`visitIntent.${chip.labelKey}` as never)}
-                        onClick={() => handleSelect(chip.intent)}
-                        className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 hover:scale-[1.03] active:scale-[0.97] focus:outline-none focus-visible:ring-2"
+                        title={t(`visitIntent.${btn.titleKey}` as never)}
+                        aria-label={t(`visitIntent.${btn.labelKey}` as never)}
+                        onClick={() => handleSelect(btn.intent)}
+                        className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 hover:-translate-y-0.5 active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
                         style={{
-                            background: 'var(--accent-subtle-bg)',
-                            color: 'var(--accent-subtle-text)',
+                            background: 'var(--surface-card)',
+                            color: 'var(--accent-strong)',
+                            border: '1px solid var(--accent)',
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
                         }}
                         onMouseEnter={(e) => {
-                            e.currentTarget.style.background = 'var(--accent-badge-bg)';
+                            e.currentTarget.style.background = 'var(--accent)';
+                            e.currentTarget.style.color = '#ffffff';
+                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(var(--accent-glow-rgb), 0.25)';
                         }}
                         onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'var(--accent-subtle-bg)';
+                            e.currentTarget.style.background = 'var(--surface-card)';
+                            e.currentTarget.style.color = 'var(--accent-strong)';
+                            e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.04)';
                         }}
                     >
-                        {t(`visitIntent.${chip.labelKey}` as never)}
+                        {renderIcon(btn.intent)}
+                        <span className="text-left leading-tight">{t(`visitIntent.${btn.labelKey}` as never)}</span>
                     </button>
                 ))}
             </div>
