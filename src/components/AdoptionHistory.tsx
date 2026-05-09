@@ -283,8 +283,15 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
 
                     return (
                         <div key={adoption.id} id={`adoption-${adoption.id}`} className="relative">
-                            {/* Timeline dot */}
-                            <div className={`absolute left-0 md:left-1 top-5 w-[15px] h-[15px] md:w-[23px] md:h-[23px] rounded-full ${colors.dot} ring-2 md:ring-4 ${colors.ring} ring-offset-2 ring-offset-stone-50 z-10 shadow-sm`} />
+                            {/* Timeline beacon — record-type signal lives here (dot color + icon
+                                inside, centered). Replaces the empty colored dot and the redundant
+                                in-card icon badge that used to live in the header column. */}
+                            <div
+                                className={`absolute left-[-4px] md:left-[-3px] top-3 w-6 h-6 md:w-8 md:h-8 rounded-full ${colors.dot} text-white flex items-center justify-center ring-2 ${colors.ring} ring-offset-2 ring-offset-stone-50 z-10 shadow-sm`}
+                                aria-hidden
+                            >
+                                <RecordTypeIcon type={recordType} className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                            </div>
 
                             {/* Card */}
                             <div
@@ -304,16 +311,11 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                             )}
                                         </div>
 
-                                        {/* Verb + animal — fluid middle */}
+                                        {/* Verb + animal — fluid middle. Record-type icon now lives in
+                                            the timeline beacon to the left of the card; the verb leads
+                                            the column directly. */}
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-semibold text-stone-800 leading-snug">
-                                                {/* SVG record-type icon. Desktop renders inside a colored badge; mobile renders as an inline-tinted icon. */}
-                                                <span className={`hidden md:inline-flex flex-shrink-0 w-7 h-7 rounded-lg ${colors.iconBg} ${colors.text} items-center justify-center align-middle mr-2`} aria-hidden>
-                                                    <RecordTypeIcon type={recordType} className="w-4 h-4" />
-                                                </span>
-                                                <span className={`md:hidden inline-flex align-middle mr-1.5 ${colors.text}`} aria-hidden>
-                                                    <RecordTypeIcon type={recordType} className="w-4 h-4" />
-                                                </span>
                                                 {summary}
                                                 {canEdit && (
                                                     <span className="text-teal-600 md:opacity-0 md:group-hover:opacity-100 transition-opacity inline-flex items-center ml-1.5 align-middle">

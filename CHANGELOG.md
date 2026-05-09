@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.8-1] - 2026-05-09
+
+Activity timeline — record-type icon moves into the timeline dot. The dot is now a "beacon": a colored circle large enough to fit a centered SVG icon, white on the saturated bg. Same record-type signal that previously appeared in three places per row (timeline dot color, in-card icon badge, mobile inline-tinted icon, plus the 4px left stripe) is now in one canonical place.
+
+### Changed
+- **`src/components/AdoptionHistory.tsx`** — timeline dot grows from `w-[15px] h-[15px] md:w-[23px] md:h-[23px]` (empty) to `w-6 h-6 md:w-8 md:h-8` (with a centered `<RecordTypeIcon>` in white). Position offsets adjusted so the dot stays centered on the rail (`left-[-4px]` mobile, `left-[-3px]` md). `top-5` → `top-3` to align with the rating-badge row inside the card. Ring simplified from `ring-2 md:ring-4` to a single `ring-2` since the bigger filled circle doesn't need a thick ring.
+- **`src/components/AdoptionHistory.tsx`** — the in-card desktop icon badge (`w-7 h-7 rounded-lg ${colors.iconBg}`) and the mobile inline-tinted icon are both removed from the verb-summary column. The verb summary leads the middle column directly. The card's 4px left stripe (`STRIPE_BY_TYPE[recordType]`) stays as the secondary type cue on the card body.
+
+### Notes
+- `RecordTypeIcon` and `getRecordTypeColors` helpers are unchanged. Other consumers (`ImportWizard`, `AdoptionFormWizard`'s type-picker chips, the read-only edit-form badge) keep using `colors.iconBg` etc. as before.
+- Net diff: ~10 lines per row simplification, ~−15 LOC overall.
+- Tests not touched: no Playwright selector targets `.dot` or the in-card icon badge by class/aria — verified before commit.
+
 ## [2.14.8] - 2026-05-09
 
 Activity-recording entry point consolidated to **one** path: the VisitIntentCard prompt at the top of the activity section. The standalone "Registrar Actividad" CTA — which was already hidden whenever the intent card was visible (i.e., always, since v2.14.7-18) — has been removed entirely. The intent card now stays available for the entire page session: after the user picks an intent, completes the wizard, and the wizard closes, the intent options re-render in place so the user can record another activity without leaving the page.
