@@ -7,6 +7,7 @@ import { eq, or, and, isNull } from 'drizzle-orm';
 import { getUser } from '@/app/actions/_db';
 import { markNotificationRead } from '@/app/actions/notifications';
 import Link from 'next/link';
+import ContractResultsMatchCard from '@/components/ContractResultsMatchCard';
 
 interface MatchedAdopter {
     id: string;
@@ -159,37 +160,14 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                         if (!profile) return null;
 
                         return (
-                            <Link
+                            <ContractResultsMatchCard
                                 key={match.id}
-                                href={`/adopter/${match.id}`}
-                                className="block bg-white rounded-xl border border-stone-200 p-4 shadow-sm hover:shadow-md hover:border-stone-300 transition-all"
-                            >
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-semibold text-stone-800 line-clamp-2 break-words" title={profile.name}>{profile.name}</p>
-                                        {profile.contactInfo && (
-                                            <p className="text-xs text-stone-500 mt-0.5 line-clamp-2 break-words">{profile.contactInfo}</p>
-                                        )}
-                                        {/* Match reasons */}
-                                        <div className="flex flex-wrap gap-1.5 mt-2">
-                                            {match.matchTypes.map((type) => {
-                                                const label = MATCH_TYPE_LABELS[type];
-                                                return (
-                                                    <span
-                                                        key={type}
-                                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700"
-                                                    >
-                                                        {label?.icon || '🔗'} {label?.es || type}
-                                                    </span>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                    <svg className="w-4 h-4 text-stone-500 flex-shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                    </svg>
-                                </div>
-                            </Link>
+                                matchId={match.id}
+                                notificationId={notificationId}
+                                profile={profile}
+                                matchTypes={match.matchTypes}
+                                matchTypeLabels={MATCH_TYPE_LABELS}
+                            />
                         );
                     })}
                 </div>

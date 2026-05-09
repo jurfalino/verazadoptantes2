@@ -902,6 +902,17 @@ export const en = {
             },
         },
     },
+    contractResults: {
+        same_person: 'Same person',
+        view_profile: 'View profile',
+        confirm_link_title: 'Attach adoption to this profile',
+        confirm_link_body: 'This will move the signed contract to {name}, remove the temporary profile that was just created, and notify the original creator.',
+        confirm_link_action: 'Confirm attachment',
+        cancel: 'Cancel',
+        linking: 'Attaching...',
+        link_success: 'Adoption attached to {name}',
+        link_error: 'Failed to attach the adoption',
+    },
     formResults: {
         back_to_animals: 'Back to My Animals',
         title: 'Form responses',

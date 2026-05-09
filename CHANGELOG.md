@@ -2,6 +2,25 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-14] - 2026-05-09
+
+Self-service contract-result merge. Until now, when a rescuer signed a contract and the system auto-created an adopter that matched an existing profile, the contract-results page just showed the matches as read-only links — no way for the rescuer to actually attach the adoption to the right profile without admin intervention. They could click into the matched profile, see the duplicate, and walk away with two adopter rows pointing at the same person. This release adds an "Es la misma persona" action that runs the merge flow on behalf of the rescuer, and notifies the matched profile's original creator so they can review.
+
+### Added
+- **`src/app/actions/duplicates.ts`** — new `attachContractToExistingAdopter(notificationId, matchAdopterId)` server action. Auth: caller must be the notification recipient. Verifies the requested target is one of the recorded matches (no arbitrary merges via this action), re-fetches `match.deletedAt` server-side at action-entry (defense against soft-delete races between page render and click), runs the shared merge with the auto-created orphan as secondary, writes a context-specific `audit_log` entry (`action: 'contract_link_to_existing'`), and fires a notification to the matched profile's `addedBy` (skipped when the actor is the creator or the creator is admin — admins do periodic reconciliation and don't need a per-merge ping).
+- **`src/components/ContractResultsMatchCard.tsx`** — new client component for the contract-results match cards. Splits the previously single-link card into two distinct intents: **"Es la misma persona"** (destructive, opens confirmation modal, calls the new action, redirects to the canonical profile on success) and **"Ver perfil"** (navigates to the existing profile so the rescuer can investigate before deciding). Mobile tap targets ≥44px on both buttons; modal flows from bottom-up on small viewports.
+- **`src/i18n/locales/{es,en}.ts`** — new `contractResults.*` keys: `same_person`, `view_profile`, `confirm_link_title`, `confirm_link_body`, `confirm_link_action`, `cancel`, `linking`, `link_success`, `link_error`. Added to both locales together per the project i18n rule.
+
+### Changed (architectural)
+- **`src/app/actions/duplicates.ts`** — extracted `mergeAdopters(primaryId, secondaryId, actorEmail)` from the admin merge route into a shared helper. The admin route at `/api/admin/duplicates/merge` is now a thin auth-checking wrapper. Both code paths (admin-triggered and rescuer-triggered) share identical merge mechanics, eliminating the same drift-via-divergence pattern that v2.14.7-12 fixed for the duplicate matchers. Cross-cutting note: any future merge-logic change lands in one place.
+- **`src/app/api/admin/duplicates/merge/route.ts`** — refactored to delegate to `mergeAdopters()`. Behavior unchanged for admins; only the call shape moves.
+
+### Notes — product decisions
+- **Cross-creator merge is allowed.** A rescuer can attach their just-signed contract to any matched profile, regardless of who originally created it. The original creator gets notified so they can review. This is a deliberate trade-off: privacy of the original profile vs. self-service convenience for the contract-signer. Notification-after-merge means by the time the original creator hears about it, the data is already mutated; recovery from a wrong attachment requires admin intervention. Acceptable for a vetting tool where admins do periodic reconciliation; if undo-windows or pending-approval flows become desirable later, that's a separate feature.
+- **Multi-match flow handled by UX, not action code.** Page redirects to the canonical adopter on successful merge, so the user can't accidentally trigger a second merge against the now-deleted orphan.
+- **Orphan-cleanup batch (the never-clicked notification case) is out of scope.** If a rescuer never opens the contract-result notification, the auto-created adopter sits in the DB forever. This is a pre-existing gap unaffected by this release; deliberately not addressed here.
+- **E2E regression test deferred** (TICKET-G). The new action has manual-verification gating only; a Playwright test seeding a contract that matches an existing profile, clicking through to merge, and asserting the orphan is soft-deleted should be added in a follow-up.
+
 ## [2.14.7-13] - 2026-05-08
 
 Text-overflow sweep across user-facing surfaces. Long names, emails, IANA timezones, and free-text audit fields were silently breaking layouts on mobile and modals. The fix is a four-strategy taxonomy applied per-surface based on the user's task at that screen — not a blanket `truncate`.

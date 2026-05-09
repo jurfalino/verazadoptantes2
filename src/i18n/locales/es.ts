@@ -901,6 +901,17 @@ export const es = {
             },
         },
     },
+    contractResults: {
+        same_person: 'Es la misma persona',
+        view_profile: 'Ver perfil',
+        confirm_link_title: 'Atribuir adopción a este perfil',
+        confirm_link_body: 'Esta acción mueve el contrato firmado al perfil de {name}, elimina el perfil temporal recién creado y notifica al creador original.',
+        confirm_link_action: 'Confirmar atribución',
+        cancel: 'Cancelar',
+        linking: 'Atribuyendo...',
+        link_success: 'Adopción atribuida a {name}',
+        link_error: 'No se pudo atribuir la adopción',
+    },
     formResults: {
         back_to_animals: 'Mis animales',
         title: 'Respuestas del formulario',

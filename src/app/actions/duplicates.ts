@@ -1,6 +1,6 @@
 'use server';
 
-import { adopters, adoptions, duplicateTokens, duplicateCandidates } from '@/db/schema';
+import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, adopterStats, duplicateTokens, duplicateCandidates, auditLog } from '@/db/schema';
 import { eq, or, and, inArray } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { getDb } from './_db';
@@ -59,6 +59,322 @@ export async function tokenizeAdopter(adopterId: string): Promise<void> {
             adopterId,
             error: error instanceof Error ? error.message : String(error),
         });
+    }
+}
+
+export interface MergeAdoptersResult {
+    success: boolean;
+    error?: string;
+    mergeDetails?: Record<string, number>;
+    primaryName?: string;
+    secondaryName?: string;
+}
+
+/**
+ * Merge two adopter profiles: re-point all related records (adoptions, images, flags,
+ * history, stats) from the secondary onto the primary, append text fields with separators,
+ * soft-delete the secondary, clean up its duplicate_tokens, and write an audit_log entry.
+ *
+ * Shared by:
+ *  - /api/admin/duplicates/merge (admin-triggered merge of any two profiles)
+ *  - attachContractToExistingAdopter (rescuer-triggered merge of contract orphan into matched profile)
+ *
+ * Auth is the caller's responsibility — this function only runs the merge mechanics.
+ */
+export async function mergeAdopters(
+    primaryId: string,
+    secondaryId: string,
+    actorEmail: string,
+): Promise<MergeAdoptersResult> {
+    try {
+        if (!primaryId || !secondaryId || primaryId === secondaryId) {
+            return { success: false, error: 'Invalid merge request' };
+        }
+
+        const db = await getDb();
+        if (!db) return { success: false, error: 'Database not available' };
+
+        const [primary, secondary] = await Promise.all([
+            db.select().from(adopters).where(eq(adopters.id, primaryId)).get(),
+            db.select().from(adopters).where(eq(adopters.id, secondaryId)).get(),
+        ]);
+
+        if (!primary || !secondary) {
+            return { success: false, error: 'One or both adopters not found' };
+        }
+        if (primary.deletedAt || secondary.deletedAt) {
+            return { success: false, error: 'Cannot merge already-deleted profiles' };
+        }
+
+        const mergeDetails: Record<string, number> = {};
+
+        // 1. Re-point adoptions
+        const movedAdoptions = await db.update(adoptions)
+            .set({ adopterId: primaryId })
+            .where(eq(adoptions.adopterId, secondaryId));
+        mergeDetails.adoptions = movedAdoptions?.rowsAffected || 0;
+
+        // 2. Re-point images
+        const movedImages = await db.update(adopterImages)
+            .set({ adopterId: primaryId })
+            .where(eq(adopterImages.adopterId, secondaryId));
+        mergeDetails.images = movedImages?.rowsAffected || 0;
+
+        // 3. Re-point flags
+        await db.update(adopterFlags)
+            .set({ adopterId: primaryId })
+            .where(eq(adopterFlags.adopterId, secondaryId));
+
+        // 4. Re-point history
+        await db.update(adopterHistory)
+            .set({ adopterId: primaryId })
+            .where(eq(adopterHistory.adopterId, secondaryId));
+
+        // 5. Re-point stats
+        await db.update(adopterStats)
+            .set({ adopterId: primaryId })
+            .where(eq(adopterStats.adopterId, secondaryId));
+
+        // 6. Append text fields (preserve secondary data with separators)
+        const updates: Partial<typeof adopters.$inferInsert> = {};
+
+        if (secondary.contactInfo) {
+            updates.contactInfo = primary.contactInfo
+                ? `${primary.contactInfo}\n--- Merged from ${secondary.name} ---\n${secondary.contactInfo}`
+                : secondary.contactInfo;
+        }
+
+        if (secondary.addressInfo && !primary.addressInfo) {
+            updates.addressInfo = secondary.addressInfo;
+        } else if (secondary.addressInfo && primary.addressInfo) {
+            updates.addressInfo = `${primary.addressInfo}\n--- Merged ---\n${secondary.addressInfo}`;
+        }
+
+        if (secondary.familyMembers) {
+            updates.familyMembers = primary.familyMembers
+                ? `${primary.familyMembers}\n${secondary.familyMembers}`
+                : secondary.familyMembers;
+        }
+
+        if (secondary.sourceUrl && !primary.sourceUrl) {
+            updates.sourceUrl = secondary.sourceUrl;
+        }
+
+        // Force re-tokenization on next save
+        updates.tokenHash = null;
+        updates.updatedAt = new Date();
+
+        if (Object.keys(updates).length > 0) {
+            await db.update(adopters).set(updates).where(eq(adopters.id, primaryId));
+        }
+
+        // 7. Soft-delete secondary
+        await db.update(adopters).set({
+            deletedAt: new Date(),
+            tokenHash: 'MERGED',
+        }).where(eq(adopters.id, secondaryId));
+
+        // 8. Clean up tokens for secondary
+        await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, secondaryId));
+
+        // 9. Mark any pending duplicate candidates between these two as resolved
+        const candidateConditions = or(
+            and(eq(duplicateCandidates.adopter1Id, primaryId), eq(duplicateCandidates.adopter2Id, secondaryId)),
+            and(eq(duplicateCandidates.adopter1Id, secondaryId), eq(duplicateCandidates.adopter2Id, primaryId)),
+        );
+        if (candidateConditions) {
+            await db.update(duplicateCandidates).set({
+                status: 'merged',
+                resolvedAt: new Date(),
+                resolvedBy: actorEmail,
+            }).where(candidateConditions);
+        }
+
+        // 10. Annotate any existing duplicate-flag pairs between these two
+        await db.update(adopterFlags).set({
+            details: `Merged into ${primaryId} by ${actorEmail}`,
+        }).where(and(
+            eq(adopterFlags.reason, 'duplicate'),
+            or(
+                and(eq(adopterFlags.adopterId, primaryId), eq(adopterFlags.targetAdopterId, secondaryId)),
+                and(eq(adopterFlags.adopterId, secondaryId), eq(adopterFlags.targetAdopterId, primaryId)),
+            )
+        ));
+
+        // 11. Audit log — caller may also write its own context-specific entry
+        await db.insert(auditLog).values({
+            id: crypto.randomUUID(),
+            userId: actorEmail,
+            userEmail: actorEmail,
+            action: 'adopter_merge',
+            target: primaryId,
+            details: JSON.stringify({
+                primaryId,
+                secondaryId,
+                secondaryName: secondary.name,
+                mergeDetails,
+            }),
+            createdAt: new Date(),
+        });
+
+        logger.info('Adopter merge complete', {
+            primaryId,
+            secondaryId,
+            actor: actorEmail,
+            mergeDetails,
+        });
+
+        return {
+            success: true,
+            mergeDetails,
+            primaryName: primary.name,
+            secondaryName: secondary.name,
+        };
+    } catch (error) {
+        const errorId = logger.error('mergeAdopters failed', error, { primaryId, secondaryId, actor: actorEmail });
+        return { success: false, error: `Merge failed (Error ID: ${errorId})` };
+    }
+}
+
+/**
+ * Attach a just-signed contract's adoption to an existing matched adopter profile,
+ * removing the auto-created orphan adopter. Self-service merge for the rescuer who
+ * received the contract-result notification.
+ *
+ * Auth: caller must be the notification recipient. Cross-creator merge is allowed
+ * (the matched profile may be owned by a different rescuer); the original creator
+ * is notified so they can review.
+ *
+ * Mechanics: validates notification ownership + that the notification's recorded
+ * orphan-adopterId matches the secondary, re-checks match.deletedAt server-side
+ * (defense against race between page render and click), runs the shared merge,
+ * writes a context-specific audit_log entry, and fires a notification to the
+ * matched profile's original creator (skipped when actor is the creator or admin).
+ */
+export async function attachContractToExistingAdopter(
+    notificationId: string,
+    matchAdopterId: string,
+): Promise<{ success: boolean; error?: string; primaryName?: string; matchedProfileUrl?: string }> {
+    let actorEmail = 'unknown';
+    try {
+        const { getUser } = await import('./_db');
+        actorEmail = await getUser();
+        if (!actorEmail || actorEmail === 'unknown') {
+            return { success: false, error: 'Not authenticated' };
+        }
+
+        const db = await getDb();
+        if (!db) return { success: false, error: 'Database not available' };
+
+        const { notifications } = await import('@/db/schema');
+
+        // Fetch notification and validate ownership + shape
+        const notification = await db.select().from(notifications).where(eq(notifications.id, notificationId)).get();
+        if (!notification) return { success: false, error: 'Notification not found' };
+        if (notification.userId !== actorEmail) return { success: false, error: 'Not authorized for this notification' };
+        if (notification.type !== 'contract_result') return { success: false, error: 'Notification is not a contract result' };
+
+        const metadata = notification.metadata ? JSON.parse(notification.metadata) : {};
+        const orphanAdopterId: string | undefined = metadata.adopterId;
+        const animalId: string | undefined = metadata.animalId;
+        const animalName: string | undefined = metadata.animalName;
+        if (!orphanAdopterId) return { success: false, error: 'Notification missing orphan adopter id' };
+
+        // Validate the requested merge target is one of the recorded matches —
+        // prevents using this action to merge into arbitrary profiles.
+        const recordedMatchIds = new Set<string>(
+            (metadata.matchedAdopters || []).map((m: { id: string }) => m.id),
+        );
+        if (!recordedMatchIds.has(matchAdopterId)) {
+            return { success: false, error: 'Adopter is not a recorded match for this notification' };
+        }
+
+        // Re-fetch match server-side and verify still live (defense against race
+        // between page render and button click — the matched profile may have been
+        // soft-deleted by another action in the meantime).
+        const match = await db.select().from(adopters).where(eq(adopters.id, matchAdopterId)).get();
+        if (!match) return { success: false, error: 'Matched adopter not found' };
+        if (match.deletedAt) return { success: false, error: 'Matched adopter has been deleted' };
+
+        // Run merge — match becomes primary, orphan becomes secondary
+        const mergeResult = await mergeAdopters(matchAdopterId, orphanAdopterId, actorEmail);
+        if (!mergeResult.success) {
+            return { success: false, error: mergeResult.error };
+        }
+
+        // Context-specific audit entry on top of the generic one written by mergeAdopters
+        try {
+            await db.insert(auditLog).values({
+                id: crypto.randomUUID(),
+                userId: actorEmail,
+                userEmail: actorEmail,
+                action: 'contract_link_to_existing',
+                target: matchAdopterId,
+                details: JSON.stringify({
+                    notificationId,
+                    mergedOrphanId: orphanAdopterId,
+                    animalId,
+                    animalName,
+                    matchedProfileCreator: match.addedBy,
+                }),
+                createdAt: new Date(),
+            });
+        } catch (e) {
+            // Audit-log failure is non-blocking but logged loudly — the merge itself succeeded.
+            logger.warn('attachContractToExistingAdopter: audit log insert failed (non-blocking)', {
+                notificationId,
+                matchAdopterId,
+                actor: actorEmail,
+                error: e instanceof Error ? e.message : String(e),
+            });
+        }
+
+        // Notify original creator (if different from actor and not an admin — admins do
+        // periodic reconciliation and don't need a per-merge ping for actions in their queue).
+        try {
+            const { isAdmin: isAdminEmail } = await import('@/config/admins');
+            if (match.addedBy && match.addedBy !== actorEmail && !isAdminEmail(match.addedBy)) {
+                const { createNotification } = await import('./notifications');
+                const { resolveDisplayName } = await import('./notifications');
+                const actorName = await resolveDisplayName(actorEmail).catch(() => actorEmail.split('@')[0]);
+                await createNotification({
+                    userId: match.addedBy,
+                    type: 'contract_attached',
+                    title: `📝 ${actorName} adjuntó un contrato a tu perfil ${match.name}`,
+                    body: animalName
+                        ? `Adopción de ${animalName} atribuida a este perfil. Tocá para revisar.`
+                        : 'Tocá para revisar.',
+                    url: `/adopter/${matchAdopterId}`,
+                    icon: '📝',
+                    metadata: {
+                        attachedBy: actorEmail,
+                        sourceNotificationId: notificationId,
+                        animalId,
+                        animalName,
+                    },
+                });
+            }
+        } catch (e) {
+            logger.warn('attachContractToExistingAdopter: creator notification failed (non-blocking)', {
+                notificationId,
+                matchAdopterId,
+                actor: actorEmail,
+                error: e instanceof Error ? e.message : String(e),
+            });
+        }
+
+        return {
+            success: true,
+            primaryName: match.name,
+            matchedProfileUrl: `/adopter/${matchAdopterId}`,
+        };
+    } catch (error) {
+        const errorId = logger.error('attachContractToExistingAdopter failed', error, {
+            notificationId,
+            matchAdopterId,
+            actor: actorEmail,
+        });
+        return { success: false, error: `Failed to attach contract (Error ID: ${errorId})` };
     }
 }
 
