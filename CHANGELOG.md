@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-15] - 2026-05-09
+
+E2E regression test for the contract-results merge flow added (TICKET-G, deferred from v2.14.7-14).
+
+### Added
+- **`tests/contract-link.spec.ts`** — full integration test of "Es la misma persona":
+  1. Seeds a unique `available` adoption fixture per test run via direct D1 SQL (no public app endpoint exists for this; `wrangler d1 execute --local` is the simplest path).
+  2. POSTs an anonymous contract submission to `/api/contract/[id]/submit` with data deliberately fuzzy-matching María García López (test-adopter-1) — name + lastName + phone "555-1234" + email "maria@example.com" all overlap with seed tokens.
+  3. Polls the `notifications` table for the contract-result row written by the fire-and-forget matcher (more reliable than racing against the bell-dropdown render).
+  4. Navigates to the contract-results page, clicks "Es la misma persona", confirms in modal.
+  5. Asserts: redirect to `/adopter/test-adopter-1`, the contract's adoption now shows on María's profile, the orphan adopter is soft-deleted (`deleted_at IS NOT NULL`), the contract's adoption record points at María, and the orphan's `duplicate_tokens` rows are gone.
+- Helper `execD1(sql)` and `parseD1Rows(json)` inline in the test file. Wrangler-CLI calls are slow (~5s each) but acceptable for the small number of setup/assertion calls — single full test run is ~20-30 seconds of DB ops on top of the browser work.
+
+### Notes
+- The fixture `adoptions` row stays in the DB after each run (residual data, harmless). Idempotency comes from the unique `test-animal-contract-${Date.now()}` id.
+- This closes TICKET-G. Remaining deferred follow-ups: TICKET-H (orphan-cleanup batch) is explicitly out of scope per product call.
+
 ## [2.14.7-14] - 2026-05-09
 
 Self-service contract-result merge. Until now, when a rescuer signed a contract and the system auto-created an adopter that matched an existing profile, the contract-results page just showed the matches as read-only links — no way for the rescuer to actually attach the adoption to the right profile without admin intervention. They could click into the matched profile, see the duplicate, and walk away with two adopter rows pointing at the same person. This release adds an "Es la misma persona" action that runs the merge flow on behalf of the rescuer, and notifies the matched profile's original creator so they can review.
