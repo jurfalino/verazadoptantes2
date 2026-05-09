@@ -358,7 +358,7 @@ export async function attachContractToExistingAdopter(
                 await createNotification({
                     userId: match.addedBy,
                     type: 'contract_attached',
-                    title: `📝 ${actorName} adjuntó un contrato a tu perfil ${match.name}`,
+                    title: `${actorName} adjuntó un contrato a tu perfil ${match.name}`,
                     body: animalName
                         ? `Adopción de ${animalName} atribuida a este perfil. Tocá para revisar.`
                         : 'Tocá para revisar.',

@@ -2,6 +2,27 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.8-3] - 2026-05-09
+
+Notification rows showed two emoji per item (`item.icon` rendered next to a `title` that already started with the same emoji), making every row read like `⚠️ ⚠️ 1 coincidencia para …`. Fixed at both write and render sites.
+
+### Changed — write site (canonical fix)
+Dropped the leading emoji from every notification `title` string. The dedicated `icon` field carries the emoji going forward; titles are now plain text.
+
+- **`src/app/api/contract/[id]/submit/route.ts`** — 3 titles cleaned (`⚠️`, `✅`, `📝` prefixes removed).
+- **`src/app/api/form/[userId]/submit/route.ts`** — 3 titles cleaned (3× `📋` prefix removed).
+- **`src/app/actions/duplicates.ts`** — `attachContractToExistingAdopter` notification (`📝` prefix removed).
+
+### Added — render site (legacy safety net)
+- **`src/components/NotificationBell.tsx`** + **`src/app/notificaciones/page.tsx`** — module-scope `stripLeadingEmoji(s)` helper using `\p{Extended_Pictographic}` Unicode property. Applied at the title-render so legacy DB rows whose titles still have the emoji prefix render cleanly. Idempotent — no effect on already-clean titles. No DB migration needed; existing rows render correctly the moment this code ships.
+
+### Polished
+- **`src/components/NotificationBell.tsx`** — dropped the redundant `🔔` from the dropdown header text (the bell icon in the page header that opened the dropdown is already on screen). Switched the bell-button `aria-label` from a hand-rolled `isEs ? 'Notificaciones' : 'Notifications'` ternary to `t('notifications.title')`, consistent with the v2.14.8-2 i18n cleanup pass.
+
+### Notes
+- **DB migration intentionally skipped.** Touching every existing notification row to strip emoji prefixes risks accidentally stripping emoji from titles where the emoji is part of the content (rather than redundant with `icon`). The render-side strip handles legacy rows safely; new rows are clean by construction.
+- **Out of scope** (filed and deferred): filter chips on the dropdown ("Unread / All / Archived"), per-row dismiss/swipe, archive UI. The empty/short list today doesn't need them; can revisit when scale demands.
+
 ## [2.14.8-2] - 2026-05-09
 
 i18n cleanup pass. The user reported seeing English labels while using the app in Spanish (default locale). Existing tooling (`check_i18n.ts`) reported 0 missing `t()` keys, so the leakage was not from missing translations — it was from **hardcoded English strings that bypass `t()` entirely**: toast messages, confirm dialogs, alt text, aria-labels, page headers, and admin sidebar labels. This release wires every user-visible English string through the i18n layer, reusing existing ES translations where they already exist and adding a new `admin` namespace for the rest.

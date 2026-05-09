@@ -170,7 +170,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                         id: notificationId,
                         userId: rescuerEmail,
                         type: 'contract_result',
-                        title: `⚠️ ${matchCount} coincidencia${matchCount > 1 ? 's' : ''} para ${fullName}`,
+                        title: `${matchCount} coincidencia${matchCount > 1 ? 's' : ''} para ${fullName}`,
                         body: `${animalName} fue adoptado por ${fullName}. Se encontraron posibles registros previos. Tocá para revisar.`,
                         url: `/contract-results/${notificationId}`,
                         icon: '⚠️',
@@ -194,7 +194,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                         id: notificationId,
                         userId: rescuerEmail,
                         type: 'contract_result',
-                        title: `✅ ${animalName} adoptado por ${fullName}`,
+                        title: `${animalName} adoptado por ${fullName}`,
                         body: `No se encontraron registros previos para ${fullName}. Todo en orden.`,
                         icon: '✅',
                         metadata: {
@@ -215,7 +215,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                     notifyOrgMembers({
                         actorEmail: rescuerEmail,
                         type: 'contract_result',
-                        title: `📝 Contrato firmado: ${animal.animalName || 'Animal'}`,
+                        title: `Contrato firmado: ${animal.animalName || 'Animal'}`,
                         body: `${fullName} firmó el contrato de adopción de ${animal.animalName || 'un animal'}.`,
                         url: `/adopter/${adopterId}`,
                         icon: '📝',
