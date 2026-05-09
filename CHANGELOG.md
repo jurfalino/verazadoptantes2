@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-22] - 2026-05-09
+
+Test fix — unblocks the staging deploy that's been stuck at v2.14.7-17 since v2.14.7-18 (four consecutive red pipelines, all from the same single test failure).
+
+### Fixed
+- **`tests/authed.spec.ts:34`** — the "Full adoption record" test was clicking the standalone "Registrar Actividad" CTA to open the wizard. v2.14.7-18 made VisitIntentCard always-on for authenticated users, which suppresses that CTA via `hideOpenButton={visitIntentVisible}` in `AdopterProfileV2.tsx:158`. The test now opens the wizard via the canonical entry point — clicking the VisitIntentCard's "Le dí un animal en adopción" option (matches both ES and EN labels). The wizard auto-opens with `initialRecordType='adoption'` from there, and the rest of the test flow (animal name input, species, save) is unchanged.
+
+### Notes — methodology lesson
+- **Background `gh run watch --exit-status` does not exit non-zero on pipeline failure** in this gh CLI version (or in this combination of flags). My v2.14.7-19 background watch reported "exit code 0" → I told the user "✅ succeeded" without reading the actual output file, which ended with `FINAL: failure`. The user found the bug by checking staging directly and seeing v2.14.7-17 still served. **Lesson: when polling pipeline status via background tasks, always read the output file, never trust the exit code alone.** Saved as a memory.
+- All four failed pipelines (v2.14.7-18 / -19 / -20 / -21) had the same root cause. The test fix in this release restores the deploy chain — once green, staging will jump to v2.14.7-22 (which carries every change from v2.14.7-18 onward).
+
 ## [2.14.7-21] - 2026-05-09
 
 Removes the 30-day "already acted" suppression on the VisitIntentCard. All three intent options now always show for any authenticated visitor. The suppression was a defensive choice to prevent duplicate same-day registrations, but it bit on legitimate repeat-adoption flows: a person can adopt a second pet from the same rescuer, request another after a previous adoption falls through, or do follow-ups in addition to past activity. Letting the user pick freely is the correct default; defending against accidental duplicates is the user's responsibility, not the UI's.

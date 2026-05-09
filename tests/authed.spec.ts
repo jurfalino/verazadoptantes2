@@ -39,10 +39,13 @@ test.describe('Authenticated User', () => {
         await dismissCountryBanner(page);
         await expect(page.getByRole('heading', { name: TEST_NAMES.NUEVA })).toBeVisible({ timeout: 30000 });
 
-        // Step 2: Click "Log Activity" / "Registrar Actividad" to open the wizard
-        const openFormBtn = page.getByRole('button', { name: /Log Activity|Registrar Actividad/i }).first();
-        await expect(openFormBtn).toBeVisible({ timeout: 30000 });
-        await openFormBtn.click({ force: true });
+        // Step 2: Open the wizard via the VisitIntentCard's "Gave an adoption" option.
+        // (The standalone "Registrar Actividad" CTA is hidden whenever VisitIntentCard
+        // is showing, which since v2.14.7-18 is "always" on adopter profiles for
+        // authenticated users — the intent card is now the canonical entry point.)
+        const intentBtn = page.getByRole('button', { name: /Le d[ií] un animal en adopci[oó]n|I gave them an animal in adoption/i }).first();
+        await expect(intentBtn).toBeVisible({ timeout: 30000 });
+        await intentBtn.click({ force: true });
 
         // ─── WIZARD STEP 1: record type + animal ───
         // Click "Create New" tab if it's offered (only shown when there are existing animals)
