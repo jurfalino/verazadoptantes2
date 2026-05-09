@@ -36,10 +36,9 @@ interface AdopterProfileV2Props {
     duplicateCandidates?: DuplicateCandidateInfo[];
     formPrefill?: FormSubmissionPrefill | null;
     userNameMap?: Record<string, string>;
-    enableVisitIntent?: boolean;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, formPrefill = null, userNameMap = {}, enableVisitIntent = false }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, formPrefill = null, userNameMap = {} }: AdopterProfileV2Props) {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const toast = useShowToast();
@@ -54,7 +53,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     // showing, suppress the standalone "Registrar actividad" CTA below so
     // there aren't two competing entry points.
     const [visitIntentDismissed, setVisitIntentDismissed] = useState(false);
-    const visitIntentVisible = enableVisitIntent && !!currentUser && !!adopter && !isNew && !visitIntentDismissed;
+    const visitIntentVisible = !!currentUser && !!adopter && !isNew && !visitIntentDismissed;
 
     const handleDeleteClick = async () => {
         setDeleteLoading(true);
@@ -137,7 +136,6 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                         {/* Visit-intent prompt sits above the section title — context-setting,
                             not part of the activity list. Suppressed for recently-acted users. */}
                         <VisitIntentCard
-                            enabled={enableVisitIntent}
                             adopterId={id}
                             adopterName={adopter?.name}
                             currentUser={currentUser}

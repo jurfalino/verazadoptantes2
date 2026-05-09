@@ -29,7 +29,6 @@ interface ConfigData {
         ENABLE_CONTENT_IMPORT?: string;
         ENABLE_ANIMALS_FOR_ADOPTION?: string;
         ENABLE_SEARCH_CARD_METADATA?: string;
-        ENABLE_VISIT_INTENT_PROMPT?: string;
         ENABLE_CHAT_WIDGET?: string;
         TELEGRAM_ADMIN_CHAT_ID?: string;
         TELEGRAM_BOT_TOKEN_SET?: string;
@@ -51,7 +50,6 @@ const FEATURE_FLAGS = [
     { key: 'ENABLE_CONTENT_IMPORT', label: 'Content Import', description: 'Show the Import Content button on the home page for importing from any URL, text, or images using AI' },
     { key: 'ENABLE_ANIMALS_FOR_ADOPTION', label: 'Animals for Adoption', description: 'Allow users to list animals for adoption and share adoption contracts with potential adopters' },
     { key: 'ENABLE_SEARCH_CARD_METADATA', label: 'Search Card Metadata', description: 'Show profile views (👁) and the bottom row dates (📅 added, ✏️ updated) on each search result card on the home page. Default ON.' },
-    { key: 'ENABLE_VISIT_INTENT_PROMPT', label: 'Visit Intent Prompt', description: 'On adopter profiles, ask visiting users why they\'re there (received request / gave adoption / want to record observation) and route them to the matching wizard. Suppressed for the profile owner and after recent matching records.' },
     { key: 'ENABLE_CHAT_WIDGET', label: 'Support Chat Widget', description: 'Floating chat icon at bottom-right that routes visitor messages to the admin\'s Telegram. Requires TELEGRAM_BOT_TOKEN + TELEGRAM_WEBHOOK_SECRET set as Cloudflare secrets and TELEGRAM_ADMIN_CHAT_ID below. See docs/CHAT_SETUP.md.' },
 ];
 
@@ -67,7 +65,6 @@ export default function AdminConfigPage() {
         ENABLE_CONTENT_IMPORT: false,
         ENABLE_ANIMALS_FOR_ADOPTION: false,
         ENABLE_SEARCH_CARD_METADATA: true,
-        ENABLE_VISIT_INTENT_PROMPT: false,
         ENABLE_CHAT_WIDGET: false,
     });
     const [telegramAdminChatId, setTelegramAdminChatId] = useState('');
@@ -106,7 +103,6 @@ export default function AdminConfigPage() {
                         ENABLE_CONTENT_IMPORT: data.config?.ENABLE_CONTENT_IMPORT === 'true',
                         ENABLE_ANIMALS_FOR_ADOPTION: data.config?.ENABLE_ANIMALS_FOR_ADOPTION === 'true',
                         ENABLE_SEARCH_CARD_METADATA: data.config?.ENABLE_SEARCH_CARD_METADATA !== 'false',
-                        ENABLE_VISIT_INTENT_PROMPT: data.config?.ENABLE_VISIT_INTENT_PROMPT === 'true',
                         ENABLE_CHAT_WIDGET: data.config?.ENABLE_CHAT_WIDGET === 'true',
                     });
                     setTelegramAdminChatId(data.config?.TELEGRAM_ADMIN_CHAT_ID || '');

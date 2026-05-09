@@ -425,21 +425,38 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], a
                     {/* ===== STEP 1: What happened? ===== */}
                     {step === 1 && (
                         <div className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-semibold text-teal-800 mb-2 uppercase tracking-wider">{t('adoption.record_type')}</label>
-                                <div className="flex flex-wrap gap-2">
-                                    {RECORD_TYPES.map(type => {
-                                        const colors = getRecordTypeColors(type.value);
-                                        const sel = formData.recordType === type.value;
-                                        return (
-                                            <button key={type.value} type="button" onClick={() => setFormData(d => ({ ...d, recordType: type.value }))}
-                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${sel ? `${colors.bg} ${colors.border} ${colors.text} shadow-sm` : 'bg-white border-stone-200 text-stone-600 hover:border-stone-300'}`}>
-                                                <span>{type.icon}</span><span>{t(type.labelKey as any)}</span>
-                                            </button>
-                                        );
-                                    })}
+                            {/* When the wizard is opened with a known intent (from VisitIntentCard) we
+                                replace the chip selector with a read-only confirmation badge — the user
+                                already picked the type one click ago, showing the picker again is friction.
+                                Manual-open paths (no `initialRecordType`) keep the full chip grid below. */}
+                            {initialRecordType ? (() => {
+                                const selectedType = RECORD_TYPES.find(t => t.value === formData.recordType) || RECORD_TYPES[0];
+                                const colors = getRecordTypeColors(selectedType.value);
+                                return (
+                                    <div>
+                                        <label className="block text-xs font-semibold text-teal-800 mb-2 uppercase tracking-wider">{t('adoption.record_type')}</label>
+                                        <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border ${colors.bg} ${colors.border} ${colors.text} shadow-sm`}>
+                                            <span>{selectedType.icon}</span><span>{t(selectedType.labelKey as any)}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })() : (
+                                <div>
+                                    <label className="block text-xs font-semibold text-teal-800 mb-2 uppercase tracking-wider">{t('adoption.record_type')}</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {RECORD_TYPES.map(type => {
+                                            const colors = getRecordTypeColors(type.value);
+                                            const sel = formData.recordType === type.value;
+                                            return (
+                                                <button key={type.value} type="button" onClick={() => setFormData(d => ({ ...d, recordType: type.value }))}
+                                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${sel ? `${colors.bg} ${colors.border} ${colors.text} shadow-sm` : 'bg-white border-stone-200 text-stone-600 hover:border-stone-300'}`}>
+                                                    <span>{type.icon}</span><span>{t(type.labelKey as any)}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
-                            </div>
+                            )}
 
                             {showModeSwitcher && (
                                 <div className="flex gap-2 p-1 bg-teal-50 rounded-lg">

@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation';
 import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getAdoptionConfig, getDuplicateCandidates } from '@/app/actions';
 import { resolveUserNames } from '@/app/actions/userNames';
 import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
-import { getFeatureFlag } from '@/config/features';
 import { logger } from '@/lib/logger';
 import { AdopterProfileV2 } from '@/components/AdopterProfileV2';
 
@@ -31,12 +30,8 @@ export default async function AdopterPage({
     // Batch 1b: Config (degrade-on-failure — page renders with defaults if these throw,
     // since a config-fetch error is not an auth error and should not bounce the user).
     let adoptionConfig: any = null;
-    let enableVisitIntent = false;
     try {
-        [adoptionConfig, enableVisitIntent] = await Promise.all([
-            getAdoptionConfig(),
-            getFeatureFlag('ENABLE_VISIT_INTENT_PROMPT'),
-        ]);
+        adoptionConfig = await getAdoptionConfig();
     } catch (e) {
         if ((e as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw e;
         logger.warn('adopter page: config fetch failed, using defaults', {
@@ -103,7 +98,6 @@ export default async function AdopterPage({
             duplicateCandidates={dupCandidates}
             formPrefill={formPrefill}
             userNameMap={userNameMap}
-            enableVisitIntent={enableVisitIntent}
         />
     );
 }

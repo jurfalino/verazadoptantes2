@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-18] - 2026-05-09
+
+VisitIntentCard graduates from feature-flagged to always-on for authenticated users on adopter profiles, and the activity-creation wizard skips its type-picker step when opened with a known intent (since the user already chose the type one click ago in the intent card).
+
+### Removed
+- **`ENABLE_VISIT_INTENT_PROMPT` feature flag.** Gone from `src/config/features.ts` (`FEATURE_FLAGS` const + `getAllFeatureFlags`), `src/app/api/admin/config/route.ts` (response shape), `src/app/admin/config/page.tsx` (toggle UI + state + hydration), `src/app/adopter/[id]/page.tsx` (`getFeatureFlag` call + import + variable + prop pass), `src/components/AdopterProfileV2.tsx` (`enableVisitIntent` prop in interface, destructure, and `visitIntentVisible` calc + child prop), and `src/components/VisitIntentCard.tsx` (`enabled` prop in interface, destructure, and `baseEligible` calc).
+- Visibility rule simplifies to: **authenticated user + applicable adopter profile + at least one option not suppressed by the user's recent matching records**. The 30-day already-acted suppression for options A and B (and option C always available) stays exactly as it was.
+
+### Changed
+- **`src/components/AdoptionFormWizard.tsx`** — when `initialRecordType` is provided (intent-driven open from VisitIntentCard), step 1's chip selector is replaced with a small read-only confirmation badge showing the chosen type. Removes redundant friction one click after the user already picked the intent. Manual-open paths (URL params or the standalone "Registrar actividad" CTA, neither of which set `initialRecordType`) keep the full chip selector unchanged.
+
+### Notes
+- The DB row `app_config[ENABLE_VISIT_INTENT_PROMPT]` is now an orphan — no code reads it, no UI writes it. Not migrating it out; it's a single key-value row of dead data, not worth a migration ticket.
+- No e2e tests touch VisitIntentCard or its feature flag; this change has no test surface to update.
+
 ## [2.14.7-17] - 2026-05-09
 
 Fix the e2e regression in v2.14.7-16 — the contract-link test passed (44 passed) but its merge target was a seed adopter (María García López), so the merge appended duplicate contact data to María's profile, which then broke `tests/search.spec.ts:66`'s strict-mode `getByText(/555-1234/)` (now resolved to two `<a>` elements instead of one). Test isolation lesson: e2e tests for destructive operations must use dedicated fixture rows, not shared seed adopters.

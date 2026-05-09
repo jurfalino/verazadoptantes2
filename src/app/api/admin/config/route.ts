@@ -48,7 +48,6 @@ export async function GET() {
             ENABLE_CONTENT_IMPORT: config['ENABLE_CONTENT_IMPORT'] || 'false',
             ENABLE_ANIMALS_FOR_ADOPTION: config['ENABLE_ANIMALS_FOR_ADOPTION'] || 'false',
             ENABLE_SEARCH_CARD_METADATA: config['ENABLE_SEARCH_CARD_METADATA'] || 'true',
-            ENABLE_VISIT_INTENT_PROMPT: config['ENABLE_VISIT_INTENT_PROMPT'] || 'false',
             ENABLE_CHAT_WIDGET: config['ENABLE_CHAT_WIDGET'] || 'false',
             // Telegram support chat — chat_id is non-sensitive and returned
             // verbatim. The bot token and webhook secret are sensitive: never

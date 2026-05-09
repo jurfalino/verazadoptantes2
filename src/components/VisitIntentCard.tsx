@@ -16,7 +16,6 @@ interface AdoptionLite {
 }
 
 interface Props {
-    enabled: boolean;
     adopterId: string;
     adopterName?: string | null;
     currentUser: string;
@@ -50,20 +49,20 @@ function isWithinWindow(date: number | Date | string | null | undefined, windowM
  * mount. The card asks the visitor's intent and routes to the matching wizard
  * with the recordType pre-selected.
  *
- * Visibility matrix: feature flag enabled, current user authenticated, and at
- * least one option not suppressed by recent matching records (30-day window
- * for A and B; C is always available). The card stays visible until the user
- * picks an option AND closes the resulting wizard — there is no manual
- * dismiss; the prompt is intentionally sticky.
+ * Visibility matrix: current user authenticated, and at least one option not
+ * suppressed by recent matching records (30-day window for A and B; C is
+ * always available). The card stays visible until the user picks an option
+ * AND closes the resulting wizard — there is no manual dismiss; the prompt
+ * is intentionally sticky.
  */
-export default function VisitIntentCard({ enabled, adopterId, adopterName, currentUser, adoptions, availableAnimals, adopterAddress = '', onHide }: Props) {
+export default function VisitIntentCard({ adopterId, adopterName, currentUser, adoptions, availableAnimals, adopterAddress = '', onHide }: Props) {
     const { t } = useLanguage();
     const [hidden, setHidden] = useState(false);
     const [openedRecordType, setOpenedRecordType] = useState<IntentType | null>(null);
     const [trackedShown, setTrackedShown] = useState(false);
     const [view, setView] = useState<View>('main');
 
-    const baseEligible = enabled && !!currentUser;
+    const baseEligible = !!currentUser;
 
     const userActedRequest = useMemo(() => adoptions.some(
         a => a.addedBy === currentUser
