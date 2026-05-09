@@ -8,6 +8,7 @@ import { getUser } from '@/app/actions/_db';
 import { markNotificationRead } from '@/app/actions/notifications';
 import Link from 'next/link';
 import ContractResultsMatchCard from '@/components/ContractResultsMatchCard';
+import ContractResultsKeepNewButton from '@/components/ContractResultsKeepNewButton';
 
 interface MatchedAdopter {
     id: string;
@@ -173,15 +174,29 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                 </div>
             )}
 
-            {/* New Adopter Link */}
+            {/* "None of these match?" — explicit affordance for the keep-new outcome.
+                Only shown when there ARE matches (without matches there's nothing to dismiss). */}
+            {hasMatches && metadata.adopterId && (
+                <div className="mt-6">
+                    <h2 className="text-sm font-semibold text-stone-700 mb-2">¿Ninguna coincide?</h2>
+                    <p className="text-xs text-stone-500 mb-3 leading-relaxed">
+                        Si ninguno de los perfiles anteriores corresponde a esta persona, continuá con el perfil recién creado a partir del contrato.
+                    </p>
+                    <ContractResultsKeepNewButton orphanAdopterId={metadata.adopterId} />
+                </div>
+            )}
+
+            {/* Soft-investigation exit — the user wants to look at the new profile without
+                committing to a triage decision. Wording is explicit about the "without deciding"
+                intent so it doesn't compete with the keep-new CTA above. */}
             {metadata.adopterId && (
                 <div className="mt-6 pt-4 border-t border-stone-200">
                     <Link
                         href={`/adopter/${metadata.adopterId}`}
-                        className="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors"
+                        className="inline-flex items-center gap-2 text-xs text-stone-500 hover:text-stone-700 transition-colors"
                     >
-                        👤 Ver perfil del nuevo adoptante
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        👤 Ver el perfil del nuevo adoptante (sin decidir)
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                         </svg>
                     </Link>

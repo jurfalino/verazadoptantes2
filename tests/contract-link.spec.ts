@@ -53,7 +53,10 @@ test.describe('Contract-results merge — "Es la misma persona"', () => {
         // 2. POST the contract with data deliberately matching María García López
         // (test-adopter-1). The seed has tokens for phone "5551234", name_word
         // "garcia" and "lopez" — combined, the fuzzy matcher will return María as
-        // a high-relevance match.
+        // a high-relevance match. The route requires a `screenshot` data URL — we
+        // pass a minimal 1×1 transparent PNG so the R2 upload step succeeds; the
+        // actual document content is irrelevant for this test.
+        const TINY_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
         const submitResponse = await contextB.request.post(`/api/contract/${animalId}/submit`, {
             data: {
                 name: 'María',
@@ -63,6 +66,7 @@ test.describe('Contract-results merge — "Es la misma persona"', () => {
                 phone: '555-1234',
                 address: 'Calle Falsa 123, Buenos Aires',
                 socialNetworks: '',
+                screenshot: TINY_PNG,
             },
         });
         const submitBody = await submitResponse.text();

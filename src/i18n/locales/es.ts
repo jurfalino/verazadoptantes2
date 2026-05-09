@@ -911,6 +911,10 @@ export const es = {
         linking: 'Atribuyendo...',
         link_success: 'Adopción atribuida a {name}',
         link_error: 'No se pudo atribuir la adopción',
+        none_match_heading: '¿Ninguna coincide?',
+        none_match_desc: 'Si ninguno de los perfiles anteriores corresponde a esta persona, continuá con el perfil recién creado a partir del contrato.',
+        continue_with_new: 'Continuar con el perfil nuevo',
+        view_new_without_deciding: 'Ver el perfil del nuevo adoptante (sin decidir)',
     },
     formResults: {
         back_to_animals: 'Mis animales',

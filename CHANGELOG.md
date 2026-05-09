@@ -2,6 +2,27 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-16] - 2026-05-09
+
+Adds the missing "keep as new profile" affordance on the contract-results page. Until now, a rescuer who reviewed the matches and decided none were duplicates had no clear way to signal that — the bottom-link "Ver perfil del nuevo adoptante" was buried under a hairline divider and worded as navigation, leading users to think they were required to pick a match. This release adds an explicit decision affordance under a "¿Ninguna coincide?" heading, plus event-tracking on both triage outcomes (merge vs keep-new) so we can validate the visual-weight choice with real data 30 days post-ship.
+
+### Added
+- **`src/app/actions/duplicates.ts`** — new `markContractKeepNew(adopterId)` server action. Inserts a single `adopterStats` row with `eventType: 'contract_kept_new'` for analytics. Fire-and-forget — failures never block the user navigation, only logged at warn level.
+- **`src/app/actions/duplicates.ts`** — `attachContractToExistingAdopter` now also writes a `contract_merged` analytics event on the matched adopter, mirroring the keep-new event so we can compare outcome volumes.
+- **`src/components/ContractResultsKeepNewButton.tsx`** — new client component. Single full-width CTA "Continuar con el perfil nuevo" rendered under a "¿Ninguna coincide?" section heading below the match cards. On click, fires the analytics action then navigates to `/adopter/${orphanAdopterId}`. Visual weight is intentionally below the per-match "Es la misma persona" buttons (those are the dominant action when a match is real) but above the soft-investigation exit link at the bottom of the page.
+- **`src/i18n/locales/{es,en}.ts`** — new keys: `contractResults.none_match_heading`, `none_match_desc`, `continue_with_new`, `view_new_without_deciding`. Added to both locales.
+
+### Changed
+- **`src/app/contract-results/[notificationId]/page.tsx`** — added the new "¿Ninguna coincide?" section + `ContractResultsKeepNewButton` between the match cards and the bottom link. Bottom-link reworded from `👤 Ver perfil del nuevo adoptante` to `👤 Ver el perfil del nuevo adoptante (sin decidir)` and demoted from `text-blue-600 font-medium` to `text-xs text-stone-500` so its intent ("look around without committing") is visually distinct from the prominent decision CTA above. The new heading is only rendered when `hasMatches` is true — when there are no matches, no triage decision is needed.
+
+### Notes — UX scope explicitly limited
+- **Wording is action-framed, not assertion-framed.** The button label is "Continuar con el perfil nuevo" (continue with new profile), not "Es una persona nueva" (this is a new person). A rescuer who is only 70% confident shouldn't have to claim certainty to triage; the button represents an action, not a positive identity claim.
+- **No `duplicate_candidates` dismissal in this PR.** It would be valuable to record "rescuer reviewed matches A and B and rejected both" as input to future matcher runs (so the same matches don't keep surfacing for the same orphan). But that requires the matcher to actually consume `dismissed` rows, and we haven't decided how (skip forever? score-down by N% for M days? presentation filter only?). Filing a future ticket for that is **deliberately blocked** until someone writes a one-paragraph spec — otherwise we accumulate dead-data rows that a future engineer assumes are load-bearing.
+- **Visual-weight choice is best-guess.** We have no analytics on rescuer triage behavior today (no events were tracked before this PR). The chosen hierarchy — "Es la misma persona" prominent at match-card level, "Continuar con el perfil nuevo" prominent below match list, "Ver sin decidir" muted at bottom — is reasoned guess, not data-driven. With this PR's `contract_merged` and `contract_kept_new` events flowing into `adopterStats`, we can revisit the hierarchy 30 days post-ship and adjust if real outcome ratios contradict the assumption.
+
+### Fixed
+- **`tests/contract-link.spec.ts`** — v2.14.7-15's e2e test was missing the `screenshot` field in its contract-submit POST body, causing the route to return `400 "Contract document is required"`. Added a minimal 1×1 transparent PNG data URL so the R2 upload step succeeds. Test content is irrelevant for the merge-flow assertions; we just need the route to accept the request.
+
 ## [2.14.7-15] - 2026-05-09
 
 E2E regression test for the contract-results merge flow added (TICKET-G, deferred from v2.14.7-14).

@@ -912,6 +912,10 @@ export const en = {
         linking: 'Attaching...',
         link_success: 'Adoption attached to {name}',
         link_error: 'Failed to attach the adoption',
+        none_match_heading: 'None of these match?',
+        none_match_desc: 'If none of the profiles above correspond to this person, continue with the profile that was just created from the contract.',
+        continue_with_new: 'Continue with new profile',
+        view_new_without_deciding: 'View the new adopter profile (without deciding)',
     },
     formResults: {
         back_to_animals: 'Back to My Animals',

@@ -320,8 +320,26 @@ export async function attachContractToExistingAdopter(
                 createdAt: new Date(),
             });
         } catch (e) {
-            // Audit-log failure is non-blocking but logged loudly — the merge itself succeeded.
             logger.warn('attachContractToExistingAdopter: audit log insert failed (non-blocking)', {
+                notificationId,
+                matchAdopterId,
+                actor: actorEmail,
+                error: e instanceof Error ? e.message : String(e),
+            });
+        }
+
+        // Triage analytics — mirrors the keep-new event, lets us compare merge vs keep-new outcome volumes.
+        try {
+            await db.insert(adopterStats).values({
+                id: crypto.randomUUID(),
+                adopterId: matchAdopterId,
+                eventType: 'contract_merged',
+                userId: actorEmail,
+                createdAt: new Date(),
+            });
+        } catch (e) {
+            // Analytics insert failure is non-blocking — the merge itself succeeded.
+            logger.warn('attachContractToExistingAdopter: contract_merged analytics insert failed (non-blocking)', {
                 notificationId,
                 matchAdopterId,
                 actor: actorEmail,
@@ -375,6 +393,44 @@ export async function attachContractToExistingAdopter(
             actor: actorEmail,
         });
         return { success: false, error: `Failed to attach contract (Error ID: ${errorId})` };
+    }
+}
+
+/**
+ * Record that the rescuer reviewed the contract-result matches and chose to keep
+ * the auto-created adopter (the "Continuar con el perfil nuevo" path). Lightweight
+ * analytics-only — does not modify the adopter, the notification, or the matches.
+ *
+ * Best-guess UX choice: we have no prior data on rescuer triage behavior, so this
+ * event lets us measure outcome volume (merge vs keep-new) over the next 30 days
+ * and decide whether the keep-new affordance should be promoted, demoted, or split
+ * into more specific intents in a follow-up.
+ */
+export async function markContractKeepNew(adopterId: string): Promise<{ success: boolean }> {
+    let actorEmail = 'unknown';
+    try {
+        const { getUser } = await import('./_db');
+        actorEmail = await getUser().catch(() => 'unknown');
+
+        const db = await getDb();
+        if (!db) return { success: false };
+
+        await db.insert(adopterStats).values({
+            id: crypto.randomUUID(),
+            adopterId,
+            eventType: 'contract_kept_new',
+            userId: actorEmail !== 'unknown' ? actorEmail : null,
+            createdAt: new Date(),
+        });
+        return { success: true };
+    } catch (error) {
+        // Analytics-only — never propagate failures to the user
+        logger.warn('markContractKeepNew failed (non-blocking)', {
+            adopterId,
+            actor: actorEmail,
+            error: error instanceof Error ? error.message : String(error),
+        });
+        return { success: false };
     }
 }
 
