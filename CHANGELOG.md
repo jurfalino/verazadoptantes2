@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-20] - 2026-05-09
+
+Activity-record edit form no longer offers the type selector. Same reasoning as v2.14.7-18's wizard change: when you're editing an existing record, the type was already chosen at creation time, and changing it after the fact is rare-and-confusing enough that the cleaner UX is "delete and re-create" if it was wrong. Kept as a colored read-only badge so the editor still sees what they're working with.
+
+### Changed
+- **`src/components/AdoptionFormEditV2.tsx`** (lines ~587-606) — replaced the 5-chip record-type picker with a single read-only badge showing the loaded record's type. Form fields below still react to `formData.recordType` (loaded from `initialData`), so type-conditional UI continues to render correctly.
+
 ## [2.14.7-19] - 2026-05-09
 
 `/admin/users` becomes a triage dashboard rather than a roster. Adds detected geography (province / city / timezone), per-user activity counts, and a one-click link to that user's audit log.

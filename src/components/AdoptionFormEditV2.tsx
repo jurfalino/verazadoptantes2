@@ -584,25 +584,28 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                         return null;
                     })()}
 
+                    {/* Record type — read-only on edit. Changing the type after creation is rare
+                        enough that we don't expose a switcher (mirrors the wizard's intent-driven
+                        flow); if the user really mis-typed it, they can delete the record and
+                        re-create. Kept as a colored badge so they still see what they're editing. */}
                     <div>
                         <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.record_type') || 'Record Type'}</label>
-                        <div className="flex flex-wrap gap-2">
-                            {[
+                        {(() => {
+                            const types = [
                                 { value: 'adoption', icon: '🏠', label: t('adoption.type_adoption') || 'Adoption' },
                                 { value: 'adoption_request', icon: '📝', label: t('adoption.type_request') || 'Request' },
                                 { value: 'observation', icon: '👁️', label: t('adoption.type_observation') || 'Note' },
                                 { value: 'follow_up', icon: '📞', label: t('adoption.type_followup') || 'Follow-up' },
-                                { value: 'returned_pet', icon: '↩️', label: t('adoption.type_returned') || 'Returned' }
-                            ].map(type => {
-                                const colors = getRecordTypeColors(type.value);
-                                const isSelected = formData.recordType === type.value;
-                                return (
-                                    <button key={type.value} type="button" onClick={() => setFormData({ ...formData, recordType: type.value })} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${isSelected ? `${colors.bg} ${colors.border} ${colors.text}` : 'bg-white border-stone-200 text-stone-600 hover:border-stone-300'}`}>
-                                        <span>{type.icon}</span><span>{type.label}</span>
-                                    </button>
-                                );
-                            })}
-                        </div>
+                                { value: 'returned_pet', icon: '↩️', label: t('adoption.type_returned') || 'Returned' },
+                            ];
+                            const selected = types.find(t => t.value === formData.recordType) || types[0];
+                            const colors = getRecordTypeColors(selected.value);
+                            return (
+                                <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border ${colors.bg} ${colors.border} ${colors.text}`}>
+                                    <span>{selected.icon}</span><span>{selected.label}</span>
+                                </div>
+                            );
+                        })()}
                     </div>
 
                     {/* Date */}
