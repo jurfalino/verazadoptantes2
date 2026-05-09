@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-21] - 2026-05-09
+
+Removes the 30-day "already acted" suppression on the VisitIntentCard. All three intent options now always show for any authenticated visitor. The suppression was a defensive choice to prevent duplicate same-day registrations, but it bit on legitimate repeat-adoption flows: a person can adopt a second pet from the same rescuer, request another after a previous adoption falls through, or do follow-ups in addition to past activity. Letting the user pick freely is the correct default; defending against accidental duplicates is the user's responsibility, not the UI's.
+
+### Changed
+- **`src/components/VisitIntentCard.tsx`** — removed `userActedRequest` / `userActedAdoption` `useMemo` calls, the `ALREADY_ACTED_WINDOW_MS` constant, the `isWithinWindow` helper, and the `showA` / `showB` / `showC` / `anyVisible` flags. Simplified `mainButtons` to a flat array of three entries (no `visible` field). The `visit_intent_shown` zaraz event no longer carries `suppressed_a` / `suppressed_b` properties — they would always be `0` now and provided no signal.
+
+### Notes
+- The triggering case: a rescuer attached a contract via `attachContractToExistingAdopter` (v2.14.7-14), which re-pointed an adoption record with `addedBy = themself` onto the matched profile, and the suppression then hid the "Gave adoption" option on that profile for 30 days. The suppression was *technically correct* (the user did just record an adoption), but it conflated "this person was the actor on a record" with "this person doesn't need the option again."
+- Useful side-effect: simplifies the component significantly. ~30 lines of state + memo + filter logic gone.
+
 ## [2.14.7-20] - 2026-05-09
 
 Activity-record edit form no longer offers the type selector. Same reasoning as v2.14.7-18's wizard change: when you're editing an existing record, the type was already chosen at creation time, and changing it after the fact is rare-and-confusing enough that the cleaner UX is "delete and re-create" if it was wrong. Kept as a colored read-only badge so the editor still sees what they're working with.

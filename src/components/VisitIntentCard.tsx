@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { zarazTrack } from '@/lib/zaraz';
 import AdoptionFormWizard from './AdoptionFormWizard';
@@ -31,29 +31,19 @@ interface Props {
     onHide?: () => void;
 }
 
-const ALREADY_ACTED_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
-
-function isWithinWindow(date: number | Date | string | null | undefined, windowMs: number): boolean {
-    if (date == null) return false;
-    let d: Date;
-    if (date instanceof Date) d = date;
-    else if (typeof date === 'number') d = new Date(date < 1e12 ? date * 1000 : date);
-    else d = new Date(date);
-    if (isNaN(d.getTime())) return false;
-    return Date.now() - d.getTime() < windowMs;
-}
-
 /**
  * Prominent prompt rendered above the activity section. Uses theme CSS
  * variables only (works under any [data-theme] palette) and animates in on
  * mount. The card asks the visitor's intent and routes to the matching wizard
  * with the recordType pre-selected.
  *
- * Visibility matrix: current user authenticated, and at least one option not
- * suppressed by recent matching records (30-day window for A and B; C is
- * always available). The card stays visible until the user picks an option
- * AND closes the resulting wizard — there is no manual dismiss; the prompt
- * is intentionally sticky.
+ * Visibility: any authenticated user. All three options always show — a person
+ * can legitimately adopt a second pet from the same rescuer or have a follow-up
+ * request after a previous adoption, so we don't suppress any option based on
+ * recent activity (the v2.14.7-2..-20 30-day "already acted" suppression was
+ * removed in v2.14.7-21 because it bit on legitimate repeat-adoption flows). The
+ * card stays visible until the user picks an option AND closes the resulting
+ * wizard — there is no manual dismiss; the prompt is intentionally sticky.
  */
 export default function VisitIntentCard({ adopterId, adopterName, currentUser, adoptions, availableAnimals, adopterAddress = '', onHide }: Props) {
     const { t } = useLanguage();
@@ -64,34 +54,13 @@ export default function VisitIntentCard({ adopterId, adopterName, currentUser, a
 
     const baseEligible = !!currentUser;
 
-    const userActedRequest = useMemo(() => adoptions.some(
-        a => a.addedBy === currentUser
-            && a.recordType === 'adoption_request'
-            && isWithinWindow(a.date ?? null, ALREADY_ACTED_WINDOW_MS)
-    ), [adoptions, currentUser]);
-
-    const userActedAdoption = useMemo(() => adoptions.some(
-        a => a.addedBy === currentUser
-            && a.recordType === 'adoption'
-            && isWithinWindow(a.date ?? null, ALREADY_ACTED_WINDOW_MS)
-    ), [adoptions, currentUser]);
-
-    const showA = !userActedRequest;
-    const showB = !userActedAdoption;
-    const showC = true;
-    const anyVisible = showA || showB || showC;
-
     useEffect(() => {
-        if (!baseEligible || hidden || !anyVisible || trackedShown || openedRecordType) return;
-        zarazTrack('visit_intent_shown', {
-            adopter_id: adopterId,
-            suppressed_a: showA ? 0 : 1,
-            suppressed_b: showB ? 0 : 1,
-        });
+        if (!baseEligible || hidden || trackedShown || openedRecordType) return;
+        zarazTrack('visit_intent_shown', { adopter_id: adopterId });
         setTrackedShown(true);
-    }, [baseEligible, hidden, anyVisible, trackedShown, openedRecordType, adopterId, showA, showB]);
+    }, [baseEligible, hidden, trackedShown, openedRecordType, adopterId]);
 
-    if (!baseEligible || hidden || !anyVisible) return null;
+    if (!baseEligible || hidden) return null;
 
     if (openedRecordType) {
         return (
@@ -174,10 +143,10 @@ export default function VisitIntentCard({ adopterId, adopterName, currentUser, a
         titleKey: 'option_a_hint' | 'option_b_hint' | 'option_c_hint' | 'option_followup_hint' | 'option_returned_hint' | 'option_observation_hint';
     };
 
-    const mainButtons: Array<ButtonDef & { visible: boolean }> = [
-        { visible: showA, intent: 'adoption_request', labelKey: 'option_a', titleKey: 'option_a_hint' },
-        { visible: showB, intent: 'adoption', labelKey: 'option_b', titleKey: 'option_b_hint' },
-        { visible: showC, intent: 'other', labelKey: 'option_c', titleKey: 'option_c_hint' },
+    const mainButtons: ButtonDef[] = [
+        { intent: 'adoption_request', labelKey: 'option_a', titleKey: 'option_a_hint' },
+        { intent: 'adoption', labelKey: 'option_b', titleKey: 'option_b_hint' },
+        { intent: 'other', labelKey: 'option_c', titleKey: 'option_c_hint' },
     ];
 
     const otherButtons: ButtonDef[] = [
@@ -186,9 +155,7 @@ export default function VisitIntentCard({ adopterId, adopterName, currentUser, a
         { intent: 'observation', labelKey: 'option_observation', titleKey: 'option_observation_hint' },
     ];
 
-    const visibleButtons: ButtonDef[] = view === 'main'
-        ? mainButtons.filter(b => b.visible)
-        : otherButtons;
+    const visibleButtons: ButtonDef[] = view === 'main' ? mainButtons : otherButtons;
 
     const firstName = (adopterName ?? '').trim().split(/\s+/)[0] || '';
     const subject = firstName || t('visitIntent.title_fallback_subject');
