@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import DuplicateMergeModal from '@/components/DuplicateMergeModal';
+import { useLanguage } from '@/context/LanguageContext';
 
 interface DuplicateCandidate {
     id: string;
@@ -45,6 +46,7 @@ interface Counts {
 }
 
 export default function DuplicatesPage() {
+    const { t } = useLanguage();
     const [userFlagged, setUserFlagged] = useState<UserFlagged[]>([]);
     const [candidates, setCandidates] = useState<DuplicateCandidate[]>([]);
     const [counts, setCounts] = useState<Counts>({ pending: 0, dismissed: 0, merged: 0, userFlagged: 0 });
@@ -92,7 +94,7 @@ export default function DuplicatesPage() {
     }
 
     async function handleDismiss(candidateId?: string, flagId?: string) {
-        if (!confirm('Dismiss this duplicate? It won\'t appear again.')) return;
+        if (!confirm(t('dialogs.confirm_dismiss_duplicate'))) return;
         try {
             const res = await fetch('/api/admin/duplicates/dismiss', {
                 method: 'POST',

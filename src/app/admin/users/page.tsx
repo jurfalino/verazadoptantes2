@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { formatDateTime } from '@/lib/dates';
 import { getCountryByCode } from '@/config/countries';
+import { useLanguage } from '@/context/LanguageContext';
 
 function CopyIdButton({ id, className = '' }: { id: string; className?: string }) {
     const [copied, setCopied] = useState(false);
@@ -80,27 +81,28 @@ function LocationCell({ user }: { user: UserProfile }) {
 
 /** Render the four activity-count pills inline. */
 function ActivityCell({ user }: { user: UserProfile }) {
+    const { t } = useLanguage();
     const empty = !user.adopters_count && !user.records_count && !user.edits_count && !user.flags_count;
     if (empty) return <span className="text-stone-300 text-xs">—</span>;
     return (
         <div className="flex flex-wrap gap-1 text-[11px] font-medium">
             {user.adopters_count > 0 && (
-                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-100" title="Adopters created">
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-100" title={t('admin.stat_adopters_created')}>
                     👤 {user.adopters_count}
                 </span>
             )}
             {user.records_count > 0 && (
-                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-stone-50 text-stone-600 border border-stone-100" title="Adoption records added">
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-stone-50 text-stone-600 border border-stone-100" title={t('admin.stat_records_added')}>
                     📋 {user.records_count}
                 </span>
             )}
             {user.edits_count > 0 && (
-                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100" title="History edits">
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100" title={t('admin.stat_history_edits')}>
                     ✏️ {user.edits_count}
                 </span>
             )}
             {user.flags_count > 0 && (
-                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-100" title="Flags filed">
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-100" title={t('admin.stat_flags_filed')}>
                     🚩 {user.flags_count}
                 </span>
             )}
@@ -109,6 +111,7 @@ function ActivityCell({ user }: { user: UserProfile }) {
 }
 
 export default function AdminUsersPage() {
+    const { t } = useLanguage();
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [loading, setLoading] = useState(true);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -370,7 +373,7 @@ export default function AdminUsersPage() {
                                                 <button
                                                     onClick={() => setDeletingId(user.id)}
                                                     className="text-stone-300 hover:text-red-500 text-xs transition-colors"
-                                                    title="Delete user"
+                                                    title={t('admin.delete_user_title')}
                                                 >
                                                     🗑️
                                                 </button>
@@ -519,7 +522,7 @@ export default function AdminUsersPage() {
                                         <button
                                             onClick={() => setDeletingId(user.id)}
                                             className="px-3 py-2 text-xs text-stone-300 bg-stone-50 rounded-lg hover:bg-red-50 hover:text-red-500 transition-colors"
-                                            title="Delete user"
+                                            title={t('admin.delete_user_title')}
                                         >
                                             🗑️
                                         </button>

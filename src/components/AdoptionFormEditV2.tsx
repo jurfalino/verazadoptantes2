@@ -785,7 +785,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                                         {pending.isVideo ? (
                                             <div className="w-20 h-20 rounded-lg border border-amber-300 ring-2 ring-amber-200 overflow-hidden relative">
                                                 {pending.thumbnail ? (
-                                                    <img src={pending.thumbnail} alt="Video thumbnail" className="w-full h-full object-cover" />
+                                                    <img src={pending.thumbnail} alt={t('common.video_thumbnail_alt')} className="w-full h-full object-cover" />
                                                 ) : (
                                                     <div className="w-full h-full bg-gradient-to-br from-teal-600 to-teal-800" />
                                                 )}

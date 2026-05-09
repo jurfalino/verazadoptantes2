@@ -2,6 +2,34 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.8-2] - 2026-05-09
+
+i18n cleanup pass. The user reported seeing English labels while using the app in Spanish (default locale). Existing tooling (`check_i18n.ts`) reported 0 missing `t()` keys, so the leakage was not from missing translations — it was from **hardcoded English strings that bypass `t()` entirely**: toast messages, confirm dialogs, alt text, aria-labels, page headers, and admin sidebar labels. This release wires every user-visible English string through the i18n layer, reusing existing ES translations where they already exist and adding a new `admin` namespace for the rest.
+
+### Added — i18n keys (es.ts + en.ts)
+- New `admin` namespace with ~30 keys covering: console title, sidebar nav (overview / flagged / duplicates / adopters list / SQL / config / data requests / communications / users / organizations / audit log / system health / data migration / CMS), open/close menu aria-labels, system-config page chrome, feature-flag labels and descriptions (4 flags), per-stat-pill titles on /admin/users, action-button titles (delete user / delete org / remove member / view geolocation / permanently delete adopter), country-picker placeholder, "Remove message" aria-label, telegram-saved toast, and "back to app" short label.
+- `common.video_thumbnail_alt` for video preview alt text.
+- `dashboard.animal_listed`, `dashboard.deleted_title`, `dashboard.country_updated_title`, `dashboard.records_updated` for the my-animals listing flow + admin mass-action toasts.
+
+### Changed — components now use `t()`
+- **`src/components/AdminSidebar.tsx`** — all 13 nav items, "Admin Console" header, mobile open/close menu aria-labels, "← App" / "← Back to App" exit links, "CMS Editor" link.
+- **`src/components/DeleteAdopterButton.tsx`** — confirm dialog (uses `dialogs.confirm_delete_adopter` with `{name}` interpolation), failure toasts (uses `toast.delete_failed_title` / `errors.unknown_error` / `errors.unexpected`), button label and tooltip.
+- **`src/components/DuplicateMergeModal.tsx`** — merge confirmation dialog (uses `dialogs.confirm_merge` with `{primary}` + `{secondary}` interpolation).
+- **`src/components/AdminAdopterList.tsx`** — batch-delete confirm, action-failed toast, "Set Country" placeholder, success toast for batch ops.
+- **`src/components/AdoptionFormWizard.tsx`** + **`src/components/AdoptionFormEditV2.tsx`** — `alt="Video thumbnail"` → `t('common.video_thumbnail_alt')`.
+- **`src/components/ui/MediaLightbox.tsx`** — close button aria-label.
+- **`src/app/admin/config/page.tsx`** — every toast (12 sites), the purge-stats confirm, "Loading configuration", page headers, feature-flag labels & descriptions (now driven by `labelKey` / `descKey` references into i18n instead of hardcoded English in the array literal), the social-proof "Remove message" aria-label.
+- **`src/app/admin/audit/page.tsx`** — purge-audit confirm, "View geolocation" tooltip.
+- **`src/app/admin/duplicates/page.tsx`** — dismiss-candidate confirm.
+- **`src/app/admin/users/page.tsx`** — `ActivityCell` pill tooltips (4× "Adopters created" / "Records added" / "History edits" / "Flags filed"), "Delete user" tooltip.
+- **`src/app/admin/organizations/page.tsx`** — "Delete organization" / "Remove member" tooltips.
+- **`src/app/my-animals/new/page.tsx`** — 4 toasts (load-failed, invalid-file, upload-failed, save-failed) + the post-save success toast (now uses interpolated `dashboard.animal_listed`).
+
+### Notes — methodology
+- **`check_i18n.ts` does not detect hardcoded English** — it only catches `t('foo.bar')` calls where `foo.bar` is missing from a locale. Everything in this PR was English literal in JSX or argument lists, invisible to the existing checker. A future improvement could add a lint rule for English string literals inside JSX text nodes / `placeholder=` / `aria-label=` / `title=` / `toast.*(...)` / `confirm(...)` to catch these going forward, but that's separate scope.
+- **Out of scope (deliberately deferred):** the ~40 entries in `tests/` are skipped — Playwright assertions reference rendered text and tests run against ES locale, so any English literal in a test selector is checking the intended ES translation. Touching tests here would be conflating "fix i18n" with "test maintenance." If a test expects the old English string and the corresponding component now renders ES, that's a real regression — covered by the next CI run, will fix-forward if any pop up.
+- **Audit-log `ACTION_LABELS` table** in `admin/audit/page.tsx` (~30 specific action labels like "Sign In" / "Adopter Created") was left in English. Those are technical event types displayed in an admin-only deep page; translating each one to Spanish without losing fidelity is a larger product call. Filed as a known not-yet-translated surface; not in this release.
+
 ## [2.14.8-1] - 2026-05-09
 
 Activity timeline — record-type icon moves into the timeline dot. The dot is now a "beacon": a colored circle large enough to fit a centered SVG icon, white on the saturated bg. Same record-type signal that previously appeared in three places per row (timeline dot color, in-card icon badge, mobile inline-tinted icon, plus the 4px left stripe) is now in one canonical place.

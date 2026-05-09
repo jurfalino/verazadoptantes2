@@ -121,12 +121,12 @@ export default function NewAnimalPage() {
                         setExistingImages(animal.images);
                     }
                 } else {
-                    toast.error('Not Found', 'Could not find the animal record.');
+                    toast.error(t('toast.not_found_title'), t('errors.not_found_animal'));
                     router.push('/my-animals');
                 }
             } catch (err) {
                 console.error('Failed to load animal:', err);
-                toast.error('Error', 'Failed to load animal data.', extractErrorId(err));
+                toast.error(t('errors.generic'), t('errors.load_animal_failed'), extractErrorId(err));
             } finally {
                 setLoadingData(false);
             }
@@ -139,7 +139,7 @@ export default function NewAnimalPage() {
         const file = e.target.files?.[0];
         if (!file) return;
         if (!file.type.startsWith('image/')) {
-            toast.error('Invalid File', 'Please select an image file.');
+            toast.error(t('toast.invalid_file_title'), t('errors.upload_invalid_image'));
             return;
         }
         e.target.value = '';
@@ -148,7 +148,7 @@ export default function NewAnimalPage() {
             const base64 = await compressImage(file);
             setPendingImages(prev => [...prev, base64]);
         } catch (error) {
-            toast.error('Upload Failed', 'Could not process the image.', extractErrorId(error));
+            toast.error(t('toast.upload_failed_title'), t('errors.upload_image_failed'), extractErrorId(error));
         } finally {
             setUploading(false);
         }
@@ -205,15 +205,15 @@ export default function NewAnimalPage() {
             }
 
             toast.success(
-                t('common.save') || 'Saved',
+                t('toast.saved_title'),
                 isEditMode
-                    ? (t('dashboard.animal_updated') || 'Animal updated!')
-                    : `${formData.animalName} listed for adoption!`
+                    ? t('dashboard.animal_updated')
+                    : (t('dashboard.animal_listed') || `${formData.animalName} listed for adoption!`).replace('{name}', formData.animalName),
             );
             router.push('/my-animals');
         } catch (err) {
             console.error(err);
-            toast.error('Error', 'Failed to save animal. Please try again.', extractErrorId(err));
+            toast.error(t('errors.generic'), t('errors.save_animal_failed'), extractErrorId(err));
         } finally {
             setLoading(false);
         }

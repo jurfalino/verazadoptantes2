@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useShowToast } from '@/components/ui/Toast';
+import { useLanguage } from '@/context/LanguageContext';
 import { extractErrorId } from '@/lib/errorUtils';
 import { RatingBadge } from '@/components/RatingBadge';
 import { formatShortDate } from '@/lib/dates';
@@ -68,6 +69,7 @@ const COUNTRY_OPTIONS = [
 // ── Component ────────────────────────────────────────────────────────────
 
 export default function AdminAdopterList({ adopters, countries: _countries }: Props) {
+    const { t } = useLanguage();
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(false);
     const [actionCountry, setActionCountry] = useState('');
@@ -104,7 +106,7 @@ export default function AdminAdopterList({ adopters, countries: _countries }: Pr
 
         if (action === 'delete') {
             const confirmed = confirm(
-                `Are you sure you want to permanently delete ${ids.length} adopter${ids.length > 1 ? 's' : ''} and all related data?\n\nThis cannot be undone.`
+                t('dialogs.confirm_delete_adopters_batch').replace('{count}', String(ids.length))
             );
             if (!confirmed) return;
         }
@@ -121,20 +123,20 @@ export default function AdminAdopterList({ adopters, countries: _countries }: Pr
 
             if (data.success) {
                 toast.success(
-                    action === 'delete' ? 'Deleted' : 'Country Updated',
-                    `${data.processedCount} record${data.processedCount > 1 ? 's' : ''} updated.`
+                    action === 'delete' ? t('dashboard.deleted_title') : t('dashboard.country_updated_title'),
+                    t('dashboard.records_updated').replace('{count}', String(data.processedCount))
                 );
                 clearSelection();
                 router.refresh();
             } else {
-                toast.error('Action Failed', data.errors?.join(', ') || 'Unknown error', data.errorId);
+                toast.error(t('toast.action_failed_title'), data.errors?.join(', ') || t('errors.unknown_error'), data.errorId);
             }
         } catch (e) {
-            toast.error('Action Failed', 'An unexpected error occurred.', extractErrorId(e));
+            toast.error(t('toast.action_failed_title'), t('errors.unexpected'), extractErrorId(e));
         } finally {
             setLoading(false);
         }
-    }, [selectedIds, clearSelection, router, toast]);
+    }, [selectedIds, clearSelection, router, toast, t]);
 
     // ── Render ───────────────────────────────────────────────────────────
 
@@ -297,7 +299,7 @@ export default function AdminAdopterList({ adopters, countries: _countries }: Pr
                                 disabled={loading}
                                 className="px-3 py-2 rounded-xl bg-stone-800 text-white text-sm border border-stone-600 focus:ring-teal-500 focus:border-teal-500 disabled:opacity-50"
                             >
-                                <option value="">Set Country…</option>
+                                <option value="">{t('admin.set_country_placeholder')}</option>
                                 {COUNTRY_OPTIONS.map(c => (
                                     <option key={c.code} value={c.code}>
                                         {countryFlag(c.code)} {c.name} ({c.code})

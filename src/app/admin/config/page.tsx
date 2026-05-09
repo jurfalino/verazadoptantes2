@@ -3,6 +3,7 @@ export const runtime = 'edge';
 
 import { useState, useEffect } from 'react';
 import { useShowToast } from '@/components/ui/Toast';
+import { useLanguage } from '@/context/LanguageContext';
 import { formatShortDate } from '@/lib/dates';
 import { extractErrorId } from '@/lib/errorUtils';
 
@@ -45,16 +46,17 @@ interface PurgeData {
     remaining: number;
 }
 
-// Feature flags definition
+// Feature flags definition — labels & descriptions live in i18n (admin.flag_label_*/flag_desc_*)
 const FEATURE_FLAGS = [
-    { key: 'ENABLE_CONTENT_IMPORT', label: 'Content Import', description: 'Show the Import Content button on the home page for importing from any URL, text, or images using AI' },
-    { key: 'ENABLE_ANIMALS_FOR_ADOPTION', label: 'Animals for Adoption', description: 'Allow users to list animals for adoption and share adoption contracts with potential adopters' },
-    { key: 'ENABLE_SEARCH_CARD_METADATA', label: 'Search Card Metadata', description: 'Show profile views (👁) and the bottom row dates (📅 added, ✏️ updated) on each search result card on the home page. Default ON.' },
-    { key: 'ENABLE_CHAT_WIDGET', label: 'Support Chat Widget', description: 'Floating chat icon at bottom-right that routes visitor messages to the admin\'s Telegram. Requires TELEGRAM_BOT_TOKEN + TELEGRAM_WEBHOOK_SECRET set as Cloudflare secrets and TELEGRAM_ADMIN_CHAT_ID below. See docs/CHAT_SETUP.md.' },
+    { key: 'ENABLE_CONTENT_IMPORT', labelKey: 'flag_label_content_import', descKey: 'flag_desc_content_import' },
+    { key: 'ENABLE_ANIMALS_FOR_ADOPTION', labelKey: 'flag_label_animals_for_adoption', descKey: 'flag_desc_animals_for_adoption' },
+    { key: 'ENABLE_SEARCH_CARD_METADATA', labelKey: 'flag_label_search_card_metadata', descKey: 'flag_desc_search_card_metadata' },
+    { key: 'ENABLE_CHAT_WIDGET', labelKey: 'flag_label_chat_widget', descKey: 'flag_desc_chat_widget' },
 ];
 
 export default function AdminConfigPage() {
     const toast = useShowToast();
+    const { t } = useLanguage();
     const [config, setConfig] = useState({
         too_many_adoptions_threshold: '5',
         too_many_adoptions_period_days: '90',
@@ -135,13 +137,13 @@ export default function AdminConfigPage() {
                 body: JSON.stringify(config)
             });
             if (res.ok) {
-                toast.success('Saved', 'Configuration saved successfully.');
+                toast.success(t('toast.saved_title'), t('toast.saved_message'));
             } else {
                 const body = await readErrorBody(res);
-                toast.error('Error', body.error || 'Failed to save configuration.', body.errorId);
+                toast.error(t('errors.generic'), body.error || t('errors.save_config_failed'), body.errorId);
             }
         } catch (e) {
-            toast.error('Error', 'Error saving configuration.', extractErrorId(e));
+            toast.error(t('errors.generic'), t('errors.config_error'), extractErrorId(e));
         } finally {
             setSaving(false);
         }
@@ -159,10 +161,10 @@ export default function AdminConfigPage() {
                 setFeatureFlags(prev => ({ ...prev, [flagKey]: newValue }));
             } else {
                 const body = await readErrorBody(res);
-                toast.error('Error', body.error || 'Failed to save feature flag.', body.errorId);
+                toast.error(t('errors.generic'), body.error || t('errors.save_flag_failed'), body.errorId);
             }
         } catch (e) {
-            toast.error('Error', 'Error saving feature flag.', extractErrorId(e));
+            toast.error(t('errors.generic'), t('errors.flag_error'), extractErrorId(e));
         } finally {
             setSavingFlags(false);
         }
@@ -180,13 +182,13 @@ export default function AdminConfigPage() {
                 })
             });
             if (res.ok) {
-                toast.success('Saved', 'Social proof banner updated.');
+                toast.success(t('toast.saved_title'), t('toast.social_proof_saved'));
             } else {
                 const body = await readErrorBody(res);
-                toast.error('Error', body.error || 'Failed to save social proof settings.', body.errorId);
+                toast.error(t('errors.generic'), body.error || t('errors.save_social_proof_failed'), body.errorId);
             }
         } catch (e) {
-            toast.error('Error', 'Error saving social proof settings.', extractErrorId(e));
+            toast.error(t('errors.generic'), t('errors.social_proof_error'), extractErrorId(e));
         } finally {
             setSavingSocialProof(false);
         }
@@ -207,7 +209,7 @@ export default function AdminConfigPage() {
     };
 
     const handlePurgeStats = async () => {
-        if (!confirm(`Are you sure you want to delete stats older than ${purgeDays} days? This cannot be undone.`)) {
+        if (!confirm(t('dialogs.confirm_purge_stats').replace('{days}', String(purgeDays)))) {
             return;
         }
         setPurging(true);
@@ -219,7 +221,7 @@ export default function AdminConfigPage() {
             });
             if (res.ok) {
                 const data: PurgeData = await res.json();
-                toast.success('Stats Purged', `Purged ${data.deleted} stat events.`);
+                toast.success(t('toast.stats_purged_title'), t('toast.stats_purged_message').replace('{count}', String(data.deleted)));
                 setStatsCount(data.remaining);
                 // Refresh oldest stat
                 const configRes = await fetch('/api/admin/config');
@@ -229,41 +231,41 @@ export default function AdminConfigPage() {
                 }
             } else {
                 const body = await readErrorBody(res);
-                toast.error('Error', body.error || 'Failed to purge stats.', body.errorId);
+                toast.error(t('errors.generic'), body.error || t('errors.purge_stats_failed'), body.errorId);
             }
         } catch (e) {
-            toast.error('Error', 'Error purging stats.', extractErrorId(e));
+            toast.error(t('errors.generic'), t('errors.purge_stats_error'), extractErrorId(e));
         } finally {
             setPurging(false);
         }
     };
 
     if (loading) {
-        return <div className="text-stone-500">Loading configuration...</div>;
+        return <div className="text-stone-500">{t('admin.loading_config')}</div>;
     }
 
     return (
         <div className="max-w-4xl mx-auto space-y-8">
             <header>
-                <h2 className="text-3xl font-semibold text-stone-900">System Configuration</h2>
-                <p className="text-stone-500 mt-2">Manage application settings and maintenance tasks.</p>
+                <h2 className="text-3xl font-semibold text-stone-900">{t('admin.system_config')}</h2>
+                <p className="text-stone-500 mt-2">{t('admin.system_config_desc')}</p>
             </header>
 
             {/* Feature Flags */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200">
                 <h3 className="text-lg font-semibold text-stone-900 mb-4 flex items-center gap-2">
                     <span className="text-xl">🚩</span>
-                    Feature Flags
+                    {t('admin.feature_flags_title')}
                 </h3>
                 <p className="text-sm text-stone-500 mb-4">
-                    Enable or disable experimental features.
+                    {t('admin.feature_flags_desc')}
                 </p>
                 <div className="space-y-4">
                     {FEATURE_FLAGS.map(flag => (
                         <div key={flag.key} className="flex items-center justify-between p-4 bg-stone-50 rounded-xl">
                             <div>
-                                <p className="font-semibold text-stone-800">{flag.label}</p>
-                                <p className="text-sm text-stone-500">{flag.description}</p>
+                                <p className="font-semibold text-stone-800">{t(`admin.${flag.labelKey}`)}</p>
+                                <p className="text-sm text-stone-500">{t(`admin.${flag.descKey}`)}</p>
                             </div>
                             <button
                                 onClick={() => handleToggleFlag(flag.key, !featureFlags[flag.key])}
@@ -380,7 +382,7 @@ export default function AdminConfigPage() {
                                     if (!res.ok) {
                                         const errMsg = (data as { error?: string }).error || 'Setup failed';
                                         setTelegramSetupResult(`✗ ${errMsg}`);
-                                        toast.error('Error', errMsg, (data as { errorId?: string }).errorId);
+                                        toast.error(t('errors.generic'), errMsg, (data as { errorId?: string }).errorId);
                                         return;
                                     }
                                     // Clear sensitive inputs after a successful save
@@ -396,7 +398,7 @@ export default function AdminConfigPage() {
                                     } else {
                                         setTelegramSetupResult(`Saved, but webhook registration failed: ${result.webhook.error || 'unknown error'}.`);
                                     }
-                                    toast.success('Saved', 'Telegram configuration updated.');
+                                    toast.success(t('toast.saved_title'), t('admin.telegram_saved') || 'Telegram configuration updated.');
                                 } catch (e) {
                                     setTelegramSetupResult(`✗ ${e instanceof Error ? e.message : 'Network error'}`);
                                 } finally {
@@ -514,7 +516,7 @@ export default function AdminConfigPage() {
                             <button
                                 onClick={() => removeSocialProofMessage(idx)}
                                 className="mt-5 text-stone-400 hover:text-rose-500 transition-colors text-sm"
-                                aria-label="Remove message"
+                                aria-label={t('admin.remove_message_aria')}
                             >
                                 ✕
                             </button>

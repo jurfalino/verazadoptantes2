@@ -634,7 +634,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], a
                                             <div key={idx} className="relative group">
                                                 {pending.isVideo ? (
                                                     <div className="w-20 h-20 rounded-lg border border-amber-300 ring-2 ring-amber-200 overflow-hidden relative">
-                                                        {pending.thumbnail ? <img src={pending.thumbnail} alt="Video thumbnail" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gradient-to-br from-teal-600 to-teal-800" />}
+                                                        {pending.thumbnail ? <img src={pending.thumbnail} alt={t('common.video_thumbnail_alt')} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gradient-to-br from-teal-600 to-teal-800" />}
                                                     </div>
                                                 ) : (
                                                     <img src={pending.data} alt={`Pending photo ${idx + 1}`} className="w-20 h-20 object-cover rounded-lg border border-amber-300 ring-2 ring-amber-200" />

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { formatDateTime, formatShortDate } from '@/lib/dates';
+import { useLanguage } from '@/context/LanguageContext';
 
 interface Organization {
     id: string;
@@ -34,6 +35,7 @@ interface OrgDetail {
 }
 
 export default function AdminOrganizationsPage() {
+    const { t } = useLanguage();
     const searchParams = useSearchParams();
     const highlightId = searchParams.get('highlight');
 
@@ -211,7 +213,7 @@ export default function AdminOrganizationsPage() {
                                                 <button
                                                     onClick={e => { e.stopPropagation(); setConfirmDeleteId(org.id); }}
                                                     className="text-stone-300 hover:text-red-500 text-xs"
-                                                    title="Delete organization"
+                                                    title={t('admin.delete_org_title')}
                                                 >🗑️</button>
                                             )}
                                         </td>
@@ -292,7 +294,7 @@ export default function AdminOrganizationsPage() {
                                                                             <button
                                                                                 onClick={() => removeMember(org.id, m.id)}
                                                                                 className="text-stone-300 hover:text-red-500 text-xs"
-                                                                                title="Remove member"
+                                                                                title={t('admin.remove_member_title')}
                                                                             >✕</button>
                                                                         </li>
                                                                     ))}

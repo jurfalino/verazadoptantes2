@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useLanguage } from '@/context/LanguageContext';
 
 interface Adopter {
     id: string;
@@ -24,6 +25,7 @@ export default function DuplicateMergeModal({
     onMerge,
     onClose,
 }: DuplicateMergeModalProps) {
+    const { t } = useLanguage();
     const [primaryId, setPrimaryId] = useState<string>(adopter1.id);
     const [merging, setMerging] = useState(false);
 
@@ -31,7 +33,10 @@ export default function DuplicateMergeModal({
     const secondary = primaryId === adopter1.id ? adopter2 : adopter1;
 
     async function handleMerge() {
-        if (!confirm(`⚠️ This will merge "${secondary.name}" into "${primary.name}". The secondary profile will be soft-deleted. Continue?`)) {
+        const confirmMsg = t('dialogs.confirm_merge')
+            .replace('{secondary}', secondary.name)
+            .replace('{primary}', primary.name);
+        if (!confirm(confirmMsg)) {
             return;
         }
         setMerging(true);
