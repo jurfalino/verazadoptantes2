@@ -109,16 +109,23 @@ export default function Home() {
           <SearchSection locale={locale} showCardMetadata={appConfig.ENABLE_SEARCH_CARD_METADATA !== 'false'} />
         </div>
 
-        {/* Social proof + milestone — below search for mobile-first */}
+        {/* Social proof + milestone — below search for mobile-first.
+            MilestoneBadge gated by ENABLE_MILESTONE_BADGE (admin-toggleable, default ON). */}
         <SocialProofBanner config={appConfig} />
-        {session?.user && <MilestoneBadge />}
-        
-        {/* Quick Access Dashboard Strip */}
-        <QuickAccessStrip />
+        {session?.user && appConfig.ENABLE_MILESTONE_BADGE !== 'false' && <MilestoneBadge />}
 
-        {/* Action Cards — 3-column grid */}
+        {/* Action Cards — 3-column grid (or 2-col when import flag off).
+            Order: Adoption · Report · Import. Import is the rarer / power-user
+            action and lives last; the three CTAs share the soft-pill style for
+            visual peer-equality. */}
         <div id="action-cards" className={`grid gap-6 mt-6 ${contentImportEnabled ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
-          {/* Import from post — promoted to full card */}
+          {/* Register Adoption */}
+          <AdoptionWizard />
+
+          {/* Report / Observation */}
+          <ReportWizard />
+
+          {/* Import from post — last position; CTA matches AdoptionWizard's soft-pill style */}
           {contentImportEnabled && (
             <div
               data-testid="import-content-btn"
@@ -132,16 +139,16 @@ export default function Home() {
               </div>
               <h2 className="text-lg font-semibold text-stone-900 mb-1">{t('home.action_import_title')}</h2>
               <p className="text-stone-500 text-sm mb-3">{t('home.action_import_desc')}</p>
-              <span className="inline-block px-4 py-2 bg-teal-600 text-white rounded-xl font-semibold text-sm group-hover:bg-teal-700 transition-colors">{t('home.action_import_btn')}</span>
+              <span className="inline-block px-6 py-2.5 bg-teal-200 text-teal-900 font-semibold rounded-xl hover:bg-teal-300 transition-colors shadow-sm">{t('home.action_import_btn')}</span>
             </div>
           )}
-
-          {/* Register Adoption */}
-          <AdoptionWizard />
-
-          {/* Report / Observation */}
-          <ReportWizard />
         </div>
+
+        {/* Quick Access Dashboard Strip — moved below cards (v2.14.8-5).
+            Cards = create intent (primary); pills = navigate-to-existing-data
+            (secondary). UserMenu in the page header already serves explicit
+            navigation. */}
+        <QuickAccessStrip />
 
         {/* PWA Install CTA — shown to users who dismissed the floating banner */}
         <InstallCTA />

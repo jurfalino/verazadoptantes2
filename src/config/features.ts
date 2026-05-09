@@ -18,6 +18,7 @@ export const FEATURE_FLAGS = {
     ENABLE_ANIMALS_FOR_ADOPTION: false,
     ENABLE_SEARCH_CARD_METADATA: true,
     ENABLE_CHAT_WIDGET: false,
+    ENABLE_MILESTONE_BADGE: true,
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;
@@ -99,6 +100,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         ENABLE_ANIMALS_FOR_ADOPTION: false,
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,
+        ENABLE_MILESTONE_BADGE: true,
     };
 
     for (const flag of Object.keys(FEATURE_FLAGS) as FeatureFlag[]) {

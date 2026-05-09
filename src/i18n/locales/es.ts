@@ -82,6 +82,8 @@ export const es = {
         telegram_saved: 'Configuración de Telegram actualizada.',
         flag_label_chat_widget: 'Widget de soporte por chat',
         flag_desc_chat_widget: 'Burbuja flotante en la esquina inferior derecha que enruta los mensajes al Telegram del admin. Requiere TELEGRAM_BOT_TOKEN + TELEGRAM_WEBHOOK_SECRET configurados como secretos de Cloudflare y TELEGRAM_ADMIN_CHAT_ID abajo. Ver docs/CHAT_SETUP.md.',
+        flag_label_milestone_badge: 'Insignia de hitos',
+        flag_desc_milestone_badge: 'Mostrar la barra de progreso "Completaste X adopciones" en la portada para usuarios autenticados.',
     },
     demo: {
         not_real: 'esta no es una persona real',

@@ -31,6 +31,7 @@ interface ConfigData {
         ENABLE_ANIMALS_FOR_ADOPTION?: string;
         ENABLE_SEARCH_CARD_METADATA?: string;
         ENABLE_CHAT_WIDGET?: string;
+        ENABLE_MILESTONE_BADGE?: string;
         TELEGRAM_ADMIN_CHAT_ID?: string;
         TELEGRAM_BOT_TOKEN_SET?: string;
         TELEGRAM_WEBHOOK_SECRET_SET?: string;
@@ -52,6 +53,7 @@ const FEATURE_FLAGS = [
     { key: 'ENABLE_ANIMALS_FOR_ADOPTION', labelKey: 'flag_label_animals_for_adoption', descKey: 'flag_desc_animals_for_adoption' },
     { key: 'ENABLE_SEARCH_CARD_METADATA', labelKey: 'flag_label_search_card_metadata', descKey: 'flag_desc_search_card_metadata' },
     { key: 'ENABLE_CHAT_WIDGET', labelKey: 'flag_label_chat_widget', descKey: 'flag_desc_chat_widget' },
+    { key: 'ENABLE_MILESTONE_BADGE', labelKey: 'flag_label_milestone_badge', descKey: 'flag_desc_milestone_badge' },
 ];
 
 export default function AdminConfigPage() {
@@ -68,6 +70,7 @@ export default function AdminConfigPage() {
         ENABLE_ANIMALS_FOR_ADOPTION: false,
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,
+        ENABLE_MILESTONE_BADGE: true,
     });
     const [telegramAdminChatId, setTelegramAdminChatId] = useState('');
     const [telegramBotToken, setTelegramBotToken] = useState('');
@@ -106,6 +109,7 @@ export default function AdminConfigPage() {
                         ENABLE_ANIMALS_FOR_ADOPTION: data.config?.ENABLE_ANIMALS_FOR_ADOPTION === 'true',
                         ENABLE_SEARCH_CARD_METADATA: data.config?.ENABLE_SEARCH_CARD_METADATA !== 'false',
                         ENABLE_CHAT_WIDGET: data.config?.ENABLE_CHAT_WIDGET === 'true',
+                        ENABLE_MILESTONE_BADGE: data.config?.ENABLE_MILESTONE_BADGE !== 'false',
                     });
                     setTelegramAdminChatId(data.config?.TELEGRAM_ADMIN_CHAT_ID || '');
                     setTelegramBotTokenSet(data.config?.TELEGRAM_BOT_TOKEN_SET === 'true');

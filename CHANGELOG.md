@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.8-5] - 2026-05-09
+
+Three small homepage layout polish fixes bundled in one commit (all in `page.tsx`).
+
+### Changed
+- **`src/app/page.tsx`** — Action-cards order is now `Adoption · Report · Import` (Import was leading the grid before; it's the rarer power-user action and now sits last). Import card's CTA restyled from solid `bg-teal-600 text-white` to `bg-teal-200 text-teal-900 font-semibold` to match AdoptionWizard's soft-pill style — three cards now read as visual peers (teal/rose/teal soft pills) instead of `1 primary CTA + 2 softer pills`. The grid still becomes `md:grid-cols-2` when `ENABLE_CONTENT_IMPORT` is off.
+- **`src/app/page.tsx`** — `<QuickAccessStrip />` (the "My Animals / My Adoptions / My Adopters" pills) moved from above the action-cards grid to below it. **CX rationale:** action cards represent *create intent* (the app's primary purpose: log new adoptions / reports / imports); pills represent *navigate-to-existing-data intent*. UserMenu in the page header already serves explicit navigation, so the pills reinforce rather than gate. Active-above-passive is the right hierarchy for a logging tool.
+- **`<MilestoneBadge />` ("Completaste X adopciones") gated by new feature flag.** Now renders only when `appConfig.ENABLE_MILESTONE_BADGE !== 'false'`. Default is `true`, so existing behavior is preserved on deploy; admin can flip to `false` via `/admin/config` to hide the badge for everyone.
+
+### Added
+- **`ENABLE_MILESTONE_BADGE` feature flag** wired through the standard 4-place plumbing:
+  - `src/config/features.ts` — added to `FEATURE_FLAGS` const + `getAllFeatureFlags` return.
+  - `src/app/api/admin/config/route.ts` — added to GET response shape.
+  - `src/app/admin/config/page.tsx` — added to `FEATURE_FLAGS` array (renders a toggle row), `ConfigData` interface, `useState` initializer, fetch hydration.
+  - `src/i18n/locales/{es,en}.ts` — `admin.flag_label_milestone_badge` ("Insignia de hitos" / "Milestone Badge"), `admin.flag_desc_milestone_badge`.
+
+### Notes
+- All three changes verified in `tests/` — no Playwright selectors target `QuickAccessStrip` DOM position, the Import card's specific CTA classes, or the MilestoneBadge presence/absence. No e2e impact.
+- Net diff intentionally small. Layout reorders are cheap; the only architectural addition is the new flag, which mirrors the existing 4-place duplication for `ENABLE_CONTENT_IMPORT` / `ENABLE_CHAT_WIDGET` exactly.
+
 ## [2.14.8-4] - 2026-05-09
 
 Homepage search — added a "¿Ninguna persona coincide?" CTA at the end of the results list. Until now, users who scrolled through all matches and decided none was the person they were looking for had to scroll back up to find the small "+ Crear nuevo" chip in the results header — extra friction at the exact decision moment. Now there's a one-tap exit immediately under the last result card.
