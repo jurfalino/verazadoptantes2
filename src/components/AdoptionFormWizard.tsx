@@ -52,7 +52,7 @@ const RECORD_TYPES = [
     { value: 'returned_pet', icon: '↩️', labelKey: 'adoption.type_returned', fallback: 'Returned' },
 ] as const;
 
-export default function AdoptionFormWizard({ adopterId, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '', initialRecordType, autoOpen = false, hideOpenButton = false, onClose }: {
+export default function AdoptionFormWizard({ adopterId, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '', initialRecordType, autoOpen = false, onClose }: {
     adopterId: string;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     availableAnimals?: any[];
@@ -76,13 +76,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], a
     initialRecordType?: 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet';
     /** Open the wizard immediately on mount (paired with initialRecordType). */
     autoOpen?: boolean;
-    /**
-     * Suppress the closed-state "Registrar actividad" entry button when
-     * something else (e.g. VisitIntentCard) is already serving as the entry
-     * point. The wizard still mounts so URL-driven autoOpen flows work.
-     */
-    hideOpenButton?: boolean;
-    /** Called when the wizard closes (cancel or save). Lets the parent re-render the entry CTA. */
+    /** Called when the wizard closes (cancel or save). */
     onClose?: () => void;
 }) {
     const router = useRouter();
@@ -360,23 +354,10 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], a
         if (checkStep1Valid()) goNext();
     };
 
-    if (!isOpen) {
-        if (hideOpenButton) return null;
-        return (
-            <button
-                id="wizard-open-btn"
-                onClick={() => {
-                    const auth = (currentUser && currentUser !== '') || !!session?.user;
-                    if (!auth) { openLogin(); return; }
-                    setIsOpen(true);
-                }}
-                className="flex items-center gap-1.5 ml-auto py-2 px-4 text-sm text-teal-700 font-semibold rounded-lg hover:bg-teal-50 transition-all duration-200 mb-4"
-            >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                {t('adoption.record_new')}
-            </button>
-        );
-    }
+    // Closed state renders nothing (v2.14.8). The wizard mounts so URL-driven
+    // autoOpen flows still work, and parents (VisitIntentCard) drive opens by
+    // unmounting/remounting with `autoOpen` set.
+    if (!isOpen) return null;
 
     const stepLabels = [
         t('wizard.step_what'),

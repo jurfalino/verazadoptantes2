@@ -48,12 +48,9 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
 
     const isOwner = adopter?.addedBy === currentUser;
 
-    // VisitIntentCard is sticky (no manual dismiss) — it stays visible until
-    // the user picks an option AND closes the resulting wizard. While it's
-    // showing, suppress the standalone "Registrar actividad" CTA below so
-    // there aren't two competing entry points.
-    const [visitIntentDismissed, setVisitIntentDismissed] = useState(false);
-    const visitIntentVisible = !!currentUser && !!adopter && !isNew && !visitIntentDismissed;
+    // VisitIntentCard is the canonical (and only) entry point for recording
+    // activity on a profile (v2.14.8). After the wizard closes, the card
+    // re-renders its options for the next record.
 
     const handleDeleteClick = async () => {
         setDeleteLoading(true);
@@ -142,20 +139,21 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             adoptions={adoptions}
                             availableAnimals={availableAnimals}
                             adopterAddress={adopter?.contactInfo || ''}
-                            onHide={() => setVisitIntentDismissed(true)}
                         />
                         <CollapsibleSection
                             title={t('adoption.title')}
                             count={adoptions.length}
                             defaultOpen={true}
                         >
+                            {/* AdoptionFormWizard renders here only for URL-driven autoOpen flows
+                                (?newAdoption=...). The closed-state "Registrar Actividad" CTA was
+                                removed in v2.14.8 — VisitIntentCard above is the canonical entry. */}
                             <AdoptionFormWizard
                                 adopterId={id}
                                 availableAnimals={availableAnimals}
                                 adopterAdoptions={adoptions}
                                 currentUser={currentUser}
                                 adopterAddress={adopter?.contactInfo || ''}
-                                hideOpenButton={visitIntentVisible}
                             />
                             <AdoptionHistory
                                 adoptions={adoptions as any}

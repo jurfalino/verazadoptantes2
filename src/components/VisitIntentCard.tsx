@@ -23,12 +23,6 @@ interface Props {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     availableAnimals?: any[];
     adopterAddress?: string;
-    /**
-     * Called when the card transitions from rendered to hidden (currently:
-     * after the launched wizard closes). Lets the parent un-suppress sibling
-     * UI like the standalone "Registrar actividad" CTA.
-     */
-    onHide?: () => void;
 }
 
 /**
@@ -40,14 +34,14 @@ interface Props {
  * Visibility: any authenticated user. All three options always show — a person
  * can legitimately adopt a second pet from the same rescuer or have a follow-up
  * request after a previous adoption, so we don't suppress any option based on
- * recent activity (the v2.14.7-2..-20 30-day "already acted" suppression was
- * removed in v2.14.7-21 because it bit on legitimate repeat-adoption flows). The
- * card stays visible until the user picks an option AND closes the resulting
- * wizard — there is no manual dismiss; the prompt is intentionally sticky.
+ * recent activity. The card is the canonical entry point for recording activity
+ * on a profile; after the wizard closes, the intent options re-render so the
+ * user can pick another intent for the next record without leaving the page
+ * (v2.14.8 made this the only entry point — the standalone "Registrar
+ * Actividad" CTA on AdoptionFormWizard was removed for UX consistency).
  */
-export default function VisitIntentCard({ adopterId, adopterName, currentUser, adoptions, availableAnimals, adopterAddress = '', onHide }: Props) {
+export default function VisitIntentCard({ adopterId, adopterName, currentUser, adoptions, availableAnimals, adopterAddress = '' }: Props) {
     const { t } = useLanguage();
-    const [hidden, setHidden] = useState(false);
     const [openedRecordType, setOpenedRecordType] = useState<IntentType | null>(null);
     const [trackedShown, setTrackedShown] = useState(false);
     const [view, setView] = useState<View>('main');
@@ -55,12 +49,12 @@ export default function VisitIntentCard({ adopterId, adopterName, currentUser, a
     const baseEligible = !!currentUser;
 
     useEffect(() => {
-        if (!baseEligible || hidden || trackedShown || openedRecordType) return;
+        if (!baseEligible || trackedShown || openedRecordType) return;
         zarazTrack('visit_intent_shown', { adopter_id: adopterId });
         setTrackedShown(true);
-    }, [baseEligible, hidden, trackedShown, openedRecordType, adopterId]);
+    }, [baseEligible, trackedShown, openedRecordType, adopterId]);
 
-    if (!baseEligible || hidden) return null;
+    if (!baseEligible) return null;
 
     if (openedRecordType) {
         return (
@@ -73,9 +67,10 @@ export default function VisitIntentCard({ adopterId, adopterName, currentUser, a
                 initialRecordType={openedRecordType}
                 autoOpen
                 onClose={() => {
+                    // Wizard closed — clear intent and fall through to re-render
+                    // the options. The card stays the entry point for the next record.
                     setOpenedRecordType(null);
-                    setHidden(true);
-                    onHide?.();
+                    setView('main');
                 }}
             />
         );

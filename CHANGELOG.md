@@ -2,6 +2,37 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.8] - 2026-05-09
+
+Activity-recording entry point consolidated to **one** path: the VisitIntentCard prompt at the top of the activity section. The standalone "Registrar Actividad" CTA — which was already hidden whenever the intent card was visible (i.e., always, since v2.14.7-18) — has been removed entirely. The intent card now stays available for the entire page session: after the user picks an intent, completes the wizard, and the wizard closes, the intent options re-render in place so the user can record another activity without leaving the page.
+
+This consolidates the v2.14.7-1..-22 batch. Highlights since 2.14.7 stable:
+
+- Color/theme fidelity sweep (info-token retune, light-theme stone overrides, status-pill token migration, intent-label color)
+- Activity-section scannability (3-column header, per-record-type stripe, summary row, line-clamped notes, ··· corner menu, footer redesign)
+- Adopter profile change-log diff bug fixed (delta.from JS-clamp removed; both halves render with line-clamp + break-all)
+- Settings location tiles overflow fixed
+- Contract API: rescuer name now from `user.name`, not email-prefix
+- Contract-results merge action ("Es la misma persona") with cross-creator notification
+- Contract-results "¿Ninguna coincide?" affordance for keep-as-new outcome
+- mergeAdopters() extracted from admin route into shared helper
+- findAdopters duplicate-mode now filters soft-deleted at write+read sites; D1 inArray bug eliminated
+- Visit-intent prompt graduates from feature-flagged to always-on
+- Wizard skips type picker when intent is known; edit form always uses read-only badge
+- 30-day "already acted" suppression on intent options removed
+- admin/users dashboard: location columns + activity counts + audit deep-link
+- Several e2e regressions caught & fixed; pipeline-watch lesson saved to memory
+
+### Changed (this release)
+- **`src/components/VisitIntentCard.tsx`** — `hidden` state and `setHidden` calls removed. `onHide` prop removed from the interface. After the wizard closes (cancel or save), the card resets `openedRecordType` to `null` and `view` to `'main'`, falling through to re-render the option chips. `trackedShown` stays sticky so we don't re-fire the zaraz `visit_intent_shown` event on each cycle.
+- **`src/components/AdopterProfileV2.tsx`** — `visitIntentDismissed` state and `visitIntentVisible` calc both removed. The `onHide` callback wiring on `<VisitIntentCard>` and the `hideOpenButton={visitIntentVisible}` prop on `<AdoptionFormWizard>` are gone.
+- **`src/components/AdoptionFormWizard.tsx`** — `hideOpenButton` prop removed from the function signature. The closed-state `<button>` render block (the "Registrar Actividad" CTA at lines 363-378) is gone; closed state now returns `null`. The wizard mounts so URL-driven `?newAdoption=...` flows still work, but it has no visible surface unless something explicitly opens it.
+
+### Notes
+- Net diff in this release: **−40 lines** across three files. The two-entry-point pattern was carrying real complexity for a UX inconsistency.
+- URL-driven `autoOpen` paths (`?newAdoption=true`, `?continueToAdoption=true`) still work — they set `isOpen=true` in the wizard's initial state, bypassing the closed-state branch entirely.
+- After a wizard save, `router.refresh()` re-fetches server data, so the new adoption appears in the timeline below while the user remains on the page with the intent card available for the next record.
+
 ## [2.14.7-22] - 2026-05-09
 
 Test fix — unblocks the staging deploy that's been stuck at v2.14.7-17 since v2.14.7-18 (four consecutive red pipelines, all from the same single test failure).
