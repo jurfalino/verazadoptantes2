@@ -19,12 +19,20 @@ export async function GET(_request: Request) {
         // The legacy user_profiles.organization free-text column was deprecated
         // in v2.12.1-34 (migration 0037). org membership now comes from the
         // org_members → organizations join.
+        // Per-user activity counts use correlated subqueries — fine at current
+        // user-table size (low hundreds). If the user table grows past a few
+        // thousand rows, switch to LEFT JOIN + GROUP BY or precompute the counts.
         const users = await env.DB.prepare(`
             SELECT
                 u.id, u.name, u.email, u.image,
                 p.role, p.notes, p.comms_opt_in,
                 p.last_active_at, p.created_at as first_sign_in,
-                p.country,
+                p.country, p.province, p.city, p.timezone,
+                p.terms_accepted_at, p.terms_version,
+                (SELECT COUNT(*) FROM adopters WHERE added_by = u.email AND deleted_at IS NULL) AS adopters_count,
+                (SELECT COUNT(*) FROM adoptions WHERE added_by = u.email) AS records_count,
+                (SELECT COUNT(*) FROM adopter_history WHERE changed_by = u.email) AS edits_count,
+                (SELECT COUNT(*) FROM adopter_flags WHERE flagged_by = u.email) AS flags_count,
                 (
                     SELECT json_group_array(json_object('id', o.id, 'name', o.name, 'role', om.role))
                     FROM org_members om

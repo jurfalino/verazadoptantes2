@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-19] - 2026-05-09
+
+`/admin/users` becomes a triage dashboard rather than a roster. Adds detected geography (province / city / timezone), per-user activity counts, and a one-click link to that user's audit log.
+
+### Added
+- **`src/app/api/admin/users/route.ts`** — extended `GET` SELECT to include `province`, `city`, `timezone`, `terms_accepted_at`, `terms_version` from `user_profiles` (these were already populated via Cloudflare auto-detect on sign-in but the API was only returning `country`). Adds four correlated `COUNT(*)` subqueries for per-user activity totals: `adopters_count` (created, soft-delete-filtered), `records_count` (`adoptions` rows), `edits_count` (`adopter_history` rows), `flags_count` (`adopter_flags` rows). All keyed on `email` since that's the actor identifier across the schema.
+- **`src/app/admin/users/page.tsx`** — new `LocationCell` component renders `🇦🇷 AR · Buenos Aires · La Plata` with the IANA timezone in the `title` tooltip. New `ActivityCell` renders four small color-coded count pills (👤 adopters · 📋 records · ✏️ edits · 🚩 flags) with hover-tooltips, hiding any pill whose count is 0.
+- **Audit-log link** per user in both desktop Actions cell and mobile button row, deep-linking to `/admin/audit?userId=${email}` (the existing audit page already accepts that query param at `audit/page.tsx:54`).
+
+### Changed
+- **Desktop table layout**: dropped the standalone "ID" column (CopyIdButton moved inline under the user's email). Combined "First Sign In" + "Last Active" into a single "Lifecycle" cell with two stacked rows. Replaced "Country" with the new "Location" cell. Net column count: 8 → 7. The activity column adds back one but the table is now wider on signal, narrower on chrome.
+- **Mobile cards**: same content swap — Country row replaced with Location, Activity-pills row added, Audit button alongside Edit/Delete.
+
+### Notes — explicitly deferred
+- **Per-user lat/long + map.** Discussed and explicitly deferred. `user_profiles` has city/province/timezone (Cloudflare can detect them) but **no lat/long column**, and adding one is a privacy design call before it's an engineering one. If a map view becomes worth building, the recommended path is geocoding the city name on-the-fly (cached) and rendering pins at city centroids — same visualization, no precise-coordinate storage tying an email to a GPS point.
+- **Performance note**: the four new `COUNT(*)` subqueries are correlated — fine at current user-table size (low hundreds), borderline if it grows past a few thousand. Switch to LEFT JOIN + GROUP BY or a precomputed materialized count if/when that happens. Comment in the query SQL spells this out.
+
 ## [2.14.7-18] - 2026-05-09
 
 VisitIntentCard graduates from feature-flagged to always-on for authenticated users on adopter profiles, and the activity-creation wizard skips its type-picker step when opened with a known intent (since the user already chose the type one click ago in the intent card).
