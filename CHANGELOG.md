@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.7-17] - 2026-05-09
+
+Fix the e2e regression in v2.14.7-16 — the contract-link test passed (44 passed) but its merge target was a seed adopter (María García López), so the merge appended duplicate contact data to María's profile, which then broke `tests/search.spec.ts:66`'s strict-mode `getByText(/555-1234/)` (now resolved to two `<a>` elements instead of one). Test isolation lesson: e2e tests for destructive operations must use dedicated fixture rows, not shared seed adopters.
+
+### Fixed
+- **`tests/contract-link.spec.ts`** — refactored to use a dedicated fixture adopter (`test-contract-fixture-target` with name "ContractFixturePerson Sintética") as the merge target instead of seed adopter María. The fixture is created via `INSERT OR REPLACE` on `adopters` + `duplicate_tokens` so re-runs reset state, and the contract submit now sends a unique-ish name (no phone/email/dni) so the matcher only surfaces the fixture, not seed rows. Seed adopters' contactInfo stays clean for downstream tests.
+
+### Notes
+- The CHANGELOG entry for v2.14.7-15 said "the fixture `adoptions` row stays in the DB after each run" — implicitly accepting residual data, which was fine for the animal row but **not** fine for the merge target. That oversight is what allowed v2.14.7-16's pipeline failure. Lesson saved as a memory: e2e tests for destructive merges must use dedicated fixture rows.
+
 ## [2.14.7-16] - 2026-05-09
 
 Adds the missing "keep as new profile" affordance on the contract-results page. Until now, a rescuer who reviewed the matches and decided none were duplicates had no clear way to signal that — the bottom-link "Ver perfil del nuevo adoptante" was buried under a hairline divider and worded as navigation, leading users to think they were required to pick a match. This release adds an explicit decision affordance under a "¿Ninguna coincide?" heading, plus event-tracking on both triage outcomes (merge vs keep-new) so we can validate the visual-weight choice with real data 30 days post-ship.
