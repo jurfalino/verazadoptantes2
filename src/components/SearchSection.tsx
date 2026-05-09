@@ -493,6 +493,26 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                             </a>
                         );
                     })}
+                    {/* End-of-results "none match" CTA — appears under the last card so the
+                        natural decision moment (user finished reading) has a one-tap exit
+                        without scrolling back to the small top-of-list chip. Empty-state
+                        below uses a more prominent treatment; this is the secondary path. */}
+                    {results.length > 0 && (
+                        <div className="bg-stone-50 rounded-2xl p-6 text-center border border-stone-200 mt-4">
+                            <p className="text-stone-600 mb-1 text-base font-medium">
+                                {t('search.none_match_heading')}
+                            </p>
+                            <p className="text-stone-500 text-sm mb-4">
+                                {t('search.none_match_desc')}
+                            </p>
+                            <button
+                                onClick={handleCreateNew}
+                                className="inline-block px-5 py-2.5 bg-teal-600 text-white rounded-xl font-semibold hover:bg-teal-700 transition-all shadow-sm"
+                            >
+                                + {t('search.create_new')}
+                            </button>
+                        </div>
+                    )}
                     {results.length === 0 && (
                         <div className="bg-stone-50 rounded-2xl p-8 text-center border border-stone-200">
                             <div className="text-4xl mb-3">🔍</div>

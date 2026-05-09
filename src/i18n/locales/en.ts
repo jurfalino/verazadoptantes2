@@ -304,6 +304,8 @@ export const en = {
         no_history: 'No one found matching "{query}".',
         no_history_cta: 'Be the first to register them',
         create_new: 'Create New Record',
+        none_match_heading: 'None of these match?',
+        none_match_desc: 'If none of the results above is the person you were looking for, you can create a new profile with this information.',
         clear: 'Clear Search',
         login_to_view: '(login to view)',
         protected_info: 'Protected info.',

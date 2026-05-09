@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.8-4] - 2026-05-09
+
+Homepage search — added a "¿Ninguna persona coincide?" CTA at the end of the results list. Until now, users who scrolled through all matches and decided none was the person they were looking for had to scroll back up to find the small "+ Crear nuevo" chip in the results header — extra friction at the exact decision moment. Now there's a one-tap exit immediately under the last result card.
+
+### Added
+- **`src/components/SearchSection.tsx`** — new block CTA rendered when `results.length > 0`, positioned after the result-card map and before the empty-state branch. Visually mirrors the no-results card (same `bg-stone-50` rounded card + same teal button) but slightly less heavy (no leading 🔍 emoji, smaller heading text) since this is a secondary exit, not the primary state. Uses the same `handleCreateNew` handler as the existing top-chip and the empty-state CTA.
+- **`src/i18n/locales/{es,en}.ts`** — `search.none_match_heading` ("¿Ninguna persona coincide?" / "None of these match?") and `search.none_match_desc` (full sentence). Reuses the existing `search.create_new` for the button label.
+
+### Notes
+- Top-of-list `+ Crear nuevo` chip stays. It serves a different user: the at-a-glance dismisser who scans the count and the first card and immediately knows none will match (e.g., a common surname returning strangers). The bottom block serves the methodical reader.
+- Pattern consistency with v2.14.7-16's "¿Ninguna coincide?" affordance on contract-results — same wording family, same visual treatment.
+- Sticky / floating-action-button variants for very long results lists explicitly deferred. End-of-list block solves the named problem; sticky variants add complexity (covering content, mobile gesture conflicts) without evidence of need yet.
+
 ## [2.14.8-3] - 2026-05-09
 
 Notification rows showed two emoji per item (`item.icon` rendered next to a `title` that already started with the same emoji), making every row read like `⚠️ ⚠️ 1 coincidencia para …`. Fixed at both write and render sites.

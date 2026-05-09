@@ -303,6 +303,8 @@ export const es = {
         no_history: 'No encontramos a nadie con "{query}".',
         no_history_cta: 'Sé el primero en registrarlo',
         create_new: 'Crear Nuevo Registro',
+        none_match_heading: '¿Ninguna persona coincide?',
+        none_match_desc: 'Si ninguno de los resultados anteriores corresponde, podés crear un nuevo perfil con esta información.',
         clear: 'Limpiar Búsqueda',
         login_to_view: '(iniciá sesión para ver)',
         protected_info: 'Información protegida.',
