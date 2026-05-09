@@ -4,6 +4,7 @@ import { adopters, adopterHistory } from "@/db/schema";
 import { desc, like, or, and, isNull, eq, sql, ne } from "drizzle-orm";
 import Link from "next/link";
 import AdminAdopterList from "@/components/AdminAdopterList";
+import UserFilterSelect from "@/components/UserFilterSelect";
 import { enrichAdopters } from "@/app/actions/enrichAdopters";
 import { getRatingColors, getRatingDescription } from "@/lib/ratingColors";
 
@@ -249,7 +250,6 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                         <UserFilterSelect
                             users={distinctUsers}
                             currentUser={filterUser}
-                            buildFilterUrl={buildFilterUrl}
                             query={query}
                             filterCountry={filterCountry}
                             filterRating={filterRating}
@@ -289,60 +289,3 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
     );
 }
 
-/**
- * User filter dropdown — a small client-side component for navigation on change.
- * Since we're in a server component, we use a script-free approach with links,
- * but a select dropdown requires JS for navigation. We inline a tiny script.
- */
-function UserFilterSelect({
-    users,
-    currentUser,
-    query,
-    filterCountry,
-    filterRating,
-}: {
-    users: string[];
-    currentUser?: string;
-    buildFilterUrl: (params: Record<string, string | undefined>) => string;
-    query: string;
-    filterCountry?: string;
-    filterRating?: string;
-}) {
-    // Build URL for each user option via data attributes
-    const baseParams = new URLSearchParams();
-    if (query) baseParams.set('q', query);
-    if (filterCountry) baseParams.set('country', filterCountry);
-    if (filterRating) baseParams.set('rating', filterRating);
-
-    const baseUrl = `/admin/adopters`;
-
-    return (
-        <>
-            <select
-                id="user-filter-select"
-                defaultValue={currentUser || ''}
-                className="flex-1 px-3 py-1.5 rounded-lg border border-stone-200 text-sm text-stone-700 bg-white max-w-xs"
-                data-base-url={baseUrl}
-                data-base-params={baseParams.toString()}
-            >
-                <option value="">All users</option>
-                {users.map(u => (
-                    <option key={u} value={u}>{u}</option>
-                ))}
-            </select>
-            <script
-                dangerouslySetInnerHTML={{
-                    __html: `
-                        document.getElementById('user-filter-select')?.addEventListener('change', function(e) {
-                            var sel = e.target;
-                            var params = new URLSearchParams(sel.dataset.baseParams || '');
-                            if (sel.value) params.set('user', sel.value);
-                            var qs = params.toString();
-                            window.location.href = sel.dataset.baseUrl + (qs ? '?' + qs : '');
-                        });
-                    `,
-                }}
-            />
-        </>
-    );
-}

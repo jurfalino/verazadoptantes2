@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.8-6] - 2026-05-09
+
+Fixed: `/admin/adopters` "Created / Updated by" filter did nothing when a user was selected. Selecting a name from the dropdown should have navigated to `/admin/adopters?user=…` and re-filtered the list — but the inline `<script dangerouslySetInnerHTML>` that wired the `addEventListener` was a fragile pattern that didn't survive App Router hydration consistently. Replaced with a proper React client component.
+
+### Fixed
+- **`src/components/UserFilterSelect.tsx`** (new) — `'use client'` component with a real `onChange` handler that calls `useRouter().push(...)` to update the URL with the selected user filter. Preserves any existing `?q=…&country=…&rating=…` filters while adding/replacing the `user` param.
+- **`src/app/admin/adopters/page.tsx`** — replaced the inline `function UserFilterSelect(…)` definition (which used `dangerouslySetInnerHTML` to inject an `addEventListener` script) with an import of the new client component. Removed the now-dead `buildFilterUrl` prop on the call site (the new component constructs URLs directly with `URLSearchParams`).
+
+### Notes
+- **Why the old pattern broke**: server components can render `<script dangerouslySetInnerHTML>` to the wire, but the script body runs once during initial HTML parse — it has no React lifecycle. After hydration, React reconciles the DOM tree; any DOM-node identity it changes drops the externally-attached `addEventListener`. The dropdown stayed visible, the value changed locally, but the change handler was gone. Plain React `onChange` on a client component is the correct shape and survives every re-render.
+- **No DB / API change.** Pure UI plumbing fix.
+- **Unrelated tidy:** the dropdown still shows raw email addresses (`gatitosolivos@gmail.com`) rather than user display names. Resolving display names here is a separate concern (would need to wire `userNameMap` through the page component) — filed as a follow-up if the user complains; not in scope for this bug fix.
+
 ## [2.14.8-5] - 2026-05-09
 
 Three small homepage layout polish fixes bundled in one commit (all in `page.tsx`).
