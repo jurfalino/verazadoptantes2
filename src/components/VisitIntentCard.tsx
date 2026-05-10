@@ -20,6 +20,12 @@ interface Props {
     adopterName?: string | null;
     /** Average rating from prior records — passed through to the wizard's guidance copy. */
     avgRating?: number | null;
+    /** Density flag forwarded to the wizard's guidance copy. */
+    tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number } | null;
+    /** Density flag forwarded to the wizard's guidance copy. */
+    tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number } | null;
+    /** WIZARD_ALERTS_AS_CARD feature flag — controls alert layout in the wizard. */
+    alertsAsCard?: boolean;
     currentUser: string;
     adoptions: AdoptionLite[];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -42,7 +48,7 @@ interface Props {
  * (v2.14.8 made this the only entry point — the standalone "Registrar
  * Actividad" CTA on AdoptionFormWizard was removed for UX consistency).
  */
-export default function VisitIntentCard({ adopterId, adopterName, avgRating = null, currentUser, adoptions, availableAnimals, adopterAddress = '' }: Props) {
+export default function VisitIntentCard({ adopterId, adopterName, avgRating = null, tooManyAdoptions = null, tooManyRequests = null, alertsAsCard = true, currentUser, adoptions, availableAnimals, adopterAddress = '' }: Props) {
     const { t } = useLanguage();
     const [openedRecordType, setOpenedRecordType] = useState<IntentType | null>(null);
     const [trackedShown, setTrackedShown] = useState(false);
@@ -64,6 +70,9 @@ export default function VisitIntentCard({ adopterId, adopterName, avgRating = nu
                 adopterId={adopterId}
                 adopterName={adopterName || ''}
                 avgRating={avgRating}
+                tooManyAdoptions={tooManyAdoptions}
+                tooManyRequests={tooManyRequests}
+                alertsAsCard={alertsAsCard}
                 availableAnimals={availableAnimals}
                 adopterAdoptions={adoptions}
                 currentUser={currentUser}

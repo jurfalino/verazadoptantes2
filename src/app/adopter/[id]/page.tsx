@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getAdoptionConfig, getDuplicateCandidates } from '@/app/actions';
 import { resolveUserNames } from '@/app/actions/userNames';
 import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
+import { getFeatureFlag } from '@/config/features';
 import { logger } from '@/lib/logger';
 import { AdopterProfileV2 } from '@/components/AdopterProfileV2';
 
@@ -91,6 +92,9 @@ export default async function AdopterPage({
         formPrefill = await getFormSubmissionPrefill(fromForm.trim());
     }
 
+    // Wizard step-1 alert layout (admin-toggleable, defaults to card layout)
+    const wizardAlertsAsCard = await getFeatureFlag('WIZARD_ALERTS_AS_CARD').catch(() => true);
+
     // Build userNameMap: collect all editor emails then resolve to display names in one batch
     const editorEmails: string[] = [];
     for (const h of history) { if (h.changedBy) editorEmails.push(h.changedBy); }
@@ -116,6 +120,7 @@ export default async function AdopterPage({
             duplicateCandidates={dupCandidates}
             formPrefill={formPrefill}
             userNameMap={userNameMap}
+            wizardAlertsAsCard={wizardAlertsAsCard}
         />
     );
 }

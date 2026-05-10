@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-4] - 2026-05-10
+
+Wizard step-1 guidance copy is now flag-aware. Beyond the rating-bucket body added in v2.14.9, the `RecordTypeGuidance` block now also renders short alert messages when the adopter trips the existing density flags `tooManyAdoptions` (e.g. 7 completed adoptions in 30 days) or `tooManyRequests` (e.g. 4 active requests in 14 days). Both flags use `actualSpanDays` (the densest observed window) when reporting the period, so the warning reads "{count} adopciones en los últimos {actual} días" instead of the wider configured threshold window.
+
+### Added
+- **`src/components/RecordTypeGuidance.tsx`** — accepts new `tooManyAdoptions`, `tooManyRequests`, and `alertsAsCard` props. Builds 0-2 alerts, ordered adoptions-first then requests, gated to `adoption` / `adoption_request` record types. Each alert is an i18n string with `{name}`/`{count}`/`{days}` interpolation and `\n` line splitting; supports `**bold**` inline.
+- **i18n keys** `wizard.guidance.alerts.too_many_adoptions.{adoption,adoption_request}` and `wizard.guidance.alerts.too_many_requests.{adoption,adoption_request}` in both `es.ts` and `en.ts` (4 keys per locale; the request-flow tooManyAdoptions copy uses an "Atención:" prefix; the others share the "demasiados animales en un corto periodo" cautionary line).
+- **Feature flag `WIZARD_ALERTS_AS_CARD`** (admin-toggleable, default `true`) — when on, each fired alert renders as its own warning card below the body (amber styling, `⚠` glyph, `role="note"`); when off, alerts are appended as additional plain paragraphs inside the body card. Standard 4-place plumbing (`features.ts`, `/api/admin/config`, `/admin/config` UI, i18n labels).
+
+### Changed
+- **`src/components/AdopterProfileV2.tsx`** — computes `tooManyAdoptions` and `tooManyRequests` once via `useMemo + computeMaxDensityPeriod` (mirrors `AdopterForm`'s pattern at line 66-71). Also accepts a new `wizardAlertsAsCard` prop. Forwards all three values into both wizard mounts (the `VisitIntentCard` mount and the URL-driven autoOpen mount).
+- **`src/components/VisitIntentCard.tsx`** — adds `tooManyAdoptions`, `tooManyRequests`, `alertsAsCard` props on its `Props` interface; threads them straight into the spawned `AdoptionFormWizard`.
+- **`src/components/AdoptionFormWizard.tsx`** — same trio added; forwarded into `RecordTypeGuidance` only on the `initialRecordType` branch (where the guidance block actually renders).
+- **`src/app/adopter/[id]/page.tsx`** — fetches the feature flag value via `getFeatureFlag('WIZARD_ALERTS_AS_CARD')` (with `.catch(() => true)` for the same degraded-default treatment as the rest of the page-load fan-out from v2.14.9-1) and passes it down to `AdopterProfileV2`.
+
+### Notes
+- **Decisions signed off** — Q1 layered (alerts overlay the rating-base body, don't replace it). Q2 only the two density flags (no `inaccurate` / `systemDuplicate` / `verified_*` for now). Q3 both layouts behind the new feature flag. Q4 render both alerts when both fire, adoptions first. Q5 use `actualSpanDays`.
+- **No DB or schema change.** Existing density computation (`adoptionConfig.threshold` / `.requestsThreshold` / `.periodDays` / `.requestsPeriodDays`) drives the flags identically to how `/admin/adopters` and `AdopterFlagging` already use them.
+- **Plan saved at** `.agents/plans/wizard-flag-aware-copy.md`.
+
 ## [2.14.9-3] - 2026-05-10
 
 Wizard step 1 for `adoption_request` now collects only the species — no animal name, no existing/new mode switcher. An adoption request is "person asks for any cat / any dog" — there's no specific animal yet, so asking for its name was friction with no information value. All other record types (adoption / follow_up / returned_pet / observation) are unchanged.

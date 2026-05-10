@@ -84,6 +84,8 @@ export const es = {
         flag_desc_chat_widget: 'Burbuja flotante en la esquina inferior derecha que enruta los mensajes al Telegram del admin. Requiere TELEGRAM_BOT_TOKEN + TELEGRAM_WEBHOOK_SECRET configurados como secretos de Cloudflare y TELEGRAM_ADMIN_CHAT_ID abajo. Ver docs/CHAT_SETUP.md.',
         flag_label_milestone_badge: 'Insignia de hitos',
         flag_desc_milestone_badge: 'Mostrar la barra de progreso "Completaste X adopciones" en la portada para usuarios autenticados.',
+        flag_label_wizard_alerts_card: 'Alertas del wizard como tarjeta',
+        flag_desc_wizard_alerts_card: 'En el paso 1 del wizard de actividad, mostrar las alertas de "muchas adopciones" / "muchos pedidos" como tarjetas separadas debajo del cuerpo. Si está apagado, las alertas se agregan como párrafos al final del cuerpo, sin estilo de tarjeta. Por defecto activado.',
     },
     demo: {
         not_real: 'esta no es una persona real',
@@ -791,6 +793,16 @@ export const es = {
             observation: {
                 title: 'Quiero registrar una observación sobre {name}.',
                 body: 'Ya sea positiva o negativa, asegurate de ser claro e imparcial al describir el hecho y las circunstancias. Si lo que compartís implica maltrato animal, recordá que debe estar respaldado por una **denuncia policial** según la ley aplicable en tu país.',
+            },
+            alerts: {
+                too_many_adoptions: {
+                    adoption_request: 'Atención: {name} ya tiene {count} adopciones registradas en los últimos {days} días. Te lo dijo en la entrevista?\nAlgunas veces, cuando una persona adopta demasiados animales en un corto periodo de tiempo, no es con buenas intenciones.',
+                    adoption: 'Tené en cuenta: {name} acumuló {count} adopciones en los últimos {days} días. Te lo dijo en la entrevista?\nAlgunas veces, cuando una persona adopta demasiados animales en un corto periodo de tiempo, no es con buenas intenciones.',
+                },
+                too_many_requests: {
+                    adoption_request: '{name} tiene {count} pedidos de adopción activos en los últimos {days} días. Confirmá que sigue interesado y no está pidiendo a varios rescatistas a la vez.',
+                    adoption: '{name} tiene {count} pedidos de adopción activos en los últimos {days} días.\nAlgunas veces, cuando una persona adopta demasiados animales en un corto periodo de tiempo, no es con buenas intenciones.',
+                },
             },
         },
     },

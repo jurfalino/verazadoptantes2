@@ -84,6 +84,8 @@ export const en = {
         flag_desc_chat_widget: 'Floating chat icon at bottom-right that routes visitor messages to the admin\'s Telegram. Requires TELEGRAM_BOT_TOKEN + TELEGRAM_WEBHOOK_SECRET set as Cloudflare secrets and TELEGRAM_ADMIN_CHAT_ID below. See docs/CHAT_SETUP.md.',
         flag_label_milestone_badge: 'Milestone Badge',
         flag_desc_milestone_badge: 'Show the "Completed X adoptions" progress bar on the homepage for authenticated users.',
+        flag_label_wizard_alerts_card: 'Wizard alerts as cards',
+        flag_desc_wizard_alerts_card: 'On wizard step 1, render "too many adoptions" / "too many requests" alerts as separate cards below the body. When off, alerts are appended as plain paragraphs to the body card. Default on.',
     },
     demo: {
         not_real: 'this is not a real person',
@@ -792,6 +794,16 @@ export const en = {
             observation: {
                 title: 'I want to log an observation about {name}.',
                 body: 'Whether positive or negative, be clear and impartial when describing what happened and the circumstances. If what you share involves animal abuse, remember it must be backed by a **police report** under the law applicable in your country.',
+            },
+            alerts: {
+                too_many_adoptions: {
+                    adoption_request: 'Heads up: {name} already has {count} adoptions on record in the last {days} days. Did they mention this during the interview?\nSometimes, when a person adopts too many animals in a short period, the intent is not good.',
+                    adoption: 'Worth noting: {name} accumulated {count} adoptions in the last {days} days. Did they mention this during the interview?\nSometimes, when a person adopts too many animals in a short period, the intent is not good.',
+                },
+                too_many_requests: {
+                    adoption_request: '{name} has {count} active adoption requests in the last {days} days. Confirm they are still interested and not asking multiple rescuers at once.',
+                    adoption: '{name} has {count} active adoption requests in the last {days} days.\nSometimes, when a person adopts too many animals in a short period, the intent is not good.',
+                },
             },
         },
     },
