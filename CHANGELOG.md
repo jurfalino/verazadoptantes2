@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-1] - 2026-05-10
+
+Hardened the adopter profile page against single-query failures. The Server-Components SSR error that surfaced on May 7 (digest `3138068963`, user `michistrendelacosta`) was the result of `src/app/adopter/[id]/page.tsx:56` doing a bare `Promise.all` of 9 D1 queries with no per-fetch error handling — a transient D1 outage on any one of them threw, Next.js caught it, redacted the message in prod, and the user got a blank profile with no log of the actual cause. Confirmed via Axiom: 1.2 seconds before that SSR error, the same user's `Log profile view failed` warn fired (D1 insert into `adopter_stats` rejected) — the profile_view stat was wrapped in try/catch (CLAUDE.md degraded pattern) so it logged-and-continued, but the 9-query Promise.all wasn't.
+
+### Fixed
+- **`src/app/adopter/[id]/page.tsx`** — wrapped each of the 9 fetches in `Promise.all` with `.catch(fallback(...))`. Each fallback logs at `warn` level with `{ op, adopterId, userEmail, error }` and returns a typed safe default (`null` for `getAdopter` / `getAdopterStats` / `getAverageRating`; `[]` for the array-returning queries). The page now degrades a section instead of crashing the whole SSR, and Axiom captures the real underlying error every time. Mirrors the `enrichAdopters` D1-fallback pattern documented in CLAUDE.md.
+
+### Notes
+- **No domain change.** The downstream components (`AdopterProfileV2` and its children) already handle `null` adopter / empty arrays — that's the existing "is this adopter new" / empty-state logic. No new branches required.
+- **The `?? null` for `availableAnimals`** in the `isNew` branch was tightened too — a small wrapper logger fires if that single query fails, matching the rest of the page's posture.
+- **Other errors found in the same Axiom audit (separate fixes pending):** `Save adoption failed` with empty `adopter_id` (May 6, "available" record_type flow); `Get users failed: no such column: p.organization` (May 6, schema drift on `/admin/users`); `[Audit] Failed to log` capturing `[object Object]` (logger plumbing bug). Each filed for its own commit.
+
 ## [2.14.9] - 2026-05-09
 
 Activity-wizard step 1 now shows explanatory copy that varies by record type — and, for `adoption` / `adoption_request`, by the adopter's average rating. The flat `[icon] Solicitud` badge gave the rescuer a label but no guidance; the new copy tells them what we know about this person and what to do given that knowledge. Rating-1 cases get an explicit "no se recomienda" warning; rating 4-5 gets a calmer "buenas referencias — igual recomendamos contrato"; brand-new adopters (no ratings) get a "tu seguimiento será el primero" framing.

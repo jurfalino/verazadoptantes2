@@ -53,19 +53,37 @@ export default async function AdopterPage({
     let dupCandidates: any[] = [];
 
     if (!isNew) {
+        // Per-fetch fallback: if any single query throws (e.g. transient D1 outage), the page
+        // degrades that section instead of crashing the whole SSR. The Server Components render
+        // error we used to surface (digest 3138068963 etc.) was the result of an unwrapped
+        // Promise.all — one D1 hiccup → blank page → no log of the underlying cause. We log at
+        // warn (degraded, not broken) and let the surrounding components handle the empty state.
+        const fallback = <T,>(op: string, def: T) => (e: unknown): T => {
+            logger.warn('adopter page: fetch fallback', {
+                op, adopterId: id, userEmail: currentUser,
+                error: e instanceof Error ? e.message : String(e),
+            });
+            return def;
+        };
         [adopter, history, adoptions, images, flags, stats, avgRating, availableAnimals, dupCandidates] = await Promise.all([
-            getAdopter(id),
-            getHistory(id),
-            getAdoptions(id),
-            getImages(id),
-            getFlags(id),
-            getAdopterStats(id),
-            getAverageRating(id),
-            getAvailableAnimals(),
-            getDuplicateCandidates(id)
+            getAdopter(id).catch(fallback('getAdopter', null)),
+            getHistory(id).catch(fallback<any[]>('getHistory', [])),
+            getAdoptions(id).catch(fallback<any[]>('getAdoptions', [])),
+            getImages(id).catch(fallback<any[]>('getImages', [])),
+            getFlags(id).catch(fallback<any[]>('getFlags', [])),
+            getAdopterStats(id).catch(fallback('getAdopterStats', null)),
+            getAverageRating(id).catch(fallback<number | null>('getAverageRating', null)),
+            getAvailableAnimals().catch(fallback<any[]>('getAvailableAnimals', [])),
+            getDuplicateCandidates(id).catch(fallback<any[]>('getDuplicateCandidates', [])),
         ]);
     } else {
-        availableAnimals = await getAvailableAnimals();
+        availableAnimals = await getAvailableAnimals().catch(e => {
+            logger.warn('adopter page: getAvailableAnimals fallback (new flow)', {
+                userEmail: currentUser,
+                error: e instanceof Error ? e.message : String(e),
+            });
+            return [];
+        });
     }
 
     let formPrefill = null;
