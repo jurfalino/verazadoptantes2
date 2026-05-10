@@ -37,11 +37,9 @@ interface AdopterProfileV2Props {
     duplicateCandidates?: DuplicateCandidateInfo[];
     formPrefill?: FormSubmissionPrefill | null;
     userNameMap?: Record<string, string>;
-    /** WIZARD_ALERTS_AS_CARD feature flag value, fetched server-side. */
-    wizardAlertsAsCard?: boolean;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, formPrefill = null, userNameMap = {}, wizardAlertsAsCard = true }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, formPrefill = null, userNameMap = {} }: AdopterProfileV2Props) {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const toast = useShowToast();
@@ -161,7 +159,6 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             avgRating={avgRating ?? null}
                             tooManyAdoptions={tooManyAdoptions}
                             tooManyRequests={tooManyRequests}
-                            alertsAsCard={wizardAlertsAsCard}
                             currentUser={currentUser}
                             adoptions={adoptions}
                             availableAnimals={availableAnimals}
@@ -181,7 +178,6 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                 avgRating={avgRating ?? null}
                                 tooManyAdoptions={tooManyAdoptions}
                                 tooManyRequests={tooManyRequests}
-                                alertsAsCard={wizardAlertsAsCard}
                                 availableAnimals={availableAnimals}
                                 adopterAdoptions={adoptions}
                                 currentUser={currentUser}

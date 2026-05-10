@@ -84,8 +84,6 @@ export const en = {
         flag_desc_chat_widget: 'Floating chat icon at bottom-right that routes visitor messages to the admin\'s Telegram. Requires TELEGRAM_BOT_TOKEN + TELEGRAM_WEBHOOK_SECRET set as Cloudflare secrets and TELEGRAM_ADMIN_CHAT_ID below. See docs/CHAT_SETUP.md.',
         flag_label_milestone_badge: 'Milestone Badge',
         flag_desc_milestone_badge: 'Show the "Completed X adoptions" progress bar on the homepage for authenticated users.',
-        flag_label_wizard_alerts_card: 'Wizard alerts as cards',
-        flag_desc_wizard_alerts_card: 'On wizard step 1, render "too many adoptions" / "too many requests" alerts as separate cards below the body. When off, alerts are appended as plain paragraphs to the body card. Default on.',
     },
     demo: {
         not_real: 'this is not a real person',

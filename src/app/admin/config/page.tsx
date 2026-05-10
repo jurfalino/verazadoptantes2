@@ -32,7 +32,6 @@ interface ConfigData {
         ENABLE_SEARCH_CARD_METADATA?: string;
         ENABLE_CHAT_WIDGET?: string;
         ENABLE_MILESTONE_BADGE?: string;
-        WIZARD_ALERTS_AS_CARD?: string;
         TELEGRAM_ADMIN_CHAT_ID?: string;
         TELEGRAM_BOT_TOKEN_SET?: string;
         TELEGRAM_WEBHOOK_SECRET_SET?: string;
@@ -55,7 +54,6 @@ const FEATURE_FLAGS = [
     { key: 'ENABLE_SEARCH_CARD_METADATA', labelKey: 'flag_label_search_card_metadata', descKey: 'flag_desc_search_card_metadata' },
     { key: 'ENABLE_CHAT_WIDGET', labelKey: 'flag_label_chat_widget', descKey: 'flag_desc_chat_widget' },
     { key: 'ENABLE_MILESTONE_BADGE', labelKey: 'flag_label_milestone_badge', descKey: 'flag_desc_milestone_badge' },
-    { key: 'WIZARD_ALERTS_AS_CARD', labelKey: 'flag_label_wizard_alerts_card', descKey: 'flag_desc_wizard_alerts_card' },
 ];
 
 export default function AdminConfigPage() {
@@ -73,7 +71,6 @@ export default function AdminConfigPage() {
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,
         ENABLE_MILESTONE_BADGE: true,
-        WIZARD_ALERTS_AS_CARD: true,
     });
     const [telegramAdminChatId, setTelegramAdminChatId] = useState('');
     const [telegramBotToken, setTelegramBotToken] = useState('');
@@ -113,7 +110,6 @@ export default function AdminConfigPage() {
                         ENABLE_SEARCH_CARD_METADATA: data.config?.ENABLE_SEARCH_CARD_METADATA !== 'false',
                         ENABLE_CHAT_WIDGET: data.config?.ENABLE_CHAT_WIDGET === 'true',
                         ENABLE_MILESTONE_BADGE: data.config?.ENABLE_MILESTONE_BADGE !== 'false',
-                        WIZARD_ALERTS_AS_CARD: data.config?.WIZARD_ALERTS_AS_CARD !== 'false',
                     });
                     setTelegramAdminChatId(data.config?.TELEGRAM_ADMIN_CHAT_ID || '');
                     setTelegramBotTokenSet(data.config?.TELEGRAM_BOT_TOKEN_SET === 'true');

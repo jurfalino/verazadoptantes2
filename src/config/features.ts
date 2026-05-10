@@ -19,10 +19,6 @@ export const FEATURE_FLAGS = {
     ENABLE_SEARCH_CARD_METADATA: true,
     ENABLE_CHAT_WIDGET: false,
     ENABLE_MILESTONE_BADGE: true,
-    // Wizard step-1 density alerts (tooManyAdoptions / tooManyRequests):
-    //   true  → render each fired alert as its own warning card below the body
-    //   false → append the alert text(s) as additional paragraphs inside the body card
-    WIZARD_ALERTS_AS_CARD: true,
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;
@@ -105,7 +101,6 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,
         ENABLE_MILESTONE_BADGE: true,
-        WIZARD_ALERTS_AS_CARD: true,
     };
 
     for (const flag of Object.keys(FEATURE_FLAGS) as FeatureFlag[]) {

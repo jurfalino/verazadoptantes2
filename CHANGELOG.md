@@ -2,6 +2,28 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-6] - 2026-05-10
+
+Removed the `WIZARD_ALERTS_AS_CARD` admin feature flag added in v2.14.9-4. Card layout is the only path now. The inline-paragraph alternative was useful for the v2.14.9-4 → v2.14.9-5 staging A/B but never won an audience — keeping it would mean carrying a 4-place flag duplication, an extra prop on three components, an extra SSR fetch on every adopter-page load, and a contrast-failure-prone alternate render path forever.
+
+The card layout itself is unchanged from v2.14.9-5 (text-amber-700/800 with proper dark-theme remaps).
+
+### Removed
+- **`src/config/features.ts`** — `WIZARD_ALERTS_AS_CARD: true` from the `FEATURE_FLAGS` const and from the `getAllFeatureFlags` defaults block.
+- **`src/app/api/admin/config/route.ts`** — `WIZARD_ALERTS_AS_CARD` line in the GET response.
+- **`src/app/admin/config/page.tsx`** — `ConfigData` interface field, `FEATURE_FLAGS` array entry, `useState` initializer key, and fetch-hydration setter.
+- **`src/i18n/locales/{es,en}.ts`** — `admin.flag_label_wizard_alerts_card` + `admin.flag_desc_wizard_alerts_card` (no longer referenced).
+- **`src/components/RecordTypeGuidance.tsx`** — `alertsAsCard` prop, the `{!alertsAsCard && alerts.map(...)}` inline-paragraph branch, and the `{alertsAsCard && ...}` guard around the card branch. Card branch now renders unconditionally.
+- **`src/components/AdoptionFormWizard.tsx`** — `alertsAsCard` prop on the destructure + JSDoc + the forwarding into `<RecordTypeGuidance>`.
+- **`src/components/VisitIntentCard.tsx`** — `alertsAsCard` from `Props` + destructure + forward into `<AdoptionFormWizard>`.
+- **`src/components/AdopterProfileV2.tsx`** — `wizardAlertsAsCard` from `AdopterProfileV2Props` + destructure + the forwarding to both wizard mounts (VisitIntentCard mount + URL-driven autoOpen mount).
+- **`src/app/adopter/[id]/page.tsx`** — `getFeatureFlag('WIZARD_ALERTS_AS_CARD')` call, the `wizardAlertsAsCard={...}` prop, and the now-unused `getFeatureFlag` import.
+
+### Notes
+- **No DB migration.** Any `app_config` row with `key = 'WIZARD_ALERTS_AS_CARD'` (anyone toggled it in `/admin/config` between v2.14.9-4 and now) is a harmless orphan — `getFeatureFlag` is no longer called for that key.
+- **Density computation stays.** The `useMemo + computeMaxDensityPeriod` block in `AdopterProfileV2`, the `tooManyAdoptions` / `tooManyRequests` props on `RecordTypeGuidance` / `AdoptionFormWizard` / `VisitIntentCard`, and the four `wizard.guidance.alerts.*` i18n strings (es + en) are all preserved — only the layout flag is gone.
+- **`grep -rn 'WIZARD_ALERTS_AS_CARD\|alertsAsCard\|wizardAlertsAsCard'` returns zero results** in `src/` after the cleanup.
+
 ## [2.14.9-5] - 2026-05-10
 
 Fixed dark-theme contrast on the wizard alert cards added in v2.14.9-4. The alert body used `text-amber-900` and the icon used `text-amber-600` — `text-amber-900` has no `[data-theme="dark"]` remap in `globals.css`, so it stayed near-black on the dark amber-tinted background and was barely readable. Switched the body to `text-amber-800` (remaps to `#fde047`/bright yellow in dark) and the icon to `text-amber-700` (remaps to `var(--status-warning-text)`); both classes already have proper light- and dark-theme overrides in the codebase.

@@ -53,7 +53,7 @@ const RECORD_TYPES = [
     { value: 'returned_pet', icon: '↩️', labelKey: 'adoption.type_returned', fallback: 'Returned' },
 ] as const;
 
-export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRating = null, tooManyAdoptions = null, tooManyRequests = null, alertsAsCard = true, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '', initialRecordType, autoOpen = false, onClose }: {
+export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRating = null, tooManyAdoptions = null, tooManyRequests = null, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '', initialRecordType, autoOpen = false, onClose }: {
     adopterId: string;
     /** Display name of the adopter — used in step-1 guidance copy. */
     adopterName?: string;
@@ -63,8 +63,6 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number } | null;
     /** Density flag: too many open adoption_requests in a recent window (or null when below threshold). */
     tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number } | null;
-    /** WIZARD_ALERTS_AS_CARD feature flag — true = alerts as cards, false = inline paragraphs. */
-    alertsAsCard?: boolean;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     availableAnimals?: any[];
     /**
@@ -443,7 +441,6 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                     avgRating={avgRating}
                                     tooManyAdoptions={tooManyAdoptions}
                                     tooManyRequests={tooManyRequests}
-                                    alertsAsCard={alertsAsCard}
                                 />
                             ) : (
                                 <div>

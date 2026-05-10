@@ -121,7 +121,6 @@ export default function RecordTypeGuidance({
     avgRating,
     tooManyAdoptions = null,
     tooManyRequests = null,
-    alertsAsCard = true,
 }: {
     recordType: RecordType;
     adopterName: string;
@@ -130,13 +129,6 @@ export default function RecordTypeGuidance({
     tooManyAdoptions?: DensityFlag | null;
     /** Density flag — `null` when below threshold. */
     tooManyRequests?: DensityFlag | null;
-    /**
-     * Layout for fired alerts:
-     *   true  → each alert as its own warning card below the body
-     *   false → alerts appended as additional paragraphs inside the body card
-     * Driven by the WIZARD_ALERTS_AS_CARD admin feature flag (default true).
-     */
-    alertsAsCard?: boolean;
 }) {
     const { t, locale } = useLanguage();
     const name = adopterName?.trim() || (locale === 'en' ? 'this person' : 'esta persona');
@@ -179,21 +171,15 @@ export default function RecordTypeGuidance({
                 <p className="text-sm text-stone-600 leading-relaxed">
                     {renderBody(body, '')}
                 </p>
-                {/* Inline layout: append each alert as its own paragraph inside the body card. */}
-                {!alertsAsCard && alerts.map((a, i) => (
-                    <p key={i} className="text-sm text-stone-600 leading-relaxed mt-3">
-                        {renderAlert(a.text)}
-                    </p>
-                ))}
             </div>
-            {/* Card layout: each alert as its own warning card below the body.
+            {/* Each fired alert renders as its own warning card below the body.
                 Tailwind classes used here all have [data-theme="dark"] remaps in
                 globals.css — bg-amber-50 → status-warning-bg, border-amber-200 →
                 status-warning-border, text-amber-700/800 → readable on the dark
                 amber-tinted bg. text-amber-900 is intentionally avoided since
                 it has no dark-theme remap and renders as near-black on the
-                tinted bg (was the v2.14.9-4 contrast bug). */}
-            {alertsAsCard && alerts.map((a, i) => (
+                tinted bg (was the v2.14.9-4 contrast bug; fixed in v2.14.9-5). */}
+            {alerts.map((a, i) => (
                 <div
                     key={i}
                     className="mt-2 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3 shadow-sm"
