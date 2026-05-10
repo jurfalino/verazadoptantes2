@@ -19,6 +19,7 @@ export const RECORD_TYPES = {
     FOLLOW_UP: 'follow_up',
     RETURNED: 'returned_pet',
     AVAILABLE: 'available',
+    FOSTER: 'foster',
 } as const;
 
 export const EVENT_TYPES = {

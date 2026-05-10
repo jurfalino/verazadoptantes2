@@ -54,6 +54,7 @@ const STRIPE_BY_TYPE: Record<string, string> = {
     observation: 'border-l-amber-500',
     follow_up: 'border-l-violet-500',
     returned_pet: 'border-l-rose-500',
+    foster: 'border-l-indigo-500',
 };
 
 // Inline SVG record-type icons. Lucide-style strokes; inherit color from parent via currentColor
@@ -206,6 +207,9 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                 {summaryCounts.returned_pet > 0 && (
                     <span><strong className="text-rose-700">{summaryCounts.returned_pet}</strong> {t('stats.returns') || 'devoluciones'}</span>
                 )}
+                {summaryCounts.foster > 0 && (
+                    <span><strong className="text-indigo-700">{summaryCounts.foster}</strong> {t('stats.fosters') || 'tránsitos'}</span>
+                )}
                 {avgRating != null && (
                     <span className="ml-auto inline-flex items-center gap-1 font-semibold">
                         <span aria-hidden>⭐</span>
@@ -277,6 +281,11 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                 ? `${t('adoption.verb_returned') || 'returned'} ${animalName}${speciesLabel ? ` (${speciesLabel})` : ''}`
                                 : `${t('adoption.verb_returned') || 'returned'} ${speciesLabel}`;
                             break;
+                        case 'foster':
+                            summary = animalName
+                                ? `${t('adoption.verb_fostered') || 'recibió en tránsito'} ${animalName}${speciesLabel ? ` (${speciesLabel})` : ''}`
+                                : `${t('adoption.verb_fostered') || 'recibió en tránsito'} ${speciesLabel}`;
+                            break;
                         default:
                             summary = animalName || speciesLabel || recordType;
                     }
@@ -317,6 +326,14 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-semibold text-stone-800 leading-snug">
                                                 {summary}
+                                                {/* Active-foster pill: foster records default to status='active' on
+                                                    create; once the rescuer marks the foster ended (status='completed')
+                                                    the pill goes away. Only relevant for foster type. */}
+                                                {recordType === 'foster' && adoption.status === 'active' && (
+                                                    <span className="ml-2 inline-flex items-center text-xs px-1.5 py-0.5 rounded font-medium bg-indigo-100 text-indigo-700 align-middle">
+                                                        {t('adoption.foster_active') || 'En curso'}
+                                                    </span>
+                                                )}
                                                 {canEdit && (
                                                     <span className="text-teal-600 md:opacity-0 md:group-hover:opacity-100 transition-opacity inline-flex items-center ml-1.5 align-middle">
                                                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>

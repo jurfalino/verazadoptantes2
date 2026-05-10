@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const filterParam = searchParams.get('filter') || 'all';
-        const validFilters = ['all', 'adoption', 'adoption_request', 'observation', 'follow_up', 'returned_pet'];
+        const validFilters = ['all', 'adoption', 'adoption_request', 'foster', 'observation', 'follow_up', 'returned_pet'];
         const filter = validFilters.includes(filterParam) ? filterParam : 'all';
         const adoptions = await getMyAdoptions(filter as any, 'date');
         return NextResponse.json(adoptions);

@@ -577,6 +577,39 @@ button {
   color: var(--status-info-text) !important;
 }
 
+/* ── Indigo Colors (foster / tránsito record type) ──
+   Tailwind's indigo doesn't share a status-* CSS var like blue does,
+   so we hand-roll dark/light remaps modeled on the blue block above.
+   Used by foster chips in AdoptionHistory + the wizard step-1 record-type chip. */
+[data-theme="dark"] .bg-indigo-100 {
+  background-color: rgba(129, 140, 248, 0.15) !important;
+}
+
+[data-theme="dark"] .text-indigo-600,
+[data-theme="dark"] .text-indigo-700 {
+  color: #a5b4fc !important;
+}
+
+[data-theme="dark"] .text-indigo-800 {
+  color: #c7d2fe !important;
+}
+
+[data-theme="dark"] .border-indigo-200 {
+  border-color: rgba(129, 140, 248, 0.3) !important;
+}
+
+[data-theme="light"] .bg-indigo-100 {
+  background-color: rgba(99, 102, 241, 0.1) !important;
+}
+
+[data-theme="light"] .text-indigo-700 {
+  color: #4338ca !important;
+}
+
+[data-theme="light"] .border-indigo-200 {
+  border-color: rgba(99, 102, 241, 0.25) !important;
+}
+
 /* ── Amber / Warning Colors ── */
 [data-theme="dark"] .bg-yellow-50 {
   background-color: rgba(250, 204, 21, 0.1) !important;

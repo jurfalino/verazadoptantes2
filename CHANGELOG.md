@@ -2,6 +2,34 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-8] - 2026-05-10
+
+Two changes bundled:
+
+1. **Fixed e2e regression from v2.14.9-7** that blocked deploy. `tests/smoke.spec.ts:15` literally asserted `Busca adoptantes y Registra adopciones` — the exact text v2.14.9-7 removed when replacing the homepage subtitle with the click-to-expand explainer. The plan's verification step #11 said "no e2e selector references home.value_main text — quick grep in tests/" but I grepped for the i18n key, not the literal string. Updated the smoke test to assert the new `¿Qué es Buen Adoptante?` button. Lesson reinforces existing memory `feedback_grep_tests_before_deletion.md`: tests assert literal text, not i18n keys.
+
+2. **Added `foster` record type — Phase 1.** Captures temporary hosting / tránsito / foster home placements that previously had to be shoehorned into `adoption` (lying about permanence) or `observation` (losing structure). New record type is a peer of adoption / adoption_request, with rating-aware step-1 guidance copy. Card layout in the timeline uses indigo (chosen for distinctness from the existing teal/sky/amber/violet/rose palette); contrasted properly in both light and dark themes via new `[data-theme]` remaps in `globals.css`.
+
+### Added
+- **`RECORD_TYPES.FOSTER = 'foster'`** in `src/domain/constants.ts`. `'foster'` added to both z.enums in `src/app/actions/validation.ts` (saveAdoptionSchema + createAdopterApiSchema). Schema doc-comment in `src/db/schema.ts:79` updated.
+- **Color + icon** in `src/lib/recordTypeColors.ts` — indigo palette (`bg-indigo-100`, `text-indigo-700`, `border-indigo-200`, etc.); 🤝 emoji.
+- **Indigo dark/light remaps** in `src/app/globals.css` — modeled on the existing blue block. Required because Tailwind indigo had zero `[data-theme]` overrides; without these the foster chip would have looked like the v2.14.9-4 amber-900 contrast bug. Adds remaps for `bg-indigo-100`, `text-indigo-600/700/800`, `border-indigo-200`.
+- **Wizard chip + visit intent + edit form**: foster added to local `RECORD_TYPES` arrays in `AdoptionFormWizard.tsx:48` and `AdoptionFormEditV2.tsx:594`. New `foster` case in `VisitIntentCard`'s `renderIcon`. New 4th main-row button in `mainButtons` (peer to "Me pidió un animal" / "Le dí un animal en adopción" / "Otro motivo").
+- **Step-1 guidance copy** — `RecordTypeGuidance.tsx`: foster added to `TYPE_META` and to `needsRatingVariant` so it gets the `none / 1 / 2 / 3 / 4_5` body lookup like adoption/request. New i18n keys `wizard.guidance.foster.{title, body.{none,1,2,3,4_5}}` in both locales — same shape as `adoption.body` with foster-specific phrasing ("durante el tránsito", etc.).
+- **Timeline rendering** in `AdoptionHistory.tsx` — added foster to `STRIPE_BY_TYPE` (border-l-indigo-500), to the verb-summary switch (`verb_fostered`), and to the activity summary line. New "En curso" pill rendered when `recordType === 'foster' && status === 'active'` (uses indigo classes — properly themed).
+- **`/my-adoptions` filter** — foster added to local `RECORD_TYPES` array (page.tsx) and `validFilters` (api/route.ts). `getTypeBadgeStyle` returns `bg-indigo-100 text-indigo-800` for foster.
+- **i18n keys**: `adoption.type_foster` ("Tránsito" / "Foster"), `adoption.foster_active` ("En curso" / "Active"), `adoption.verb_fostered` ("recibió en tránsito" / "fostered"), `stats.fosters` ("tránsitos" / "fosters"), `visitIntent.option_foster` + `option_foster_hint`. EN translations follow the literal pattern.
+
+### Changed
+- **`visitIntent.option_a`** tightened: `'Me pidió un animal en adopción'` → `'Me pidió un animal'` (per user ask). Bundles cleanly with the new `option_foster` since it's the same file + same surface; the "en adopción" suffix was implicit from neighboring options.
+- **`tests/smoke.spec.ts`** — homepage assertion now matches `¿Qué es Buen Adoptante?` button instead of the removed value_main literal.
+
+### Notes
+- **Lifecycle uses existing `status` field** — `status='active'` (foster ongoing) vs `status='completed'` (foster ended). No new column. Phase 2 can add `endDate` if duration analytics become important.
+- **Stats integration**: foster ratings count toward `avgRating` automatically (`computeAvgRating` already includes any non-null rating regardless of type). Foster records are **not** counted toward `MilestoneBadge`, `tooManyAdoptions`, or `tooManyRequests` (CX call: those are about permanent-placement signals; foster is a different lifecycle).
+- **Plan saved** at `/home/jurfalino/.claude-personal/plans/in-the-profile-screen-sequential-boole.md`.
+- **Phase 2/3 deferred**: foster→adoption "fail" conversion flow, dedicated `tooManyActiveFosters` density flag, observation-record backfill scan.
+
 ## [2.14.9-7] - 2026-05-10
 
 Replaced the homepage utility subtitle ("Busca adoptantes y Registra adopciones") with a click-to-expand "¿Qué es Buen Adoptante?" question. Tapping reveals a two-paragraph explainer of what the product is and how the workflow goes ("Cuando alguien te pide un animal en adopción, busca su nombre y sus datos acá…"). Trade-off accepted: lose a small action signal for returning users, gain self-onboarding for first-time visitors who don't yet have a mental model of the product.

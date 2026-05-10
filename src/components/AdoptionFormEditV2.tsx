@@ -594,6 +594,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                             const types = [
                                 { value: 'adoption', icon: '🏠', label: t('adoption.type_adoption') || 'Adoption' },
                                 { value: 'adoption_request', icon: '📝', label: t('adoption.type_request') || 'Request' },
+                                { value: 'foster', icon: '🤝', label: t('adoption.type_foster') || 'Foster' },
                                 { value: 'observation', icon: '👁️', label: t('adoption.type_observation') || 'Note' },
                                 { value: 'follow_up', icon: '📞', label: t('adoption.type_followup') || 'Follow-up' },
                                 { value: 'returned_pet', icon: '↩️', label: t('adoption.type_returned') || 'Returned' },

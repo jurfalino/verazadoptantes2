@@ -48,6 +48,7 @@ function extractAddressFromContact(contactText: string): string {
 const RECORD_TYPES = [
     { value: 'adoption', icon: '🏠', labelKey: 'adoption.type_adoption', fallback: 'Adoption' },
     { value: 'adoption_request', icon: '📝', labelKey: 'adoption.type_request', fallback: 'Request' },
+    { value: 'foster', icon: '🤝', labelKey: 'adoption.type_foster', fallback: 'Foster' },
     { value: 'observation', icon: '👁️', labelKey: 'adoption.type_observation', fallback: 'Note' },
     { value: 'follow_up', icon: '📞', labelKey: 'adoption.type_followup', fallback: 'Follow-up' },
     { value: 'returned_pet', icon: '↩️', labelKey: 'adoption.type_returned', fallback: 'Returned' },
@@ -82,7 +83,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
      * adoption_request flows can pick an animal — observation flows just
      * click "next".
      */
-    initialRecordType?: 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet';
+    initialRecordType?: 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet' | 'foster';
     /** Open the wizard immediately on mount (paired with initialRecordType). */
     autoOpen?: boolean;
     /** Called when the wizard closes (cancel or save). */

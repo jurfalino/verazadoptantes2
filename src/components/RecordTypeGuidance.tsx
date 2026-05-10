@@ -6,6 +6,7 @@ import { getRecordTypeColors, type RecordType } from '@/lib/recordTypeColors';
 const TYPE_META: Record<RecordType, { icon: string; labelKey: string }> = {
     adoption: { icon: '🏠', labelKey: 'adoption.type_adoption' },
     adoption_request: { icon: '📝', labelKey: 'adoption.type_request' },
+    foster: { icon: '🤝', labelKey: 'adoption.type_foster' },
     observation: { icon: '👁️', labelKey: 'adoption.type_observation' },
     follow_up: { icon: '📞', labelKey: 'adoption.type_followup' },
     returned_pet: { icon: '↩️', labelKey: 'adoption.type_returned' },
@@ -23,7 +24,7 @@ function ratingBucket(avg: number | null | undefined): RatingBucket {
 }
 
 function needsRatingVariant(rt: RecordType): boolean {
-    return rt === 'adoption' || rt === 'adoption_request';
+    return rt === 'adoption' || rt === 'adoption_request' || rt === 'foster';
 }
 
 function scrollToHistory() {
