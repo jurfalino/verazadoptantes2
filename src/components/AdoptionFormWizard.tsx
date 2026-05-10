@@ -7,6 +7,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { getRecordTypeColors, getRecordTypeIcon } from '@/lib/recordTypeColors';
+import RecordTypeGuidance from '@/components/RecordTypeGuidance';
 import { StarRating } from '@/components/StarRating';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
@@ -52,8 +53,12 @@ const RECORD_TYPES = [
     { value: 'returned_pet', icon: '↩️', labelKey: 'adoption.type_returned', fallback: 'Returned' },
 ] as const;
 
-export default function AdoptionFormWizard({ adopterId, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '', initialRecordType, autoOpen = false, onClose }: {
+export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRating = null, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '', initialRecordType, autoOpen = false, onClose }: {
     adopterId: string;
+    /** Display name of the adopter — used in step-1 guidance copy. */
+    adopterName?: string;
+    /** Average rating from prior records (1-5). Drives rating-bucket guidance copy. null when unrated. */
+    avgRating?: number | null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     availableAnimals?: any[];
     /**
@@ -407,21 +412,16 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], a
                     {step === 1 && (
                         <div className="space-y-4">
                             {/* When the wizard is opened with a known intent (from VisitIntentCard) we
-                                replace the chip selector with a read-only confirmation badge — the user
-                                already picked the type one click ago, showing the picker again is friction.
-                                Manual-open paths (no `initialRecordType`) keep the full chip grid below. */}
-                            {initialRecordType ? (() => {
-                                const selectedType = RECORD_TYPES.find(t => t.value === formData.recordType) || RECORD_TYPES[0];
-                                const colors = getRecordTypeColors(selectedType.value);
-                                return (
-                                    <div>
-                                        <label className="block text-xs font-semibold text-teal-800 mb-2 uppercase tracking-wider">{t('adoption.record_type')}</label>
-                                        <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border ${colors.bg} ${colors.border} ${colors.text} shadow-sm`}>
-                                            <span>{selectedType.icon}</span><span>{t(selectedType.labelKey as any)}</span>
-                                        </div>
-                                    </div>
-                                );
-                            })() : (
+                                replace the picker with explanatory copy that varies by record type
+                                and (for adoption/request) the adopter's rating bucket. Manual-open
+                                paths (no `initialRecordType`) keep the full chip grid below. */}
+                            {initialRecordType ? (
+                                <RecordTypeGuidance
+                                    recordType={formData.recordType as 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet'}
+                                    adopterName={adopterName}
+                                    avgRating={avgRating}
+                                />
+                            ) : (
                                 <div>
                                     <label className="block text-xs font-semibold text-teal-800 mb-2 uppercase tracking-wider">{t('adoption.record_type')}</label>
                                     <div className="flex flex-wrap gap-2">

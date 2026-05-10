@@ -18,6 +18,8 @@ interface AdoptionLite {
 interface Props {
     adopterId: string;
     adopterName?: string | null;
+    /** Average rating from prior records — passed through to the wizard's guidance copy. */
+    avgRating?: number | null;
     currentUser: string;
     adoptions: AdoptionLite[];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -40,7 +42,7 @@ interface Props {
  * (v2.14.8 made this the only entry point — the standalone "Registrar
  * Actividad" CTA on AdoptionFormWizard was removed for UX consistency).
  */
-export default function VisitIntentCard({ adopterId, adopterName, currentUser, adoptions, availableAnimals, adopterAddress = '' }: Props) {
+export default function VisitIntentCard({ adopterId, adopterName, avgRating = null, currentUser, adoptions, availableAnimals, adopterAddress = '' }: Props) {
     const { t } = useLanguage();
     const [openedRecordType, setOpenedRecordType] = useState<IntentType | null>(null);
     const [trackedShown, setTrackedShown] = useState(false);
@@ -60,6 +62,8 @@ export default function VisitIntentCard({ adopterId, adopterName, currentUser, a
         return (
             <AdoptionFormWizard
                 adopterId={adopterId}
+                adopterName={adopterName || ''}
+                avgRating={avgRating}
                 availableAnimals={availableAnimals}
                 adopterAdoptions={adoptions}
                 currentUser={currentUser}

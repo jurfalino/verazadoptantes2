@@ -15,7 +15,7 @@
 
 import { adopters, searches, adopterHistory, adoptions, adopterStats, duplicateTokens } from '@/db/schema';
 import { or, like, sql, and, isNull, eq, ne } from 'drizzle-orm';
-import { logger } from '@/lib/logger';
+import { logger, withTrace } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import {
@@ -671,13 +671,26 @@ export async function findAdopters(
 
         if (options.mode === 'duplicate') {
             // Duplicate mode: no auth, no enrichment, no analytics
-            const results = await runDuplicateMode(input, options, db);
+            const results = await withTrace(
+                'findAdopters.duplicate',
+                () => runDuplicateMode(input, options, db),
+                {
+                    nameLen: (input.name || '').length,
+                    phones: input.phones?.length || 0,
+                    emails: input.emails?.length || 0,
+                    socials: input.socials?.length || 0,
+                },
+            );
             return { results };
         }
 
         // Discovery mode: auth context, enrichment, geo-filter, analytics
         try { user = await getUser(); } catch { /* unauthenticated */ }
-        return await runDiscoveryMode(input, options, db, user);
+        return await withTrace(
+            'findAdopters.discovery',
+            () => runDiscoveryMode(input, options, db, user),
+            { rawLen: (input.raw || '').length, enrich: options.enrich !== false },
+        );
 
     } catch (error) {
         const errorId = logger.error('findAdopters failed', error, { mode: options.mode, user });

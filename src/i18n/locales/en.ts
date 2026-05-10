@@ -760,6 +760,40 @@ export const en = {
         match_family: 'Matches family members',
         match_history: 'Matches history log',
         match_adoption: 'Matches adoption records',
+        guidance: {
+            adoption_request: {
+                title: '{name} requested an animal for adoption.',
+                body: {
+                    none: '{name} has no ratings on file yet. Before handing over an animal we recommend doing a thorough interview, asking for references, and — if you proceed — signing an adoption contract. Log this request for future reference.',
+                    '1': 'Based on the ratings on their profile, **handing over animals is not recommended.** Review the {historyLink}activity history below{/historyLink} to read comments and contact those who shared past experiences with {name}. Either way, log this request for future reference.',
+                    '2': 'The ratings on their profile suggest that {name} **may pose a risk** as an adopter. Review the {historyLink}history below{/historyLink} for more context and, if you decide to proceed, follow up especially carefully. Log this request for future reference.',
+                    '3': '{name} has mixed ratings. If you decide to hand over an animal, we recommend doing it with proper follow-up. Review the {historyLink}history below{/historyLink} for more context, and log this request for future reference.',
+                    '4_5': '{name} has good references. Even so, we recommend always signing an adoption contract and following up. When interviewing {name}, you can contrast their answers with the information here — without mentioning that you already know their history.',
+                },
+            },
+            adoption: {
+                title: 'You gave {name} an animal for adoption.',
+                body: {
+                    none: 'Since {name} has no prior ratings, this record will be the first — your follow-up will be especially valuable for anyone who later considers handing over an animal. Share what you observe in the coming weeks.',
+                    '1': '{name} has very negative ratings on the platform. **The animal may be at risk.** Follow up as soon as possible and share your observations here.',
+                    '2': '{name} does not have great adopter ratings. **Follow up closely** on the adoption and share your observations here.',
+                    '3': '{name} has mixed adopter ratings. Follow up appropriately and share your observations here.',
+                    '4_5': '{name} has good references as an adopter. Even so, we recommend periodic follow-up and logging any observations that come up over time.',
+                },
+            },
+            follow_up: {
+                title: 'I am logging a follow-up on an animal I gave {name} for adoption.',
+                body: 'Share what you observed during the follow-up: living conditions of the animal, contact with {name}, photos if you have them. These observations help others evaluate {name} with first-hand information.',
+            },
+            returned_pet: {
+                title: '{name} returned an animal that you (or someone else) had given them for adoption.',
+                body: 'Be clear and impartial when describing what happened and the circumstances. This information will be visible to other rescuers evaluating future adoptions with {name}.',
+            },
+            observation: {
+                title: 'I want to log an observation about {name}.',
+                body: 'Whether positive or negative, be clear and impartial when describing what happened and the circumstances. If what you share involves animal abuse, remember it must be backed by a **police report** under the law applicable in your country.',
+            },
+        },
     },
     facebook: {
         importButton: 'Import from Facebook',

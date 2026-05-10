@@ -215,7 +215,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                 )}
             </div>
 
-            <div className="relative pb-6">
+            <div id="adoption-history" className="relative pb-6 scroll-mt-4">
                 {/* Vertical timeline connector — neutral; per-event color comes from dots and card stripe */}
                 <div className="absolute left-[7px] md:left-[15px] top-3 bottom-3 w-0.5 bg-stone-200 rounded-full" />
 

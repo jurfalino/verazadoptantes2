@@ -2,6 +2,37 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9] - 2026-05-09
+
+Activity-wizard step 1 now shows explanatory copy that varies by record type — and, for `adoption` / `adoption_request`, by the adopter's average rating. The flat `[icon] Solicitud` badge gave the rescuer a label but no guidance; the new copy tells them what we know about this person and what to do given that knowledge. Rating-1 cases get an explicit "no se recomienda" warning; rating 4-5 gets a calmer "buenas referencias — igual recomendamos contrato"; brand-new adopters (no ratings) get a "tu seguimiento será el primero" framing.
+
+### Added
+- **`src/components/RecordTypeGuidance.tsx`** (new) — title row + body paragraph + record-type chip on the right. Computes a `'none' | '1' | '2' | '3' | '4_5'` rating bucket from `avgRating`, looks up the matching i18n string at `wizard.guidance.<recordType>.body.<bucket>`. Body strings can embed `**bold**` (rendered as `<strong>`) and `{historyLink}…{/historyLink}` tokens (rendered as a button that scrolls to `#adoption-history`).
+- **`src/i18n/locales/es.ts` and `en.ts`** — 18 new keys under `wizard.guidance.*`. ES is the canonical voice; EN is a literal translation. Five record types × titles plus 8 rating-aware bodies (adoption + adoption_request × 4 buckets each, with `none` and `4_5` collapsed) plus 3 rating-neutral bodies (follow_up, returned_pet, observation).
+- **`src/components/AdoptionHistory.tsx`** — `id="adoption-history"` (with `scroll-mt-4`) on the timeline wrapper. Becomes the scroll target for the `{historyLink}` token.
+
+### Changed
+- **`src/components/AdoptionFormWizard.tsx`** — accepts `adopterName` and `avgRating` props. The `initialRecordType` branch (when the wizard is opened from VisitIntentCard with the type pre-selected) now renders `<RecordTypeGuidance>` instead of the small read-only badge. The manual-open chip-grid path stays untouched (no record type chosen yet → nothing to explain).
+- **`src/components/AdopterProfileV2.tsx`** — threads `adopterName` and `avgRating` into both the direct `AdoptionFormWizard` mount and the `VisitIntentCard` mount.
+- **`src/components/VisitIntentCard.tsx`** — accepts an optional `avgRating` prop and forwards it (alongside `adopterName`) into the wizard it spawns.
+
+### Notes
+- **Edit form is intentionally unchanged.** Per the plan, `AdoptionFormEditV2` still shows the small chip — explanatory copy would be preachy when someone is just fixing a typo on an existing record. The new copy only fires on creation.
+- **Bold emphasis** is applied only where the warning is severe (rating 1 in both flows) or where the action verb deserves it (rating 2 "seguimiento cercano", observation "denuncia policial"). Calmer ratings (3, 4-5, neutral types) intentionally have no bold.
+- **The `{historyLink}` token** is only present in 3 strings (request rating 1/2/3). Click → `document.getElementById('adoption-history')?.scrollIntoView({behavior:'smooth'})`. Plain DOM scroll, no router involved — works because the wizard is only mounted on the profile page where the timeline exists.
+- **Plan saved at** `.agents/plans/wizard-explanatory-copy.md` for reference.
+- **Type-check + lint clean** for all touched files.
+
+### Also bundled — cost observability traces
+
+Wrapped the three highest-leverage server-action paths in the existing `withTrace(...)` helper from `src/lib/logger.ts`. Each emits an `info`-level Axiom log line with `trace`, `duration` (ms), and small metadata so we can chart p50/p95 by route from APL queries — no new infra. Targets:
+
+- **`findAdopters` discovery mode** — `findAdopters.discovery` trace, metadata `{ rawLen, enrich }`.
+- **`findAdopters` duplicate mode** — `findAdopters.duplicate` trace, metadata `{ nameLen, phones, emails, socials }`.
+- **`enrichAdopters`** — wrapped via internal `_enrichAdoptersImpl` so the public signature is unchanged. Metadata `{ count }` (adopter list size).
+
+These were the answer to your earlier question about how to tell which functionality is most expensive as the app scales — once shipped, Axiom dashboards can `summarize p50, p95 by trace` to surface the slow paths.
+
 ## [2.14.8-6] - 2026-05-09
 
 Fixed: `/admin/adopters` "Created / Updated by" filter did nothing when a user was selected. Selecting a name from the dropdown should have navigated to `/admin/adopters?user=…` and re-filtered the list — but the inline `<script dangerouslySetInnerHTML>` that wired the `addEventListener` was a fragile pattern that didn't survive App Router hydration consistently. Replaced with a proper React client component.

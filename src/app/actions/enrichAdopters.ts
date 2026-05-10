@@ -11,7 +11,7 @@ import { computeStats } from '@/domain/stats';
 import { buildFlags } from '@/domain/flags';
 import { RECORD_TYPES } from '@/domain/constants';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
-import { logger } from '@/lib/logger';
+import { logger, withTrace } from '@/lib/logger';
 
 const logD1Fallback = (op: string, adopterId: string) => (e: unknown) => {
     logger.warn('enrichAdopters: D1 fallback hit', {
@@ -38,8 +38,13 @@ export async function enrichAdopters(
     adopterIds: string[]
 ): Promise<Map<string, EnrichmentResult>> {
     if (adopterIds.length === 0) return new Map();
+    return withTrace('enrichAdopters', () => _enrichAdoptersImpl(db, adopterIds), { count: adopterIds.length });
+}
 
-
+async function _enrichAdoptersImpl(
+    db: any,
+    adopterIds: string[]
+): Promise<Map<string, EnrichmentResult>> {
     const adoptionConfig = await getAdoptionConfig();
 
     // Initialize maps for enrichment data

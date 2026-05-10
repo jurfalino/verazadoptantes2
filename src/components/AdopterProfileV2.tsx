@@ -135,6 +135,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                         <VisitIntentCard
                             adopterId={id}
                             adopterName={adopter?.name}
+                            avgRating={avgRating ?? null}
                             currentUser={currentUser}
                             adoptions={adoptions}
                             availableAnimals={availableAnimals}
@@ -150,6 +151,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                 removed in v2.14.8 — VisitIntentCard above is the canonical entry. */}
                             <AdoptionFormWizard
                                 adopterId={id}
+                                adopterName={adopter?.name || ''}
+                                avgRating={avgRating ?? null}
                                 availableAnimals={availableAnimals}
                                 adopterAdoptions={adoptions}
                                 currentUser={currentUser}

@@ -759,6 +759,40 @@ export const es = {
         match_family: 'Coincide con miembros de la familia',
         match_history: 'Coincide con el historial',
         match_adoption: 'Coincide con registros de adopción',
+        guidance: {
+            adoption_request: {
+                title: '{name} te pidió un animal en adopción.',
+                body: {
+                    none: '{name} aún no tiene calificaciones registradas en la plataforma. Antes de entregarle un animal te recomendamos hacer una entrevista detallada, pedir referencias y, si procedés, firmar un contrato de adopción. Dejá constancia de este pedido para referencia futura.',
+                    '1': 'En base a las calificaciones registradas en su perfil, **no se recomienda entregarle animales en adopción.** Revisá el {historyLink}historial de actividad más abajo{/historyLink} para leer comentarios y contactar a quienes dejaron experiencias previas con {name}. Igualmente, dejá registrado este pedido para referencia futura.',
+                    '2': 'Las calificaciones en su perfil indican que {name} **puede representar un riesgo** como adoptante. Revisá el {historyLink}historial más abajo{/historyLink} para más contexto y, si decidís proceder, hacé un seguimiento especialmente cuidadoso. Dejá registrado este pedido para referencia futura.',
+                    '3': 'Las calificaciones de {name} son mixtas. Si decidís entregarle un animal, te recomendamos hacerlo con un seguimiento adecuado. Revisá el {historyLink}historial más abajo{/historyLink} para más contexto, y dejá registrado este pedido para referencia futura.',
+                    '4_5': '{name} tiene buenas referencias. Aun así, te recomendamos siempre firmar un contrato de adopción y hacer seguimiento. Al entrevistar a {name} podés contrastar sus respuestas con la información registrada acá — sin mencionarle que ya conocés su historial.',
+                },
+            },
+            adoption: {
+                title: 'Le diste a {name} un animal en adopción.',
+                body: {
+                    none: 'Como {name} aún no tiene calificaciones previas, este registro es el primero — tu seguimiento será especialmente valioso para quienes en el futuro evalúen entregarle un animal. Compartí acá lo que observes en las próximas semanas.',
+                    '1': '{name} tiene calificaciones muy negativas en la plataforma. **El animal puede estar en riesgo.** Hacé seguimiento lo antes posible y compartí acá tus observaciones.',
+                    '2': '{name} no tiene muy buenas calificaciones como adoptante. Hacé un **seguimiento cercano** de la adopción y compartí acá tus observaciones.',
+                    '3': '{name} tiene calificaciones mixtas como adoptante. Hacé un seguimiento adecuado y compartí acá tus observaciones.',
+                    '4_5': '{name} tiene buenas referencias como adoptante. Aun así, te recomendamos hacer un seguimiento periódico y registrar acá cualquier observación que surja con el tiempo.',
+                },
+            },
+            follow_up: {
+                title: 'Voy a registrar un seguimiento de un animal que le di a {name} en adopción.',
+                body: 'Compartí lo que observaste durante el seguimiento: condiciones de vida del animal, contacto con {name}, fotos si tenés. Estas observaciones ayudan a otras personas a evaluar a {name} con información de primera mano.',
+            },
+            returned_pet: {
+                title: '{name} te devolvió un animal que le habías dado (vos u otra persona) en adopción.',
+                body: 'Asegurate de ser claro e imparcial al describir el hecho y las circunstancias. Esta información será visible para otros rescatistas que evalúen futuras adopciones con {name}.',
+            },
+            observation: {
+                title: 'Quiero registrar una observación sobre {name}.',
+                body: 'Ya sea positiva o negativa, asegurate de ser claro e imparcial al describir el hecho y las circunstancias. Si lo que compartís implica maltrato animal, recordá que debe estar respaldado por una **denuncia policial** según la ley aplicable en tu país.',
+            },
+        },
     },
     facebook: {
         importButton: 'Importar desde Facebook',
