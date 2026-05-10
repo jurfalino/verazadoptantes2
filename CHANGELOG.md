@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-10] - 2026-05-10
+
+Embedded Axiom-driven metrics into the `/admin` landing page. The previous "Activity Log coming soon..." placeholder is replaced with four operational signals fetched server-side from Axiom: errors-last-7d (with delta vs prior 7d), top 5 error messages, p50/p95 latency by trace (`findAdopters.discovery`, `findAdopters.duplicate`, `enrichAdopters` — the v2.14.9 trace wrappers finally pay off), and active rescuers in the last 7d / 30d. All in parallel with the existing DB counters; results cached 5 min per worker so repeat /admin loads are instant.
+
+### Added
+- **`src/lib/axiom.ts`** (new) — query-side counterpart to `logger.ts`. Reads a separate Cloudflare secret `AXIOM_QUERY_TOKEN` (read scope; distinct from the existing `AXIOM_TOKEN` used by the logger for ingest). Exposes typed wrappers `getErrorsCount`, `getTopErrors`, `getTraceLatencies`, `getActiveRescuers`. Module-level cache with 5-min TTL keyed by stringified request body. Uses Axiom's structured `legacy=true` query endpoint (NOT `_apl` — verified empirically; see Notes).
+- **`src/app/admin/page.tsx`** — extends the existing `Promise.all` with 6 Axiom calls (4 metric helpers, with errors fetched twice for the 7d/prior-7d delta and active rescuers twice for 7d/30d). Each call wrapped in `.catch(() => null)` per the v2.14.9-1 hardening pattern: one Axiom failure or a missing token degrades that section instead of crashing the page. New "Métricas (últimos 7 días)" section with three counter cards, a top-errors list, and a per-trace latency table.
+
+### Notes
+- **New Cloudflare secret required**: `AXIOM_QUERY_TOKEN`. Set under Cloudflare Pages → settings → Variables and Secrets → Environment variables, both staging and production. The existing `AXIOM_TOKEN` (ingest) and `AXIOM_DATASET` stay as-is.
+- **APL gotcha discovered while building**: the Axiom REST API has *two* query shapes. The `/v1/datasets/_apl/query` endpoint (which their docs feature prominently) returns 404 for our token/setup. The working endpoint is `/v1/datasets/{dataset}/query?legacy=true` with structured `aggregations[] / filter / groupBy[]` body — and crucially, **field names there are FLAT** (`level`, `message`, `trace`, `duration`, `user`) even though events are stored nested under `data.*` in the JSON. This took several iterations to nail down; the `axiom.ts` module documents the contract inline so the next person doesn't repeat the search.
+- **Active rescuers** counts distinct values of the `user` field — this captures search activity (the most common engagement surface) but misses events that use `changedBy` / `userEmail` (Adoption created, sign-ins, my-animals page). Logging field-name inconsistency is real codebase debt; counting "active searchers" is a reasonable proxy for v1. A union across the three fields is a Phase 2 improvement.
+- **`findAdopters.duplicate` trace** rarely fires in normal traffic (only on contract submits + a couple of import paths), so it may be absent from the latency table on a quiet week. That's expected; the row simply doesn't render.
+- **Cost**: 6 queries × ~10 admin loads/day = 60/day, well within Axiom free-tier 500GB/month. Cache keeps it flat. If we ever add 10+ metrics or multiple admins poll heavily, revisit cache TTL.
+- **No client-side token exposure**: the secret is read inside server-only code (`getRequestContext().env`) and the helpers are imported into the SSR'd `admin/page.tsx`. View-source on /admin contains no `xaat-` substring.
+- **Plan saved at** `/home/jurfalino/.claude-personal/plans/in-the-profile-screen-sequential-boole.md`.
+
 ## [2.14.9-9] - 2026-05-10
 
 Fixed `ENABLE_MILESTONE_BADGE` admin toggle not actually hiding the MilestoneBadge on the homepage. v2.14.8-5 added the 4-place flag plumbing (features.ts, /api/admin/config, /admin/config UI, i18n labels) but missed a 5th place: `src/app/api/config/route.ts` — the **public** config endpoint that the homepage actually reads. The admin UI was writing the flag value to the DB correctly, but `/api/config`'s `PUBLIC_FLAG_KEYS` whitelist didn't include `ENABLE_MILESTONE_BADGE`, so the homepage only ever saw `undefined` for that key. Since the homepage check is `appConfig.ENABLE_MILESTONE_BADGE !== 'false'`, `undefined !== 'false'` is `true` → the component always rendered regardless of admin toggle.
