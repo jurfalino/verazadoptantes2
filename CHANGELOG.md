@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-2] - 2026-05-10
+
+Fixed `[object Object]` showing up in Axiom whenever audit-log writes failed. Both catch blocks in `src/lib/audit.ts` were calling `logger.error('[Audit] ...', { error: e... })` — the `{error}` object was getting passed as the **second positional argument** to `logger.error(message, error?, data?)`, which logger's non-Error branch then stringified to `"[object Object]"` (because `String({error:'...'})` → `"[object Object]"`). The actual error message + stack never made it to Axiom — every audit-log failure was unactionable.
+
+### Fixed
+- **`src/lib/audit.ts:70`** — `logger.error('[Audit] Failed to log', e, { action, target })`. Pass the raw error as 2nd arg so logger extracts `name`/`message`/`stack`; pass operation context as 3rd arg.
+- **`src/lib/audit.ts:172`** — same fix on the upsert-user-profile path. Used `userId` and `email` (parameters in scope at catch level) instead of `resolvedId` (declared inside the try block, not visible in the catch).
+
+### Notes
+- **Issue C from the audit (`p.organization` schema-drift error)** — already resolved in current `master`. The legacy free-text `organization` column was deprecated in v2.12.1-34 (migration 0037) and the `/api/admin/users` SELECT no longer references it. The May 6 occurrence was on a stale deploy.
+- **The `[Audit]` errors were both rare** (2 occurrences in 7 days), but each one was a black box. With this fix the next failure will surface the underlying SQLite/D1 message + the audit `action` and `target` so we can actually triage.
+
 ## [2.14.9-1] - 2026-05-10
 
 Hardened the adopter profile page against single-query failures. The Server-Components SSR error that surfaced on May 7 (digest `3138068963`, user `michistrendelacosta`) was the result of `src/app/adopter/[id]/page.tsx:56` doing a bare `Promise.all` of 9 D1 queries with no per-fetch error handling — a transient D1 outage on any one of them threw, Next.js caught it, redacted the message in prod, and the user got a blank profile with no log of the actual cause. Confirmed via Axiom: 1.2 seconds before that SSR error, the same user's `Log profile view failed` warn fired (D1 insert into `adopter_stats` rejected) — the profile_view stat was wrapped in try/catch (CLAUDE.md degraded pattern) so it logged-and-continued, but the 9-query Promise.all wasn't.

@@ -66,8 +66,11 @@ export async function logAudit(entry: AuditEntry) {
                 resolvedIp
             ).run();
         } catch (e) {
-            // Never let audit logging break the main flow
-            logger.error('[Audit] Failed to log', { error: e instanceof Error ? e.message : String(e) });
+            // Never let audit logging break the main flow.
+            // Pass `e` directly as the 2nd arg so logger extracts name/message/stack;
+            // passing a `{error: ...}` object as 2nd arg made logger stringify it to
+            // "[object Object]" (it treats non-Error 2nd arg as `String(error)`).
+            logger.error('[Audit] Failed to log', e, { action: entry.action, target: entry.target });
         }
     };
 
@@ -166,7 +169,7 @@ export async function ensureUserProfile(userId: string, email?: string, name?: s
                  WHERE user_id = ?`
             ).bind(detectedProvince, detectedProvinceCode, detectedCity, detectedTimezone, resolvedId).run();
         } catch (e) {
-            logger.error('[Audit] Failed to upsert user profile', { error: e instanceof Error ? e.message : String(e) });
+            logger.error('[Audit] Failed to upsert user profile', e, { userId, email });
         }
     };
 
