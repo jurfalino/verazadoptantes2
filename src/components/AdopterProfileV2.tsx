@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
 import { useSearchParams } from 'next/navigation';
 import { AdopterForm } from '@/components/AdopterForm';
 import { CollapsibleSection } from '@/components/CollapsibleSection';
@@ -51,6 +52,26 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     // VisitIntentCard is the canonical (and only) entry point for recording
     // activity on a profile (v2.14.8). After the wizard closes, the card
     // re-renders its options for the next record.
+
+    // Density flags for wizard step-1 alerts (mirrors AdopterForm's computation).
+    // Drives the optional "too many adoptions / too many requests" warnings shown
+    // alongside the rating-bucket guidance copy. null when below threshold.
+    const adoptionsThreshold = adoptionConfig?.threshold ?? 5;
+    const adoptionsPeriodDays = adoptionConfig?.periodDays ?? 90;
+    const requestsThreshold = adoptionConfig?.requestsThreshold ?? 3;
+    const requestsPeriodDays = adoptionConfig?.requestsPeriodDays ?? 30;
+    const tooManyAdoptions = useMemo(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const d = computeMaxDensityPeriod(adoptions as any, 'adoption', adoptionsPeriodDays);
+        if (d.count < adoptionsThreshold) return null;
+        return { count: d.count, actualSpanDays: d.timeSpanDays, periodDays: adoptionsPeriodDays };
+    }, [adoptions, adoptionsThreshold, adoptionsPeriodDays]);
+    const tooManyRequests = useMemo(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const d = computeMaxDensityPeriod(adoptions as any, 'adoption_request', requestsPeriodDays);
+        if (d.count < requestsThreshold) return null;
+        return { count: d.count, actualSpanDays: d.timeSpanDays, periodDays: requestsPeriodDays };
+    }, [adoptions, requestsThreshold, requestsPeriodDays]);
 
     const handleDeleteClick = async () => {
         setDeleteLoading(true);
@@ -136,6 +157,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             adopterId={id}
                             adopterName={adopter?.name}
                             avgRating={avgRating ?? null}
+                            tooManyAdoptions={tooManyAdoptions}
+                            tooManyRequests={tooManyRequests}
                             currentUser={currentUser}
                             adoptions={adoptions}
                             availableAnimals={availableAnimals}
@@ -153,6 +176,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                 adopterId={id}
                                 adopterName={adopter?.name || ''}
                                 avgRating={avgRating ?? null}
+                                tooManyAdoptions={tooManyAdoptions}
+                                tooManyRequests={tooManyRequests}
                                 availableAnimals={availableAnimals}
                                 adopterAdoptions={adoptions}
                                 currentUser={currentUser}

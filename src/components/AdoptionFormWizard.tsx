@@ -48,17 +48,22 @@ function extractAddressFromContact(contactText: string): string {
 const RECORD_TYPES = [
     { value: 'adoption', icon: '🏠', labelKey: 'adoption.type_adoption', fallback: 'Adoption' },
     { value: 'adoption_request', icon: '📝', labelKey: 'adoption.type_request', fallback: 'Request' },
+    { value: 'foster', icon: '🤝', labelKey: 'adoption.type_foster', fallback: 'Foster' },
     { value: 'observation', icon: '👁️', labelKey: 'adoption.type_observation', fallback: 'Note' },
     { value: 'follow_up', icon: '📞', labelKey: 'adoption.type_followup', fallback: 'Follow-up' },
     { value: 'returned_pet', icon: '↩️', labelKey: 'adoption.type_returned', fallback: 'Returned' },
 ] as const;
 
-export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRating = null, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '', initialRecordType, autoOpen = false, onClose }: {
+export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRating = null, tooManyAdoptions = null, tooManyRequests = null, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '', initialRecordType, autoOpen = false, onClose }: {
     adopterId: string;
     /** Display name of the adopter — used in step-1 guidance copy. */
     adopterName?: string;
     /** Average rating from prior records (1-5). Drives rating-bucket guidance copy. null when unrated. */
     avgRating?: number | null;
+    /** Density flag: too many completed adoptions in a recent window (or null when below threshold). */
+    tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number } | null;
+    /** Density flag: too many open adoption_requests in a recent window (or null when below threshold). */
+    tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number } | null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     availableAnimals?: any[];
     /**
@@ -78,7 +83,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
      * adoption_request flows can pick an animal — observation flows just
      * click "next".
      */
-    initialRecordType?: 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet';
+    initialRecordType?: 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet' | 'foster';
     /** Open the wizard immediately on mount (paired with initialRecordType). */
     autoOpen?: boolean;
     /** Called when the wizard closes (cancel or save). */
@@ -435,6 +440,8 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                     recordType={formData.recordType as 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet'}
                                     adopterName={adopterName}
                                     avgRating={avgRating}
+                                    tooManyAdoptions={tooManyAdoptions}
+                                    tooManyRequests={tooManyRequests}
                                 />
                             ) : (
                                 <div>

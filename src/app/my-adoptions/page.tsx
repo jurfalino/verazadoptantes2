@@ -41,7 +41,7 @@ function getContractUrl(comments: string | null | undefined): string | null {
     }
 }
 
-const RECORD_TYPES = ['all', 'adoption', 'adoption_request', 'observation', 'follow_up', 'returned_pet'] as const;
+const RECORD_TYPES = ['all', 'adoption', 'adoption_request', 'foster', 'observation', 'follow_up', 'returned_pet'] as const;
 type RecordTypeFilter = typeof RECORD_TYPES[number];
 
 export default function MyAdoptionsPage() {
@@ -87,6 +87,7 @@ export default function MyAdoptionsPage() {
             all: t('dashboard.filter_all') || 'All',
             adoption: t('adoption.type_adoption') || 'Adoption',
             adoption_request: t('adoption.type_adoption_request') || 'Request',
+            foster: t('adoption.type_foster') || 'Foster',
             observation: t('adoption.type_observation') || 'Observation',
             follow_up: t('adoption.type_follow_up') || 'Follow-up',
             returned_pet: t('adoption.type_returned_pet') || 'Returned',
@@ -100,6 +101,8 @@ export default function MyAdoptionsPage() {
                 return 'bg-teal-100 text-teal-800';
             case 'adoption_request':
                 return 'bg-blue-100 text-blue-800';
+            case 'foster':
+                return 'bg-indigo-100 text-indigo-800';
             case 'observation':
                 return 'bg-purple-100 text-purple-800';
             case 'follow_up':

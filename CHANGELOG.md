@@ -2,6 +2,117 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-9] - 2026-05-10
+
+Fixed `ENABLE_MILESTONE_BADGE` admin toggle not actually hiding the MilestoneBadge on the homepage. v2.14.8-5 added the 4-place flag plumbing (features.ts, /api/admin/config, /admin/config UI, i18n labels) but missed a 5th place: `src/app/api/config/route.ts` — the **public** config endpoint that the homepage actually reads. The admin UI was writing the flag value to the DB correctly, but `/api/config`'s `PUBLIC_FLAG_KEYS` whitelist didn't include `ENABLE_MILESTONE_BADGE`, so the homepage only ever saw `undefined` for that key. Since the homepage check is `appConfig.ENABLE_MILESTONE_BADGE !== 'false'`, `undefined !== 'false'` is `true` → the component always rendered regardless of admin toggle.
+
+### Fixed
+- **`src/app/api/config/route.ts`** — added `ENABLE_MILESTONE_BADGE` to `PUBLIC_FLAG_KEYS` whitelist and to `PUBLIC_FLAG_DEFAULTS` (default `'true'`, matching `features.ts`).
+
+### Notes
+- **The "4-place plumbing" pattern documented in CLAUDE.md is actually 5 places when the flag gates client-side UI visible to all users** (admin + public both need to know). I'll fold this into the next `feedback_*` memory update so future agents don't repeat the miss. For admin-only flags (e.g. flags that only affect admin pages), the 4-place pattern is still correct.
+- **Other public-visible flags I should verify post-deploy** to make sure they actually work via /admin/config: `ENABLE_CONTENT_IMPORT`, `ENABLE_ANIMALS_FOR_ADOPTION`, `ENABLE_SEARCH_CARD_METADATA`, `SOCIAL_PROOF_ENABLED`. These are in `PUBLIC_FLAG_KEYS` so they should work; flagging here for completeness.
+
+## [2.14.9-8] - 2026-05-10
+
+Two changes bundled:
+
+1. **Fixed e2e regression from v2.14.9-7** that blocked deploy. `tests/smoke.spec.ts:15` literally asserted `Busca adoptantes y Registra adopciones` — the exact text v2.14.9-7 removed when replacing the homepage subtitle with the click-to-expand explainer. The plan's verification step #11 said "no e2e selector references home.value_main text — quick grep in tests/" but I grepped for the i18n key, not the literal string. Updated the smoke test to assert the new `¿Qué es Buen Adoptante?` button. Lesson reinforces existing memory `feedback_grep_tests_before_deletion.md`: tests assert literal text, not i18n keys.
+
+2. **Added `foster` record type — Phase 1.** Captures temporary hosting / tránsito / foster home placements that previously had to be shoehorned into `adoption` (lying about permanence) or `observation` (losing structure). New record type is a peer of adoption / adoption_request, with rating-aware step-1 guidance copy. Card layout in the timeline uses indigo (chosen for distinctness from the existing teal/sky/amber/violet/rose palette); contrasted properly in both light and dark themes via new `[data-theme]` remaps in `globals.css`.
+
+### Added
+- **`RECORD_TYPES.FOSTER = 'foster'`** in `src/domain/constants.ts`. `'foster'` added to both z.enums in `src/app/actions/validation.ts` (saveAdoptionSchema + createAdopterApiSchema). Schema doc-comment in `src/db/schema.ts:79` updated.
+- **Color + icon** in `src/lib/recordTypeColors.ts` — indigo palette (`bg-indigo-100`, `text-indigo-700`, `border-indigo-200`, etc.); 🤝 emoji.
+- **Indigo dark/light remaps** in `src/app/globals.css` — modeled on the existing blue block. Required because Tailwind indigo had zero `[data-theme]` overrides; without these the foster chip would have looked like the v2.14.9-4 amber-900 contrast bug. Adds remaps for `bg-indigo-100`, `text-indigo-600/700/800`, `border-indigo-200`.
+- **Wizard chip + visit intent + edit form**: foster added to local `RECORD_TYPES` arrays in `AdoptionFormWizard.tsx:48` and `AdoptionFormEditV2.tsx:594`. New `foster` case in `VisitIntentCard`'s `renderIcon`. New 4th main-row button in `mainButtons` (peer to "Me pidió un animal" / "Le dí un animal en adopción" / "Otro motivo").
+- **Step-1 guidance copy** — `RecordTypeGuidance.tsx`: foster added to `TYPE_META` and to `needsRatingVariant` so it gets the `none / 1 / 2 / 3 / 4_5` body lookup like adoption/request. New i18n keys `wizard.guidance.foster.{title, body.{none,1,2,3,4_5}}` in both locales — same shape as `adoption.body` with foster-specific phrasing ("durante el tránsito", etc.).
+- **Timeline rendering** in `AdoptionHistory.tsx` — added foster to `STRIPE_BY_TYPE` (border-l-indigo-500), to the verb-summary switch (`verb_fostered`), and to the activity summary line. New "En curso" pill rendered when `recordType === 'foster' && status === 'active'` (uses indigo classes — properly themed).
+- **`/my-adoptions` filter** — foster added to local `RECORD_TYPES` array (page.tsx) and `validFilters` (api/route.ts). `getTypeBadgeStyle` returns `bg-indigo-100 text-indigo-800` for foster.
+- **i18n keys**: `adoption.type_foster` ("Tránsito" / "Foster"), `adoption.foster_active` ("En curso" / "Active"), `adoption.verb_fostered` ("recibió en tránsito" / "fostered"), `stats.fosters` ("tránsitos" / "fosters"), `visitIntent.option_foster` + `option_foster_hint`. EN translations follow the literal pattern.
+
+### Changed
+- **`visitIntent.option_a`** tightened: `'Me pidió un animal en adopción'` → `'Me pidió un animal'` (per user ask). Bundles cleanly with the new `option_foster` since it's the same file + same surface; the "en adopción" suffix was implicit from neighboring options.
+- **`tests/smoke.spec.ts`** — homepage assertion now matches `¿Qué es Buen Adoptante?` button instead of the removed value_main literal.
+
+### Notes
+- **Lifecycle uses existing `status` field** — `status='active'` (foster ongoing) vs `status='completed'` (foster ended). No new column. Phase 2 can add `endDate` if duration analytics become important.
+- **Stats integration**: foster ratings count toward `avgRating` automatically (`computeAvgRating` already includes any non-null rating regardless of type). Foster records are **not** counted toward `MilestoneBadge`, `tooManyAdoptions`, or `tooManyRequests` (CX call: those are about permanent-placement signals; foster is a different lifecycle).
+- **Plan saved** at `/home/jurfalino/.claude-personal/plans/in-the-profile-screen-sequential-boole.md`.
+- **Phase 2/3 deferred**: foster→adoption "fail" conversion flow, dedicated `tooManyActiveFosters` density flag, observation-record backfill scan.
+
+## [2.14.9-7] - 2026-05-10
+
+Replaced the homepage utility subtitle ("Busca adoptantes y Registra adopciones") with a click-to-expand "¿Qué es Buen Adoptante?" question. Tapping reveals a two-paragraph explainer of what the product is and how the workflow goes ("Cuando alguien te pide un animal en adopción, busca su nombre y sus datos acá…"). Trade-off accepted: lose a small action signal for returning users, gain self-onboarding for first-time visitors who don't yet have a mental model of the product.
+
+### Added
+- **`src/components/WhatIsBuenAdoptante.tsx`** (new) — `'use client'` collapsible explainer. Question always renders; tapping toggles a height-animated panel with the intro paragraph + "¿Cómo funciona?" subhead + workflow paragraph. `<button aria-expanded aria-controls>` with rotating chevron; panel uses `grid-rows-[1fr]/[0fr]` transition so the height interpolates smoothly. No state persistence — every visit starts collapsed (CX trade-off accepted: simpler now, can layer in localStorage dismissal later if returning-user fatigue becomes a real complaint).
+- **i18n keys** `home.what_is.{title,intro,how_title,how_body}` in both `es.ts` and `en.ts`. Editorial passes on the user's draft: glossed "veraz" so non-Río-de-la-Plata readers aren't lost (`Es un registro de adoptantes — un "veraz", si conocés el término —`); fixed `sino → si no` (grammar — `sino` means "but rather", `si no` means "if not"); switched `rating → calificación` for consistency with the rest of the UI.
+
+### Changed
+- **`src/components/SearchSection.tsx`** — replaced the single-line `<p>{t('home.value_main')}</p>` subtitle (lines 182-190) with `<WhatIsBuenAdoptante />`. Kept the `text-center mb-4` spacing and the `hasResults ? 'hidden md:block'` mobile-collapse rule so the search-results-shown behavior stays identical.
+
+### Removed
+- **`home.value_main`, `home.value_verify`, `home.value_register`** keys from both `es.ts` and `en.ts`. Grep across `src/` and `tests/` confirmed all three were dead post-removal of `value_main` (the other two were already orphaned in earlier copy iterations). Removing dead keys per the i18n hygiene note in CLAUDE.md.
+
+### Notes
+- **Plan saved at** `/home/jurfalino/.claude-personal/plans/in-the-profile-screen-sequential-boole.md`.
+- **No DB / API change.** Pure UI swap.
+- **EN copy is a literal translation** — codebase default is `es`, EN side is best-effort per CLAUDE.md i18n note.
+- **`grep -rn 'value_main' src/ tests/`** returns zero results post-change.
+
+## [2.14.9-6] - 2026-05-10
+
+Removed the `WIZARD_ALERTS_AS_CARD` admin feature flag added in v2.14.9-4. Card layout is the only path now. The inline-paragraph alternative was useful for the v2.14.9-4 → v2.14.9-5 staging A/B but never won an audience — keeping it would mean carrying a 4-place flag duplication, an extra prop on three components, an extra SSR fetch on every adopter-page load, and a contrast-failure-prone alternate render path forever.
+
+The card layout itself is unchanged from v2.14.9-5 (text-amber-700/800 with proper dark-theme remaps).
+
+### Removed
+- **`src/config/features.ts`** — `WIZARD_ALERTS_AS_CARD: true` from the `FEATURE_FLAGS` const and from the `getAllFeatureFlags` defaults block.
+- **`src/app/api/admin/config/route.ts`** — `WIZARD_ALERTS_AS_CARD` line in the GET response.
+- **`src/app/admin/config/page.tsx`** — `ConfigData` interface field, `FEATURE_FLAGS` array entry, `useState` initializer key, and fetch-hydration setter.
+- **`src/i18n/locales/{es,en}.ts`** — `admin.flag_label_wizard_alerts_card` + `admin.flag_desc_wizard_alerts_card` (no longer referenced).
+- **`src/components/RecordTypeGuidance.tsx`** — `alertsAsCard` prop, the `{!alertsAsCard && alerts.map(...)}` inline-paragraph branch, and the `{alertsAsCard && ...}` guard around the card branch. Card branch now renders unconditionally.
+- **`src/components/AdoptionFormWizard.tsx`** — `alertsAsCard` prop on the destructure + JSDoc + the forwarding into `<RecordTypeGuidance>`.
+- **`src/components/VisitIntentCard.tsx`** — `alertsAsCard` from `Props` + destructure + forward into `<AdoptionFormWizard>`.
+- **`src/components/AdopterProfileV2.tsx`** — `wizardAlertsAsCard` from `AdopterProfileV2Props` + destructure + the forwarding to both wizard mounts (VisitIntentCard mount + URL-driven autoOpen mount).
+- **`src/app/adopter/[id]/page.tsx`** — `getFeatureFlag('WIZARD_ALERTS_AS_CARD')` call, the `wizardAlertsAsCard={...}` prop, and the now-unused `getFeatureFlag` import.
+
+### Notes
+- **No DB migration.** Any `app_config` row with `key = 'WIZARD_ALERTS_AS_CARD'` (anyone toggled it in `/admin/config` between v2.14.9-4 and now) is a harmless orphan — `getFeatureFlag` is no longer called for that key.
+- **Density computation stays.** The `useMemo + computeMaxDensityPeriod` block in `AdopterProfileV2`, the `tooManyAdoptions` / `tooManyRequests` props on `RecordTypeGuidance` / `AdoptionFormWizard` / `VisitIntentCard`, and the four `wizard.guidance.alerts.*` i18n strings (es + en) are all preserved — only the layout flag is gone.
+- **`grep -rn 'WIZARD_ALERTS_AS_CARD\|alertsAsCard\|wizardAlertsAsCard'` returns zero results** in `src/` after the cleanup.
+
+## [2.14.9-5] - 2026-05-10
+
+Fixed dark-theme contrast on the wizard alert cards added in v2.14.9-4. The alert body used `text-amber-900` and the icon used `text-amber-600` — `text-amber-900` has no `[data-theme="dark"]` remap in `globals.css`, so it stayed near-black on the dark amber-tinted background and was barely readable. Switched the body to `text-amber-800` (remaps to `#fde047`/bright yellow in dark) and the icon to `text-amber-700` (remaps to `var(--status-warning-text)`); both classes already have proper light- and dark-theme overrides in the codebase.
+
+### Fixed
+- **`src/components/RecordTypeGuidance.tsx`** — alert card body class `text-amber-900` → `text-amber-800`; icon class `text-amber-600` → `text-amber-700`. Added an inline comment to flag amber-900 as intentionally avoided so the next person isn't tempted to "match the design system" by using the deeper amber.
+
+### Notes
+- **No change to inline-paragraph layout** (`WIZARD_ALERTS_AS_CARD=false`). That layout uses the existing body card's `text-stone-600` which already has full theme coverage in `globals.css`.
+
+## [2.14.9-4] - 2026-05-10
+
+Wizard step-1 guidance copy is now flag-aware. Beyond the rating-bucket body added in v2.14.9, the `RecordTypeGuidance` block now also renders short alert messages when the adopter trips the existing density flags `tooManyAdoptions` (e.g. 7 completed adoptions in 30 days) or `tooManyRequests` (e.g. 4 active requests in 14 days). Both flags use `actualSpanDays` (the densest observed window) when reporting the period, so the warning reads "{count} adopciones en los últimos {actual} días" instead of the wider configured threshold window.
+
+### Added
+- **`src/components/RecordTypeGuidance.tsx`** — accepts new `tooManyAdoptions`, `tooManyRequests`, and `alertsAsCard` props. Builds 0-2 alerts, ordered adoptions-first then requests, gated to `adoption` / `adoption_request` record types. Each alert is an i18n string with `{name}`/`{count}`/`{days}` interpolation and `\n` line splitting; supports `**bold**` inline.
+- **i18n keys** `wizard.guidance.alerts.too_many_adoptions.{adoption,adoption_request}` and `wizard.guidance.alerts.too_many_requests.{adoption,adoption_request}` in both `es.ts` and `en.ts` (4 keys per locale; the request-flow tooManyAdoptions copy uses an "Atención:" prefix; the others share the "demasiados animales en un corto periodo" cautionary line).
+- **Feature flag `WIZARD_ALERTS_AS_CARD`** (admin-toggleable, default `true`) — when on, each fired alert renders as its own warning card below the body (amber styling, `⚠` glyph, `role="note"`); when off, alerts are appended as additional plain paragraphs inside the body card. Standard 4-place plumbing (`features.ts`, `/api/admin/config`, `/admin/config` UI, i18n labels).
+
+### Changed
+- **`src/components/AdopterProfileV2.tsx`** — computes `tooManyAdoptions` and `tooManyRequests` once via `useMemo + computeMaxDensityPeriod` (mirrors `AdopterForm`'s pattern at line 66-71). Also accepts a new `wizardAlertsAsCard` prop. Forwards all three values into both wizard mounts (the `VisitIntentCard` mount and the URL-driven autoOpen mount).
+- **`src/components/VisitIntentCard.tsx`** — adds `tooManyAdoptions`, `tooManyRequests`, `alertsAsCard` props on its `Props` interface; threads them straight into the spawned `AdoptionFormWizard`.
+- **`src/components/AdoptionFormWizard.tsx`** — same trio added; forwarded into `RecordTypeGuidance` only on the `initialRecordType` branch (where the guidance block actually renders).
+- **`src/app/adopter/[id]/page.tsx`** — fetches the feature flag value via `getFeatureFlag('WIZARD_ALERTS_AS_CARD')` (with `.catch(() => true)` for the same degraded-default treatment as the rest of the page-load fan-out from v2.14.9-1) and passes it down to `AdopterProfileV2`.
+
+### Notes
+- **Decisions signed off** — Q1 layered (alerts overlay the rating-base body, don't replace it). Q2 only the two density flags (no `inaccurate` / `systemDuplicate` / `verified_*` for now). Q3 both layouts behind the new feature flag. Q4 render both alerts when both fire, adoptions first. Q5 use `actualSpanDays`.
+- **No DB or schema change.** Existing density computation (`adoptionConfig.threshold` / `.requestsThreshold` / `.periodDays` / `.requestsPeriodDays`) drives the flags identically to how `/admin/adopters` and `AdopterFlagging` already use them.
+- **Plan saved at** `.agents/plans/wizard-flag-aware-copy.md`.
+
 ## [2.14.9-3] - 2026-05-10
 
 Wizard step 1 for `adoption_request` now collects only the species — no animal name, no existing/new mode switcher. An adoption request is "person asks for any cat / any dog" — there's no specific animal yet, so asking for its name was friction with no information value. All other record types (adoption / follow_up / returned_pet / observation) are unchanged.

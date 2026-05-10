@@ -44,7 +44,7 @@ export const saveAdoptionSchema = z.object({
     comments: optionalText,
     date: z.union([z.coerce.date(), z.string().max(50)]).optional().nullable(),
     onBehalfOf: z.string().max(500).optional().nullable(),
-    recordType: z.enum(['adoption', 'adoption_request', 'observation', 'follow_up', 'returned_pet', 'available']).optional().nullable(),
+    recordType: z.enum(['adoption', 'adoption_request', 'observation', 'follow_up', 'returned_pet', 'available', 'foster']).optional().nullable(),
     deliveredToHome: z.number().int().min(0).max(1).optional().nullable(),
     verifiedAddress: z.string().max(2_000).optional().nullable(),
     identityVerified: z.number().int().min(0).max(1).optional().nullable(),
@@ -114,7 +114,7 @@ export const createAdopterApiSchema = z.object({
     adoption: z.object({
         animalName: z.string().max(500).optional(),
         species: z.string().max(100).optional(),
-        recordType: z.enum(['adoption', 'adoption_request', 'returned_pet', 'follow_up', 'observation']).optional(),
+        recordType: z.enum(['adoption', 'adoption_request', 'returned_pet', 'follow_up', 'observation', 'foster']).optional(),
         rating: z.number().int().min(1).max(5).optional(),
         date: z.string().max(50).optional(),
     }).optional(),

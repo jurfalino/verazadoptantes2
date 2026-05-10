@@ -5,7 +5,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { zarazTrack } from '@/lib/zaraz';
 import AdoptionFormWizard from './AdoptionFormWizard';
 
-type IntentType = 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet';
+type IntentType = 'adoption' | 'adoption_request' | 'foster' | 'observation' | 'follow_up' | 'returned_pet';
 type IconKind = IntentType | 'other';
 type View = 'main' | 'other';
 
@@ -20,6 +20,10 @@ interface Props {
     adopterName?: string | null;
     /** Average rating from prior records — passed through to the wizard's guidance copy. */
     avgRating?: number | null;
+    /** Density flag forwarded to the wizard's guidance copy. */
+    tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number } | null;
+    /** Density flag forwarded to the wizard's guidance copy. */
+    tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number } | null;
     currentUser: string;
     adoptions: AdoptionLite[];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -42,7 +46,7 @@ interface Props {
  * (v2.14.8 made this the only entry point — the standalone "Registrar
  * Actividad" CTA on AdoptionFormWizard was removed for UX consistency).
  */
-export default function VisitIntentCard({ adopterId, adopterName, avgRating = null, currentUser, adoptions, availableAnimals, adopterAddress = '' }: Props) {
+export default function VisitIntentCard({ adopterId, adopterName, avgRating = null, tooManyAdoptions = null, tooManyRequests = null, currentUser, adoptions, availableAnimals, adopterAddress = '' }: Props) {
     const { t } = useLanguage();
     const [openedRecordType, setOpenedRecordType] = useState<IntentType | null>(null);
     const [trackedShown, setTrackedShown] = useState(false);
@@ -64,6 +68,8 @@ export default function VisitIntentCard({ adopterId, adopterName, avgRating = nu
                 adopterId={adopterId}
                 adopterName={adopterName || ''}
                 avgRating={avgRating}
+                tooManyAdoptions={tooManyAdoptions}
+                tooManyRequests={tooManyRequests}
                 availableAnimals={availableAnimals}
                 adopterAdoptions={adoptions}
                 currentUser={currentUser}
@@ -125,6 +131,13 @@ export default function VisitIntentCard({ adopterId, adopterName, avgRating = nu
                         <path strokeLinecap="round" strokeLinejoin="round" d="M7 12L3 8l4-4M3 8h9a4.5 4.5 0 0 1 0 9H8" />
                     </svg>
                 );
+            case 'foster':
+                // Two hands shaking — temporary entrustment / foster placement
+                return (
+                    <svg className="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 11l3-3 2 2 1.5-1.5M17 11l-3-3-2 2-1.5-1.5M2 13l5-5 3 3 3-3 5 5M3 13v3h14v-3" />
+                    </svg>
+                );
             case 'observation':
             default:
                 // Note / document with lines
@@ -138,13 +151,14 @@ export default function VisitIntentCard({ adopterId, adopterName, avgRating = nu
 
     type ButtonDef = {
         intent: IntentType | 'other';
-        labelKey: 'option_a' | 'option_b' | 'option_c' | 'option_followup' | 'option_returned' | 'option_observation';
-        titleKey: 'option_a_hint' | 'option_b_hint' | 'option_c_hint' | 'option_followup_hint' | 'option_returned_hint' | 'option_observation_hint';
+        labelKey: 'option_a' | 'option_b' | 'option_c' | 'option_foster' | 'option_followup' | 'option_returned' | 'option_observation';
+        titleKey: 'option_a_hint' | 'option_b_hint' | 'option_c_hint' | 'option_foster_hint' | 'option_followup_hint' | 'option_returned_hint' | 'option_observation_hint';
     };
 
     const mainButtons: ButtonDef[] = [
         { intent: 'adoption_request', labelKey: 'option_a', titleKey: 'option_a_hint' },
         { intent: 'adoption', labelKey: 'option_b', titleKey: 'option_b_hint' },
+        { intent: 'foster', labelKey: 'option_foster', titleKey: 'option_foster_hint' },
         { intent: 'other', labelKey: 'option_c', titleKey: 'option_c_hint' },
     ];
 

@@ -76,7 +76,7 @@ export const adoptions = sqliteTable("adoptions", {
     date: integer("date", { mode: "timestamp" }),
     addedBy: text("added_by").default("anonymous"),
     onBehalfOf: text("on_behalf_of"), // Name of person this was recorded for
-    recordType: text("record_type").default("adoption"), // adoption, adoption_request, observation, follow_up, returned_pet
+    recordType: text("record_type").default("adoption"), // adoption, adoption_request, observation, follow_up, returned_pet, available, foster
     deliveredToHome: integer("delivered_to_home"), // 1 if pet was delivered to adopter's home
     verifiedAddress: text("verified_address"), // Snapshot of verified address at time of adoption
     identityVerified: integer("identity_verified"), // 1 if adopter identity was verified during this adoption

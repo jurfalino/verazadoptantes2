@@ -35,6 +35,7 @@ import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { formatShortDate } from '@/lib/dates';
 import { zarazTrack } from '@/lib/zaraz';
+import WhatIsBuenAdoptante from '@/components/WhatIsBuenAdoptante';
 
 export default function SearchSection({ locale, showCardMetadata = true }: { locale?: string; showCardMetadata?: boolean }) {
     const { t } = useLanguage();
@@ -181,12 +182,11 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
 
     return (
         <div className="w-full">
-            {/* Slim hero — single value-prop line above the search.
-                Collapses on mobile when results are visible (existing pattern). */}
-            <div className={`text-center mb-4 ${hasResults ? 'hidden md:block' : ''}`}>
-                <p className="text-stone-600 text-sm md:text-base font-medium">
-                    {t('home.value_main')}
-                </p>
+            {/* Hero explainer — click-to-expand "¿Qué es Buen Adoptante?".
+                Replaces the old utility subtitle ("Busca adoptantes y Registra adopciones").
+                Collapses on mobile when results are visible (same pattern as before). */}
+            <div className={`mb-4 ${hasResults ? 'hidden md:block' : ''}`}>
+                <WhatIsBuenAdoptante />
             </div>
 
             {/* Search card — just the search tool */}

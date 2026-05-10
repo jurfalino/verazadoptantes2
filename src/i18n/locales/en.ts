@@ -152,6 +152,7 @@ export const en = {
         observations: 'observations',
         follow_ups: 'follow-ups',
         returns: 'returns',
+        fosters: 'fosters',
         rating_avg_short: 'avg',
         profile_stats: 'Profile Statistics',
         views_desc: 'How many times this profile was opened',
@@ -350,9 +351,12 @@ export const en = {
         process_guide: 'Adoption Process Guide',
         hero_guide: 'Adoption Guide',
         hero_features: 'Features',
-        value_verify: 'Search, verify, and report adopters',
-        value_register: 'Record adoptions and adoption requests',
-        value_main: 'Search adopters and record adoptions',
+        what_is: {
+            title: 'What is BuenAdoptante?',
+            intro: 'It\'s an adopter registry — a "veraz" (a reference list, if you know the term) — where you can record adoptions, adoption requests, and any observation useful to the rescue community for evaluating future adoptions.',
+            how_title: 'How does it work?',
+            how_body: 'When someone asks you for an animal, search their name and details here. If the profile already exists, you can see the rating and comments left by others; if not, you can create it and start logging their history.',
+        },
     },
     legal: {
         consent_checkbox: 'By saving, you agree to the',
@@ -488,6 +492,8 @@ export const en = {
         type_followup: 'Follow-up',
         type_returned_pet: 'Returned',
         type_returned: 'Returned',
+        type_foster: 'Foster',
+        foster_active: 'Active',
         adoption_date: 'Adoption date',
         followup_event_date: 'Follow-up date',
         return_event_date: 'Return date',
@@ -529,6 +535,7 @@ export const en = {
         verb_noted: 'noted about',
         verb_followed_up: 'followed up on',
         verb_returned: 'returned',
+        verb_fostered: 'fostered',
         select_existing: 'Select Existing',
         create_new: 'Create New',
         select_animal: 'Select Animal',
@@ -781,6 +788,16 @@ export const en = {
                     '4_5': '{name} has good references as an adopter. Even so, we recommend periodic follow-up and logging any observations that come up over time.',
                 },
             },
+            foster: {
+                title: 'You gave {name} an animal to foster.',
+                body: {
+                    none: 'Since {name} has no prior ratings, this record will be the first — your follow-up will be especially valuable. Share how the foster is going and log when it ends.',
+                    '1': '{name} has very negative ratings on the platform. **The animal may be at risk during the foster.** Follow up as soon as possible and share your observations here.',
+                    '2': '{name} does not have great adopter ratings. **Follow up closely** on the foster and share your observations here.',
+                    '3': '{name} has mixed adopter ratings. Follow up appropriately on the foster and share your observations here.',
+                    '4_5': '{name} has good references as an adopter. Even so, we recommend following up on the foster and logging any observations that come up.',
+                },
+            },
             follow_up: {
                 title: 'I am logging a follow-up on an animal I gave {name} for adoption.',
                 body: 'Share what you observed during the follow-up: living conditions of the animal, contact with {name}, photos if you have them. These observations help others evaluate {name} with first-hand information.',
@@ -792,6 +809,16 @@ export const en = {
             observation: {
                 title: 'I want to log an observation about {name}.',
                 body: 'Whether positive or negative, be clear and impartial when describing what happened and the circumstances. If what you share involves animal abuse, remember it must be backed by a **police report** under the law applicable in your country.',
+            },
+            alerts: {
+                too_many_adoptions: {
+                    adoption_request: 'Heads up: {name} already has {count} adoptions on record in the last {days} days. Did they mention this during the interview?\nSometimes, when a person adopts too many animals in a short period, the intent is not good.',
+                    adoption: 'Worth noting: {name} accumulated {count} adoptions in the last {days} days. Did they mention this during the interview?\nSometimes, when a person adopts too many animals in a short period, the intent is not good.',
+                },
+                too_many_requests: {
+                    adoption_request: '{name} has {count} active adoption requests in the last {days} days. Confirm they are still interested and not asking multiple rescuers at once.',
+                    adoption: '{name} has {count} active adoption requests in the last {days} days.\nSometimes, when a person adopts too many animals in a short period, the intent is not good.',
+                },
             },
         },
     },
@@ -1374,10 +1401,12 @@ export const en = {
     visitIntent: {
         title_prefix: 'What happened with',
         title_fallback_subject: 'this person',
-        option_a: 'They asked me for an animal to adopt',
+        option_a: 'They asked me for an animal',
         option_a_hint: 'Log the adoption request this person made to you',
         option_b: 'I gave them an animal in adoption',
         option_b_hint: 'Log an adoption you already completed',
+        option_foster: 'I gave them an animal to foster',
+        option_foster_hint: 'Log that you placed an animal with this person in temporary care',
         option_c: 'Other reason',
         option_c_hint: 'More options',
         option_followup: 'I did a follow-up',
