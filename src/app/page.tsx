@@ -10,7 +10,6 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import AdoptionWizard from '@/components/AdoptionWizard';
 import ReportWizard from '@/components/ReportWizard';
-import packageJson from '../../package.json';
 import { useEffect, useState } from 'react';
 import InstallCTA from '@/components/InstallCTA';
 import SocialProofBanner from '@/components/SocialProofBanner';
@@ -105,20 +104,28 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-stone-50 py-6 px-4 relative">
       <div className="max-w-3xl mx-auto space-y-6">
+        <h1 className="sr-only">{t('home.h1')}</h1>
         <div id="search-section">
           <SearchSection locale={locale} showCardMetadata={appConfig.ENABLE_SEARCH_CARD_METADATA !== 'false'} />
         </div>
 
-        {/* Social proof + milestone — below search for mobile-first */}
+        {/* Social proof + milestone — below search for mobile-first.
+            MilestoneBadge gated by ENABLE_MILESTONE_BADGE (admin-toggleable, default ON). */}
         <SocialProofBanner config={appConfig} />
-        {session?.user && <MilestoneBadge />}
-        
-        {/* Quick Access Dashboard Strip */}
-        <QuickAccessStrip />
+        {session?.user && appConfig.ENABLE_MILESTONE_BADGE !== 'false' && <MilestoneBadge />}
 
-        {/* Action Cards — 3-column grid */}
+        {/* Action Cards — 3-column grid (or 2-col when import flag off).
+            Order: Adoption · Report · Import. Import is the rarer / power-user
+            action and lives last; the three CTAs share the soft-pill style for
+            visual peer-equality. */}
         <div id="action-cards" className={`grid gap-6 mt-6 ${contentImportEnabled ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
-          {/* Import from post — promoted to full card */}
+          {/* Register Adoption */}
+          <AdoptionWizard />
+
+          {/* Report / Observation */}
+          <ReportWizard />
+
+          {/* Import from post — last position; CTA matches AdoptionWizard's soft-pill style */}
           {contentImportEnabled && (
             <div
               data-testid="import-content-btn"
@@ -130,18 +137,18 @@ export default function Home() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
               </div>
-              <h3 className="text-lg font-semibold text-stone-900 mb-1">{t('home.action_import_title')}</h3>
+              <h2 className="text-lg font-semibold text-stone-900 mb-1">{t('home.action_import_title')}</h2>
               <p className="text-stone-500 text-sm mb-3">{t('home.action_import_desc')}</p>
-              <span className="inline-block px-4 py-2 bg-teal-600 text-white rounded-xl font-semibold text-sm group-hover:bg-teal-700 transition-colors">{t('home.action_import_btn')}</span>
+              <span className="inline-block px-6 py-2.5 bg-teal-200 text-teal-900 font-semibold rounded-xl hover:bg-teal-300 transition-colors shadow-sm">{t('home.action_import_btn')}</span>
             </div>
           )}
-
-          {/* Register Adoption */}
-          <AdoptionWizard />
-
-          {/* Report / Observation */}
-          <ReportWizard />
         </div>
+
+        {/* Quick Access Dashboard Strip — moved below cards (v2.14.8-5).
+            Cards = create intent (primary); pills = navigate-to-existing-data
+            (secondary). UserMenu in the page header already serves explicit
+            navigation. */}
+        <QuickAccessStrip />
 
         {/* PWA Install CTA — shown to users who dismissed the floating banner */}
         <InstallCTA />
@@ -149,32 +156,6 @@ export default function Home() {
         {/* Referral banner — logged-in users only */}
         <ReferralBanner />
 
-        <footer className="mt-10 text-center text-stone-500 text-sm space-y-2">
-
-          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs">
-            <a href={locale === 'en' ? '/guide' : '/guia'} className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
-              {t('home.hero_guide')}
-            </a>
-            <span className="text-stone-300">·</span>
-            <a href="/funcionalidades" className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
-              {t('home.hero_features')}
-            </a>
-            <span className="text-stone-300">·</span>
-            <a href="/privacy" className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
-              {t('legal.privacy')}
-            </a>
-            <span className="text-stone-300">·</span>
-            <a href="/terms" className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
-              {t('legal.terms')}
-            </a>
-            <span className="text-stone-300">·</span>
-            <a href="mailto:privacidad@buenadoptante.com" className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
-              {t('legal.contact')}
-            </a>
-          </div>
-          <p>{t('home.footer')}</p>
-          <p className="text-stone-500 text-xs">v{packageJson.version}</p>
-        </footer>
       </div>
     </main>
   );

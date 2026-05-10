@@ -52,7 +52,7 @@ export default function SettingsPage() {
             localStorage.setItem(`country_confirmed_${session?.user?.email}`, '1');
             toast.success(t('settings.saved') || 'Saved!');
         } else {
-            toast.error('Error');
+            toast.error('Error', t('errors.unexpected') || 'Could not save country', result.errorId);
         }
         setSavingCountry(false);
     };
@@ -66,7 +66,7 @@ export default function SettingsPage() {
             setOriginalName(trimmed);
             toast.success(t('settings.saved') || 'Saved!');
         } else {
-            toast.error('Error');
+            toast.error('Error', t('errors.unexpected') || 'Could not save name', result.errorId);
         }
         setSavingName(false);
     };
@@ -148,29 +148,29 @@ export default function SettingsPage() {
                             </h3>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 {geoInfo.province && (
-                                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-stone-50 dark:bg-stone-700/50">
-                                        <span className="text-stone-400 text-xs">🏛️</span>
-                                        <div>
+                                    <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-stone-50 dark:bg-stone-700/50">
+                                        <span className="text-stone-400 text-xs mt-0.5 flex-shrink-0">🏛️</span>
+                                        <div className="min-w-0 flex-1">
                                             <div className="text-[10px] font-medium text-stone-400 dark:text-stone-500 uppercase">{t('settings.province') || 'Province'}</div>
-                                            <div className="text-sm font-medium text-stone-700 dark:text-stone-200">{geoInfo.province}</div>
+                                            <div className="text-sm font-medium text-stone-700 dark:text-stone-200 break-all">{geoInfo.province}</div>
                                         </div>
                                     </div>
                                 )}
                                 {geoInfo.city && (
-                                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-stone-50 dark:bg-stone-700/50">
-                                        <span className="text-stone-400 text-xs">🏙️</span>
-                                        <div>
+                                    <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-stone-50 dark:bg-stone-700/50">
+                                        <span className="text-stone-400 text-xs mt-0.5 flex-shrink-0">🏙️</span>
+                                        <div className="min-w-0 flex-1">
                                             <div className="text-[10px] font-medium text-stone-400 dark:text-stone-500 uppercase">{t('settings.city') || 'City'}</div>
-                                            <div className="text-sm font-medium text-stone-700 dark:text-stone-200">{geoInfo.city}</div>
+                                            <div className="text-sm font-medium text-stone-700 dark:text-stone-200 break-all">{geoInfo.city}</div>
                                         </div>
                                     </div>
                                 )}
                                 {geoInfo.timezone && (
-                                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-stone-50 dark:bg-stone-700/50">
-                                        <span className="text-stone-400 text-xs">🕐</span>
-                                        <div>
+                                    <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-stone-50 dark:bg-stone-700/50">
+                                        <span className="text-stone-400 text-xs mt-0.5 flex-shrink-0">🕐</span>
+                                        <div className="min-w-0 flex-1">
                                             <div className="text-[10px] font-medium text-stone-400 dark:text-stone-500 uppercase">{t('settings.timezone') || 'Timezone'}</div>
-                                            <div className="text-sm font-medium text-stone-700 dark:text-stone-200">{geoInfo.timezone}</div>
+                                            <div className="text-sm font-medium text-stone-700 dark:text-stone-200 break-all">{geoInfo.timezone}</div>
                                         </div>
                                     </div>
                                 )}

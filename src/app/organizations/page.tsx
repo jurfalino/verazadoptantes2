@@ -60,7 +60,7 @@ export default function OrganizationsPage() {
             setShowCreateForm(false);
             loadOrgs();
         } else {
-            toast.error(result.error || 'Error');
+            toast.error(result.error || 'Error', undefined, result.errorId);
         }
     };
 
@@ -241,7 +241,7 @@ function OrgCard({ org, onRefresh }: { org: Organization; onRefresh: () => void 
             setEditing(false);
             onRefresh();
         } else {
-            toast.error(result.error || 'Error');
+            toast.error(result.error || 'Error', undefined, result.errorId);
         }
     };
 
@@ -261,7 +261,7 @@ function OrgCard({ org, onRefresh }: { org: Organization; onRefresh: () => void 
                 } catch { /* user cancelled */ }
             }
         } else {
-            toast.error(result.error || 'Error');
+            toast.error(result.error || 'Error', undefined, result.errorId);
         }
     };
 
@@ -294,7 +294,7 @@ function OrgCard({ org, onRefresh }: { org: Organization; onRefresh: () => void 
             toast.success(result.deleted ? t('organizations.deleted_success') : t('organizations.left_success'));
             onRefresh();
         } else {
-            toast.error(result.error || 'Error');
+            toast.error(result.error || 'Error', undefined, result.errorId);
         }
     };
 

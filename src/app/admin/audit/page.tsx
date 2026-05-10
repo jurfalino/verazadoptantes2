@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { formatDateTimeFull } from '@/lib/dates';
+import { useLanguage } from '@/context/LanguageContext';
 
 interface AuditEntry {
     id: string;
@@ -32,6 +33,7 @@ const ACTION_LABELS: Record<string, { label: string; icon: string; color: string
 };
 
 export default function AdminAuditPage() {
+    const { t } = useLanguage();
     const [entries, setEntries] = useState<AuditEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
@@ -72,7 +74,7 @@ export default function AdminAuditPage() {
     }, [page, filterAction, filterUser]);
 
     const handlePurge = async () => {
-        if (!confirm(`This will permanently delete audit records older than ${retentionDays} days. Continue?`)) return;
+        if (!confirm(t('dialogs.confirm_delete_audit').replace('{days}', String(retentionDays)))) return;
         setPurging(true);
         setPurgeResult(null);
         try {
@@ -244,7 +246,7 @@ export default function AdminAuditPage() {
                                                         target="_blank"
                                                         rel="noopener noreferrer"
                                                         className="text-blue-500 hover:text-blue-700 hover:underline font-mono"
-                                                        title="View geolocation"
+                                                        title={t('admin.view_geolocation_title')}
                                                     >
                                                         {entry.ip_address}
                                                     </a>

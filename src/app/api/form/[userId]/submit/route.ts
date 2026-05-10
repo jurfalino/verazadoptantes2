@@ -98,94 +98,31 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
 
         logger.info('PetShield form submission stored', { submissionId, rescuerEmail, name });
 
-        // Fuzzy matching + notification (fire-and-forget style but awaited for reliability)
+        // Fuzzy matching + notification (fire-and-forget style but awaited for reliability).
+        // Backed by findAdopters({ mode: 'duplicate' }) — single source of truth shared with
+        // ImportWizard / AdopterFlagging / contract submit. minRelevance:0 preserves recall.
         try {
-            const { extractNameWords, extractPhones, extractPhoneSuffixes, extractEmails, normalizeText } = await import('@/lib/tokenizer');
-            const { duplicateTokens } = await import('@/db/schema');
-            const { inArray: drizzleInArray, or: drizzleOr, like } = await import('drizzle-orm');
+            const { findAdopters } = await import('@/app/actions/findAdopters');
+            const { extractPhones, extractEmails } = await import('@/lib/tokenizer');
             const { createNotification } = await import('@/app/actions/notifications');
 
-            // Tokenize submitted data
-            const tokens: Array<{ type: string; value: string }> = [];
-            const nameWords = extractNameWords(name);
-            nameWords.forEach(w => tokens.push({ type: 'name_word', value: w }));
-            if (name.trim()) tokens.push({ type: 'name_full', value: normalizeText(name) });
-            if (phone) {
-                const phones = extractPhones(phone);
-                phones.forEach(p => tokens.push({ type: 'phone', value: p }));
-                extractPhoneSuffixes(phones).forEach(s => tokens.push({ type: 'phone_suffix', value: s }));
-            }
-            if (email) {
-                extractEmails(email).forEach(e => tokens.push({ type: 'email', value: e }));
-            }
-
-            const adopterMatches = new Map<string, Set<string>>();
-
-            // Strategy 1: Token-based matching
-            const tokenValues = tokens.map(t => t.value).filter(v => v.length >= 3);
-            if (tokenValues.length > 0) {
-                const tokenMatches = await db
-                    .select({
-                        adopterId: duplicateTokens.adopterId,
-                        tokenType: duplicateTokens.tokenType,
-                    })
-                    .from(duplicateTokens)
-                    .where(drizzleInArray(duplicateTokens.tokenValue, tokenValues))
-                    .all();
-
-                for (const m of tokenMatches) {
-                    if (!adopterMatches.has(m.adopterId)) adopterMatches.set(m.adopterId, new Set());
-                    adopterMatches.get(m.adopterId)!.add(`token:${m.tokenType}`);
-                }
-            }
-
-            // Strategy 2: LIKE search on adopters
-            const likeQueries: Array<{ field: string; value: string }> = [];
-            for (const word of nameWords) {
-                if (word.length >= 3) likeQueries.push({ field: 'name', value: `%${word}%` });
-            }
-            if (phone) {
-                const digits = phone.replace(/\D/g, '');
-                if (digits.length >= 6) likeQueries.push({ field: 'contact', value: `%${digits.slice(-8)}%` });
-            }
-            if (email && email.includes('@')) {
-                likeQueries.push({ field: 'contact', value: `%${email.toLowerCase()}%` });
-            }
-
-            const likeResults = await Promise.all(
-                likeQueries.map(async (q) => {
-                    const col = q.field === 'name' ? adopters.name : adopters.contactInfo;
-                    const results = await db
-                        .select({ id: adopters.id })
-                        .from(adopters)
-                        .where(like(col, q.value))
-                        .all();
-                    return { field: q.field, ids: results.map((r: { id: string }) => r.id) };
-                })
+            const dupResult = await findAdopters(
+                {
+                    name,
+                    phones: phone ? extractPhones(phone) : [],
+                    emails: email ? extractEmails(email) : [],
+                },
+                { mode: 'duplicate', minRelevance: 0, limit: 5 },
             );
-
-            for (const lr of likeResults) {
-                for (const id of lr.ids) {
-                    if (!adopterMatches.has(id)) adopterMatches.set(id, new Set());
-                    adopterMatches.get(id)!.add(`like:${lr.field}`);
-                }
-            }
-
-            const matchCount = adopterMatches.size;
+            const matches = dupResult.results as Array<{ adopterId: string; adopterName: string; matchTypes: string[] }>;
+            const matchCount = matches.length;
 
             if (matchCount > 0) {
-                const matchedIds = Array.from(adopterMatches.keys()).slice(0, 5);
-                const matchedAdopters = await db
-                    .select({ id: adopters.id, name: adopters.name })
-                    .from(adopters)
-                    .where(drizzleOr(...matchedIds.map(id => eq(adopters.id, id)))!)
-                    .all();
-
                 await createNotification({
                     id: notificationId,
                     userId: rescuerEmail,
                     type: 'form_submission',
-                    title: `📋 ${name} completó el formulario — ${matchCount} coincidencia${matchCount > 1 ? 's' : ''}`,
+                    title: `${name} completó el formulario — ${matchCount} coincidencia${matchCount > 1 ? 's' : ''}`,
                     body: `Se encontraron posibles registros previos. Tocá para revisar las respuestas y vincular.`,
                     url: `/form-results/${submissionId}`,
                     icon: '⚠️',
@@ -193,10 +130,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                         submissionId,
                         matchCount,
                         submittedData: { ...body, selfie: selfieUrl || '[removed]' },
-                        matchedAdopters: matchedAdopters.map((a: { id: string; name: string }) => ({
-                            id: a.id,
-                            name: a.name,
-                            matchTypes: Array.from(adopterMatches.get(a.id) || []),
+                        matchedAdopters: matches.map(m => ({
+                            id: m.adopterId,
+                            name: m.adopterName,
+                            matchTypes: m.matchTypes,
                         })),
                     },
                 });
@@ -205,7 +142,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     id: notificationId,
                     userId: rescuerEmail,
                     type: 'form_submission',
-                    title: `📋 ${name} completó el formulario`,
+                    title: `${name} completó el formulario`,
                     body: `No se encontraron registros previos. Revisá las respuestas para continuar.`,
                     url: `/form-results/${submissionId}`,
                     icon: '📋',
@@ -217,19 +154,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                 });
             }
 
-            logger.info('Form fuzzy search completed', { submissionId, matchCount, tokenCount: tokenValues.length });
+            logger.info('Form fuzzy search completed', { submissionId, matchCount });
 
             // Fan-out to org members (fire-and-forget)
             import('@/app/actions/notifications').then(({ notifyOrgMembers }) => {
                 notifyOrgMembers({
                     actorEmail: rescuerEmail,
                     type: 'form_submission',
-                    title: `📋 Nueva respuesta al formulario`,
+                    title: `Nueva respuesta al formulario`,
                     body: `${name} completó el formulario de adopción compartido por ${rescuerEmail}.`,
                     url: `/form-results/${submissionId}`,
                     icon: '📋',
                     metadata: { submissionId, submitterName: name },
-                }).catch(() => {});
+                }).catch((e) => {
+                    logger.warn('form submit: notifyOrgMembers failed', {
+                        submissionId,
+                        rescuerEmail,
+                        error: e instanceof Error ? e.message : String(e),
+                    });
+                });
             });
         } catch (searchErr) {
             logger.warn('Form fuzzy search/notification failed (non-blocking)', { error: (searchErr as Error).message, submissionId });

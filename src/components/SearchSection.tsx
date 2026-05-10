@@ -158,8 +158,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                 setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
             }
         } catch (err) {
-            console.error(err);
-            toast.error(t('toast.search_failed_title'), t('errors.search_failed'));
+            toast.error(t('toast.search_failed_title'), t('errors.search_failed'), extractErrorId(err));
         } finally {
             setLoading(false);
         }
@@ -401,12 +400,12 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                                         </div>
                                         {/* Name + Contact */}
                                         <div className="flex-1 min-w-0">
-                                            <div className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate">
+                                            <div className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate" title={res.adopter.name}>
                                                 {isAuthenticated && res.matchSnippet?.field === 'name' && res.matchSnippet.snippet === res.adopter.name
                                                     ? (renderHighlightedSnippet(res.adopter.name, res.matchSnippet.highlights) || res.adopter.name)
                                                     : res.adopter.name}
                                             </div>
-                                            <div className="text-xs text-stone-500 truncate">
+                                            <div className="text-xs text-stone-500 truncate" title={res.adopter.contactInfo || undefined}>
                                                 {isAuthenticated && res.matchSnippet?.field === 'contact' && res.matchSnippet.snippet === res.adopter.contactInfo
                                                     ? (renderHighlightedSnippet(res.adopter.contactInfo, res.matchSnippet.highlights) || res.adopter.contactInfo)
                                                     : (res.adopter.contactInfo || t('common.no_contact'))}
@@ -465,7 +464,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                                         return (
                                             <div className="mt-2 flex items-start gap-2 text-xs text-stone-600 bg-stone-50 px-3 py-2 rounded-lg border border-stone-100">
                                                 <span className="flex-shrink-0 mt-0.5">{icon}</span>
-                                                <span className="min-w-0">
+                                                <span className="min-w-0 break-words">
                                                     <span className="font-semibold text-stone-500">{label}:</span>{' '}
                                                     {s.field === 'history' ? (
                                                         <span className="italic">{t('search.snippet_history_generic')}</span>
@@ -494,6 +493,26 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                             </a>
                         );
                     })}
+                    {/* End-of-results "none match" CTA — appears under the last card so the
+                        natural decision moment (user finished reading) has a one-tap exit
+                        without scrolling back to the small top-of-list chip. Empty-state
+                        below uses a more prominent treatment; this is the secondary path. */}
+                    {results.length > 0 && (
+                        <div className="bg-stone-50 rounded-2xl p-6 text-center border border-stone-200 mt-4">
+                            <p className="text-stone-600 mb-1 text-base font-medium">
+                                {t('search.none_match_heading')}
+                            </p>
+                            <p className="text-stone-500 text-sm mb-4">
+                                {t('search.none_match_desc')}
+                            </p>
+                            <button
+                                onClick={handleCreateNew}
+                                className="inline-block px-5 py-2.5 bg-teal-600 text-white rounded-xl font-semibold hover:bg-teal-700 transition-all shadow-sm"
+                            >
+                                + {t('search.create_new')}
+                            </button>
+                        </div>
+                    )}
                     {results.length === 0 && (
                         <div className="bg-stone-50 rounded-2xl p-8 text-center border border-stone-200">
                             <div className="text-4xl mb-3">🔍</div>

@@ -53,7 +53,7 @@ function extractAddressFromContact(contactText: string): string {
     return '';
 }
 
-export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, onSuccess, onDelete, availableAnimals = [], currentUser, adopterAddress = '' }: { adopterId: string, /* eslint-disable-next-line @typescript-eslint/no-explicit-any */ initialData?: any, onCancel?: () => void, onSuccess?: () => void, onDelete?: () => void, /* eslint-disable-next-line @typescript-eslint/no-explicit-any */ availableAnimals?: any[], currentUser?: string, adopterAddress?: string }) {
+export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, onSuccess, onDelete, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '' }: { adopterId: string, /* eslint-disable-next-line @typescript-eslint/no-explicit-any */ initialData?: any, onCancel?: () => void, onSuccess?: () => void, onDelete?: () => void, /* eslint-disable-next-line @typescript-eslint/no-explicit-any */ availableAnimals?: any[], /* eslint-disable-next-line @typescript-eslint/no-explicit-any */ adopterAdoptions?: any[], currentUser?: string, adopterAddress?: string }) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { t, locale } = useLanguage();
@@ -172,16 +172,18 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
 
     const handleSelectExisting = (animalId: string) => {
         if (!animalId) return;
-        const animal = availableAnimals.find(a => a.id === animalId);
+        const animal = effectiveAnimalsList.find(a => a.id === animalId);
         if (animal) {
             setFormData({
                 ...formData,
-                id: animal.id,
+                // For follow_up / returned_pet, the picked row is a *prior
+                // adoption* — never overwrite that row; keep this record's id.
+                id: isFollowUpOrReturn ? formData.id : animal.id,
                 animalName: animal.animalName,
                 species: animal.species,
-                details: animal.details || '',
-                status: 'completed',
-                rating: 5,
+                details: isFollowUpOrReturn ? formData.details : (animal.details || ''),
+                status: isFollowUpOrReturn ? formData.status : 'completed',
+                rating: isFollowUpOrReturn ? formData.rating : 5,
                 adopterId: adopterId
             });
         }
@@ -374,15 +376,27 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
     }
 
     const isObservation = formData.recordType === 'observation';
-    // Hide switcher when wizard already made the new/existing choice (newAdoptionParam or continueToAdoption)
-    // and always for observation records (no animal involved).
-    const showModeSwitcher = !initialData && !shouldOpenFromWizard && availableAnimals && (availableAnimals?.length ?? 0) > 0 && !isObservation;
-    const effectiveMode = showModeSwitcher ? mode : 'new';
+    const isFollowUpOrReturn = formData.recordType === 'follow_up' || formData.recordType === 'returned_pet';
 
     // Defensive: ensure all arrays are actually arrays (guards against undefined from any source)
     const safeAdoptionImages = Array.isArray(adoptionImages) ? adoptionImages : [];
     const safePendingImages = Array.isArray(pendingImages) ? pendingImages : [];
     const safeAvailableAnimals = Array.isArray(availableAnimals) ? availableAnimals : [];
+    const safeAdopterAdoptions = Array.isArray(adopterAdoptions) ? adopterAdoptions : [];
+
+    // For follow_up / returned_pet, source the picker from past adoption rows
+    // for *this* adopter (animals already placed with them), not the rescuer's
+    // unlinked inventory. Skip the record being edited so users don't pick it
+    // as its own parent.
+    const previousAdoptionsForAdopter = isFollowUpOrReturn
+        ? safeAdopterAdoptions.filter(a => a && a.recordType === 'adoption' && a.animalName && a.id !== initialData?.id)
+        : [];
+    const effectiveAnimalsList = isFollowUpOrReturn ? previousAdoptionsForAdopter : safeAvailableAnimals;
+
+    // Hide switcher when wizard already made the new/existing choice (newAdoptionParam or continueToAdoption)
+    // and always for observation records (no animal involved).
+    const showModeSwitcher = !initialData && !shouldOpenFromWizard && effectiveAnimalsList.length > 0 && !isObservation;
+    const effectiveMode = showModeSwitcher ? mode : 'new';
 
     return (
         <>
@@ -397,7 +411,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
 
                 {showModeSwitcher && (
                     <div className="flex gap-2 mb-4 p-1 bg-teal-50 rounded-lg">
-                        <button type="button" onClick={() => setMode('existing')} className={`flex-1 py-1.5 text-sm font-semibold rounded-md transition-all ${effectiveMode === 'existing' ? 'bg-white text-teal-700 shadow-sm' : 'text-teal-700 hover:text-teal-800'}`}>{t('adoption.select_existing') || 'Select Existing'} ({safeAvailableAnimals.length})</button>
+                        <button type="button" onClick={() => setMode('existing')} className={`flex-1 py-1.5 text-sm font-semibold rounded-md transition-all ${effectiveMode === 'existing' ? 'bg-white text-teal-700 shadow-sm' : 'text-teal-700 hover:text-teal-800'}`}>{t('adoption.select_existing') || 'Select Existing'} ({effectiveAnimalsList.length})</button>
                         <button type="button" onClick={() => { setMode('new'); setFormData(prev => ({ ...prev, id: undefined, animalName: '', species: '', details: '', status: 'completed', rating: 5, recordType: 'adoption' })); }} className={`flex-1 py-1.5 text-sm font-semibold rounded-md transition-all ${effectiveMode === 'new' ? 'bg-white text-teal-700 shadow-sm' : 'text-teal-700 hover:text-teal-800'}`}>{t('adoption.create_new') || 'Create New'}</button>
                     </div>
                 )}
@@ -405,10 +419,12 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                 <form onSubmit={handleSubmit} className="space-y-4">
                     {!isObservation && effectiveMode === 'existing' && (
                         <div className="mb-4">
-                            <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.select_animal') || 'Select Animal'}</label>
+                            <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
+                                {isFollowUpOrReturn ? (t('adoption.previous_adoption_picker_label') || 'Animal already adopted') : (t('adoption.select_animal') || 'Select Animal')}
+                            </label>
                             <select className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-base md:text-sm" onChange={(e) => handleSelectExisting(e.target.value)} value={formData.id || ''}>
                                 <option value="">{t('adoption.choose_animal') || '-- Choose an animal --'}</option>
-                                {safeAvailableAnimals.map(a => (<option key={a.id} value={a.id}>{a.animalName} ({a.species}) - {formatShortDate(new Date(a.date))}</option>))}
+                                {effectiveAnimalsList.map(a => (<option key={a.id} value={a.id}>{a.animalName} ({a.species}){a.date ? ` — ${formatShortDate(new Date(a.date))}` : ''}</option>))}
                             </select>
                         </div>
                     )}
@@ -568,25 +584,28 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                         return null;
                     })()}
 
+                    {/* Record type — read-only on edit. Changing the type after creation is rare
+                        enough that we don't expose a switcher (mirrors the wizard's intent-driven
+                        flow); if the user really mis-typed it, they can delete the record and
+                        re-create. Kept as a colored badge so they still see what they're editing. */}
                     <div>
                         <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.record_type') || 'Record Type'}</label>
-                        <div className="flex flex-wrap gap-2">
-                            {[
+                        {(() => {
+                            const types = [
                                 { value: 'adoption', icon: '🏠', label: t('adoption.type_adoption') || 'Adoption' },
                                 { value: 'adoption_request', icon: '📝', label: t('adoption.type_request') || 'Request' },
                                 { value: 'observation', icon: '👁️', label: t('adoption.type_observation') || 'Note' },
                                 { value: 'follow_up', icon: '📞', label: t('adoption.type_followup') || 'Follow-up' },
-                                { value: 'returned_pet', icon: '↩️', label: t('adoption.type_returned') || 'Returned' }
-                            ].map(type => {
-                                const colors = getRecordTypeColors(type.value);
-                                const isSelected = formData.recordType === type.value;
-                                return (
-                                    <button key={type.value} type="button" onClick={() => setFormData({ ...formData, recordType: type.value })} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${isSelected ? `${colors.bg} ${colors.border} ${colors.text}` : 'bg-white border-stone-200 text-stone-600 hover:border-stone-300'}`}>
-                                        <span>{type.icon}</span><span>{type.label}</span>
-                                    </button>
-                                );
-                            })}
-                        </div>
+                                { value: 'returned_pet', icon: '↩️', label: t('adoption.type_returned') || 'Returned' },
+                            ];
+                            const selected = types.find(t => t.value === formData.recordType) || types[0];
+                            const colors = getRecordTypeColors(selected.value);
+                            return (
+                                <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border ${colors.bg} ${colors.border} ${colors.text}`}>
+                                    <span>{selected.icon}</span><span>{selected.label}</span>
+                                </div>
+                            );
+                        })()}
                     </div>
 
                     {/* Date */}
@@ -766,7 +785,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                                         {pending.isVideo ? (
                                             <div className="w-20 h-20 rounded-lg border border-amber-300 ring-2 ring-amber-200 overflow-hidden relative">
                                                 {pending.thumbnail ? (
-                                                    <img src={pending.thumbnail} alt="Video thumbnail" className="w-full h-full object-cover" />
+                                                    <img src={pending.thumbnail} alt={t('common.video_thumbnail_alt')} className="w-full h-full object-cover" />
                                                 ) : (
                                                     <div className="w-full h-full bg-gradient-to-br from-teal-600 to-teal-800" />
                                                 )}

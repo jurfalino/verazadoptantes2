@@ -8,6 +8,8 @@ import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import { RatingBadge } from '@/components/RatingBadge';
 import { formatShortDate } from '@/lib/dates';
+import { useShowToast } from '@/components/ui/Toast';
+import { extractErrorId } from '@/lib/errorUtils';
 
 interface AdoptionImage {
     id: string;
@@ -45,6 +47,7 @@ type RecordTypeFilter = typeof RECORD_TYPES[number];
 export default function MyAdoptionsPage() {
     const { t } = useLanguage();
     const { data: session } = useSession();
+    const toast = useShowToast();
     const currentEmail = session?.user?.email || '';
     const searchParams = useSearchParams();
     // Default to the Adoption tab so the page matches the "Mis Adopciones" label
@@ -65,14 +68,18 @@ export default function MyAdoptionsPage() {
                 if (res.ok) {
                     const data = await res.json() as Adoption[];
                     setAdoptions(data);
+                } else {
+                    const body = await res.json().catch(() => ({})) as { error?: string; errorId?: string };
+                    toast.error(t('errors.generic') || 'Error', body.error || 'Failed to load adoptions.', body.errorId);
                 }
             } catch (e) {
-                console.error('Failed to fetch adoptions:', e);
+                toast.error(t('errors.generic') || 'Error', 'Failed to load adoptions.', extractErrorId(e));
             } finally {
                 setLoading(false);
             }
         }
         fetchAdoptions();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [filter]);
 
     const getTypeLabel = (type: string) => {

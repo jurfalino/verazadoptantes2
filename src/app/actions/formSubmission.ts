@@ -125,8 +125,11 @@ export async function getFormSubmissionPrefill(submissionId: string): Promise<Fo
                     }
                     if (extra.length > 0) notes += '\n\n' + extra.join('\n');
                 }
-            } catch {
-                // keep notes as is
+            } catch (e) {
+                logger.warn('getFormSubmissionPrefill: answersJson parse failed', {
+                    submissionId,
+                    error: e instanceof Error ? e.message : String(e),
+                });
             }
         }
 
@@ -136,7 +139,8 @@ export async function getFormSubmissionPrefill(submissionId: string): Promise<Fo
             selfieUrl: row.selfieUrl || null,
             notes: notes.trim(),
         };
-    } catch {
+    } catch (e) {
+        logger.error('getFormSubmissionPrefill failed', e, { submissionId });
         return null;
     }
 }
@@ -147,7 +151,7 @@ export async function getFormSubmissionPrefill(submissionId: string): Promise<Fo
  * Idempotent: skips if the adoption request already exists (dedup via sourceUrl).
  * Only updates if the submission belongs to the current user (rescuer).
  */
-export async function linkFormSubmissionToAdopter(submissionId: string, adopterId: string): Promise<{ success: boolean; error?: string }> {
+export async function linkFormSubmissionToAdopter(submissionId: string, adopterId: string): Promise<{ success: boolean; error?: string; errorId?: string }> {
     if (!submissionId?.trim() || !adopterId?.trim()) return { success: false, error: 'Missing submissionId or adopterId' };
     try {
         const db = await getDb();
@@ -215,11 +219,16 @@ export async function linkFormSubmissionToAdopter(submissionId: string, adopterI
             }
         } catch (adoptionErr) {
             // Non-blocking: the link succeeded, adoption request creation is best-effort
-            console.warn('[formSubmission] Failed to create adoption_request record', adoptionErr);
+            logger.warn('linkFormSubmissionToAdopter: adoption_request creation failed', {
+                submissionId,
+                adopterId,
+                error: adoptionErr instanceof Error ? adoptionErr.message : String(adoptionErr),
+            });
         }
 
         return { success: true };
     } catch (e) {
-        return { success: false, error: e instanceof Error ? e.message : 'Unknown error' };
+        const errorId = logger.error('linkFormSubmissionToAdopter failed', e, { submissionId, adopterId });
+        return { success: false, error: e instanceof Error ? e.message : 'Unknown error', errorId };
     }
 }

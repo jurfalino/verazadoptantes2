@@ -7,9 +7,11 @@ import { CollapsibleSection } from '@/components/CollapsibleSection';
 import AdoptionHistory from '@/components/AdoptionHistory';
 import AdoptionFormWizard from '@/components/AdoptionFormWizard';
 import AdoptionFormEditV2 from '@/components/AdoptionFormEditV2';
+import VisitIntentCard from '@/components/VisitIntentCard';
 import { useLanguage } from '@/context/LanguageContext';
 import { saveImage, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from '@/app/actions';
 import { ImageGallery } from '@/components/ImageGallery';
+import { extractErrorId } from '@/lib/errorUtils';
 import { DisclaimerToast } from '@/components/DisclaimerToast';
 import { RatingBadge } from '@/components/RatingBadge';
 import { useShowToast } from '@/components/ui/Toast';
@@ -46,14 +48,18 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
 
     const isOwner = adopter?.addedBy === currentUser;
 
+    // VisitIntentCard is the canonical (and only) entry point for recording
+    // activity on a profile (v2.14.8). After the wizard closes, the card
+    // re-renders its options for the next record.
+
     const handleDeleteClick = async () => {
         setDeleteLoading(true);
         try {
             const result = await checkAdopterDeletable(id);
             setDeleteCheck(result);
             setDeleteModalOpen(true);
-        } catch {
-            toast.error(t('errors.generic'), t('adopter.delete_error_check'));
+        } catch (e) {
+            toast.error(t('errors.generic'), t('adopter.delete_error_check'), extractErrorId(e));
         } finally {
             setDeleteLoading(false);
         }
@@ -65,8 +71,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             await deleteOwnAdopter(id);
             toast.success('✓', t('adopter.delete_success'));
             window.location.href = '/';
-        } catch {
-            toast.error(t('errors.generic'), t('errors.delete_failed_generic'));
+        } catch (e) {
+            toast.error(t('errors.generic'), t('errors.delete_failed_generic'), extractErrorId(e));
             setDeleteLoading(false);
         }
     };
@@ -77,8 +83,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             await requestAdopterDeletion(id);
             toast.success('✓', t('adopter.delete_request_success'));
             setDeleteModalOpen(false);
-        } catch {
-            toast.error(t('errors.generic'), t('errors.delete_request_failed'));
+        } catch (e) {
+            toast.error(t('errors.generic'), t('errors.delete_request_failed'), extractErrorId(e));
         } finally {
             setDeleteLoading(false);
         }
@@ -124,14 +130,31 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                 {/* Adoptions — with Wizard Form */}
                 {!isNew && adopter && (
                     <div id="adoptions-section" data-testid="adoptions-list">
+                        {/* Visit-intent prompt sits above the section title — context-setting,
+                            not part of the activity list. Suppressed for recently-acted users. */}
+                        <VisitIntentCard
+                            adopterId={id}
+                            adopterName={adopter?.name}
+                            avgRating={avgRating ?? null}
+                            currentUser={currentUser}
+                            adoptions={adoptions}
+                            availableAnimals={availableAnimals}
+                            adopterAddress={adopter?.contactInfo || ''}
+                        />
                         <CollapsibleSection
                             title={t('adoption.title')}
                             count={adoptions.length}
                             defaultOpen={true}
                         >
+                            {/* AdoptionFormWizard renders here only for URL-driven autoOpen flows
+                                (?newAdoption=...). The closed-state "Registrar Actividad" CTA was
+                                removed in v2.14.8 — VisitIntentCard above is the canonical entry. */}
                             <AdoptionFormWizard
                                 adopterId={id}
+                                adopterName={adopter?.name || ''}
+                                avgRating={avgRating ?? null}
                                 availableAnimals={availableAnimals}
+                                adopterAdoptions={adoptions}
                                 currentUser={currentUser}
                                 adopterAddress={adopter?.contactInfo || ''}
                             />
@@ -209,31 +232,31 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                             {(eventType === 'update' || eventType === 'adoption_updated') && Object.entries(changes).map(([key, delta]: [string, any]) => (
                                                                 <div key={key} className="grid grid-cols-[120px_1fr] gap-3 items-start text-sm">
                                                                     <span className="font-semibold text-teal-800 capitalize truncate" title={key}>{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
-                                                                    <div className="text-teal-700 break-words font-medium">
-                                                                        <div className="line-through text-rose-400 text-xs mr-2 opacity-70 inline-block">
-                                                                            {typeof delta.from === 'string' && delta.from.length > 30 ? delta.from.substring(0, 30) + '...' : (delta.from || t('audit.empty_val'))}
+                                                                    <div className="text-teal-700 break-words font-medium min-w-0">
+                                                                        <div className="line-through text-rose-400 text-xs mr-2 opacity-70 inline-block max-w-full break-all line-clamp-3" title={typeof delta.from === 'string' ? delta.from : undefined}>
+                                                                            {delta.from || t('audit.empty_val')}
                                                                         </div>
                                                                         <span className="text-teal-700 mr-2">➜</span>
-                                                                        <span className="text-teal-900 bg-teal-100 px-1.5 rounded">{delta.to || t('audit.empty_val')}</span>
+                                                                        <span className="text-teal-900 bg-teal-100 px-1.5 rounded inline-block max-w-full break-all line-clamp-3 align-bottom" title={typeof delta.to === 'string' ? delta.to : undefined}>{delta.to || t('audit.empty_val')}</span>
                                                                     </div>
                                                                 </div>
                                                             ))}
                                                             {eventType === 'adoption_added' && (
-                                                                <div className="text-teal-800 font-medium">
-                                                                    {t('audit.desc_adoption_added')} <span className="font-semibold">{changes.animalName}</span> ({changes.species}) - {changes.status}
+                                                                <div className="text-teal-800 font-medium break-words">
+                                                                    {t('audit.desc_adoption_added')} <span className="font-semibold break-all">{changes.animalName}</span> ({changes.species}) - {changes.status}
                                                                 </div>
                                                             )}
                                                             {eventType === 'adoption_deleted' && (
-                                                                <div className="space-y-1 text-teal-800">
-                                                                    <div><span className="font-semibold">{t('adoption.animal_name')}:</span> {changes.animalName} ({changes.species})</div>
+                                                                <div className="space-y-1 text-teal-800 break-words">
+                                                                    <div><span className="font-semibold">{t('adoption.animal_name')}:</span> <span className="break-all">{changes.animalName}</span> ({changes.species})</div>
                                                                     <div><span className="font-semibold">{t('adoption.status')}:</span> {changes.status}</div>
                                                                     <div className="flex items-center gap-1"><span className="font-semibold">{t('adoption.rating')}:</span> <RatingBadge rating={changes.rating} variant="inline" size="sm" /></div>
-                                                                    {changes.details && <div className="text-xs italic mt-1">"{changes.details}"</div>}
+                                                                    {changes.details && <div className="text-xs italic mt-1 line-clamp-3 break-words" title={changes.details}>"{changes.details}"</div>}
                                                                 </div>
                                                             )}
                                                             {eventType === 'image_deleted' && (
-                                                                <div className="text-teal-800">
-                                                                    {t('audit.desc_image_deleted')} <span className="italic opacity-75">"{changes.caption || t('common.untitled')}"</span> ({t('audit.by')} {formatShortDate(new Date(changes.uploadedAt))})
+                                                                <div className="text-teal-800 break-words">
+                                                                    {t('audit.desc_image_deleted')} <span className="italic opacity-75 break-all">"{changes.caption || t('common.untitled')}"</span> ({t('audit.by')} {formatShortDate(new Date(changes.uploadedAt))})
                                                                 </div>
                                                             )}
                                                         </>

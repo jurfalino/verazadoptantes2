@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { formatDateTime } from '@/lib/dates';
 import { getCountryByCode } from '@/config/countries';
+import { useLanguage } from '@/context/LanguageContext';
 
 function CopyIdButton({ id, className = '' }: { id: string; className?: string }) {
     const [copied, setCopied] = useState(false);
@@ -51,10 +52,66 @@ interface UserProfile {
     last_active_at: number | null;
     first_sign_in: number | null;
     country: string | null;
+    province: string | null;
+    city: string | null;
+    timezone: string | null;
+    terms_accepted_at: number | null;
+    terms_version: number | null;
+    adopters_count: number;
+    records_count: number;
+    edits_count: number;
+    flags_count: number;
     orgMemberships: OrgMembership[];
 }
 
+/** Render a user's detected location as flag·province·city, with timezone in tooltip. */
+function LocationCell({ user }: { user: UserProfile }) {
+    if (!user.country && !user.province && !user.city) {
+        return <span className="text-stone-300">—</span>;
+    }
+    const c = user.country ? getCountryByCode(user.country) : null;
+    const flagAndCode = c ? `${c.flag} ${c.code}` : (user.country ?? '');
+    const parts = [flagAndCode, user.province, user.city].filter(Boolean) as string[];
+    return (
+        <div className="text-xs text-stone-700 break-words" title={user.timezone || undefined}>
+            <span className="break-all">{parts.join(' · ')}</span>
+        </div>
+    );
+}
+
+/** Render the four activity-count pills inline. */
+function ActivityCell({ user }: { user: UserProfile }) {
+    const { t } = useLanguage();
+    const empty = !user.adopters_count && !user.records_count && !user.edits_count && !user.flags_count;
+    if (empty) return <span className="text-stone-300 text-xs">—</span>;
+    return (
+        <div className="flex flex-wrap gap-1 text-[11px] font-medium">
+            {user.adopters_count > 0 && (
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-100" title={t('admin.stat_adopters_created')}>
+                    👤 {user.adopters_count}
+                </span>
+            )}
+            {user.records_count > 0 && (
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-stone-50 text-stone-600 border border-stone-100" title={t('admin.stat_records_added')}>
+                    📋 {user.records_count}
+                </span>
+            )}
+            {user.edits_count > 0 && (
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100" title={t('admin.stat_history_edits')}>
+                    ✏️ {user.edits_count}
+                </span>
+            )}
+            {user.flags_count > 0 && (
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-100" title={t('admin.stat_flags_filed')}>
+                    🚩 {user.flags_count}
+                </span>
+            )}
+        </div>
+    );
+}
+
 export default function AdminUsersPage() {
+    const { t } = useLanguage();
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [loading, setLoading] = useState(true);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -186,12 +243,11 @@ export default function AdminUsersPage() {
                     <thead className="bg-stone-50 text-stone-600 text-xs uppercase tracking-wider">
                         <tr>
                             <th className="px-4 py-3 text-left">User</th>
-                            <th className="px-4 py-3 text-left">ID</th>
                             <th className="px-4 py-3 text-left">Organizations</th>
                             <th className="px-4 py-3 text-left">Role</th>
-                            <th className="px-4 py-3 text-left">Country</th>
-                            <th className="px-4 py-3 text-left">First Sign In</th>
-                            <th className="px-4 py-3 text-left">Last Active</th>
+                            <th className="px-4 py-3 text-left">Location</th>
+                            <th className="px-4 py-3 text-left">Lifecycle</th>
+                            <th className="px-4 py-3 text-left">Activity</th>
                             <th className="px-4 py-3 text-left">Actions</th>
                         </tr>
                     </thead>
@@ -207,16 +263,16 @@ export default function AdminUsersPage() {
                                                 {(user.name || user.email || '?')[0].toUpperCase()}
                                             </div>
                                         )}
-                                        <div>
-                                            <div className="font-medium text-stone-900">{user.name || 'Unknown'}</div>
-                                            <a href={`mailto:${user.email}`} className="text-xs text-blue-600 hover:underline">
+                                        <div className="min-w-0 flex-1">
+                                            <div className="font-medium text-stone-900 truncate" title={user.name || 'Unknown'}>{user.name || 'Unknown'}</div>
+                                            <a href={`mailto:${user.email}`} className="text-xs text-blue-600 hover:underline break-all">
                                                 {user.email}
                                             </a>
+                                            <div className="mt-0.5">
+                                                <CopyIdButton id={user.id} />
+                                            </div>
                                         </div>
                                     </div>
-                                </td>
-                                <td className="px-4 py-3">
-                                    <CopyIdButton id={user.id} />
                                 </td>
                                 <td className="px-4 py-3">
                                     {(user.orgMemberships || []).length > 0 ? (
@@ -256,17 +312,15 @@ export default function AdminUsersPage() {
                                         </span>
                                     )}
                                 </td>
-                                <td className="px-4 py-3">
-                                    {user.country ? (() => {
-                                        const c = getCountryByCode(user.country);
-                                        return c ? <span title={c.name}>{c.flag} {c.code}</span> : <span className="text-stone-500">{user.country}</span>;
-                                    })() : <span className="text-stone-300">—</span>}
+                                <td className="px-4 py-3 max-w-[180px]">
+                                    <LocationCell user={user} />
                                 </td>
-                                <td className="px-4 py-3 text-stone-500 text-xs">
-                                    {formatDate(user.first_sign_in)}
+                                <td className="px-4 py-3 text-stone-500 text-xs leading-snug">
+                                    <div><span className="text-stone-400">First:</span> {formatDate(user.first_sign_in)}</div>
+                                    <div><span className="text-stone-400">Active:</span> {formatDate(user.last_active_at)}</div>
                                 </td>
-                                <td className="px-4 py-3 text-stone-500 text-xs">
-                                    {formatDate(user.last_active_at)}
+                                <td className="px-4 py-3 max-w-[200px]">
+                                    <ActivityCell user={user} />
                                 </td>
                                 <td className="px-4 py-3">
                                     {editingId === user.id ? (
@@ -287,6 +341,13 @@ export default function AdminUsersPage() {
                                         </div>
                                     ) : (
                                         <div className="flex items-center gap-2">
+                                            <a
+                                                href={`/admin/audit?userId=${encodeURIComponent(user.email)}`}
+                                                className="text-stone-500 hover:text-stone-700 text-xs underline underline-offset-2"
+                                                title={`View audit log for ${user.email}`}
+                                            >
+                                                Audit
+                                            </a>
                                             <button
                                                 onClick={() => startEdit(user)}
                                                 className="text-stone-500 hover:text-stone-700 text-xs underline underline-offset-2"
@@ -312,7 +373,7 @@ export default function AdminUsersPage() {
                                                 <button
                                                     onClick={() => setDeletingId(user.id)}
                                                     className="text-stone-300 hover:text-red-500 text-xs transition-colors"
-                                                    title="Delete user"
+                                                    title={t('admin.delete_user_title')}
                                                 >
                                                     🗑️
                                                 </button>
@@ -324,7 +385,7 @@ export default function AdminUsersPage() {
                         ))}
                         {filteredUsers.length === 0 && (
                             <tr>
-                                <td colSpan={8} className="px-4 py-8 text-center text-stone-500">
+                                <td colSpan={7} className="px-4 py-8 text-center text-stone-500">
                                     {filter ? 'No users match your filter' : 'No users found'}
                                 </td>
                             </tr>
@@ -417,18 +478,25 @@ export default function AdminUsersPage() {
                                         <span className="text-stone-500">{formatDate(user.first_sign_in)}</span>
                                     </div>
                                     <div>
-                                        <span className="text-stone-500">Country: </span>
-                                        <span className="text-stone-600">{user.country ? (() => {
-                                            const c = getCountryByCode(user.country);
-                                            return c ? `${c.flag} ${c.code}` : user.country;
-                                        })() : '—'}</span>
-                                    </div>
-                                    <div className="col-span-2">
                                         <span className="text-stone-500">Active: </span>
                                         <span className="text-stone-500">{formatDate(user.last_active_at)}</span>
                                     </div>
+                                    <div className="col-span-2">
+                                        <span className="text-stone-500">Location: </span>
+                                        <LocationCell user={user} />
+                                    </div>
+                                    <div className="col-span-2">
+                                        <span className="text-stone-500 block mb-1">Activity:</span>
+                                        <ActivityCell user={user} />
+                                    </div>
                                 </div>
                                 <div className="flex gap-2">
+                                    <a
+                                        href={`/admin/audit?userId=${encodeURIComponent(user.email)}`}
+                                        className="flex-1 py-2 text-xs font-semibold text-stone-500 bg-stone-50 rounded-lg hover:bg-stone-100 text-center"
+                                    >
+                                        Audit
+                                    </a>
                                     <button
                                         onClick={() => startEdit(user)}
                                         className="flex-1 py-2 text-xs font-semibold text-stone-500 bg-stone-50 rounded-lg hover:bg-stone-100"
@@ -454,7 +522,7 @@ export default function AdminUsersPage() {
                                         <button
                                             onClick={() => setDeletingId(user.id)}
                                             className="px-3 py-2 text-xs text-stone-300 bg-stone-50 rounded-lg hover:bg-red-50 hover:text-red-500 transition-colors"
-                                            title="Delete user"
+                                            title={t('admin.delete_user_title')}
                                         >
                                             🗑️
                                         </button>

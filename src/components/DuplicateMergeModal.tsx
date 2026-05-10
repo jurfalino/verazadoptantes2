@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useLanguage } from '@/context/LanguageContext';
 
 interface Adopter {
     id: string;
@@ -24,6 +25,7 @@ export default function DuplicateMergeModal({
     onMerge,
     onClose,
 }: DuplicateMergeModalProps) {
+    const { t } = useLanguage();
     const [primaryId, setPrimaryId] = useState<string>(adopter1.id);
     const [merging, setMerging] = useState(false);
 
@@ -31,7 +33,10 @@ export default function DuplicateMergeModal({
     const secondary = primaryId === adopter1.id ? adopter2 : adopter1;
 
     async function handleMerge() {
-        if (!confirm(`⚠️ This will merge "${secondary.name}" into "${primary.name}". The secondary profile will be soft-deleted. Continue?`)) {
+        const confirmMsg = t('dialogs.confirm_merge')
+            .replace('{secondary}', secondary.name)
+            .replace('{primary}', primary.name);
+        if (!confirm(confirmMsg)) {
             return;
         }
         setMerging(true);
@@ -143,10 +148,10 @@ function ProfileCard({
                     {role === 'primary' ? '✓ Keep' : 'Delete'}
                 </span>
             </div>
-            <p className="font-semibold text-stone-900 text-sm">{adopter.name}</p>
+            <p className="font-semibold text-stone-900 text-sm line-clamp-2 break-words" title={adopter.name}>{adopter.name}</p>
             <p className="text-xs text-stone-500 font-mono mt-1 truncate">{adopter.id}</p>
             {adopter.contact && (
-                <p className="text-xs text-stone-500 mt-2 line-clamp-2">{adopter.contact}</p>
+                <p className="text-xs text-stone-500 mt-2 line-clamp-2 break-words">{adopter.contact}</p>
             )}
             {adopter.status && (
                 <p className="text-xs text-stone-500 mt-1">Rating: {adopter.status}</p>

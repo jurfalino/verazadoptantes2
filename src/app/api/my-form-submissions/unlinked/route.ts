@@ -14,7 +14,7 @@ export async function GET() {
         const forms = await getMyUnlinkedFormSubmissions();
         return NextResponse.json(forms);
     } catch (error) {
-        logger.error('API my-form-submissions/unlinked error', error);
-        return NextResponse.json([], { status: 500 });
+        const errorId = logger.error('API my-form-submissions/unlinked error', error, { userEmail: session.user.email });
+        return NextResponse.json({ error: 'Failed to load form submissions', errorId }, { status: 500 });
     }
 }

@@ -36,10 +36,14 @@ export function RatingExplainer({ rating, children }: RatingExplainerProps) {
     }, [isOpen]);
 
     return (
-        <div className="relative inline-block" ref={wrapperRef}>
+        <div
+            className="relative inline-block"
+            ref={wrapperRef}
+            onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+        >
             <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); setIsOpen(o => !o); }}
+                onClick={() => setIsOpen(o => !o)}
                 aria-label={t('ratings.scale_title')}
                 aria-expanded={isOpen}
                 className="cursor-pointer focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-1 rounded-full"

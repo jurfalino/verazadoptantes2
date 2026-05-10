@@ -54,9 +54,9 @@
   --status-error-text: #be123c;
   --status-error-border: rgba(255, 59, 48, 0.2);
 
-  --status-info-bg: rgba(94, 234, 212, 0.1);
+  --status-info-bg: rgba(56, 189, 248, 0.1);
   --status-info-text: #1d4ed8;
-  --status-info-border: rgba(94, 234, 212, 0.25);
+  --status-info-border: rgba(56, 189, 248, 0.25);
 
   --status-purple-bg: rgba(168, 85, 247, 0.1);
   --status-purple-text: #7e22ce;
@@ -143,9 +143,9 @@
   --status-error-text: #fb7185;
   --status-error-border: rgba(251, 113, 133, 0.3);
 
-  --status-info-bg: rgba(94, 234, 212, 0.1);
-  --status-info-text: #5eead4;
-  --status-info-border: rgba(94, 234, 212, 0.3);
+  --status-info-bg: rgba(56, 189, 248, 0.1);
+  --status-info-text: #38bdf8;
+  --status-info-border: rgba(56, 189, 248, 0.3);
 
   --status-purple-bg: rgba(168, 85, 247, 0.1);
   --status-purple-text: #c084fc;
@@ -278,6 +278,17 @@ button {
 [data-theme="dark"] .text-stone-500,
 [data-theme="dark"] .text-stone-400 {
   color: var(--text-muted) !important;
+}
+
+[data-theme="light"] .text-stone-900,
+[data-theme="light"] .text-stone-800 {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="light"] .text-stone-700,
+[data-theme="light"] .text-stone-600,
+[data-theme="light"] .text-stone-400 {
+  color: var(--text-secondary) !important;
 }
 
 [data-theme="light"] .text-stone-500 {
@@ -1114,6 +1125,26 @@ button {
 
 .animate-slideDown {
   animation: slide-down 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes visit-intent-enter {
+  0%   { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+@keyframes visit-intent-glow {
+  0%, 100% { box-shadow: 0 0 0 0   rgba(var(--accent-glow-rgb), 0);    }
+  50%      { box-shadow: 0 0 0 4px rgba(var(--accent-glow-rgb), 0.18); }
+}
+
+.visit-intent-card {
+  animation:
+    visit-intent-enter 0.45s cubic-bezier(0.16, 1, 0.3, 1) both,
+    visit-intent-glow 2.2s ease-in-out 0.45s 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .visit-intent-card { animation: none; }
 }
 
 /* ════════════════════════════════════════════════════════════

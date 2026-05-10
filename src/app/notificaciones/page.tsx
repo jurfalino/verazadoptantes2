@@ -19,6 +19,16 @@ interface NotificationItem {
 
 type FilterTab = 'all' | 'unread' | 'archived';
 
+/**
+ * Strip a leading emoji + whitespace from a notification title. Defensive
+ * against legacy DB rows that prefix the title with an emoji already shown
+ * separately as `item.icon`. Mirrors the helper in NotificationBell.tsx.
+ * Idempotent.
+ */
+function stripLeadingEmoji(s: string): string {
+    return s.replace(/^\p{Extended_Pictographic}\s*/u, '');
+}
+
 function timeAgo(date: Date, locale: string): string {
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
@@ -423,7 +433,7 @@ export default function NotificacionesPage() {
                                             color: 'var(--text-primary)',
                                             lineHeight: 1.3,
                                         }}>
-                                            {item.title}
+                                            {stripLeadingEmoji(item.title)}
                                         </p>
                                         {!item.read && (
                                             <span style={{

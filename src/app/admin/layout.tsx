@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { isAdminAsync } from "@/config/admins";
 import { redirect } from 'next/navigation';
 import AdminSidebar from "@/components/AdminSidebar";
+import AdminEnvWarnings from "@/components/AdminEnvWarnings";
 
 export default async function AdminLayout({
     children,
@@ -22,6 +23,7 @@ export default async function AdminLayout({
 
             {/* Main Content — top padding on mobile for the fixed header bar */}
             <main className="flex-1 overflow-y-auto lg:h-screen p-4 pt-28 lg:p-8 lg:pt-8">
+                <AdminEnvWarnings />
                 {children}
             </main>
         </div>

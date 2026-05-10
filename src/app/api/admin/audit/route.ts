@@ -69,7 +69,7 @@ export async function GET(request: Request) {
             stats: sizeResult
         });
     } catch (error) {
-        const errorId = logger.error('Get audit log failed', error);
+        const errorId = logger.error('Get audit log failed', error, { actorEmail: session.user.email });
         return NextResponse.json({ error: "Failed to fetch audit log", errorId }, { status: 500 });
     }
 }
@@ -97,7 +97,7 @@ export async function DELETE(request: Request) {
             purged: result.meta?.changes || 0
         });
     } catch (error) {
-        const errorId = logger.error('Purge audit log failed', error);
+        const errorId = logger.error('Purge audit log failed', error, { actorEmail: session.user.email });
         return NextResponse.json({ error: "Failed to purge audit log", errorId }, { status: 500 });
     }
 }

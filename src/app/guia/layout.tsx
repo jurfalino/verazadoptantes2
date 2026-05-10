@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import { GuideHowToJsonLd } from '@/components/JsonLd';
+import { STEPS } from '@/content/guide-data';
 
 export const metadata: Metadata = {
     title: 'Guía de Adopción Responsable',
@@ -22,5 +24,14 @@ export const metadata: Metadata = {
 };
 
 export default function GuiaLayout({ children }: { children: React.ReactNode }) {
-    return children;
+    const howToSteps = STEPS.map((s) => ({
+        name: s.entry.titleEs,
+        description: s.entry.descriptionEs,
+    }));
+    return (
+        <>
+            <GuideHowToJsonLd steps={howToSteps} />
+            {children}
+        </>
+    );
 }

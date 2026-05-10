@@ -131,9 +131,9 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
             <div className="flex items-start gap-3">
                 {icons[toast.type]}
                 <div className="flex-1 min-w-0">
-                    <p className="font-medium" style={{ color: 'var(--text-primary)' }}>{toast.title}</p>
+                    <p className="font-medium break-words" style={{ color: 'var(--text-primary)' }}>{toast.title}</p>
                     {toast.message && (
-                        <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>{toast.message}</p>
+                        <p className="text-sm mt-1 break-words" style={{ color: 'var(--text-muted)' }}>{toast.message}</p>
                     )}
                     {toast.errorId && (
                         <button

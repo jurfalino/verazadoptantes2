@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import { FaqPageJsonLd } from '@/components/JsonLd';
+import { FAQ } from '@/content/guide-data';
 
 export const metadata: Metadata = {
     title: 'Preguntas Frecuentes sobre Adopción',
@@ -22,5 +24,14 @@ export const metadata: Metadata = {
 };
 
 export default function FaqLayout({ children }: { children: React.ReactNode }) {
-    return children;
+    const faqs = FAQ.map((f) => ({
+        question: f.entry.questionEs,
+        answer: f.entry.answerEs,
+    }));
+    return (
+        <>
+            <FaqPageJsonLd faqs={faqs} />
+            {children}
+        </>
+    );
 }

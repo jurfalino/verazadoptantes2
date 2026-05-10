@@ -17,7 +17,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         const db = await getDb();
         if (!db) return withCors(NextResponse.json({ error: 'Database unavailable' }, { status: 500 }), origin);
 
-        const { adoptions, adopterImages } = await import('@/db/schema');
+        const { adoptions, adopterImages, users } = await import('@/db/schema');
         const { eq } = await import('drizzle-orm');
 
         const animal = await db.select().from(adoptions).where(eq(adoptions.id, id)).get();
@@ -36,8 +36,26 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             .limit(5)
             .all();
 
-        // Build a display name from the email (before the @)
-        const rescuerDisplay = animal.addedBy ? animal.addedBy.split('@')[0] : null;
+        // Resolve rescuer display name from the `user` table (the name they picked in /settings).
+        // Falls back to the email's local-part only if no name is set or the lookup fails.
+        let rescuerDisplay: string | null = null;
+        if (animal.addedBy) {
+            try {
+                const userRow = await db.select({ name: users.name })
+                    .from(users)
+                    .where(eq(users.email, animal.addedBy))
+                    .get();
+                const name = userRow?.name?.trim();
+                rescuerDisplay = name || animal.addedBy.split('@')[0];
+            } catch (e) {
+                logger.warn('Contract data: rescuerName lookup failed', {
+                    animalId: id,
+                    addedBy: animal.addedBy,
+                    error: e instanceof Error ? e.message : String(e),
+                });
+                rescuerDisplay = animal.addedBy.split('@')[0];
+            }
+        }
 
         // Return only safe public fields (no PII)
         return withCors(NextResponse.json({

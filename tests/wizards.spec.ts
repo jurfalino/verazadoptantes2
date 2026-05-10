@@ -29,7 +29,8 @@ test.describe('Home Screen Wizards', () => {
 
     test('Report Wizard opens', async ({ page }) => {
         // The report wizard card says "I have info about an adopter"
-        const reportCard = page.locator('h3').filter({ hasText: /info about|información sobre/i }).locator('..');
+        // Heading is <h2> since v2.14.3 (action cards demoted from h3 to h2 to fix heading hierarchy after the new sr-only h1).
+        const reportCard = page.locator('h2').filter({ hasText: /info about|información sobre/i }).locator('..');
         const registerBtn = reportCard.getByRole('button', { name: /Register Now|Registrar/i });
         await expect(registerBtn).toBeVisible({ timeout: 30000 });
         await registerBtn.click();
@@ -42,8 +43,8 @@ test.describe('Home Screen Wizards', () => {
     });
 
     test('Wizard auth gate works — unauthenticated click triggers login', async ({ page }) => {
-        // Look for the adoption card "Register Now" button
-        const adoptionCard = page.locator('h3').filter({ hasText: /gave a pet|di un animal/i }).locator('..');
+        // Look for the adoption card "Register Now" button (<h2> since v2.14.3).
+        const adoptionCard = page.locator('h2').filter({ hasText: /gave a pet|di un animal/i }).locator('..');
         const registerBtn = adoptionCard.getByRole('button', { name: /Register Now|Registrar/i });
 
         if (await registerBtn.isVisible({ timeout: 5000 }).catch(() => false)) {

@@ -3,10 +3,12 @@ export const runtime = 'edge';
 import { redirect } from 'next/navigation';
 import { getDb } from '@/lib/db';
 import { notifications, adopters } from '@/db/schema';
-import { eq, or } from 'drizzle-orm';
+import { eq, or, and, isNull } from 'drizzle-orm';
 import { getUser } from '@/app/actions/_db';
 import { markNotificationRead } from '@/app/actions/notifications';
 import Link from 'next/link';
+import ContractResultsMatchCard from '@/components/ContractResultsMatchCard';
+import ContractResultsKeepNewButton from '@/components/ContractResultsKeepNewButton';
 
 interface MatchedAdopter {
     id: string;
@@ -44,14 +46,16 @@ const MATCH_TYPE_LABELS: Record<string, { icon: string; es: string; en: string }
     // LIKE-based matches
     'like:name': { icon: '👤', es: 'Nombre', en: 'Name' },
     'like:contact': { icon: '📱', es: 'Contacto', en: 'Contact' },
-    // Legacy (no prefix)
+    // Unprefixed taxonomy (emitted by findAdopters duplicate-mode)
     name_full: { icon: '👤', es: 'Nombre completo', en: 'Full name' },
     name_word: { icon: '📝', es: 'Nombre parcial', en: 'Partial name' },
+    name_word_fuzzy: { icon: '✨', es: 'Nombre similar', en: 'Similar name' },
     phone: { icon: '📱', es: 'Teléfono', en: 'Phone' },
     phone_suffix: { icon: '📞', es: 'Teléfono (sufijo)', en: 'Phone (suffix)' },
     email: { icon: '📧', es: 'Email', en: 'Email' },
     social: { icon: '🌐', es: 'Red social', en: 'Social network' },
     address_word: { icon: '📍', es: 'Dirección', en: 'Address' },
+    like_fallback: { icon: '🔍', es: 'Coincidencia general', en: 'General match' },
 };
 
 export default async function ContractResultsPage({ params }: { params: Promise<{ notificationId: string }> }) {
@@ -90,10 +94,12 @@ export default async function ContractResultsPage({ params }: { params: Promise<
     let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; status: string | null }> = [];
     if (metadata.matchedAdopters && metadata.matchedAdopters.length > 0) {
         const adopterIds = metadata.matchedAdopters.map(a => a.id);
+        // Filter soft-deleted (merged-duplicate) adopters at read time so even legacy
+        // notifications whose stored matchedAdopters contains since-deleted IDs render correctly.
         matchedProfiles = await db
             .select({ id: adopters.id, name: adopters.name, contactInfo: adopters.contactInfo, status: adopters.status })
             .from(adopters)
-            .where(or(...adopterIds.map(id => eq(adopters.id, id)))!)
+            .where(and(or(...adopterIds.map(id => eq(adopters.id, id)))!, isNull(adopters.deletedAt)))
             .all();
     }
 
@@ -155,51 +161,42 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                         if (!profile) return null;
 
                         return (
-                            <Link
+                            <ContractResultsMatchCard
                                 key={match.id}
-                                href={`/adopter/${match.id}`}
-                                className="block bg-white rounded-xl border border-stone-200 p-4 shadow-sm hover:shadow-md hover:border-stone-300 transition-all"
-                            >
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-semibold text-stone-800">{profile.name}</p>
-                                        {profile.contactInfo && (
-                                            <p className="text-xs text-stone-500 mt-0.5 line-clamp-2">{profile.contactInfo}</p>
-                                        )}
-                                        {/* Match reasons */}
-                                        <div className="flex flex-wrap gap-1.5 mt-2">
-                                            {match.matchTypes.map((type) => {
-                                                const label = MATCH_TYPE_LABELS[type];
-                                                return (
-                                                    <span
-                                                        key={type}
-                                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700"
-                                                    >
-                                                        {label?.icon || '🔗'} {label?.es || type}
-                                                    </span>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                    <svg className="w-4 h-4 text-stone-500 flex-shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                    </svg>
-                                </div>
-                            </Link>
+                                matchId={match.id}
+                                notificationId={notificationId}
+                                profile={profile}
+                                matchTypes={match.matchTypes}
+                                matchTypeLabels={MATCH_TYPE_LABELS}
+                            />
                         );
                     })}
                 </div>
             )}
 
-            {/* New Adopter Link */}
+            {/* "None of these match?" — explicit affordance for the keep-new outcome.
+                Only shown when there ARE matches (without matches there's nothing to dismiss). */}
+            {hasMatches && metadata.adopterId && (
+                <div className="mt-6">
+                    <h2 className="text-sm font-semibold text-stone-700 mb-2">¿Ninguna coincide?</h2>
+                    <p className="text-xs text-stone-500 mb-3 leading-relaxed">
+                        Si ninguno de los perfiles anteriores corresponde a esta persona, continuá con el perfil recién creado a partir del contrato.
+                    </p>
+                    <ContractResultsKeepNewButton orphanAdopterId={metadata.adopterId} />
+                </div>
+            )}
+
+            {/* Soft-investigation exit — the user wants to look at the new profile without
+                committing to a triage decision. Wording is explicit about the "without deciding"
+                intent so it doesn't compete with the keep-new CTA above. */}
             {metadata.adopterId && (
                 <div className="mt-6 pt-4 border-t border-stone-200">
                     <Link
                         href={`/adopter/${metadata.adopterId}`}
-                        className="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors"
+                        className="inline-flex items-center gap-2 text-xs text-stone-500 hover:text-stone-700 transition-colors"
                     >
-                        👤 Ver perfil del nuevo adoptante
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        👤 Ver el perfil del nuevo adoptante (sin decidir)
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                         </svg>
                     </Link>

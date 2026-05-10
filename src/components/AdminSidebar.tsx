@@ -3,26 +3,28 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useLanguage } from '@/context/LanguageContext';
 
-const NAV_ITEMS = [
-    { href: '/admin', label: 'Overview', icon: '📊' },
-    { href: '/admin/flags', label: 'Flagged Content', icon: '🚩' },
-    { href: '/admin/duplicates', label: 'Duplicates', icon: '🔍' },
-    { href: '/admin/adopters', label: 'Adopters List', icon: '👤' },
-    { href: '/admin/query', label: 'SQL Runner', icon: '⚡', special: true },
-    { href: '/admin/config', label: 'Configuration', icon: '⚙️' },
-    { href: '/admin/data-requests', label: 'Data Requests', icon: '📬' },
-    { href: '/admin/notifications', label: 'Communications', icon: '📡' },
-    { href: '/admin/users', label: 'Users', icon: '👥' },
-    { href: '/admin/organizations', label: 'Organizations', icon: '🏢' },
-    { href: '/admin/audit', label: 'Audit Log', icon: '📋' },
-    { href: '/admin/health', label: 'System Health', icon: '🩺' },
-    { href: '/admin/data', label: 'Data Migration', icon: '📦' },
+const NAV_ITEMS: Array<{ href: string; labelKey: string; icon: string; special?: boolean }> = [
+    { href: '/admin', labelKey: 'nav_overview', icon: '📊' },
+    { href: '/admin/flags', labelKey: 'nav_flagged', icon: '🚩' },
+    { href: '/admin/duplicates', labelKey: 'nav_duplicates', icon: '🔍' },
+    { href: '/admin/adopters', labelKey: 'nav_adopters_list', icon: '👤' },
+    { href: '/admin/query', labelKey: 'nav_sql', icon: '⚡', special: true },
+    { href: '/admin/config', labelKey: 'nav_config', icon: '⚙️' },
+    { href: '/admin/data-requests', labelKey: 'nav_data_requests', icon: '📬' },
+    { href: '/admin/notifications', labelKey: 'nav_communications', icon: '📡' },
+    { href: '/admin/users', labelKey: 'nav_users', icon: '👥' },
+    { href: '/admin/organizations', labelKey: 'nav_organizations', icon: '🏢' },
+    { href: '/admin/audit', labelKey: 'nav_audit_log', icon: '📋' },
+    { href: '/admin/health', labelKey: 'nav_system_health', icon: '🩺' },
+    { href: '/admin/data', labelKey: 'nav_data_migration', icon: '📦' },
 ];
 
 export default function AdminSidebar() {
     const [open, setOpen] = useState(false);
     const pathname = usePathname();
+    const { t } = useLanguage();
 
     const isActive = (href: string) => {
         if (href === '/admin') return pathname === '/admin';
@@ -37,15 +39,15 @@ export default function AdminSidebar() {
                     <button
                         onClick={() => setOpen(true)}
                         className="p-1.5 rounded-lg hover:bg-stone-800 transition-colors"
-                        aria-label="Open menu"
+                        aria-label={t('admin.open_menu')}
                     >
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                         </svg>
                     </button>
-                    <span className="font-semibold text-sm tracking-tight">Admin Console</span>
+                    <span className="font-semibold text-sm tracking-tight">{t('admin.console')}</span>
                 </div>
-                <Link href="/" className="text-xs text-stone-500 hover:text-white">← App</Link>
+                <Link href="/" className="text-xs text-stone-500 hover:text-white">{t('admin.nav_back_app_short')}</Link>
             </div>
 
             {/* Mobile overlay */}
@@ -65,14 +67,14 @@ export default function AdminSidebar() {
             `}>
                 <div className="p-6 flex items-center justify-between">
                     <div>
-                        <h1 className="text-xl font-semibold text-white tracking-tight">Admin Console</h1>
+                        <h1 className="text-xl font-semibold text-white tracking-tight">{t('admin.console')}</h1>
                         <p className="text-xs text-stone-500 mt-1">v1.8.0</p>
                     </div>
                     {/* Close button (mobile only) */}
                     <button
                         onClick={() => setOpen(false)}
                         className="lg:hidden p-1 rounded-lg hover:bg-stone-800 text-stone-500 hover:text-white"
-                        aria-label="Close menu"
+                        aria-label={t('admin.close_menu')}
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -94,7 +96,7 @@ export default function AdminSidebar() {
                                 ${item.special ? 'text-amber-500/80 hover:text-amber-400' : ''}
                             `}
                         >
-                            {item.icon} {item.label}
+                            {item.icon} {t(`admin.${item.labelKey}`)}
                         </Link>
                     ))}
 
@@ -104,13 +106,13 @@ export default function AdminSidebar() {
                             target="_blank"
                             className="block px-4 py-2 rounded-lg hover:bg-stone-800 hover:text-white transition-colors text-sm text-teal-700 hover:text-teal-700"
                         >
-                            ✏️ CMS Editor ↗
+                            ✏️ {t('admin.nav_cms')} ↗
                         </Link>
                         <Link
                             href="/"
                             className="block px-4 py-2 rounded-lg hover:bg-stone-800 hover:text-white transition-colors text-sm"
                         >
-                            ← Back to App
+                            {t('admin.back_to_app')}
                         </Link>
                     </div>
                 </nav>

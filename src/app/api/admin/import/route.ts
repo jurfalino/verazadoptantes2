@@ -120,7 +120,7 @@ export async function POST(request: Request) {
         });
 
     } catch (error: unknown) {
-        const errorId = logger.error('Import failed', error);
+        const errorId = logger.error('Import failed', error, { actorEmail: session?.user?.email });
         const message = error instanceof Error ? error.message : "Unknown error";
         return NextResponse.json({ error: `Import failed: ${message}`, errorId }, { status: 500 });
     }

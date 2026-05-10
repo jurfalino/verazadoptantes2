@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useShowToast } from '@/components/ui/Toast';
+import { useLanguage } from '@/context/LanguageContext';
 import { extractErrorId } from '@/lib/errorUtils';
 
 interface DeleteButtonProps {
@@ -14,9 +15,11 @@ export default function DeleteAdopterButton({ adopterId, adopterName }: DeleteBu
     const [loading, setLoading] = useState(false);
     const router = useRouter();
     const toast = useShowToast();
+    const { t } = useLanguage();
 
     const handleDelete = async () => {
-        if (!confirm(`Are you sure you want to permanently delete "${adopterName}" and all related data?`)) {
+        const confirmMsg = t('dialogs.confirm_delete_adopter').replace('{name}', adopterName);
+        if (!confirm(confirmMsg)) {
             return;
         }
 
@@ -28,16 +31,15 @@ export default function DeleteAdopterButton({ adopterId, adopterName }: DeleteBu
                 body: JSON.stringify({ adopterId }),
             });
 
-            const data = await response.json() as { success?: boolean; error?: string };
+            const data = await response.json() as { success?: boolean; error?: string; errorId?: string };
 
             if (data.success) {
                 router.refresh();
             } else {
-                toast.error('Delete Failed', data.error || 'Unknown error');
+                toast.error(t('toast.delete_failed_title'), data.error || t('errors.unknown_error'), data.errorId);
             }
         } catch (error) {
-            console.error('Delete error:', error);
-            toast.error('Delete Failed', 'An unexpected error occurred. Check console for details.', extractErrorId(error));
+            toast.error(t('toast.delete_failed_title'), t('errors.unexpected'), extractErrorId(error));
         } finally {
             setLoading(false);
         }
@@ -48,9 +50,9 @@ export default function DeleteAdopterButton({ adopterId, adopterName }: DeleteBu
             onClick={handleDelete}
             disabled={loading}
             className="px-3 py-1.5 text-xs font-semibold text-rose-600 bg-rose-100 rounded-lg hover:bg-rose-200 transition-colors disabled:opacity-50"
-            title="Permanently Delete Adopter"
+            title={t('admin.permanently_delete_adopter_title')}
         >
-            {loading ? '...' : 'Delete'}
+            {loading ? '...' : t('common.delete')}
         </button>
     );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
+import { useLanguage } from '@/context/LanguageContext';
 
 export interface MediaItem {
     url: string;
@@ -39,6 +40,7 @@ export function isVideo(item: MediaItem): boolean {
  * - Blob URL cleanup on close
  */
 export function MediaLightbox({ item, onClose, actions }: MediaLightboxProps) {
+    const { t } = useLanguage();
     const [videoLoading, setVideoLoading] = useState(false);
     const [blobUrl, setBlobUrl] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -100,7 +102,7 @@ export function MediaLightbox({ item, onClose, actions }: MediaLightboxProps) {
                 <button
                     className="text-white text-3xl hover:text-stone-300"
                     onClick={handleClose}
-                    aria-label="Close"
+                    aria-label={t('common.close')}
                 >
                     ×
                 </button>

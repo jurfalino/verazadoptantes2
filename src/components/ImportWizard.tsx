@@ -1451,8 +1451,8 @@ export default function ImportWizard() {
                                                         }`}>
                                                         {isSelected && <span className="text-white text-xs">✓</span>}
                                                     </div>
-                                                    <div>
-                                                        <p className="font-semibold text-stone-900">{match.name}</p>
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="font-semibold text-stone-900 line-clamp-2 break-words" title={match.name}>{match.name}</p>
                                                         <div className="flex flex-wrap gap-1 mt-1">
                                                             {match.matchReasons?.map((reason, i) => (
                                                                 <span key={i} className="text-xs px-1.5 py-0.5 rounded bg-stone-200 text-stone-600">{reason}</span>

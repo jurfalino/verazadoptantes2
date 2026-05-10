@@ -134,7 +134,7 @@ export default function ReportWizard() {
                 <div className="w-12 h-12 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4 text-rose-700 group-hover:scale-110 transition-transform">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                 </div>
-                <h3 className="text-xl font-semibold text-stone-900 mb-2">{t('home.action_report_title')}</h3>
+                <h2 className="text-xl font-semibold text-stone-900 mb-2">{t('home.action_report_title')}</h2>
                 <p className="text-stone-500 mb-4 text-sm">{t('home.action_report_desc')}</p>
                 <button
                     className="inline-block px-6 py-2.5 bg-rose-200 text-rose-900 font-semibold rounded-xl hover:bg-rose-300 transition-colors shadow-sm"
@@ -173,7 +173,7 @@ export default function ReportWizard() {
                                             </div>
                                         )}
                                         <div className="flex-1 min-w-0">
-                                            <div className="font-semibold text-stone-800 text-lg">{previewAdopter.adopter.name}</div>
+                                            <div className="font-semibold text-stone-800 text-lg line-clamp-2 break-words" title={previewAdopter.adopter.name}>{previewAdopter.adopter.name}</div>
                                             {previewAdopter.matchSnippet && (
                                                 <div className="text-xs text-rose-600">{SNIPPET_ICONS[previewAdopter.matchSnippet.field as SnippetField]} {t(`search.snippet_${previewAdopter.matchSnippet.field}`)}</div>
                                             )}
@@ -248,7 +248,7 @@ export default function ReportWizard() {
                                 {selectedAdopterId && (
                                     <div className="flex items-center gap-2 px-3 py-2 bg-teal-50 border border-teal-200 rounded-xl">
                                         <svg className="w-5 h-5 text-teal-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                        <span className="text-sm font-semibold text-teal-800 flex-1">
+                                        <span className="text-sm font-semibold text-teal-800 flex-1 min-w-0 line-clamp-2 break-words" title={searchResults.find(r => r.adopter.id === selectedAdopterId)?.adopter.name || ''}>
                                             {searchResults.find(r => r.adopter.id === selectedAdopterId)?.adopter.name || 'Adopter selected'}
                                         </span>
                                         <button onClick={() => setSelectedAdopterId('')} className="text-stone-400 hover:text-stone-600 text-xs font-semibold">✕</button>

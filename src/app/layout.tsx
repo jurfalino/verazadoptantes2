@@ -11,11 +11,15 @@ import { SessionProvider } from 'next-auth/react';
 import { AuthProvider } from '@/context/AuthContext';
 import LoginModal from '@/components/LoginModal';
 import { ToastProvider } from '@/components/ui/Toast';
+import ClientErrorReporter from '@/components/ClientErrorReporter';
 import InstallPrompt from '@/components/InstallPrompt';
+import Footer from '@/components/Footer';
 import { CountryConfirmBanner } from '@/components/CountryConfirmBanner';
 import NotificationBell from '@/components/NotificationBell';
 import ZarazIdentify from '@/components/ZarazIdentify';
 import { WebApplicationJsonLd, OrganizationJsonLd } from '@/components/JsonLd';
+import ChatWidget from '@/components/ChatWidget';
+import { getFeatureFlag } from '@/config/features';
 
 export const runtime = "edge";
 export const dynamic = 'force-dynamic';
@@ -86,6 +90,16 @@ export default async function RootLayout({
     logger.warn('Layout auth check failed', { error: e instanceof Error ? e.message : String(e) });
   }
 
+  // Feature flag for the floating support chat. Reads DB → env → default.
+  // Falls open to false if the flag lookup fails so the widget can't
+  // accidentally appear on misconfigured deployments.
+  let chatEnabled = false;
+  try {
+    chatEnabled = await getFeatureFlag('ENABLE_CHAT_WIDGET');
+  } catch (e) {
+    logger.warn('Layout chat-flag lookup failed', { error: e instanceof Error ? e.message : String(e) });
+  }
+
 
   return (
     <html lang="es" suppressHydrationWarning>
@@ -123,6 +137,7 @@ export default async function RootLayout({
           <LanguageProvider>
             <ThemeProvider>
               <ToastProvider>
+                <ClientErrorReporter />
                 <AuthProvider>
                   <div className="min-h-screen flex flex-col bg-stone-50">
                     <nav className="bg-white/80 border-b border-stone-200 sticky top-0 z-50 backdrop-blur-md">
@@ -138,7 +153,9 @@ export default async function RootLayout({
                     <LoginModal />
                     <InstallPrompt />
                     {children}
+                    <Footer />
                   </div>
+                  {chatEnabled && <ChatWidget />}
                 </AuthProvider>
               </ToastProvider>
             </ThemeProvider>

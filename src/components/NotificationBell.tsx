@@ -16,6 +16,16 @@ interface NotificationItem {
     createdAt: number | string | Date;
 }
 
+/**
+ * Strip a leading emoji + whitespace from a notification title. Defensive against
+ * legacy DB rows whose titles still include an emoji prefix that's now redundant
+ * with the dedicated `icon` field rendered to the left of the title (v2.14.8-3).
+ * Idempotent — applying it to an already-clean title is a no-op.
+ */
+function stripLeadingEmoji(s: string): string {
+    return s.replace(/^\p{Extended_Pictographic}\s*/u, '');
+}
+
 function timeAgo(date: Date, locale: string): string {
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
@@ -34,7 +44,7 @@ function timeAgo(date: Date, locale: string): string {
 export default function NotificationBell() {
     const { data: session } = useSession();
     const router = useRouter();
-    const { locale } = useLanguage();
+    const { locale, t } = useLanguage();
     const [open, setOpen] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
     const [items, setItems] = useState<NotificationItem[]>([]);
@@ -162,7 +172,7 @@ export default function NotificationBell() {
             <button
                 onClick={handleToggle}
                 className="relative p-2 rounded-lg text-stone-500 hover:text-stone-700 hover:bg-stone-100 transition-colors"
-                aria-label={isEs ? 'Notificaciones' : 'Notifications'}
+                aria-label={t('notifications.title')}
             >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
@@ -197,7 +207,7 @@ export default function NotificationBell() {
                         style={{ borderBottom: '1px solid var(--border-default)', background: 'var(--surface-muted)' }}
                     >
                         <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                            🔔 {isEs ? 'Notificaciones' : 'Notifications'}
+                            {t('notifications.title')}
                         </h3>
                         {unreadCount > 0 && (
                             <button
@@ -248,10 +258,10 @@ export default function NotificationBell() {
                                         <div className="flex items-start gap-2.5">
                                             <span className="text-lg flex-shrink-0 mt-0.5">{item.icon}</span>
                                             <div className="flex-1 min-w-0">
-                                                <p className={`text-sm leading-snug ${!item.read ? 'font-semibold' : 'font-medium'}`} style={{ color: 'var(--text-primary)' }}>
-                                                    {item.title}
+                                                <p className={`text-sm leading-snug break-words ${!item.read ? 'font-semibold' : 'font-medium'}`} style={{ color: 'var(--text-primary)' }}>
+                                                    {stripLeadingEmoji(item.title)}
                                                 </p>
-                                                <p className="text-xs leading-relaxed mt-0.5 line-clamp-2" style={{ color: 'var(--text-muted)' }}>
+                                                <p className="text-xs leading-relaxed mt-0.5 line-clamp-2 break-words" style={{ color: 'var(--text-muted)' }}>
                                                     {item.body}
                                                 </p>
                                                 <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>

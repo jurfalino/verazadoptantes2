@@ -7,6 +7,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { getRecordTypeColors, getRecordTypeIcon } from '@/lib/recordTypeColors';
+import RecordTypeGuidance from '@/components/RecordTypeGuidance';
 import { StarRating } from '@/components/StarRating';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
@@ -52,12 +53,36 @@ const RECORD_TYPES = [
     { value: 'returned_pet', icon: '↩️', labelKey: 'adoption.type_returned', fallback: 'Returned' },
 ] as const;
 
-export default function AdoptionFormWizard({ adopterId, availableAnimals = [], currentUser, adopterAddress = '' }: {
+export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRating = null, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '', initialRecordType, autoOpen = false, onClose }: {
     adopterId: string;
+    /** Display name of the adopter — used in step-1 guidance copy. */
+    adopterName?: string;
+    /** Average rating from prior records (1-5). Drives rating-bucket guidance copy. null when unrated. */
+    avgRating?: number | null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     availableAnimals?: any[];
+    /**
+     * All existing adoption-table rows for this adopter. Used as the picker
+     * source when the user is logging a follow_up / returned_pet — those flows
+     * reference an animal *already* adopted by this person, not the rescuer's
+     * unlinked inventory (`availableAnimals`).
+     */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    adopterAdoptions?: any[];
     currentUser?: string;
     adopterAddress?: string;
+    /**
+     * Pre-select the record type when the wizard mounts. Skips the user
+     * having to tap the chip in step 1 (used by VisitIntentCard which already
+     * captured the user's intent). Step 1 still renders so adoption /
+     * adoption_request flows can pick an animal — observation flows just
+     * click "next".
+     */
+    initialRecordType?: 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet';
+    /** Open the wizard immediately on mount (paired with initialRecordType). */
+    autoOpen?: boolean;
+    /** Called when the wizard closes (cancel or save). */
+    onClose?: () => void;
 }) {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -71,12 +96,13 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
     const shouldOpenFromWizard = !!newAdoptionParam || continueToAdoption;
     const prefillAnimalName = searchParams.get('animalName') || '';
     const prefillSpecies = searchParams.get('species') || 'cat';
-    const prefillRecordType = newAdoptionParam === 'observation' ? 'observation' : 'adoption';
+    const prefillRecordType = initialRecordType
+        || (newAdoptionParam === 'observation' ? 'observation' : 'adoption');
     const prefillRating = searchParams.get('rating');
     const prefillDetails = searchParams.get('details') || '';
     const prefillDate = searchParams.get('date') || '';
 
-    const [isOpen, setIsOpen] = useState(shouldOpenFromWizard);
+    const [isOpen, setIsOpen] = useState(shouldOpenFromWizard || autoOpen);
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
@@ -97,6 +123,11 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
         adopterId: adopterId,
         recordType: prefillRecordType,
         date: prefillDate,
+        // Companion date used only for the dual-record follow_up/returned_pet
+        // flow — when the user is logging an event for a brand-new animal that
+        // wasn't previously in the system, we ask for both the original
+        // adoption date and the event date so two records can be created.
+        adoptionDate: '',
         deliveredToHome: false,
         verifiedAddress: '',
         identityVerified: false,
@@ -112,8 +143,8 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
     // Focus management and scrolling
     useEffect(() => {
         if (isOpen && stepContainerRef.current) {
-            // Scroll if opened via URL param
-            if (shouldOpenFromWizard && step === 1) {
+            // Scroll if opened via URL param or programmatically (VisitIntentCard)
+            if ((shouldOpenFromWizard || autoOpen) && step === 1) {
                 setTimeout(() => stepContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
             }
             // Move focus to container on step change for screen readers
@@ -121,10 +152,10 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
                 stepContainerRef.current?.focus();
             }, 50);
         }
-    }, [isOpen, step, shouldOpenFromWizard]);
+    }, [isOpen, step, shouldOpenFromWizard, autoOpen]);
 
     const resetForm = () => {
-        setFormData({ animalId: '', animalName: '', details: '', status: 'completed', rating: 5, comments: '', species: 'cat', adopterId, recordType: 'adoption', date: new Date().toISOString().split('T')[0], deliveredToHome: false, verifiedAddress: '', identityVerified: false });
+        setFormData({ animalId: '', animalName: '', details: '', status: 'completed', rating: 5, comments: '', species: 'cat', adopterId, recordType: 'adoption', date: new Date().toISOString().split('T')[0], adoptionDate: '', deliveredToHome: false, verifiedAddress: '', identityVerified: false });
         setPendingImages([]);
         setUnknownAnimal(false);
         setCustomSpecies(false);
@@ -133,9 +164,27 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
     };
 
     const safeAvailableAnimals = Array.isArray(availableAnimals) ? availableAnimals : [];
+    const safeAdopterAdoptions = Array.isArray(adopterAdoptions) ? adopterAdoptions : [];
     const isObservation = formData.recordType === 'observation';
-    const showModeSwitcher = !shouldOpenFromWizard && safeAvailableAnimals.length > 0 && !isObservation;
+    const isFollowUpOrReturn = formData.recordType === 'follow_up' || formData.recordType === 'returned_pet';
+    // Adoption-request flows only collect species — there's no specific animal yet
+    // ("person asks for any cat"), so hiding name + mode-switcher removes friction
+    // with no information loss. animalName is saved as null on submit.
+    const isRequest = formData.recordType === 'adoption_request';
+
+    // For follow_up / returned_pet, the picker should source from animals this
+    // adopter has actually adopted — not the rescuer's unlinked inventory.
+    const previousAdoptionsForAdopter = isFollowUpOrReturn
+        ? safeAdopterAdoptions.filter(a => a && a.recordType === 'adoption' && a.animalName)
+        : [];
+    const effectiveAnimalsList = isFollowUpOrReturn ? previousAdoptionsForAdopter : safeAvailableAnimals;
+    const showModeSwitcher = !shouldOpenFromWizard && effectiveAnimalsList.length > 0 && !isObservation && !isRequest;
     const effectiveMode = showModeSwitcher ? mode : 'new';
+
+    // Dual-record flow: user is logging a follow_up/returned_pet for an animal
+    // that wasn't previously in the system — we'll create the parent adoption
+    // and the event record together, so we need two dates.
+    const showDualDate = isFollowUpOrReturn && effectiveMode === 'new';
 
     // Clear stale animal data when user switches to observation type so the saved record
     // doesn't carry over animalName/species from a previously-selected adoption type.
@@ -149,7 +198,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
 
     const handleSelectExisting = (animalId: string) => {
         if (!animalId) return;
-        const animal = safeAvailableAnimals.find(a => a.id === animalId);
+        const animal = effectiveAnimalsList.find(a => a.id === animalId);
         if (animal) setFormData(prev => ({ ...prev, animalId: animal.id, animalName: animal.animalName, species: animal.species }));
     };
 
@@ -206,25 +255,66 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
     const handleSubmit = async () => {
         const isAuthenticated = (currentUser && currentUser !== '') || !!session?.user;
         if (!isAuthenticated) { openLogin(); return; }
+
+        // Dual-date validation: both required when logging a brand-new follow-up/return.
+        if (showDualDate && !formData.adoptionDate) {
+            toast.warning(t('common.error'), t('adoption.fill_required'));
+            return;
+        }
+
         setLoading(true);
         try {
-            const dateParts = formData.date.split('-').map(Number);
-            const localDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2] || 1, 12, 0, 0);
-            
+            const parseLocalDate = (s: string) => {
+                const [y, m, d] = s.split('-').map(Number);
+                return new Date(y, (m || 1) - 1, d || 1, 12, 0, 0);
+            };
+            const localDate = parseLocalDate(formData.date);
+
+            // For follow_up / returned_pet, animalId on the form refers to a
+            // *previous adoption record* — we copy its name/species but must
+            // create a NEW row for the event (never UPDATE the parent adoption).
+            const idForSubmit = isFollowUpOrReturn ? undefined : (formData.animalId || undefined);
+
+            // Dual-record path: create the parent adoption first, then the event.
+            if (showDualDate) {
+                const adoptionLocalDate = parseLocalDate(formData.adoptionDate);
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                await saveAdoption({
+                    animalName: formData.animalName,
+                    species: formData.species,
+                    details: '',
+                    status: 'completed',
+                    rating: Number(formData.rating),
+                    adopterId,
+                    recordType: 'adoption',
+                    date: adoptionLocalDate,
+                    onBehalfOf: null,
+                    deliveredToHome: 0,
+                    verifiedAddress: null,
+                    identityVerified: 0,
+                } as any);
+            }
+
             const submitData = {
                 ...formData,
-                id: formData.animalId || undefined,
+                id: idForSubmit,
                 rating: Number(formData.rating),
                 date: localDate,
+                // Adoption requests don't reference a specific animal — drop the
+                // name even if some leftover state held one. Species stays.
+                animalName: isRequest ? null : formData.animalName,
                 onBehalfOf: null,
                 deliveredToHome: formData.deliveredToHome ? 1 : 0,
                 verifiedAddress: formData.verifiedAddress || null,
                 identityVerified: formData.identityVerified ? 1 : 0
             };
-            
+            // `adoptionDate` is wizard-only state, not a column.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            delete (submitData as any).adoptionDate;
+
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const result = await saveAdoption(submitData as any);
-            
+
             if (pendingImages.length > 0 && result?.id) {
                 const uploadPromises = pendingImages.map(async (pending) => {
                     if (pending.isVideo && pending.file) {
@@ -244,6 +334,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
             
             resetForm();
             setIsOpen(false);
+            onClose?.();
             await new Promise(r => setTimeout(r, 100));
             router.refresh();
         } catch (err) {
@@ -259,6 +350,14 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
     const checkStep1Valid = () => {
         // Observations are about the adopter, not an animal — no animal selection required.
         if (isObservation) return true;
+        // Adoption requests only collect species — no specific animal yet.
+        if (isRequest) {
+            if (!formData.species.trim()) {
+                toast.warning(t('common.error'), t('adoption.fill_required'));
+                return false;
+            }
+            return true;
+        }
 
         const isValid = effectiveMode === 'existing'
             ? !!formData.animalId
@@ -275,22 +374,10 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
         if (checkStep1Valid()) goNext();
     };
 
-    if (!isOpen) {
-        return (
-            <button
-                id="wizard-open-btn"
-                onClick={() => {
-                    const auth = (currentUser && currentUser !== '') || !!session?.user;
-                    if (!auth) { openLogin(); return; }
-                    setIsOpen(true);
-                }}
-                className="flex items-center gap-1.5 ml-auto py-2 px-4 text-sm text-teal-700 font-semibold rounded-lg hover:bg-teal-50 transition-all duration-200 mb-4"
-            >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                {t('adoption.record_new')}
-            </button>
-        );
-    }
+    // Closed state renders nothing (v2.14.8). The wizard mounts so URL-driven
+    // autoOpen flows still work, and parents (VisitIntentCard) drive opens by
+    // unmounting/remounting with `autoOpen` set.
+    if (!isOpen) return null;
 
     const stepLabels = [
         t('wizard.step_what'),
@@ -339,26 +426,38 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
                     {/* ===== STEP 1: What happened? ===== */}
                     {step === 1 && (
                         <div className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-semibold text-teal-800 mb-2 uppercase tracking-wider">{t('adoption.record_type')}</label>
-                                <div className="flex flex-wrap gap-2">
-                                    {RECORD_TYPES.map(type => {
-                                        const colors = getRecordTypeColors(type.value);
-                                        const sel = formData.recordType === type.value;
-                                        return (
-                                            <button key={type.value} type="button" onClick={() => setFormData(d => ({ ...d, recordType: type.value }))}
-                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${sel ? `${colors.bg} ${colors.border} ${colors.text} shadow-sm` : 'bg-white border-stone-200 text-stone-600 hover:border-stone-300'}`}>
-                                                <span>{type.icon}</span><span>{t(type.labelKey as any)}</span>
-                                            </button>
-                                        );
-                                    })}
+                            {/* When the wizard is opened with a known intent (from VisitIntentCard) we
+                                replace the picker with explanatory copy that varies by record type
+                                and (for adoption/request) the adopter's rating bucket. Manual-open
+                                paths (no `initialRecordType`) keep the full chip grid below. */}
+                            {initialRecordType ? (
+                                <RecordTypeGuidance
+                                    recordType={formData.recordType as 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet'}
+                                    adopterName={adopterName}
+                                    avgRating={avgRating}
+                                />
+                            ) : (
+                                <div>
+                                    <label className="block text-xs font-semibold text-teal-800 mb-2 uppercase tracking-wider">{t('adoption.record_type')}</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {RECORD_TYPES.map(type => {
+                                            const colors = getRecordTypeColors(type.value);
+                                            const sel = formData.recordType === type.value;
+                                            return (
+                                                <button key={type.value} type="button" onClick={() => setFormData(d => ({ ...d, recordType: type.value }))}
+                                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${sel ? `${colors.bg} ${colors.border} ${colors.text} shadow-sm` : 'bg-white border-stone-200 text-stone-600 hover:border-stone-300'}`}>
+                                                    <span>{type.icon}</span><span>{t(type.labelKey as any)}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
-                            </div>
+                            )}
 
                             {showModeSwitcher && (
                                 <div className="flex gap-2 p-1 bg-teal-50 rounded-lg">
                                     <button type="button" onClick={() => setMode('existing')} className={`flex-1 py-1.5 text-sm font-semibold rounded-md transition-all ${effectiveMode === 'existing' ? 'bg-white text-teal-700 shadow-sm' : 'text-teal-600 hover:text-teal-800'}`}>
-                                        {t('adoption.select_existing')} ({safeAvailableAnimals.length})
+                                        {t('adoption.select_existing')} ({effectiveAnimalsList.length})
                                     </button>
                                     <button type="button" onClick={() => { setMode('new'); setFormData(d => ({ ...d, animalId: '', animalName: '', species: 'cat' })); }} className={`flex-1 py-1.5 text-sm font-semibold rounded-md transition-all ${effectiveMode === 'new' ? 'bg-white text-teal-700 shadow-sm' : 'text-teal-600 hover:text-teal-800'}`}>
                                         {t('adoption.create_new')}
@@ -372,30 +471,39 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
                                 </div>
                             )}
 
-                            {!isObservation && effectiveMode === 'existing' && (
+                            {!isObservation && !isRequest && effectiveMode === 'existing' && (
                                 <div>
-                                    <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.select_animal')}</label>
+                                    <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
+                                        {isFollowUpOrReturn ? t('adoption.previous_adoption_picker_label') : t('adoption.select_animal')}
+                                    </label>
                                     <select className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-base md:text-sm" onChange={(e) => handleSelectExisting(e.target.value)} value={formData.animalId || ''}>
                                         <option value="">{t('adoption.choose_animal')}</option>
-                                        {safeAvailableAnimals.map(a => (<option key={a.id} value={a.id}>{a.animalName} ({a.species})</option>))}
+                                        {effectiveAnimalsList.map(a => {
+                                            const dateLabel = isFollowUpOrReturn && a.date ? ` — ${formatShortDate(a.date)}` : '';
+                                            return (
+                                                <option key={a.id} value={a.id}>{a.animalName} ({a.species}){dateLabel}</option>
+                                            );
+                                        })}
                                     </select>
                                 </div>
                             )}
 
                             {!isObservation && effectiveMode === 'new' && (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div>
-                                        <div className="flex items-center justify-between mb-1.5">
-                                            <label className="block text-xs font-semibold text-teal-800 uppercase tracking-wider">{t('adoption.animal_name')}</label>
-                                            <label className="flex items-center gap-1.5 cursor-pointer text-xs">
-                                                <span className="text-stone-500">{t('common.unknown')}</span>
-                                                <button type="button" onClick={() => { setUnknownAnimal(!unknownAnimal); if (!unknownAnimal) setFormData(d => ({ ...d, animalName: '' })); }} className={`relative w-9 h-5 rounded-full transition-colors ${unknownAnimal ? 'bg-amber-500' : 'bg-stone-200'}`}>
-                                                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${unknownAnimal ? 'translate-x-4' : 'translate-x-0'}`} />
-                                                </button>
-                                            </label>
+                                <div className={`grid gap-4 ${isRequest ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'}`}>
+                                    {!isRequest && (
+                                        <div>
+                                            <div className="flex items-center justify-between mb-1.5">
+                                                <label className="block text-xs font-semibold text-teal-800 uppercase tracking-wider">{t('adoption.animal_name')}</label>
+                                                <label className="flex items-center gap-1.5 cursor-pointer text-xs">
+                                                    <span className="text-stone-500">{t('common.unknown')}</span>
+                                                    <button type="button" onClick={() => { setUnknownAnimal(!unknownAnimal); if (!unknownAnimal) setFormData(d => ({ ...d, animalName: '' })); }} className={`relative w-9 h-5 rounded-full transition-colors ${unknownAnimal ? 'bg-amber-500' : 'bg-stone-200'}`}>
+                                                        <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${unknownAnimal ? 'translate-x-4' : 'translate-x-0'}`} />
+                                                    </button>
+                                                </label>
+                                            </div>
+                                            <input required={!unknownAnimal} disabled={unknownAnimal} className={`w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-base md:text-sm ${unknownAnimal ? 'bg-stone-100 text-stone-500 cursor-not-allowed' : 'bg-white'}`} value={unknownAnimal ? '' : formData.animalName} onChange={e => setFormData(d => ({ ...d, animalName: e.target.value }))} placeholder={unknownAnimal ? (t('adoption.unknown_animal')) : t('adoption.animal_placeholder')} />
                                         </div>
-                                        <input required={!unknownAnimal} disabled={unknownAnimal} className={`w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-base md:text-sm ${unknownAnimal ? 'bg-stone-100 text-stone-500 cursor-not-allowed' : 'bg-white'}`} value={unknownAnimal ? '' : formData.animalName} onChange={e => setFormData(d => ({ ...d, animalName: e.target.value }))} placeholder={unknownAnimal ? (t('adoption.unknown_animal')) : t('adoption.animal_placeholder')} />
-                                    </div>
+                                    )}
                                     <div>
                                         <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.species')}</label>
                                         {customSpecies ? (
@@ -421,7 +529,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
                             )}
 
                             <div className="flex justify-between items-center pt-4 border-t border-teal-100/50">
-                                <button type="button" onClick={() => setIsOpen(false)} className="px-4 py-2 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors">{t('common.cancel')}</button>
+                                <button type="button" onClick={() => { setIsOpen(false); onClose?.(); }} className="px-4 py-2 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors">{t('common.cancel')}</button>
                                 <button type="button" onClick={handleNextStep1} className="px-6 py-2 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 shadow-md shadow-teal-700/20 transition-all">{t('wizard.next')} →</button>
                             </div>
                         </div>
@@ -430,8 +538,27 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
                     {/* ===== STEP 2: Details ===== */}
                     {step === 2 && (
                         <div className="space-y-4">
+                            {showDualDate && (
+                                <div className="text-xs text-teal-800 bg-teal-50/70 border border-teal-100 rounded-lg p-2.5">
+                                    {t('adoption.dual_date_hint')}
+                                </div>
+                            )}
+
+                            {showDualDate && (
+                                <div>
+                                    <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.adoption_date')}</label>
+                                    <DatePicker value={formData.adoptionDate} onChange={date => setFormData(d => ({ ...d, adoptionDate: date }))} maxDate={new Date().toISOString().split('T')[0]} dayOptional />
+                                </div>
+                            )}
+
                             <div>
-                                <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.date')}</label>
+                                <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
+                                    {formData.recordType === 'follow_up'
+                                        ? t('adoption.followup_event_date')
+                                        : formData.recordType === 'returned_pet'
+                                            ? t('adoption.return_event_date')
+                                            : t('adoption.date')}
+                                </label>
                                 <DatePicker value={formData.date} onChange={date => setFormData(d => ({ ...d, date }))} maxDate={new Date().toISOString().split('T')[0]} dayOptional />
                             </div>
 
@@ -524,7 +651,7 @@ export default function AdoptionFormWizard({ adopterId, availableAnimals = [], c
                                             <div key={idx} className="relative group">
                                                 {pending.isVideo ? (
                                                     <div className="w-20 h-20 rounded-lg border border-amber-300 ring-2 ring-amber-200 overflow-hidden relative">
-                                                        {pending.thumbnail ? <img src={pending.thumbnail} alt="Video thumbnail" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gradient-to-br from-teal-600 to-teal-800" />}
+                                                        {pending.thumbnail ? <img src={pending.thumbnail} alt={t('common.video_thumbnail_alt')} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gradient-to-br from-teal-600 to-teal-800" />}
                                                     </div>
                                                 ) : (
                                                     <img src={pending.data} alt={`Pending photo ${idx + 1}`} className="w-20 h-20 object-cover rounded-lg border border-amber-300 ring-2 ring-amber-200" />

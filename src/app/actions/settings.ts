@@ -25,8 +25,9 @@ export interface UserSettings {
  * getUserSettings() and getUserName() calls, saving one full round-trip.
  */
 export async function getUserSettings(): Promise<UserSettings | null> {
+    let userEmail: string | undefined;
     try {
-        const userEmail = await getUser();
+        userEmail = await getUser();
         if (!userEmail || userEmail === 'unknown') return null;
 
         const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
@@ -62,7 +63,7 @@ export async function getUserSettings(): Promise<UserSettings | null> {
             termsVersion: row.terms_version ?? null,
         };
     } catch (error) {
-        logger.error('getUserSettings failed', error);
+        logger.error('getUserSettings failed', error, { userEmail });
         return null;
     }
 }
@@ -83,14 +84,15 @@ export async function getUserSettings(): Promise<UserSettings | null> {
  * does NOT write terms_version, so it cannot satisfy the T&C gate.
  * For first-time onboarding, use acceptTermsAndCountry() instead.
  */
-export async function updateUserCountry(country: string): Promise<{ success: boolean }> {
+export async function updateUserCountry(country: string): Promise<{ success: boolean; errorId?: string }> {
     const parsed = acceptTermsAndCountrySchema.shape.country.safeParse(country);
     if (!parsed.success) {
         throw new Error(`Invalid country: ${parsed.error.issues.map(i => i.message).join(', ')}`);
     }
 
+    let userEmail: string | undefined;
     try {
-        const userEmail = await getUser();
+        userEmail = await getUser();
         if (!userEmail || userEmail === 'unknown') throw new Error('Not authenticated');
 
         const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
@@ -111,8 +113,8 @@ export async function updateUserCountry(country: string): Promise<{ success: boo
         logger.info('Country updated from settings', { userEmail, country });
         return { success: true };
     } catch (error) {
-        logger.error('updateUserCountry failed', error);
-        return { success: false };
+        const errorId = logger.error('updateUserCountry failed', error, { userEmail, country });
+        return { success: false, errorId };
     }
 }
 
@@ -126,8 +128,9 @@ export async function acceptTermsAndCountry(
         throw new Error(`Invalid input: ${parsed.error.issues.map(i => i.message).join(', ')}`);
     }
 
+    let userEmail: string | undefined;
     try {
-        const userEmail = await getUser();
+        userEmail = await getUser();
         if (!userEmail || userEmail === 'unknown') {
             throw new Error('Not authenticated');
         }
@@ -162,7 +165,7 @@ export async function acceptTermsAndCountry(
 
         return { success: true };
     } catch (error) {
-        logger.error('acceptTermsAndCountry failed', error);
+        logger.error('acceptTermsAndCountry failed', error, { userEmail, country, version });
         return { success: false };
     }
 }
@@ -180,8 +183,9 @@ export async function acceptTerms(version: number): Promise<{ success: boolean }
         throw new Error(`Invalid version: ${parsed.error.issues.map(i => i.message).join(', ')}`);
     }
 
+    let userEmail: string | undefined;
     try {
-        const userEmail = await getUser();
+        userEmail = await getUser();
         if (!userEmail || userEmail === 'unknown') {
             throw new Error('Not authenticated');
         }
@@ -219,7 +223,7 @@ export async function acceptTerms(version: number): Promise<{ success: boolean }
 
         return { success: true };
     } catch (error) {
-        logger.error('acceptTerms failed', error);
+        logger.error('acceptTerms failed', error, { userEmail, version });
         return { success: false };
     }
 }
@@ -228,8 +232,9 @@ export async function acceptTerms(version: number): Promise<{ success: boolean }
  * Get the current user's display name from the `user` table.
  */
 export async function getUserName(): Promise<string | null> {
+    let userEmail: string | undefined;
     try {
-        const userEmail = await getUser();
+        userEmail = await getUser();
         if (!userEmail || userEmail === 'unknown') return null;
 
         const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
@@ -241,7 +246,7 @@ export async function getUserName(): Promise<string | null> {
 
         return row?.name || null;
     } catch (error) {
-        logger.error('getUserName failed', error);
+        logger.error('getUserName failed', error, { userEmail });
         return null;
     }
 }
@@ -249,14 +254,15 @@ export async function getUserName(): Promise<string | null> {
 /**
  * Update the current user's display name in the `user` table.
  */
-export async function updateUserName(name: string): Promise<{ success: boolean }> {
+export async function updateUserName(name: string): Promise<{ success: boolean; errorId?: string }> {
     const trimmed = name.trim();
     if (!trimmed || trimmed.length > 100) {
         throw new Error('Name must be between 1 and 100 characters');
     }
 
+    let userEmail: string | undefined;
     try {
-        const userEmail = await getUser();
+        userEmail = await getUser();
         if (!userEmail || userEmail === 'unknown') {
             throw new Error('Not authenticated');
         }
@@ -272,7 +278,7 @@ export async function updateUserName(name: string): Promise<{ success: boolean }
 
         return { success: true };
     } catch (error) {
-        logger.error('updateUserName failed', error);
-        return { success: false };
+        const errorId = logger.error('updateUserName failed', error, { userEmail });
+        return { success: false, errorId };
     }
 }

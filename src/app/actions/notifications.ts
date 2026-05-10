@@ -301,7 +301,9 @@ export async function resolveDisplayName(email: string): Promise<string> {
             ).bind(email).first<{ name: string | null }>();
             if (row?.name) return row.name;
         }
-    } catch { /* fallback */ }
+    } catch (e) {
+        logger.warn('resolveDisplayName: DB lookup failed', { error: e instanceof Error ? e.message : String(e) });
+    }
     return email.split('@')[0];
 }
 
@@ -341,8 +343,12 @@ export async function notifyAdmins(opts: {
                     adminEmails.add(row.email);
                 }
             }
-        } catch {
-            // DB unavailable — only bootstrap admins will be notified
+        } catch (e) {
+            logger.warn('notifyAdmins: failed to fetch DB admins, falling back to bootstrap list', {
+                actorEmail: opts.actorEmail,
+                type: opts.type,
+                error: e instanceof Error ? e.message : String(e),
+            });
         }
 
         // Exclude the actor

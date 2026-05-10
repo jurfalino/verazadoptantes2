@@ -15,7 +15,7 @@
 
 import { adopters, searches, adopterHistory, adoptions, adopterStats, duplicateTokens } from '@/db/schema';
 import { or, like, sql, and, isNull, eq, ne } from 'drizzle-orm';
-import { logger } from '@/lib/logger';
+import { logger, withTrace } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import {
@@ -275,7 +275,8 @@ async function runDuplicateMode(
     }
 
     if (likeConditions.length > 0) {
-        let likeWhere = or(...likeConditions) as any;
+        // Filter soft-deleted on the LIKE strategy directly so we never hand merged duplicates upstream.
+        let likeWhere: any = and(or(...likeConditions), isNull(adopters.deletedAt));
         if (excludeId) likeWhere = and(likeWhere, ne(adopters.id, excludeId));
         const likeRows = await db.select({ id: adopters.id }).from(adopters).where(likeWhere).limit(20);
         for (const r of likeRows) {
@@ -286,13 +287,15 @@ async function runDuplicateMode(
 
     if (matchMap.size === 0) return [];
 
-    // Fetch adopter names + stored name_word tokens for Levenshtein scoring
-    // D1-compatible: fan out with eq() per ID instead of inArray() which silently breaks on D1
+    // Fetch adopter names + stored name_word tokens for Levenshtein scoring.
+    // D1-compatible: fan out with eq() per ID instead of inArray() which silently breaks on D1.
+    // The eq+isNull guard drops soft-deleted IDs that may have entered matchMap via the token-index
+    // strategy (Strategy 1 doesn't join against adopters, so its candidates aren't pre-filtered).
     const matchedIds = Array.from(matchMap.keys());
     const [nameRows, storedWordRows] = await Promise.all([
         Promise.all(matchedIds.map(id =>
             db.select({ id: adopters.id, name: adopters.name }).from(adopters)
-                .where(eq(adopters.id, id))
+                .where(and(eq(adopters.id, id), isNull(adopters.deletedAt)))
                 .catch((e: unknown) => {
                     logger.warn('findAdopters: D1 fallback hit (adopter name lookup)', {
                         adopterId: id,
@@ -668,13 +671,26 @@ export async function findAdopters(
 
         if (options.mode === 'duplicate') {
             // Duplicate mode: no auth, no enrichment, no analytics
-            const results = await runDuplicateMode(input, options, db);
+            const results = await withTrace(
+                'findAdopters.duplicate',
+                () => runDuplicateMode(input, options, db),
+                {
+                    nameLen: (input.name || '').length,
+                    phones: input.phones?.length || 0,
+                    emails: input.emails?.length || 0,
+                    socials: input.socials?.length || 0,
+                },
+            );
             return { results };
         }
 
         // Discovery mode: auth context, enrichment, geo-filter, analytics
         try { user = await getUser(); } catch { /* unauthenticated */ }
-        return await runDiscoveryMode(input, options, db, user);
+        return await withTrace(
+            'findAdopters.discovery',
+            () => runDiscoveryMode(input, options, db, user),
+            { rawLen: (input.raw || '').length, enrich: options.enrich !== false },
+        );
 
     } catch (error) {
         const errorId = logger.error('findAdopters failed', error, { mode: options.mode, user });

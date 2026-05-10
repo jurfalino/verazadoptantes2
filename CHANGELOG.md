@@ -2,6 +2,701 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-3] - 2026-05-10
+
+Wizard step 1 for `adoption_request` now collects only the species — no animal name, no existing/new mode switcher. An adoption request is "person asks for any cat / any dog" — there's no specific animal yet, so asking for its name was friction with no information value. All other record types (adoption / follow_up / returned_pet / observation) are unchanged.
+
+### Changed
+- **`src/components/AdoptionFormWizard.tsx`** — added `isRequest` derivation (mirrors `isObservation` / `isFollowUpOrReturn`). Used in three places:
+  - `showModeSwitcher` excludes request — there's no existing animal to pick.
+  - The existing-animal picker block is gated `!isObservation && !isRequest`.
+  - The new-animal grid renders single-column for requests; the animal-name input is hidden, leaving species alone.
+  - `checkStep1Valid` short-circuits for requests: only `species` is required.
+  - Submit serializes `animalName: null` for requests (defensive — form state defaults to `''` and shouldn't leak through, but explicit null is clearer at the DB row).
+
+### Notes
+- **No DB or schema change.** The `adoptions.animal_name` column is already nullable; existing request rows that had a name in their `animal_name` column are not migrated and stay as-is.
+- **Edit form (`AdoptionFormEditV2`) intentionally untouched.** If a rescuer is editing a historical request that happened to have an animal name, they can still see and clear it via the edit path.
+
+## [2.14.9-2] - 2026-05-10
+
+Fixed `[object Object]` showing up in Axiom whenever audit-log writes failed. Both catch blocks in `src/lib/audit.ts` were calling `logger.error('[Audit] ...', { error: e... })` — the `{error}` object was getting passed as the **second positional argument** to `logger.error(message, error?, data?)`, which logger's non-Error branch then stringified to `"[object Object]"` (because `String({error:'...'})` → `"[object Object]"`). The actual error message + stack never made it to Axiom — every audit-log failure was unactionable.
+
+### Fixed
+- **`src/lib/audit.ts:70`** — `logger.error('[Audit] Failed to log', e, { action, target })`. Pass the raw error as 2nd arg so logger extracts `name`/`message`/`stack`; pass operation context as 3rd arg.
+- **`src/lib/audit.ts:172`** — same fix on the upsert-user-profile path. Used `userId` and `email` (parameters in scope at catch level) instead of `resolvedId` (declared inside the try block, not visible in the catch).
+
+### Notes
+- **Issue C from the audit (`p.organization` schema-drift error)** — already resolved in current `master`. The legacy free-text `organization` column was deprecated in v2.12.1-34 (migration 0037) and the `/api/admin/users` SELECT no longer references it. The May 6 occurrence was on a stale deploy.
+- **The `[Audit]` errors were both rare** (2 occurrences in 7 days), but each one was a black box. With this fix the next failure will surface the underlying SQLite/D1 message + the audit `action` and `target` so we can actually triage.
+
+## [2.14.9-1] - 2026-05-10
+
+Hardened the adopter profile page against single-query failures. The Server-Components SSR error that surfaced on May 7 (digest `3138068963`, user `michistrendelacosta`) was the result of `src/app/adopter/[id]/page.tsx:56` doing a bare `Promise.all` of 9 D1 queries with no per-fetch error handling — a transient D1 outage on any one of them threw, Next.js caught it, redacted the message in prod, and the user got a blank profile with no log of the actual cause. Confirmed via Axiom: 1.2 seconds before that SSR error, the same user's `Log profile view failed` warn fired (D1 insert into `adopter_stats` rejected) — the profile_view stat was wrapped in try/catch (CLAUDE.md degraded pattern) so it logged-and-continued, but the 9-query Promise.all wasn't.
+
+### Fixed
+- **`src/app/adopter/[id]/page.tsx`** — wrapped each of the 9 fetches in `Promise.all` with `.catch(fallback(...))`. Each fallback logs at `warn` level with `{ op, adopterId, userEmail, error }` and returns a typed safe default (`null` for `getAdopter` / `getAdopterStats` / `getAverageRating`; `[]` for the array-returning queries). The page now degrades a section instead of crashing the whole SSR, and Axiom captures the real underlying error every time. Mirrors the `enrichAdopters` D1-fallback pattern documented in CLAUDE.md.
+
+### Notes
+- **No domain change.** The downstream components (`AdopterProfileV2` and its children) already handle `null` adopter / empty arrays — that's the existing "is this adopter new" / empty-state logic. No new branches required.
+- **The `?? null` for `availableAnimals`** in the `isNew` branch was tightened too — a small wrapper logger fires if that single query fails, matching the rest of the page's posture.
+- **Other errors found in the same Axiom audit (separate fixes pending):** `Save adoption failed` with empty `adopter_id` (May 6, "available" record_type flow); `Get users failed: no such column: p.organization` (May 6, schema drift on `/admin/users`); `[Audit] Failed to log` capturing `[object Object]` (logger plumbing bug). Each filed for its own commit.
+
+## [2.14.9] - 2026-05-09
+
+Activity-wizard step 1 now shows explanatory copy that varies by record type — and, for `adoption` / `adoption_request`, by the adopter's average rating. The flat `[icon] Solicitud` badge gave the rescuer a label but no guidance; the new copy tells them what we know about this person and what to do given that knowledge. Rating-1 cases get an explicit "no se recomienda" warning; rating 4-5 gets a calmer "buenas referencias — igual recomendamos contrato"; brand-new adopters (no ratings) get a "tu seguimiento será el primero" framing.
+
+### Added
+- **`src/components/RecordTypeGuidance.tsx`** (new) — title row + body paragraph + record-type chip on the right. Computes a `'none' | '1' | '2' | '3' | '4_5'` rating bucket from `avgRating`, looks up the matching i18n string at `wizard.guidance.<recordType>.body.<bucket>`. Body strings can embed `**bold**` (rendered as `<strong>`) and `{historyLink}…{/historyLink}` tokens (rendered as a button that scrolls to `#adoption-history`).
+- **`src/i18n/locales/es.ts` and `en.ts`** — 18 new keys under `wizard.guidance.*`. ES is the canonical voice; EN is a literal translation. Five record types × titles plus 8 rating-aware bodies (adoption + adoption_request × 4 buckets each, with `none` and `4_5` collapsed) plus 3 rating-neutral bodies (follow_up, returned_pet, observation).
+- **`src/components/AdoptionHistory.tsx`** — `id="adoption-history"` (with `scroll-mt-4`) on the timeline wrapper. Becomes the scroll target for the `{historyLink}` token.
+
+### Changed
+- **`src/components/AdoptionFormWizard.tsx`** — accepts `adopterName` and `avgRating` props. The `initialRecordType` branch (when the wizard is opened from VisitIntentCard with the type pre-selected) now renders `<RecordTypeGuidance>` instead of the small read-only badge. The manual-open chip-grid path stays untouched (no record type chosen yet → nothing to explain).
+- **`src/components/AdopterProfileV2.tsx`** — threads `adopterName` and `avgRating` into both the direct `AdoptionFormWizard` mount and the `VisitIntentCard` mount.
+- **`src/components/VisitIntentCard.tsx`** — accepts an optional `avgRating` prop and forwards it (alongside `adopterName`) into the wizard it spawns.
+
+### Notes
+- **Edit form is intentionally unchanged.** Per the plan, `AdoptionFormEditV2` still shows the small chip — explanatory copy would be preachy when someone is just fixing a typo on an existing record. The new copy only fires on creation.
+- **Bold emphasis** is applied only where the warning is severe (rating 1 in both flows) or where the action verb deserves it (rating 2 "seguimiento cercano", observation "denuncia policial"). Calmer ratings (3, 4-5, neutral types) intentionally have no bold.
+- **The `{historyLink}` token** is only present in 3 strings (request rating 1/2/3). Click → `document.getElementById('adoption-history')?.scrollIntoView({behavior:'smooth'})`. Plain DOM scroll, no router involved — works because the wizard is only mounted on the profile page where the timeline exists.
+- **Plan saved at** `.agents/plans/wizard-explanatory-copy.md` for reference.
+- **Type-check + lint clean** for all touched files.
+
+### Also bundled — cost observability traces
+
+Wrapped the three highest-leverage server-action paths in the existing `withTrace(...)` helper from `src/lib/logger.ts`. Each emits an `info`-level Axiom log line with `trace`, `duration` (ms), and small metadata so we can chart p50/p95 by route from APL queries — no new infra. Targets:
+
+- **`findAdopters` discovery mode** — `findAdopters.discovery` trace, metadata `{ rawLen, enrich }`.
+- **`findAdopters` duplicate mode** — `findAdopters.duplicate` trace, metadata `{ nameLen, phones, emails, socials }`.
+- **`enrichAdopters`** — wrapped via internal `_enrichAdoptersImpl` so the public signature is unchanged. Metadata `{ count }` (adopter list size).
+
+These were the answer to your earlier question about how to tell which functionality is most expensive as the app scales — once shipped, Axiom dashboards can `summarize p50, p95 by trace` to surface the slow paths.
+
+## [2.14.8-6] - 2026-05-09
+
+Fixed: `/admin/adopters` "Created / Updated by" filter did nothing when a user was selected. Selecting a name from the dropdown should have navigated to `/admin/adopters?user=…` and re-filtered the list — but the inline `<script dangerouslySetInnerHTML>` that wired the `addEventListener` was a fragile pattern that didn't survive App Router hydration consistently. Replaced with a proper React client component.
+
+### Fixed
+- **`src/components/UserFilterSelect.tsx`** (new) — `'use client'` component with a real `onChange` handler that calls `useRouter().push(...)` to update the URL with the selected user filter. Preserves any existing `?q=…&country=…&rating=…` filters while adding/replacing the `user` param.
+- **`src/app/admin/adopters/page.tsx`** — replaced the inline `function UserFilterSelect(…)` definition (which used `dangerouslySetInnerHTML` to inject an `addEventListener` script) with an import of the new client component. Removed the now-dead `buildFilterUrl` prop on the call site (the new component constructs URLs directly with `URLSearchParams`).
+
+### Notes
+- **Why the old pattern broke**: server components can render `<script dangerouslySetInnerHTML>` to the wire, but the script body runs once during initial HTML parse — it has no React lifecycle. After hydration, React reconciles the DOM tree; any DOM-node identity it changes drops the externally-attached `addEventListener`. The dropdown stayed visible, the value changed locally, but the change handler was gone. Plain React `onChange` on a client component is the correct shape and survives every re-render.
+- **No DB / API change.** Pure UI plumbing fix.
+- **Unrelated tidy:** the dropdown still shows raw email addresses (`gatitosolivos@gmail.com`) rather than user display names. Resolving display names here is a separate concern (would need to wire `userNameMap` through the page component) — filed as a follow-up if the user complains; not in scope for this bug fix.
+
+## [2.14.8-5] - 2026-05-09
+
+Three small homepage layout polish fixes bundled in one commit (all in `page.tsx`).
+
+### Changed
+- **`src/app/page.tsx`** — Action-cards order is now `Adoption · Report · Import` (Import was leading the grid before; it's the rarer power-user action and now sits last). Import card's CTA restyled from solid `bg-teal-600 text-white` to `bg-teal-200 text-teal-900 font-semibold` to match AdoptionWizard's soft-pill style — three cards now read as visual peers (teal/rose/teal soft pills) instead of `1 primary CTA + 2 softer pills`. The grid still becomes `md:grid-cols-2` when `ENABLE_CONTENT_IMPORT` is off.
+- **`src/app/page.tsx`** — `<QuickAccessStrip />` (the "My Animals / My Adoptions / My Adopters" pills) moved from above the action-cards grid to below it. **CX rationale:** action cards represent *create intent* (the app's primary purpose: log new adoptions / reports / imports); pills represent *navigate-to-existing-data intent*. UserMenu in the page header already serves explicit navigation, so the pills reinforce rather than gate. Active-above-passive is the right hierarchy for a logging tool.
+- **`<MilestoneBadge />` ("Completaste X adopciones") gated by new feature flag.** Now renders only when `appConfig.ENABLE_MILESTONE_BADGE !== 'false'`. Default is `true`, so existing behavior is preserved on deploy; admin can flip to `false` via `/admin/config` to hide the badge for everyone.
+
+### Added
+- **`ENABLE_MILESTONE_BADGE` feature flag** wired through the standard 4-place plumbing:
+  - `src/config/features.ts` — added to `FEATURE_FLAGS` const + `getAllFeatureFlags` return.
+  - `src/app/api/admin/config/route.ts` — added to GET response shape.
+  - `src/app/admin/config/page.tsx` — added to `FEATURE_FLAGS` array (renders a toggle row), `ConfigData` interface, `useState` initializer, fetch hydration.
+  - `src/i18n/locales/{es,en}.ts` — `admin.flag_label_milestone_badge` ("Insignia de hitos" / "Milestone Badge"), `admin.flag_desc_milestone_badge`.
+
+### Notes
+- All three changes verified in `tests/` — no Playwright selectors target `QuickAccessStrip` DOM position, the Import card's specific CTA classes, or the MilestoneBadge presence/absence. No e2e impact.
+- Net diff intentionally small. Layout reorders are cheap; the only architectural addition is the new flag, which mirrors the existing 4-place duplication for `ENABLE_CONTENT_IMPORT` / `ENABLE_CHAT_WIDGET` exactly.
+
+## [2.14.8-4] - 2026-05-09
+
+Homepage search — added a "¿Ninguna persona coincide?" CTA at the end of the results list. Until now, users who scrolled through all matches and decided none was the person they were looking for had to scroll back up to find the small "+ Crear nuevo" chip in the results header — extra friction at the exact decision moment. Now there's a one-tap exit immediately under the last result card.
+
+### Added
+- **`src/components/SearchSection.tsx`** — new block CTA rendered when `results.length > 0`, positioned after the result-card map and before the empty-state branch. Visually mirrors the no-results card (same `bg-stone-50` rounded card + same teal button) but slightly less heavy (no leading 🔍 emoji, smaller heading text) since this is a secondary exit, not the primary state. Uses the same `handleCreateNew` handler as the existing top-chip and the empty-state CTA.
+- **`src/i18n/locales/{es,en}.ts`** — `search.none_match_heading` ("¿Ninguna persona coincide?" / "None of these match?") and `search.none_match_desc` (full sentence). Reuses the existing `search.create_new` for the button label.
+
+### Notes
+- Top-of-list `+ Crear nuevo` chip stays. It serves a different user: the at-a-glance dismisser who scans the count and the first card and immediately knows none will match (e.g., a common surname returning strangers). The bottom block serves the methodical reader.
+- Pattern consistency with v2.14.7-16's "¿Ninguna coincide?" affordance on contract-results — same wording family, same visual treatment.
+- Sticky / floating-action-button variants for very long results lists explicitly deferred. End-of-list block solves the named problem; sticky variants add complexity (covering content, mobile gesture conflicts) without evidence of need yet.
+
+## [2.14.8-3] - 2026-05-09
+
+Notification rows showed two emoji per item (`item.icon` rendered next to a `title` that already started with the same emoji), making every row read like `⚠️ ⚠️ 1 coincidencia para …`. Fixed at both write and render sites.
+
+### Changed — write site (canonical fix)
+Dropped the leading emoji from every notification `title` string. The dedicated `icon` field carries the emoji going forward; titles are now plain text.
+
+- **`src/app/api/contract/[id]/submit/route.ts`** — 3 titles cleaned (`⚠️`, `✅`, `📝` prefixes removed).
+- **`src/app/api/form/[userId]/submit/route.ts`** — 3 titles cleaned (3× `📋` prefix removed).
+- **`src/app/actions/duplicates.ts`** — `attachContractToExistingAdopter` notification (`📝` prefix removed).
+
+### Added — render site (legacy safety net)
+- **`src/components/NotificationBell.tsx`** + **`src/app/notificaciones/page.tsx`** — module-scope `stripLeadingEmoji(s)` helper using `\p{Extended_Pictographic}` Unicode property. Applied at the title-render so legacy DB rows whose titles still have the emoji prefix render cleanly. Idempotent — no effect on already-clean titles. No DB migration needed; existing rows render correctly the moment this code ships.
+
+### Polished
+- **`src/components/NotificationBell.tsx`** — dropped the redundant `🔔` from the dropdown header text (the bell icon in the page header that opened the dropdown is already on screen). Switched the bell-button `aria-label` from a hand-rolled `isEs ? 'Notificaciones' : 'Notifications'` ternary to `t('notifications.title')`, consistent with the v2.14.8-2 i18n cleanup pass.
+
+### Notes
+- **DB migration intentionally skipped.** Touching every existing notification row to strip emoji prefixes risks accidentally stripping emoji from titles where the emoji is part of the content (rather than redundant with `icon`). The render-side strip handles legacy rows safely; new rows are clean by construction.
+- **Out of scope** (filed and deferred): filter chips on the dropdown ("Unread / All / Archived"), per-row dismiss/swipe, archive UI. The empty/short list today doesn't need them; can revisit when scale demands.
+
+## [2.14.8-2] - 2026-05-09
+
+i18n cleanup pass. The user reported seeing English labels while using the app in Spanish (default locale). Existing tooling (`check_i18n.ts`) reported 0 missing `t()` keys, so the leakage was not from missing translations — it was from **hardcoded English strings that bypass `t()` entirely**: toast messages, confirm dialogs, alt text, aria-labels, page headers, and admin sidebar labels. This release wires every user-visible English string through the i18n layer, reusing existing ES translations where they already exist and adding a new `admin` namespace for the rest.
+
+### Added — i18n keys (es.ts + en.ts)
+- New `admin` namespace with ~30 keys covering: console title, sidebar nav (overview / flagged / duplicates / adopters list / SQL / config / data requests / communications / users / organizations / audit log / system health / data migration / CMS), open/close menu aria-labels, system-config page chrome, feature-flag labels and descriptions (4 flags), per-stat-pill titles on /admin/users, action-button titles (delete user / delete org / remove member / view geolocation / permanently delete adopter), country-picker placeholder, "Remove message" aria-label, telegram-saved toast, and "back to app" short label.
+- `common.video_thumbnail_alt` for video preview alt text.
+- `dashboard.animal_listed`, `dashboard.deleted_title`, `dashboard.country_updated_title`, `dashboard.records_updated` for the my-animals listing flow + admin mass-action toasts.
+
+### Changed — components now use `t()`
+- **`src/components/AdminSidebar.tsx`** — all 13 nav items, "Admin Console" header, mobile open/close menu aria-labels, "← App" / "← Back to App" exit links, "CMS Editor" link.
+- **`src/components/DeleteAdopterButton.tsx`** — confirm dialog (uses `dialogs.confirm_delete_adopter` with `{name}` interpolation), failure toasts (uses `toast.delete_failed_title` / `errors.unknown_error` / `errors.unexpected`), button label and tooltip.
+- **`src/components/DuplicateMergeModal.tsx`** — merge confirmation dialog (uses `dialogs.confirm_merge` with `{primary}` + `{secondary}` interpolation).
+- **`src/components/AdminAdopterList.tsx`** — batch-delete confirm, action-failed toast, "Set Country" placeholder, success toast for batch ops.
+- **`src/components/AdoptionFormWizard.tsx`** + **`src/components/AdoptionFormEditV2.tsx`** — `alt="Video thumbnail"` → `t('common.video_thumbnail_alt')`.
+- **`src/components/ui/MediaLightbox.tsx`** — close button aria-label.
+- **`src/app/admin/config/page.tsx`** — every toast (12 sites), the purge-stats confirm, "Loading configuration", page headers, feature-flag labels & descriptions (now driven by `labelKey` / `descKey` references into i18n instead of hardcoded English in the array literal), the social-proof "Remove message" aria-label.
+- **`src/app/admin/audit/page.tsx`** — purge-audit confirm, "View geolocation" tooltip.
+- **`src/app/admin/duplicates/page.tsx`** — dismiss-candidate confirm.
+- **`src/app/admin/users/page.tsx`** — `ActivityCell` pill tooltips (4× "Adopters created" / "Records added" / "History edits" / "Flags filed"), "Delete user" tooltip.
+- **`src/app/admin/organizations/page.tsx`** — "Delete organization" / "Remove member" tooltips.
+- **`src/app/my-animals/new/page.tsx`** — 4 toasts (load-failed, invalid-file, upload-failed, save-failed) + the post-save success toast (now uses interpolated `dashboard.animal_listed`).
+
+### Notes — methodology
+- **`check_i18n.ts` does not detect hardcoded English** — it only catches `t('foo.bar')` calls where `foo.bar` is missing from a locale. Everything in this PR was English literal in JSX or argument lists, invisible to the existing checker. A future improvement could add a lint rule for English string literals inside JSX text nodes / `placeholder=` / `aria-label=` / `title=` / `toast.*(...)` / `confirm(...)` to catch these going forward, but that's separate scope.
+- **Out of scope (deliberately deferred):** the ~40 entries in `tests/` are skipped — Playwright assertions reference rendered text and tests run against ES locale, so any English literal in a test selector is checking the intended ES translation. Touching tests here would be conflating "fix i18n" with "test maintenance." If a test expects the old English string and the corresponding component now renders ES, that's a real regression — covered by the next CI run, will fix-forward if any pop up.
+- **Audit-log `ACTION_LABELS` table** in `admin/audit/page.tsx` (~30 specific action labels like "Sign In" / "Adopter Created") was left in English. Those are technical event types displayed in an admin-only deep page; translating each one to Spanish without losing fidelity is a larger product call. Filed as a known not-yet-translated surface; not in this release.
+
+## [2.14.8-1] - 2026-05-09
+
+Activity timeline — record-type icon moves into the timeline dot. The dot is now a "beacon": a colored circle large enough to fit a centered SVG icon, white on the saturated bg. Same record-type signal that previously appeared in three places per row (timeline dot color, in-card icon badge, mobile inline-tinted icon, plus the 4px left stripe) is now in one canonical place.
+
+### Changed
+- **`src/components/AdoptionHistory.tsx`** — timeline dot grows from `w-[15px] h-[15px] md:w-[23px] md:h-[23px]` (empty) to `w-6 h-6 md:w-8 md:h-8` (with a centered `<RecordTypeIcon>` in white). Position offsets adjusted so the dot stays centered on the rail (`left-[-4px]` mobile, `left-[-3px]` md). `top-5` → `top-3` to align with the rating-badge row inside the card. Ring simplified from `ring-2 md:ring-4` to a single `ring-2` since the bigger filled circle doesn't need a thick ring.
+- **`src/components/AdoptionHistory.tsx`** — the in-card desktop icon badge (`w-7 h-7 rounded-lg ${colors.iconBg}`) and the mobile inline-tinted icon are both removed from the verb-summary column. The verb summary leads the middle column directly. The card's 4px left stripe (`STRIPE_BY_TYPE[recordType]`) stays as the secondary type cue on the card body.
+
+### Notes
+- `RecordTypeIcon` and `getRecordTypeColors` helpers are unchanged. Other consumers (`ImportWizard`, `AdoptionFormWizard`'s type-picker chips, the read-only edit-form badge) keep using `colors.iconBg` etc. as before.
+- Net diff: ~10 lines per row simplification, ~−15 LOC overall.
+- Tests not touched: no Playwright selector targets `.dot` or the in-card icon badge by class/aria — verified before commit.
+
+## [2.14.8] - 2026-05-09
+
+Activity-recording entry point consolidated to **one** path: the VisitIntentCard prompt at the top of the activity section. The standalone "Registrar Actividad" CTA — which was already hidden whenever the intent card was visible (i.e., always, since v2.14.7-18) — has been removed entirely. The intent card now stays available for the entire page session: after the user picks an intent, completes the wizard, and the wizard closes, the intent options re-render in place so the user can record another activity without leaving the page.
+
+This consolidates the v2.14.7-1..-22 batch. Highlights since 2.14.7 stable:
+
+- Color/theme fidelity sweep (info-token retune, light-theme stone overrides, status-pill token migration, intent-label color)
+- Activity-section scannability (3-column header, per-record-type stripe, summary row, line-clamped notes, ··· corner menu, footer redesign)
+- Adopter profile change-log diff bug fixed (delta.from JS-clamp removed; both halves render with line-clamp + break-all)
+- Settings location tiles overflow fixed
+- Contract API: rescuer name now from `user.name`, not email-prefix
+- Contract-results merge action ("Es la misma persona") with cross-creator notification
+- Contract-results "¿Ninguna coincide?" affordance for keep-as-new outcome
+- mergeAdopters() extracted from admin route into shared helper
+- findAdopters duplicate-mode now filters soft-deleted at write+read sites; D1 inArray bug eliminated
+- Visit-intent prompt graduates from feature-flagged to always-on
+- Wizard skips type picker when intent is known; edit form always uses read-only badge
+- 30-day "already acted" suppression on intent options removed
+- admin/users dashboard: location columns + activity counts + audit deep-link
+- Several e2e regressions caught & fixed; pipeline-watch lesson saved to memory
+
+### Changed (this release)
+- **`src/components/VisitIntentCard.tsx`** — `hidden` state and `setHidden` calls removed. `onHide` prop removed from the interface. After the wizard closes (cancel or save), the card resets `openedRecordType` to `null` and `view` to `'main'`, falling through to re-render the option chips. `trackedShown` stays sticky so we don't re-fire the zaraz `visit_intent_shown` event on each cycle.
+- **`src/components/AdopterProfileV2.tsx`** — `visitIntentDismissed` state and `visitIntentVisible` calc both removed. The `onHide` callback wiring on `<VisitIntentCard>` and the `hideOpenButton={visitIntentVisible}` prop on `<AdoptionFormWizard>` are gone.
+- **`src/components/AdoptionFormWizard.tsx`** — `hideOpenButton` prop removed from the function signature. The closed-state `<button>` render block (the "Registrar Actividad" CTA at lines 363-378) is gone; closed state now returns `null`. The wizard mounts so URL-driven `?newAdoption=...` flows still work, but it has no visible surface unless something explicitly opens it.
+
+### Notes
+- Net diff in this release: **−40 lines** across three files. The two-entry-point pattern was carrying real complexity for a UX inconsistency.
+- URL-driven `autoOpen` paths (`?newAdoption=true`, `?continueToAdoption=true`) still work — they set `isOpen=true` in the wizard's initial state, bypassing the closed-state branch entirely.
+- After a wizard save, `router.refresh()` re-fetches server data, so the new adoption appears in the timeline below while the user remains on the page with the intent card available for the next record.
+
+## [2.14.7-22] - 2026-05-09
+
+Test fix — unblocks the staging deploy that's been stuck at v2.14.7-17 since v2.14.7-18 (four consecutive red pipelines, all from the same single test failure).
+
+### Fixed
+- **`tests/authed.spec.ts:34`** — the "Full adoption record" test was clicking the standalone "Registrar Actividad" CTA to open the wizard. v2.14.7-18 made VisitIntentCard always-on for authenticated users, which suppresses that CTA via `hideOpenButton={visitIntentVisible}` in `AdopterProfileV2.tsx:158`. The test now opens the wizard via the canonical entry point — clicking the VisitIntentCard's "Le dí un animal en adopción" option (matches both ES and EN labels). The wizard auto-opens with `initialRecordType='adoption'` from there, and the rest of the test flow (animal name input, species, save) is unchanged.
+
+### Notes — methodology lesson
+- **Background `gh run watch --exit-status` does not exit non-zero on pipeline failure** in this gh CLI version (or in this combination of flags). My v2.14.7-19 background watch reported "exit code 0" → I told the user "✅ succeeded" without reading the actual output file, which ended with `FINAL: failure`. The user found the bug by checking staging directly and seeing v2.14.7-17 still served. **Lesson: when polling pipeline status via background tasks, always read the output file, never trust the exit code alone.** Saved as a memory.
+- All four failed pipelines (v2.14.7-18 / -19 / -20 / -21) had the same root cause. The test fix in this release restores the deploy chain — once green, staging will jump to v2.14.7-22 (which carries every change from v2.14.7-18 onward).
+
+## [2.14.7-21] - 2026-05-09
+
+Removes the 30-day "already acted" suppression on the VisitIntentCard. All three intent options now always show for any authenticated visitor. The suppression was a defensive choice to prevent duplicate same-day registrations, but it bit on legitimate repeat-adoption flows: a person can adopt a second pet from the same rescuer, request another after a previous adoption falls through, or do follow-ups in addition to past activity. Letting the user pick freely is the correct default; defending against accidental duplicates is the user's responsibility, not the UI's.
+
+### Changed
+- **`src/components/VisitIntentCard.tsx`** — removed `userActedRequest` / `userActedAdoption` `useMemo` calls, the `ALREADY_ACTED_WINDOW_MS` constant, the `isWithinWindow` helper, and the `showA` / `showB` / `showC` / `anyVisible` flags. Simplified `mainButtons` to a flat array of three entries (no `visible` field). The `visit_intent_shown` zaraz event no longer carries `suppressed_a` / `suppressed_b` properties — they would always be `0` now and provided no signal.
+
+### Notes
+- The triggering case: a rescuer attached a contract via `attachContractToExistingAdopter` (v2.14.7-14), which re-pointed an adoption record with `addedBy = themself` onto the matched profile, and the suppression then hid the "Gave adoption" option on that profile for 30 days. The suppression was *technically correct* (the user did just record an adoption), but it conflated "this person was the actor on a record" with "this person doesn't need the option again."
+- Useful side-effect: simplifies the component significantly. ~30 lines of state + memo + filter logic gone.
+
+## [2.14.7-20] - 2026-05-09
+
+Activity-record edit form no longer offers the type selector. Same reasoning as v2.14.7-18's wizard change: when you're editing an existing record, the type was already chosen at creation time, and changing it after the fact is rare-and-confusing enough that the cleaner UX is "delete and re-create" if it was wrong. Kept as a colored read-only badge so the editor still sees what they're working with.
+
+### Changed
+- **`src/components/AdoptionFormEditV2.tsx`** (lines ~587-606) — replaced the 5-chip record-type picker with a single read-only badge showing the loaded record's type. Form fields below still react to `formData.recordType` (loaded from `initialData`), so type-conditional UI continues to render correctly.
+
+## [2.14.7-19] - 2026-05-09
+
+`/admin/users` becomes a triage dashboard rather than a roster. Adds detected geography (province / city / timezone), per-user activity counts, and a one-click link to that user's audit log.
+
+### Added
+- **`src/app/api/admin/users/route.ts`** — extended `GET` SELECT to include `province`, `city`, `timezone`, `terms_accepted_at`, `terms_version` from `user_profiles` (these were already populated via Cloudflare auto-detect on sign-in but the API was only returning `country`). Adds four correlated `COUNT(*)` subqueries for per-user activity totals: `adopters_count` (created, soft-delete-filtered), `records_count` (`adoptions` rows), `edits_count` (`adopter_history` rows), `flags_count` (`adopter_flags` rows). All keyed on `email` since that's the actor identifier across the schema.
+- **`src/app/admin/users/page.tsx`** — new `LocationCell` component renders `🇦🇷 AR · Buenos Aires · La Plata` with the IANA timezone in the `title` tooltip. New `ActivityCell` renders four small color-coded count pills (👤 adopters · 📋 records · ✏️ edits · 🚩 flags) with hover-tooltips, hiding any pill whose count is 0.
+- **Audit-log link** per user in both desktop Actions cell and mobile button row, deep-linking to `/admin/audit?userId=${email}` (the existing audit page already accepts that query param at `audit/page.tsx:54`).
+
+### Changed
+- **Desktop table layout**: dropped the standalone "ID" column (CopyIdButton moved inline under the user's email). Combined "First Sign In" + "Last Active" into a single "Lifecycle" cell with two stacked rows. Replaced "Country" with the new "Location" cell. Net column count: 8 → 7. The activity column adds back one but the table is now wider on signal, narrower on chrome.
+- **Mobile cards**: same content swap — Country row replaced with Location, Activity-pills row added, Audit button alongside Edit/Delete.
+
+### Notes — explicitly deferred
+- **Per-user lat/long + map.** Discussed and explicitly deferred. `user_profiles` has city/province/timezone (Cloudflare can detect them) but **no lat/long column**, and adding one is a privacy design call before it's an engineering one. If a map view becomes worth building, the recommended path is geocoding the city name on-the-fly (cached) and rendering pins at city centroids — same visualization, no precise-coordinate storage tying an email to a GPS point.
+- **Performance note**: the four new `COUNT(*)` subqueries are correlated — fine at current user-table size (low hundreds), borderline if it grows past a few thousand. Switch to LEFT JOIN + GROUP BY or a precomputed materialized count if/when that happens. Comment in the query SQL spells this out.
+
+## [2.14.7-18] - 2026-05-09
+
+VisitIntentCard graduates from feature-flagged to always-on for authenticated users on adopter profiles, and the activity-creation wizard skips its type-picker step when opened with a known intent (since the user already chose the type one click ago in the intent card).
+
+### Removed
+- **`ENABLE_VISIT_INTENT_PROMPT` feature flag.** Gone from `src/config/features.ts` (`FEATURE_FLAGS` const + `getAllFeatureFlags`), `src/app/api/admin/config/route.ts` (response shape), `src/app/admin/config/page.tsx` (toggle UI + state + hydration), `src/app/adopter/[id]/page.tsx` (`getFeatureFlag` call + import + variable + prop pass), `src/components/AdopterProfileV2.tsx` (`enableVisitIntent` prop in interface, destructure, and `visitIntentVisible` calc + child prop), and `src/components/VisitIntentCard.tsx` (`enabled` prop in interface, destructure, and `baseEligible` calc).
+- Visibility rule simplifies to: **authenticated user + applicable adopter profile + at least one option not suppressed by the user's recent matching records**. The 30-day already-acted suppression for options A and B (and option C always available) stays exactly as it was.
+
+### Changed
+- **`src/components/AdoptionFormWizard.tsx`** — when `initialRecordType` is provided (intent-driven open from VisitIntentCard), step 1's chip selector is replaced with a small read-only confirmation badge showing the chosen type. Removes redundant friction one click after the user already picked the intent. Manual-open paths (URL params or the standalone "Registrar actividad" CTA, neither of which set `initialRecordType`) keep the full chip selector unchanged.
+
+### Notes
+- The DB row `app_config[ENABLE_VISIT_INTENT_PROMPT]` is now an orphan — no code reads it, no UI writes it. Not migrating it out; it's a single key-value row of dead data, not worth a migration ticket.
+- No e2e tests touch VisitIntentCard or its feature flag; this change has no test surface to update.
+
+## [2.14.7-17] - 2026-05-09
+
+Fix the e2e regression in v2.14.7-16 — the contract-link test passed (44 passed) but its merge target was a seed adopter (María García López), so the merge appended duplicate contact data to María's profile, which then broke `tests/search.spec.ts:66`'s strict-mode `getByText(/555-1234/)` (now resolved to two `<a>` elements instead of one). Test isolation lesson: e2e tests for destructive operations must use dedicated fixture rows, not shared seed adopters.
+
+### Fixed
+- **`tests/contract-link.spec.ts`** — refactored to use a dedicated fixture adopter (`test-contract-fixture-target` with name "ContractFixturePerson Sintética") as the merge target instead of seed adopter María. The fixture is created via `INSERT OR REPLACE` on `adopters` + `duplicate_tokens` so re-runs reset state, and the contract submit now sends a unique-ish name (no phone/email/dni) so the matcher only surfaces the fixture, not seed rows. Seed adopters' contactInfo stays clean for downstream tests.
+
+### Notes
+- The CHANGELOG entry for v2.14.7-15 said "the fixture `adoptions` row stays in the DB after each run" — implicitly accepting residual data, which was fine for the animal row but **not** fine for the merge target. That oversight is what allowed v2.14.7-16's pipeline failure. Lesson saved as a memory: e2e tests for destructive merges must use dedicated fixture rows.
+
+## [2.14.7-16] - 2026-05-09
+
+Adds the missing "keep as new profile" affordance on the contract-results page. Until now, a rescuer who reviewed the matches and decided none were duplicates had no clear way to signal that — the bottom-link "Ver perfil del nuevo adoptante" was buried under a hairline divider and worded as navigation, leading users to think they were required to pick a match. This release adds an explicit decision affordance under a "¿Ninguna coincide?" heading, plus event-tracking on both triage outcomes (merge vs keep-new) so we can validate the visual-weight choice with real data 30 days post-ship.
+
+### Added
+- **`src/app/actions/duplicates.ts`** — new `markContractKeepNew(adopterId)` server action. Inserts a single `adopterStats` row with `eventType: 'contract_kept_new'` for analytics. Fire-and-forget — failures never block the user navigation, only logged at warn level.
+- **`src/app/actions/duplicates.ts`** — `attachContractToExistingAdopter` now also writes a `contract_merged` analytics event on the matched adopter, mirroring the keep-new event so we can compare outcome volumes.
+- **`src/components/ContractResultsKeepNewButton.tsx`** — new client component. Single full-width CTA "Continuar con el perfil nuevo" rendered under a "¿Ninguna coincide?" section heading below the match cards. On click, fires the analytics action then navigates to `/adopter/${orphanAdopterId}`. Visual weight is intentionally below the per-match "Es la misma persona" buttons (those are the dominant action when a match is real) but above the soft-investigation exit link at the bottom of the page.
+- **`src/i18n/locales/{es,en}.ts`** — new keys: `contractResults.none_match_heading`, `none_match_desc`, `continue_with_new`, `view_new_without_deciding`. Added to both locales.
+
+### Changed
+- **`src/app/contract-results/[notificationId]/page.tsx`** — added the new "¿Ninguna coincide?" section + `ContractResultsKeepNewButton` between the match cards and the bottom link. Bottom-link reworded from `👤 Ver perfil del nuevo adoptante` to `👤 Ver el perfil del nuevo adoptante (sin decidir)` and demoted from `text-blue-600 font-medium` to `text-xs text-stone-500` so its intent ("look around without committing") is visually distinct from the prominent decision CTA above. The new heading is only rendered when `hasMatches` is true — when there are no matches, no triage decision is needed.
+
+### Notes — UX scope explicitly limited
+- **Wording is action-framed, not assertion-framed.** The button label is "Continuar con el perfil nuevo" (continue with new profile), not "Es una persona nueva" (this is a new person). A rescuer who is only 70% confident shouldn't have to claim certainty to triage; the button represents an action, not a positive identity claim.
+- **No `duplicate_candidates` dismissal in this PR.** It would be valuable to record "rescuer reviewed matches A and B and rejected both" as input to future matcher runs (so the same matches don't keep surfacing for the same orphan). But that requires the matcher to actually consume `dismissed` rows, and we haven't decided how (skip forever? score-down by N% for M days? presentation filter only?). Filing a future ticket for that is **deliberately blocked** until someone writes a one-paragraph spec — otherwise we accumulate dead-data rows that a future engineer assumes are load-bearing.
+- **Visual-weight choice is best-guess.** We have no analytics on rescuer triage behavior today (no events were tracked before this PR). The chosen hierarchy — "Es la misma persona" prominent at match-card level, "Continuar con el perfil nuevo" prominent below match list, "Ver sin decidir" muted at bottom — is reasoned guess, not data-driven. With this PR's `contract_merged` and `contract_kept_new` events flowing into `adopterStats`, we can revisit the hierarchy 30 days post-ship and adjust if real outcome ratios contradict the assumption.
+
+### Fixed
+- **`tests/contract-link.spec.ts`** — v2.14.7-15's e2e test was missing the `screenshot` field in its contract-submit POST body, causing the route to return `400 "Contract document is required"`. Added a minimal 1×1 transparent PNG data URL so the R2 upload step succeeds. Test content is irrelevant for the merge-flow assertions; we just need the route to accept the request.
+
+## [2.14.7-15] - 2026-05-09
+
+E2E regression test for the contract-results merge flow added (TICKET-G, deferred from v2.14.7-14).
+
+### Added
+- **`tests/contract-link.spec.ts`** — full integration test of "Es la misma persona":
+  1. Seeds a unique `available` adoption fixture per test run via direct D1 SQL (no public app endpoint exists for this; `wrangler d1 execute --local` is the simplest path).
+  2. POSTs an anonymous contract submission to `/api/contract/[id]/submit` with data deliberately fuzzy-matching María García López (test-adopter-1) — name + lastName + phone "555-1234" + email "maria@example.com" all overlap with seed tokens.
+  3. Polls the `notifications` table for the contract-result row written by the fire-and-forget matcher (more reliable than racing against the bell-dropdown render).
+  4. Navigates to the contract-results page, clicks "Es la misma persona", confirms in modal.
+  5. Asserts: redirect to `/adopter/test-adopter-1`, the contract's adoption now shows on María's profile, the orphan adopter is soft-deleted (`deleted_at IS NOT NULL`), the contract's adoption record points at María, and the orphan's `duplicate_tokens` rows are gone.
+- Helper `execD1(sql)` and `parseD1Rows(json)` inline in the test file. Wrangler-CLI calls are slow (~5s each) but acceptable for the small number of setup/assertion calls — single full test run is ~20-30 seconds of DB ops on top of the browser work.
+
+### Notes
+- The fixture `adoptions` row stays in the DB after each run (residual data, harmless). Idempotency comes from the unique `test-animal-contract-${Date.now()}` id.
+- This closes TICKET-G. Remaining deferred follow-ups: TICKET-H (orphan-cleanup batch) is explicitly out of scope per product call.
+
+## [2.14.7-14] - 2026-05-09
+
+Self-service contract-result merge. Until now, when a rescuer signed a contract and the system auto-created an adopter that matched an existing profile, the contract-results page just showed the matches as read-only links — no way for the rescuer to actually attach the adoption to the right profile without admin intervention. They could click into the matched profile, see the duplicate, and walk away with two adopter rows pointing at the same person. This release adds an "Es la misma persona" action that runs the merge flow on behalf of the rescuer, and notifies the matched profile's original creator so they can review.
+
+### Added
+- **`src/app/actions/duplicates.ts`** — new `attachContractToExistingAdopter(notificationId, matchAdopterId)` server action. Auth: caller must be the notification recipient. Verifies the requested target is one of the recorded matches (no arbitrary merges via this action), re-fetches `match.deletedAt` server-side at action-entry (defense against soft-delete races between page render and click), runs the shared merge with the auto-created orphan as secondary, writes a context-specific `audit_log` entry (`action: 'contract_link_to_existing'`), and fires a notification to the matched profile's `addedBy` (skipped when the actor is the creator or the creator is admin — admins do periodic reconciliation and don't need a per-merge ping).
+- **`src/components/ContractResultsMatchCard.tsx`** — new client component for the contract-results match cards. Splits the previously single-link card into two distinct intents: **"Es la misma persona"** (destructive, opens confirmation modal, calls the new action, redirects to the canonical profile on success) and **"Ver perfil"** (navigates to the existing profile so the rescuer can investigate before deciding). Mobile tap targets ≥44px on both buttons; modal flows from bottom-up on small viewports.
+- **`src/i18n/locales/{es,en}.ts`** — new `contractResults.*` keys: `same_person`, `view_profile`, `confirm_link_title`, `confirm_link_body`, `confirm_link_action`, `cancel`, `linking`, `link_success`, `link_error`. Added to both locales together per the project i18n rule.
+
+### Changed (architectural)
+- **`src/app/actions/duplicates.ts`** — extracted `mergeAdopters(primaryId, secondaryId, actorEmail)` from the admin merge route into a shared helper. The admin route at `/api/admin/duplicates/merge` is now a thin auth-checking wrapper. Both code paths (admin-triggered and rescuer-triggered) share identical merge mechanics, eliminating the same drift-via-divergence pattern that v2.14.7-12 fixed for the duplicate matchers. Cross-cutting note: any future merge-logic change lands in one place.
+- **`src/app/api/admin/duplicates/merge/route.ts`** — refactored to delegate to `mergeAdopters()`. Behavior unchanged for admins; only the call shape moves.
+
+### Notes — product decisions
+- **Cross-creator merge is allowed.** A rescuer can attach their just-signed contract to any matched profile, regardless of who originally created it. The original creator gets notified so they can review. This is a deliberate trade-off: privacy of the original profile vs. self-service convenience for the contract-signer. Notification-after-merge means by the time the original creator hears about it, the data is already mutated; recovery from a wrong attachment requires admin intervention. Acceptable for a vetting tool where admins do periodic reconciliation; if undo-windows or pending-approval flows become desirable later, that's a separate feature.
+- **Multi-match flow handled by UX, not action code.** Page redirects to the canonical adopter on successful merge, so the user can't accidentally trigger a second merge against the now-deleted orphan.
+- **Orphan-cleanup batch (the never-clicked notification case) is out of scope.** If a rescuer never opens the contract-result notification, the auto-created adopter sits in the DB forever. This is a pre-existing gap unaffected by this release; deliberately not addressed here.
+- **E2E regression test deferred** (TICKET-G). The new action has manual-verification gating only; a Playwright test seeding a contract that matches an existing profile, clicking through to merge, and asserting the orphan is soft-deleted should be added in a follow-up.
+
+## [2.14.7-13] - 2026-05-08
+
+Text-overflow sweep across user-facing surfaces. Long names, emails, IANA timezones, and free-text audit fields were silently breaking layouts on mobile and modals. The fix is a four-strategy taxonomy applied per-surface based on the user's task at that screen — not a blanket `truncate`.
+
+### Strategy
+
+| Strategy | Where |
+|---|---|
+| `line-clamp-2 break-words` + `title` | Vetting-decision surfaces where the user has to compare/judge full content (contract-results match cards, merge modal, import preview, wizard previews) |
+| `truncate` + `title` | Compact list rows that click through to full data (my-adopters list, flagging suggestions, admin user names) |
+| `break-words` | Free-text body the user wants to read in full (toasts, notification body, change-log fields, search snippets) |
+| `break-all` | Opaque strings in tight cells where word-breaks aren't possible (admin emails, IANA timezones, masked-email fallbacks) |
+| `min-w-0 flex-1` (structural) | Nested flex children where text needs to truncate/wrap (settings tiles, admin user column, ImportWizard match) |
+
+### Fixed
+- **`src/app/contract-results/[notificationId]/page.tsx:169-171`** — match-card `profile.name` was rendered raw; now `line-clamp-2 break-words` + `title`. `contactInfo` got `break-words` added alongside the existing `line-clamp-2`. Vetting-decision context — single-line truncation could cause merge-the-wrong-person errors.
+- **`src/app/admin/users/page.tsx:210-214`** — desktop email row was inconsistent with the mobile view (mobile had `truncate block`, desktop had nothing). Inner column now `min-w-0 flex-1`, name `truncate` + `title`, email `break-all` (NOT truncate — admins need full email visible before destructive actions).
+- **`src/components/DuplicateMergeModal.tsx:146-149`** — destructive merge decision modal: name + contact now `line-clamp-2 break-words` + `title`. Truncating identity strings on a destructive action was unsafe.
+- **`src/components/AdoptionWizard.tsx:354, 430` and `src/components/ReportWizard.tsx:176, 252`** — wizard "selected adopter" preview is the last-confirmation step before a write. Same vetting-decision class as the merge modal: `line-clamp-2 break-words` + `title`. Originally proposed as `truncate` + `title` but UI-manager review caught that single-line truncation could lead a user to confirm against the wrong adopter (e.g. mid-string name collision).
+- **`src/components/AdopterFlagging.tsx:553-554`** — flagging-suggestion cards: `truncate` + `title` on name + contact. Click-through to full profile mitigates truncation risk here.
+- **`src/components/ImportWizard.tsx:1454-1461`** — import-preview match cards: `min-w-0 flex-1` on inner div, `line-clamp-2 break-words` + `title` on name (vetting-decision class).
+- **`src/app/my-adopters/page.tsx:233-234`** — list-card name `truncate` + `title`; email `break-all`.
+- **`src/components/AdopterProfileV2.tsx:233-262`** — change log diff renderer: removed the JS-side `delta.from.substring(0, 30) + '...'` clamp (it was a pre-existing constraint of unknown vintage that hid load-bearing audit data on one half of every diff but not the other). Both `delta.from` and `delta.to` now render in full with `break-all line-clamp-3` and a `title` attribute for hover-to-see-everything. Vetting tools need complete audit trails; CSS clamping bounds vertical sprawl without hiding content. Event-description bolded names (animal name, image caption) get `break-all`. Adoption-deletion notes get `line-clamp-3 break-words` + `title`.
+- **`src/app/settings/page.tsx:144-178`** — geo-detected location tiles (province, city, timezone). Inner `<div>` was missing `min-w-0`, so a 32-char IANA timezone like `America/Argentina/Buenos_Aires` overflowed the 190px-wide `sm:grid-cols-3` cells. Now `min-w-0 flex-1` on the inner div and `break-all` on the value (NOT truncate — the panel exists for the user to verify auto-detection, mobile has no hover to reveal a truncated string). Tile heights now diverge slightly when long values wrap to two lines; acceptable trade-off for full visibility.
+- **`src/components/ui/Toast.tsx:134-136`** — toast title + message: `break-words` (NOT truncate — when an error toast appears, the user wants to read it).
+- **`src/components/NotificationBell.tsx:251-255`** — notification dropdown title + body: `break-words` on both (body keeps the existing `line-clamp-2`).
+- **`src/components/AdoptionHistory.tsx:489`** — activity-section "Agregado por X" footer (added in v2.14.7-12): `break-all` on the `<strong>` so masked-email fallbacks (`j••••@gmail.com`) break cleanly mid-string instead of forcing the whole label to wrap.
+- **`src/components/SearchSection.tsx:403, 408, 467`** — search-result card name + contact get `title` for hover-discoverability of truncated values; deep match-snippet block adds `break-words`.
+
+### Notes
+- **No new tests in this PR.** All edits are CSS class additions or `title` attribute additions; existing Playwright selectors (text-content, role-based, URL-based) are unaffected — verified via grep across `tests/`. Adding `truncate` doesn't change innerText, only overflow-CSS, so `getByText` selectors keep working.
+- **Methodology lesson saved to memory** (`feedback_overflow_audit_method.md`): pure grep-driven overflow audits miss JS-side truncation, deeply-nested flex children without `min-w-0`, and small-grid-tile patterns. Future overflow audits should include a screen-by-screen walkthrough with stress-test data (50-char names, 30+ char timezones, multi-sentence notes), not just grep.
+- **Manual verification on staging recommended:** load the adopter profile change log, settings page (mobile viewport), notification dropdown with a long-name notification, and the contract-results page with a long-name match.
+
+## [2.14.7-12] - 2026-05-08
+
+Fix the "two Jorge Hu profiles in the contract-results page" bug at the architectural root: contract-submit and form-submit notifications were running their own bespoke fuzzy matchers that diverged from the canonical `findAdopters` engine — missing the soft-delete filter, missing geo-filter, missing relevance scoring, and silently broken on D1 (`inArray()` returned wrong results). Both routes now go through `findAdopters({ mode: 'duplicate' })`, so soft-deleted (merged-duplicate) adopters never appear in match notifications, and behavior stays consistent across discovery search and duplicate detection going forward. Defense-in-depth filter on the result-page reads also retroactively cleans every existing stale notification.
+
+### Fixed
+- **`src/app/contract-results/[notificationId]/page.tsx`** (read-site filter) — the matched-profile SELECT now filters `isNull(adopters.deletedAt)`. This is what unblocks the immediate user-visible Jorge Hu bug: even legacy notifications whose `metadata.matchedAdopters` JSON still contains since-deleted IDs render only the live profiles. Added `like_fallback` and `name_word_fuzzy` entries to `MATCH_TYPE_LABELS` so the new findAdopters-emitted match types render localized labels instead of raw strings.
+- **`src/app/form-results/[submissionId]/page.tsx`** — same read-site filter on the matched-profile SELECT.
+
+### Changed
+- **`src/app/actions/findAdopters.ts`** — `runDuplicateMode` now filters `isNull(adopters.deletedAt)` on both the LIKE strategy WHERE clause and the per-id `nameRows` fetch. Cross-cutting: this is the canonical duplicate-detection engine; the same filter now applies to **every** caller (`ImportWizard`, `AdopterFlagging`, `AdopterForm` creation check, contract submit, form submit). The behavior change is desirable everywhere — you don't want to dedupe imports against soft-deleted records or surface merged-away duplicates in flagging suggestions — but worth flagging for future maintainers.
+- **`src/app/api/contract/[id]/submit/route.ts`** — bespoke fuzzy matcher (~140 lines of token + LIKE strategy code) replaced with a single `findAdopters({ name, phones, emails, socials, excludeAdopterId }, { mode: 'duplicate', minRelevance: 0, limit: 5 })` call. Output mapped to the existing `notification.metadata.matchedAdopters` shape. DNI digits appended into the `phones` array to preserve the historical "DNI as phone-token" semantic. `minRelevance: 0` chosen for vetting recall: surface even weak matches rather than risk dropping a real one. `logger.info('Contract fuzzy search completed', { animalId, adopterId, matchCount })` preserved for observability.
+- **`src/app/api/form/[userId]/submit/route.ts`** — same swap. Form schema has no DNI/socials, so the call passes only `{ name, phones, emails }`.
+- **`src/components/FormResultMatchCard.tsx`** — `MATCH_TYPE_KEYS` extended to handle the unprefixed match-type taxonomy emitted by `findAdopters` (`'name_full'` / `'phone'` / `'email'` / `'like_fallback'` / `'name_word_fuzzy'`) alongside the legacy prefixed taxonomy (`'token:phone'` / `'like:name'`). Same dual-taxonomy support added to `isStrongMatch`. Old notifications written by the bespoke matcher continue to render with their original labels; new notifications get the unprefixed labels.
+
+### Notes
+- **D1 `inArray()` bug fixed for free.** The bespoke matcher used `drizzleInArray(duplicateTokens.tokenValue, tokenValues)` at `submit/route.ts:182` — silently broken on Cloudflare D1 per `docs/D1_COMPATIBILITY.md` (D1 binds only the first array element). `findAdopters` was already D1-safe by design (one query per token via a for loop). Going through it eliminates the bug at the source rather than patching one site.
+- **Levenshtein fuzzy matching is now active on contract/form submissions.** `findAdopters` duplicate-mode includes name-token fuzzy scoring (e.g. `Jonathan` ↔ `Jonatan`), which the bespoke matcher lacked. Net new match surface — minor false-positive uptick is expected; this is desirable for vetting recall but worth knowing.
+- **TICKET-B (D1 inArray fix in submit routes) is obsolete** — covered by this refactor.
+- **Regression test for soft-deleted exclusion deferred to TICKET-C.** Manual verification on staging Jorge Hu URLs (`/adopter/085706cb-3c7b-4221-93fa-d0904e2563d2` lives, `9fd1025e-940e-4aa3-84c3-771476602101` soft-deleted) — only the live profile should now appear on the contract-results page.
+
+## [2.14.7-11] - 2026-05-08
+
+Fix the rescuer name shown in the public contract (Vite app at adoptions.pages.dev). It was rendering the email local-part — the chosen display name now comes through.
+
+### Fixed
+- **`src/app/api/contract/[id]/route.ts`** — `rescuerName` was built as `animal.addedBy.split('@')[0]`. The Vite contract page (`contract-app/src/ContractPage.tsx`) reads that field and displays it as the rescatista. Now we look up `user.name` (the display name set in `/settings`) for the `addedBy` email and only fall back to the email-prefix when no name is set or the DB lookup fails. The catch logs `animalId` + `addedBy` per the project logging rule (re-emit operation context, never silently swallow).
+
+## [2.14.7-10] - 2026-05-08
+
+Audit-trail visibility restored on activity cards, and prominent emoji icons converted to inline SVG. Walks back the `···` popover from `2.14.7-9` — for a vetting tool, knowing the creator of a record is at-a-glance audit info, not metadata.
+
+### Changed
+- **`src/components/AdoptionHistory.tsx`** — bottom-of-card audit footer restored. Source link (icon + name) and "Agregado por X" (with a small user-silhouette SVG) are both always visible on a single compact row, separated from the body by a hairline `border-t border-stone-100`. The `···` corner button and `openMeta` state are gone.
+- **`src/components/AdoptionHistory.tsx`** — record-type icons converted from emoji (🏠 / 📝 / 👁️ / 🔄 / ↩️) to inline SVG (Lucide-style strokes, `currentColor`-driven so the badge text color flows through). Emoji rendered inconsistently across OS / browser; SVG looks the same in Linux/Windows/Apple. The icon component lives at the top of the file as `RecordTypeIcon`. `getRecordTypeIcon` (string-emoji helper) is still used by `AdoptionFormWizard` and stays in `src/lib/recordTypeColors.ts`.
+- **`src/components/AdoptionHistory.tsx`** — affordance icons converted to SVG: `✓ / ✗` neutered chips → check / x strokes; `📋` "Ver contrato firmado" → clipboard SVG; `📝` "Ver formulario completado" → document SVG. Small attribute markers (🎂 age, 🎨 color, 💉 microchip, ♂️/♀️ sex) intentionally left as emoji per the project rule "emoji OK as decorative subject markers next to text labels."
+
+### Fixed
+- **`tests/search.spec.ts:120`** — sentinel was `page.locator('text=🏠').first()`. With record-type emoji removed from cards, that selector no longer resolves. Replaced with `page.getByTestId('adoptions-list')` which asserts the same intent (activity timeline rendered) more robustly.
+
+## [2.14.7-9] - 2026-05-08
+
+Fixes the e2e regressions introduced by `2.14.7-8`. Two real test breaks, both my fault.
+
+### Fixed
+- **`src/components/AdoptionHistory.tsx`** — DOM order of the per-card icon spans was flipped (mobile-only span first, desktop second), causing `page.locator('text=🏠').first()` in `tests/search.spec.ts:121` to resolve to a `md:hidden` element on the desktop viewport. Restored desktop-variant-first ordering; visual output unchanged.
+- **`src/components/AdoptionHistory.tsx`** — the source-URL link was moved inside the `···` popover in `2.14.7-8`, hiding it until tap. `tests/flags.spec.ts:23` asserts the Facebook source link is visible on Roberto's profile, which was load-bearing UX. Source icon is now always visible inline (top-right corner of each card, action-oriented, scannable). Only the verbose "Agregado por X" string remains behind `···`. Header row reserves `pr-16` so date + corner icons don't collide.
+
+## [2.14.7-8] - 2026-05-08
+
+Activity-section scannability pass on the adopter profile. The vertical timeline now reads as a scannable column rather than a stack of sentences: rating, action, and date sit in fixed slots, record-type is signaled by a 4px left stripe, and an at-a-glance summary header gives the gestalt before any scrolling.
+
+### Changed
+- **`src/components/AdoptionHistory.tsx`**:
+  - **3-column card header.** Rating moves to a fixed-width left column (or em-dash placeholder), the verb+animal sits in the fluid middle, the date is right-aligned and muted. Relative time moved off the line into the date's `title` attribute on hover. The eye can now scan a vertical column of stars/dates without parsing prose.
+  - **4px colored left stripe per record type** (`border-l-{teal/sky/amber/violet/rose}-500`), keyed off `recordType`. Replaces the unified-color border. Adoptions, requests, observations, follow-ups, and returns are pre-attentively distinguishable.
+  - **Activity summary above the timeline.** One-line counts per record type with hue-matched numerals, plus average rating on the right. Captures "3 adopciones · 2 solicitudes · 1 devolución · ⭐ 3.8" in a single saccade.
+  - **Notes clamped to 2 lines** with a `leer más / leer menos` toggle (uses a per-card expanded set in component state, only shown when the note exceeds ~120 chars). Long notes no longer break timeline rhythm.
+  - **Bottom audit-trail footer removed** (sourceUrl icon + "Agregado por X"). Replaced with a `···` button in the card's top-right corner that toggles a small popover containing the same info. Audit metadata is one tap away when needed and out of the scan path otherwise.
+  - **Timeline rail recolored** from the teal→violet→teal gradient to a neutral `bg-stone-200`. Categorical color now lives only on the dots and stripes, so it carries information instead of decoration.
+- **`src/i18n/locales/{es,en}.ts`**: new keys `common.show_more`, `common.show_less`, `stats.observations`, `stats.follow_ups`, `stats.returns`, `stats.rating_avg_short`. Added to both locales together.
+
+### Notes
+- Animal-attribute pills (sex / age / neutered / color / microchip) intentionally left in place this pass; the broader question of whether animal facts belong on an adopter profile screen is deferred.
+
+## [2.14.7-7] - 2026-05-08
+
+Profile-screen color/theme fidelity pass. Status pills now go through the design-token system, the info family no longer collides with brand teal in dark mode, and `text-stone-*` Tailwind classes now resolve consistently across both themes.
+
+### Changed
+- **`src/app/globals.css`** — `--status-info-*` retuned to the sky-400 family in both themes (was teal-bg + blue-text in light, all-teal in dark which collided with `--accent`). Legal notice (`DisclaimerToast`) and any other info surface now reads as a single hue family. Added `[data-theme="light"]` overrides for `text-stone-400/600/700/800/900` mirroring the existing dark-theme block, so the same `text-stone-*` Tailwind class no longer renders warm-grey in light vs slate-blue in dark.
+- **`src/components/AdopterFlagging.tsx`** — four warning pills (inaccurate / duplicate / too-many-adoptions / too-many-requests) replaced hardcoded Tailwind `bg-rose/amber/orange/purple-100` chains with token-driven inline styles. Active state now uses `aria-pressed` + `shadow-inner`; hover via `hover:opacity-90`. Too-many-adoptions collapsed onto `--status-warning-*` (no separate orange family — the warning hue carries both signals).
+- **`src/components/VisitIntentCard.tsx`** — title and intent-button labels switched from `var(--accent-strong)` (`#042f2e`, reads as black in light) to `var(--accent)` (`#0f766e`, visibly teal). Hover-fill behavior unchanged.
+
+## [2.14.7-6] - 2026-05-08
+
+Chat setup is now fully UI-driven. Bot token + webhook secret can be saved from `/admin/config`, and the same Save button calls Telegram's `setWebhook` for you — no curl, no shell.
+
+### Changed
+- **`src/lib/telegram.ts`**: secrets resolved DB-first, Cloudflare-env fallback. `getTelegramConfig()` returns `{ botToken, webhookSecret, adminChatId }` from `appConfig` rows; missing rows fall back to the Cloudflare secret. `verifyWebhookSecret` and `sendTelegramMessage` are now async; both accept an optional pre-resolved config to avoid double DB lookups in handlers that need multiple Telegram calls.
+- **New `registerWebhook(webhookUrl, config?)`** in `src/lib/telegram.ts`: thin wrapper around Telegram's `setWebhook` API. Idempotent.
+- **New endpoint `POST /api/admin/telegram/setup`**: admin-only. Accepts any subset of `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_ADMIN_CHAT_ID` plus a `registerWebhook` flag (default `true`). Empty string clears the DB row (falls back to Cloudflare secret). When `registerWebhook=true`, derives the webhook URL from the request host (`x-forwarded-proto` + `x-forwarded-host` or `host`) and calls Telegram. Returns `{ status, webhook }` so the UI can surface "saved" and "registered" independently.
+- **Admin UI redesign** for the Telegram panel in `/admin/config`:
+  - Three password-style inputs: bot token, webhook secret, admin chat_id. The first two show "(currently set)" when populated and accept blank to mean "keep current value".
+  - Single **Save & register webhook** button — sends the form to `/api/admin/telegram/setup` with `registerWebhook: true`. Surfaces success or specific Telegram-API error inline (green ✓ or red ✗ panel below the inputs).
+  - Secondary **Re-register webhook** button — calls the same endpoint with no config changes, just kicks Telegram's `setWebhook` again. Useful after env migration or secret rotation.
+  - Inline amber "Security note" callout: explains that DB-stored secrets are visible to anyone with admin DB access and points to the Cloudflare-secret path for higher isolation.
+- **Masked GET response** in `/api/admin/config`: `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` are never returned to the client. The route now exposes only `TELEGRAM_BOT_TOKEN_SET` / `TELEGRAM_WEBHOOK_SECRET_SET` boolean indicators so the UI can render "(currently set)" without leaking the value.
+
+### Path matrix
+- **Path A (UI-only)**: paste all three into the admin form, hit Save & register. Stored in DB. One-step setup.
+- **Path B (Cloudflare-secret)**: `wrangler pages secret put TELEGRAM_BOT_TOKEN` etc., leave the password fields blank in the UI, paste only the chat_id. App reads DB-first, env-fallback so this still works seamlessly.
+
+### Docs
+- **`docs/CHAT_SETUP.md`** rewritten around the two paths. Removes the long curl/setWebhook section since the admin UI handles it.
+
+### Migration
+- No schema change. The endpoint is purely additive; existing deployments continue to read Cloudflare secrets if they were configured that way.
+
+## [2.14.7-5] - 2026-05-08
+
+Floating support chat widget routed to admin's personal Telegram. Visitors (anon or signed-in) can chat with the admin without exposing the admin's IP. Off by default; enabled via `ENABLE_CHAT_WIDGET` flag in admin/config and Telegram secrets on Cloudflare.
+
+### Added
+- **Schema** (migration `0039_chat_tables.sql`): `chat_conversations` (id = visitor's localStorage anchor; `user_email`, `user_label`, `last_message_at`, `blocked`, `hour_count`, `hour_window_start`) and `chat_messages` (`conversation_id`, `direction` ∈ `user|admin`, `body`, `telegram_message_id` for admin-Reply routing).
+- **`src/lib/telegram.ts`**: thin Telegram Bot API wrapper. `sendTelegramMessage(chatId, text)`, `verifyWebhookSecret(headers)`, `formatForwardedMessage` (prepends `[#xxxxxxxx]` routing tag), `extractConversationTag` (parses tag from `reply_to_message.text`). Reads `TELEGRAM_BOT_TOKEN` / `TELEGRAM_WEBHOOK_SECRET` from the Cloudflare runtime env with `process.env` fallback.
+- **`/api/chat` (edge)**: `POST` validates conversationId (UUID v4), enforces rate limit (≤1 msg / 5s, ≤30 / rolling hour, per conversation), drops blocked conversations silently, writes the user message to D1, forwards to admin's Telegram with the routing prefix, persists the returned `message_id`. Honeypot field on the request body discards bot submissions. `GET ?conversationId&since` returns admin replies newer than `since`.
+- **`/api/telegram/webhook` (edge)**: verifies `X-Telegram-Bot-Api-Secret-Token` (constant-time-ish compare) before doing any work, parses the Telegram update, extracts the `[#xxxxxxxx]` prefix from `reply_to_message.text`, looks up the conversation by 8-char prefix (UUID v4 → 32-bit prefix → effectively collision-free at this scale), inserts the admin message. Plain (non-Reply) admin messages get a guidance reply. Admin can send `/block` or `/unblock` as a reply to mute a conversation.
+- **`ChatWidget.tsx`**: client component, mounted once in root layout when `ENABLE_CHAT_WIDGET` is on. Floating bubble bottom-right, `z-[80]` (below toasts, above content); panel slides up; localStorage stores conversationId (UUID v4) + `last_seen_at`; polls `/api/chat` every 4s while open AND `document.visibilityState === 'visible'` (no background traffic); unread red dot when admin replies arrive while panel is closed; visually-hidden honeypot input. Uses theme tokens only (`--surface-card`, `--accent`, `--border-default`, `--text-primary`, `--surface-base`, `--surface-muted`) so it matches both Claro and Azul Noche by construction.
+- **Feature flag** `ENABLE_CHAT_WIDGET` wired through the four-place duplication: `src/config/features.ts` (FEATURE_FLAGS const + getAllFeatureFlags default), `src/app/api/admin/config/route.ts` (GET response shape), `src/app/admin/config/page.tsx` (useState initializer + fetch hydration + admin toggle list + ConfigData interface).
+- **Admin config UI**: new "Telegram Support Chat" panel on `/admin/config` with a `TELEGRAM_ADMIN_CHAT_ID` input (numeric chat_id, NOT the bot token — that lives only as a Cloudflare secret) and a Save button hitting the existing config POST endpoint.
+- **`docs/CHAT_SETUP.md`**: end-to-end one-time setup walkthrough — BotFather, capturing chat_id via `getUpdates`, generating the webhook secret, `wrangler pages secret put`, registering the webhook with Telegram, smoke-test, troubleshooting, and how to rotate secrets if a token leaks.
+- **i18n**: new `chat.*` keys in `es` and `en` (`open`, `close`, `title`, `subtitle`, `placeholder`, `send`, `empty_state`, `unread_indicator`, `error_send`).
+
+### Privacy guarantees
+- Browser only contacts `/api/chat` on the app's own origin. Admin's IP never appears in any client-visible network request.
+- Admin's Telegram client only contacts Telegram's servers. The app's worker is the only thing that talks to both Telegram and the visitor.
+- Bot token + webhook secret are stored as Cloudflare secrets, never in `wrangler.toml`, never in the DB, never reachable from client code.
+
+### Defaults
+- Off behind `ENABLE_CHAT_WIDGET` (flag default `false`). Even with the flag on, the API endpoint refuses messages until `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ADMIN_CHAT_ID` are both set — degrades gracefully (logs a warning, stores the message, returns ok to the visitor) rather than crashing.
+- This commit changes no visible behavior on the live site until the flag is enabled in admin/config.
+
+## [2.14.7-4] - 2026-05-08
+
+VisitIntentCard layout cleanup + entry-point dedup.
+
+### Changed
+- **Back arrow inline with the buttons**. In the "Otro motivo" submenu, the back affordance moved out of the header and now sits at the start of the buttons row — icon-only on desktop (square 36px, accent-bordered), icon + "Volver" label on mobile where the buttons stack. The buttons row layout switched from `grid grid-cols-3` to `flex flex-col sm:flex-row` with `flex-1` on each option button so the back button can claim a smaller width without distorting the others.
+- **Removed the X dismiss button**. There's no manual dismiss anymore — the prompt is intentionally sticky until the user picks an option AND closes the launched wizard. The localStorage 7-day TTL, `dismissalKey`, the corresponding `useEffect`, and the `visit_intent_dismissed` zaraz event were all removed (no callers left). The `visitIntent.dismiss` i18n key is now unused but kept for now.
+- **Hide standalone "Registrar actividad" CTA when the prompt is showing**. New `hideOpenButton` prop on `AdoptionFormWizard` causes its closed-state entry button to render `null`. `AdopterProfileV2` lifts a `visitIntentDismissed` state and computes `visitIntentVisible = enableVisitIntent && !!currentUser && !!adopter && !isNew && !visitIntentDismissed`; passes this as `hideOpenButton` to the wizard. `VisitIntentCard` gained an `onHide` callback that fires when its inner wizard closes, flipping the parent state — so the standalone CTA reappears exactly when the prompt goes away. URL-driven autoOpen still works because the wizard's open state is independent of the entry-button render.
+
+## [2.14.7-3] - 2026-05-08
+
+Wizards now treat follow-ups and returned pets as events tied to a past adoption, not to the rescuer's unlinked inventory.
+
+### Changed
+- **Animal-picker source for `follow_up` / `returned_pet`** (both new and edit wizards): the existing-mode dropdown now lists adoption-table rows where `adopterId = this adopter && recordType === 'adoption'` (i.e., animals this person already adopted) instead of `availableAnimals` (the rescuer's unlinked inventory). Other record types (`adoption`, `adoption_request`, `observation`) keep the previous source.
+- **Picker label**: shows "Animal ya adoptado por esta persona" / "Animal already adopted by this person" instead of the generic "Select Animal" when in follow-up/return mode. Each option appends the past adoption's date.
+- **New wizard — dual-record creation**: when the user picks "Create new" for a follow-up or return (i.e., the animal isn't yet in the system), step 2 now shows two date pickers — `Fecha de adopción` and `Fecha del seguimiento`/`Fecha de la devolución`. Both are required; both reuse the existing `DatePicker` with `dayOptional` so users can enter month + year if they don't recall the exact day. On save we issue two `saveAdoption` calls: first the parent adoption (`status='completed'`, `recordType='adoption'`, the new animal's name/species), then the follow-up/return event with the same name/species — two independent rows, no FK linkage (matches existing schema; records associate by name/species/adopterId).
+- **Critical guard**: when the picker is sourced from past adoptions, selecting an option no longer sets `submitData.id` to that past row's primary key. Doing so would have caused `saveAdoption` to UPDATE the parent adoption, flipping its `recordType` to `follow_up` and silently destroying the original record. The wizard now forces `id=undefined` for follow_up/returned_pet inserts; the edit wizard preserves the record being edited's own id.
+
+### Plumbing
+- New `adopterAdoptions` prop on `AdoptionFormWizard` and `AdoptionFormEditV2`. Threaded through `AdopterProfileV2` (passes `adoptions` directly) and `AdoptionHistory` (passes `initialAdoptions` to the edit component, with the `editFormComponent` ComponentType extended to declare the optional prop). `VisitIntentCard` forwards its existing `adoptions` prop to the wizard so submenu launches (follow_up / returned_pet) get the right source list.
+- New i18n keys (es + en): `adoption_date`, `followup_event_date`, `return_event_date`, `dual_date_hint`, `previous_adoption_picker_label`.
+- Edit-wizard scope is intentionally limited: source list swaps for follow-ups/returns, but the dual-record flow is new-wizard only — editing a follow-up that switches to a brand-new animal still updates only that one record, no parent auto-creation.
+
+## [2.14.7-2] - 2026-05-08
+
+VisitIntentCard "Otro motivo" now drills into a submenu instead of jumping straight to the observation wizard.
+
+### Changed
+- **Top-level option C** ("Otro motivo") icon switched from pencil to a three-dot ellipsis to signal "more options". Clicking it fires a new `visit_intent_other_opened` analytics event and swaps the buttons to a submenu — no longer auto-opens the observation wizard.
+- **Submenu options**: `Hice un seguimiento` (phone icon → `follow_up` wizard), `Me devolvió un animal` (U-turn arrow → `returned_pet` wizard), `Quiero dejar una observación` (note/document icon → `observation` wizard). All three record types were already accepted by `AdoptionFormWizard.initialRecordType`.
+- **Submenu header** gains a left-arrow back button next to the title; click returns to the main 3-button view. The dismiss (X) and the localStorage dismissal contract are unchanged.
+- **Animation**: the buttons grid is keyed by `view`, so React remounts on swap and the existing `animate-slideDown` keyframe replays — soft fade-down on every view change.
+
+### i18n
+- Replaced `option_c_hint` ("Compartí lo que sabés…") — that string moved to `option_observation_hint`. New keys: `option_followup`, `option_followup_hint`, `option_returned`, `option_returned_hint`, `option_observation`, `option_observation_hint`, `back`. ES + EN both updated in the same commit.
+
+## [2.14.7-1] - 2026-05-07
+
+VisitIntentCard prominence + button redesign. Feedback: the card was less visually present than the legal disclaimer below it, which was the wrong hierarchy — the disclaimer is passive info, this is an active CTA.
+
+### Changed
+- **Container**: background switched from `--surface-card` to `--accent-subtle-bg`; border bumped to a vivid `2px solid var(--accent)`; padding to `px-4 py-3`; title to `text-base font-semibold` in `--accent-strong`. Reads as a tinted callout instead of a neutral panel.
+- **Buttons**: pill chips replaced with proper rectangular buttons (`rounded-lg`, `px-3 py-2`, `text-sm font-medium`). White-ish `--surface-card` fill with 1px `--accent` border on the tinted card gives clear click affordance; hover inverts to filled `--accent` with accent-glow shadow and a small upward translate. Layout moved from `flex-wrap` to `grid grid-cols-1 sm:grid-cols-3` so labels stack full-width on mobile and sit in equal columns on desktop.
+- **Icons**: leading inline SVGs (currentColor, 16×16, no emoji per the no-emoji-for-functional-affordances convention) — speech bubble for A (request), house for B (adoption completed), pencil for C (other reason).
+
+## [2.14.7] - 2026-05-07
+
+VisitIntentCard copy + visibility tweaks. Goal: make the prompt feel like an active call-to-action tied to the specific adopter (not a generic banner), surface it on freshly-created profiles, and replace the previous (non-functional in Tailwind 4) `animate-in` classes with a real keyframe animation.
+
+### Changed
+- **Title**: now reads `¿Qué pasó con {firstName}?` (en: `What happened with {firstName}?`) instead of `¿Para qué visitás este perfil?`. Falls back to `esta persona` / `this person` when the adopter has no name. Always visible — the previous `hidden sm:inline` was dropped so mobile users see it too.
+- **Button labels**: full long labels in every viewport — `Me pidió un animal en adopción` / `Le dí un animal en adopción` / `Otro motivo`. Dropped the `option_*_short` keys and the chip emojis; the row now uses `flex-wrap` so labels wrap on narrow screens instead of horizontal-scrolling.
+- **Border + animation**: container border bumped to 2px and recolored to `--border-accent`. Added real `@keyframes visit-intent-enter` (fade + slide + subtle scale) and `visit-intent-glow` (two pulses of accent box-shadow) in `globals.css`, wired via the new `.visit-intent-card` class. The previous `animate-in fade-in slide-in-from-top-2` Tailwind classes weren't backed by any plugin in this Tailwind 4 install — the card wasn't actually animating before. `prefers-reduced-motion` opts out.
+- **Visibility**: removed the owner suppression. Owners now see the prompt like everyone else, which is what makes it appear on **newly-created profiles** (creator lands on `/adopter/{id}` post-create as the owner). The `forceShow` / `?justCreated=1` plumbing initially scaffolded for the create-flow was dropped as redundant once the owner gate was gone.
+
+### Same as before (no regression)
+- Feature flag (`ENABLE_VISIT_INTENT_PROMPT`), 7-day per-(adopter, user) localStorage dismissal, 30-day per-option suppression for A/B based on recent matching records, and the always-visible C option.
+- Telemetry events (`visit_intent_shown` / `visit_intent_selected` / `visit_intent_dismissed`).
+- Wizard launch contract (option click → `AdoptionFormWizard` with `initialRecordType` + `autoOpen`).
+
+## [2.14.6] - 2026-05-07
+
+VisitIntentCard redesign — UX feedback was that v2.14.0's full-card-with-paragraphs design was too tall (forced scrolling on mobile to see all options), used hardcoded white/`--status-info-*` tokens that didn't read well in the Azul Noche dark theme, and lived inside the Adoptions section (felt like part of the activity list rather than a context-setting prompt).
+
+### Changed
+- **Placement**: card moved from inside the Adoptions `CollapsibleSection` to **above its title**. It now reads as a prompt that introduces the section, not as an item within it.
+- **Layout**: collapsed from a vertical card with three paragraph-style buttons into a **single compact row**: question on the left (hidden on mobile to save space), three pill chips, dismiss icon on the right. Total height ≈ 40px instead of ~200px. No scrolling required.
+- **Theme**: every color now uses a CSS variable that's already remapped per `[data-theme]` in `globals.css` (`--surface-card`, `--border-default`, `--text-primary`, `--text-secondary`, `--accent-subtle-bg`, `--accent-subtle-text`, `--accent-badge-bg`). No more `bg-white/70` or `--status-info-*` — the card now blends into Claro and Azul Noche by construction.
+- **Animation**: the container fades + slides in from the top (`animate-in fade-in slide-in-from-top-2 duration-300`) and each chip slides in from the right with a 60ms stagger so the row populates left-to-right.
+- **Chip labels**: shortened to single words (`Solicitud` / `Adopción` / `Observación` in Spanish; `Request` / `Adoption` / `Observation` in English). The longer hint copy moved into `title=` and `aria-label=` so it's still discoverable via tooltip and screen readers but doesn't bloat the line. Title trimmed from "Estás visitando este perfil porque:" to "¿Para qué visitás este perfil?". Dismiss button label trimmed to "Cerrar" / "Dismiss".
+- **Hover/active**: each chip scales subtly (`hover:scale-[1.04] active:scale-[0.97]`) and shifts to `--accent-badge-bg`. Focus ring uses theme `--ring-focus`.
+- Mobile: question text hidden via `hidden sm:inline`, chip row gets `overflow-x-auto` so it gracefully scrolls if labels are translated longer than expected.
+
+### Same as before (no regression)
+- Visibility matrix (feature flag, owner suppression, 7-day per-(adopter, user) localStorage dismissal, 30-day per-option suppression for A/B based on recent matching records).
+- Telemetry events (`visit_intent_shown` / `visit_intent_selected` / `visit_intent_dismissed`).
+- Wizard launch contract (option click → `AdoptionFormWizard` mounted with `initialRecordType` + `autoOpen`, card hides for the rest of the session).
+
+## [2.14.5] - 2026-05-07
+
+### Fixed
+- **e2e: `tests/wizards.spec.ts:30 "Report Wizard opens"` failed on v2.14.3.** The SEO commit (`7ad23ef`) demoted the action-card headings from `<h3>` → `<h2>` for proper hierarchy under the new sr-only `h1`, but two Playwright selectors in `wizards.spec.ts` were still pinned to `h3` (lines 32 and 46). The test for "I have info about an adopter" failed deterministically; the test for "I gave a pet" was guarded by an `if (await registerBtn.isVisible({ timeout: 5000 }).catch(() => false))` so it silently passed without exercising the assertion. Fixed both. CLAUDE memory note about "grep tests before changing UI elements" applies — the SEO commit should have updated these selectors in the same change.
+
+### Known flake (not addressed in this turn)
+- `tests/search.spec.ts:13 "Search returns results"` flaked on the same run (passed on retry) with `page.goto: net::ERR_ABORTED` and the dev server logging `[TypeError: controller[kState].transformAlgorithm is not a function]`. That's a Node.js web-streams error from React Server Components, not caused by recent changes. CI's retry caught it; if it becomes deterministic we'll need to widen the `beforeEach` timeout or pin Node version.
+
+## [2.14.4] - 2026-05-06
+
+### Fixed
+- **`ENABLE_VISIT_INTENT_PROMPT` toggle in `/admin/config` showed OFF after reload, even when the flag was actually set in the DB.** The flag was being persisted correctly (the `/api/admin/config` POST is generic), but the GET response shape (`route.ts:43-46`) hardcoded which keys to return and didn't include the new flag — so the admin UI hydrated `featureFlags.ENABLE_VISIT_INTENT_PROMPT` to `undefined` and rendered the toggle as off. The server-side `getFeatureFlag` call read directly from `appConfig` and returned the correct value, which is why the visit-intent card was actually rendering on adopter profiles even though the admin UI claimed the flag was off.
+- Added `ENABLE_VISIT_INTENT_PROMPT` to the four duplicated lists: GET response shape, admin page `useState` initializer, fetch-hydration mapping, and `ConfigData` interface. Left a comment in `route.ts` calling out the four-place duplication for the next person who adds a flag.
+
+### Known wart (not fixed in this turn)
+- Adding a new feature flag still requires editing four places: `src/config/features.ts` (`FEATURE_FLAGS` const + `getAllFeatureFlags` defaults), `src/app/api/admin/config/route.ts` (GET response shape), `src/app/admin/config/page.tsx` (`useState` initializer + `setFeatureFlags` hydration + `FEATURE_FLAGS` admin toggle list + `ConfigData` interface). Worth refactoring to derive everything from the `FEATURE_FLAGS` const, but out of scope for a one-line bug fix.
+
+## [2.14.3] - 2026-05-06
+
+Two cleanup passes: finishing the i18n sweep started in v2.12.3, plus Tier-1 of an SEO audit. No functional behavior changes for logged-in users; SEO/discoverability changes only.
+
+### Fixed
+- **5 missing translation keys** the v2.12.3 sweep (`fcd73e2`) overlooked: `wizard.step_what`, `wizard.step_details`, `wizard.step_evidence`, `common.error`, `adoption.fill_required`. Spanish/English users were seeing raw key paths in the adoption-wizard step indicator and one validation toast. Added a CI-style scan (`/tmp/find_missing_keys.py`) that confirmed these were the only remaining gaps.
+
+### Added — SEO Tier 1
+- **Restored `<h1>` on home** (sr-only, keyword-rich). Removed in v2.12.1-39 for the slim search-first hero; the visual decision is preserved, but crawlers and screen readers get a primary heading again. New i18n key `home.h1`.
+- **Generated missing icons**: `public/apple-touch-icon.png` (180×180) and `public/icon-192.png` (192×192) — both were referenced from `layout.tsx` and `manifest.json` but didn't exist, 404ing on every page load. New `scripts/generate-icons.cjs` regenerates them from `icon-512.png`.
+- **HowTo + FAQ JSON-LD wired server-side** on `/guia` and `/guia/faq`. `GuideHowToJsonLd` and `FaqPageJsonLd` were exported from `JsonLd.tsx` but never imported — guide pages had zero structured data. Content extracted to `src/content/guide-data.ts` so both the API route and the layouts share one source of truth.
+- **Page-level `robots: { index: false }`** on `/health`, `/notificaciones`, `/organizations` (the last two were soft-auth-gated client-side but crawlable, would have ranked for nothing).
+- **Sitemap fixes**: added `/funcionalidades` (had its own metadata + canonical but was missing from sitemap), and replaced per-request `lastModified: new Date()` with a build-time-frozen constant so crawlers stop seeing the sitemap "change" on every fetch.
+- **Robots disallow extended** to cover `/contract`, `/contract-results`, `/form-results`, `/invite`, `/notificaciones`, `/organizations`, `/health`.
+- **Demoted action-card `<h3>`s → `<h2>`** on home, AdoptionWizard, ReportWizard so heading hierarchy stays sane after the new h1.
+
+### Changed
+- **`WebApplicationJsonLd`** — `softwareVersion` now reads from `package.json` instead of the stale hardcoded `'2.9.0'`. `screenshot` URL switched from `/icon-512.png` (an icon, not a screenshot) to `/og-image.png`. Empty `sameAs: []` removed from `OrganizationJsonLd` (weak signal).
+- **`public/manifest.json`** — description translated to Spanish (was English on a `lang: 'es'` site).
+
+### Deferred (Tier 2 — documented in `.agents/plans/seo-audit.md`)
+- Removing `dynamic = 'force-dynamic'` from root layout (highest-leverage win, but session-cache edge cases warrant a dedicated PR with monitoring).
+- Bilingual hreflang / `/en` URL tree (architectural decision: commit to bilingual SEO or drop the `alternateLocale` claim).
+- Dynamic `<html lang>` (couples with the bilingual decision).
+- Promoting `/notificaciones` & `/organizations` to `PROTECTED_ROUTES` (UX change — Tier-1 noindex resolves the SEO half safely).
+
+## [2.14.2] - 2026-05-06
+
+Diagnostic plumbing for the v2.13.0 audit's blind spot: when Axiom env vars are missing on a deployed environment, errors silently fall back to worker stdout and the user-visible error id stops matching any Axiom row. Three changes make that drift impossible to miss.
+
+### Added
+- **`probeAxiom()` in `/api/admin/health/route.ts`** — checks `AXIOM_DATASET` and `AXIOM_TOKEN` presence and pings `GET https://api.axiom.co/v1/datasets/<dataset>` with the token (3s timeout). Reports `{ configured, reachable, dataset, datasetSet, tokenSet, latencyMs, statusCode?, error? }` in the health response. Token is never returned to the client.
+- **`AdminEnvWarnings` (`src/components/AdminEnvWarnings.tsx`)** — mounted in `src/app/admin/layout.tsx` above page content. Fetches `/api/admin/health` once on mount and renders a red banner if Axiom is unconfigured ("Axiom logging is disabled in this environment — errors fall back to worker console; user-visible error IDs will not match any Axiom row") or an amber banner if configured but unreachable. Lists which env var is missing.
+- **`AXIOM_DATASET` / `AXIOM_TOKEN` added to the env-var presence list** returned by `/api/admin/health` so the existing health UI surfaces them too.
+
+### Changed
+- **`src/lib/logger.ts`** — when `sendToAxiom` falls back to console (env vars missing) and the runtime env is not `local`, emit one `console.warn` per worker boot: `[Logger] Axiom config missing in env="<env>" — errors fall back to worker console only.` Surfaces in `wrangler tail` immediately on a misconfigured deployment instead of waiting for the first user error.
+- **`src/app/adopter/[id]/page.tsx`** — split the auth + config `Promise.all` into two:
+  - **Auth (`getUser` + `getIsAdmin`)** still redirects to login on failure (mandatory).
+  - **Config (`getAdoptionConfig` + `getFeatureFlag`)** now degrades to defaults with `logger.warn` on failure. Previously a transient D1 outage on a config fetch would bounce the user to `/?authRequired=1` as if their session expired — which was misleading and possibly the failure mode behind the v2.14.0 visit-intent staging incident report.
+
+### How to use the new signals
+- Open `/admin` in any environment. If you see the red Axiom banner, **the user-visible error IDs are NOT in Axiom** — fix the missing secret in Cloudflare Pages → Settings → Variables and Secrets for that environment before relying on Axiom for triage.
+- Tail the worker (`npx wrangler pages deployment tail --project-name verazadoptantes2 --environment=preview`) and look for `[Logger] Axiom config missing` on first deploy of a fresh environment.
+
+## [2.14.1] - 2026-05-06
+
+### Fixed
+- **Footer reachable from every public page**, not just the homepage. Privacy, terms, contact, and the deployed version string were stranded on `/` because the footer JSX was inlined inside `src/app/page.tsx` instead of in the shared shell. Extracted to `src/components/Footer.tsx` (client component, reads `usePathname` to suppress itself on the routes that have their own footers / no footer): `/admin/*`, `/keystatic/*`, `/health`, `/contract/*`, `/contract-results/*`. Mounted in `src/app/layout.tsx` below `{children}`. Removed the unused `packageJson` import from `page.tsx`.
+
+## [2.14.0] - 2026-05-06
+
+Visit-intent prompt on adopter profiles — admin-toggleable card that asks why a visiting rescuer is on the profile and routes them to the matching wizard.
+
+### Added
+- **`VisitIntentCard`** (`src/components/VisitIntentCard.tsx`) — non-blocking inline card pinned at the top of the Adoptions section on adopter profiles. Asks "¿Estás visitando este perfil porque:" with three options:
+  - A. Me solicitó un animal en adopción → opens wizard with `recordType='adoption_request'`
+  - B. Le di un animal en adopción → opens wizard with `recordType='adoption'`
+  - C. Quiero reportar una observación sobre esta persona → opens wizard with `recordType='observation'`
+  - "Solo estoy mirando, cerrar" dismisses without scolding.
+- **Feature flag `ENABLE_VISIT_INTENT_PROMPT`** — DB-backed via `appConfig`, toggleable in `/admin/config`. Default off; admin opts in.
+- **i18n keys** under `visitIntent.*` in both `es.ts` and `en.ts` (Spanish primary).
+- **Telemetry**: `visit_intent_shown`, `visit_intent_selected`, `visit_intent_dismissed` via `zarazTrack` — gives shown→selected conversion per option.
+
+### Visibility logic
+The card renders only when **all** of the following are true: feature flag enabled, not the profile owner (`adopter.addedBy !== currentUser`), user is authenticated, no recent dismissal (per-(adopter, user) localStorage key with 7-day TTL — mirrors `InstallPrompt`), and at least one option is not suppressed by recent matching records (30-day window). Per-option suppression: A hidden if user logged an `adoption_request` for this adopter in 30d; B hidden for `adoption`; C never hidden (observations are unbounded over time). If all three would be hidden, the whole card is hidden.
+
+### Changed
+- **`AdoptionFormWizard`** — added opt-in `initialRecordType?`, `autoOpen?`, and `onClose?` props. Pre-seeds the recordType so the user doesn't pick it twice. Step 1 still renders so adoption / adoption_request flows can pick an animal — observation flows just click "next." `onClose` lets `VisitIntentCard` know when to clear its own state. No behavior change for existing callers (all props optional).
+- **`AdopterProfileV2`** — added `enableVisitIntent` prop, mounts `VisitIntentCard` above the existing `AdoptionFormWizard` button inside the Adoptions `CollapsibleSection`. The existing button stays — it's still the universal entry point for users who dismiss the card or want a different recordType.
+- **`adopter/[id]/page.tsx`** — reads `getFeatureFlag('ENABLE_VISIT_INTENT_PROMPT')` in the existing `Promise.all` batch (no extra round-trip), passes through to `AdopterProfileV2`.
+
+### CX framing
+The four risks of funnel features are addressed in `docs/error_logging_audit.md`-style depth in `~/.claude-personal/plans/wondrous-noodling-fern.md`:
+- **Pop-up fatigue** → 7-day per-(adopter, user) localStorage dismissal.
+- **Wrong intent** → explicit "solo estoy mirando" + 1-line description per option.
+- **Owner self-view** → suppressed when `adopter.addedBy === currentUser`.
+- **Already-acted** → per-option 30-day suppression based on `adoptions[]` already fetched server-side (no extra query).
+
+## [2.13.0] - 2026-05-06
+
+Error logging audit: every error now writes to Axiom with a stable id surfaced to the user.
+
+### Added
+- **`/api/log-client-error` (edge route).** Accepts `{ errorId?, message, stack?, source, ... }` from the browser, calls `logger.error`, and returns the resulting id. When the client supplies a hex id, the server uses it verbatim — so what the user copies is exactly the row admins query in Axiom.
+- **`ClientErrorReporter` (mounted in `app/layout.tsx`).** Registers `window.addEventListener('error', ...)` and `unhandledrejection`. Generates an id locally, shows it in a toast immediately, then POSTs to `/api/log-client-error` under that same id. Skips events whose error already carries an embedded `Error ID:` (server-thrown errors already logged upstream).
+- **`reportClientError` helper.** 30s in-memory dedup so a misbehaving extension can't flood the endpoint.
+
+### Changed
+- **`error.tsx` / `global-error.tsx`.** Id is generated once via `useState(() => …)` — no more inline `crypto.randomUUID()` flipping the id between renders. Sends the id to `/api/log-client-error` so the user-visible id matches the Axiom row by construction.
+- **`logger.error`** now accepts an optional pre-generated id via the `data.errorId` field (used by `/api/log-client-error`). Server-side callers that omit it keep the previous behavior.
+- **5 API routes that returned `[]` on 500** (`my-animals`, `my-adopters`, `my-adoptions`, `my-form-submissions/unlinked`, `dashboard/milestone`) now return `{ error, errorId }` so the client can surface the id via `toast.error`. This was the proximate cause of the unrecoverable `/my-animals` triage in v2.12.7 — the error was logged but never showed up to the user.
+- **~25 `toast.error(...)` callers** updated to pass `extractErrorId(err)` or the response-body errorId, so the user-facing toast shows an id whenever one was logged. Touches admin/config, settings, organizations, AdminAdopterList, AdopterFlagging, AdopterProfileV2, AdopterForm, SearchSection, DeleteAdopterButton, FormResultMatchCard, my-animals/my-adopters/my-adoptions pages.
+- **Server actions in `organizations.ts`, `settings.ts`** updated to (a) use the correct `logger.error(msg, error, data)` signature instead of treating the error as data, and (b) return `{ success: false, error, errorId }` so the page can render the id.
+- **Silent swallows in `formSubmission.ts`, `notifications.ts`, `organizations.ts`, `admin/notifications/page.tsx`, `dashboard/milestone`, `form/[userId]`, `contract/[id]/submit`, `form/[userId]/submit`** now log at warn or error with operation context.
+- **Operation-context sweep** on `dashboard.ts`, `settings.ts`, `admin.ts`, `audit/route.ts`, `import/route.ts` — `logger.error` now re-emits `userEmail`/`actorEmail` and other in-scope inputs to make Axiom rows triagable.
+
+### Audited
+- See `docs/error_logging_audit.md` for the full breakdown of findings, fixes, and the few remaining acceptable bare catches (auth fallbacks, health probes, SSR-safe `localStorage` reads).
+
+## [2.12.8] - 2026-05-06
+
+### Fixed
+- **Rating popover stole click → navigated to profile.** In `SearchSection`, each card is wrapped in `<a href={`/adopter/${id}`}>`. The `RatingExplainer` button rendered inside that anchor; on click the popover opened correctly but the click also triggered the anchor's default action and the page navigated to the adopter profile. `stopPropagation` alone wasn't enough — the browser's anchor navigation is a default action, not a React handler. Fix: added `e.preventDefault()` (alongside `stopPropagation`) on the wrapper `<div>` of `RatingExplainer`, which catches all bubbled clicks (trigger button, close button, mobile backdrop) and suppresses navigation.
+
 ## [2.12.6] - 2026-05-06
 
 UX: rating labels and click-to-explain popover on search results.
