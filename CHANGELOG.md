@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-9] - 2026-05-10
+
+Fixed `ENABLE_MILESTONE_BADGE` admin toggle not actually hiding the MilestoneBadge on the homepage. v2.14.8-5 added the 4-place flag plumbing (features.ts, /api/admin/config, /admin/config UI, i18n labels) but missed a 5th place: `src/app/api/config/route.ts` — the **public** config endpoint that the homepage actually reads. The admin UI was writing the flag value to the DB correctly, but `/api/config`'s `PUBLIC_FLAG_KEYS` whitelist didn't include `ENABLE_MILESTONE_BADGE`, so the homepage only ever saw `undefined` for that key. Since the homepage check is `appConfig.ENABLE_MILESTONE_BADGE !== 'false'`, `undefined !== 'false'` is `true` → the component always rendered regardless of admin toggle.
+
+### Fixed
+- **`src/app/api/config/route.ts`** — added `ENABLE_MILESTONE_BADGE` to `PUBLIC_FLAG_KEYS` whitelist and to `PUBLIC_FLAG_DEFAULTS` (default `'true'`, matching `features.ts`).
+
+### Notes
+- **The "4-place plumbing" pattern documented in CLAUDE.md is actually 5 places when the flag gates client-side UI visible to all users** (admin + public both need to know). I'll fold this into the next `feedback_*` memory update so future agents don't repeat the miss. For admin-only flags (e.g. flags that only affect admin pages), the 4-place pattern is still correct.
+- **Other public-visible flags I should verify post-deploy** to make sure they actually work via /admin/config: `ENABLE_CONTENT_IMPORT`, `ENABLE_ANIMALS_FOR_ADOPTION`, `ENABLE_SEARCH_CARD_METADATA`, `SOCIAL_PROOF_ENABLED`. These are in `PUBLIC_FLAG_KEYS` so they should work; flagging here for completeness.
+
 ## [2.14.9-8] - 2026-05-10
 
 Two changes bundled:
