@@ -167,6 +167,10 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     const safeAdopterAdoptions = Array.isArray(adopterAdoptions) ? adopterAdoptions : [];
     const isObservation = formData.recordType === 'observation';
     const isFollowUpOrReturn = formData.recordType === 'follow_up' || formData.recordType === 'returned_pet';
+    // Adoption-request flows only collect species — there's no specific animal yet
+    // ("person asks for any cat"), so hiding name + mode-switcher removes friction
+    // with no information loss. animalName is saved as null on submit.
+    const isRequest = formData.recordType === 'adoption_request';
 
     // For follow_up / returned_pet, the picker should source from animals this
     // adopter has actually adopted — not the rescuer's unlinked inventory.
@@ -174,7 +178,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
         ? safeAdopterAdoptions.filter(a => a && a.recordType === 'adoption' && a.animalName)
         : [];
     const effectiveAnimalsList = isFollowUpOrReturn ? previousAdoptionsForAdopter : safeAvailableAnimals;
-    const showModeSwitcher = !shouldOpenFromWizard && effectiveAnimalsList.length > 0 && !isObservation;
+    const showModeSwitcher = !shouldOpenFromWizard && effectiveAnimalsList.length > 0 && !isObservation && !isRequest;
     const effectiveMode = showModeSwitcher ? mode : 'new';
 
     // Dual-record flow: user is logging a follow_up/returned_pet for an animal
@@ -296,6 +300,9 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                 id: idForSubmit,
                 rating: Number(formData.rating),
                 date: localDate,
+                // Adoption requests don't reference a specific animal — drop the
+                // name even if some leftover state held one. Species stays.
+                animalName: isRequest ? null : formData.animalName,
                 onBehalfOf: null,
                 deliveredToHome: formData.deliveredToHome ? 1 : 0,
                 verifiedAddress: formData.verifiedAddress || null,
@@ -343,6 +350,14 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     const checkStep1Valid = () => {
         // Observations are about the adopter, not an animal — no animal selection required.
         if (isObservation) return true;
+        // Adoption requests only collect species — no specific animal yet.
+        if (isRequest) {
+            if (!formData.species.trim()) {
+                toast.warning(t('common.error'), t('adoption.fill_required'));
+                return false;
+            }
+            return true;
+        }
 
         const isValid = effectiveMode === 'existing'
             ? !!formData.animalId
@@ -456,7 +471,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                 </div>
                             )}
 
-                            {!isObservation && effectiveMode === 'existing' && (
+                            {!isObservation && !isRequest && effectiveMode === 'existing' && (
                                 <div>
                                     <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
                                         {isFollowUpOrReturn ? t('adoption.previous_adoption_picker_label') : t('adoption.select_animal')}
@@ -474,19 +489,21 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                             )}
 
                             {!isObservation && effectiveMode === 'new' && (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div>
-                                        <div className="flex items-center justify-between mb-1.5">
-                                            <label className="block text-xs font-semibold text-teal-800 uppercase tracking-wider">{t('adoption.animal_name')}</label>
-                                            <label className="flex items-center gap-1.5 cursor-pointer text-xs">
-                                                <span className="text-stone-500">{t('common.unknown')}</span>
-                                                <button type="button" onClick={() => { setUnknownAnimal(!unknownAnimal); if (!unknownAnimal) setFormData(d => ({ ...d, animalName: '' })); }} className={`relative w-9 h-5 rounded-full transition-colors ${unknownAnimal ? 'bg-amber-500' : 'bg-stone-200'}`}>
-                                                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${unknownAnimal ? 'translate-x-4' : 'translate-x-0'}`} />
-                                                </button>
-                                            </label>
+                                <div className={`grid gap-4 ${isRequest ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'}`}>
+                                    {!isRequest && (
+                                        <div>
+                                            <div className="flex items-center justify-between mb-1.5">
+                                                <label className="block text-xs font-semibold text-teal-800 uppercase tracking-wider">{t('adoption.animal_name')}</label>
+                                                <label className="flex items-center gap-1.5 cursor-pointer text-xs">
+                                                    <span className="text-stone-500">{t('common.unknown')}</span>
+                                                    <button type="button" onClick={() => { setUnknownAnimal(!unknownAnimal); if (!unknownAnimal) setFormData(d => ({ ...d, animalName: '' })); }} className={`relative w-9 h-5 rounded-full transition-colors ${unknownAnimal ? 'bg-amber-500' : 'bg-stone-200'}`}>
+                                                        <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${unknownAnimal ? 'translate-x-4' : 'translate-x-0'}`} />
+                                                    </button>
+                                                </label>
+                                            </div>
+                                            <input required={!unknownAnimal} disabled={unknownAnimal} className={`w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-base md:text-sm ${unknownAnimal ? 'bg-stone-100 text-stone-500 cursor-not-allowed' : 'bg-white'}`} value={unknownAnimal ? '' : formData.animalName} onChange={e => setFormData(d => ({ ...d, animalName: e.target.value }))} placeholder={unknownAnimal ? (t('adoption.unknown_animal')) : t('adoption.animal_placeholder')} />
                                         </div>
-                                        <input required={!unknownAnimal} disabled={unknownAnimal} className={`w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-base md:text-sm ${unknownAnimal ? 'bg-stone-100 text-stone-500 cursor-not-allowed' : 'bg-white'}`} value={unknownAnimal ? '' : formData.animalName} onChange={e => setFormData(d => ({ ...d, animalName: e.target.value }))} placeholder={unknownAnimal ? (t('adoption.unknown_animal')) : t('adoption.animal_placeholder')} />
-                                    </div>
+                                    )}
                                     <div>
                                         <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">{t('adoption.species')}</label>
                                         {customSpecies ? (

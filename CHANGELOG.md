@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-3] - 2026-05-10
+
+Wizard step 1 for `adoption_request` now collects only the species — no animal name, no existing/new mode switcher. An adoption request is "person asks for any cat / any dog" — there's no specific animal yet, so asking for its name was friction with no information value. All other record types (adoption / follow_up / returned_pet / observation) are unchanged.
+
+### Changed
+- **`src/components/AdoptionFormWizard.tsx`** — added `isRequest` derivation (mirrors `isObservation` / `isFollowUpOrReturn`). Used in three places:
+  - `showModeSwitcher` excludes request — there's no existing animal to pick.
+  - The existing-animal picker block is gated `!isObservation && !isRequest`.
+  - The new-animal grid renders single-column for requests; the animal-name input is hidden, leaving species alone.
+  - `checkStep1Valid` short-circuits for requests: only `species` is required.
+  - Submit serializes `animalName: null` for requests (defensive — form state defaults to `''` and shouldn't leak through, but explicit null is clearer at the DB row).
+
+### Notes
+- **No DB or schema change.** The `adoptions.animal_name` column is already nullable; existing request rows that had a name in their `animal_name` column are not migrated and stay as-is.
+- **Edit form (`AdoptionFormEditV2`) intentionally untouched.** If a rescuer is editing a historical request that happened to have an animal name, they can still see and clear it via the edit path.
+
 ## [2.14.9-2] - 2026-05-10
 
 Fixed `[object Object]` showing up in Axiom whenever audit-log writes failed. Both catch blocks in `src/lib/audit.ts` were calling `logger.error('[Audit] ...', { error: e... })` — the `{error}` object was getting passed as the **second positional argument** to `logger.error(message, error?, data?)`, which logger's non-Error branch then stringified to `"[object Object]"` (because `String({error:'...'})` → `"[object Object]"`). The actual error message + stack never made it to Axiom — every audit-log failure was unactionable.
