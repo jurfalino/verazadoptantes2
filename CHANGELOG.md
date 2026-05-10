@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-7] - 2026-05-10
+
+Replaced the homepage utility subtitle ("Busca adoptantes y Registra adopciones") with a click-to-expand "¿Qué es Buen Adoptante?" question. Tapping reveals a two-paragraph explainer of what the product is and how the workflow goes ("Cuando alguien te pide un animal en adopción, busca su nombre y sus datos acá…"). Trade-off accepted: lose a small action signal for returning users, gain self-onboarding for first-time visitors who don't yet have a mental model of the product.
+
+### Added
+- **`src/components/WhatIsBuenAdoptante.tsx`** (new) — `'use client'` collapsible explainer. Question always renders; tapping toggles a height-animated panel with the intro paragraph + "¿Cómo funciona?" subhead + workflow paragraph. `<button aria-expanded aria-controls>` with rotating chevron; panel uses `grid-rows-[1fr]/[0fr]` transition so the height interpolates smoothly. No state persistence — every visit starts collapsed (CX trade-off accepted: simpler now, can layer in localStorage dismissal later if returning-user fatigue becomes a real complaint).
+- **i18n keys** `home.what_is.{title,intro,how_title,how_body}` in both `es.ts` and `en.ts`. Editorial passes on the user's draft: glossed "veraz" so non-Río-de-la-Plata readers aren't lost (`Es un registro de adoptantes — un "veraz", si conocés el término —`); fixed `sino → si no` (grammar — `sino` means "but rather", `si no` means "if not"); switched `rating → calificación` for consistency with the rest of the UI.
+
+### Changed
+- **`src/components/SearchSection.tsx`** — replaced the single-line `<p>{t('home.value_main')}</p>` subtitle (lines 182-190) with `<WhatIsBuenAdoptante />`. Kept the `text-center mb-4` spacing and the `hasResults ? 'hidden md:block'` mobile-collapse rule so the search-results-shown behavior stays identical.
+
+### Removed
+- **`home.value_main`, `home.value_verify`, `home.value_register`** keys from both `es.ts` and `en.ts`. Grep across `src/` and `tests/` confirmed all three were dead post-removal of `value_main` (the other two were already orphaned in earlier copy iterations). Removing dead keys per the i18n hygiene note in CLAUDE.md.
+
+### Notes
+- **Plan saved at** `/home/jurfalino/.claude-personal/plans/in-the-profile-screen-sequential-boole.md`.
+- **No DB / API change.** Pure UI swap.
+- **EN copy is a literal translation** — codebase default is `es`, EN side is best-effort per CLAUDE.md i18n note.
+- **`grep -rn 'value_main' src/ tests/`** returns zero results post-change.
+
 ## [2.14.9-6] - 2026-05-10
 
 Removed the `WIZARD_ALERTS_AS_CARD` admin feature flag added in v2.14.9-4. Card layout is the only path now. The inline-paragraph alternative was useful for the v2.14.9-4 → v2.14.9-5 staging A/B but never won an audience — keeping it would mean carrying a 4-place flag duplication, an extra prop on three components, an extra SSR fetch on every adopter-page load, and a contrast-failure-prone alternate render path forever.

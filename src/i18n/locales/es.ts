@@ -349,9 +349,12 @@ export const es = {
         process_guide: 'Guía del Proceso de Adopción',
         hero_guide: 'Guía de Adopción',
         hero_features: 'Funcionalidades',
-        value_verify: 'Buscá, verificá y reportá adoptantes',
-        value_register: 'Registrá adopciones y pedidos de adopción',
-        value_main: 'Busca adoptantes y Registra adopciones',
+        what_is: {
+            title: '¿Qué es Buen Adoptante?',
+            intro: 'Es un registro de adoptantes — un "veraz", si conocés el término — donde podés registrar adopciones, pedidos de adopción, y toda observación que le sea de utilidad a la comunidad rescatista para evaluar futuras adopciones.',
+            how_title: '¿Cómo funciona?',
+            how_body: 'Cuando alguien te pide un animal en adopción, busca su nombre y sus datos acá. Si el perfil ya existe, podés ver la calificación y comentarios de otras personas; si no, lo podés crear y comenzar a registrar su historial.',
+        },
     },
     legal: {
         consent_checkbox: 'Al guardar, aceptás los',
