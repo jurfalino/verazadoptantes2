@@ -2,6 +2,28 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-12] - 2026-05-10
+
+Two changes:
+
+1. **Env-scoped Axiom metrics** — every metric query on /admin now auto-filters to events from the same deploy environment the page is running in. Staging /admin shows staging traffic only; production /admin shows production traffic only. Previously the queries summed across all environments — staging counts were inflated by production events and vice versa.
+
+2. **"Recorded Adoptions" → "Adopter Activities"** — renamed the second DB-counter on the /admin landing and removed the `recordType='adoption'` filter added in v2.14.9-11. The operator wants the broader "any activity row" signal; the rename makes the count and label match.
+
+### Changed
+- **`src/lib/axiom.ts`** —
+  - Added `getCurrentEnv()` mirroring `logger.ts`'s `getEnvironmentInfo()` (reads `CF_PAGES_BRANCH` / `CF_PAGES_URL`; returns `'production' | 'staging' | 'preview-<branch>' | 'local'`).
+  - `runQuery()` now wraps every caller's filter with a compound `{ op: 'and', children: [<original>, { op: '==', field: 'env', value: <currentEnv> }] }`. Verified empirically against the live API; the legacy structured-query endpoint accepts compound and-filters.
+  - Cache key includes the wrapped filter, so same query from staging vs production gets cached separately. No cross-env cache pollution.
+  - `getAxiomDeepLinkUrl()` always emits an `env=="<currentEnv>"` clause in the `_q=` query string, so clicking through from /admin opens Axiom Stream pre-filtered to the right env.
+  - Refactored the `AxiomFilter` type to a discriminated union (`AxiomLeafFilter | AxiomCompoundFilter`) to support the compound shape cleanly.
+- **`src/app/admin/page.tsx`** — second counter is now "Adopter Activities" (was "Recorded Adoptions"). Removed the `eq(adoptions.recordType, RECORD_TYPES.ADOPTION)` where-clause from v2.14.9-11. Removed unused `eq` and `RECORD_TYPES` imports.
+
+### Notes
+- **Logger.ts and axiom.ts now both have `getCurrentEnv` (axiom) and `getEnvironmentInfo` (logger) doing similar things** — slight duplication. They differ in shape (logger returns more fields like `domain` / `requestId`); refactoring to a shared helper is sensible follow-up but not in scope here.
+- **The "Active Flags" filter from v2.14.9-11 stays** — that audit was about a different bug (positive flags being counted as concerning), unrelated to the recordType filter being undone.
+- **The `findAdopters.discovery` p50 = 750ms latency signal** flagged in v2.14.9-11 still applies — env-scoping doesn't change the underlying numbers, only narrows what each /admin page sees. Investigation still pending.
+
 ## [2.14.9-11] - 2026-05-10
 
 Three improvements to /admin landing metrics: Axiom deep-links, fixed Active Rescuers undercount, and audit fixes on the existing DB-counter labels (which were misleading by counting things the labels didn't claim).

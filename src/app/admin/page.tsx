@@ -1,10 +1,10 @@
 export const runtime = 'edge';
 import { getDb } from "@/app/actions";
 import { adopters, adoptions, adopterFlags } from "@/db/schema";
-import { count, isNull, eq, and, ne } from "drizzle-orm";
+import { count, isNull, and, ne } from "drizzle-orm";
 import AdminDangerZone from "@/components/AdminDangerZone";
 import { getErrorsCount, getTopErrors, getTraceLatencies, getActiveRescuers, getAxiomDeepLinkUrl } from "@/lib/axiom";
-import { FLAG_REASONS, RECORD_TYPES } from "@/domain/constants";
+import { FLAG_REASONS } from "@/domain/constants";
 
 export default async function AdminOverviewPage() {
     const db = await getDb();
@@ -33,15 +33,15 @@ export default async function AdminOverviewPage() {
         activeRescuers30d,
     ] = await Promise.all([
         db.select({ count: count() }).from(adopters).where(isNull(adopters.deletedAt)),
-        // Recorded Adoptions: filter to recordType='adoption' so the count
-        // matches the label. Was counting ALL activity rows (requests,
-        // observations, follow_ups, returns, foster, available animal
-        // listings) — misleading. Audit fix from v2.14.9-11.
-        db.select({ count: count() }).from(adoptions).where(eq(adoptions.recordType, RECORD_TYPES.ADOPTION)),
+        // "Adopter Activities" — counts every row in the adoptions table
+        // regardless of recordType (adoption, request, observation, follow-up,
+        // returned, foster, available). The label was renamed in v2.14.9-12
+        // from "Recorded Adoptions" so the count and label match without
+        // filtering — operator wants the broader signal.
+        db.select({ count: count() }).from(adoptions),
         // Active Flags: exclude positive verification flags (verified_identity,
         // verified_address) — those aren't "active concerns", they're trust
-        // signals. The counter should only show genuinely-concerning flags.
-        // Audit fix from v2.14.9-11.
+        // signals. Audit fix from v2.14.9-11.
         db.select({ count: count() }).from(adopterFlags).where(and(
             ne(adopterFlags.reason, FLAG_REASONS.VERIFIED_IDENTITY),
             ne(adopterFlags.reason, FLAG_REASONS.VERIFIED_ADDRESS),
@@ -56,7 +56,7 @@ export default async function AdminOverviewPage() {
 
     const stats = [
         { label: 'Total Adopters', value: adopterCount[0].count, color: 'emerald' },
-        { label: 'Recorded Adoptions', value: adoptionCount[0].count, color: 'blue' },
+        { label: 'Adopter Activities', value: adoptionCount[0].count, color: 'blue' },
         { label: 'Active Flags', value: activeFlagsCount[0].count, color: 'rose' },
     ];
 

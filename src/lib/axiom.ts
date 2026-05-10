@@ -47,17 +47,48 @@ function getQueryConfig(): AxiomConfig | null {
 // Module-level cache. Per-worker, resets on cold start. Keyed by stringified body.
 const _cache = new Map<string, { value: unknown; expiresAt: number }>();
 
+/** Detect the current deploy environment, mirroring `logger.ts`'s ingest-side
+ *  shape so the values line up with what's stored in Axiom events. Returns
+ *  one of: 'production', 'staging', 'preview-<branch>', or 'local'. Used to
+ *  scope every metric query to the env it's running in — staging /admin
+ *  shouldn't see production traffic and vice versa.
+ */
+function getCurrentEnv(): string {
+    let branch: string | undefined;
+    let url: string | undefined;
+    try {
+        const { env } = getRequestContext();
+        const e = env as unknown as Record<string, string | undefined>;
+        branch = e?.CF_PAGES_BRANCH || process.env.CF_PAGES_BRANCH;
+        url = e?.CF_PAGES_URL || process.env.CF_PAGES_URL;
+    } catch {
+        branch = process.env.CF_PAGES_BRANCH;
+        url = process.env.CF_PAGES_URL;
+    }
+    if (branch === 'master' || branch === 'main') return 'production';
+    if (branch === 'staging' || url?.includes('staging')) return 'staging';
+    if (branch) return `preview-${branch}`;
+    return 'local';
+}
+
 interface AxiomAggregation {
     op: string;
     field?: string;
     argument?: number[];
 }
 
-interface AxiomFilter {
+interface AxiomLeafFilter {
     op: string;
     field: string;
     value: string | number;
 }
+
+interface AxiomCompoundFilter {
+    op: 'and' | 'or';
+    children: AxiomFilter[];
+}
+
+type AxiomFilter = AxiomLeafFilter | AxiomCompoundFilter;
 
 interface AxiomQueryBody {
     startTime: string;
@@ -77,7 +108,18 @@ interface AxiomQueryResponse {
 }
 
 async function runQuery(body: AxiomQueryBody, config: AxiomConfig): Promise<AxiomQueryResponse | null> {
-    const cacheKey = JSON.stringify(body);
+    // Auto-inject an env filter so /admin metrics on staging only see staging
+    // events (and prod sees prod). The logger ingest-side stamps every event
+    // with `env` via getEnvironmentInfo() in logger.ts; we mirror that field
+    // here. Verified against the live API: compound { op:'and', children:[...] }
+    // filters work in the legacy structured query endpoint.
+    const envFilter: AxiomLeafFilter = { op: '==', field: 'env', value: getCurrentEnv() };
+    const finalFilter: AxiomFilter = body.filter
+        ? { op: 'and', children: [body.filter, envFilter] }
+        : envFilter;
+    const finalBody: AxiomQueryBody = { ...body, filter: finalFilter };
+
+    const cacheKey = JSON.stringify(finalBody);
     const cached = _cache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
         return cached.value as AxiomQueryResponse;
@@ -90,7 +132,7 @@ async function runQuery(body: AxiomQueryBody, config: AxiomConfig): Promise<Axio
             'Authorization': `Bearer ${config.token}`,
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(finalBody),
     });
     if (!res.ok) {
         // Don't crash the admin page on Axiom failure. Caller treats null as
@@ -260,8 +302,9 @@ export function getAxiomDeepLinkUrl(opts: DeepLinkOptions = {}): string | null {
     }
     if (!slug || !dataset) return null;
     const base = `https://app.axiom.co/${encodeURIComponent(slug)}/datasets/${encodeURIComponent(dataset)}/stream`;
-    if (opts.filter) {
-        return `${base}?_q=${encodeURIComponent(opts.filter)}`;
-    }
-    return base;
+    // Always env-scope the deep-link so clicking from /admin doesn't show
+    // cross-env events (mirrors the auto env filter on the metric queries).
+    const envFilter = `env=="${getCurrentEnv()}"`;
+    const combined = opts.filter ? `${envFilter} ${opts.filter}` : envFilter;
+    return `${base}?_q=${encodeURIComponent(combined)}`;
 }
