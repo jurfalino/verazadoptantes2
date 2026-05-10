@@ -186,15 +186,21 @@ export default function RecordTypeGuidance({
                     </p>
                 ))}
             </div>
-            {/* Card layout: each alert as its own warning card below the body. */}
+            {/* Card layout: each alert as its own warning card below the body.
+                Tailwind classes used here all have [data-theme="dark"] remaps in
+                globals.css — bg-amber-50 → status-warning-bg, border-amber-200 →
+                status-warning-border, text-amber-700/800 → readable on the dark
+                amber-tinted bg. text-amber-900 is intentionally avoided since
+                it has no dark-theme remap and renders as near-black on the
+                tinted bg (was the v2.14.9-4 contrast bug). */}
             {alertsAsCard && alerts.map((a, i) => (
                 <div
                     key={i}
                     className="mt-2 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3 shadow-sm"
                     role="note"
                 >
-                    <span className="text-amber-600 shrink-0 mt-0.5" aria-hidden="true">⚠</span>
-                    <p className="text-sm text-amber-900 leading-relaxed">
+                    <span className="text-amber-700 shrink-0 mt-0.5" aria-hidden="true">⚠</span>
+                    <p className="text-sm text-amber-800 leading-relaxed">
                         {renderAlert(a.text)}
                     </p>
                 </div>

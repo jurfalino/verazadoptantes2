@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-5] - 2026-05-10
+
+Fixed dark-theme contrast on the wizard alert cards added in v2.14.9-4. The alert body used `text-amber-900` and the icon used `text-amber-600` — `text-amber-900` has no `[data-theme="dark"]` remap in `globals.css`, so it stayed near-black on the dark amber-tinted background and was barely readable. Switched the body to `text-amber-800` (remaps to `#fde047`/bright yellow in dark) and the icon to `text-amber-700` (remaps to `var(--status-warning-text)`); both classes already have proper light- and dark-theme overrides in the codebase.
+
+### Fixed
+- **`src/components/RecordTypeGuidance.tsx`** — alert card body class `text-amber-900` → `text-amber-800`; icon class `text-amber-600` → `text-amber-700`. Added an inline comment to flag amber-900 as intentionally avoided so the next person isn't tempted to "match the design system" by using the deeper amber.
+
+### Notes
+- **No change to inline-paragraph layout** (`WIZARD_ALERTS_AS_CARD=false`). That layout uses the existing body card's `text-stone-600` which already has full theme coverage in `globals.css`.
+
 ## [2.14.9-4] - 2026-05-10
 
 Wizard step-1 guidance copy is now flag-aware. Beyond the rating-bucket body added in v2.14.9, the `RecordTypeGuidance` block now also renders short alert messages when the adopter trips the existing density flags `tooManyAdoptions` (e.g. 7 completed adoptions in 30 days) or `tooManyRequests` (e.g. 4 active requests in 14 days). Both flags use `actualSpanDays` (the densest observed window) when reporting the period, so the warning reads "{count} adopciones en los últimos {actual} días" instead of the wider configured threshold window.
