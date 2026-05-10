@@ -1,9 +1,10 @@
 export const runtime = 'edge';
 import { getDb } from "@/app/actions";
 import { adopters, adoptions, adopterFlags } from "@/db/schema";
-import { count, isNull } from "drizzle-orm";
+import { count, isNull, eq, and, ne } from "drizzle-orm";
 import AdminDangerZone from "@/components/AdminDangerZone";
-import { getErrorsCount, getTopErrors, getTraceLatencies, getActiveRescuers } from "@/lib/axiom";
+import { getErrorsCount, getTopErrors, getTraceLatencies, getActiveRescuers, getAxiomDeepLinkUrl } from "@/lib/axiom";
+import { FLAG_REASONS, RECORD_TYPES } from "@/domain/constants";
 
 export default async function AdminOverviewPage() {
     const db = await getDb();
@@ -32,8 +33,19 @@ export default async function AdminOverviewPage() {
         activeRescuers30d,
     ] = await Promise.all([
         db.select({ count: count() }).from(adopters).where(isNull(adopters.deletedAt)),
-        db.select({ count: count() }).from(adoptions),
-        db.select({ count: count() }).from(adopterFlags),
+        // Recorded Adoptions: filter to recordType='adoption' so the count
+        // matches the label. Was counting ALL activity rows (requests,
+        // observations, follow_ups, returns, foster, available animal
+        // listings) — misleading. Audit fix from v2.14.9-11.
+        db.select({ count: count() }).from(adoptions).where(eq(adoptions.recordType, RECORD_TYPES.ADOPTION)),
+        // Active Flags: exclude positive verification flags (verified_identity,
+        // verified_address) — those aren't "active concerns", they're trust
+        // signals. The counter should only show genuinely-concerning flags.
+        // Audit fix from v2.14.9-11.
+        db.select({ count: count() }).from(adopterFlags).where(and(
+            ne(adopterFlags.reason, FLAG_REASONS.VERIFIED_IDENTITY),
+            ne(adopterFlags.reason, FLAG_REASONS.VERIFIED_ADDRESS),
+        )),
         getErrorsCount(win7).catch(() => null),
         getErrorsCount(winPrior7).catch(() => null),
         getTopErrors({ ...win7, limit: 5 }).catch(() => null),
@@ -60,6 +72,12 @@ export default async function AdminOverviewPage() {
     // to a single "no disponible" placeholder rather than rendering 0s everywhere.
     const metricsAvailable = errorsThis7d != null || topErrors != null || traceLatencies != null || activeRescuers7d != null;
 
+    // Deep-link URLs for "Ver en Axiom →" affordances. Returns null when
+    // AXIOM_ORG_SLUG is unset; render conditionally so missing config hides
+    // the links rather than producing broken URLs.
+    const axiomLinkErrors = getAxiomDeepLinkUrl({ filter: 'level=="error"' });
+    const axiomLinkAll = getAxiomDeepLinkUrl();
+
     return (
         <div className="max-w-6xl mx-auto space-y-8">
             <header>
@@ -84,12 +102,22 @@ export default async function AdminOverviewPage() {
                 coming soon..." placeholder. Backed by Axiom; degrades gracefully
                 when AXIOM_QUERY_TOKEN is unset (local dev) or the API is down. */}
             <section className="space-y-4">
-                <div className="flex items-baseline justify-between">
+                <div className="flex items-baseline justify-between gap-3 flex-wrap">
                     <h3 className="text-xl font-semibold text-stone-900">Métricas (últimos 7 días)</h3>
                     {metricsAvailable && (
-                        <span className="text-xs text-stone-500">
-                            cache 5min · datos de Axiom
-                        </span>
+                        <div className="flex items-baseline gap-3 text-xs text-stone-500">
+                            {axiomLinkAll && (
+                                <a
+                                    href={axiomLinkAll}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-teal-700 hover:text-teal-800 font-medium underline underline-offset-2"
+                                >
+                                    Ver en Axiom →
+                                </a>
+                            )}
+                            <span>cache 5min · datos de Axiom</span>
+                        </div>
                     )}
                 </div>
 
@@ -105,9 +133,22 @@ export default async function AdminOverviewPage() {
                         {/* Counters row: errors + active 7d + active 30d */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200">
-                                <p className="text-sm font-semibold uppercase tracking-wider text-rose-600/70 mb-2">
-                                    Errores 7d
-                                </p>
+                                <div className="flex items-baseline justify-between mb-2">
+                                    <p className="text-sm font-semibold uppercase tracking-wider text-rose-600/70">
+                                        Errores 7d
+                                    </p>
+                                    {axiomLinkErrors && (
+                                        <a
+                                            href={axiomLinkErrors}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-xs text-teal-700 hover:text-teal-800 font-medium underline underline-offset-2"
+                                            title="Ver eventos de error en Axiom"
+                                        >
+                                            Ver →
+                                        </a>
+                                    )}
+                                </div>
                                 <div className="flex items-baseline gap-3">
                                     <p className="text-4xl font-extrabold text-stone-900">
                                         {errorsThis7d ?? '—'}
@@ -148,12 +189,28 @@ export default async function AdminOverviewPage() {
                                 <p className="text-sm text-emerald-700">Ningún error registrado en los últimos 7 días. ✓</p>
                             ) : (
                                 <ul className="divide-y divide-stone-100">
-                                    {topErrors.map((e) => (
-                                        <li key={e.message} className="py-2 flex items-start justify-between gap-4">
-                                            <span className="text-sm text-stone-700 leading-snug">{e.message}</span>
-                                            <span className="text-sm font-semibold text-rose-700 flex-shrink-0">{e.count}</span>
-                                        </li>
-                                    ))}
+                                    {topErrors.map((e) => {
+                                        const escaped = e.message.replace(/"/g, '\\"');
+                                        const link = getAxiomDeepLinkUrl({ filter: `level=="error" message=="${escaped}"` });
+                                        return (
+                                            <li key={e.message} className="py-2 flex items-start justify-between gap-4">
+                                                {link ? (
+                                                    <a
+                                                        href={link}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="text-sm text-stone-700 leading-snug hover:text-teal-700 hover:underline"
+                                                        title="Ver eventos en Axiom"
+                                                    >
+                                                        {e.message}
+                                                    </a>
+                                                ) : (
+                                                    <span className="text-sm text-stone-700 leading-snug">{e.message}</span>
+                                                )}
+                                                <span className="text-sm font-semibold text-rose-700 flex-shrink-0">{e.count}</span>
+                                            </li>
+                                        );
+                                    })}
                                 </ul>
                             )}
                         </div>
@@ -167,15 +224,30 @@ export default async function AdminOverviewPage() {
                                 <p className="text-sm text-stone-500">Sin datos de trazas en los últimos 7 días.</p>
                             ) : (
                                 <ul className="divide-y divide-stone-100">
-                                    {traceLatencies.map((t) => (
-                                        <li key={t.trace} className="py-2 flex items-center justify-between gap-4">
-                                            <span className="text-sm text-stone-700 font-mono">{t.trace}</span>
-                                            <span className="text-sm text-stone-600 flex-shrink-0">
-                                                <span className="font-semibold text-stone-800">{t.p50}ms</span> / <span className="font-semibold text-stone-800">{t.p95}ms</span>
-                                                <span className="text-stone-400 ml-2">· {t.count.toLocaleString()} calls</span>
-                                            </span>
-                                        </li>
-                                    ))}
+                                    {traceLatencies.map((t) => {
+                                        const link = getAxiomDeepLinkUrl({ filter: `trace=="${t.trace}"` });
+                                        return (
+                                            <li key={t.trace} className="py-2 flex items-center justify-between gap-4">
+                                                {link ? (
+                                                    <a
+                                                        href={link}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="text-sm text-stone-700 font-mono hover:text-teal-700 hover:underline"
+                                                        title="Ver llamadas de esta traza en Axiom"
+                                                    >
+                                                        {t.trace}
+                                                    </a>
+                                                ) : (
+                                                    <span className="text-sm text-stone-700 font-mono">{t.trace}</span>
+                                                )}
+                                                <span className="text-sm text-stone-600 flex-shrink-0">
+                                                    <span className="font-semibold text-stone-800">{t.p50}ms</span> / <span className="font-semibold text-stone-800">{t.p95}ms</span>
+                                                    <span className="text-stone-400 ml-2">· {t.count.toLocaleString()} calls</span>
+                                                </span>
+                                            </li>
+                                        );
+                                    })}
                                 </ul>
                             )}
                         </div>

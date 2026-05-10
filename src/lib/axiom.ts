@@ -186,19 +186,82 @@ export async function getTraceLatencies(w: TimeWindow): Promise<TraceLatency[] |
     return rows.sort((a, b) => b.count - a.count);
 }
 
-/** Distinct rescuers (the `user` field — set by findAdopters and similar
- *  authenticated read paths). Note: this is "active searchers" not "all
- *  active accounts" since some events use `changedBy` / `userEmail` instead.
- *  Phase 2 could union these fields; v1 keeps it simple.
+/** Distinct active rescuers in the window — counts unique email-shaped
+ *  values across every actor field we log under (`user`, `changedBy`,
+ *  `email`, `userEmail`). Logging field-name inconsistency is real codebase
+ *  debt; the long-term fix is to standardize on a single `actorEmail`
+ *  field in the logger. Until then this union covers all activity types
+ *  (search, profile-create, adoption-record, sign-in, my-animals query).
+ *
+ *  Implementation: 4 parallel groupBy queries, each returning the distinct
+ *  values of one field. Union client-side, dedup case-insensitive, drop
+ *  sentinel non-emails ("anonymous", "unknown", "system").
  */
 export async function getActiveRescuers(w: TimeWindow): Promise<number | null> {
     const config = getQueryConfig();
     if (!config) return null;
-    const data = await runQuery({
-        startTime: w.startTime,
-        endTime: w.endTime,
-        aggregations: [{ op: 'distinct', field: 'user' }],
-    }, config);
-    const total = data?.buckets?.totals?.[0]?.aggregations?.[0]?.value;
-    return typeof total === 'number' ? total : 0;
+    const FIELDS = ['user', 'changedBy', 'email', 'userEmail'];
+    const results = await Promise.all(FIELDS.map((field) =>
+        runQuery({
+            startTime: w.startTime,
+            endTime: w.endTime,
+            aggregations: [{ op: 'count', field: '*' }],
+            groupBy: [field],
+        }, config).catch(() => null)
+    ));
+    // If every query failed (token / network), bubble up null so the caller
+    // renders "no disponible" instead of a misleading 0.
+    if (results.every((r) => r === null)) return null;
+    const set = new Set<string>();
+    for (let i = 0; i < results.length; i++) {
+        const totals = results[i]?.buckets?.totals || [];
+        const fieldName = FIELDS[i];
+        for (const r of totals) {
+            const v = r.group?.[fieldName];
+            if (typeof v !== 'string' || !v) continue;
+            const normalized = v.toLowerCase().trim();
+            if (normalized === 'anonymous' || normalized === 'unknown' || normalized === 'system') continue;
+            // Loose email shape check — drops accidental non-email values
+            if (!normalized.includes('@')) continue;
+            set.add(normalized);
+        }
+    }
+    return set.size;
+}
+
+// ── Deep-link helper ──────────────────────────────────────────────────────
+
+/** Optional filter expression for the Axiom Stream view. */
+export interface DeepLinkOptions {
+    /** Raw filter expression in Axiom's stream search syntax (e.g. `level=="error"`). */
+    filter?: string;
+}
+
+/** Build a URL into the Axiom UI for the configured dataset. Returns null
+ *  when `AXIOM_ORG_SLUG` is not set so callers can hide the link gracefully.
+ *  Used by /admin landing to give "Ver en Axiom →" affordances on each metric.
+ *
+ *  URL shape: `https://app.axiom.co/{org}/datasets/{dataset}/stream` — opens
+ *  the Stream view scoped to the dataset. Optional `filter` is appended as
+ *  `?_q=` so Axiom pre-applies a simple filter expression
+ *  (e.g. `level=="error"` or `trace=="findAdopters.discovery"`).
+ */
+export function getAxiomDeepLinkUrl(opts: DeepLinkOptions = {}): string | null {
+    let slug = '';
+    let dataset = '';
+    try {
+        const { env } = getRequestContext();
+        const e = env as unknown as Record<string, string | undefined>;
+        slug = e?.AXIOM_ORG_SLUG || process.env.AXIOM_ORG_SLUG || '';
+        dataset = e?.AXIOM_DATASET || process.env.AXIOM_DATASET || '';
+    } catch {
+        slug = process.env.AXIOM_ORG_SLUG || '';
+        dataset = process.env.AXIOM_DATASET || '';
+    }
+    if (!slug || !dataset) return null;
+    const base = `https://app.axiom.co/${encodeURIComponent(slug)}/datasets/${encodeURIComponent(dataset)}/stream`;
+    if (opts.filter) {
+        return `${base}?_q=${encodeURIComponent(opts.filter)}`;
+    }
+    return base;
 }

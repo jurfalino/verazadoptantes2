@@ -2,6 +2,28 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-11] - 2026-05-10
+
+Three improvements to /admin landing metrics: Axiom deep-links, fixed Active Rescuers undercount, and audit fixes on the existing DB-counter labels (which were misleading by counting things the labels didn't claim).
+
+### Added
+- **`AXIOM_ORG_SLUG` Cloudflare secret** — used by `getAxiomDeepLinkUrl()` in `src/lib/axiom.ts` to build "Ver en Axiom →" deep-links into the Stream view of the dataset, with optional `_q` filter pre-applied. When the slug is missing, the helper returns null and links are hidden — same graceful-degradation pattern as `AXIOM_QUERY_TOKEN`. The slug is the path segment after `app.axiom.co/` in your Axiom dashboard URL (e.g. `verazadoptantes-4l1p`).
+- **Per-metric deep-links on /admin landing**:
+  - Section header: "Ver en Axiom →" linking to the unfiltered dataset Stream.
+  - Errors counter: "Ver →" linking to `level=="error"` filtered Stream.
+  - Top-errors rows: each message is now a link that opens Axiom filtered to `level=="error" message=="<that-message>"` — one-click triage.
+  - Trace-latency rows: each trace name is a link filtered to `trace=="findAdopters.discovery"` (etc.) — one-click drill to the actual slow calls.
+
+### Fixed
+- **`getActiveRescuers` was undercounting** — counted distinct values of the single `user` field, which is only set by search-side actors. Rescuers whose only activity was creating profiles (`changedBy`), signing in (`email`), or browsing my-animals (`userEmail`) were invisible. Now unions distinct values across all four fields, deduplicates case-insensitively, drops sentinel non-emails (`anonymous`, `unknown`, `system`), and validates email shape (must contain `@`). The "rescatistas (búsquedas)" hint copy is removed since the count now covers all activity types.
+- **"Recorded Adoptions" counter was counting everything** — `db.select(count()).from(adoptions)` returned all rows including `adoption_request`, `observation`, `follow_up`, `returned_pet`, `available`, and the new `foster` rows. The label says "Adoptions" so the count should be filtered to `recordType='adoption'`. Audit caught this on staging where the counter showed 57 but only a fraction of those were actual adoptions.
+- **"Active Flags" counter was inflated by positive flags** — included `verified_identity` and `verified_address` rows, which are *trust signals*, not "active concerns". The counter now excludes those two reasons via `ne(...)` clauses (D1-safe; doesn't use `inArray`). Result: a more meaningful "concerning flags" count.
+
+### Notes
+- **Logging field-name inconsistency** is real codebase debt — different log call sites use `user`, `changedBy`, `email`, `userEmail` for what is logically the same "actor" field. Long-term fix is to standardize on `actorEmail` everywhere; short-term the `getActiveRescuers` union covers all four. Worth filing a follow-up to do the standardization sweep.
+- **Performance signal surfaced by the metrics**: `findAdopters.discovery` p50 = 750ms / p95 = 1190ms on staging, with `enrichAdopters` p50 = 444ms — i.e. enrichment is ~59% of search latency. Worth a follow-up investigation: enrichment-scope reduction (only enrich top-N rendered results), more aggressive parallelization, or KV-side caching of frequently-enriched profiles. Out of scope for this commit.
+- **Required Cloudflare secret**: set `AXIOM_ORG_SLUG=verazadoptantes-4l1p` in Pages → Variables and Secrets, both staging and production.
+
 ## [2.14.9-10] - 2026-05-10
 
 Embedded Axiom-driven metrics into the `/admin` landing page. The previous "Activity Log coming soon..." placeholder is replaced with four operational signals fetched server-side from Axiom: errors-last-7d (with delta vs prior 7d), top 5 error messages, p50/p95 latency by trace (`findAdopters.discovery`, `findAdopters.duplicate`, `enrichAdopters` — the v2.14.9 trace wrappers finally pay off), and active rescuers in the last 7d / 30d. All in parallel with the existing DB counters; results cached 5 min per worker so repeat /admin loads are instant.
