@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-16] - 2026-05-11
+
+Wire up the events the Amplitude funnel needs. Activation funnel (`signed_in → search_performed → visit_intent_shown → adoption_created`) and new-data-onboarding funnel (`signed_in → search_performed → adopter_created → adoption_created`) are now both fully instrumented end-to-end.
+
+### Added
+- **`signed_in` event** in `src/components/ZarazIdentify.tsx`. Fires once per unauth → auth transition. Deduplicated via `sessionStorage` keyed on `userId` so a page refresh while logged in doesn't refire; sign-out clears the flag so the next sign-in fires fresh. Property: `role` (`'admin'` or `'viewer'`). Wrapped in try/catch since `sessionStorage` is unavailable in Safari private mode etc.; analytics is best-effort.
+- **`adopter_created` event** in `src/components/AdopterForm.tsx`, fired right after the server action succeeds on the CREATE path (not update). Properties: `hasContactInfo` (1/0), `hasFamilyMembers` (1/0), `fromForm` (1/0 — Petshield-form-prefill flow), `continuesToAdoption` (1/0 — onboarding-flow URL param signals the rescuer is mid-onboarding and will keep going).
+
+### Changed
+- **`search_performed` event** in `src/components/SearchSection.tsx` — added `hasResults` boolean (1 when `resultCount > 0`, 0 otherwise). Lets Amplitude split the funnel: searches that found a match feed the activation funnel; searches that found nothing feed the new-data onboarding funnel. No new event, just an extra property on the existing one.
+
+### Notes
+- **Recommended Amplitude funnel structure (per the audit earlier today)**:
+  - **Activation (returning-user core loop)**: `signed_in → search_performed (hasResults=1) → visit_intent_shown → adoption_created`
+  - **New-data onboarding**: `signed_in → search_performed (hasResults=0) → adopter_created → adoption_created`
+- The split funnel matches the actual product paths: rescuers who find an existing profile drill in via the VisitIntentCard; rescuers who don't find one create the profile. Forcing both through the same middle step would under-measure one path.
+- Properties chosen for `adopter_created` are PII-free: no name, no contact info, no email — just shape signals (whether the field was filled) and provenance flags (whether they came from the form-share flow / onboarding chain). Safe to surface in Amplitude.
+
 ## [2.14.9-15] - 2026-05-11
 
 Revert the `REQUIRED_SESSION_VERSION` bump that v2.14.9-14 introduced. The adopter-login gate runs on **new** sign-ins; we don't want to force every currently-signed-in user to re-auth and risk false-positives via the LIKE-substring fallback locking out a legit rescuer whose email happened to appear in an adopter's notes.
