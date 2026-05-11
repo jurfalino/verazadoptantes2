@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-13] - 2026-05-10
+
+Cuts the homepage's client-side `/api/config` fetch out of the LCP critical path. Cloudflare Web Analytics reported a p99 LCP of ~17s on the homepage. Root cause: `src/app/page.tsx` was fully `'use client'` with `useState({})` + `useEffect(fetch('/api/config'))` — every flag-gated UI block (Import card, MilestoneBadge, SocialProofBanner) was invisible in the SSR HTML and only rendered after the client-side bundle loaded, React hydrated, the API request roundtripped, and a re-render flushed. On cold-start workers + slow networks that whole tail added seconds of LCP delay.
+
+### Changed
+- **`src/app/page.tsx`** — refactored from a 162-line client component into a ~20-line **server component** that calls the new `getPublicConfig()` server-side and passes the result as `initialConfig` to a new client component. The server fetch is 30s-cached (see new helper) and falls back to `PUBLIC_FLAG_DEFAULTS` on D1 failure; uses the same `.catch(() => …)` graceful-degradation pattern as v2.14.9-1's adopter page hardening.
+- **`src/components/HomeClient.tsx`** (new) — the entire `'use client'` payload that used to live in `page.tsx`, minus the config `useEffect`. Takes `initialConfig: Record<string, string>` as a prop and reads flags directly from it; `contentImportEnabled` is now derived instead of `useState`. All other client behavior (auth-redirect callbackUrl handling, wizard navigation, toasts) preserved verbatim.
+- **`src/app/api/config/route.ts`** — refactored from 55 inline lines to a 20-line thin wrapper around the new `getPublicConfig()` helper. Now serves `Cache-Control: public, max-age=60, stale-while-revalidate=600` so any remaining consumers (contract-app, dev tooling, external integrations) benefit from edge caching.
+
+### Added
+- **`src/lib/publicConfig.ts`** (new) — single source of truth for the public-flags whitelist + defaults + read logic. Exports `PUBLIC_FLAG_KEYS`, `PUBLIC_FLAG_DEFAULTS`, and `getPublicConfig()` (cached 30s in-memory per worker, returns defaults on D1 failure with a `logger.warn`). Shared between `/api/config/route.ts` and the homepage server component, eliminating the two-place duplication that lived in `route.ts`.
+
+### Notes
+- **Expected LCP improvement**: significant on cold-start cases. The LCP-candidate element (one of the action cards, probably) now appears in the first-byte HTML instead of waiting for client hydration + an extra API roundtrip. p99 should drop materially; p50/p75 will also improve modestly because the redundant client fetch is gone.
+- **What this does NOT fix**: `MilestoneBadge` still requires `useSession()` (client-only) so it still waits for hydration. Same for any client-only badges. To fix those would mean server-side session reads — out of scope here.
+- **Flag-flip latency**: admin flipping a flag in `/admin/config` now takes up to **30 seconds** (helper cache) **plus up to 60 seconds** (HTTP edge cache on `/api/config`) to be visible to homepage visitors. Previously it was instant once the user's `/api/config` fetch hit. Acceptable tradeoff for the LCP win. If we ever need instant flag propagation, the admin save path can call a `/api/admin/cache-bust` (not in scope).
+- **Recommended verification**: run https://pagespeed.web.dev/ against `https://staging.buenadoptante.org/` after this deploys. Compare LCP element + p99 vs the v2.14.9-12 baseline.
+
 ## [2.14.9-12] - 2026-05-10
 
 Two changes:
