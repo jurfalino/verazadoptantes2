@@ -41,6 +41,11 @@ export interface PublicRescuer {
     orgName?: string;
     orgSlug?: string;
     userHandle?: string;
+    /** NextAuth user ID — opaque UUID, NOT the email. Exposed because the
+     *  showcase "Adoptar" CTA needs to construct `/form?u={userId}&animal=...`
+     *  to launch the form. Same exposure level as the existing share-form
+     *  flow where rescuers share `/form?u={userId}` directly. */
+    userId?: string;
 }
 
 /** Hard whitelist on which adoption columns become a `PublicAnimal`. */
@@ -81,14 +86,16 @@ export async function buildPublicRescuer(
     // Display name from the user table
     let displayName = '';
     let userHandle: string | undefined;
+    let userId: string | undefined;
     try {
         const userRow = await db.select({ name: users.name, id: users.id })
             .from(users)
             .where(eq(users.email, addedBy))
             .get();
         if (userRow?.name) displayName = userRow.name;
-        // Handle from user_profiles
         if (userRow?.id) {
+            userId = userRow.id;
+            // Handle from user_profiles
             const profile = await db.select({ handle: userProfiles.handle })
                 .from(userProfiles)
                 .where(eq(userProfiles.userId, userRow.id))
@@ -119,7 +126,7 @@ export async function buildPublicRescuer(
         }
     } catch { /* no org affiliation, fine */ }
 
-    return { displayName, orgName, orgSlug, userHandle };
+    return { displayName, orgName, orgSlug, userHandle, userId };
 }
 
 /** Fetch up to 5 images for a list of animal IDs. D1-safe: fan-out per id

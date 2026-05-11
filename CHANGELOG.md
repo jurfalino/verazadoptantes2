@@ -2,6 +2,28 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-3] - 2026-05-11
+
+**Vite showcase pages** (slice 4 of showcase rollout). The user-facing surface lands. Adopters can now browse animals at `/` (global), `/org/[slug]`, `/user/[handle]`, and `/animal/[id]` on the contract-app domain — same dark indigo aesthetic as the existing forms + contracts.
+
+### Added (Vite contract-app)
+- **`contract-app/src/Showcase.tsx`** (new) — scope-aware list page. One component serves all three list URLs (`{ kind: 'all' | 'org' | 'user' }` discriminated union). Fetches the right `/api/showcase/*` endpoint per scope, renders a card grid with header + empty state. Sets `document.title` + OG meta tags via React effect for SPA-side SEO.
+- **`contract-app/src/AnimalDetail.tsx`** (new) — per-animal hero + thumbnail gallery + species/sex/age/neutered/color/microchip badges + description + "Quiero adoptarlo" CTA. The CTA links to `/form?u={rescuerUserId}&animal={animalId}` which triggers the skip-steps flow from v2.14.10-2. JSON-LD `Product` structured data injected for SEO. Falls back to a "no longer available" empty state when the animal is 404 (e.g., after it's been adopted).
+- **`contract-app/src/components/AnimalCard.tsx`** (new) — reusable card. Photo, name, species/sex meta, rescuer label. Hover-lift effect.
+- **`contract-app/src/components/ShowcaseHeader.tsx`** (new) — title + subtitle + animal count.
+- **`contract-app/src/components/EmptyShowcase.tsx`** (new) — designed empty state (icon + heading + body + optional Instagram CTA when `INSTAGRAM_URL` is configured).
+- **`contract-app/src/petshield.css`** — appended showcase + animal-detail CSS. Uses existing `--ps-bg`, `--ps-card`, `--ps-accent`, `--ps-border`, `--ps-text*` tokens for full visual consistency with forms + contracts. Responsive 1/2/3-col grid via CSS Grid + breakpoints (640px / 1024px).
+
+### Changed
+- **`contract-app/src/App.tsx`** — full routing rewrite. UUID regex check first (preserves the existing `/{animalId}` contract route), then the named paths `/form`, `/terms`, `/animal/:id`, `/org/:slug`, `/user/:handle`, and `/` (root → global showcase). 404 fallback links back to the catalog.
+- **`src/lib/showcase.ts`** — `buildPublicRescuer()` now also resolves `userId` (NextAuth UUID) from the rescuer's email. Surfaced in the `PublicRescuer` block so the Vite detail page can construct the form URL `/form?u={userId}&animal={id}` for the "Adoptar" CTA. Same exposure level as the existing rescuer-shared form links — userId is opaque, not PII.
+
+### Notes
+- **`/` (root)** previously showed a "Verificá que el link sea correcto" error card when no animalId was in the URL. That's replaced with the global catalog — adopters landing on the bare domain see all available animals.
+- **Form CTA flow end-to-end now works**: `/` → click animal card → `/animal/[id]` → "Quiero adoptarlo" → `/form?u={userId}&animal={id}` → form skips steps 2/3/4 → submit → rescuer's notification names the specific animal (slice 3 wiring). The whole funnel is live except for the `/my-animals` copy-chip section that exposes the URLs (ships in slice 5).
+- **Discovery for now**: until slice 5 ships, rescuers learn about the showcase URLs by direct knowledge / manual sharing. The feature works; only the in-product URL-copy UX is missing.
+- **SEO is best-effort SPA-side** per the plan's "Tech-stack call". Googlebot does execute JS but indexes slower than SSR. If indexing turns out to matter, a Phase 2 refactor to Next.js routes is an option.
+
 ## [2.14.10-2] - 2026-05-11
 
 **Form skip-steps + animalId submit** (slice 3 of showcase rollout). When the adoption form is launched with `?animal={id}` URL param — the route the public showcase will use once slice 4 ships — the 3 steps that ask about animal preference (species / lifeStage / specialNeeds) are skipped entirely. The animal choice rides along in the submit body, gets persisted to `form_submissions.selected_animal_id`, and the rescuer's notification names the specific animal applied for.
