@@ -2,6 +2,42 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-14] - 2026-05-11
+
+**Adopter-login gate.** BuenAdoptante is an NGO/rescuer tool; adopters being rated aren't supposed to know the registry exists. This change rejects any OAuth sign-in where the email matches an adopter profile that's been flagged. The rejected user sees a generic "Ocurrió un error inesperado" page (no hint they were blocked) with a "report this problem" form. Admins get notifications + an audit page at /admin/blocked-logins.
+
+### Block logic
+
+A sign-in is rejected when the email matches an adopter profile AND **any** of:
+- `avgRating < 4` (rated, but not high enough)
+- `tooManyAdoptions` density flag set
+- `tooManyRequests` density flag set
+
+Not blocked: emails matching profiles with `avgRating = null` (never rated) and no flags, OR `avgRating >= 4` and no flags. Bootstrap admins (in `src/config/admins.ts`) are always allowed. The gate fails OPEN on D1 errors (a transient outage shouldn't lock legitimate rescuers out).
+
+### Added
+- **`src/lib/adopterLoginGate.ts`** (new) — `checkAdopterLoginGate(email)`. Matches via `duplicate_tokens` (normalized email index) first, falls back to LIKE substring on `adopters.contactInfo`. Computes avgRating + density flags per match. Returns `{ blocked, matches[], reason }`.
+- **`src/lib/blockedLoginRecorder.ts`** (new) — side-effects writer: inserts a row in the new `blocked_logins` table, fans out one in-app notification per admin (bootstrap list + DB `role='admin'`), and emits an `info`-level log to Axiom. Each side-effect best-effort with its own try/catch.
+- **`src/app/auth-error/page.tsx`** (new) — generic error page NextAuth redirects to. Vague copy + a real "report this problem" form (email + message + submit). The form makes the deception more credible — real apps have error reports.
+- **`src/components/AuthErrorReportForm.tsx`** (new) — client island for the form. POSTs to `/api/error-report`.
+- **`src/app/api/error-report/route.ts`** (new) — public POST endpoint. Validates input lengths, hashes the CF-Connecting-IP to 16 hex chars (no raw-IP storage), writes `error_reports` row. Always returns success regardless of DB outcome — also part of the deception.
+- **`src/app/admin/blocked-logins/page.tsx`** (new) — admin view. Two sections: recent error reports (correlated by time/IP-hash) above; blocked-login attempts below. Each blocked row shows matched profile(s), avgRating, addedBy, lastChangedBy from history, triggers fired.
+- **DB tables** (`drizzle/0040_blocked_logins.sql`): `blocked_logins` (id, email, attemptedAt, matchedAdopterIds, reason, matchedSummary) + `error_reports` (id, email, message, userAgent, ipHash, createdAt).
+- **Notifications**: new type `adopter_login_blocked` with 🚫 icon, title `"Intento de login bloqueado: <email>"`, link to the primary matched profile.
+- **Admin sidebar**: new "Logins bloqueados" entry at `/admin/blocked-logins`.
+- **i18n**: `admin.nav_blocked_logins` in both locales.
+
+### Changed
+- **`src/auth.config.ts`** —
+  - `REQUIRED_SESSION_VERSION` bumped from `3` to `4` so any existing session goes through the new gate on next page load.
+  - `signIn` callback now runs `checkAdopterLoginGate` before the existing audit/profile logic. If `blocked`, calls `recordBlockedLogin` and returns false (NextAuth redirects to `/auth-error`). Admins skip the check via `isAdmin(email)`.
+  - `pages.error: '/auth-error'` added so NextAuth uses our custom page instead of the default error route.
+
+### Notes
+- **Failure mode is fail-open**: if D1 is unreachable when the gate runs, every sign-in is allowed. Deliberate. The cost of accidentally letting an adopter through during an outage is lower than the cost of locking every rescuer out.
+- **No correlation between error reports and blocked-login rows**: the form submits without a session, so we can't automatically tie a report to a specific attempt. Admins correlate by timestamp + IP-hash (visible in both tables). If automatic correlation becomes important, we can set a short-lived cookie at block time with the attempt ID.
+- **`REQUIRED_SESSION_VERSION` bump means every currently-signed-in user will be forced to re-auth** on their next page load. Most will pass; a small number (any rescuer whose own email is also recorded as an adopter with low rating — edge case) might be unexpectedly locked out. If you see legitimate rescuers complaining about random errors, check `/admin/blocked-logins`.
+
 ## [2.14.9-13] - 2026-05-10
 
 Cuts the homepage's client-side `/api/config` fetch out of the LCP critical path. Cloudflare Web Analytics reported a p99 LCP of ~17s on the homepage. Root cause: `src/app/page.tsx` was fully `'use client'` with `useState({})` + `useEffect(fetch('/api/config'))` — every flag-gated UI block (Import card, MilestoneBadge, SocialProofBanner) was invisible in the SSR HTML and only rendered after the client-side bundle loaded, React hydrated, the API request roundtripped, and a re-render flushed. On cold-start workers + slow networks that whole tail added seconds of LCP delay.

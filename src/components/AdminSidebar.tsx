@@ -17,6 +17,7 @@ const NAV_ITEMS: Array<{ href: string; labelKey: string; icon: string; special?:
     { href: '/admin/users', labelKey: 'nav_users', icon: '👥' },
     { href: '/admin/organizations', labelKey: 'nav_organizations', icon: '🏢' },
     { href: '/admin/audit', labelKey: 'nav_audit_log', icon: '📋' },
+    { href: '/admin/blocked-logins', labelKey: 'nav_blocked_logins', icon: '🚫' },
     { href: '/admin/health', labelKey: 'nav_system_health', icon: '🩺' },
     { href: '/admin/data', labelKey: 'nav_data_migration', icon: '📦' },
 ];

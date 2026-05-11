@@ -269,6 +269,43 @@ export const notifications = sqliteTable("notifications", {
     typeIdx: index("idx_notif_type").on(table.type, table.createdAt),
 }));
 
+// User-submitted error reports from /auth-error (v2.14.9-14). The page hides
+// the real reason behind "Ocurrió un error inesperado" and includes a
+// "Report this problem" form — real apps have those, so the form makes the
+// deception more credible. Admins read what blocked users said via the same
+// /admin/blocked-logins page (separate table, correlated by time + IP).
+//
+// No FK to user/session because the user is unauthenticated at this point.
+// Correlation to a specific blocked attempt is manual (admin eyeballs the
+// timestamp).
+export const errorReports = sqliteTable("error_reports", {
+    id: text("id").primaryKey(),
+    email: text("email"),       // optional — user may or may not fill it
+    message: text("message"),   // optional — user may submit empty
+    userAgent: text("user_agent"),
+    ipHash: text("ip_hash"),    // truncated/hashed CF-Connecting-IP (privacy)
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`).notNull(),
+}, (table) => ({
+    createdIdx: index("idx_error_reports_created").on(table.createdAt),
+}));
+
+// Blocked sign-in attempts — written when an OAuth login is rejected by the
+// adopter-login gate (v2.14.9-14). Admins view historical attempts at
+// /admin/blocked-logins. We deliberately keep this separate from notifications
+// because notifications are dismissable/read-state per-admin; blocked-logins
+// is the immutable audit trail of "someone tried, here's why we said no."
+export const blockedLogins = sqliteTable("blocked_logins", {
+    id: text("id").primaryKey(),
+    email: text("email").notNull(),
+    attemptedAt: integer("attempted_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`).notNull(),
+    matchedAdopterIds: text("matched_adopter_ids").notNull(), // JSON array of adopter IDs
+    reason: text("reason").notNull(), // 'low_rating' | 'too_many_adoptions' | 'too_many_requests' | composite
+    matchedSummary: text("matched_summary"), // JSON snapshot: name, avgRating, addedBy, lastChangedBy per match
+}, (table) => ({
+    attemptedIdx: index("idx_blocked_attempted").on(table.attemptedAt),
+    emailIdx: index("idx_blocked_email").on(table.email),
+}));
+
 // PetShield Form Submissions
 export const formSubmissions = sqliteTable("form_submissions", {
     id: text("id").primaryKey(),
