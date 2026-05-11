@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-17] - 2026-05-11
+
+Surface the user's display name to Zaraz / Amplitude so the User Lookup view shows real names instead of just the UUID or email.
+
+### Changed
+- **`src/components/ZarazIdentify.tsx`** — pushes `session.user.name` as the Zaraz `userName` variable (alongside the existing `userId` / `userEmail` / `userRole`). Cleared on sign-out like the others. Skipped silently when the name is empty so we don't blow away a prior value with a blank.
+
+### Notes
+- **Still requires the Zaraz dashboard to map `userName` → Amplitude user property `name`** for this to actually appear in Amplitude. The Zaraz → Amplitude destination config isn't part of the codebase. If it doesn't show up, check Zaraz dashboard → Amplitude tool → Field mappings.
+- **Country / signup date / org membership** remain unsent — they'd need session-callback enrichment (touching `src/auth.ts`'s JWT + session callbacks). Not in scope; the funnel works without them, and any auth-callback edit carries regression risk worth bundling with a real product reason.
+
 ## [2.14.9-16] - 2026-05-11
 
 Wire up the events the Amplitude funnel needs. Activation funnel (`signed_in → search_performed → visit_intent_shown → adoption_created`) and new-data-onboarding funnel (`signed_in → search_performed → adopter_created → adoption_created`) are now both fully instrumented end-to-end.
