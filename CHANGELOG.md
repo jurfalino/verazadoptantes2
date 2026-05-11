@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-18] - 2026-05-11
+
+Revert the `userName` push added in v2.14.9-17. The 5-line change nudged the Worker bundle just over Cloudflare's **3 MiB free-plan ceiling** and the `Deploy to Staging` step failed with `Your Worker exceeded the size limit of 3 MiB`. Build + lint + e2e all passed — only the deploy step failed.
+
+### Reverted
+- **`src/components/ZarazIdentify.tsx`** — removed the `zarazSet('userName', ...)` call and the matching sign-out clear. Left an inline comment so the next person looking at this remembers why it's missing.
+
+### Notes
+- **The funnel events from v2.14.9-16 ARE live** (signed_in, adopter_created, search_performed enrichment). Only the cosmetic name-in-Amplitude addition is rolled back.
+- **Bundle size is the real issue** — this won't be the last time we hit the ceiling. Worth a follow-up: identify the biggest chunks in `__next-on-pages-dist__/functions/*.func.js` and lazy-load / dynamic-import anything not on the critical path. Quick wins likely live in admin routes that ship everywhere.
+- **Alternative**: Cloudflare Workers paid plan ($5/mo) bumps the limit to 10 MiB. Worth considering if bundle reduction would mean significant refactoring.
+
 ## [2.14.9-17] - 2026-05-11
 
 Surface the user's display name to Zaraz / Amplitude so the User Lookup view shows real names instead of just the UUID or email.

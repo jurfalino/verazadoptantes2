@@ -39,12 +39,9 @@ export default function ZarazIdentify() {
             if (session?.user?.email) {
                 zarazSet('userEmail', session.user.email, 'session');
             }
-            // Display name from OAuth (Google) — surfaces in Amplitude's User
-            // Lookup instead of email/UUID, helpful when triaging individual
-            // sessions. Skipped when empty so we don't clobber prior value.
-            if (session?.user?.name) {
-                zarazSet('userName', session.user.name, 'session');
-            }
+            // userName push (v2.14.9-17) was reverted in v2.14.9-18 — pushed
+            // the Worker bundle just over Cloudflare's 3 MiB free-plan ceiling.
+            // Re-add once bundle-size is brought under control.
 
             // Fire signed_in only on a real unauth → auth transition.
             // sessionStorage keyed on userId so a page refresh doesn't refire,
@@ -60,7 +57,6 @@ export default function ZarazIdentify() {
             zarazSet('userId', '', 'session');
             zarazSet('userRole', '', 'session');
             zarazSet('userEmail', '', 'session');
-            zarazSet('userName', '', 'session');
             try { sessionStorage.removeItem(SIGNED_IN_TRACKED_KEY); } catch { /* ignore */ }
         }
     }, [session]);
