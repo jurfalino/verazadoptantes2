@@ -2,6 +2,28 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-4] - 2026-05-11
+
+**Slice 5 of showcase rollout** — `/my-animals` copy-chip section + sitemap + a CI lint fix that v2.14.10-3 stubbed on. Showcase feature is now complete end-to-end.
+
+### Fixed (CI deploy)
+- **`eslint.config.mjs`** — added `contract-app/**` to the ignores list. The Next.js ESLint preset (`@next/next/no-html-link-for-pages`) was treating `<a href="/">` in the Vite app as a missing-`next/link` violation. The Vite app has its own routing model; the Next.js preset doesn't apply. v2.14.10-3 deploy failed on this — this commit unblocks it.
+
+### Added
+- **`src/app/api/my-showcase-info/route.ts`** (new) — authenticated GET returning `{ handle, orgs[] }` for the signed-in user. Backs the new copy-chip section. 401 when unauthenticated. Logs warn on D1 errors.
+- **`src/components/ShowcaseUrlChips.tsx`** (new) — `'use client'` chip section mounted at the top of `/my-animals`. Reads the three `SHOWCASE_*_VISIBLE` flags from `/api/config` + the user's handle + orgs from `/api/my-showcase-info`. Renders one chip per scope-and-resource: global (when flag on), user-handle (flag on + user has a handle), each org (flag on + user is a member). Each chip has copy-to-clipboard with a toast. Section renders nothing when no chips qualify, so admins controlling rollout via flags see no empty UI.
+- **`src/app/api/sitemap.xml/route.ts`** (new) — full sitemap.xml served at `/api/sitemap.xml`. Lists `/`, every `/org/[slug]`, every `/user/[handle]`, every `/animal/[id]` for available animals (capped at 5000 per Google's 50k limit). Fully-qualified URLs pointing to the `NEXT_PUBLIC_CONTRACT_URL` host. 24h Cache-Control. Falls back to a roots-only sitemap on D1 failure — partial is better than none for SEO discovery.
+
+### Changed
+- **`src/app/my-animals/page.tsx`** — imports + mounts `<ShowcaseUrlChips />` at the top of the page header.
+- **`src/i18n/locales/{es,en}.ts`** — new `myAnimals.*` namespace with 7 keys for the chip section.
+
+### Notes
+- **Showcase feature is now feature-complete**. Rescuer flow: `/my-animals` → see copy chips (gated on flags) → copy URL → share with adopters. Adopter flow: open URL → `/` or `/org/[slug]` or `/user/[handle]` → click animal card → `/animal/[id]` → "Quiero adoptarlo" → form with steps 2/3/4 skipped → rescuer notified with animal name attached.
+- **All three SHOWCASE_*_VISIBLE flags still default OFF**. Admin enables each in `/admin/config` when ready to expose to rescuers. Suggested rollout sequence: enable `SHOWCASE_GLOBAL_VISIBLE` first (lowest risk — only adds an extra share-link), then `SHOWCASE_USER_VISIBLE`, then `SHOWCASE_ORG_VISIBLE` (most discoverable, hardest to undo).
+- **Sitemap discovery**: submit `https://<your-domain>/api/sitemap.xml` to Google Search Console once production is up. Resubmit periodically as animals are added.
+- **Outstanding follow-ups** (not in this rollout): filter/search on showcase lists, per-org Instagram override, QR-code generator for shareable physical flyers. Filed in the plan doc's "Out of scope" section.
+
 ## [2.14.10-3] - 2026-05-11
 
 **Vite showcase pages** (slice 4 of showcase rollout). The user-facing surface lands. Adopters can now browse animals at `/` (global), `/org/[slug]`, `/user/[handle]`, and `/animal/[id]` on the contract-app domain — same dark indigo aesthetic as the existing forms + contracts.

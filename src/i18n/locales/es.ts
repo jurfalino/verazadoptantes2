@@ -915,6 +915,15 @@ export const es = {
         aboutToCreate: 'Estás por crear un nuevo perfil para',
         duplicateUrl: 'Este post de Facebook ya fue importado. Perfil existente:',
     },
+    myAnimals: {
+        showcase_section_title: 'Tu catálogo público',
+        showcase_section_desc: 'Compartí estos links para que las personas vean tus animales en adopción.',
+        showcase_global: 'Todos los animales',
+        showcase_user: 'Mis animales',
+        showcase_copy: 'Copiar',
+        showcase_copied: 'Link copiado',
+        showcase_copy_failed: 'No se pudo copiar el link.',
+    },
     petshield: {
         sections: {
             answers_title: 'Respuestas completas del formulario',

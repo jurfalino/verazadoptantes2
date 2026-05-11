@@ -916,6 +916,15 @@ export const en = {
         aboutToCreate: 'You are about to create a new profile for',
         duplicateUrl: 'This Facebook post was already imported. Existing Profile:',
     },
+    myAnimals: {
+        showcase_section_title: 'Your public catalog',
+        showcase_section_desc: 'Share these links so people can browse your animals available for adoption.',
+        showcase_global: 'All animals',
+        showcase_user: 'My animals',
+        showcase_copy: 'Copy',
+        showcase_copied: 'Link copied',
+        showcase_copy_failed: 'Could not copy the link.',
+    },
     petshield: {
         sections: {
             answers_title: 'Full form answers',
