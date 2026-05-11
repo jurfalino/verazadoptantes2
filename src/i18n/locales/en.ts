@@ -919,11 +919,16 @@ export const en = {
     myAnimals: {
         showcase_section_title: 'Your public catalog',
         showcase_section_desc: 'Share these links so people can browse your animals available for adoption.',
+        showcase_menu_label: 'Share catalog',
         showcase_global: 'All animals',
+        showcase_global_desc: 'Global catalog of all animals available for adoption.',
         showcase_user: 'My animals',
+        showcase_user_desc: 'Your animals available for adoption (personal catalog).',
+        showcase_org_desc: 'Animals available for adoption from your organization.',
         showcase_copy: 'Copy',
-        showcase_copied: 'Link copied',
+        showcase_copied: 'Copied',
         showcase_copy_failed: 'Could not copy the link.',
+        showcase_open: 'Open',
     },
     petshield: {
         sections: {

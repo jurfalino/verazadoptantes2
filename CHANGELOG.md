@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-5] - 2026-05-11
+
+**Showcase polish** — four bugs surfaced during staging testing of the showcase flow.
+
+### Fixed
+- **Handle missing for pre-v2.14.10 sessions** — `user_profiles.handle` is normally assigned on sign-in via `ensureUserProfile()`, but users with an active session from before that deploy stayed on `handle = NULL` until they re-authed. `/api/my-showcase-info` now lazy-backfills the handle when it's NULL, so the `/user/[handle]` URL renders without forcing a global re-auth.
+- **Showcase URLs pointed at production from staging** — `NEXT_PUBLIC_CONTRACT_URL` is inlined at build time, so one build couldn't point at two different Vite-app hosts. Replaced with a runtime resolver `getContractBaseUrl()` in `src/lib/contractUrl.ts` that reads `CONTRACT_BASE_URL` from the Cloudflare worker binding. `/api/my-showcase-info` returns the resolved base in its response (client drops its dependency on the build-time env var). `/api/sitemap.xml` uses the same helper. **Cloudflare action required**: set `CONTRACT_BASE_URL` on the staging and production Pages projects (staging → Vite staging URL; production → `https://adoptions.pages.dev`).
+- **Vite-app routes return 404 on staging** — knock-on effect of the env-var issue: the staging Next.js deployment was generating prod URLs that didn't resolve. Fix above resolves URL generation; the Vite app still needs its own staging deploy (separate Cloudflare Pages project).
+
+### Changed
+- **`ShowcaseUrlChips` redesigned as a header dropdown** — the previous chips banner above the page title was too heavy. Now mounts as a "Compartir catálogo" button in the page header next to `ShareFormMenu`, opening a modal that lists each scope (global / user / per-org) with Copy and Open actions. Mirrors `ShareFormMenu`'s pattern (backdrop, Escape-to-close, icon button). Renders nothing when no scopes qualify.
+- **`src/app/my-animals/page.tsx`** — moved `<ShowcaseUrlChips />` from above the page header into the header's action group.
+- **`src/i18n/locales/{es,en}.ts`** — added 5 new `myAnimals.*` keys for the dropdown copy: `showcase_menu_label`, `showcase_global_desc`, `showcase_user_desc`, `showcase_org_desc`, `showcase_open`. `showcase_copied` simplified to "Copiado" / "Copied" (no longer "Link copiado").
+
 ## [2.14.10-4] - 2026-05-11
 
 **Slice 5 of showcase rollout** — `/my-animals` copy-chip section + sitemap + a CI lint fix that v2.14.10-3 stubbed on. Showcase feature is now complete end-to-end.

@@ -918,11 +918,16 @@ export const es = {
     myAnimals: {
         showcase_section_title: 'Tu catálogo público',
         showcase_section_desc: 'Compartí estos links para que las personas vean tus animales en adopción.',
+        showcase_menu_label: 'Compartir catálogo',
         showcase_global: 'Todos los animales',
+        showcase_global_desc: 'Catálogo global de todos los animales en adopción.',
         showcase_user: 'Mis animales',
+        showcase_user_desc: 'Tus animales en adopción (catálogo personal).',
+        showcase_org_desc: 'Animales en adopción de tu organización.',
         showcase_copy: 'Copiar',
-        showcase_copied: 'Link copiado',
+        showcase_copied: 'Copiado',
         showcase_copy_failed: 'No se pudo copiar el link.',
+        showcase_open: 'Abrir',
     },
     petshield: {
         sections: {

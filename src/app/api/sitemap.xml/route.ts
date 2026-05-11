@@ -2,6 +2,7 @@ export const runtime = 'edge';
 import { adoptions, organizations, userProfiles } from '@/db/schema';
 import { getDb } from '@/lib/db';
 import { availableAnimalsBase, availableAnimalsOrder } from '@/lib/showcase';
+import { getContractBaseUrl } from '@/lib/contractUrl';
 import { isNotNull } from 'drizzle-orm';
 
 /**
@@ -15,13 +16,13 @@ import { isNotNull } from 'drizzle-orm';
  *
  * Cache: 24h. Animals come and go but a one-day window is enough.
  *
- * Note: the canonical host for showcase URLs is the Vite contract-app, not
- * the Next.js domain. We read NEXT_PUBLIC_CONTRACT_URL (mirrors ShareFormMenu)
- * and emit fully-qualified URLs pointing to that domain.
+ * Resolves the Vite-app base URL at request time via `getContractBaseUrl`
+ * (reads `CONTRACT_BASE_URL` from the Cloudflare worker binding) so staging
+ * and production each point at their own Vite deployment.
  */
-const CONTRACT_BASE = (process.env.NEXT_PUBLIC_CONTRACT_URL || 'https://adoptions.pages.dev').replace(/\/+$/, '');
 
 export async function GET() {
+    const CONTRACT_BASE = await getContractBaseUrl();
     const urls: { loc: string; lastmod?: string }[] = [];
 
     // Roots

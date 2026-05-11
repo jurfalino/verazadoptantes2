@@ -124,11 +124,6 @@ export default function MyAnimalsPage() {
     return (
         <div className="min-h-screen bg-stone-50 py-12 px-4">
             <div className="max-w-6xl mx-auto">
-                {/* Public showcase URLs — v2.14.10-4. Renders nothing when all
-                    three SHOWCASE_*_VISIBLE flags are off or the user has
-                    nothing to share. Self-contained client component. */}
-                <ShowcaseUrlChips />
-
                 {/* Header */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                     <div className="flex items-center gap-4">
@@ -140,7 +135,8 @@ export default function MyAnimalsPage() {
                         </h1>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <ShowcaseUrlChips />
                         {userId && <ShareFormMenu userId={userId} />}
                         <Link
                             href="/my-animals/new"
