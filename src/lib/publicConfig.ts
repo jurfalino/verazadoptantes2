@@ -25,6 +25,14 @@ export const PUBLIC_FLAG_KEYS = [
     'ENABLE_MILESTONE_BADGE',
     'SOCIAL_PROOF_ENABLED',
     'SOCIAL_PROOF_MESSAGES',
+    // v2.14.10-1: showcase URL-chip visibility + Instagram CTA target.
+    // /my-animals reads these client-side to render the copy chips.
+    // The Vite-app showcase pages also read INSTAGRAM_URL for the empty
+    // state. All three SHOWCASE_*_VISIBLE default to false.
+    'SHOWCASE_GLOBAL_VISIBLE',
+    'SHOWCASE_ORG_VISIBLE',
+    'SHOWCASE_USER_VISIBLE',
+    'INSTAGRAM_URL',
 ] as const;
 
 export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
@@ -34,6 +42,10 @@ export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
     ENABLE_MILESTONE_BADGE: 'true',
     SOCIAL_PROOF_ENABLED: 'false',
     SOCIAL_PROOF_MESSAGES: '[]',
+    SHOWCASE_GLOBAL_VISIBLE: 'false',
+    SHOWCASE_ORG_VISIBLE: 'false',
+    SHOWCASE_USER_VISIBLE: 'false',
+    INSTAGRAM_URL: '',
 };
 
 const CACHE_TTL_MS = 30 * 1000;

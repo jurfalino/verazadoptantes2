@@ -2,6 +2,35 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-1] - 2026-05-11
+
+**Public showcase APIs + feature-flag plumbing** (slice 2 of the showcase rollout). Backends only; no user-visible changes in this slice (the Vite frontend that consumes these endpoints ships in 2.14.10-2 → -3). All four routes return only PII-safe whitelisted fields — no rescuer email, no adopter data, no flags, no ratings.
+
+### Added
+- **`src/lib/showcase.ts`** (new) — shared helpers used by all four routes: `pickPublicAnimal()` (hard field whitelist), `buildPublicRescuer()` (resolves display name from `user.name` with email-prefix fallback, picks first org by membership, attaches handle — never leaks the email itself), `fetchAnimalImages()` (per-id fan-out, D1-safe), `availableAnimalsBase()` + `availableAnimalsOrder()` (shared WHERE + ORDER BY).
+- **`GET /api/showcase/all`** — paginated global catalog. `?limit=` (max 60) + `?offset=`. Cache 60s + stale-while-revalidate 600s.
+- **`GET /api/showcase/org/[slug]`** — org-scoped via `orgMembers.userEmail` ↔ `adoptions.addedBy`. Returns the org's name + slug alongside the animals.
+- **`GET /api/showcase/user/[handle]`** — user-scoped via `userProfiles.handle` → `user.email` → `adoptions.addedBy`.
+- **`GET /api/showcase/animal/[id]`** — single-animal detail. Returns animal + rescuer + the global Instagram URL (if configured) so the Vite detail page can render the social CTA.
+- **Three new feature flags** plumbed through the established 5-place pattern (per `feedback_feature_flag_5_place.md`):
+  - `SHOWCASE_GLOBAL_VISIBLE` — gates the global URL chip on `/my-animals`
+  - `SHOWCASE_ORG_VISIBLE` — gates the per-org URL chips
+  - `SHOWCASE_USER_VISIBLE` — gates the per-user URL chip
+  - All default **`false`** so the URLs stay hidden until each is explicitly enabled.
+- **`INSTAGRAM_URL` admin config** — text input on `/admin/config` with its own save handler. Empty = no Instagram CTA renders on the public showcase. Exposed via `/api/config` so the Vite app can read it client-side without a separate endpoint.
+
+### Changed
+- **`src/config/features.ts`** — added the three SHOWCASE flags (default false in both `FEATURE_FLAGS` const + `getAllFeatureFlags` defaults).
+- **`src/app/api/admin/config/route.ts`** — return the three flags + `INSTAGRAM_URL` in the admin GET response.
+- **`src/lib/publicConfig.ts`** — added the three flags + `INSTAGRAM_URL` to `PUBLIC_FLAG_KEYS` + `PUBLIC_FLAG_DEFAULTS`.
+- **`src/app/admin/config/page.tsx`** — three new toggle entries in the `FEATURE_FLAGS` array; new Instagram URL input + save handler; `ConfigData` interface extended.
+- **`src/i18n/locales/{es,en}.ts`** — 8 new admin keys (`flag_label_showcase_*`, `flag_desc_showcase_*`, `instagram_section_*`, `instagram_saved`, `instagram_save_failed`).
+
+### Notes
+- **No new user-visible surface** until 2.14.10-2 (form skip-steps) + 2.14.10-3 (Vite showcase routes). The APIs work standalone — you can `curl` them on staging post-deploy to verify the response shapes.
+- **The `/api/showcase/org/[slug]` route fetches per-member then merges client-side** because D1 doesn't expand `inArray()` reliably (per CLAUDE.md). At current scale this is fine; if any single org grows to 100+ members with 60+ animals each we'd want a single `addedBy IN (...)` with explicit `sql` template instead.
+- **Field whitelist is the security boundary.** Adding any new sensitive column to `adoptions` won't leak through these endpoints unless explicitly added to `pickPublicAnimal`. Worth keeping that pattern strict.
+
 ## [2.14.10] - 2026-05-11
 
 **Foundation for the public animal showcase** (full feature shipping in 2.14.10-1 → 2.14.10-N). No user-visible changes in this slice — it adds the schema fields, migration, slug-generation helper, and the hooks that auto-assign slugs/handles. Everything else (public APIs, Vite showcase pages, feature flags, my-animals integration) ships in subsequent slices on top of this base.
