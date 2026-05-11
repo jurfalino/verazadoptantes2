@@ -28,6 +28,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         const specialNeeds = body.specialNeeds ? 1 : 0;
         const intent = body.intent as string || null;
         const household = Array.isArray(body.household) ? JSON.stringify(body.household) : null;
+        // v2.14.10-2: form launched from the public showcase pre-selected
+        // an animal; carry the id through to the form_submissions row so
+        // the rescuer's notification can name the specific animal.
+        const selectedAnimalId = typeof body.animalId === 'string' && body.animalId.trim() ? body.animalId.trim() : null;
 
         // Validate required fields
         if (!name) {
@@ -93,8 +97,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             household,
             answersJson: JSON.stringify({ ...body, selfie: selfieUrl || '[removed]' }),
             notificationId,
+            selectedAnimalId,
             createdAt: new Date(),
         });
+
+        // If the submission targeted a specific animal (showcase flow), look
+        // up its name so the notification can read "Juana aplicó para Luna"
+        // instead of "Juana completó el formulario". Best-effort: if the
+        // lookup fails we fall back to the generic copy.
+        let selectedAnimalName: string | null = null;
+        if (selectedAnimalId) {
+            try {
+                const { adoptions } = await import('@/db/schema');
+                const animal = await db.select({ animalName: adoptions.animalName })
+                    .from(adoptions)
+                    .where(eq(adoptions.id, selectedAnimalId))
+                    .get();
+                if (animal?.animalName) selectedAnimalName = animal.animalName;
+            } catch { /* fall through */ }
+        }
 
         logger.info('PetShield form submission stored', { submissionId, rescuerEmail, name });
 
@@ -117,12 +138,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             const matches = dupResult.results as Array<{ adopterId: string; adopterName: string; matchTypes: string[] }>;
             const matchCount = matches.length;
 
+            // When the submission targets a specific animal, prepend the
+            // animal-application framing to the title so the notification reads
+            // "Juana aplicó para Luna" with the match-count appended.
+            const animalPrefix = selectedAnimalName ? `${name} aplicó para ${selectedAnimalName}` : `${name} completó el formulario`;
             if (matchCount > 0) {
                 await createNotification({
                     id: notificationId,
                     userId: rescuerEmail,
                     type: 'form_submission',
-                    title: `${name} completó el formulario — ${matchCount} coincidencia${matchCount > 1 ? 's' : ''}`,
+                    title: `${animalPrefix} — ${matchCount} coincidencia${matchCount > 1 ? 's' : ''}`,
                     body: `Se encontraron posibles registros previos. Tocá para revisar las respuestas y vincular.`,
                     url: `/form-results/${submissionId}`,
                     icon: '⚠️',
@@ -135,6 +160,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                             name: m.adopterName,
                             matchTypes: m.matchTypes,
                         })),
+                        selectedAnimalId,
+                        selectedAnimalName,
                     },
                 });
             } else {
@@ -142,7 +169,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     id: notificationId,
                     userId: rescuerEmail,
                     type: 'form_submission',
-                    title: `${name} completó el formulario`,
+                    title: animalPrefix,
                     body: `No se encontraron registros previos. Revisá las respuestas para continuar.`,
                     url: `/form-results/${submissionId}`,
                     icon: '📋',
@@ -150,6 +177,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                         submissionId,
                         matchCount: 0,
                         submittedData: { ...body, selfie: selfieUrl || '[removed]' },
+                        selectedAnimalId,
+                        selectedAnimalName,
                     },
                 });
             }

@@ -7,13 +7,19 @@ function App() {
     // Simple routing: URL is /{animalId}
     const path = window.location.pathname.replace(/^\//, '').replace(/\/$/, '')
 
-    // PetShield Form route: /form?u={userId}
+    // PetShield Form route: /form?u={userId}&animal={animalId?}
+    // The optional `animal` param signals the form was launched from the
+    // public showcase ("Adoptar" click on /animal/[id]). When present, the
+    // form skips steps 2/3/4 (species / lifeStage / specialNeeds) since
+    // the animal choice is already known, and attaches animalId to the
+    // submission so the rescuer's notification can name the specific animal.
     if (path === 'form') {
         const params = new URLSearchParams(window.location.search)
         const userId = params.get('u')
+        const animalId = params.get('animal')
         return (
             <ErrorBoundary>
-                <PetShieldForm userId={userId} />
+                <PetShieldForm userId={userId} animalId={animalId} />
             </ErrorBoundary>
         )
     }

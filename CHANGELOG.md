@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-2] - 2026-05-11
+
+**Form skip-steps + animalId submit** (slice 3 of showcase rollout). When the adoption form is launched with `?animal={id}` URL param — the route the public showcase will use once slice 4 ships — the 3 steps that ask about animal preference (species / lifeStage / specialNeeds) are skipped entirely. The animal choice rides along in the submit body, gets persisted to `form_submissions.selected_animal_id`, and the rescuer's notification names the specific animal applied for.
+
+### Changed
+- **`contract-app/src/App.tsx`** — `/form` route now reads `?animal=` in addition to `?u=` and forwards both to `PetShieldForm`. Comment explains the showcase-launch flow.
+- **`contract-app/src/PetShieldForm.tsx`** — accepts a new optional `animalId` prop. When present, filters `DEFAULT_SCHEMA` to exclude the three animal-preference steps (`species`, `lifeStage`, `specialNeeds` — filtered by id, not index, so future schema reordering won't silently skip the wrong steps). Submit body now includes `animalId` when set.
+- **`src/app/api/form/[userId]/submit/route.ts`** — reads `body.animalId`, persists to the new `form_submissions.selected_animal_id` column (added in v2.14.10 foundation slice). Looks up the animal's `animalName` for the notification title; falls back to the generic copy if the lookup fails. Notification metadata includes `selectedAnimalId` + `selectedAnimalName` so downstream UIs can link back to the animal.
+
+### Notes
+- **Both notification branches updated** — the matches-found one ("Juana aplicó para Luna — 2 coincidencias") and the no-matches one ("Juana aplicó para Luna"). When no animal is selected the existing "completó el formulario" copy is preserved.
+- **No user-visible change yet** because the showcase pages that supply the `?animal=` URL param don't ship until slice 4 (Vite showcase). Direct manual testing: load `/form?u=<userid>&animal=<animalId>` and confirm the three steps are gone.
+- **Slice tally**: foundation (2.14.10) → APIs+flags (2.14.10-1) → form skip-steps (this) → Vite showcase pages (2.14.10-3) → /my-animals chips + sitemap (2.14.10-4).
+
 ## [2.14.10-1] - 2026-05-11
 
 **Public showcase APIs + feature-flag plumbing** (slice 2 of the showcase rollout). Backends only; no user-visible changes in this slice (the Vite frontend that consumes these endpoints ships in 2.14.10-2 → -3). All four routes return only PII-safe whitelisted fields — no rescuer email, no adopter data, no flags, no ratings.

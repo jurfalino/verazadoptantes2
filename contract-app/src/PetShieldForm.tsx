@@ -499,8 +499,20 @@ const API_URL = import.meta.env.VITE_API_URL || ''
 // COMPONENT
 // ══════════════════════════════════════════════
 
-export default function PetShieldForm({ userId }: { userId: string | null }) {
-    const schema = DEFAULT_SCHEMA
+export default function PetShieldForm({ userId, animalId }: { userId: string | null; animalId?: string | null }) {
+    // When the form was launched from the public showcase (animalId present),
+    // skip the three steps that ask about the desired animal — the choice is
+    // already made. The animalId travels with the submission so the rescuer's
+    // notification can name the specific animal applied for.
+    //
+    // Step ids to drop come from the recon: 'species' (step 2), 'lifeStage'
+    // (step 3), 'specialNeeds' (step 4). They're contiguous but we filter by
+    // id rather than index so future schema reordering doesn't silently
+    // skip the wrong steps.
+    const ANIMAL_QUESTION_STEPS = ['species', 'lifeStage', 'specialNeeds'] as const
+    const schema = animalId
+        ? DEFAULT_SCHEMA.filter(s => !ANIMAL_QUESTION_STEPS.includes(s.id as typeof ANIMAL_QUESTION_STEPS[number]))
+        : DEFAULT_SCHEMA
     const totalSteps = schema.length
 
     // ── State ──
@@ -640,10 +652,16 @@ export default function PetShieldForm({ userId }: { userId: string | null }) {
         }
         setSubmitting(true)
         try {
+            // When the form was launched from the showcase, attach the
+            // animalId so the backend can store it in form_submissions
+            // and the rescuer's notification can name the specific animal.
+            const submitBody = animalId
+                ? { ...finalAnswers, animalId }
+                : finalAnswers
             const res = await fetch(`${API_URL}/api/form/${encodeURIComponent(userId)}/submit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(finalAnswers),
+                body: JSON.stringify(submitBody),
             })
             if (!res.ok) {
                 const data = await res.json().catch(() => ({ error: 'Error desconocido' })) as { error?: string }
