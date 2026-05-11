@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10] - 2026-05-11
+
+**Foundation for the public animal showcase** (full feature shipping in 2.14.10-1 → 2.14.10-N). No user-visible changes in this slice — it adds the schema fields, migration, slug-generation helper, and the hooks that auto-assign slugs/handles. Everything else (public APIs, Vite showcase pages, feature flags, my-animals integration) ships in subsequent slices on top of this base.
+
+### Added
+- **`src/lib/slugify.ts`** (new) — `normalizeToSlug()` (NFD-strip accents, lowercase, hyphenize non-alphanumeric) + `generateUniqueSlug(raw, exists)` (integer-suffix-on-collision loop, no hash). Used by both org slug + user handle assignment.
+- **`organizations.slug`** column — TEXT UNIQUE, kebab-cased shareable identifier for the upcoming `/org/[slug]` showcase URL. Set on org creation via `generateUniqueSlug` in `createOrganization`. Backfilled in migration 0041 for existing rows.
+- **`user_profiles.handle`** column — TEXT UNIQUE nullable, kebab-cased shareable identifier for the upcoming `/user/[handle]` showcase URL. Auto-assigned on next sign-in via the new block in `ensureUserProfile()` (audit.ts) — only when currently NULL. Stable thereafter so the URL stays bookmarkable.
+- **`form_submissions.selected_animal_id`** column — TEXT nullable. Captures which animal an applicant chose from the showcase before submitting the form (the field will be populated by the form's submit endpoint once the showcase ships).
+- **`drizzle/0041_showcase_slugs.sql`** — migration adding the three columns + two unique indexes + SQL backfill for `organizations.slug` (deterministic lower/replace transform, good enough for the current tiny org count; if collisions ever surface in production the `generateUniqueSlug` helper rewrites on next org rename).
+
+### Notes
+- **No user-visible behavior change in this commit.** The new columns sit unused until the showcase feature lands. Migration applies cleanly because all three new columns are nullable / have safe defaults.
+- **Rename does NOT regenerate slug** — `updateOrganizationName` only updates the display name; the slug stays stable so previously-shared URLs keep working. A separate rebrand-aware "change my slug" flow would need its own opt-in path with a "this breaks shared links" warning.
+- **Handle assignment is opportunistic** — wrapped in try/catch inside `ensureUserProfile`. If a particular sign-in hits a slugify error, the handle stays NULL and next sign-in retries. Logged at `warn`.
+- **Full plan saved** at `/home/jurfalino/.claude-personal/plans/in-the-profile-screen-sequential-boole.md`.
+
 ## [2.14.9-19] - 2026-05-11
 
 **Remove Keystatic entirely.** The CMS was wired up to edit `.mdoc` files in `content/`, but **the runtime never read those files** — `/guia` and `/funcionalidades` both fetch from `/api/guide-content` which reads from `src/content/guide-data.ts` (hand-maintained TypeScript). Keystatic's admin UI was 2.8 MiB of dead weight in the worker bundle, single-handedly pushing us over Cloudflare's 3 MiB free-plan ceiling. v2.14.9-17 / -18 both got blocked at the deploy step by this. Removing it gets us back to comfortable headroom.

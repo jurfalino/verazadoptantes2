@@ -231,6 +231,10 @@ export const userProfiles = sqliteTable("user_profiles", {
     // Legal
     termsAcceptedAt: integer("terms_accepted_at", { mode: "timestamp" }), // Unix timestamp when T&C were accepted
     termsVersion: integer("terms_version"), // Version of T&C accepted (matches CURRENT_TERMS_VERSION)
+    // v2.14.10: shareable handle for the public /user/[handle] showcase URL.
+    // Kebab-cased, integer suffix on collision (no hash). Auto-assigned by
+    // ensureUserProfile() on first sign-in via generateUniqueSlug(); stable thereafter.
+    handle: text("handle").unique(),
 });
 
 export const auditLog = sqliteTable("audit_log", {
@@ -334,6 +338,12 @@ export const formSubmissions = sqliteTable("form_submissions", {
     status: text("status").default("pending"),   // pending, reviewed, linked
     linkedAdopterId: text("linked_adopter_id"),  // Set when rescuer links to profile
     notificationId: text("notification_id"),     // Back-reference to notification
+    // v2.14.10: when the form was launched from the public showcase
+    // (`/animal/[id]` → "Adoptar"), this captures which animal the
+    // applicant selected. Lets the rescuer's notification + UI show
+    // "X aplicó para Luna" instead of the generic "X completó el formulario".
+    // Null when the form was shared generically (no animal pre-selected).
+    selectedAnimalId: text("selected_animal_id"),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
     userIdx: index("idx_form_user").on(table.userId),
@@ -347,6 +357,11 @@ export const organizations = sqliteTable("organizations", {
     name: text("name").notNull(),
     createdBy: text("created_by").notNull(),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    // v2.14.10: shareable slug for the public /org/[slug] showcase URL.
+    // Kebab-cased, integer suffix on collision (no hash). Nullable for legacy
+    // rows; backfilled in migration 0041. Set by createOrganization / rename
+    // via generateUniqueSlug().
+    slug: text("slug").unique(),
 });
 
 export const orgMembers = sqliteTable("org_members", {

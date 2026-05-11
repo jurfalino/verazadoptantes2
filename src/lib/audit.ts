@@ -168,6 +168,37 @@ export async function ensureUserProfile(userId: string, email?: string, name?: s
                     timezone = COALESCE(timezone, ?)
                  WHERE user_id = ?`
             ).bind(detectedProvince, detectedProvinceCode, detectedCity, detectedTimezone, resolvedId).run();
+
+            // 3. v2.14.10: assign a shareable handle for the public showcase URL
+            //    (`/user/[handle]`). Only set if currently NULL — stable thereafter
+            //    so the URL stays bookmarkable. Generated from the display name
+            //    (or email local-part if name absent) via generateUniqueSlug with
+            //    integer-suffix-on-collision logic.
+            try {
+                const profile = await env.DB.prepare(
+                    `SELECT handle FROM user_profiles WHERE user_id = ?`
+                ).bind(resolvedId).first<{ handle: string | null }>();
+                if (profile && !profile.handle) {
+                    const { generateUniqueSlug } = await import('@/lib/slugify');
+                    const rawName = name || (email ? email.split('@')[0] : '') || 'rescuer';
+                    const handle = await generateUniqueSlug(rawName, async (candidate) => {
+                        const taken = await env.DB.prepare(
+                            `SELECT user_id FROM user_profiles WHERE handle = ? LIMIT 1`
+                        ).bind(candidate).first<{ user_id: string }>();
+                        return taken != null;
+                    });
+                    await env.DB.prepare(
+                        `UPDATE user_profiles SET handle = ? WHERE user_id = ? AND handle IS NULL`
+                    ).bind(handle, resolvedId).run();
+                }
+            } catch (handleErr) {
+                // Non-fatal — handle assignment is opportunistic. If this user
+                // signs in again it'll retry. Log so the slugify path is observable.
+                logger.warn('[Audit] handle assignment skipped', {
+                    userId: resolvedId,
+                    error: handleErr instanceof Error ? handleErr.message : String(handleErr),
+                });
+            }
         } catch (e) {
             logger.error('[Audit] Failed to upsert user profile', e, { userId, email });
         }
