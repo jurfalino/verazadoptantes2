@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-15] - 2026-05-11
+
+Revert the `REQUIRED_SESSION_VERSION` bump that v2.14.9-14 introduced. The adopter-login gate runs on **new** sign-ins; we don't want to force every currently-signed-in user to re-auth and risk false-positives via the LIKE-substring fallback locking out a legit rescuer whose email happened to appear in an adopter's notes.
+
+### Reverted
+- **`src/auth.config.ts`** — `REQUIRED_SESSION_VERSION` back to `3` (was `4`). The gate still applies on every fresh OAuth sign-in. Existing valid sessions are unaffected.
+
 ## [2.14.9-14] - 2026-05-11
 
 **Adopter-login gate.** BuenAdoptante is an NGO/rescuer tool; adopters being rated aren't supposed to know the registry exists. This change rejects any OAuth sign-in where the email matches an adopter profile that's been flagged. The rejected user sees a generic "Ocurrió un error inesperado" page (no hint they were blocked) with a "report this problem" form. Admins get notifications + an audit page at /admin/blocked-logins.

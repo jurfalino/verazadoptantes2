@@ -9,9 +9,11 @@ import { recordBlockedLogin } from "@/lib/blockedLoginRecorder"
 
 // Bump this number and deploy to force all users to re-authenticate.
 // Exported so auth.ts can use the same value.
-// Bumped to 4 in v2.14.9-14 so existing sessions go through the new
-// adopter-login gate on their next page load.
-export const REQUIRED_SESSION_VERSION = 4;
+// The adopter-login gate (v2.14.9-14) intentionally does NOT bump this —
+// existing legit rescuers stay signed in; the gate only runs on fresh
+// sign-ins. Bump manually if/when the gate's posture changes and we want
+// to re-run it across the current user base.
+export const REQUIRED_SESSION_VERSION = 3;
 
 export const authConfig = {
     providers: [
