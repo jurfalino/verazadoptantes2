@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.9-19] - 2026-05-11
+
+**Remove Keystatic entirely.** The CMS was wired up to edit `.mdoc` files in `content/`, but **the runtime never read those files** — `/guia` and `/funcionalidades` both fetch from `/api/guide-content` which reads from `src/content/guide-data.ts` (hand-maintained TypeScript). Keystatic's admin UI was 2.8 MiB of dead weight in the worker bundle, single-handedly pushing us over Cloudflare's 3 MiB free-plan ceiling. v2.14.9-17 / -18 both got blocked at the deploy step by this. Removing it gets us back to comfortable headroom.
+
+### Removed
+- **`src/app/keystatic/*`** — admin UI mount (page + layout + KeystaticApp wrapper).
+- **`src/app/api/keystatic/*`** — API route for the CMS handler.
+- **`keystatic.config.tsx`** at repo root — collection/singleton definitions.
+- **`@keystatic/core`** and **`@keystatic/next`** dev dependencies (npm uninstall).
+- **`/keystatic` link in `AdminSidebar.tsx`** — the only entry point in the UI.
+
+### Notes
+- **Bundle-size impact**: largest single function (`keystatic/[[...params]].func.js`) was **2840 KiB** before this change. Gone now. The Keystatic API route was another **240 KiB**, also gone. Total saved from the worker bundle: ~3 MiB. Should give us substantial headroom even on the free plan.
+- **`content/` directory is left in place** — the `.mdoc` files there are now orphans (nothing reads them at runtime) but they're not bundled into the worker either. Can be deleted as a follow-up housekeeping commit. Left in this commit to keep the blast radius tight.
+- **`/keystatic/` still in `src/app/robots.ts` Disallow list** and `Footer.tsx HIDDEN_PREFIXES` — harmless, just lists a non-existent path. Could be removed for cleanliness; not required.
+- **If you ever want a CMS**: don't re-add Keystatic. For this size of team and content, edit `src/content/guide-data.ts` directly and commit. If a non-technical editor needs the UI in the future, a separate Pages project for the CMS is the right architecture — not bundled into the main app.
+
 ## [2.14.9-18] - 2026-05-11
 
 Revert the `userName` push added in v2.14.9-17. The 5-line change nudged the Worker bundle just over Cloudflare's **3 MiB free-plan ceiling** and the `Deploy to Staging` step failed with `Your Worker exceeded the size limit of 3 MiB`. Build + lint + e2e all passed — only the deploy step failed.

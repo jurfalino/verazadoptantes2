@@ -102,13 +102,13 @@ export default function AdminSidebar() {
                     ))}
 
                     <div className="pt-6 mt-6 border-t border-stone-800 space-y-1">
-                        <Link
-                            href="/keystatic"
-                            target="_blank"
-                            className="block px-4 py-2 rounded-lg hover:bg-stone-800 hover:text-white transition-colors text-sm text-teal-700 hover:text-teal-700"
-                        >
-                            ✏️ {t('admin.nav_cms')} ↗
-                        </Link>
+                        {/* Keystatic CMS link removed in v2.14.9-19 — Keystatic
+                            was never actually wired up to serve content (the
+                            /guia and /funcionalidades pages read directly from
+                            src/content/guide-data.ts, not from Keystatic's
+                            .mdoc files). The admin UI bundled ~2.8 MiB into
+                            the worker and pushed us over Cloudflare's 3 MiB
+                            free-plan ceiling for nothing. */}
                         <Link
                             href="/"
                             className="block px-4 py-2 rounded-lg hover:bg-stone-800 hover:text-white transition-colors text-sm"
