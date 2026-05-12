@@ -4,6 +4,7 @@ import PetShieldForm from './PetShieldForm'
 import TermsPage from './TermsPage'
 import Showcase from './Showcase'
 import AnimalDetail from './AnimalDetail'
+import HomePage from './HomePage'
 
 // UUIDs are 36 chars: 8-4-4-4-12 hex with hyphens. Check before the named
 // routes so existing `/{animalId}` contract URLs keep working unchanged.
@@ -71,14 +72,24 @@ function App() {
         )
     }
 
-    // ── / (root) ─────────────────────────────────────────────────────
-    // Public global catalog. v2.14.10-3 replaced the previous "no animal id"
-    // error card with this — adopters landing on the bare domain see all
-    // available animals.
-    if (!path) {
+    // ── /all — full global catalog ───────────────────────────────────
+    // Previously at /; moved here so / can host a marketing-style landing
+    // that frames the funnel before dropping visitors into the grid.
+    if (path === 'all') {
         return (
             <ErrorBoundary>
                 <Showcase scope={{ kind: 'all' }} />
+            </ErrorBoundary>
+        )
+    }
+
+    // ── / (root) ─────────────────────────────────────────────────────
+    // Canonical landing: hero + featured (6 from /all) + how-it-works
+    // + closing CTA. The catalog itself lives at /all.
+    if (!path) {
+        return (
+            <ErrorBoundary>
+                <HomePage />
             </ErrorBoundary>
         )
     }

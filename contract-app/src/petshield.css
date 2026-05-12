@@ -1070,3 +1070,254 @@ body {
   border: 1px dashed var(--ps-border);
   border-radius: 12px;
 }
+
+/* ══════════════════════════════════════════════
+ * HomePage — canonical landing at /
+ * Hero → Featured (6) → How it works → Closing CTA
+ * ══════════════════════════════════════════════ */
+
+.ps-home {
+  min-height: 100vh;
+  padding: var(--ps-4) var(--ps-3);
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* ── Hero ── */
+.ps-home-hero {
+  text-align: center;
+  padding: var(--ps-8) var(--ps-2) var(--ps-6);
+  position: relative;
+}
+
+/* Subtle radial glow behind the hero — uses the indigo accent at low
+   opacity. Renders below the title via pseudo-element, no DOM cost. */
+.ps-home-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(var(--ps-accent-glow-rgb), 0.12) 0%,
+    transparent 60%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.ps-home-hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+.ps-home-hero__title {
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  margin: 0 auto var(--ps-2);
+  max-width: 720px;
+  color: var(--ps-text);
+}
+
+@media (min-width: 720px) {
+  .ps-home-hero__title { font-size: 48px; }
+}
+
+.ps-home-hero__sub {
+  margin: 0 auto var(--ps-4);
+  max-width: 540px;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--ps-text-secondary);
+}
+
+.ps-home-hero__cta {
+  text-decoration: none;
+  font-size: 16px;
+  padding: 14px var(--ps-3); /* 14px: form-CTA touch height */
+}
+
+.ps-home-hero__cta span {
+  transition: transform 200ms ease;
+}
+
+.ps-home-hero__cta:hover span {
+  transform: translateX(4px);
+}
+
+/* ── Section wrapper + eyebrow ── */
+.ps-home-section {
+  padding: var(--ps-6) 0;
+}
+
+.ps-home-section__eyebrow {
+  text-align: center;
+  margin: 0 0 var(--ps-3);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ps-text-muted);
+}
+
+/* ── Featured grid + "more" link ── */
+.ps-home-featured {
+  /* Inherits grid layout from .ps-showcase-grid; no overrides needed. */
+}
+
+.ps-home-featured__more {
+  display: block;
+  margin: var(--ps-4) auto 0;
+  text-align: center;
+  color: var(--ps-accent);
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 600;
+  padding: var(--ps-1) var(--ps-2);
+  transition: color 200ms ease;
+}
+
+.ps-home-featured__more:hover {
+  color: var(--ps-accent-hover);
+}
+
+.ps-home-featured__more span {
+  display: inline-block;
+  margin-left: 4px;
+  transition: transform 200ms ease;
+}
+
+.ps-home-featured__more:hover span {
+  transform: translateX(4px);
+}
+
+/* ── Skeleton cards (featured loading state) ── */
+@keyframes ps-skeleton-pulse {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 1; }
+}
+
+.ps-home-card-skeleton {
+  background: var(--ps-card);
+  border: 1px solid var(--ps-border);
+  border-radius: 16px;
+  overflow: hidden;
+  animation: ps-skeleton-pulse 1.6s ease-in-out infinite;
+}
+
+.ps-home-card-skeleton__photo {
+  aspect-ratio: 4 / 3;
+  background: linear-gradient(
+    90deg,
+    rgba(99, 102, 241, 0.04) 0%,
+    rgba(99, 102, 241, 0.10) 50%,
+    rgba(99, 102, 241, 0.04) 100%
+  );
+}
+
+.ps-home-card-skeleton__line {
+  height: 12px;
+  margin: var(--ps-2);
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.ps-home-card-skeleton__line--lg {
+  height: 16px;
+  width: 60%;
+  margin-top: var(--ps-2);
+  margin-bottom: 6px;
+}
+
+/* ── How it works (3 steps) ── */
+.ps-home-steps-section {
+  border-top: 1px solid var(--ps-border);
+  border-bottom: 1px solid var(--ps-border);
+  margin-top: var(--ps-4);
+}
+
+.ps-home-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--ps-3);
+  max-width: 960px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (min-width: 720px) {
+  .ps-home-steps {
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--ps-4);
+  }
+}
+
+.ps-home-step {
+  text-align: center;
+  padding: var(--ps-3) var(--ps-2);
+}
+
+.ps-home-step__num {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto var(--ps-2);
+  border-radius: 50%;
+  background: rgba(var(--ps-accent-glow-rgb), 0.15);
+  border: 1px solid rgba(var(--ps-accent-glow-rgb), 0.35);
+  color: var(--ps-accent-strong);
+  font-size: 20px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--ps-glow);
+}
+
+.ps-home-step__title {
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ps-text);
+}
+
+.ps-home-step__desc {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ps-text-secondary);
+  max-width: 280px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ── Closing CTA / mission ── */
+.ps-home-closing {
+  text-align: center;
+  padding: var(--ps-8) var(--ps-3) var(--ps-6);
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.ps-home-closing__text {
+  margin: 0 0 var(--ps-3);
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--ps-text-secondary);
+}
+
+.ps-home-closing__cta {
+  text-decoration: none;
+  padding: 14px var(--ps-3); /* 14px: match hero CTA */
+}
+
+.ps-home-closing__cta span {
+  transition: transform 200ms ease;
+}
+
+.ps-home-closing__cta:hover span {
+  transform: translateX(4px);
+}
