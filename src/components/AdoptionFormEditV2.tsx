@@ -53,7 +53,7 @@ function extractAddressFromContact(contactText: string): string {
     return '';
 }
 
-export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, onSuccess, onDelete, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '' }: { adopterId: string, /* eslint-disable-next-line @typescript-eslint/no-explicit-any */ initialData?: any, onCancel?: () => void, onSuccess?: () => void, onDelete?: () => void, /* eslint-disable-next-line @typescript-eslint/no-explicit-any */ availableAnimals?: any[], /* eslint-disable-next-line @typescript-eslint/no-explicit-any */ adopterAdoptions?: any[], currentUser?: string, adopterAddress?: string }) {
+export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, onSuccess, onDelete, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '' }: { adopterId: string,   initialData?: any, onCancel?: () => void, onSuccess?: () => void, onDelete?: () => void,   availableAnimals?: any[],   adopterAdoptions?: any[], currentUser?: string, adopterAddress?: string }) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { t, locale } = useLanguage();

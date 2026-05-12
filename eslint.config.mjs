@@ -23,6 +23,12 @@ const eslintConfig = [
       "run-migration-0003.js",
       "scripts/**",
       "public/sw.js",
+      // Vite mini-app — has its own toolchain and routing model. The Next.js
+      // ESLint preset doesn't apply (e.g. `<a href="/">` is correct here, not
+      // a missing `next/link` import). Linted separately via the vite-app's
+      // own setup if needed. Added in v2.14.10-3 after the showcase pages
+      // started tripping `@next/next/no-html-link-for-pages`.
+      "contract-app/**",
     ],
   },
   {

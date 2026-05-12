@@ -150,11 +150,19 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                 url.searchParams.set('q', query.trim());
                 window.history.replaceState({}, '', url.toString());
                 // Track search event in Amplitude via Zaraz
-                zarazTrack('search_performed', {
-                    resultCount: (response.results || []).length,
-                    query_length: query.trim().length,
-                    truncated: response.truncated ? 1 : 0,
-                });
+                {
+                    const resultCount = (response.results || []).length;
+                    zarazTrack('search_performed', {
+                        resultCount,
+                        // hasResults = 1 when the search surfaced anything; lets
+                        // Amplitude funnels filter the "found a match" path
+                        // (→ visit_intent_shown → adoption_created) vs the
+                        // "no match" path (→ adopter_created → adoption_created).
+                        hasResults: resultCount > 0 ? 1 : 0,
+                        query_length: query.trim().length,
+                        truncated: response.truncated ? 1 : 0,
+                    });
+                }
                 // Auto-scroll to results on mobile
                 setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
             }

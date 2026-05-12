@@ -5,8 +5,13 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-/* ── Design Tokens ── */
-.ps-form {
+/* ── Design Tokens ──
+   Hoisted to :root so they cascade to every page in this app, not just
+   pages wrapped in .ps-form. Showcase / AnimalDetail / future surfaces
+   share the same design system; gating tokens to .ps-form was
+   accidentally producing un-themed (browser-default) renderings on
+   non-form routes. */
+:root {
   --ps-unit: 8px;
 
   /* Surfaces */
@@ -54,8 +59,14 @@
   --ps-8: 64px;
   --ps-10: 80px;
   --ps-12: 96px;
+}
 
-  /* Typography */
+/* Body-level defaults so every page picks up the dark surface + Inter
+   font, even when no .ps-form / .ps-showcase-page wrapper applies. */
+body {
+  margin: 0;
+  background: var(--ps-bg);
+  color: var(--ps-text);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -711,4 +722,705 @@
   .ps-step-container { padding: var(--ps-3) var(--ps-2); }
   .ps-checklist { grid-template-columns: 1fr; }
   .ps-card-grid--4 { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ══════════════════════════════════════════════
+ * SHOWCASE (v2.14.10-3)
+ * Public animal catalog + per-animal detail page.
+ * Reuses --ps-* design tokens for visual consistency
+ * with the forms + contracts living on the same domain.
+ * ══════════════════════════════════════════════ */
+
+.ps-showcase-page {
+  min-height: 100vh;
+  background: var(--ps-bg);
+  color: var(--ps-text);
+  padding: var(--ps-4) var(--ps-3);
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.ps-showcase-loading {
+  padding: var(--ps-12) var(--ps-4);
+  text-align: center;
+  color: var(--ps-text-muted);
+  font-size: 15px;
+}
+
+.ps-showcase-header {
+  margin-bottom: var(--ps-4);
+  padding-bottom: var(--ps-3);
+  border-bottom: 1px solid var(--ps-border);
+}
+
+.ps-showcase-header__title {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0 0 var(--ps-1);
+  color: var(--ps-text);
+}
+
+.ps-showcase-header__subtitle {
+  margin: 0 0 var(--ps-2);
+  color: var(--ps-text-secondary);
+  font-size: 14px;
+}
+
+.ps-showcase-header__count {
+  margin: 0;
+  color: var(--ps-text-muted);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.ps-showcase-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--ps-3);
+}
+
+@media (min-width: 640px) {
+  .ps-showcase-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 1024px) {
+  .ps-showcase-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+.ps-showcase-card {
+  display: block;
+  background: var(--ps-card);
+  border: 1px solid var(--ps-border);
+  border-radius: 16px;
+  overflow: hidden;
+  transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+  text-decoration: none;
+  color: inherit;
+  /* Staggered fade-in is set per-card via nth-child below. */
+  animation: ps-fade-up 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ps-showcase-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--ps-accent);
+  box-shadow: 0 12px 32px rgba(99, 102, 241, 0.18);
+}
+
+.ps-showcase-card:hover .ps-showcase-card__photo img {
+  transform: scale(1.03);
+}
+
+/* Stagger first 9 cards (3 rows × 3 cols on widest grid). Cards beyond
+   that just fade in on the same tick — diminishing return for the effect. */
+.ps-showcase-grid > .ps-showcase-card:nth-child(1) { animation-delay: 0ms; }
+.ps-showcase-grid > .ps-showcase-card:nth-child(2) { animation-delay: 50ms; }
+.ps-showcase-grid > .ps-showcase-card:nth-child(3) { animation-delay: 100ms; }
+.ps-showcase-grid > .ps-showcase-card:nth-child(4) { animation-delay: 150ms; }
+.ps-showcase-grid > .ps-showcase-card:nth-child(5) { animation-delay: 200ms; }
+.ps-showcase-grid > .ps-showcase-card:nth-child(6) { animation-delay: 250ms; }
+.ps-showcase-grid > .ps-showcase-card:nth-child(7) { animation-delay: 300ms; }
+.ps-showcase-grid > .ps-showcase-card:nth-child(8) { animation-delay: 320ms; }
+.ps-showcase-grid > .ps-showcase-card:nth-child(9) { animation-delay: 340ms; }
+
+@keyframes ps-fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ps-showcase-card,
+  .ps-showcase-card__photo img,
+  .ps-home-hero__cta span,
+  .ps-home-featured__more span,
+  .ps-home-closing__cta span {
+    animation: none !important;
+    transition: none !important;
+  }
+  .ps-showcase-card:hover {
+    transform: none;
+  }
+}
+
+.ps-showcase-card__photo {
+  aspect-ratio: 4 / 3;
+  background: rgba(99, 102, 241, 0.06);
+  overflow: hidden;
+  position: relative;
+}
+
+.ps-showcase-card__photo img {
+  transition: transform 400ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Subtle bottom-to-top dark gradient on the photo — gives the
+   text body underneath a visual "lift" without dimming the photo. */
+.ps-showcase-card__photo-fade {
+  position: absolute;
+  inset: 50% 0 0;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(15, 23, 42, 0.35) 100%
+  );
+  pointer-events: none;
+}
+
+.ps-showcase-card__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ps-showcase-card__photo-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ps-accent);
+  opacity: 0.45;
+}
+
+.ps-showcase-card__body {
+  padding: var(--ps-2);
+}
+
+.ps-showcase-card__name {
+  margin: 0 0 4px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ps-text);
+}
+
+.ps-showcase-card__meta {
+  margin: 0 0 4px;
+  color: var(--ps-text-secondary);
+  font-size: 13px;
+}
+
+.ps-showcase-card__rescuer {
+  margin: 0;
+  color: var(--ps-text-muted);
+  font-size: 12px;
+}
+
+.ps-showcase-empty {
+  padding: var(--ps-8) var(--ps-3);
+  text-align: center;
+  background: var(--ps-card);
+  border: 1px solid var(--ps-border);
+  border-radius: 16px;
+  margin-top: var(--ps-4);
+}
+
+.ps-showcase-empty__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto var(--ps-2);
+  color: var(--ps-accent);
+  opacity: 0.7;
+}
+
+.ps-showcase-empty__title {
+  margin: 0 0 var(--ps-1);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ps-text);
+}
+
+.ps-showcase-empty__desc {
+  margin: 0 auto var(--ps-3);
+  max-width: 360px;
+  color: var(--ps-text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.ps-showcase-empty__cta {
+  display: inline-block;
+}
+
+.ps-showcase-back-link {
+  display: inline-block;
+  color: var(--ps-accent);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: var(--ps-3);
+  transition: color 200ms ease;
+}
+
+.ps-showcase-back-link:hover {
+  color: var(--ps-accent-hover);
+}
+
+/* ── Animal detail ── */
+
+.ps-animal-detail {
+  max-width: 880px;
+  /* Bottom padding for mobile sticky CTA so the last paragraph isn't
+     hidden behind it; reset on desktop where the sticky bar is hidden. */
+  padding-bottom: 96px;
+}
+
+@media (min-width: 720px) {
+  .ps-animal-detail {
+    padding-bottom: var(--ps-4);
+  }
+}
+
+.ps-animal-hero {
+  aspect-ratio: 3 / 2;
+  background: rgba(99, 102, 241, 0.06);
+  border-radius: 16px;
+  overflow: hidden;
+  margin-bottom: var(--ps-2);
+  border: 1px solid var(--ps-border);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.18);
+}
+
+.ps-animal-hero__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ps-animal-hero__empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ps-accent);
+  opacity: 0.5;
+}
+
+.ps-animal-thumbs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: var(--ps-3);
+  flex-wrap: wrap;
+}
+
+.ps-animal-thumb {
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--ps-card);
+  transition: border-color 200ms ease;
+}
+
+.ps-animal-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ps-animal-thumb--active {
+  border-color: var(--ps-accent);
+}
+
+.ps-animal-name {
+  font-size: 32px;
+  font-weight: 700;
+  margin: 0 0 var(--ps-2);
+  color: var(--ps-text);
+}
+
+.ps-animal-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: var(--ps-3);
+}
+
+.ps-animal-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--ps-accent);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ps-animal-badge--mono {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.ps-animal-details {
+  margin-bottom: var(--ps-4);
+}
+
+.ps-animal-section-title {
+  margin: 0 0 var(--ps-1);
+  font-size: 15px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ps-text-muted);
+}
+
+.ps-animal-description {
+  margin: 0;
+  color: var(--ps-text);
+  font-size: 15px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.ps-animal-rescuer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: var(--ps-4);
+  padding: var(--ps-2);
+  background: var(--ps-card);
+  border: 1px solid var(--ps-border);
+  border-radius: 12px;
+  font-size: 14px;
+}
+
+.ps-animal-rescuer__label {
+  color: var(--ps-text-muted);
+}
+
+.ps-animal-rescuer__link {
+  color: var(--ps-accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.ps-animal-rescuer__link:hover {
+  color: var(--ps-accent-hover);
+}
+
+.ps-animal-rescuer__name {
+  color: var(--ps-text);
+  font-weight: 600;
+}
+
+.ps-animal-cta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ps-2);
+  padding-top: var(--ps-2);
+}
+
+.ps-animal-cta__btn {
+  width: 100%;
+  text-align: center;
+  font-size: 16px;
+  padding: var(--ps-2);
+}
+
+.ps-animal-cta__ig {
+  width: 100%;
+  text-align: center;
+}
+
+.ps-animal-cta__unavailable {
+  margin: 0;
+  padding: var(--ps-2);
+  text-align: center;
+  color: var(--ps-text-muted);
+  font-size: 14px;
+  background: var(--ps-card);
+  border: 1px dashed var(--ps-border);
+  border-radius: 12px;
+}
+
+/* ── Sticky mobile CTA on the animal detail page ──
+   Mobile-first reachability — the inline CTA at the bottom of the page
+   is too far below the fold on long descriptions. Hide on ≥720px where
+   the inline CTA is closer to the fold and a fixed bar would intrude. */
+.ps-animal-cta-sticky {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  padding: var(--ps-2);
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--ps-border);
+  /* Respect iOS safe-area inset so the button isn't under the home indicator. */
+  padding-bottom: max(var(--ps-2), env(safe-area-inset-bottom));
+}
+
+.ps-animal-cta-sticky__btn {
+  display: block;
+  width: 100%;
+  text-align: center;
+  font-size: 16px;
+  padding: 14px var(--ps-3); /* 14px: match hero CTA height */
+}
+
+@media (min-width: 720px) {
+  .ps-animal-cta-sticky {
+    display: none;
+  }
+}
+
+/* ══════════════════════════════════════════════
+ * HomePage — canonical landing at /
+ * Hero → Featured (6) → How it works → Closing CTA
+ * ══════════════════════════════════════════════ */
+
+.ps-home {
+  min-height: 100vh;
+  padding: var(--ps-4) var(--ps-3);
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* ── Hero ── */
+.ps-home-hero {
+  text-align: center;
+  padding: var(--ps-8) var(--ps-2) var(--ps-6);
+  position: relative;
+}
+
+/* Subtle radial glow behind the hero — uses the indigo accent at low
+   opacity. Renders below the title via pseudo-element, no DOM cost. */
+.ps-home-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(var(--ps-accent-glow-rgb), 0.12) 0%,
+    transparent 60%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.ps-home-hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+.ps-home-hero__title {
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  margin: 0 auto var(--ps-2);
+  max-width: 720px;
+  color: var(--ps-text);
+}
+
+@media (min-width: 720px) {
+  .ps-home-hero__title { font-size: 48px; }
+}
+
+.ps-home-hero__sub {
+  margin: 0 auto var(--ps-4);
+  max-width: 540px;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--ps-text-secondary);
+}
+
+.ps-home-hero__cta {
+  text-decoration: none;
+  font-size: 16px;
+  padding: 14px var(--ps-3); /* 14px: form-CTA touch height */
+}
+
+.ps-home-hero__cta span {
+  transition: transform 200ms ease;
+}
+
+.ps-home-hero__cta:hover span {
+  transform: translateX(4px);
+}
+
+/* ── Section wrapper + eyebrow ── */
+.ps-home-section {
+  padding: var(--ps-6) 0;
+}
+
+.ps-home-section__eyebrow {
+  text-align: center;
+  margin: 0 0 var(--ps-3);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ps-text-muted);
+}
+
+/* ── Featured grid + "more" link ── */
+.ps-home-featured {
+  /* Inherits grid layout from .ps-showcase-grid; no overrides needed. */
+}
+
+.ps-home-featured__more {
+  display: block;
+  margin: var(--ps-4) auto 0;
+  text-align: center;
+  color: var(--ps-accent);
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 600;
+  padding: var(--ps-1) var(--ps-2);
+  transition: color 200ms ease;
+}
+
+.ps-home-featured__more:hover {
+  color: var(--ps-accent-hover);
+}
+
+.ps-home-featured__more span {
+  display: inline-block;
+  margin-left: 4px;
+  transition: transform 200ms ease;
+}
+
+.ps-home-featured__more:hover span {
+  transform: translateX(4px);
+}
+
+/* ── Skeleton cards (featured loading state) ── */
+@keyframes ps-skeleton-pulse {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 1; }
+}
+
+.ps-home-card-skeleton {
+  background: var(--ps-card);
+  border: 1px solid var(--ps-border);
+  border-radius: 16px;
+  overflow: hidden;
+  animation: ps-skeleton-pulse 1.6s ease-in-out infinite;
+}
+
+.ps-home-card-skeleton__photo {
+  aspect-ratio: 4 / 3;
+  background: linear-gradient(
+    90deg,
+    rgba(99, 102, 241, 0.04) 0%,
+    rgba(99, 102, 241, 0.10) 50%,
+    rgba(99, 102, 241, 0.04) 100%
+  );
+}
+
+.ps-home-card-skeleton__line {
+  height: 12px;
+  margin: var(--ps-2);
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.ps-home-card-skeleton__line--lg {
+  height: 16px;
+  width: 60%;
+  margin-top: var(--ps-2);
+  margin-bottom: 6px;
+}
+
+/* ── How it works (3 steps) ── */
+.ps-home-steps-section {
+  border-top: 1px solid var(--ps-border);
+  border-bottom: 1px solid var(--ps-border);
+  margin-top: var(--ps-4);
+}
+
+.ps-home-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--ps-3);
+  max-width: 960px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (min-width: 720px) {
+  .ps-home-steps {
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--ps-4);
+  }
+}
+
+.ps-home-step {
+  text-align: center;
+  padding: var(--ps-3) var(--ps-2);
+}
+
+.ps-home-step__num {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto var(--ps-2);
+  border-radius: 50%;
+  background: rgba(var(--ps-accent-glow-rgb), 0.15);
+  border: 1px solid rgba(var(--ps-accent-glow-rgb), 0.35);
+  color: var(--ps-accent-strong);
+  font-size: 20px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--ps-glow);
+}
+
+.ps-home-step__title {
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ps-text);
+}
+
+.ps-home-step__desc {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ps-text-secondary);
+  max-width: 280px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ── Closing CTA / mission ── */
+.ps-home-closing {
+  text-align: center;
+  padding: var(--ps-8) var(--ps-3) var(--ps-6);
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.ps-home-closing__text {
+  margin: 0 0 var(--ps-3);
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--ps-text-secondary);
+}
+
+.ps-home-closing__cta {
+  text-decoration: none;
+  padding: 14px var(--ps-3); /* 14px: match hero CTA */
+}
+
+.ps-home-closing__cta span {
+  transition: transform 200ms ease;
+}
+
+.ps-home-closing__cta:hover span {
+  transform: translateX(4px);
 }

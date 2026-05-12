@@ -2,30 +2,30 @@
 
 import { useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
+import { useContractBase } from '@/hooks/useContractBase';
 
 interface ShareMenuProps {
     contractUrl: string; // animal ID or path like /contract/{id}
     animalName: string;
 }
 
-// External contract app domain — no buenadoptante branding
-const CONTRACT_BASE = (process.env.NEXT_PUBLIC_CONTRACT_URL || 'https://adoptions.pages.dev').replace(/\/+$/, '');
-// Use same-origin proxy so CSP img-src 'self' allows the QR image
 const getQrImageSrc = (url: string) => `/api/qr?data=${encodeURIComponent(url)}`;
 
 export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
     const { t } = useLanguage();
+    const contractBase = useContractBase();
     const [isOpen, setIsOpen] = useState(false);
     const [showQr, setShowQr] = useState(false);
     const [copied, setCopied] = useState(false);
 
-    // Extract just the ID from the contractUrl (handles both "/contract/abc" and "abc")
     const animalId = contractUrl.replace(/^\/contract\//, '');
-    const fullUrl = `${CONTRACT_BASE}/${animalId}`;
+    const fullUrl = contractBase ? `${contractBase}/${animalId}` : '';
+    const ready = fullUrl !== '';
 
     const shareText = `Contrato de adopción para ${animalName}`;
 
     const handleCopyLink = async () => {
+        if (!ready) return;
         try {
             await navigator.clipboard.writeText(fullUrl);
         } catch {
@@ -41,16 +41,19 @@ export default function ShareMenu({ contractUrl, animalName }: ShareMenuProps) {
     };
 
     const handleWhatsApp = () => {
+        if (!ready) return;
         window.open(`https://wa.me/?text=${encodeURIComponent(`${shareText}\n${fullUrl}`)}`, '_blank');
         setIsOpen(false);
     };
 
     const handleEmail = () => {
+        if (!ready) return;
         window.open(`mailto:?subject=${encodeURIComponent(shareText)}&body=${encodeURIComponent(`${shareText}\n\n${fullUrl}`)}`, '_blank');
         setIsOpen(false);
     };
 
     const handleNativeShare = async () => {
+        if (!ready) return;
         if (navigator.share) {
             try {
                 await navigator.share({ title: shareText, url: fullUrl });

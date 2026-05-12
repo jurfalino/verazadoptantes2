@@ -40,10 +40,23 @@ export async function createOrganization(name: string): Promise<{ success: boole
         const orgId = crypto.randomUUID();
         const memberId = crypto.randomUUID();
 
+        // v2.14.10: assign a shareable slug for the public /org/[slug] showcase URL.
+        // Integer-suffix collision strategy via generateUniqueSlug. Done before
+        // INSERT so the slug is set at create time, not retroactively.
+        const { generateUniqueSlug } = await import('@/lib/slugify');
+        const slug = await generateUniqueSlug(trimmed, async (candidate) => {
+            const existing = await db.select({ id: organizations.id })
+                .from(organizations)
+                .where(eq(organizations.slug, candidate))
+                .get();
+            return existing != null;
+        });
+
         await db.insert(organizations).values({
             id: orgId,
             name: trimmed,
             createdBy: user,
+            slug,
         });
 
         await db.insert(orgMembers).values({

@@ -32,6 +32,11 @@ interface ConfigData {
         ENABLE_SEARCH_CARD_METADATA?: string;
         ENABLE_CHAT_WIDGET?: string;
         ENABLE_MILESTONE_BADGE?: string;
+        ENABLE_QUICK_ACCESS_STRIP?: string;
+        SHOWCASE_GLOBAL_VISIBLE?: string;
+        SHOWCASE_ORG_VISIBLE?: string;
+        SHOWCASE_USER_VISIBLE?: string;
+        INSTAGRAM_URL?: string;
         TELEGRAM_ADMIN_CHAT_ID?: string;
         TELEGRAM_BOT_TOKEN_SET?: string;
         TELEGRAM_WEBHOOK_SECRET_SET?: string;
@@ -54,6 +59,10 @@ const FEATURE_FLAGS = [
     { key: 'ENABLE_SEARCH_CARD_METADATA', labelKey: 'flag_label_search_card_metadata', descKey: 'flag_desc_search_card_metadata' },
     { key: 'ENABLE_CHAT_WIDGET', labelKey: 'flag_label_chat_widget', descKey: 'flag_desc_chat_widget' },
     { key: 'ENABLE_MILESTONE_BADGE', labelKey: 'flag_label_milestone_badge', descKey: 'flag_desc_milestone_badge' },
+    { key: 'ENABLE_QUICK_ACCESS_STRIP', labelKey: 'flag_label_quick_access_strip', descKey: 'flag_desc_quick_access_strip' },
+    { key: 'SHOWCASE_GLOBAL_VISIBLE', labelKey: 'flag_label_showcase_global', descKey: 'flag_desc_showcase_global' },
+    { key: 'SHOWCASE_ORG_VISIBLE', labelKey: 'flag_label_showcase_org', descKey: 'flag_desc_showcase_org' },
+    { key: 'SHOWCASE_USER_VISIBLE', labelKey: 'flag_label_showcase_user', descKey: 'flag_desc_showcase_user' },
 ];
 
 export default function AdminConfigPage() {
@@ -71,7 +80,13 @@ export default function AdminConfigPage() {
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,
         ENABLE_MILESTONE_BADGE: true,
+        ENABLE_QUICK_ACCESS_STRIP: true,
+        SHOWCASE_GLOBAL_VISIBLE: false,
+        SHOWCASE_ORG_VISIBLE: false,
+        SHOWCASE_USER_VISIBLE: false,
     });
+    const [instagramUrl, setInstagramUrl] = useState('');
+    const [savingInstagram, setSavingInstagram] = useState(false);
     const [telegramAdminChatId, setTelegramAdminChatId] = useState('');
     const [telegramBotToken, setTelegramBotToken] = useState('');
     const [telegramWebhookSecret, setTelegramWebhookSecret] = useState('');
@@ -110,7 +125,12 @@ export default function AdminConfigPage() {
                         ENABLE_SEARCH_CARD_METADATA: data.config?.ENABLE_SEARCH_CARD_METADATA !== 'false',
                         ENABLE_CHAT_WIDGET: data.config?.ENABLE_CHAT_WIDGET === 'true',
                         ENABLE_MILESTONE_BADGE: data.config?.ENABLE_MILESTONE_BADGE !== 'false',
+                        ENABLE_QUICK_ACCESS_STRIP: data.config?.ENABLE_QUICK_ACCESS_STRIP !== 'false',
+                        SHOWCASE_GLOBAL_VISIBLE: data.config?.SHOWCASE_GLOBAL_VISIBLE === 'true',
+                        SHOWCASE_ORG_VISIBLE: data.config?.SHOWCASE_ORG_VISIBLE === 'true',
+                        SHOWCASE_USER_VISIBLE: data.config?.SHOWCASE_USER_VISIBLE === 'true',
                     });
+                    setInstagramUrl(data.config?.INSTAGRAM_URL || '');
                     setTelegramAdminChatId(data.config?.TELEGRAM_ADMIN_CHAT_ID || '');
                     setTelegramBotTokenSet(data.config?.TELEGRAM_BOT_TOKEN_SET === 'true');
                     setTelegramWebhookSecretSet(data.config?.TELEGRAM_WEBHOOK_SECRET_SET === 'true');
@@ -195,6 +215,27 @@ export default function AdminConfigPage() {
             toast.error(t('errors.generic'), t('errors.social_proof_error'), extractErrorId(e));
         } finally {
             setSavingSocialProof(false);
+        }
+    };
+
+    const handleSaveInstagram = async () => {
+        setSavingInstagram(true);
+        try {
+            const res = await fetch('/api/admin/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ INSTAGRAM_URL: instagramUrl.trim() })
+            });
+            if (res.ok) {
+                toast.success(t('toast.saved_title'), t('admin.instagram_saved'));
+            } else {
+                const body = await readErrorBody(res);
+                toast.error(t('errors.generic'), body.error || t('admin.instagram_save_failed'), body.errorId);
+            }
+        } catch (e) {
+            toast.error(t('errors.generic'), t('errors.unexpected'), extractErrorId(e));
+        } finally {
+            setSavingInstagram(false);
         }
     };
 
@@ -448,6 +489,36 @@ export default function AdminConfigPage() {
                             Re-register webhook
                         </button>
                     </div>
+                </div>
+            </div>
+
+            {/* Instagram URL — used by the public-showcase empty-state CTA and
+                the animal-detail social link. Empty = hide the CTA. */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200">
+                <h3 className="text-lg font-semibold text-stone-900 mb-4 flex items-center gap-2">
+                    <span className="text-xl">📷</span>
+                    {t('admin.instagram_section_title')}
+                </h3>
+                <p className="text-sm text-stone-500 mb-4">
+                    {t('admin.instagram_section_desc')}
+                </p>
+                <div className="flex gap-2">
+                    <input
+                        type="url"
+                        value={instagramUrl}
+                        onChange={(e) => setInstagramUrl(e.target.value)}
+                        placeholder="https://instagram.com/buenadoptante"
+                        className="flex-1 px-3 py-2 rounded-lg border border-stone-200 text-sm focus:border-teal-400 focus:ring-2 focus:ring-teal-100 outline-none transition-all"
+                        maxLength={500}
+                    />
+                    <button
+                        type="button"
+                        onClick={handleSaveInstagram}
+                        disabled={savingInstagram}
+                        className="px-4 py-2 rounded-lg bg-stone-900 text-white text-sm font-semibold hover:bg-stone-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                        {savingInstagram ? '…' : t('common.save')}
+                    </button>
                 </div>
             </div>
 

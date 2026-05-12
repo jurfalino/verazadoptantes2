@@ -19,6 +19,13 @@ export const FEATURE_FLAGS = {
     ENABLE_SEARCH_CARD_METADATA: true,
     ENABLE_CHAT_WIDGET: false,
     ENABLE_MILESTONE_BADGE: true,
+    ENABLE_QUICK_ACCESS_STRIP: true,
+    // v2.14.10-1: three flags gate visibility of the public-showcase URL chips
+    // on /my-animals. Each defaults FALSE so the URLs stay hidden until an
+    // admin enables them explicitly per the staged rollout plan.
+    SHOWCASE_GLOBAL_VISIBLE: false,
+    SHOWCASE_ORG_VISIBLE: false,
+    SHOWCASE_USER_VISIBLE: false,
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;
@@ -101,6 +108,10 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,
         ENABLE_MILESTONE_BADGE: true,
+        ENABLE_QUICK_ACCESS_STRIP: true,
+        SHOWCASE_GLOBAL_VISIBLE: false,
+        SHOWCASE_ORG_VISIBLE: false,
+        SHOWCASE_USER_VISIBLE: false,
     };
 
     for (const flag of Object.keys(FEATURE_FLAGS) as FeatureFlag[]) {

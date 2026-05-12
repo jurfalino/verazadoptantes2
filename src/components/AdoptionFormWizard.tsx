@@ -11,7 +11,7 @@ import RecordTypeGuidance from '@/components/RecordTypeGuidance';
 import { StarRating } from '@/components/StarRating';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
-import { MediaLightbox, isVideo as isVideoItem } from '@/components/ui/MediaLightbox';
+import { MediaLightbox } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 import { formatShortDate } from '@/lib/dates';
 import DatePicker from '@/components/ui/DatePicker';
@@ -19,12 +19,6 @@ import { extractVideoThumbnail } from '@/lib/videoThumbnail';
 import { zarazTrack } from '@/lib/zaraz';
 
 // Helpers
-function proxyR2Url(url: string): string {
-    if (!url) return '';
-    if (url.includes('r2.dev')) return `/api/proxy-image?url=${encodeURIComponent(url)}`;
-    return url;
-}
-
 function dataUrlToBlob(dataUrl: string): Blob {
     const [header, base64] = dataUrl.split(',');
     const mime = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
@@ -283,7 +277,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
             // Dual-record path: create the parent adoption first, then the event.
             if (showDualDate) {
                 const adoptionLocalDate = parseLocalDate(formData.adoptionDate);
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                 
                 await saveAdoption({
                     animalName: formData.animalName,
                     species: formData.species,
@@ -431,11 +425,13 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                     {/* ===== STEP 1: What happened? ===== */}
                     {step === 1 && (
                         <div className="space-y-4">
-                            {/* When the wizard is opened with a known intent (from VisitIntentCard) we
-                                replace the picker with explanatory copy that varies by record type
-                                and (for adoption/request) the adopter's rating bucket. Manual-open
-                                paths (no `initialRecordType`) keep the full chip grid below. */}
-                            {initialRecordType ? (
+                            {/* When the wizard is opened with a known intent — either from
+                                VisitIntentCard (`initialRecordType` prop) or from a homepage
+                                action card (`?newAdoption=<type>` URL param) — we replace the
+                                picker with explanatory copy that varies by record type and (for
+                                adoption/request) the adopter's rating bucket. Manual-open paths
+                                (FAB on the profile, no intent declared) keep the full chip grid. */}
+                            {(initialRecordType || newAdoptionParam) ? (
                                 <RecordTypeGuidance
                                     recordType={formData.recordType as 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet'}
                                     adopterName={adopterName}

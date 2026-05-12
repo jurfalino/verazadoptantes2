@@ -2,27 +2,45 @@
 
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
+import { useContractBase } from '@/hooks/useContractBase';
 import { zarazTrack } from '@/lib/zaraz';
 
-// External contract app domain
-const CONTRACT_BASE = (process.env.NEXT_PUBLIC_CONTRACT_URL || 'https://adoptions.pages.dev').replace(/\/+$/, '');
-// Use same-origin proxy so CSP img-src 'self' allows the QR image
 const getQrImageSrc = (url: string) => `/api/qr?data=${encodeURIComponent(url)}`;
 
 interface ShareFormMenuProps {
     userId: string;
+    /**
+     * When provided, the share URL becomes /form?u=...&animal=ID and all
+     * labels switch to per-animal phrasing ("formulario para {name}").
+     * Used by the /my-animals card actions so rescuers can hand a
+     * prospective adopter a link pre-targeted to a specific animal.
+     */
+    animalId?: string;
+    animalName?: string;
+    /**
+     * Tighter button styling for use inside card action rows where the
+     * full-width "Compartir formulario de adopción" label is too long.
+     */
+    compact?: boolean;
 }
 
-export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
+export default function ShareFormMenu({ userId, animalId, animalName, compact = false }: ShareFormMenuProps) {
     const { t } = useLanguage();
+    const contractBase = useContractBase();
     const [isOpen, setIsOpen] = useState(false);
     const [showQr, setShowQr] = useState(false);
     const [copied, setCopied] = useState(false);
 
-    const fullUrl = `${CONTRACT_BASE}/form?u=${encodeURIComponent(userId)}`;
-    const shareText = 'Formulario de adopción responsable — PetShield';
+    const perAnimal = !!animalId;
+    const baseUrl = contractBase ? `${contractBase}/form?u=${encodeURIComponent(userId)}` : '';
+    const fullUrl = baseUrl && animalId ? `${baseUrl}&animal=${encodeURIComponent(animalId)}` : baseUrl;
+    const ready = fullUrl !== '';
+    const shareText = perAnimal
+        ? `${t('dashboard.share_form_for_animal_share_text') || 'Formulario de adopción para'} ${animalName || 'este animal'}`
+        : 'Formulario de adopción responsable — PetShield';
 
     const handleCopyLink = async () => {
+        if (!ready) return;
         try {
             await navigator.clipboard.writeText(fullUrl);
         } catch {
@@ -39,18 +57,21 @@ export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
     };
 
     const handleWhatsApp = () => {
+        if (!ready) return;
         window.open(`https://wa.me/?text=${encodeURIComponent(`${shareText}\n${fullUrl}`)}`, '_blank');
         zarazTrack('contract_shared', { channel: 'whatsapp' });
         setIsOpen(false);
     };
 
     const handleEmail = () => {
+        if (!ready) return;
         window.open(`mailto:?subject=${encodeURIComponent(shareText)}&body=${encodeURIComponent(`${shareText}\n\n${fullUrl}`)}`, '_blank');
         zarazTrack('contract_shared', { channel: 'email' });
         setIsOpen(false);
     };
 
     const handleNativeShare = async () => {
+        if (!ready) return;
         if (navigator.share) {
             try {
                 await navigator.share({ title: shareText, url: fullUrl });
@@ -76,13 +97,17 @@ export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
         <>
             <button
                 onClick={(e) => { e.stopPropagation(); e.preventDefault(); setIsOpen(true); }}
-                className="inline-flex items-center gap-2 px-4 py-2.5 text-[13px] font-semibold text-teal-700 bg-teal-50 rounded-xl hover:bg-teal-100 transition-colors border border-teal-200"
-                aria-label={t('dashboard.share_form') || 'Share application form'}
+                className={`inline-flex items-center gap-2 ${compact ? 'px-3 py-2 text-[12px]' : 'px-4 py-2.5 text-[13px]'} font-semibold text-indigo-700 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-200`}
+                aria-label={perAnimal
+                    ? `${t('dashboard.share_form_for_animal_short') || 'Compartir formulario'}${animalName ? ` — ${animalName}` : ''}`
+                    : (t('dashboard.share_form') || 'Share application form')}
             >
-                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <svg className={`${compact ? 'w-3.5 h-3.5' : 'w-4 h-4'} flex-shrink-0`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                 </svg>
-                {t('dashboard.share_form') || 'Share application form'}
+                {perAnimal
+                    ? (compact ? (t('dashboard.share_form_for_animal_short') || 'Formulario') : (t('dashboard.share_form_for_animal') || 'Compartir formulario'))
+                    : (t('dashboard.share_form') || 'Share application form')}
             </button>
 
             {isOpen && (
@@ -101,8 +126,20 @@ export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center text-lg">📋</div>
                                     <div>
-                                        <h3 className="font-semibold text-stone-900 text-sm">{showQr ? (t('common.qr_code') || 'QR code') : (t('dashboard.share_form_modal_title') || 'Share application form')}</h3>
-                                        <p className="text-xs text-stone-500 mt-0.5">{showQr ? (t('dashboard.share_form_qr_hint') || 'Have the applicant scan to open the form') : (t('dashboard.share_form_modal_hint') || 'Applicants fill this form; you\'ll receive their responses.')}</p>
+                                        <h3 className="font-semibold text-stone-900 text-sm">
+                                            {showQr
+                                                ? (t('common.qr_code') || 'QR code')
+                                                : perAnimal
+                                                    ? (t('dashboard.share_form_for_animal_modal_title') || 'Compartir formulario')
+                                                    : (t('dashboard.share_form_modal_title') || 'Share application form')}
+                                        </h3>
+                                        <p className="text-xs text-stone-500 mt-0.5 truncate max-w-[220px]">
+                                            {showQr
+                                                ? (t('dashboard.share_form_qr_hint') || 'Have the applicant scan to open the form')
+                                                : perAnimal
+                                                    ? (animalName || t('dashboard.share_form_for_animal_modal_hint') || 'Aspirantes completarán este formulario para postularse a este animal.')
+                                                    : (t('dashboard.share_form_modal_hint') || 'Applicants fill this form; you\'ll receive their responses.')}
+                                        </p>
                                     </div>
                                 </div>
                                 <button
@@ -205,7 +242,9 @@ export default function ShareFormMenu({ userId }: ShareFormMenuProps) {
                         {/* Footer */}
                         <div className="px-5 pb-4 pt-1">
                             <p className="text-xs text-stone-500 text-center">
-                                {t('share.form_footer_hint')}
+                                {perAnimal
+                                    ? (t('dashboard.share_form_for_animal_footer_hint') || 'El postulante completará el formulario para adoptar a este animal.')
+                                    : t('share.form_footer_hint')}
                             </p>
                         </div>
                         </>

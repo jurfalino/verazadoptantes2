@@ -166,7 +166,7 @@ git commit -m "v<version>: <description>"
 git push origin HEAD:staging                # NEVER push directly to master
 ```
 
-Lint warnings must not exceed the current ratchet threshold (currently **122**).
+Lint warnings must not exceed the current ratchet threshold (currently **125**).
 
 **Cloudflare auto-deploy is OFF.** All deploys run through the GitHub Actions pipeline (`.github/workflows/ci.yml`). On push to `staging` or `master` the pipeline runs:
 

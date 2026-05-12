@@ -50,6 +50,13 @@ export async function GET() {
             ENABLE_SEARCH_CARD_METADATA: config['ENABLE_SEARCH_CARD_METADATA'] || 'true',
             ENABLE_CHAT_WIDGET: config['ENABLE_CHAT_WIDGET'] || 'false',
             ENABLE_MILESTONE_BADGE: config['ENABLE_MILESTONE_BADGE'] || 'true',
+            ENABLE_QUICK_ACCESS_STRIP: config['ENABLE_QUICK_ACCESS_STRIP'] || 'true',
+            // v2.14.10-1: showcase URL-chip visibility flags + Instagram URL for
+            // the empty-state CTA. All three SHOWCASE_*_VISIBLE default OFF.
+            SHOWCASE_GLOBAL_VISIBLE: config['SHOWCASE_GLOBAL_VISIBLE'] || 'false',
+            SHOWCASE_ORG_VISIBLE: config['SHOWCASE_ORG_VISIBLE'] || 'false',
+            SHOWCASE_USER_VISIBLE: config['SHOWCASE_USER_VISIBLE'] || 'false',
+            INSTAGRAM_URL: config['INSTAGRAM_URL'] || '',
             // Telegram support chat — chat_id is non-sensitive and returned
             // verbatim. The bot token and webhook secret are sensitive: never
             // returned to the client. Instead we expose a *_SET indicator so

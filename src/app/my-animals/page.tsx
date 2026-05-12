@@ -9,6 +9,7 @@ import { formatShortDate } from '@/lib/dates';
 import { formatAge } from '@/lib/ageUtils';
 import ShareMenu from '@/components/ShareMenu';
 import ShareFormMenu from '@/components/ShareFormMenu';
+import ShowcaseUrlChips from '@/components/ShowcaseUrlChips';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 
@@ -134,7 +135,8 @@ export default function MyAnimalsPage() {
                         </h1>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <ShowcaseUrlChips />
                         {userId && <ShareFormMenu userId={userId} />}
                         <Link
                             href="/my-animals/new"
@@ -390,7 +392,15 @@ export default function MyAnimalsPage() {
                                                 <span>📅 {formatShortDate(animal.date)}</span>
                                             )}
                                         </div>
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-2 flex-wrap justify-end">
+                                            {!animal.adopterId && userId && (
+                                                <ShareFormMenu
+                                                    userId={userId}
+                                                    animalId={animal.id}
+                                                    animalName={animal.animalName || 'Animal'}
+                                                    compact
+                                                />
+                                            )}
                                             {!animal.adopterId && (
                                                 <ShareMenu
                                                     contractUrl={`/contract/${animal.id}`}

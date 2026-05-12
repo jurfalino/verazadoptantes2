@@ -1,5 +1,3 @@
-const http = require('http');
-
 async function check() {
     try {
         const res = await fetch('http://127.0.0.1:3000/my-animals', { redirect: 'manual' });

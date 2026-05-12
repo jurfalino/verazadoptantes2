@@ -231,6 +231,10 @@ export const userProfiles = sqliteTable("user_profiles", {
     // Legal
     termsAcceptedAt: integer("terms_accepted_at", { mode: "timestamp" }), // Unix timestamp when T&C were accepted
     termsVersion: integer("terms_version"), // Version of T&C accepted (matches CURRENT_TERMS_VERSION)
+    // v2.14.10: shareable handle for the public /user/[handle] showcase URL.
+    // Kebab-cased, integer suffix on collision (no hash). Auto-assigned by
+    // ensureUserProfile() on first sign-in via generateUniqueSlug(); stable thereafter.
+    handle: text("handle").unique(),
 });
 
 export const auditLog = sqliteTable("audit_log", {
@@ -269,6 +273,43 @@ export const notifications = sqliteTable("notifications", {
     typeIdx: index("idx_notif_type").on(table.type, table.createdAt),
 }));
 
+// User-submitted error reports from /auth-error (v2.14.9-14). The page hides
+// the real reason behind "Ocurrió un error inesperado" and includes a
+// "Report this problem" form — real apps have those, so the form makes the
+// deception more credible. Admins read what blocked users said via the same
+// /admin/blocked-logins page (separate table, correlated by time + IP).
+//
+// No FK to user/session because the user is unauthenticated at this point.
+// Correlation to a specific blocked attempt is manual (admin eyeballs the
+// timestamp).
+export const errorReports = sqliteTable("error_reports", {
+    id: text("id").primaryKey(),
+    email: text("email"),       // optional — user may or may not fill it
+    message: text("message"),   // optional — user may submit empty
+    userAgent: text("user_agent"),
+    ipHash: text("ip_hash"),    // truncated/hashed CF-Connecting-IP (privacy)
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`).notNull(),
+}, (table) => ({
+    createdIdx: index("idx_error_reports_created").on(table.createdAt),
+}));
+
+// Blocked sign-in attempts — written when an OAuth login is rejected by the
+// adopter-login gate (v2.14.9-14). Admins view historical attempts at
+// /admin/blocked-logins. We deliberately keep this separate from notifications
+// because notifications are dismissable/read-state per-admin; blocked-logins
+// is the immutable audit trail of "someone tried, here's why we said no."
+export const blockedLogins = sqliteTable("blocked_logins", {
+    id: text("id").primaryKey(),
+    email: text("email").notNull(),
+    attemptedAt: integer("attempted_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`).notNull(),
+    matchedAdopterIds: text("matched_adopter_ids").notNull(), // JSON array of adopter IDs
+    reason: text("reason").notNull(), // 'low_rating' | 'too_many_adoptions' | 'too_many_requests' | composite
+    matchedSummary: text("matched_summary"), // JSON snapshot: name, avgRating, addedBy, lastChangedBy per match
+}, (table) => ({
+    attemptedIdx: index("idx_blocked_attempted").on(table.attemptedAt),
+    emailIdx: index("idx_blocked_email").on(table.email),
+}));
+
 // PetShield Form Submissions
 export const formSubmissions = sqliteTable("form_submissions", {
     id: text("id").primaryKey(),
@@ -297,6 +338,12 @@ export const formSubmissions = sqliteTable("form_submissions", {
     status: text("status").default("pending"),   // pending, reviewed, linked
     linkedAdopterId: text("linked_adopter_id"),  // Set when rescuer links to profile
     notificationId: text("notification_id"),     // Back-reference to notification
+    // v2.14.10: when the form was launched from the public showcase
+    // (`/animal/[id]` → "Adoptar"), this captures which animal the
+    // applicant selected. Lets the rescuer's notification + UI show
+    // "X aplicó para Luna" instead of the generic "X completó el formulario".
+    // Null when the form was shared generically (no animal pre-selected).
+    selectedAnimalId: text("selected_animal_id"),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
     userIdx: index("idx_form_user").on(table.userId),
@@ -310,6 +357,11 @@ export const organizations = sqliteTable("organizations", {
     name: text("name").notNull(),
     createdBy: text("created_by").notNull(),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    // v2.14.10: shareable slug for the public /org/[slug] showcase URL.
+    // Kebab-cased, integer suffix on collision (no hash). Nullable for legacy
+    // rows; backfilled in migration 0041. Set by createOrganization / rename
+    // via generateUniqueSlug().
+    slug: text("slug").unique(),
 });
 
 export const orgMembers = sqliteTable("org_members", {

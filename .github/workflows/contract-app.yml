@@ -5,12 +5,24 @@ on:
     branches: [master, staging]
     paths:
       - 'contract-app/**'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Deploy target'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
 
 jobs:
   deploy:
     name: 🚀 Deploy Contract App
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      IS_PROD: ${{ github.ref == 'refs/heads/master' || inputs.target == 'production' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -26,11 +38,18 @@ jobs:
 
       - name: Build
         working-directory: contract-app
-        run: npm run build
+        env:
+          VITE_API_URL: ${{ env.IS_PROD == 'true' && vars.VITE_API_URL_PROD || vars.VITE_API_URL_STAGING }}
+        run: npm run build -- --mode ${{ env.IS_PROD == 'true' && 'production' || 'staging' }}
 
-      - name: Deploy to Cloudflare Workers
+      - name: Deploy to Cloudflare Pages
         working-directory: contract-app
-        run: npx wrangler deploy
+        # NB: each project's production branch differs.
+        #   adoptions           → master    (legacy from Cloudflare auto-deploy)
+        #   adoptions-staging   → production (set via `wrangler pages project create`)
+        # --branch must match the project's production branch, else the deploy
+        # is treated as a Preview and never aliases to the canonical *.pages.dev URL.
+        run: npx wrangler pages deploy dist --project-name=${{ env.IS_PROD == 'true' && 'adoptions' || 'adoptions-staging' }} --branch=${{ env.IS_PROD == 'true' && 'master' || 'production' }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

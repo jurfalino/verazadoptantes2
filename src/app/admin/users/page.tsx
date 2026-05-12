@@ -171,7 +171,7 @@ export default function AdminUsersPage() {
         }
     };
 
-    const deleteUser = async (userId: string, userName: string) => {
+    const deleteUser = async (userId: string, _userName: string) => {
         try {
             const res = await fetch('/api/admin/users', {
                 method: 'DELETE',

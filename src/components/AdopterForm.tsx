@@ -3,6 +3,7 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { saveAdopter, saveImage, findAdopters } from "@/app/actions";
+import { zarazTrack } from "@/lib/zaraz";
 import type { DiscoveryMatch } from "@/app/actions";
 import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
@@ -20,7 +21,7 @@ import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
 import { renderTextWithLinks } from '@/lib/textUtils';
 import { AdopterFlagging } from '@/components/AdopterFlagging';
 import type { AdopterFlaggingHandle } from '@/components/AdopterFlagging';
-import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, HistoryEntry, AdoptionConfig } from '@/types/adopter';
+import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, AdoptionConfig } from '@/types/adopter';
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 
 interface AdopterFormProps {
@@ -228,6 +229,17 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             const res = await saveAdopter(data);
             if (res.success) {
                 if (isNew) {
+                    // Funnel-tracking event for Amplitude (via Zaraz). Fires
+                    // only on the CREATE path; updates don't trigger it. The
+                    // `continuesToAdoption` flag separates onboarding-completion
+                    // ("they came to log activity and ended up here") from
+                    // pure-profile-create.
+                    zarazTrack('adopter_created', {
+                        hasContactInfo: data.contactInfo ? 1 : 0,
+                        hasFamilyMembers: data.familyMembers ? 1 : 0,
+                        fromForm: formPrefill ? 1 : 0,
+                        continuesToAdoption: searchParams.get('continueToAdoption') === 'true' ? 1 : 0,
+                    });
                     if (formPrefill?.selfieUrl) {
                         try {
                             await saveImage(res.id, formPrefill.selfieUrl, t('formResults.selfie_alt') || 'Applicant selfie');

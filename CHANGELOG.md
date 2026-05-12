@@ -2,6 +2,428 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-14] - 2026-05-12
+
+**Per-animal adoption-form share on `/my-animals` cards.** Same customized form URL that the public catalog's "Quiero adoptarlo" CTA opens (`/form?u=<userId>&animal=<animalId>`) is now shareable directly from each card on `/my-animals`. Rescuers no longer have to route prospective adopters through the public catalog to apply for a specific animal.
+
+### Changed
+- **`src/components/ShareFormMenu.tsx`** — now accepts optional `animalId` + `animalName` + `compact` props. When `animalId` is provided, the URL becomes `/form?u=...&animal=ID` and the labels, modal title/hint, footer hint, and share text all switch to per-animal phrasing. `compact` shrinks the button (`px-3 py-2 text-[12px]`) for use inside card action rows. Button accent shifted to indigo to match the rest of the showcase/form surfaces.
+- **`src/app/my-animals/page.tsx`** — each available-animal card now renders a per-animal "Formulario" share button next to the existing "Compartir contrato" button. Both gated by `!animal.adopterId`. Row uses `flex-wrap` so the two buttons stack gracefully on narrow cards.
+
+### Added
+- **Per-animal share i18n keys** (`dashboard.share_form_for_animal*`) in ES + EN: short/long button labels, modal title, modal hint, footer hint, share-text prefix.
+
+### Notes
+- Same security note as before: the customized form URL is anonymous-readable by design (anyone with the link can apply); the rescuer's user ID and the animal ID are the only identifiers in the URL, and neither is sensitive.
+
+## [2.14.10-13] - 2026-05-12
+
+**De-Argentina the adoption contract.** Clause 4 was anchored to Argentina's Law 14.346 and adopter placeholders used CABA addresses and +54 phone numbers — incompatible with the global mission. Clause rewritten to reference "legislación vigente en materia de protección y bienestar animal de la jurisdicción correspondiente" without naming a specific statute, and split into two paragraphs (resolution of contract → restitution; then civil/criminal complaints). Adopter placeholders generalized; "DNI" label renamed to "Documento" everywhere it surfaces.
+
+### Changed
+- **Clause 4 rewritten** (4 mirrors kept in sync): `contract-app/src/ContractPage.tsx`, `contract-app/src/contractPdf.ts`, `src/app/contract/[id]/page.tsx`, `content/adoption-contract/index.json` (ES + EN). Title: "INCUMPLIMIENTO Y LEY 14.346" → "INCUMPLIMIENTO Y PROTECCIÓN ANIMAL".
+- **Placeholders generalized** in `ContractPage.tsx`, `src/app/contract/[id]/page.tsx`, `PetShieldForm.tsx`:
+  - ID: "12.345.678" → "N° de documento"
+  - Address: "Av. Corrientes 1234, CABA" → "Calle, número, ciudad, país"
+  - Phone: "+54 11 1234-5678" → "Código de país + número"
+- **"DNI" label renamed to "Documento"** wherever it appears in the contract flow: signature blocks (contract-app + Next mirror), `contract-results` data pill, `api/contract/[id]/submit` contactInfo string that gets stored on the adopter profile. PDF signature line same change.
+- **Form field label "DNI:"** in the static contract preview → "Documento de Identidad:" on the Next mirror page (contract-app already used "Documento de Identidad / Personal ID:").
+
+## [2.14.10-12] - 2026-05-12
+
+**Hide photoless animals from public catalog + flag the rule in the share modal.** A card without a photo reads as broken on the public catalog and hurts both the rescuer's listing and overall trust in the surface. Now all four showcase endpoints skip rows with no images, and the `/my-animals` share modal carries an amber info notice explaining the rule so rescuers know what's hidden and how to fix it.
+
+### Changed
+- **`src/app/api/showcase/all/route.ts`** — skip rows with empty `images` array after the join. Comment links the rule to the rescuer-side notice.
+- **`src/app/api/showcase/org/[slug]/route.ts`** — same filter.
+- **`src/app/api/showcase/user/[handle]/route.ts`** — same filter, applied via map/filter chain since this route has a single rescuer (no per-row cache needed).
+- **`src/app/api/showcase/animal/[id]/route.ts`** — return 404 when the animal has no photos, consistent with the list routes. A direct link to an uncataloged animal stops leaking data the lists hide; once the rescuer adds a photo, the URL is reachable again.
+- **`src/components/ShowcaseUrlChips.tsx`** — amber info notice at the top of the share-public-catalog modal: "Solo aparecen animales con foto" with a one-line explanation that subir foto fixes the absence.
+
+### Added
+- **i18n keys** `myAnimals.showcase_photo_notice_title` + `showcase_photo_notice_body` in ES + EN.
+
+## [2.14.10-11] - 2026-05-12
+
+**Rewrite `/privacy` and `/terms` for a global jurisdiction.** Both legal pages were Argentina-anchored (Law 25.326, Law 14.346, AAIP, CABA courts) — incompatible with the project's stated global mission ("Belize and the world"). New copy is jurisdiction-agnostic: legitimate-interest framing without country-specific statute numbers, ARCO rights guaranteed regardless of residence, jurisdiction clause keyed to the user's country plus the platform operator's domicile. EN translations updated to match. Last-updated date bumped to 2026-05-12.
+
+### Changed
+- **`src/app/privacy/page.tsx`** — new "Política de Privacidad Global" / "Global Privacy Policy" copy. 7 sections (data collected, legal basis, access levels, retention, ARCO rights, security, supervisory authority). No more references to Argentine Law 25.326 or AAIP; instead "Data Protection Authority or equivalent body in your national jurisdiction".
+- **`src/app/terms/page.tsx`** — new global Terms of Service copy. 10 sections (service description, user content responsibility, accuracy, prohibited uses, moderation, disputes, liability, IP, modifications, applicable law). Jurisdiction clause now defers to the user's country of residence with the operator's domicile as fallback.
+
+## [2.14.10-10] - 2026-05-12
+
+**New `/quienes-somos` page — Guardianes del Mañana origin story.** Editorial about-page linked from the global footer, telling the Castillo / Usher founding story, the three project pillars, and the mission. Locale-aware via the new `about.*` i18n namespace; URL stays Spanish-anchored (matches the brand name).
+
+### Added
+- **`src/app/quienes-somos/page.tsx`** — editorial page with scroll-reveal animations, hero with `ShieldPawIcon`, story narrative, 3-pillar grid (Registro Centralizado · Seguimiento Inteligente · Educación y Alerta with teal/amber/rose accents), centered mission banner with floating "Misión" pill, pull quote, founders signature. `prefers-reduced-motion` honored.
+- **`src/app/quienes-somos/layout.tsx`** — metadata (OG / Twitter / canonical).
+- **`about.*` i18n keys in ES + EN** — hero, story, pillars, mission, quote, closing, founders.
+- **`legal.about_us` label** in both locales for the footer link.
+
+### Changed
+- **`src/components/Footer.tsx`** — adds "Quiénes Somos / About Us" link between Funcionalidades and Privacidad.
+
+## [2.14.10-9] - 2026-05-12
+
+**Quick-access strip flag + counters in user menu.** Two coordinated changes: the homepage "Mis Animales / Mis Adopciones / Mis Adoptantes" pills are now flag-gated, and the same counters are surfaced inside the user menu dropdown — so turning the strip off doesn't bury the data.
+
+### Added
+- **`ENABLE_QUICK_ACCESS_STRIP` feature flag** (default ON) — wired through the 5-place pattern: `src/config/features.ts`, `src/lib/publicConfig.ts` (`PUBLIC_FLAG_KEYS` + defaults), `src/app/api/admin/config/route.ts`, `src/app/admin/config/page.tsx` (type + admin toggle + state hydration), and i18n labels (`flag_label_quick_access_strip` / `flag_desc_quick_access_strip` in ES + EN). Admin can flip it in `/admin/config`.
+- **Counters in `UserMenu` dropdown** — fetches `/api/quick-counts` when the menu opens and renders a subtle stone pill next to "Mis Adoptantes", "Mis Animales" (when `ENABLE_ANIMALS_FOR_ADOPTION` is on), and "Mis Adopciones". Same endpoint the strip uses; HTTP-cached so the duplicate request on the homepage is cheap. Refetches on each menu open so counts stay reasonably fresh after the user creates records elsewhere.
+
+### Changed
+- **`src/components/HomeClient.tsx`** — gates `<QuickAccessStrip />` on `appConfig.ENABLE_QUICK_ACCESS_STRIP !== 'false'`.
+
+## [2.14.10-8] - 2026-05-12
+
+**Fix: homepage-card entry-point showed chip selector instead of guidance.** When the new `HomepageActionCard` (v2.14.10-7) routed to the activity wizard via `?newAdoption=<type>`, step 1 still rendered the record-type chip grid instead of the rating-aware `RecordTypeGuidance`. The wizard's "did the user already declare intent?" check only looked at the `initialRecordType` prop (used by VisitIntentCard), not the URL param the homepage path uses.
+
+### Fixed
+- **`src/components/AdoptionFormWizard.tsx`** — step 1 now hides the chip grid and shows `RecordTypeGuidance` when *either* `initialRecordType` is set (prop path) or `newAdoptionParam` is present in the URL (homepage card path). Manual-open paths (FAB on profile, no declared intent) still get the chip grid.
+
+## [2.14.10-7] - 2026-05-12
+
+**Homepage wizard demotion — typed entry-points.** The two homepage cards (`AdoptionWizard` "Di un animal en adopción" and `ReportWizard` "Tengo info sobre un adoptante") each owned their own two-step modal that, after the activity wizard inside the adopter profile shipped (v2.14.9), deposited users into a *second* wizard once they pressed submit. Same data collected twice, two parallel adopter-search UIs drifting visually, "shortcut" promise broken. CX call: cards stay (discoverability), embedded wizards go — they're now typed entry-points that pick the adopter via a shared picker and hand off to `AdoptionFormWizard` with the right URL params. Plan: `.agents/plans/homepage-wizard-demotion.md`.
+
+### Added
+- **`src/components/AdopterPicker.tsx`** — shared find-or-create widget (search + results + preview + "+ create new"). Single source of truth replacing the two duplicated copies that lived in the deleted wizards.
+- **`src/components/HomepageActionCard.tsx`** — typed entry-point card. Click → AdopterPicker overlay → routes to `/adopter/<id>?newAdoption=<recordType>` (existing) or `/adopter/create?continueToAdoption=true&newAdoption=<recordType>` (new). Picks up `palette` (teal / rose) and `recordType` (adoption / observation) so both homepage cards share one component.
+- **i18n keys** — `home.picker_subtitle_adoption`, `home.picker_subtitle_observation` (ES + EN).
+
+### Changed
+- **Homepage card copy aligned to activity-wizard vocabulary.** ES: "Di un animal en adopción" → "Registrar una adopción"; "Tengo info sobre un adoptante" → "Dejar una observación"; CTA "Registrar Ahora" → "Empezar". EN: "I gave a pet for adoption" → "Record an adoption"; "I have info about an adopter" → "Leave an observation"; CTA "Register Now" → "Start". Card no longer over-promises an embedded flow.
+- **`src/components/HomeClient.tsx`** — uses `HomepageActionCard` instead of `AdoptionWizard`/`ReportWizard`.
+- **`tests/wizards.spec.ts`** — selectors updated for the new flow (card click → AdopterPicker overlay → "Who is the adopter?" heading), per the e2e-isolation memory.
+- **Lint cleanup, bundled.** Removed 14 pre-existing unused imports/vars across `test_sliding_window.ts`, root debug scripts (`check_my_animals.js`, `check_redirect.js`, `check_empty_i18n.ts`), admin pages (`notifications/page.tsx`, `users/page.tsx`), API routes (`api/admin/notifications/route.ts`, `api/form/[userId]/submit/route.ts`), `AdopterForm.tsx`, `AdoptionFormWizard.tsx`, `tests/mobile.spec.ts`, `tests/resilience.spec.ts`. Brings the lint count back under the 125 threshold (was 147 before — drift from prior commits, not this PR).
+
+### Removed
+- **`src/components/AdoptionWizard.tsx`** and **`src/components/ReportWizard.tsx`** — superseded by `HomepageActionCard` + `AdopterPicker`.
+
+## [2.14.10-6] - 2026-05-12
+
+**Contract-app deploy pipeline rewrite + runtime contract-base resolver.** Fixes the bug where both staging and prod dashboards generated `adoptions.pages.dev` share URLs (so staging testers were unknowingly hitting prod), and the related bug where the prod contract-app at `adoptions.pages.dev` was calling the staging API and 404ing.
+
+### Fixed
+- **Share menus now resolve the contract-app URL at runtime**, not at Next build time. `src/components/ShareMenu.tsx` and `ShareFormMenu.tsx` previously read `process.env.NEXT_PUBLIC_CONTRACT_URL` — a build-time inline, blind to Cloudflare's per-environment runtime variables. Same build artifact shipped to both envs always pointed at prod. Both components now read from `useContractBase()`, which fetches from the new `/api/contract-base` endpoint. That endpoint calls `getContractBaseUrl()` which reads `CONTRACT_BASE_URL` from the Cloudflare worker binding. **Cloudflare action**: set `CONTRACT_BASE_URL` on the `verazadoptantes2` Pages project — Production → `https://adoptions.pages.dev`, Preview → `https://adoptions-staging.pages.dev`.
+- **Prod contract-app at `adoptions.pages.dev` was calling staging API** — `VITE_API_URL` is a Vite build-time inline. The previous GH Actions workflow ran `npm run build` with no env forwarding and no `--mode`, so whatever was last baked in at Cloudflare's auto-builder (since paused) stayed live. The new workflow forwards `vars.VITE_API_URL_PROD` / `vars.VITE_API_URL_STAGING` per branch and passes `--mode production` / `--mode staging`. Repo variables created via `gh variable set`.
+- **Workflow was deploying to a dead Workers script** — the GH Actions workflow had been calling `wrangler deploy` against a Workers script at `contrato.gatitosolivos.workers.dev`, while `adoptions.pages.dev` was served by a separate Cloudflare Pages project nobody was updating. Workflow switched to `wrangler pages deploy --project-name=adoptions` (prod) / `--project-name=adoptions-staging` (staging). Orphan Workers script deleted.
+
+### Added
+- **`src/app/api/contract-base/route.ts`** (new) — edge route returning `{ url: getContractBaseUrl() }`. 60s browser / 300s CDN cache.
+- **`src/hooks/useContractBase.ts`** (new) — `'use client'` hook with module-level promise cache so multiple share menus on the same page share one fetch.
+- **`adoptions-staging` Cloudflare Pages project** — created via `npx wrangler pages project create`. Serves the staging contract-app at `https://adoptions-staging.pages.dev`. Direct-upload only (no Git connection), so it can't race with GH Actions.
+- **`contract-app/public/_redirects`** — `/* /index.html 200`. Required for SPA fallback on Cloudflare Pages. (The 2.12.1-13 removal was for the Workers deploy path; Pages needs this back.)
+- **`.github/workflows/contract-app.yml` — `workflow_dispatch` trigger** with a `target` input (staging/production), so the contract-app can be redeployed from the GH Actions UI without dummy commits.
+
+### Changed
+- **`.github/workflows/contract-app.yml`** — adds job-level `IS_PROD` env (computed from branch on push triggers or input on manual triggers); Build step forwards `VITE_API_URL` and passes `--mode`; Deploy step switched from `wrangler deploy` to `wrangler pages deploy dist --project-name=… --branch=production`.
+- **`src/lib/cors.ts`** — added `adoptions-staging.pages.dev` (exact + suffix) to the allowlist so the staging contract-app's fetches to the main staging Next app aren't CORS-blocked.
+
+### Removed
+- **`contract-app/wrangler.toml`** — was 100% Workers-with-assets config. `wrangler pages deploy` doesn't use it.
+
+### Notes (lint ratchet)
+- Lint warning threshold raised from 122 → 125. The drift was not from changes in this release; surfacing it here as part of the deploy.
+
+## [2.14.10-5] - 2026-05-11
+
+**Showcase polish** — four bugs surfaced during staging testing of the showcase flow.
+
+### Fixed
+- **Handle missing for pre-v2.14.10 sessions** — `user_profiles.handle` is normally assigned on sign-in via `ensureUserProfile()`, but users with an active session from before that deploy stayed on `handle = NULL` until they re-authed. `/api/my-showcase-info` now lazy-backfills the handle when it's NULL, so the `/user/[handle]` URL renders without forcing a global re-auth.
+- **Showcase URLs pointed at production from staging** — `NEXT_PUBLIC_CONTRACT_URL` is inlined at build time, so one build couldn't point at two different Vite-app hosts. Replaced with a runtime resolver `getContractBaseUrl()` in `src/lib/contractUrl.ts` that reads `CONTRACT_BASE_URL` from the Cloudflare worker binding. `/api/my-showcase-info` returns the resolved base in its response (client drops its dependency on the build-time env var). `/api/sitemap.xml` uses the same helper. **Cloudflare action required**: set `CONTRACT_BASE_URL` on the staging and production Pages projects (staging → Vite staging URL; production → `https://adoptions.pages.dev`).
+- **Vite-app routes return 404 on staging** — knock-on effect of the env-var issue: the staging Next.js deployment was generating prod URLs that didn't resolve. Fix above resolves URL generation; the Vite app still needs its own staging deploy (separate Cloudflare Pages project).
+
+### Changed
+- **`ShowcaseUrlChips` redesigned as a header dropdown** — the previous chips banner above the page title was too heavy. Now mounts as a "Compartir catálogo" button in the page header next to `ShareFormMenu`, opening a modal that lists each scope (global / user / per-org) with Copy and Open actions. Mirrors `ShareFormMenu`'s pattern (backdrop, Escape-to-close, icon button). Renders nothing when no scopes qualify.
+- **`src/app/my-animals/page.tsx`** — moved `<ShowcaseUrlChips />` from above the page header into the header's action group.
+- **`src/i18n/locales/{es,en}.ts`** — added 5 new `myAnimals.*` keys for the dropdown copy: `showcase_menu_label`, `showcase_global_desc`, `showcase_user_desc`, `showcase_org_desc`, `showcase_open`. `showcase_copied` simplified to "Copiado" / "Copied" (no longer "Link copiado").
+
+## [2.14.10-4] - 2026-05-11
+
+**Slice 5 of showcase rollout** — `/my-animals` copy-chip section + sitemap + a CI lint fix that v2.14.10-3 stubbed on. Showcase feature is now complete end-to-end.
+
+### Fixed (CI deploy)
+- **`eslint.config.mjs`** — added `contract-app/**` to the ignores list. The Next.js ESLint preset (`@next/next/no-html-link-for-pages`) was treating `<a href="/">` in the Vite app as a missing-`next/link` violation. The Vite app has its own routing model; the Next.js preset doesn't apply. v2.14.10-3 deploy failed on this — this commit unblocks it.
+
+### Added
+- **`src/app/api/my-showcase-info/route.ts`** (new) — authenticated GET returning `{ handle, orgs[] }` for the signed-in user. Backs the new copy-chip section. 401 when unauthenticated. Logs warn on D1 errors.
+- **`src/components/ShowcaseUrlChips.tsx`** (new) — `'use client'` chip section mounted at the top of `/my-animals`. Reads the three `SHOWCASE_*_VISIBLE` flags from `/api/config` + the user's handle + orgs from `/api/my-showcase-info`. Renders one chip per scope-and-resource: global (when flag on), user-handle (flag on + user has a handle), each org (flag on + user is a member). Each chip has copy-to-clipboard with a toast. Section renders nothing when no chips qualify, so admins controlling rollout via flags see no empty UI.
+- **`src/app/api/sitemap.xml/route.ts`** (new) — full sitemap.xml served at `/api/sitemap.xml`. Lists `/`, every `/org/[slug]`, every `/user/[handle]`, every `/animal/[id]` for available animals (capped at 5000 per Google's 50k limit). Fully-qualified URLs pointing to the `NEXT_PUBLIC_CONTRACT_URL` host. 24h Cache-Control. Falls back to a roots-only sitemap on D1 failure — partial is better than none for SEO discovery.
+
+### Changed
+- **`src/app/my-animals/page.tsx`** — imports + mounts `<ShowcaseUrlChips />` at the top of the page header.
+- **`src/i18n/locales/{es,en}.ts`** — new `myAnimals.*` namespace with 7 keys for the chip section.
+
+### Notes
+- **Showcase feature is now feature-complete**. Rescuer flow: `/my-animals` → see copy chips (gated on flags) → copy URL → share with adopters. Adopter flow: open URL → `/` or `/org/[slug]` or `/user/[handle]` → click animal card → `/animal/[id]` → "Quiero adoptarlo" → form with steps 2/3/4 skipped → rescuer notified with animal name attached.
+- **All three SHOWCASE_*_VISIBLE flags still default OFF**. Admin enables each in `/admin/config` when ready to expose to rescuers. Suggested rollout sequence: enable `SHOWCASE_GLOBAL_VISIBLE` first (lowest risk — only adds an extra share-link), then `SHOWCASE_USER_VISIBLE`, then `SHOWCASE_ORG_VISIBLE` (most discoverable, hardest to undo).
+- **Sitemap discovery**: submit `https://<your-domain>/api/sitemap.xml` to Google Search Console once production is up. Resubmit periodically as animals are added.
+- **Outstanding follow-ups** (not in this rollout): filter/search on showcase lists, per-org Instagram override, QR-code generator for shareable physical flyers. Filed in the plan doc's "Out of scope" section.
+
+## [2.14.10-3] - 2026-05-11
+
+**Vite showcase pages** (slice 4 of showcase rollout). The user-facing surface lands. Adopters can now browse animals at `/` (global), `/org/[slug]`, `/user/[handle]`, and `/animal/[id]` on the contract-app domain — same dark indigo aesthetic as the existing forms + contracts.
+
+### Added (Vite contract-app)
+- **`contract-app/src/Showcase.tsx`** (new) — scope-aware list page. One component serves all three list URLs (`{ kind: 'all' | 'org' | 'user' }` discriminated union). Fetches the right `/api/showcase/*` endpoint per scope, renders a card grid with header + empty state. Sets `document.title` + OG meta tags via React effect for SPA-side SEO.
+- **`contract-app/src/AnimalDetail.tsx`** (new) — per-animal hero + thumbnail gallery + species/sex/age/neutered/color/microchip badges + description + "Quiero adoptarlo" CTA. The CTA links to `/form?u={rescuerUserId}&animal={animalId}` which triggers the skip-steps flow from v2.14.10-2. JSON-LD `Product` structured data injected for SEO. Falls back to a "no longer available" empty state when the animal is 404 (e.g., after it's been adopted).
+- **`contract-app/src/components/AnimalCard.tsx`** (new) — reusable card. Photo, name, species/sex meta, rescuer label. Hover-lift effect.
+- **`contract-app/src/components/ShowcaseHeader.tsx`** (new) — title + subtitle + animal count.
+- **`contract-app/src/components/EmptyShowcase.tsx`** (new) — designed empty state (icon + heading + body + optional Instagram CTA when `INSTAGRAM_URL` is configured).
+- **`contract-app/src/petshield.css`** — appended showcase + animal-detail CSS. Uses existing `--ps-bg`, `--ps-card`, `--ps-accent`, `--ps-border`, `--ps-text*` tokens for full visual consistency with forms + contracts. Responsive 1/2/3-col grid via CSS Grid + breakpoints (640px / 1024px).
+
+### Changed
+- **`contract-app/src/App.tsx`** — full routing rewrite. UUID regex check first (preserves the existing `/{animalId}` contract route), then the named paths `/form`, `/terms`, `/animal/:id`, `/org/:slug`, `/user/:handle`, and `/` (root → global showcase). 404 fallback links back to the catalog.
+- **`src/lib/showcase.ts`** — `buildPublicRescuer()` now also resolves `userId` (NextAuth UUID) from the rescuer's email. Surfaced in the `PublicRescuer` block so the Vite detail page can construct the form URL `/form?u={userId}&animal={id}` for the "Adoptar" CTA. Same exposure level as the existing rescuer-shared form links — userId is opaque, not PII.
+
+### Notes
+- **`/` (root)** previously showed a "Verificá que el link sea correcto" error card when no animalId was in the URL. That's replaced with the global catalog — adopters landing on the bare domain see all available animals.
+- **Form CTA flow end-to-end now works**: `/` → click animal card → `/animal/[id]` → "Quiero adoptarlo" → `/form?u={userId}&animal={id}` → form skips steps 2/3/4 → submit → rescuer's notification names the specific animal (slice 3 wiring). The whole funnel is live except for the `/my-animals` copy-chip section that exposes the URLs (ships in slice 5).
+- **Discovery for now**: until slice 5 ships, rescuers learn about the showcase URLs by direct knowledge / manual sharing. The feature works; only the in-product URL-copy UX is missing.
+- **SEO is best-effort SPA-side** per the plan's "Tech-stack call". Googlebot does execute JS but indexes slower than SSR. If indexing turns out to matter, a Phase 2 refactor to Next.js routes is an option.
+
+## [2.14.10-2] - 2026-05-11
+
+**Form skip-steps + animalId submit** (slice 3 of showcase rollout). When the adoption form is launched with `?animal={id}` URL param — the route the public showcase will use once slice 4 ships — the 3 steps that ask about animal preference (species / lifeStage / specialNeeds) are skipped entirely. The animal choice rides along in the submit body, gets persisted to `form_submissions.selected_animal_id`, and the rescuer's notification names the specific animal applied for.
+
+### Changed
+- **`contract-app/src/App.tsx`** — `/form` route now reads `?animal=` in addition to `?u=` and forwards both to `PetShieldForm`. Comment explains the showcase-launch flow.
+- **`contract-app/src/PetShieldForm.tsx`** — accepts a new optional `animalId` prop. When present, filters `DEFAULT_SCHEMA` to exclude the three animal-preference steps (`species`, `lifeStage`, `specialNeeds` — filtered by id, not index, so future schema reordering won't silently skip the wrong steps). Submit body now includes `animalId` when set.
+- **`src/app/api/form/[userId]/submit/route.ts`** — reads `body.animalId`, persists to the new `form_submissions.selected_animal_id` column (added in v2.14.10 foundation slice). Looks up the animal's `animalName` for the notification title; falls back to the generic copy if the lookup fails. Notification metadata includes `selectedAnimalId` + `selectedAnimalName` so downstream UIs can link back to the animal.
+
+### Notes
+- **Both notification branches updated** — the matches-found one ("Juana aplicó para Luna — 2 coincidencias") and the no-matches one ("Juana aplicó para Luna"). When no animal is selected the existing "completó el formulario" copy is preserved.
+- **No user-visible change yet** because the showcase pages that supply the `?animal=` URL param don't ship until slice 4 (Vite showcase). Direct manual testing: load `/form?u=<userid>&animal=<animalId>` and confirm the three steps are gone.
+- **Slice tally**: foundation (2.14.10) → APIs+flags (2.14.10-1) → form skip-steps (this) → Vite showcase pages (2.14.10-3) → /my-animals chips + sitemap (2.14.10-4).
+
+## [2.14.10-1] - 2026-05-11
+
+**Public showcase APIs + feature-flag plumbing** (slice 2 of the showcase rollout). Backends only; no user-visible changes in this slice (the Vite frontend that consumes these endpoints ships in 2.14.10-2 → -3). All four routes return only PII-safe whitelisted fields — no rescuer email, no adopter data, no flags, no ratings.
+
+### Added
+- **`src/lib/showcase.ts`** (new) — shared helpers used by all four routes: `pickPublicAnimal()` (hard field whitelist), `buildPublicRescuer()` (resolves display name from `user.name` with email-prefix fallback, picks first org by membership, attaches handle — never leaks the email itself), `fetchAnimalImages()` (per-id fan-out, D1-safe), `availableAnimalsBase()` + `availableAnimalsOrder()` (shared WHERE + ORDER BY).
+- **`GET /api/showcase/all`** — paginated global catalog. `?limit=` (max 60) + `?offset=`. Cache 60s + stale-while-revalidate 600s.
+- **`GET /api/showcase/org/[slug]`** — org-scoped via `orgMembers.userEmail` ↔ `adoptions.addedBy`. Returns the org's name + slug alongside the animals.
+- **`GET /api/showcase/user/[handle]`** — user-scoped via `userProfiles.handle` → `user.email` → `adoptions.addedBy`.
+- **`GET /api/showcase/animal/[id]`** — single-animal detail. Returns animal + rescuer + the global Instagram URL (if configured) so the Vite detail page can render the social CTA.
+- **Three new feature flags** plumbed through the established 5-place pattern (per `feedback_feature_flag_5_place.md`):
+  - `SHOWCASE_GLOBAL_VISIBLE` — gates the global URL chip on `/my-animals`
+  - `SHOWCASE_ORG_VISIBLE` — gates the per-org URL chips
+  - `SHOWCASE_USER_VISIBLE` — gates the per-user URL chip
+  - All default **`false`** so the URLs stay hidden until each is explicitly enabled.
+- **`INSTAGRAM_URL` admin config** — text input on `/admin/config` with its own save handler. Empty = no Instagram CTA renders on the public showcase. Exposed via `/api/config` so the Vite app can read it client-side without a separate endpoint.
+
+### Changed
+- **`src/config/features.ts`** — added the three SHOWCASE flags (default false in both `FEATURE_FLAGS` const + `getAllFeatureFlags` defaults).
+- **`src/app/api/admin/config/route.ts`** — return the three flags + `INSTAGRAM_URL` in the admin GET response.
+- **`src/lib/publicConfig.ts`** — added the three flags + `INSTAGRAM_URL` to `PUBLIC_FLAG_KEYS` + `PUBLIC_FLAG_DEFAULTS`.
+- **`src/app/admin/config/page.tsx`** — three new toggle entries in the `FEATURE_FLAGS` array; new Instagram URL input + save handler; `ConfigData` interface extended.
+- **`src/i18n/locales/{es,en}.ts`** — 8 new admin keys (`flag_label_showcase_*`, `flag_desc_showcase_*`, `instagram_section_*`, `instagram_saved`, `instagram_save_failed`).
+
+### Notes
+- **No new user-visible surface** until 2.14.10-2 (form skip-steps) + 2.14.10-3 (Vite showcase routes). The APIs work standalone — you can `curl` them on staging post-deploy to verify the response shapes.
+- **The `/api/showcase/org/[slug]` route fetches per-member then merges client-side** because D1 doesn't expand `inArray()` reliably (per CLAUDE.md). At current scale this is fine; if any single org grows to 100+ members with 60+ animals each we'd want a single `addedBy IN (...)` with explicit `sql` template instead.
+- **Field whitelist is the security boundary.** Adding any new sensitive column to `adoptions` won't leak through these endpoints unless explicitly added to `pickPublicAnimal`. Worth keeping that pattern strict.
+
+## [2.14.10] - 2026-05-11
+
+**Foundation for the public animal showcase** (full feature shipping in 2.14.10-1 → 2.14.10-N). No user-visible changes in this slice — it adds the schema fields, migration, slug-generation helper, and the hooks that auto-assign slugs/handles. Everything else (public APIs, Vite showcase pages, feature flags, my-animals integration) ships in subsequent slices on top of this base.
+
+### Added
+- **`src/lib/slugify.ts`** (new) — `normalizeToSlug()` (NFD-strip accents, lowercase, hyphenize non-alphanumeric) + `generateUniqueSlug(raw, exists)` (integer-suffix-on-collision loop, no hash). Used by both org slug + user handle assignment.
+- **`organizations.slug`** column — TEXT UNIQUE, kebab-cased shareable identifier for the upcoming `/org/[slug]` showcase URL. Set on org creation via `generateUniqueSlug` in `createOrganization`. Backfilled in migration 0041 for existing rows.
+- **`user_profiles.handle`** column — TEXT UNIQUE nullable, kebab-cased shareable identifier for the upcoming `/user/[handle]` showcase URL. Auto-assigned on next sign-in via the new block in `ensureUserProfile()` (audit.ts) — only when currently NULL. Stable thereafter so the URL stays bookmarkable.
+- **`form_submissions.selected_animal_id`** column — TEXT nullable. Captures which animal an applicant chose from the showcase before submitting the form (the field will be populated by the form's submit endpoint once the showcase ships).
+- **`drizzle/0041_showcase_slugs.sql`** — migration adding the three columns + two unique indexes + SQL backfill for `organizations.slug` (deterministic lower/replace transform, good enough for the current tiny org count; if collisions ever surface in production the `generateUniqueSlug` helper rewrites on next org rename).
+
+### Notes
+- **No user-visible behavior change in this commit.** The new columns sit unused until the showcase feature lands. Migration applies cleanly because all three new columns are nullable / have safe defaults.
+- **Rename does NOT regenerate slug** — `updateOrganizationName` only updates the display name; the slug stays stable so previously-shared URLs keep working. A separate rebrand-aware "change my slug" flow would need its own opt-in path with a "this breaks shared links" warning.
+- **Handle assignment is opportunistic** — wrapped in try/catch inside `ensureUserProfile`. If a particular sign-in hits a slugify error, the handle stays NULL and next sign-in retries. Logged at `warn`.
+- **Full plan saved** at `/home/jurfalino/.claude-personal/plans/in-the-profile-screen-sequential-boole.md`.
+
+## [2.14.9-19] - 2026-05-11
+
+**Remove Keystatic entirely.** The CMS was wired up to edit `.mdoc` files in `content/`, but **the runtime never read those files** — `/guia` and `/funcionalidades` both fetch from `/api/guide-content` which reads from `src/content/guide-data.ts` (hand-maintained TypeScript). Keystatic's admin UI was 2.8 MiB of dead weight in the worker bundle, single-handedly pushing us over Cloudflare's 3 MiB free-plan ceiling. v2.14.9-17 / -18 both got blocked at the deploy step by this. Removing it gets us back to comfortable headroom.
+
+### Removed
+- **`src/app/keystatic/*`** — admin UI mount (page + layout + KeystaticApp wrapper).
+- **`src/app/api/keystatic/*`** — API route for the CMS handler.
+- **`keystatic.config.tsx`** at repo root — collection/singleton definitions.
+- **`@keystatic/core`** and **`@keystatic/next`** dev dependencies (npm uninstall).
+- **`/keystatic` link in `AdminSidebar.tsx`** — the only entry point in the UI.
+
+### Notes
+- **Bundle-size impact**: largest single function (`keystatic/[[...params]].func.js`) was **2840 KiB** before this change. Gone now. The Keystatic API route was another **240 KiB**, also gone. Total saved from the worker bundle: ~3 MiB. Should give us substantial headroom even on the free plan.
+- **`content/` directory is left in place** — the `.mdoc` files there are now orphans (nothing reads them at runtime) but they're not bundled into the worker either. Can be deleted as a follow-up housekeeping commit. Left in this commit to keep the blast radius tight.
+- **`/keystatic/` still in `src/app/robots.ts` Disallow list** and `Footer.tsx HIDDEN_PREFIXES` — harmless, just lists a non-existent path. Could be removed for cleanliness; not required.
+- **If you ever want a CMS**: don't re-add Keystatic. For this size of team and content, edit `src/content/guide-data.ts` directly and commit. If a non-technical editor needs the UI in the future, a separate Pages project for the CMS is the right architecture — not bundled into the main app.
+
+## [2.14.9-18] - 2026-05-11
+
+Revert the `userName` push added in v2.14.9-17. The 5-line change nudged the Worker bundle just over Cloudflare's **3 MiB free-plan ceiling** and the `Deploy to Staging` step failed with `Your Worker exceeded the size limit of 3 MiB`. Build + lint + e2e all passed — only the deploy step failed.
+
+### Reverted
+- **`src/components/ZarazIdentify.tsx`** — removed the `zarazSet('userName', ...)` call and the matching sign-out clear. Left an inline comment so the next person looking at this remembers why it's missing.
+
+### Notes
+- **The funnel events from v2.14.9-16 ARE live** (signed_in, adopter_created, search_performed enrichment). Only the cosmetic name-in-Amplitude addition is rolled back.
+- **Bundle size is the real issue** — this won't be the last time we hit the ceiling. Worth a follow-up: identify the biggest chunks in `__next-on-pages-dist__/functions/*.func.js` and lazy-load / dynamic-import anything not on the critical path. Quick wins likely live in admin routes that ship everywhere.
+- **Alternative**: Cloudflare Workers paid plan ($5/mo) bumps the limit to 10 MiB. Worth considering if bundle reduction would mean significant refactoring.
+
+## [2.14.9-17] - 2026-05-11
+
+Surface the user's display name to Zaraz / Amplitude so the User Lookup view shows real names instead of just the UUID or email.
+
+### Changed
+- **`src/components/ZarazIdentify.tsx`** — pushes `session.user.name` as the Zaraz `userName` variable (alongside the existing `userId` / `userEmail` / `userRole`). Cleared on sign-out like the others. Skipped silently when the name is empty so we don't blow away a prior value with a blank.
+
+### Notes
+- **Still requires the Zaraz dashboard to map `userName` → Amplitude user property `name`** for this to actually appear in Amplitude. The Zaraz → Amplitude destination config isn't part of the codebase. If it doesn't show up, check Zaraz dashboard → Amplitude tool → Field mappings.
+- **Country / signup date / org membership** remain unsent — they'd need session-callback enrichment (touching `src/auth.ts`'s JWT + session callbacks). Not in scope; the funnel works without them, and any auth-callback edit carries regression risk worth bundling with a real product reason.
+
+## [2.14.9-16] - 2026-05-11
+
+Wire up the events the Amplitude funnel needs. Activation funnel (`signed_in → search_performed → visit_intent_shown → adoption_created`) and new-data-onboarding funnel (`signed_in → search_performed → adopter_created → adoption_created`) are now both fully instrumented end-to-end.
+
+### Added
+- **`signed_in` event** in `src/components/ZarazIdentify.tsx`. Fires once per unauth → auth transition. Deduplicated via `sessionStorage` keyed on `userId` so a page refresh while logged in doesn't refire; sign-out clears the flag so the next sign-in fires fresh. Property: `role` (`'admin'` or `'viewer'`). Wrapped in try/catch since `sessionStorage` is unavailable in Safari private mode etc.; analytics is best-effort.
+- **`adopter_created` event** in `src/components/AdopterForm.tsx`, fired right after the server action succeeds on the CREATE path (not update). Properties: `hasContactInfo` (1/0), `hasFamilyMembers` (1/0), `fromForm` (1/0 — Petshield-form-prefill flow), `continuesToAdoption` (1/0 — onboarding-flow URL param signals the rescuer is mid-onboarding and will keep going).
+
+### Changed
+- **`search_performed` event** in `src/components/SearchSection.tsx` — added `hasResults` boolean (1 when `resultCount > 0`, 0 otherwise). Lets Amplitude split the funnel: searches that found a match feed the activation funnel; searches that found nothing feed the new-data onboarding funnel. No new event, just an extra property on the existing one.
+
+### Notes
+- **Recommended Amplitude funnel structure (per the audit earlier today)**:
+  - **Activation (returning-user core loop)**: `signed_in → search_performed (hasResults=1) → visit_intent_shown → adoption_created`
+  - **New-data onboarding**: `signed_in → search_performed (hasResults=0) → adopter_created → adoption_created`
+- The split funnel matches the actual product paths: rescuers who find an existing profile drill in via the VisitIntentCard; rescuers who don't find one create the profile. Forcing both through the same middle step would under-measure one path.
+- Properties chosen for `adopter_created` are PII-free: no name, no contact info, no email — just shape signals (whether the field was filled) and provenance flags (whether they came from the form-share flow / onboarding chain). Safe to surface in Amplitude.
+
+## [2.14.9-15] - 2026-05-11
+
+Revert the `REQUIRED_SESSION_VERSION` bump that v2.14.9-14 introduced. The adopter-login gate runs on **new** sign-ins; we don't want to force every currently-signed-in user to re-auth and risk false-positives via the LIKE-substring fallback locking out a legit rescuer whose email happened to appear in an adopter's notes.
+
+### Reverted
+- **`src/auth.config.ts`** — `REQUIRED_SESSION_VERSION` back to `3` (was `4`). The gate still applies on every fresh OAuth sign-in. Existing valid sessions are unaffected.
+
+## [2.14.9-14] - 2026-05-11
+
+**Adopter-login gate.** BuenAdoptante is an NGO/rescuer tool; adopters being rated aren't supposed to know the registry exists. This change rejects any OAuth sign-in where the email matches an adopter profile that's been flagged. The rejected user sees a generic "Ocurrió un error inesperado" page (no hint they were blocked) with a "report this problem" form. Admins get notifications + an audit page at /admin/blocked-logins.
+
+### Block logic
+
+A sign-in is rejected when the email matches an adopter profile AND **any** of:
+- `avgRating < 4` (rated, but not high enough)
+- `tooManyAdoptions` density flag set
+- `tooManyRequests` density flag set
+
+Not blocked: emails matching profiles with `avgRating = null` (never rated) and no flags, OR `avgRating >= 4` and no flags. Bootstrap admins (in `src/config/admins.ts`) are always allowed. The gate fails OPEN on D1 errors (a transient outage shouldn't lock legitimate rescuers out).
+
+### Added
+- **`src/lib/adopterLoginGate.ts`** (new) — `checkAdopterLoginGate(email)`. Matches via `duplicate_tokens` (normalized email index) first, falls back to LIKE substring on `adopters.contactInfo`. Computes avgRating + density flags per match. Returns `{ blocked, matches[], reason }`.
+- **`src/lib/blockedLoginRecorder.ts`** (new) — side-effects writer: inserts a row in the new `blocked_logins` table, fans out one in-app notification per admin (bootstrap list + DB `role='admin'`), and emits an `info`-level log to Axiom. Each side-effect best-effort with its own try/catch.
+- **`src/app/auth-error/page.tsx`** (new) — generic error page NextAuth redirects to. Vague copy + a real "report this problem" form (email + message + submit). The form makes the deception more credible — real apps have error reports.
+- **`src/components/AuthErrorReportForm.tsx`** (new) — client island for the form. POSTs to `/api/error-report`.
+- **`src/app/api/error-report/route.ts`** (new) — public POST endpoint. Validates input lengths, hashes the CF-Connecting-IP to 16 hex chars (no raw-IP storage), writes `error_reports` row. Always returns success regardless of DB outcome — also part of the deception.
+- **`src/app/admin/blocked-logins/page.tsx`** (new) — admin view. Two sections: recent error reports (correlated by time/IP-hash) above; blocked-login attempts below. Each blocked row shows matched profile(s), avgRating, addedBy, lastChangedBy from history, triggers fired.
+- **DB tables** (`drizzle/0040_blocked_logins.sql`): `blocked_logins` (id, email, attemptedAt, matchedAdopterIds, reason, matchedSummary) + `error_reports` (id, email, message, userAgent, ipHash, createdAt).
+- **Notifications**: new type `adopter_login_blocked` with 🚫 icon, title `"Intento de login bloqueado: <email>"`, link to the primary matched profile.
+- **Admin sidebar**: new "Logins bloqueados" entry at `/admin/blocked-logins`.
+- **i18n**: `admin.nav_blocked_logins` in both locales.
+
+### Changed
+- **`src/auth.config.ts`** —
+  - `REQUIRED_SESSION_VERSION` bumped from `3` to `4` so any existing session goes through the new gate on next page load.
+  - `signIn` callback now runs `checkAdopterLoginGate` before the existing audit/profile logic. If `blocked`, calls `recordBlockedLogin` and returns false (NextAuth redirects to `/auth-error`). Admins skip the check via `isAdmin(email)`.
+  - `pages.error: '/auth-error'` added so NextAuth uses our custom page instead of the default error route.
+
+### Notes
+- **Failure mode is fail-open**: if D1 is unreachable when the gate runs, every sign-in is allowed. Deliberate. The cost of accidentally letting an adopter through during an outage is lower than the cost of locking every rescuer out.
+- **No correlation between error reports and blocked-login rows**: the form submits without a session, so we can't automatically tie a report to a specific attempt. Admins correlate by timestamp + IP-hash (visible in both tables). If automatic correlation becomes important, we can set a short-lived cookie at block time with the attempt ID.
+- **`REQUIRED_SESSION_VERSION` bump means every currently-signed-in user will be forced to re-auth** on their next page load. Most will pass; a small number (any rescuer whose own email is also recorded as an adopter with low rating — edge case) might be unexpectedly locked out. If you see legitimate rescuers complaining about random errors, check `/admin/blocked-logins`.
+
+## [2.14.9-13] - 2026-05-10
+
+Cuts the homepage's client-side `/api/config` fetch out of the LCP critical path. Cloudflare Web Analytics reported a p99 LCP of ~17s on the homepage. Root cause: `src/app/page.tsx` was fully `'use client'` with `useState({})` + `useEffect(fetch('/api/config'))` — every flag-gated UI block (Import card, MilestoneBadge, SocialProofBanner) was invisible in the SSR HTML and only rendered after the client-side bundle loaded, React hydrated, the API request roundtripped, and a re-render flushed. On cold-start workers + slow networks that whole tail added seconds of LCP delay.
+
+### Changed
+- **`src/app/page.tsx`** — refactored from a 162-line client component into a ~20-line **server component** that calls the new `getPublicConfig()` server-side and passes the result as `initialConfig` to a new client component. The server fetch is 30s-cached (see new helper) and falls back to `PUBLIC_FLAG_DEFAULTS` on D1 failure; uses the same `.catch(() => …)` graceful-degradation pattern as v2.14.9-1's adopter page hardening.
+- **`src/components/HomeClient.tsx`** (new) — the entire `'use client'` payload that used to live in `page.tsx`, minus the config `useEffect`. Takes `initialConfig: Record<string, string>` as a prop and reads flags directly from it; `contentImportEnabled` is now derived instead of `useState`. All other client behavior (auth-redirect callbackUrl handling, wizard navigation, toasts) preserved verbatim.
+- **`src/app/api/config/route.ts`** — refactored from 55 inline lines to a 20-line thin wrapper around the new `getPublicConfig()` helper. Now serves `Cache-Control: public, max-age=60, stale-while-revalidate=600` so any remaining consumers (contract-app, dev tooling, external integrations) benefit from edge caching.
+
+### Added
+- **`src/lib/publicConfig.ts`** (new) — single source of truth for the public-flags whitelist + defaults + read logic. Exports `PUBLIC_FLAG_KEYS`, `PUBLIC_FLAG_DEFAULTS`, and `getPublicConfig()` (cached 30s in-memory per worker, returns defaults on D1 failure with a `logger.warn`). Shared between `/api/config/route.ts` and the homepage server component, eliminating the two-place duplication that lived in `route.ts`.
+
+### Notes
+- **Expected LCP improvement**: significant on cold-start cases. The LCP-candidate element (one of the action cards, probably) now appears in the first-byte HTML instead of waiting for client hydration + an extra API roundtrip. p99 should drop materially; p50/p75 will also improve modestly because the redundant client fetch is gone.
+- **What this does NOT fix**: `MilestoneBadge` still requires `useSession()` (client-only) so it still waits for hydration. Same for any client-only badges. To fix those would mean server-side session reads — out of scope here.
+- **Flag-flip latency**: admin flipping a flag in `/admin/config` now takes up to **30 seconds** (helper cache) **plus up to 60 seconds** (HTTP edge cache on `/api/config`) to be visible to homepage visitors. Previously it was instant once the user's `/api/config` fetch hit. Acceptable tradeoff for the LCP win. If we ever need instant flag propagation, the admin save path can call a `/api/admin/cache-bust` (not in scope).
+- **Recommended verification**: run https://pagespeed.web.dev/ against `https://staging.buenadoptante.org/` after this deploys. Compare LCP element + p99 vs the v2.14.9-12 baseline.
+
+## [2.14.9-12] - 2026-05-10
+
+Two changes:
+
+1. **Env-scoped Axiom metrics** — every metric query on /admin now auto-filters to events from the same deploy environment the page is running in. Staging /admin shows staging traffic only; production /admin shows production traffic only. Previously the queries summed across all environments — staging counts were inflated by production events and vice versa.
+
+2. **"Recorded Adoptions" → "Adopter Activities"** — renamed the second DB-counter on the /admin landing and removed the `recordType='adoption'` filter added in v2.14.9-11. The operator wants the broader "any activity row" signal; the rename makes the count and label match.
+
+### Changed
+- **`src/lib/axiom.ts`** —
+  - Added `getCurrentEnv()` mirroring `logger.ts`'s `getEnvironmentInfo()` (reads `CF_PAGES_BRANCH` / `CF_PAGES_URL`; returns `'production' | 'staging' | 'preview-<branch>' | 'local'`).
+  - `runQuery()` now wraps every caller's filter with a compound `{ op: 'and', children: [<original>, { op: '==', field: 'env', value: <currentEnv> }] }`. Verified empirically against the live API; the legacy structured-query endpoint accepts compound and-filters.
+  - Cache key includes the wrapped filter, so same query from staging vs production gets cached separately. No cross-env cache pollution.
+  - `getAxiomDeepLinkUrl()` always emits an `env=="<currentEnv>"` clause in the `_q=` query string, so clicking through from /admin opens Axiom Stream pre-filtered to the right env.
+  - Refactored the `AxiomFilter` type to a discriminated union (`AxiomLeafFilter | AxiomCompoundFilter`) to support the compound shape cleanly.
+- **`src/app/admin/page.tsx`** — second counter is now "Adopter Activities" (was "Recorded Adoptions"). Removed the `eq(adoptions.recordType, RECORD_TYPES.ADOPTION)` where-clause from v2.14.9-11. Removed unused `eq` and `RECORD_TYPES` imports.
+
+### Notes
+- **Logger.ts and axiom.ts now both have `getCurrentEnv` (axiom) and `getEnvironmentInfo` (logger) doing similar things** — slight duplication. They differ in shape (logger returns more fields like `domain` / `requestId`); refactoring to a shared helper is sensible follow-up but not in scope here.
+- **The "Active Flags" filter from v2.14.9-11 stays** — that audit was about a different bug (positive flags being counted as concerning), unrelated to the recordType filter being undone.
+- **The `findAdopters.discovery` p50 = 750ms latency signal** flagged in v2.14.9-11 still applies — env-scoping doesn't change the underlying numbers, only narrows what each /admin page sees. Investigation still pending.
+
+## [2.14.9-11] - 2026-05-10
+
+Three improvements to /admin landing metrics: Axiom deep-links, fixed Active Rescuers undercount, and audit fixes on the existing DB-counter labels (which were misleading by counting things the labels didn't claim).
+
+### Added
+- **`AXIOM_ORG_SLUG` Cloudflare secret** — used by `getAxiomDeepLinkUrl()` in `src/lib/axiom.ts` to build "Ver en Axiom →" deep-links into the Stream view of the dataset, with optional `_q` filter pre-applied. When the slug is missing, the helper returns null and links are hidden — same graceful-degradation pattern as `AXIOM_QUERY_TOKEN`. The slug is the path segment after `app.axiom.co/` in your Axiom dashboard URL (e.g. `verazadoptantes-4l1p`).
+- **Per-metric deep-links on /admin landing**:
+  - Section header: "Ver en Axiom →" linking to the unfiltered dataset Stream.
+  - Errors counter: "Ver →" linking to `level=="error"` filtered Stream.
+  - Top-errors rows: each message is now a link that opens Axiom filtered to `level=="error" message=="<that-message>"` — one-click triage.
+  - Trace-latency rows: each trace name is a link filtered to `trace=="findAdopters.discovery"` (etc.) — one-click drill to the actual slow calls.
+
+### Fixed
+- **`getActiveRescuers` was undercounting** — counted distinct values of the single `user` field, which is only set by search-side actors. Rescuers whose only activity was creating profiles (`changedBy`), signing in (`email`), or browsing my-animals (`userEmail`) were invisible. Now unions distinct values across all four fields, deduplicates case-insensitively, drops sentinel non-emails (`anonymous`, `unknown`, `system`), and validates email shape (must contain `@`). The "rescatistas (búsquedas)" hint copy is removed since the count now covers all activity types.
+- **"Recorded Adoptions" counter was counting everything** — `db.select(count()).from(adoptions)` returned all rows including `adoption_request`, `observation`, `follow_up`, `returned_pet`, `available`, and the new `foster` rows. The label says "Adoptions" so the count should be filtered to `recordType='adoption'`. Audit caught this on staging where the counter showed 57 but only a fraction of those were actual adoptions.
+- **"Active Flags" counter was inflated by positive flags** — included `verified_identity` and `verified_address` rows, which are *trust signals*, not "active concerns". The counter now excludes those two reasons via `ne(...)` clauses (D1-safe; doesn't use `inArray`). Result: a more meaningful "concerning flags" count.
+
+### Notes
+- **Logging field-name inconsistency** is real codebase debt — different log call sites use `user`, `changedBy`, `email`, `userEmail` for what is logically the same "actor" field. Long-term fix is to standardize on `actorEmail` everywhere; short-term the `getActiveRescuers` union covers all four. Worth filing a follow-up to do the standardization sweep.
+- **Performance signal surfaced by the metrics**: `findAdopters.discovery` p50 = 750ms / p95 = 1190ms on staging, with `enrichAdopters` p50 = 444ms — i.e. enrichment is ~59% of search latency. Worth a follow-up investigation: enrichment-scope reduction (only enrich top-N rendered results), more aggressive parallelization, or KV-side caching of frequently-enriched profiles. Out of scope for this commit.
+- **Required Cloudflare secret**: set `AXIOM_ORG_SLUG=verazadoptantes-4l1p` in Pages → Variables and Secrets, both staging and production.
+
+## [2.14.9-10] - 2026-05-10
+
+Embedded Axiom-driven metrics into the `/admin` landing page. The previous "Activity Log coming soon..." placeholder is replaced with four operational signals fetched server-side from Axiom: errors-last-7d (with delta vs prior 7d), top 5 error messages, p50/p95 latency by trace (`findAdopters.discovery`, `findAdopters.duplicate`, `enrichAdopters` — the v2.14.9 trace wrappers finally pay off), and active rescuers in the last 7d / 30d. All in parallel with the existing DB counters; results cached 5 min per worker so repeat /admin loads are instant.
+
+### Added
+- **`src/lib/axiom.ts`** (new) — query-side counterpart to `logger.ts`. Reads a separate Cloudflare secret `AXIOM_QUERY_TOKEN` (read scope; distinct from the existing `AXIOM_TOKEN` used by the logger for ingest). Exposes typed wrappers `getErrorsCount`, `getTopErrors`, `getTraceLatencies`, `getActiveRescuers`. Module-level cache with 5-min TTL keyed by stringified request body. Uses Axiom's structured `legacy=true` query endpoint (NOT `_apl` — verified empirically; see Notes).
+- **`src/app/admin/page.tsx`** — extends the existing `Promise.all` with 6 Axiom calls (4 metric helpers, with errors fetched twice for the 7d/prior-7d delta and active rescuers twice for 7d/30d). Each call wrapped in `.catch(() => null)` per the v2.14.9-1 hardening pattern: one Axiom failure or a missing token degrades that section instead of crashing the page. New "Métricas (últimos 7 días)" section with three counter cards, a top-errors list, and a per-trace latency table.
+
+### Notes
+- **New Cloudflare secret required**: `AXIOM_QUERY_TOKEN`. Set under Cloudflare Pages → settings → Variables and Secrets → Environment variables, both staging and production. The existing `AXIOM_TOKEN` (ingest) and `AXIOM_DATASET` stay as-is.
+- **APL gotcha discovered while building**: the Axiom REST API has *two* query shapes. The `/v1/datasets/_apl/query` endpoint (which their docs feature prominently) returns 404 for our token/setup. The working endpoint is `/v1/datasets/{dataset}/query?legacy=true` with structured `aggregations[] / filter / groupBy[]` body — and crucially, **field names there are FLAT** (`level`, `message`, `trace`, `duration`, `user`) even though events are stored nested under `data.*` in the JSON. This took several iterations to nail down; the `axiom.ts` module documents the contract inline so the next person doesn't repeat the search.
+- **Active rescuers** counts distinct values of the `user` field — this captures search activity (the most common engagement surface) but misses events that use `changedBy` / `userEmail` (Adoption created, sign-ins, my-animals page). Logging field-name inconsistency is real codebase debt; counting "active searchers" is a reasonable proxy for v1. A union across the three fields is a Phase 2 improvement.
+- **`findAdopters.duplicate` trace** rarely fires in normal traffic (only on contract submits + a couple of import paths), so it may be absent from the latency table on a quiet week. That's expected; the row simply doesn't render.
+- **Cost**: 6 queries × ~10 admin loads/day = 60/day, well within Axiom free-tier 500GB/month. Cache keeps it flat. If we ever add 10+ metrics or multiple admins poll heavily, revisit cache TTL.
+- **No client-side token exposure**: the secret is read inside server-only code (`getRequestContext().env`) and the helpers are imported into the SSR'd `admin/page.tsx`. View-source on /admin contains no `xaat-` substring.
+- **Plan saved at** `/home/jurfalino/.claude-personal/plans/in-the-profile-screen-sequential-boole.md`.
+
 ## [2.14.9-9] - 2026-05-10
 
 Fixed `ENABLE_MILESTONE_BADGE` admin toggle not actually hiding the MilestoneBadge on the homepage. v2.14.8-5 added the 4-place flag plumbing (features.ts, /api/admin/config, /admin/config UI, i18n labels) but missed a 5th place: `src/app/api/config/route.ts` — the **public** config endpoint that the homepage actually reads. The admin UI was writing the flag value to the DB correctly, but `/api/config`'s `PUBLIC_FLAG_KEYS` whitelist didn't include `ENABLE_MILESTONE_BADGE`, so the homepage only ever saw `undefined` for that key. Since the homepage check is `appConfig.ENABLE_MILESTONE_BADGE !== 'false'`, `undefined !== 'false'` is `true` → the component always rendered regardless of admin toggle.

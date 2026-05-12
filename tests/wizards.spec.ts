@@ -13,49 +13,46 @@ test.describe('Home Screen Wizards', () => {
         await expect(page.locator('input#search')).toBeVisible({ timeout: 30000 });
     });
 
-    test('Adoption Wizard opens and shows step progression', async ({ page }) => {
-        // The adoption wizard card says "I gave a pet for adoption" with a "Register Now" button
-        const registerBtn = page.getByRole('button', { name: /Register Now|Registrar/i }).first();
+    test('Adoption card opens AdopterPicker (or login modal)', async ({ page }) => {
+        // Card → AdopterPicker overlay. Picker heading is "Who is the adopter?" / "¿Quién es el adoptante?".
+        const registerBtn = page.getByRole('button', { name: /^Start$|^Empezar$/i }).first();
         await expect(registerBtn).toBeVisible({ timeout: 30000 });
         await registerBtn.click();
 
-        // The wizard opens inline — look for the "Identify Animal" step heading or animal name input
-        const wizardContent = page.getByRole('heading', { name: /Identify Animal|Identificar Animal/i });
+        const pickerHeading = page.getByRole('heading', { name: /Who is the adopter|Quién es el adoptante/i });
         const loginModal = page.getByText(/Sign In|Iniciar/i).first();
 
-        // Wait for either wizard or login modal to appear
-        await expect(wizardContent.or(loginModal)).toBeVisible({ timeout: 30000 });
+        await expect(pickerHeading.or(loginModal)).toBeVisible({ timeout: 30000 });
     });
 
-    test('Report Wizard opens', async ({ page }) => {
-        // The report wizard card says "I have info about an adopter"
+    test('Observation card opens AdopterPicker (or login modal)', async ({ page }) => {
+        // The observation card says "Leave an observation" / "Dejar una observación".
         // Heading is <h2> since v2.14.3 (action cards demoted from h3 to h2 to fix heading hierarchy after the new sr-only h1).
-        const reportCard = page.locator('h2').filter({ hasText: /info about|información sobre/i }).locator('..');
-        const registerBtn = reportCard.getByRole('button', { name: /Register Now|Registrar/i });
+        const reportCard = page.locator('h2').filter({ hasText: /observation|observación/i }).locator('..');
+        const registerBtn = reportCard.getByRole('button', { name: /^Start$|^Empezar$/i });
         await expect(registerBtn).toBeVisible({ timeout: 30000 });
         await registerBtn.click();
 
-        // The wizard opens inline — look for adopter name input or a heading
-        const wizardContent = page.getByPlaceholder(/name|nombre/i).first();
+        // Card → AdopterPicker overlay (search input) or login modal.
+        const searchInput = page.getByPlaceholder(/name|nombre/i).first();
         const loginModal = page.getByText(/Sign In|Iniciar/i).first();
 
-        await expect(wizardContent.or(loginModal)).toBeVisible({ timeout: 30000 });
+        await expect(searchInput.or(loginModal)).toBeVisible({ timeout: 30000 });
     });
 
-    test('Wizard auth gate works — unauthenticated click triggers login', async ({ page }) => {
-        // Look for the adoption card "Register Now" button (<h2> since v2.14.3).
-        const adoptionCard = page.locator('h2').filter({ hasText: /gave a pet|di un animal/i }).locator('..');
-        const registerBtn = adoptionCard.getByRole('button', { name: /Register Now|Registrar/i });
+    test('Auth gate — unauthenticated click triggers login', async ({ page }) => {
+        // Look for the adoption card "Start" button (<h2> since v2.14.3).
+        const adoptionCard = page.locator('h2').filter({ hasText: /Record an adoption|Registrar una adopción/i }).locator('..');
+        const registerBtn = adoptionCard.getByRole('button', { name: /^Start$|^Empezar$/i });
 
         if (await registerBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
             await registerBtn.click();
 
-            // Either login modal or wizard should appear
+            // Either login modal or AdopterPicker overlay should appear.
             const loginModal = page.getByText(/Sign In|Iniciar/i).first();
-            const wizardContent = page.getByRole('heading', { name: /Identify Animal|Identificar Animal/i });
+            const pickerHeading = page.getByRole('heading', { name: /Who is the adopter|Quién es el adoptante/i });
 
-            // Wait for either to appear
-            await expect(loginModal.or(wizardContent)).toBeVisible({ timeout: 30000 });
+            await expect(loginModal.or(pickerHeading)).toBeVisible({ timeout: 30000 });
         }
     });
 });

@@ -196,16 +196,16 @@ export default function ContractPage() {
                                 {blank('lastName', 'Apellido', 'min-w-[140px]', true)}
                             </p>
                             <p className="flex flex-wrap items-baseline gap-x-2">
-                                <span className="font-semibold whitespace-nowrap">DNI:</span>
-                                {blank('dni', '12.345.678', 'min-w-[140px]')}
+                                <span className="font-semibold whitespace-nowrap">Documento de Identidad:</span>
+                                {blank('dni', 'N° de documento', 'min-w-[140px]')}
                             </p>
                             <p className="flex flex-wrap items-baseline gap-x-2">
                                 <span className="font-semibold whitespace-nowrap">Domicilio Real:</span>
-                                {blank('address', 'Av. Corrientes 1234, CABA', 'min-w-[300px] flex-1')}
+                                {blank('address', 'Calle, número, ciudad, país', 'min-w-[300px] flex-1')}
                             </p>
                             <p className="flex flex-wrap items-baseline gap-x-2">
                                 <span className="font-semibold whitespace-nowrap">Teléfono de contacto:</span>
-                                {blank('phone', '+54 11 1234-5678', 'min-w-[180px]', false, 'tel')}
+                                {blank('phone', 'Código de país + número', 'min-w-[180px]', false, 'tel')}
                             </p>
                             <p className="flex flex-wrap items-baseline gap-x-2">
                                 <span className="font-semibold whitespace-nowrap">Email:</span>
@@ -291,10 +291,11 @@ export default function ContractPage() {
 
                         <hr className="border-stone-200" />
 
-                        {/* ── 4. INCUMPLIMIENTO Y LEY 14.346 ── */}
+                        {/* ── 4. INCUMPLIMIENTO Y PROTECCIÓN ANIMAL ── */}
                         <section>
-                            <h2 className="font-semibold text-stone-900 mb-3">4. INCUMPLIMIENTO Y LEY 14.346</h2>
-                            <p className="pl-4">El incumplimiento de cualquiera de estas cláusulas facultará al rescatista a la restitución inmediata del animal sin necesidad de intervención judicial previa, sin perjuicio de las acciones legales que correspondan bajo la Ley Nacional 14.346 de Protección Animal, la cual pena el maltrato y la crueldad.</p>
+                            <h2 className="font-semibold text-stone-900 mb-3">4. INCUMPLIMIENTO Y PROTECCIÓN ANIMAL</h2>
+                            <p className="pl-4 mb-3">El incumplimiento de cualquiera de las obligaciones pactadas en este documento facultará al rescatista a declarar la resolución del contrato y exigir la restitución inmediata del animal para garantizar su integridad física y emocional.</p>
+                            <p className="pl-4">Esta acción se llevará a cabo sin perjuicio de las denuncias y acciones legales (civiles o penales) que correspondan bajo la legislación vigente en materia de protección y bienestar animal de la jurisdicción correspondiente, la cual sanciona el maltrato, la crueldad y el abandono de seres sintientes.</p>
                         </section>
 
                         <hr className="border-stone-200" />
@@ -314,7 +315,7 @@ export default function ContractPage() {
                                     {form.name && form.lastName ? `${form.name} ${form.lastName}` : ''}
                                 </div>
                                 <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">Firma del Adoptante</p>
-                                {form.dni && <p className="text-xs text-stone-500 mt-1">DNI: {form.dni}</p>}
+                                {form.dni && <p className="text-xs text-stone-500 mt-1">Documento: {form.dni}</p>}
                             </div>
                             <div className="text-center flex-1">
                                 <div className="border-b-2 border-stone-400 h-12 mb-2 flex items-end justify-center pb-1 text-stone-500 italic text-sm">
