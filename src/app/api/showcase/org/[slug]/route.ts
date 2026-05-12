@@ -60,13 +60,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
         const ids = rows.map((r) => r.id);
         const imagesByAnimal = await fetchAnimalImages(db, ids);
 
+        // v2.14.10-12: skip photoless animals (rule mirrored across all
+        // showcase list routes; rescuers see the hidden-when-photoless
+        // notice in the /my-animals share modal).
         const rescuerCache = new Map<string, ReturnType<typeof buildPublicRescuer>>();
         const animals = [];
         for (const row of rows) {
+            const animalImages = imagesByAnimal.get(row.id) || [];
+            if (animalImages.length === 0) continue;
             const key = row.addedBy || '';
             if (!rescuerCache.has(key)) rescuerCache.set(key, buildPublicRescuer(db, row.addedBy));
             const rescuer = await rescuerCache.get(key)!;
-            animals.push(pickPublicAnimal(row, imagesByAnimal.get(row.id) || [], rescuer));
+            animals.push(pickPublicAnimal(row, animalImages, rescuer));
         }
 
         return withCors(NextResponse.json({

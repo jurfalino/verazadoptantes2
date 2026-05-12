@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-12] - 2026-05-12
+
+**Hide photoless animals from public catalog + flag the rule in the share modal.** A card without a photo reads as broken on the public catalog and hurts both the rescuer's listing and overall trust in the surface. Now all four showcase endpoints skip rows with no images, and the `/my-animals` share modal carries an amber info notice explaining the rule so rescuers know what's hidden and how to fix it.
+
+### Changed
+- **`src/app/api/showcase/all/route.ts`** — skip rows with empty `images` array after the join. Comment links the rule to the rescuer-side notice.
+- **`src/app/api/showcase/org/[slug]/route.ts`** — same filter.
+- **`src/app/api/showcase/user/[handle]/route.ts`** — same filter, applied via map/filter chain since this route has a single rescuer (no per-row cache needed).
+- **`src/app/api/showcase/animal/[id]/route.ts`** — return 404 when the animal has no photos, consistent with the list routes. A direct link to an uncataloged animal stops leaking data the lists hide; once the rescuer adds a photo, the URL is reachable again.
+- **`src/components/ShowcaseUrlChips.tsx`** — amber info notice at the top of the share-public-catalog modal: "Solo aparecen animales con foto" with a one-line explanation that subir foto fixes the absence.
+
+### Added
+- **i18n keys** `myAnimals.showcase_photo_notice_title` + `showcase_photo_notice_body` in ES + EN.
+
 ## [2.14.10-11] - 2026-05-12
 
 **Rewrite `/privacy` and `/terms` for a global jurisdiction.** Both legal pages were Argentina-anchored (Law 25.326, Law 14.346, AAIP, CABA courts) — incompatible with the project's stated global mission ("Belize and the world"). New copy is jurisdiction-agnostic: legitimate-interest framing without country-specific statute numbers, ARCO rights guaranteed regardless of residence, jurisdiction clause keyed to the user's country plus the platform operator's domicile. EN translations updated to match. Last-updated date bumped to 2026-05-12.

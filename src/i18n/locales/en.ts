@@ -965,6 +965,8 @@ export const en = {
         showcase_copied: 'Copied',
         showcase_copy_failed: 'Could not copy the link.',
         showcase_open: 'Open',
+        showcase_photo_notice_title: 'Only animals with photos appear',
+        showcase_photo_notice_body: 'Animals without a photo are automatically hidden from the public catalog. Upload at least one photo so they show up.',
     },
     petshield: {
         sections: {

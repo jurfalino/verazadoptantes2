@@ -37,9 +37,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         }
 
         const imagesByAnimal = await fetchAnimalImages(db, [id]);
-        const rescuer = await buildPublicRescuer(db, animalRow.addedBy);
+        const animalImages = imagesByAnimal.get(id) || [];
 
-        const animal = pickPublicAnimal(animalRow, imagesByAnimal.get(id) || [], rescuer);
+        // v2.14.10-12: photoless animals are excluded from the public catalog
+        // — surface a 404 here too so a direct-link share to an uncataloged
+        // animal doesn't leak data the list routes hide. Once the rescuer
+        // adds an image, the page becomes reachable again.
+        if (animalImages.length === 0) {
+            return withCors(NextResponse.json({ error: 'Animal not found' }, { status: 404 }), origin);
+        }
+
+        const rescuer = await buildPublicRescuer(db, animalRow.addedBy);
+        const animal = pickPublicAnimal(animalRow, animalImages, rescuer);
 
         // Pull global INSTAGRAM_URL so the detail page can show the social CTA
         // when the empty-state isn't relevant (i.e. this single-animal page).

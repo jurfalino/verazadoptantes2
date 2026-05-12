@@ -41,15 +41,23 @@ export async function GET(request: Request) {
 
         // Resolve rescuer per row. Dedup by `addedBy` so we don't run the
         // same lookup N times for animals from the same rescuer.
+        //
+        // v2.14.10-12: skip animals with no public photo. A photoless card in
+        // the catalog reads as broken/abandoned to a first-time visitor and
+        // hurts both the rescuer's listing and overall trust in the surface.
+        // Rescuers see the hidden-when-photoless rule called out in the
+        // /my-animals share-public-catalog modal.
         const rescuerCache = new Map<string, ReturnType<typeof buildPublicRescuer>>();
         const animals: PublicAnimal[] = [];
         for (const row of rows) {
+            const animalImages = imagesByAnimal.get(row.id) || [];
+            if (animalImages.length === 0) continue;
             const key = row.addedBy || '';
             if (!rescuerCache.has(key)) {
                 rescuerCache.set(key, buildPublicRescuer(db, row.addedBy));
             }
             const rescuer = await rescuerCache.get(key)!;
-            animals.push(pickPublicAnimal(row, imagesByAnimal.get(row.id) || [], rescuer));
+            animals.push(pickPublicAnimal(row, animalImages, rescuer));
         }
 
         return withCors(

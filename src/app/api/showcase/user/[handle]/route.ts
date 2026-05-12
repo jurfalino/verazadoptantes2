@@ -49,7 +49,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ hand
         const imagesByAnimal = await fetchAnimalImages(db, ids);
         const rescuer = await buildPublicRescuer(db, user.email);
 
-        const animals = rows.map((row) => pickPublicAnimal(row, imagesByAnimal.get(row.id) || [], rescuer));
+        // v2.14.10-12: skip photoless animals (rule mirrored across all
+        // showcase list routes; rescuers see the hidden-when-photoless
+        // notice in the /my-animals share modal).
+        const animals = rows
+            .map((row) => ({ row, images: imagesByAnimal.get(row.id) || [] }))
+            .filter(({ images }) => images.length > 0)
+            .map(({ row, images }) => pickPublicAnimal(row, images, rescuer));
 
         return withCors(NextResponse.json({
             rescuer,

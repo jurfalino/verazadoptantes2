@@ -964,6 +964,8 @@ export const es = {
         showcase_copied: 'Copiado',
         showcase_copy_failed: 'No se pudo copiar el link.',
         showcase_open: 'Abrir',
+        showcase_photo_notice_title: 'Solo aparecen animales con foto',
+        showcase_photo_notice_body: 'Los animales sin foto se ocultan automáticamente del catálogo público. Subí al menos una foto para que aparezcan.',
     },
     petshield: {
         sections: {
