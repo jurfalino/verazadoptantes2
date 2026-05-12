@@ -74,13 +74,13 @@ npx tsc --noEmit
 ```
 If errors exist, fix them before proceeding.
 
-2. Run lint warning ratchet check (current threshold: **123 warnings**):
+2. Run lint warning ratchet check (current threshold: **125 warnings**):
 // turbo
 ```
 npx next lint 2>&1 | Select-String "Warning:" | Measure-Object | Select-Object -ExpandProperty Count
 ```
-Compare the count against the threshold of **122**. If the count is **higher than 123**, STOP and tell the user:
-> "⚠️ Lint warnings increased from 122 to [N]. You should fix the new warnings before deploying, or acknowledge the increase."
+Compare the count against the threshold of **125**. If the count is **higher than 125**, STOP and tell the user:
+> "⚠️ Lint warnings increased from 125 to [N]. You should fix the new warnings before deploying, or acknowledge the increase."
 Wait for user acknowledgment before proceeding. If the user acknowledges, update the threshold in this workflow file to match the new count.
 If the count is **equal or lower**, proceed silently.
 

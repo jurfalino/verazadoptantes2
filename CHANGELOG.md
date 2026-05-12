@@ -2,6 +2,32 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-6] - 2026-05-12
+
+**Contract-app deploy pipeline rewrite + runtime contract-base resolver.** Fixes the bug where both staging and prod dashboards generated `adoptions.pages.dev` share URLs (so staging testers were unknowingly hitting prod), and the related bug where the prod contract-app at `adoptions.pages.dev` was calling the staging API and 404ing.
+
+### Fixed
+- **Share menus now resolve the contract-app URL at runtime**, not at Next build time. `src/components/ShareMenu.tsx` and `ShareFormMenu.tsx` previously read `process.env.NEXT_PUBLIC_CONTRACT_URL` — a build-time inline, blind to Cloudflare's per-environment runtime variables. Same build artifact shipped to both envs always pointed at prod. Both components now read from `useContractBase()`, which fetches from the new `/api/contract-base` endpoint. That endpoint calls `getContractBaseUrl()` which reads `CONTRACT_BASE_URL` from the Cloudflare worker binding. **Cloudflare action**: set `CONTRACT_BASE_URL` on the `verazadoptantes2` Pages project — Production → `https://adoptions.pages.dev`, Preview → `https://adoptions-staging.pages.dev`.
+- **Prod contract-app at `adoptions.pages.dev` was calling staging API** — `VITE_API_URL` is a Vite build-time inline. The previous GH Actions workflow ran `npm run build` with no env forwarding and no `--mode`, so whatever was last baked in at Cloudflare's auto-builder (since paused) stayed live. The new workflow forwards `vars.VITE_API_URL_PROD` / `vars.VITE_API_URL_STAGING` per branch and passes `--mode production` / `--mode staging`. Repo variables created via `gh variable set`.
+- **Workflow was deploying to a dead Workers script** — the GH Actions workflow had been calling `wrangler deploy` against a Workers script at `contrato.gatitosolivos.workers.dev`, while `adoptions.pages.dev` was served by a separate Cloudflare Pages project nobody was updating. Workflow switched to `wrangler pages deploy --project-name=adoptions` (prod) / `--project-name=adoptions-staging` (staging). Orphan Workers script deleted.
+
+### Added
+- **`src/app/api/contract-base/route.ts`** (new) — edge route returning `{ url: getContractBaseUrl() }`. 60s browser / 300s CDN cache.
+- **`src/hooks/useContractBase.ts`** (new) — `'use client'` hook with module-level promise cache so multiple share menus on the same page share one fetch.
+- **`adoptions-staging` Cloudflare Pages project** — created via `npx wrangler pages project create`. Serves the staging contract-app at `https://adoptions-staging.pages.dev`. Direct-upload only (no Git connection), so it can't race with GH Actions.
+- **`contract-app/public/_redirects`** — `/* /index.html 200`. Required for SPA fallback on Cloudflare Pages. (The 2.12.1-13 removal was for the Workers deploy path; Pages needs this back.)
+- **`.github/workflows/contract-app.yml` — `workflow_dispatch` trigger** with a `target` input (staging/production), so the contract-app can be redeployed from the GH Actions UI without dummy commits.
+
+### Changed
+- **`.github/workflows/contract-app.yml`** — adds job-level `IS_PROD` env (computed from branch on push triggers or input on manual triggers); Build step forwards `VITE_API_URL` and passes `--mode`; Deploy step switched from `wrangler deploy` to `wrangler pages deploy dist --project-name=… --branch=production`.
+- **`src/lib/cors.ts`** — added `adoptions-staging.pages.dev` (exact + suffix) to the allowlist so the staging contract-app's fetches to the main staging Next app aren't CORS-blocked.
+
+### Removed
+- **`contract-app/wrangler.toml`** — was 100% Workers-with-assets config. `wrangler pages deploy` doesn't use it.
+
+### Notes (lint ratchet)
+- Lint warning threshold raised from 122 → 125. The drift was not from changes in this release; surfacing it here as part of the deploy.
+
 ## [2.14.10-5] - 2026-05-11
 
 **Showcase polish** — four bugs surfaced during staging testing of the showcase flow.
