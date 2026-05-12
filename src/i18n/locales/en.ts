@@ -774,6 +774,13 @@ export const en = {
         share_form_modal_hint: 'Applicants fill this form; you\'ll receive their responses.',
         share_form_qr_hint: 'Have the applicant scan to open the form',
         share_buttons_hint: 'Share the form with people interested in adopting; when they complete it the system will notify you. On each animal, share the contract when you have an adopter.',
+        // Per-animal share form (used on /my-animals cards)
+        share_form_for_animal: 'Share form',
+        share_form_for_animal_short: 'Form',
+        share_form_for_animal_modal_title: 'Share application form',
+        share_form_for_animal_modal_hint: 'To apply to adopt this animal',
+        share_form_for_animal_footer_hint: 'The applicant will fill out the form to adopt this animal.',
+        share_form_for_animal_share_text: 'Adoption form for',
     },
     wizard: {
         step_what: 'What happened',

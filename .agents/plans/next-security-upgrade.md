@@ -56,6 +56,14 @@ Next 15.1 → 15.5 is a minor bump within v15. Generally drop-in safe, but histo
 4. **Edge runtime** — homepage (`src/app/page.tsx`) uses `export const runtime = 'edge'`. Confirm cold-start still works after the upgrade.
 5. **`async_hooks` webpack alias** in `next.config.ts` — the workaround for Cloudflare Workers compat. Sometimes Next refactors webpack internals across minor versions; if build complains about `async_hooks`, the alias config may need to move.
 
+## Bundled reminder — GitHub Actions Node 20 → Node 24
+
+The deploy pipelines log this warning on every run:
+
+> Node.js 20 actions are deprecated. … `actions/checkout@v4`, `actions/setup-node@v4` are running on Node.js 20. Actions will be forced to run with Node.js 24 by default starting June 2nd, 2026. Node.js 20 will be removed from the runner on September 16th, 2026.
+
+**Action when convenient (before June 2026):** bump pinned versions in `.github/workflows/ci.yml` and `.github/workflows/contract-app.yml` to whichever tag of `actions/checkout` and `actions/setup-node` runs on Node 24 (likely `@v5` by the time this is read). Low urgency — September 2026 is the actual removal date — but might as well roll it in with the next CI touch.
+
 ## What's left after this upgrade
 
 After `npm audit --omit=dev`, the remaining alerts (if any) should be:

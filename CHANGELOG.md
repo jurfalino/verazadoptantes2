@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-14] - 2026-05-12
+
+**Per-animal adoption-form share on `/my-animals` cards.** Same customized form URL that the public catalog's "Quiero adoptarlo" CTA opens (`/form?u=<userId>&animal=<animalId>`) is now shareable directly from each card on `/my-animals`. Rescuers no longer have to route prospective adopters through the public catalog to apply for a specific animal.
+
+### Changed
+- **`src/components/ShareFormMenu.tsx`** — now accepts optional `animalId` + `animalName` + `compact` props. When `animalId` is provided, the URL becomes `/form?u=...&animal=ID` and the labels, modal title/hint, footer hint, and share text all switch to per-animal phrasing. `compact` shrinks the button (`px-3 py-2 text-[12px]`) for use inside card action rows. Button accent shifted to indigo to match the rest of the showcase/form surfaces.
+- **`src/app/my-animals/page.tsx`** — each available-animal card now renders a per-animal "Formulario" share button next to the existing "Compartir contrato" button. Both gated by `!animal.adopterId`. Row uses `flex-wrap` so the two buttons stack gracefully on narrow cards.
+
+### Added
+- **Per-animal share i18n keys** (`dashboard.share_form_for_animal*`) in ES + EN: short/long button labels, modal title, modal hint, footer hint, share-text prefix.
+
+### Notes
+- Same security note as before: the customized form URL is anonymous-readable by design (anyone with the link can apply); the rescuer's user ID and the animal ID are the only identifiers in the URL, and neither is sensitive.
+
 ## [2.14.10-13] - 2026-05-12
 
 **De-Argentina the adoption contract.** Clause 4 was anchored to Argentina's Law 14.346 and adopter placeholders used CABA addresses and +54 phone numbers — incompatible with the global mission. Clause rewritten to reference "legislación vigente en materia de protección y bienestar animal de la jurisdicción correspondiente" without naming a specific statute, and split into two paragraphs (resolution of contract → restitution; then civil/criminal complaints). Adopter placeholders generalized; "DNI" label renamed to "Documento" everywhere it surfaces.

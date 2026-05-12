@@ -392,7 +392,15 @@ export default function MyAnimalsPage() {
                                                 <span>📅 {formatShortDate(animal.date)}</span>
                                             )}
                                         </div>
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-2 flex-wrap justify-end">
+                                            {!animal.adopterId && userId && (
+                                                <ShareFormMenu
+                                                    userId={userId}
+                                                    animalId={animal.id}
+                                                    animalName={animal.animalName || 'Animal'}
+                                                    compact
+                                                />
+                                            )}
                                             {!animal.adopterId && (
                                                 <ShareMenu
                                                     contractUrl={`/contract/${animal.id}`}

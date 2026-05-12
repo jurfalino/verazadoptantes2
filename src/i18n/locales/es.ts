@@ -773,6 +773,13 @@ export const es = {
         share_form_modal_hint: 'Los interesados completan este formulario; vos recibís sus respuestas.',
         share_form_qr_hint: 'Que el adoptante escanee para abrir el formulario',
         share_buttons_hint: 'Compartí el formulario con los interesados en adoptar, cuando lo completen el sistema te notificará. En cada animal, compartí el contrato cuando tengas un adoptante.',
+        // Per-animal share form (used on /my-animals cards)
+        share_form_for_animal: 'Compartir formulario',
+        share_form_for_animal_short: 'Formulario',
+        share_form_for_animal_modal_title: 'Compartir formulario',
+        share_form_for_animal_modal_hint: 'Para postularse a adoptar a este animal',
+        share_form_for_animal_footer_hint: 'El postulante completará el formulario para adoptar a este animal.',
+        share_form_for_animal_share_text: 'Formulario de adopción para',
     },
     wizard: {
         step_what: 'Qué pasó',
