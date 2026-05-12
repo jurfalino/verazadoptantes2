@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-16] - 2026-05-12
+
+**Prevent duplicate organization names + manual prod fix for the same.** Earlier today the production deploy of v2.14.10 (showcase foundation) silently failed for several PR merges because the `0041_showcase_slugs.sql` migration's UNIQUE index on `organizations.slug` collided on two orgs both named "Michis" — backfilled slug clashed. Fixed manually on prod (renamed the duplicate test org → `Michis (test)` with slug `michis-test`) and applied the migration. This release adds the validation so it cannot recur.
+
+### Added
+- **Org name uniqueness check** in both `createOrganization` and `updateOrganizationName` (`src/app/actions/organizations.ts`). Case-insensitive comparison via `LOWER(name) = LOWER(input)`. Returns stable error code `org_name_exists`; the rename path passes `excludeId` so a no-op rename doesn't conflict with itself.
+- **i18n key** `organizations.error_name_exists` in ES + EN with friendly messaging ("Ya existe una organización con ese nombre. Probá con uno diferente." / "An organization with that name already exists. Try a different one.").
+
+### Changed
+- **`src/app/organizations/page.tsx`** — toast handler in both `handleCreate` and `handleSaveName` translates `org_name_exists` to the localized message; other error strings still pass through.
+
+### Notes
+- Slug uniqueness was already enforced at create time via `generateUniqueSlug` (integer-suffix-on-collision). This change guards the *display-name* layer that users actually see, which is what made two "Michis" possible.
+- Pre-existing duplicate orgs are grandfathered — they keep their names. The validation only blocks *new* duplicates.
+
 ## [2.14.10-15] - 2026-05-12
 
 **Fix: ShareFormMenu button looked broken in dark theme.** v2.14.10-14 shifted the button accent from teal to indigo to "match the form/showcase palette" — but only teal/rose/stone are remapped in `[data-theme="dark"]` in `globals.css`. Indigo classes pass through as raw Tailwind values, which clash badly against the dark surface base (`#0a1628`). Reverted the button to teal. Modal-internal indigo accents (small circle icon, "open in new tab" row icon) are unchanged since they predate v2.14.10-14 and the user hasn't flagged them.

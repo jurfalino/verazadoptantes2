@@ -60,7 +60,10 @@ export default function OrganizationsPage() {
             setShowCreateForm(false);
             loadOrgs();
         } else {
-            toast.error(result.error || 'Error', undefined, result.errorId);
+            const msg = result.error === 'org_name_exists'
+                ? t('organizations.error_name_exists')
+                : (result.error || 'Error');
+            toast.error(msg, undefined, result.errorId);
         }
     };
 
@@ -241,7 +244,10 @@ function OrgCard({ org, onRefresh }: { org: Organization; onRefresh: () => void 
             setEditing(false);
             onRefresh();
         } else {
-            toast.error(result.error || 'Error', undefined, result.errorId);
+            const msg = result.error === 'org_name_exists'
+                ? t('organizations.error_name_exists')
+                : (result.error || 'Error');
+            toast.error(msg, undefined, result.errorId);
         }
     };
 

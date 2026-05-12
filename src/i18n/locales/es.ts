@@ -1333,6 +1333,7 @@ export const es = {
         expired_invite: 'Este enlace de invitación ya expiró',
         created_success: 'Organización creada',
         name_updated: 'Nombre actualizado',
+        error_name_exists: 'Ya existe una organización con ese nombre. Probá con uno diferente.',
         left_success: 'Saliste de la organización',
         deleted_success: 'Organización eliminada',
         added_by: 'por {name}',

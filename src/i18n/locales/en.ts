@@ -1335,6 +1335,7 @@ export const en = {
         expired_invite: 'This invite link has expired',
         created_success: 'Organization created',
         name_updated: 'Name updated',
+        error_name_exists: 'An organization with that name already exists. Try a different one.',
         left_success: 'You left the organization',
         deleted_success: 'Organization deleted',
         added_by: 'by {name}',
