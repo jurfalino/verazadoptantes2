@@ -44,7 +44,12 @@ jobs:
 
       - name: Deploy to Cloudflare Pages
         working-directory: contract-app
-        run: npx wrangler pages deploy dist --project-name=${{ env.IS_PROD == 'true' && 'adoptions' || 'adoptions-staging' }} --branch=production
+        # NB: each project's production branch differs.
+        #   adoptions           → master    (legacy from Cloudflare auto-deploy)
+        #   adoptions-staging   → production (set via `wrangler pages project create`)
+        # --branch must match the project's production branch, else the deploy
+        # is treated as a Preview and never aliases to the canonical *.pages.dev URL.
+        run: npx wrangler pages deploy dist --project-name=${{ env.IS_PROD == 'true' && 'adoptions' || 'adoptions-staging' }} --branch=${{ env.IS_PROD == 'true' && 'master' || 'production' }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
