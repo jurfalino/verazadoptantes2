@@ -425,11 +425,13 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                     {/* ===== STEP 1: What happened? ===== */}
                     {step === 1 && (
                         <div className="space-y-4">
-                            {/* When the wizard is opened with a known intent (from VisitIntentCard) we
-                                replace the picker with explanatory copy that varies by record type
-                                and (for adoption/request) the adopter's rating bucket. Manual-open
-                                paths (no `initialRecordType`) keep the full chip grid below. */}
-                            {initialRecordType ? (
+                            {/* When the wizard is opened with a known intent — either from
+                                VisitIntentCard (`initialRecordType` prop) or from a homepage
+                                action card (`?newAdoption=<type>` URL param) — we replace the
+                                picker with explanatory copy that varies by record type and (for
+                                adoption/request) the adopter's rating bucket. Manual-open paths
+                                (FAB on the profile, no intent declared) keep the full chip grid. */}
+                            {(initialRecordType || newAdoptionParam) ? (
                                 <RecordTypeGuidance
                                     recordType={formData.recordType as 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet'}
                                     adopterName={adopterName}

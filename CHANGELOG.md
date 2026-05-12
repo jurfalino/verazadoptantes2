@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-8] - 2026-05-12
+
+**Fix: homepage-card entry-point showed chip selector instead of guidance.** When the new `HomepageActionCard` (v2.14.10-7) routed to the activity wizard via `?newAdoption=<type>`, step 1 still rendered the record-type chip grid instead of the rating-aware `RecordTypeGuidance`. The wizard's "did the user already declare intent?" check only looked at the `initialRecordType` prop (used by VisitIntentCard), not the URL param the homepage path uses.
+
+### Fixed
+- **`src/components/AdoptionFormWizard.tsx`** — step 1 now hides the chip grid and shows `RecordTypeGuidance` when *either* `initialRecordType` is set (prop path) or `newAdoptionParam` is present in the URL (homepage card path). Manual-open paths (FAB on profile, no declared intent) still get the chip grid.
+
 ## [2.14.10-7] - 2026-05-12
 
 **Homepage wizard demotion — typed entry-points.** The two homepage cards (`AdoptionWizard` "Di un animal en adopción" and `ReportWizard` "Tengo info sobre un adoptante") each owned their own two-step modal that, after the activity wizard inside the adopter profile shipped (v2.14.9), deposited users into a *second* wizard once they pressed submit. Same data collected twice, two parallel adopter-search UIs drifting visually, "shortcut" promise broken. CX call: cards stay (discoverability), embedded wizards go — they're now typed entry-points that pick the adopter via a shared picker and hand off to `AdoptionFormWizard` with the right URL params. Plan: `.agents/plans/homepage-wizard-demotion.md`.
