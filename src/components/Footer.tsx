@@ -39,6 +39,10 @@ export default function Footer() {
                     {t('home.hero_features')}
                 </a>
                 <span className="text-stone-300">·</span>
+                <a href="/quienes-somos" className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
+                    {t('legal.about_us')}
+                </a>
+                <span className="text-stone-300">·</span>
                 <a href="/privacy" className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
                     {t('legal.privacy')}
                 </a>

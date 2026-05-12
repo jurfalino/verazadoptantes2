@@ -373,6 +373,37 @@ export const en = {
             how_body: 'When someone asks you for an animal, search their name and details here. If the profile already exists, you can see the rating and comments left by others; if not, you can create it and start logging their history.',
         },
     },
+    about: {
+        meta_title: 'About Us',
+        meta_description: 'Guardians of Tomorrow — the adoption verification network born in Belize to protect animals from dangerous adopters worldwide.',
+        hero_eyebrow: 'About Us',
+        hero_title: 'Guardians of Tomorrow',
+        hero_lead: 'On the streets of Belize City, in the communities of Cayo, and in every corner of our beautiful country, thousands of animals are looking for a home. But behind the promise of a better life, darkness sometimes hides.',
+        hero_subline: 'Guardians of Tomorrow was born of an urgent need: to turn trust into safety.',
+
+        story_title: 'Our Story',
+        story_p1: 'We are Jose Castillo and John Usher, two friends united by a deep concern for animal welfare. We were moved to act by the harsh, chilling lessons of the Luka Magnotta case, laid bare in the Netflix documentary "Don\'t F**k with Cats". That story showed the world how the absence of information and proper adoption controls lets cruel individuals reach defenseless victims with ease.',
+        story_p2: 'To that we added our concern about the "invisible cases" in Belize and across the Americas: animals adopted and disappearing without a trace, or abuse incidents that never make the headlines. We understood that silence was no longer an option — that prevention is the only real tool we have to keep these tragedies from happening.',
+
+        project_title: 'The Project',
+        project_intro: 'Our tool is an Adoption Verification Network. While born from the Belizean reality, our goal is for this platform to cross borders and serve rescuers and shelters in every country that needs it. We are not just a local database — we are a global digital shield.',
+        pillar1_title: 'Centralized Registry',
+        pillar1_desc: 'We unite the efforts of independent rescuers to identify risk profiles before a placement happens.',
+        pillar2_title: 'Smart Follow-Up',
+        pillar2_desc: 'We make post-adoption check-in protocols easy, so every cat and dog is genuinely safe.',
+        pillar3_title: 'Education & Alert',
+        pillar3_desc: 'We inform the community about the behavioral patterns that should raise red flags in an adoption process.',
+
+        mission_title: 'Our Mission',
+        mission_body: 'Our mission is simple: no adoption should ever happen blind. We want the process to be transparent — so that rescuers, wherever they are in the world, can trust that the home they chose is truly a refuge.',
+
+        quote: 'The greatness of a nation and its moral progress can be judged by the way its animals are treated.',
+
+        closing: 'At Guardians of Tomorrow, we work to make Belize and the world an example of protection, justice, and compassion.',
+
+        founders: 'Jose M Castillo & John Usher',
+        founders_role: 'Founders',
+    },
     legal: {
         consent_checkbox: 'By saving, you agree to the',
         terms_link: 'Terms of Use',
@@ -387,6 +418,7 @@ export const en = {
         privacy: 'Privacy',
         terms: 'Terms',
         contact: 'Contact',
+        about_us: 'About Us',
         report_submitted: 'Report submitted. We will review it within 10 business days.',
         report_desc: 'If this profile contains incorrect information about you, let us know:',
         your_name: 'Your name *',

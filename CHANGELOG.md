@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-10] - 2026-05-12
+
+**New `/quienes-somos` page — Guardianes del Mañana origin story.** Editorial about-page linked from the global footer, telling the Castillo / Usher founding story, the three project pillars, and the mission. Locale-aware via the new `about.*` i18n namespace; URL stays Spanish-anchored (matches the brand name).
+
+### Added
+- **`src/app/quienes-somos/page.tsx`** — editorial page with scroll-reveal animations, hero with `ShieldPawIcon`, story narrative, 3-pillar grid (Registro Centralizado · Seguimiento Inteligente · Educación y Alerta with teal/amber/rose accents), centered mission banner with floating "Misión" pill, pull quote, founders signature. `prefers-reduced-motion` honored.
+- **`src/app/quienes-somos/layout.tsx`** — metadata (OG / Twitter / canonical).
+- **`about.*` i18n keys in ES + EN** — hero, story, pillars, mission, quote, closing, founders.
+- **`legal.about_us` label** in both locales for the footer link.
+
+### Changed
+- **`src/components/Footer.tsx`** — adds "Quiénes Somos / About Us" link between Funcionalidades and Privacidad.
+
 ## [2.14.10-9] - 2026-05-12
 
 **Quick-access strip flag + counters in user menu.** Two coordinated changes: the homepage "Mis Animales / Mis Adopciones / Mis Adoptantes" pills are now flag-gated, and the same counters are surfaced inside the user menu dropdown — so turning the strip off doesn't bury the data.

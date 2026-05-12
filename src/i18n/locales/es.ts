@@ -372,6 +372,37 @@ export const es = {
             how_body: 'Cuando alguien te pide un animal en adopción, busca su nombre y sus datos acá. Si el perfil ya existe, podés ver la calificación y comentarios de otras personas; si no, lo podés crear y comenzar a registrar su historial.',
         },
     },
+    about: {
+        meta_title: 'Quiénes Somos',
+        meta_description: 'Guardianes del Mañana — la red de verificación de adopciones que nació en Belice para proteger a los animales de adoptantes peligrosos en todo el mundo.',
+        hero_eyebrow: 'Quiénes Somos',
+        hero_title: 'Guardianes del Mañana',
+        hero_lead: 'En las calles de Belize City, en las comunidades de Cayo y en cada rincón de nuestro hermoso país, miles de animales buscan un hogar. Pero detrás de la promesa de una vida mejor, a veces se esconde la oscuridad.',
+        hero_subline: 'Guardianes del Mañana nace de una necesidad urgente: convertir la confianza en seguridad.',
+
+        story_title: 'Nuestra Historia',
+        story_p1: 'Somos Jose Castillo y John Usher, dos amigos unidos por una profunda preocupación por el bienestar animal. Decidimos actuar inspirados por las duras y escalofriantes lecciones que dejó el caso de Luka Magnotta, expuesto en el documental de Netflix "Don\'t F**k with Cats". Aquel suceso demostró a nivel global cómo la falta de información y de controles de adopción permite a individuos crueles acceder fácilmente a víctimas indefensas.',
+        story_p2: 'A esto se sumó nuestra preocupación por los "casos invisibles" en Belice y en toda América: animales que son adoptados y desaparecen sin dejar rastro, o incidentes de abuso que nunca llegan a los titulares de las noticias. Comprendimos que el silencio ya no era una opción y que la prevención es la única herramienta real que tenemos para evitar estas tragedias.',
+
+        project_title: 'El Proyecto',
+        project_intro: 'Nuestra herramienta es una Red de Verificación de Adopciones. Aunque nació impulsada por la realidad beliceña, nuestro gran objetivo es que esta plataforma trascienda fronteras y pueda ser utilizada por rescatistas y refugios en todos los países que lo necesiten. No somos solo una base de datos local; somos un escudo digital global.',
+        pillar1_title: 'Registro Centralizado',
+        pillar1_desc: 'Unimos los esfuerzos de rescatistas independientes para identificar perfiles de riesgo antes de que ocurra una entrega.',
+        pillar2_title: 'Seguimiento Inteligente',
+        pillar2_desc: 'Facilitamos protocolos de control post-adopción que aseguren que cada gato y perro esté realmente a salvo.',
+        pillar3_title: 'Educación y Alerta',
+        pillar3_desc: 'Informamos a la comunidad sobre los patrones de conducta que deben encender las alarmas en un proceso de adopción.',
+
+        mission_title: 'Nuestra Misión',
+        mission_body: 'Nuestra misión es simple: que ninguna adopción sea a ciegas. Queremos que el proceso sea transparente y que los proteccionistas, sin importar en qué país se encuentren, tengan la tranquilidad de saber que el hogar que han elegido es, verdaderamente, un refugio.',
+
+        quote: 'La grandeza de una nación y su progreso moral pueden ser juzgados por la forma en que se trata a sus animales.',
+
+        closing: 'En Guardianes del Mañana, trabajamos para que Belice y el mundo sean un ejemplo de protección, justicia y compasión.',
+
+        founders: 'Jose M Castillo & John Usher',
+        founders_role: 'Fundadores',
+    },
     legal: {
         consent_checkbox: 'Al guardar, aceptás los',
         terms_link: 'Términos de Uso',
@@ -386,6 +417,7 @@ export const es = {
         privacy: 'Privacidad',
         terms: 'Términos',
         contact: 'Contacto',
+        about_us: 'Quiénes Somos',
         report_submitted: 'Reporte enviado. Lo revisaremos dentro de los próximos 10 días hábiles.',
         report_desc: 'Si este perfil contiene información incorrecta sobre vos, contános:',
         your_name: 'Tu nombre *',
