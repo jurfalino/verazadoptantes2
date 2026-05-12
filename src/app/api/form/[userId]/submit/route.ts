@@ -45,7 +45,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         const db = await getDb();
         if (!db) return withCors(NextResponse.json({ error: 'Database unavailable' }, { status: 500 }), origin);
 
-        const { formSubmissions, adopters } = await import('@/db/schema');
+        const { formSubmissions } = await import('@/db/schema');
         const { eq } = await import('drizzle-orm');
 
         // Validate that userId belongs to a real user (userId is the user's UUID from the DB)

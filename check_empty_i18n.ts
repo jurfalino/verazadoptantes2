@@ -1,4 +1,3 @@
-import fs from 'fs';
 import { es } from './src/i18n/locales/es';
 import { en } from './src/i18n/locales/en';
 

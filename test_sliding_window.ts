@@ -1,8 +1,5 @@
 import { computeMaxDensityPeriod } from './src/lib/adoptionFilters';
 
-// Mock types so the test doesn't fail
-type AdoptionRecord = any;
-
 const runTests = () => {
     console.log("Running Sliding Window Tests...");
 

@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-7] - 2026-05-12
+
+**Homepage wizard demotion — typed entry-points.** The two homepage cards (`AdoptionWizard` "Di un animal en adopción" and `ReportWizard` "Tengo info sobre un adoptante") each owned their own two-step modal that, after the activity wizard inside the adopter profile shipped (v2.14.9), deposited users into a *second* wizard once they pressed submit. Same data collected twice, two parallel adopter-search UIs drifting visually, "shortcut" promise broken. CX call: cards stay (discoverability), embedded wizards go — they're now typed entry-points that pick the adopter via a shared picker and hand off to `AdoptionFormWizard` with the right URL params. Plan: `.agents/plans/homepage-wizard-demotion.md`.
+
+### Added
+- **`src/components/AdopterPicker.tsx`** — shared find-or-create widget (search + results + preview + "+ create new"). Single source of truth replacing the two duplicated copies that lived in the deleted wizards.
+- **`src/components/HomepageActionCard.tsx`** — typed entry-point card. Click → AdopterPicker overlay → routes to `/adopter/<id>?newAdoption=<recordType>` (existing) or `/adopter/create?continueToAdoption=true&newAdoption=<recordType>` (new). Picks up `palette` (teal / rose) and `recordType` (adoption / observation) so both homepage cards share one component.
+- **i18n keys** — `home.picker_subtitle_adoption`, `home.picker_subtitle_observation` (ES + EN).
+
+### Changed
+- **Homepage card copy aligned to activity-wizard vocabulary.** ES: "Di un animal en adopción" → "Registrar una adopción"; "Tengo info sobre un adoptante" → "Dejar una observación"; CTA "Registrar Ahora" → "Empezar". EN: "I gave a pet for adoption" → "Record an adoption"; "I have info about an adopter" → "Leave an observation"; CTA "Register Now" → "Start". Card no longer over-promises an embedded flow.
+- **`src/components/HomeClient.tsx`** — uses `HomepageActionCard` instead of `AdoptionWizard`/`ReportWizard`.
+- **`tests/wizards.spec.ts`** — selectors updated for the new flow (card click → AdopterPicker overlay → "Who is the adopter?" heading), per the e2e-isolation memory.
+- **Lint cleanup, bundled.** Removed 14 pre-existing unused imports/vars across `test_sliding_window.ts`, root debug scripts (`check_my_animals.js`, `check_redirect.js`, `check_empty_i18n.ts`), admin pages (`notifications/page.tsx`, `users/page.tsx`), API routes (`api/admin/notifications/route.ts`, `api/form/[userId]/submit/route.ts`), `AdopterForm.tsx`, `AdoptionFormWizard.tsx`, `tests/mobile.spec.ts`, `tests/resilience.spec.ts`. Brings the lint count back under the 125 threshold (was 147 before — drift from prior commits, not this PR).
+
+### Removed
+- **`src/components/AdoptionWizard.tsx`** and **`src/components/ReportWizard.tsx`** — superseded by `HomepageActionCard` + `AdopterPicker`.
+
 ## [2.14.10-6] - 2026-05-12
 
 **Contract-app deploy pipeline rewrite + runtime contract-base resolver.** Fixes the bug where both staging and prod dashboards generated `adoptions.pages.dev` share URLs (so staging testers were unknowingly hitting prod), and the related bug where the prod contract-app at `adoptions.pages.dev` was calling the staging API and 404ing.

@@ -72,7 +72,7 @@ test.describe('Double-Submit Protection', () => {
 
         // Monitor for button state change during submission
         // Click and immediately check if button becomes disabled or text changes
-        const [response] = await Promise.all([
+        await Promise.all([
             page.waitForResponse(resp => resp.url().includes('/adopter') && resp.status() < 500, { timeout: 30000 }),
             saveBtn.click(),
         ]);

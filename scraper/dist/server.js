@@ -260,7 +260,7 @@ async function scrapeFacebookPost(url) {
                     if (images.length === 0) {
                         const ogImageMatches = rawHtml.matchAll(/<meta\s+property="og:image"\s+content="([^"]+)"/gi);
                         for (const match of ogImageMatches) {
-                            let imgUrl = match[1]
+                            const imgUrl = match[1]
                                 .replace(/&amp;/g, '&');
                             if (!images.includes(imgUrl)) {
                                 images.push(imgUrl);

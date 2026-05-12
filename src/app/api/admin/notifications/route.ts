@@ -3,7 +3,7 @@ import { auth } from '@/auth';
 import { isAdminAsync } from '@/config/admins';
 import { getDb } from '@/lib/db';
 import { appConfig } from '@/db/schema';
-import { eq, like } from 'drizzle-orm';
+import { like } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 
 import { getRequestContext } from '@cloudflare/next-on-pages';
@@ -71,7 +71,7 @@ export async function GET() {
         const enrichedStats = await Promise.all(Array.from(allTypes).map(async (type) => {
             const stat = stats.find((s: any) => s.type === type) || { totalSent: 0, totalRead: 0, lastSentAt: null };
             
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+             
             const previewQuery = await rawDb.prepare(`
                 SELECT id, title, body, icon, metadata, created_at as createdAt, read
                 FROM notifications

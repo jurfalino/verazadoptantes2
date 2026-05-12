@@ -108,7 +108,7 @@ async function probeDatabase(db: D1Database) {
 
         try {
             // PRAGMA and COUNT ran in parallel per-table for speed
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+             
             const [pragmaResult, countResult] = await Promise.all([
                 db.prepare(`PRAGMA table_info(${tableName})`).all() as any,
                 db.prepare(`SELECT COUNT(*) as cnt FROM ${tableName}`).first().catch(() => ({ cnt: 0 })) as any

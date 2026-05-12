@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { TEST_ADOPTERS, TEST_NAMES, dismissCountryBanner } from './helpers';
+import { dismissCountryBanner } from './helpers';
 
 /**
  * Mobile viewport tests — runs on iPhone 14 (390×844).

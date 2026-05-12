@@ -6,8 +6,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
-import AdoptionWizard from '@/components/AdoptionWizard';
-import ReportWizard from '@/components/ReportWizard';
+import HomepageActionCard from '@/components/HomepageActionCard';
 import { useEffect } from 'react';
 import InstallCTA from '@/components/InstallCTA';
 import SocialProofBanner from '@/components/SocialProofBanner';
@@ -110,13 +109,31 @@ export default function HomeClient({ initialConfig }: { initialConfig: Record<st
                     action and lives last; the three CTAs share the soft-pill style for
                     visual peer-equality. */}
                 <div id="action-cards" className={`grid gap-6 mt-6 ${contentImportEnabled ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
-                    {/* Register Adoption */}
-                    <AdoptionWizard />
+                    {/* Register Adoption — typed entry-point. Picks adopter, then hands off to
+                        AdoptionFormWizard via /adopter/<id>?newAdoption=adoption (or
+                        /adopter/create?continueToAdoption=true&newAdoption=adoption). */}
+                    <HomepageActionCard
+                        recordType="adoption"
+                        testId="adoption-wizard-btn"
+                        palette="teal"
+                        titleKey="home.action_register_title"
+                        descKey="home.action_register_desc"
+                        btnKey="home.action_register_btn"
+                        icon="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
 
-                    {/* Report / Observation */}
-                    <ReportWizard />
+                    {/* Observation / Note — same entry-point pattern, observation record type. */}
+                    <HomepageActionCard
+                        recordType="observation"
+                        testId="report-wizard-btn"
+                        palette="rose"
+                        titleKey="home.action_report_title"
+                        descKey="home.action_report_desc"
+                        btnKey="home.action_report_btn"
+                        icon="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                    />
 
-                    {/* Import from post — last position; CTA matches AdoptionWizard's soft-pill style */}
+                    {/* Import from post — last position; CTA matches the soft-pill style of the other action cards */}
                     {contentImportEnabled && (
                         <div
                             data-testid="import-content-btn"

@@ -21,7 +21,7 @@ import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
 import { renderTextWithLinks } from '@/lib/textUtils';
 import { AdopterFlagging } from '@/components/AdopterFlagging';
 import type { AdopterFlaggingHandle } from '@/components/AdopterFlagging';
-import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, HistoryEntry, AdoptionConfig } from '@/types/adopter';
+import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, AdoptionConfig } from '@/types/adopter';
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 
 interface AdopterFormProps {
