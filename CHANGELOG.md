@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-13] - 2026-05-12
+
+**De-Argentina the adoption contract.** Clause 4 was anchored to Argentina's Law 14.346 and adopter placeholders used CABA addresses and +54 phone numbers — incompatible with the global mission. Clause rewritten to reference "legislación vigente en materia de protección y bienestar animal de la jurisdicción correspondiente" without naming a specific statute, and split into two paragraphs (resolution of contract → restitution; then civil/criminal complaints). Adopter placeholders generalized; "DNI" label renamed to "Documento" everywhere it surfaces.
+
+### Changed
+- **Clause 4 rewritten** (4 mirrors kept in sync): `contract-app/src/ContractPage.tsx`, `contract-app/src/contractPdf.ts`, `src/app/contract/[id]/page.tsx`, `content/adoption-contract/index.json` (ES + EN). Title: "INCUMPLIMIENTO Y LEY 14.346" → "INCUMPLIMIENTO Y PROTECCIÓN ANIMAL".
+- **Placeholders generalized** in `ContractPage.tsx`, `src/app/contract/[id]/page.tsx`, `PetShieldForm.tsx`:
+  - ID: "12.345.678" → "N° de documento"
+  - Address: "Av. Corrientes 1234, CABA" → "Calle, número, ciudad, país"
+  - Phone: "+54 11 1234-5678" → "Código de país + número"
+- **"DNI" label renamed to "Documento"** wherever it appears in the contract flow: signature blocks (contract-app + Next mirror), `contract-results` data pill, `api/contract/[id]/submit` contactInfo string that gets stored on the adopter profile. PDF signature line same change.
+- **Form field label "DNI:"** in the static contract preview → "Documento de Identidad:" on the Next mirror page (contract-app already used "Documento de Identidad / Personal ID:").
+
 ## [2.14.10-12] - 2026-05-12
 
 **Hide photoless animals from public catalog + flag the rule in the share modal.** A card without a photo reads as broken on the public catalog and hurts both the rescuer's listing and overall trust in the surface. Now all four showcase endpoints skip rows with no images, and the `/my-animals` share modal carries an amber info notice explaining the rule so rescuers know what's hidden and how to fix it.

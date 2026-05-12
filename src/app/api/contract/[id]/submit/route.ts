@@ -74,7 +74,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         // 3. Build contact info from form data
         const contactParts: string[] = [];
-        if (dni) contactParts.push(`DNI: ${dni}`);
+        if (dni) contactParts.push(`Documento: ${dni}`);
         if (email) contactParts.push(`Email: ${email}`);
         if (phone) contactParts.push(`Tel: ${phone}`);
         if (address) contactParts.push(`Dirección: ${address}`);

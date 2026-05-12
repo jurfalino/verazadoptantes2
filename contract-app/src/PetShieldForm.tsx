@@ -188,13 +188,13 @@ const DEFAULT_SCHEMA: FormStep[] = [
     {
         id: 'identity-phone', type: 'text-fields', title: '¿Tu teléfono?',
         fields: [
-            { name: 'phone', label: 'Teléfono', placeholder: '+54 11 1234-5678', validation: 'phone-ar' },
+            { name: 'phone', label: 'Teléfono', placeholder: 'Código de país + número', validation: 'phone-ar' },
         ],
     },
     {
         id: 'identity-address', type: 'text-fields', title: '¿Dónde vivís?',
         fields: [
-            { name: 'address', label: 'Dirección', placeholder: 'Av. Corrientes 1234, CABA', required: true },
+            { name: 'address', label: 'Dirección', placeholder: 'Calle, número, ciudad, país', required: true },
         ],
     },
     {

@@ -220,10 +220,12 @@ export function generateContractPdf(animal: AnimalData, form: FormData): Blob | 
         y += SECTION_GAP
 
         // === 4. INCUMPLIMIENTO ===
-        checkPage(25)
-        addText('4. INCUMPLIMIENTO Y LEY 14.346', MARGIN_LEFT, CONTENT_WIDTH, { bold: true, size: 11 })
+        checkPage(35)
+        addText('4. INCUMPLIMIENTO Y PROTECCION ANIMAL', MARGIN_LEFT, CONTENT_WIDTH, { bold: true, size: 11 })
         y += 1
-        addText('El incumplimiento de cualquiera de estas clausulas facultara al rescatista a la restitucion inmediata del animal sin necesidad de intervencion judicial previa, sin perjuicio de las acciones legales que correspondan bajo la Ley Nacional 14.346 de Proteccion Animal, la cual pena el maltrato y la crueldad.', MARGIN_LEFT + 4, CONTENT_WIDTH - 4)
+        addText('El incumplimiento de cualquiera de las obligaciones pactadas en este documento facultara al rescatista a declarar la resolucion del contrato y exigir la restitucion inmediata del animal para garantizar su integridad fisica y emocional.', MARGIN_LEFT + 4, CONTENT_WIDTH - 4)
+        y += 2
+        addText('Esta accion se llevara a cabo sin perjuicio de las denuncias y acciones legales (civiles o penales) que correspondan bajo la legislacion vigente en materia de proteccion y bienestar animal de la jurisdiccion correspondiente, la cual sanciona el maltrato, la crueldad y el abandono de seres sintientes.', MARGIN_LEFT + 4, CONTENT_WIDTH - 4)
         y += 3
 
         // === Divider ===
@@ -292,7 +294,7 @@ export function generateContractPdf(animal: AnimalData, form: FormData): Blob | 
             doc.setFont('helvetica', 'normal')
             doc.setFontSize(8)
             doc.setTextColor(150, 150, 150)
-            const dniText = `DNI: ${form.dni}`
+            const dniText = `Documento: ${form.dni}`
             doc.text(dniText, sigLeft + (sigWidth - doc.getTextWidth(dniText)) / 2, y)
         }
 

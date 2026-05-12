@@ -145,7 +145,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                         {submitted.name && <DataPill label="Nombre" value={submitted.name} />}
                         {submitted.phone && <DataPill label="Teléfono" value={submitted.phone} />}
                         {submitted.email && <DataPill label="Email" value={submitted.email} />}
-                        {submitted.dni && <DataPill label="DNI" value={submitted.dni} />}
+                        {submitted.dni && <DataPill label="Documento" value={submitted.dni} />}
                         {submitted.address && <DataPill label="Dirección" value={submitted.address} />}
                         {submitted.socialNetworks && <DataPill label="Redes" value={submitted.socialNetworks} />}
                     </div>
