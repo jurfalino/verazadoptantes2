@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-15] - 2026-05-12
+
+**Fix: ShareFormMenu button looked broken in dark theme.** v2.14.10-14 shifted the button accent from teal to indigo to "match the form/showcase palette" — but only teal/rose/stone are remapped in `[data-theme="dark"]` in `globals.css`. Indigo classes pass through as raw Tailwind values, which clash badly against the dark surface base (`#0a1628`). Reverted the button to teal. Modal-internal indigo accents (small circle icon, "open in new tab" row icon) are unchanged since they predate v2.14.10-14 and the user hasn't flagged them.
+
+### Fixed
+- **`src/components/ShareFormMenu.tsx`** — button class reverted from `text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border-indigo-200` to teal equivalents. Both the page-header share-form button and the new per-animal compact share-form button now theme correctly in dark mode.
+
+### Notes
+- The two per-card share buttons ("Formulario" + "Compartir contrato") now share the same teal palette. Icon + label distinguish them, which is the same pattern used elsewhere in the app (e.g., the QuickAccessStrip pills).
+- Follow-up worth queueing: either (a) add indigo to the theme remapping in `globals.css` so the modal accents and `ShowcaseUrlChips` don't drift, or (b) replace remaining indigo with themed teal across the rescuer-facing surfaces. Not in scope here.
+
 ## [2.14.10-14] - 2026-05-12
 
 **Per-animal adoption-form share on `/my-animals` cards.** Same customized form URL that the public catalog's "Quiero adoptarlo" CTA opens (`/form?u=<userId>&animal=<animalId>`) is now shareable directly from each card on `/my-animals`. Rescuers no longer have to route prospective adopters through the public catalog to apply for a specific animal.

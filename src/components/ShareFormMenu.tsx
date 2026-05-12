@@ -97,7 +97,7 @@ export default function ShareFormMenu({ userId, animalId, animalName, compact = 
         <>
             <button
                 onClick={(e) => { e.stopPropagation(); e.preventDefault(); setIsOpen(true); }}
-                className={`inline-flex items-center gap-2 ${compact ? 'px-3 py-2 text-[12px]' : 'px-4 py-2.5 text-[13px]'} font-semibold text-indigo-700 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-200`}
+                className={`inline-flex items-center gap-2 ${compact ? 'px-3 py-2 text-[12px]' : 'px-4 py-2.5 text-[13px]'} font-semibold text-teal-700 bg-teal-50 rounded-xl hover:bg-teal-100 transition-colors border border-teal-200`}
                 aria-label={perAnimal
                     ? `${t('dashboard.share_form_for_animal_short') || 'Compartir formulario'}${animalName ? ` — ${animalName}` : ''}`
                     : (t('dashboard.share_form') || 'Share application form')}
