@@ -797,18 +797,73 @@ body {
   transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
   text-decoration: none;
   color: inherit;
+  /* Staggered fade-in is set per-card via nth-child below. */
+  animation: ps-fade-up 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .ps-showcase-card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   border-color: var(--ps-accent);
-  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.15);
+  box-shadow: 0 12px 32px rgba(99, 102, 241, 0.18);
+}
+
+.ps-showcase-card:hover .ps-showcase-card__photo img {
+  transform: scale(1.03);
+}
+
+/* Stagger first 9 cards (3 rows × 3 cols on widest grid). Cards beyond
+   that just fade in on the same tick — diminishing return for the effect. */
+.ps-showcase-grid > .ps-showcase-card:nth-child(1) { animation-delay: 0ms; }
+.ps-showcase-grid > .ps-showcase-card:nth-child(2) { animation-delay: 50ms; }
+.ps-showcase-grid > .ps-showcase-card:nth-child(3) { animation-delay: 100ms; }
+.ps-showcase-grid > .ps-showcase-card:nth-child(4) { animation-delay: 150ms; }
+.ps-showcase-grid > .ps-showcase-card:nth-child(5) { animation-delay: 200ms; }
+.ps-showcase-grid > .ps-showcase-card:nth-child(6) { animation-delay: 250ms; }
+.ps-showcase-grid > .ps-showcase-card:nth-child(7) { animation-delay: 300ms; }
+.ps-showcase-grid > .ps-showcase-card:nth-child(8) { animation-delay: 320ms; }
+.ps-showcase-grid > .ps-showcase-card:nth-child(9) { animation-delay: 340ms; }
+
+@keyframes ps-fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ps-showcase-card,
+  .ps-showcase-card__photo img,
+  .ps-home-hero__cta span,
+  .ps-home-featured__more span,
+  .ps-home-closing__cta span {
+    animation: none !important;
+    transition: none !important;
+  }
+  .ps-showcase-card:hover {
+    transform: none;
+  }
 }
 
 .ps-showcase-card__photo {
   aspect-ratio: 4 / 3;
   background: rgba(99, 102, 241, 0.06);
   overflow: hidden;
+  position: relative;
+}
+
+.ps-showcase-card__photo img {
+  transition: transform 400ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Subtle bottom-to-top dark gradient on the photo — gives the
+   text body underneath a visual "lift" without dimming the photo. */
+.ps-showcase-card__photo-fade {
+  position: absolute;
+  inset: 50% 0 0;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(15, 23, 42, 0.35) 100%
+  );
+  pointer-events: none;
 }
 
 .ps-showcase-card__photo img {
@@ -824,8 +879,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 48px;
-  opacity: 0.5;
+  color: var(--ps-accent);
+  opacity: 0.45;
 }
 
 .ps-showcase-card__body {
@@ -861,8 +916,12 @@ body {
 }
 
 .ps-showcase-empty__icon {
-  font-size: 56px;
-  margin-bottom: var(--ps-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto var(--ps-2);
+  color: var(--ps-accent);
+  opacity: 0.7;
 }
 
 .ps-showcase-empty__title {
@@ -901,15 +960,26 @@ body {
 /* ── Animal detail ── */
 
 .ps-animal-detail {
-  max-width: 720px;
+  max-width: 880px;
+  /* Bottom padding for mobile sticky CTA so the last paragraph isn't
+     hidden behind it; reset on desktop where the sticky bar is hidden. */
+  padding-bottom: 96px;
+}
+
+@media (min-width: 720px) {
+  .ps-animal-detail {
+    padding-bottom: var(--ps-4);
+  }
 }
 
 .ps-animal-hero {
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 3 / 2;
   background: rgba(99, 102, 241, 0.06);
   border-radius: 16px;
   overflow: hidden;
   margin-bottom: var(--ps-2);
+  border: 1px solid var(--ps-border);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.18);
 }
 
 .ps-animal-hero__img {
@@ -925,7 +995,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 80px;
+  color: var(--ps-accent);
   opacity: 0.5;
 }
 
@@ -1069,6 +1139,39 @@ body {
   background: var(--ps-card);
   border: 1px dashed var(--ps-border);
   border-radius: 12px;
+}
+
+/* ── Sticky mobile CTA on the animal detail page ──
+   Mobile-first reachability — the inline CTA at the bottom of the page
+   is too far below the fold on long descriptions. Hide on ≥720px where
+   the inline CTA is closer to the fold and a fixed bar would intrude. */
+.ps-animal-cta-sticky {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  padding: var(--ps-2);
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--ps-border);
+  /* Respect iOS safe-area inset so the button isn't under the home indicator. */
+  padding-bottom: max(var(--ps-2), env(safe-area-inset-bottom));
+}
+
+.ps-animal-cta-sticky__btn {
+  display: block;
+  width: 100%;
+  text-align: center;
+  font-size: 16px;
+  padding: 14px var(--ps-3); /* 14px: match hero CTA height */
+}
+
+@media (min-width: 720px) {
+  .ps-animal-cta-sticky {
+    display: none;
+  }
 }
 
 /* ══════════════════════════════════════════════

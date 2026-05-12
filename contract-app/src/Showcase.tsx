@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import AnimalCard, { type AnimalSummary } from './components/AnimalCard'
 import ShowcaseHeader from './components/ShowcaseHeader'
 import EmptyShowcase from './components/EmptyShowcase'
+import { AlertIcon } from './components/Icons'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -96,7 +97,9 @@ export default function Showcase({ scope }: { scope: ShowcaseScope }) {
         return (
             <main className="ps-showcase-page">
                 <div className="ps-showcase-empty">
-                    <div className="ps-showcase-empty__icon" aria-hidden>⚠</div>
+                    <div className="ps-showcase-empty__icon" aria-hidden>
+                        <AlertIcon size={48} />
+                    </div>
                     <h2 className="ps-showcase-empty__title">No pudimos cargar el catálogo</h2>
                     <p className="ps-showcase-empty__desc">{error}. Intentá nuevamente en unos minutos.</p>
                 </div>

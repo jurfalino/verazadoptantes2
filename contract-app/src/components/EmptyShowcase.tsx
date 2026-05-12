@@ -1,3 +1,5 @@
+import { PawIcon } from './Icons'
+
 /**
  * EmptyShowcase — the "no animals available" state.
  * Designed component (not just text) per CX call. Shows an Instagram CTA
@@ -14,7 +16,9 @@ export default function EmptyShowcase({ instagramUrl, scopeLabel }: Props) {
     const where = scopeLabel || 'la plataforma'
     return (
         <div className="ps-showcase-empty">
-            <div className="ps-showcase-empty__icon" aria-hidden>🐾</div>
+            <div className="ps-showcase-empty__icon" aria-hidden>
+                <PawIcon size={56} />
+            </div>
             <h2 className="ps-showcase-empty__title">Sin animales disponibles</h2>
             <p className="ps-showcase-empty__desc">
                 Por ahora no hay animales en adopción en {where}.

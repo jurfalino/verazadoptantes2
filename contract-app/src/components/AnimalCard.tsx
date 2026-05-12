@@ -1,3 +1,5 @@
+import { PawIcon } from './Icons'
+
 /**
  * AnimalCard — one card in the showcase grid (v2.14.10-3).
  * Clicking navigates to /animal/[id]. Reuses petshield.css design tokens.
@@ -44,8 +46,11 @@ export default function AnimalCard({ animal }: { animal: AnimalSummary }) {
                 {hero ? (
                     <img src={hero} alt={name} loading="lazy" />
                 ) : (
-                    <div className="ps-showcase-card__photo-empty" aria-hidden>🐾</div>
+                    <div className="ps-showcase-card__photo-empty" aria-hidden>
+                        <PawIcon size={48} />
+                    </div>
                 )}
+                <div className="ps-showcase-card__photo-fade" aria-hidden />
             </div>
             <div className="ps-showcase-card__body">
                 <h3 className="ps-showcase-card__name">{name}</h3>

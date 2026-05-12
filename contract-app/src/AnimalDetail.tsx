@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { PawIcon, AlertIcon } from './components/Icons'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -131,7 +132,9 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
         return (
             <main className="ps-showcase-page">
                 <div className="ps-showcase-empty">
-                    <div className="ps-showcase-empty__icon" aria-hidden>⚠</div>
+                    <div className="ps-showcase-empty__icon" aria-hidden>
+                        <AlertIcon size={48} />
+                    </div>
                     <h2 className="ps-showcase-empty__title">{error || 'No encontrado'}</h2>
                     <p className="ps-showcase-empty__desc">
                         <a href="/" className="ps-showcase-back-link">Ver otros animales en adopción</a>
@@ -155,13 +158,15 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
 
     return (
         <main className="ps-showcase-page ps-animal-detail">
-            <a href="/" className="ps-showcase-back-link">← Volver al catálogo</a>
+            <a href="/all" className="ps-showcase-back-link">← Volver al catálogo</a>
 
             <div className="ps-animal-hero">
                 {heroImage ? (
                     <img src={heroImage} alt={name} className="ps-animal-hero__img" />
                 ) : (
-                    <div className="ps-animal-hero__empty" aria-hidden>🐾</div>
+                    <div className="ps-animal-hero__empty" aria-hidden>
+                        <PawIcon size={96} />
+                    </div>
                 )}
             </div>
 
@@ -227,6 +232,17 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
                     </a>
                 )}
             </div>
+
+            {/* Sticky mobile CTA (mobile-only via CSS). Only when adoption is
+                actually possible — when unavailable, the inline message above
+                is sufficient and a sticky bar would mislead. */}
+            {adoptHref && (
+                <div className="ps-animal-cta-sticky" aria-hidden="false">
+                    <a href={adoptHref} className="ps-btn ps-btn--primary ps-animal-cta-sticky__btn">
+                        Quiero adoptarlo
+                    </a>
+                </div>
+            )}
         </main>
     )
 }
