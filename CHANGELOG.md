@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-11] - 2026-05-12
+
+**Rewrite `/privacy` and `/terms` for a global jurisdiction.** Both legal pages were Argentina-anchored (Law 25.326, Law 14.346, AAIP, CABA courts) — incompatible with the project's stated global mission ("Belize and the world"). New copy is jurisdiction-agnostic: legitimate-interest framing without country-specific statute numbers, ARCO rights guaranteed regardless of residence, jurisdiction clause keyed to the user's country plus the platform operator's domicile. EN translations updated to match. Last-updated date bumped to 2026-05-12.
+
+### Changed
+- **`src/app/privacy/page.tsx`** — new "Política de Privacidad Global" / "Global Privacy Policy" copy. 7 sections (data collected, legal basis, access levels, retention, ARCO rights, security, supervisory authority). No more references to Argentine Law 25.326 or AAIP; instead "Data Protection Authority or equivalent body in your national jurisdiction".
+- **`src/app/terms/page.tsx`** — new global Terms of Service copy. 10 sections (service description, user content responsibility, accuracy, prohibited uses, moderation, disputes, liability, IP, modifications, applicable law). Jurisdiction clause now defers to the user's country of residence with the operator's domicile as fallback.
+
 ## [2.14.10-10] - 2026-05-12
 
 **New `/quienes-somos` page — Guardianes del Mañana origin story.** Editorial about-page linked from the global footer, telling the Castillo / Usher founding story, the three project pillars, and the mission. Locale-aware via the new `about.*` i18n namespace; URL stays Spanish-anchored (matches the brand name).
