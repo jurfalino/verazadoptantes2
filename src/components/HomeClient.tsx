@@ -154,9 +154,10 @@ export default function HomeClient({ initialConfig }: { initialConfig: Record<st
 
                 {/* Quick Access Dashboard Strip — moved below cards (v2.14.8-5).
                     Cards = create intent (primary); pills = navigate-to-existing-data
-                    (secondary). UserMenu in the page header already serves explicit
-                    navigation. */}
-                <QuickAccessStrip />
+                    (secondary). Gated by ENABLE_QUICK_ACCESS_STRIP (default ON, admin
+                    toggle); when OFF, the same counters are still surfaced inside
+                    UserMenu so the data path doesn't disappear. */}
+                {appConfig.ENABLE_QUICK_ACCESS_STRIP !== 'false' && <QuickAccessStrip />}
 
                 {/* PWA Install CTA — shown to users who dismissed the floating banner */}
                 <InstallCTA />

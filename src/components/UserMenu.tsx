@@ -18,12 +18,20 @@ interface UserMenuProps {
     isAdmin?: boolean;
 }
 
+interface QuickCounts {
+    animals: number;
+    adoptions: number;
+    adopters: number;
+    animalsEnabled: boolean;
+}
+
 export default function UserMenu({ user, isAdmin: isAdminFromServer }: UserMenuProps) {
     const { t, locale, setLocale } = useLanguage();
     const { openLogin } = useAuthContext();
     const { data: session } = useSession();
     const [isOpen, setIsOpen] = useState(false);
     const [animalsEnabled, setAnimalsEnabled] = useState(false);
+    const [counts, setCounts] = useState<QuickCounts | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     // Single source: server-passed isAdmin (layout) > user.isAdmin (session callback) > client session
     const userIsAdmin = isAdminFromServer ?? (user as { isAdmin?: boolean } | undefined)?.isAdmin ?? (session?.user as { isAdmin?: boolean } | undefined)?.isAdmin ?? false;
@@ -54,6 +62,22 @@ export default function UserMenu({ user, isAdmin: isAdminFromServer }: UserMenuP
             })
             .catch(() => { });
     }, [user]);
+
+    // Fetch quick counts (same endpoint QuickAccessStrip uses; HTTP-cached so
+    // the duplicate request on the homepage is cheap). Refetch when the menu
+    // opens so counts stay reasonably fresh after the user creates records
+    // elsewhere in the app.
+    useEffect(() => {
+        if (!user || !isOpen) return;
+        let isMounted = true;
+        fetch('/api/quick-counts')
+            .then(res => res.json() as Promise<QuickCounts>)
+            .then(data => {
+                if (isMounted && data) setCounts(data);
+            })
+            .catch(() => { });
+        return () => { isMounted = false; };
+    }, [user, isOpen]);
 
     const handleSignOut = async () => {
         await signOut({ redirectTo: '/' });
@@ -138,7 +162,10 @@ export default function UserMenu({ user, isAdmin: isAdminFromServer }: UserMenuP
                                 onClick={() => setIsOpen(false)}
                             >
                                 <svg className="w-4 h-4 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-                                {t('dashboard.my_adopters') || 'My Adopters'}
+                                <span className="flex-1">{t('dashboard.my_adopters') || 'My Adopters'}</span>
+                                {counts && (
+                                    <span className="px-1.5 py-0.5 bg-stone-100 text-stone-500 rounded-full text-xs font-semibold tabular-nums">{counts.adopters}</span>
+                                )}
                             </Link>
                             {animalsEnabled && (
                                 <Link
@@ -147,7 +174,10 @@ export default function UserMenu({ user, isAdmin: isAdminFromServer }: UserMenuP
                                     onClick={() => setIsOpen(false)}
                                 >
                                     <span className="text-base w-4 h-4 flex items-center justify-center">🐾</span>
-                                    {t('dashboard.my_animals') || 'My Animals'}
+                                    <span className="flex-1">{t('dashboard.my_animals') || 'My Animals'}</span>
+                                    {counts && (
+                                        <span className="px-1.5 py-0.5 bg-stone-100 text-stone-500 rounded-full text-xs font-semibold tabular-nums">{counts.animals}</span>
+                                    )}
                                 </Link>
                             )}
                             <Link
@@ -156,7 +186,10 @@ export default function UserMenu({ user, isAdmin: isAdminFromServer }: UserMenuP
                                 onClick={() => setIsOpen(false)}
                             >
                                 <svg className="w-4 h-4 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
-                                {t('dashboard.my_adoptions') || 'My Adoptions'}
+                                <span className="flex-1">{t('dashboard.my_adoptions') || 'My Adoptions'}</span>
+                                {counts && (
+                                    <span className="px-1.5 py-0.5 bg-stone-100 text-stone-500 rounded-full text-xs font-semibold tabular-nums">{counts.adoptions}</span>
+                                )}
                             </Link>
                             <Link
                                 href="/organizations"

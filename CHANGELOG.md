@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-9] - 2026-05-12
+
+**Quick-access strip flag + counters in user menu.** Two coordinated changes: the homepage "Mis Animales / Mis Adopciones / Mis Adoptantes" pills are now flag-gated, and the same counters are surfaced inside the user menu dropdown — so turning the strip off doesn't bury the data.
+
+### Added
+- **`ENABLE_QUICK_ACCESS_STRIP` feature flag** (default ON) — wired through the 5-place pattern: `src/config/features.ts`, `src/lib/publicConfig.ts` (`PUBLIC_FLAG_KEYS` + defaults), `src/app/api/admin/config/route.ts`, `src/app/admin/config/page.tsx` (type + admin toggle + state hydration), and i18n labels (`flag_label_quick_access_strip` / `flag_desc_quick_access_strip` in ES + EN). Admin can flip it in `/admin/config`.
+- **Counters in `UserMenu` dropdown** — fetches `/api/quick-counts` when the menu opens and renders a subtle stone pill next to "Mis Adoptantes", "Mis Animales" (when `ENABLE_ANIMALS_FOR_ADOPTION` is on), and "Mis Adopciones". Same endpoint the strip uses; HTTP-cached so the duplicate request on the homepage is cheap. Refetches on each menu open so counts stay reasonably fresh after the user creates records elsewhere.
+
+### Changed
+- **`src/components/HomeClient.tsx`** — gates `<QuickAccessStrip />` on `appConfig.ENABLE_QUICK_ACCESS_STRIP !== 'false'`.
+
 ## [2.14.10-8] - 2026-05-12
 
 **Fix: homepage-card entry-point showed chip selector instead of guidance.** When the new `HomepageActionCard` (v2.14.10-7) routed to the activity wizard via `?newAdoption=<type>`, step 1 still rendered the record-type chip grid instead of the rating-aware `RecordTypeGuidance`. The wizard's "did the user already declare intent?" check only looked at the `initialRecordType` prop (used by VisitIntentCard), not the URL param the homepage path uses.

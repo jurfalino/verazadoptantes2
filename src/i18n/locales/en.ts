@@ -85,6 +85,8 @@ export const en = {
         flag_desc_chat_widget: 'Floating chat icon at bottom-right that routes visitor messages to the admin\'s Telegram. Requires TELEGRAM_BOT_TOKEN + TELEGRAM_WEBHOOK_SECRET set as Cloudflare secrets and TELEGRAM_ADMIN_CHAT_ID below. See docs/CHAT_SETUP.md.',
         flag_label_milestone_badge: 'Milestone Badge',
         flag_desc_milestone_badge: 'Show the "Completed X adoptions" progress bar on the homepage for authenticated users.',
+        flag_label_quick_access_strip: 'Quick Access Strip',
+        flag_desc_quick_access_strip: 'Show the "My Animals / My Adoptions / My Adopters" pills with counters on the homepage. When off, the same counters remain available in the user menu. Default ON.',
         flag_label_showcase_global: 'Public global catalog URL',
         flag_desc_showcase_global: 'On /my-animals, show the public link to the global catalog of all available animals (root "/"). Off by default while the flow is validated.',
         flag_label_showcase_org: 'Public per-org URLs',

@@ -32,6 +32,7 @@ interface ConfigData {
         ENABLE_SEARCH_CARD_METADATA?: string;
         ENABLE_CHAT_WIDGET?: string;
         ENABLE_MILESTONE_BADGE?: string;
+        ENABLE_QUICK_ACCESS_STRIP?: string;
         SHOWCASE_GLOBAL_VISIBLE?: string;
         SHOWCASE_ORG_VISIBLE?: string;
         SHOWCASE_USER_VISIBLE?: string;
@@ -58,6 +59,7 @@ const FEATURE_FLAGS = [
     { key: 'ENABLE_SEARCH_CARD_METADATA', labelKey: 'flag_label_search_card_metadata', descKey: 'flag_desc_search_card_metadata' },
     { key: 'ENABLE_CHAT_WIDGET', labelKey: 'flag_label_chat_widget', descKey: 'flag_desc_chat_widget' },
     { key: 'ENABLE_MILESTONE_BADGE', labelKey: 'flag_label_milestone_badge', descKey: 'flag_desc_milestone_badge' },
+    { key: 'ENABLE_QUICK_ACCESS_STRIP', labelKey: 'flag_label_quick_access_strip', descKey: 'flag_desc_quick_access_strip' },
     { key: 'SHOWCASE_GLOBAL_VISIBLE', labelKey: 'flag_label_showcase_global', descKey: 'flag_desc_showcase_global' },
     { key: 'SHOWCASE_ORG_VISIBLE', labelKey: 'flag_label_showcase_org', descKey: 'flag_desc_showcase_org' },
     { key: 'SHOWCASE_USER_VISIBLE', labelKey: 'flag_label_showcase_user', descKey: 'flag_desc_showcase_user' },
@@ -78,6 +80,7 @@ export default function AdminConfigPage() {
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,
         ENABLE_MILESTONE_BADGE: true,
+        ENABLE_QUICK_ACCESS_STRIP: true,
         SHOWCASE_GLOBAL_VISIBLE: false,
         SHOWCASE_ORG_VISIBLE: false,
         SHOWCASE_USER_VISIBLE: false,
@@ -122,6 +125,7 @@ export default function AdminConfigPage() {
                         ENABLE_SEARCH_CARD_METADATA: data.config?.ENABLE_SEARCH_CARD_METADATA !== 'false',
                         ENABLE_CHAT_WIDGET: data.config?.ENABLE_CHAT_WIDGET === 'true',
                         ENABLE_MILESTONE_BADGE: data.config?.ENABLE_MILESTONE_BADGE !== 'false',
+                        ENABLE_QUICK_ACCESS_STRIP: data.config?.ENABLE_QUICK_ACCESS_STRIP !== 'false',
                         SHOWCASE_GLOBAL_VISIBLE: data.config?.SHOWCASE_GLOBAL_VISIBLE === 'true',
                         SHOWCASE_ORG_VISIBLE: data.config?.SHOWCASE_ORG_VISIBLE === 'true',
                         SHOWCASE_USER_VISIBLE: data.config?.SHOWCASE_USER_VISIBLE === 'true',

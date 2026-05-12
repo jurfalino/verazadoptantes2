@@ -23,6 +23,7 @@ export const PUBLIC_FLAG_KEYS = [
     'ENABLE_ANIMALS_FOR_ADOPTION',
     'ENABLE_SEARCH_CARD_METADATA',
     'ENABLE_MILESTONE_BADGE',
+    'ENABLE_QUICK_ACCESS_STRIP',
     'SOCIAL_PROOF_ENABLED',
     'SOCIAL_PROOF_MESSAGES',
     // v2.14.10-1: showcase URL-chip visibility + Instagram CTA target.
@@ -40,6 +41,7 @@ export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
     ENABLE_ANIMALS_FOR_ADOPTION: 'false',
     ENABLE_SEARCH_CARD_METADATA: 'true',
     ENABLE_MILESTONE_BADGE: 'true',
+    ENABLE_QUICK_ACCESS_STRIP: 'true',
     SOCIAL_PROOF_ENABLED: 'false',
     SOCIAL_PROOF_MESSAGES: '[]',
     SHOWCASE_GLOBAL_VISIBLE: 'false',
