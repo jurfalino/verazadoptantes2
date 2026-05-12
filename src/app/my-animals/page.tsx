@@ -386,28 +386,29 @@ export default function MyAnimalsPage() {
                                     })()}
 
                                     {/* Actions */}
-                                    <div className="flex items-center justify-between pt-3 border-t border-stone-100">
-                                        <div className="text-xs text-stone-500">
+                                    <div className="flex items-center justify-between gap-2 pt-3 border-t border-stone-100">
+                                        <div className="text-xs text-stone-500 flex-shrink-0">
                                             {animal.date && (
                                                 <span>📅 {formatShortDate(animal.date)}</span>
                                             )}
                                         </div>
-                                        <div className="flex items-center gap-2 flex-wrap justify-end">
-                                            {!animal.adopterId && userId && (
-                                                <ShareFormMenu
-                                                    userId={userId}
-                                                    animalId={animal.id}
-                                                    animalName={animal.animalName || 'Animal'}
-                                                    compact
-                                                />
-                                            )}
-                                            {!animal.adopterId && (
+                                        {!animal.adopterId && (
+                                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                                                {userId && (
+                                                    <ShareFormMenu
+                                                        userId={userId}
+                                                        animalId={animal.id}
+                                                        animalName={animal.animalName || 'Animal'}
+                                                        compact
+                                                    />
+                                                )}
                                                 <ShareMenu
                                                     contractUrl={`/contract/${animal.id}`}
                                                     animalName={animal.animalName || 'Animal'}
+                                                    compact
                                                 />
-                                            )}
-                                        </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>

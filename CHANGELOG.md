@@ -2,6 +2,32 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-17] - 2026-05-12
+
+Two coordinated fixes: (a) multiple dark-theme regressions across recent UI work, (b) `/my-animals` card share buttons sized inconsistently and wrapping awkwardly on narrow cards.
+
+### Fixed — dark theme
+
+Repeated bug pattern across recent commits: the codebase remaps Tailwind palettes via `[data-theme]` rules in `globals.css` (not Tailwind `dark:` variants). Any class that isn't in those rule blocks renders raw and clashes with the dark indigo surface. A new memory entry documents the rule so it stops recurring.
+
+- **`/quienes-somos` hero backdrop** — was a CSS `linear-gradient(180deg, #f5f5f4, #fafaf9)` (literal light-mode hex inside an inline `<style>`). Replaced with `var(--surface-base)` so it inherits the active theme. Brand-teal radial overlay stays.
+- **`/quienes-somos` mission banner** — used `bg-gradient-to-br from-teal-50 via-white to-teal-50`. Gradient stop classes (`from-*`, `via-*`, `to-*`) are not themed; `via-white` produced a bright stripe in dark mode. Replaced with solid `bg-teal-50` (themed).
+- **`/quienes-somos` pillar icon borders** — used `ring-4 ring-{tone}-200/60`. Ring utilities (including the `/opacity` form) are not themed. Replaced with `border-2 border-{tone}-200`, which IS in the theme rules for teal/rose/amber.
+- **`ShowcaseUrlChips` photo-notice** — used `text-amber-900` (not themed; only 700/800 are). Bumped parent to `text-amber-800`; removed the redundant override on the body line.
+
+### Fixed — `/my-animals` card share buttons
+
+The "Formulario" button I added in v2.14.10-14 was compact but `ShareMenu` (contract) stayed at the original full size — same teal styling but mismatched padding/text-size, looked like a draft. On narrow cards (3-col desktop ~280px), the two buttons plus date wouldn't fit and `flex-wrap` dropped one to a second line, creating a stagger.
+
+- **`src/components/ShareMenu.tsx`** — added `compact` prop mirroring `ShareFormMenu`. Same px-3 py-2 / text-[12px] / w-3.5 icon, label drops to `Contrato` (vs. `Compartir contrato`), `title` attribute keeps the full label discoverable on hover.
+- **`src/app/my-animals/page.tsx`** — both share buttons now compact and same metrics. Dropped `flex-wrap` (no longer needed: ~190px button group + 70px date + gaps fits even 3-col cards). Tighter `gap-1.5` *inside* the button group (they're related actions), `gap-2` between the group and the date (those are unrelated). Both sides `flex-shrink-0` so neither gets squeezed.
+- **i18n key** `dashboard.share_contract_short` in ES + EN (`Contrato` / `Contract`).
+
+### Notes
+- Saved a memory at `feedback_themed_colors_only.md` listing exactly which Tailwind shades are theme-safe per `globals.css`. Future UI work should grep that file before adding a color class.
+- Both share buttons stay teal (not differentiated by color). Considered primary/secondary visual hierarchy, but the two actions are peers — same animal, two stages (apply → sign) — and lying about hierarchy through color would mislead. Icons + labels handle differentiation.
+- Pre-existing theme breakages elsewhere (indigo accents in the `ShareFormMenu` modal interiors that predate my changes) are NOT in this PR; tackle later via adding indigo to the theme palette or replacing with themed alternatives.
+
 ## [2.14.10-16] - 2026-05-12
 
 **Prevent duplicate organization names + manual prod fix for the same.** Earlier today the production deploy of v2.14.10 (showcase foundation) silently failed for several PR merges because the `0041_showcase_slugs.sql` migration's UNIQUE index on `organizations.slug` collided on two orgs both named "Michis" — backfilled slug clashed. Fixed manually on prod (renamed the duplicate test org → `Michis (test)` with slug `michis-test`) and applied the migration. This release adds the validation so it cannot recur.

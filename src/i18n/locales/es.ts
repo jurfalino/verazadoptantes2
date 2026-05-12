@@ -764,6 +764,7 @@ export const es = {
         view_signed_contract: 'Ver Contrato Firmado',
         view_contract: 'Ver contrato',
         share_contract: 'Compartir contrato',
+        share_contract_short: 'Contrato',
         share_contract_tooltip: 'Enviá el enlace del contrato de adopción de este animal para que el adoptante lo firme.',
         share_contract_modal_title: 'Compartir contrato de adopción',
         share_contract_modal_hint: 'El adoptante usará este enlace para firmar el contrato de este animal.',

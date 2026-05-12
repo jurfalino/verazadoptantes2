@@ -161,13 +161,13 @@ export default function ShowcaseUrlChips() {
                         {/* Info notice: animals without photos are hidden from the public catalog.
                             Placed above the link list so rescuers see it before they click "open"
                             and wonder why their catalog has fewer animals than they expected. */}
-                        <div className="mx-3 mt-3 flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
-                            <svg className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                        <div className="mx-3 mt-3 flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800">
+                            <svg className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                             <div className="min-w-0 flex-1">
                                 <p className="text-xs font-semibold leading-tight">{t('myAnimals.showcase_photo_notice_title')}</p>
-                                <p className="text-xs leading-snug mt-0.5 text-amber-800">{t('myAnimals.showcase_photo_notice_body')}</p>
+                                <p className="text-xs leading-snug mt-0.5">{t('myAnimals.showcase_photo_notice_body')}</p>
                             </div>
                         </div>
 

@@ -765,6 +765,7 @@ export const en = {
         view_signed_contract: 'View Signed Contract',
         view_contract: 'View contract',
         share_contract: 'Share contract',
+        share_contract_short: 'Contract',
         share_contract_tooltip: 'Send the adoption contract link for this animal so the adopter can sign it.',
         share_contract_modal_title: 'Share adoption contract',
         share_contract_modal_hint: 'The adopter will use this link to sign the contract for this animal.',
