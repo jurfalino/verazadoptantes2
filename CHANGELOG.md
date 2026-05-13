@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-19] - 2026-05-13
+
+**Fix two e2e regressions that blocked the Phase 1 deploy.** v2.14.10-18 built but failed the e2e gate on staging; this release lands both fixes so Phase 1 ships cleanly.
+
+### Fixed
+- **`tests/forms.spec.ts:5`** — was asserting the OLD "Create new profile" CTA on `/form-results/<id>`. Phase 1 auto-creates an adopter for every submission and marks `status='linked'` synchronously, so the page now renders the "View linked adopter profile" CTA instead. Test updated to assert the new behavior — also proves the auto-create flow ran end-to-end.
+- **`tests/forms.spec.ts:21`** — preexisting race: the test grabbed `.href` immediately after the share-form link became visible, but `useContractBase()` resolves async and the href is empty for a beat. Now polls until the href contains `u=` (15s timeout). Phase 1's added DB work tipped the existing flake over the edge on CI.
+- **`src/app/actions/_adopterFactory.ts`** — `findAdopters` was called with `minRelevance: 30`, tighter than the existing contract-submit route's `0`. The contract-link e2e test sets up a borderline-confidence fixture and relies on the loose threshold to surface the match in the notification. Split the two thresholds: `0` for `findAdopters` (preserves notification recall), `≥30` for what's written to `duplicate_candidates` (keeps the pending-dedup table from filling with noise).
+
+### Notes
+- Migration 0042 was applied to staging by the prior run's `migrate-staging` job (which succeeded before the e2e timeout). No re-migration needed; the DB is already at the new shape.
+
 ## [2.14.10-18] - 2026-05-12
 
 **Auto-create adopters from form submissions + source attribution (Phase 1 of the new applicant→contract workflow).** Form submissions no longer sit in `form_submissions` purgatory until a rescuer manually links them — each submission now produces an `adopters` row immediately, with source attribution and pre-computed duplicate-candidate pairs so the upcoming pending-dedup section has data to render. Plan: `.agents/plans/snoopy-exploring-iverson.md` (local copy at `/home/jurfalino/.claude-personal/plans/snoopy-exploring-iverson.md`).

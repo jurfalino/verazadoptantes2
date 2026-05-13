@@ -159,13 +159,20 @@ export async function createAdopterFromSubmission(
         });
     }
 
-    // 4. Find duplicates + persist as `duplicate_candidates` pending rows so the
-    // pending-dedup section on /my-adopters has data to render.
+    // 4. Find duplicates + persist a filtered subset as `duplicate_candidates`
+    // pending rows so the pending-dedup section on /my-adopters has data.
     //
-    // minRelevance: 30 — above pure noise (10-pt threshold the admin uses)
-    // but inclusive enough to catch most genuine dupes. Caller can post-process
-    // the returned array; the persisted rows use the same threshold to avoid
-    // clogging the UI with very-low-confidence pairs.
+    // Two thresholds intentionally split:
+    //   • findAdopters minRelevance:0 — matches the existing form/contract
+    //     notification recall (the prior code paths use 0). Keeps the
+    //     notification banner honest about borderline matches and preserves
+    //     existing e2e behavior (notably contract-link.spec.ts which sets up
+    //     a low-confidence fixture and expects the "Es la misma persona"
+    //     merge button to render).
+    //   • PERSIST_THRESHOLD = 30 — only pairs with ≥30% relevance get
+    //     written to duplicate_candidates. Stops the pending-dedup table
+    //     from filling with noise that the rescuer would just dismiss.
+    const PERSIST_THRESHOLD = 30;
     let dupCandidates: DupCandidateSummary[] = [];
     try {
         const { findAdopters } = await import('@/app/actions/findAdopters');
@@ -188,15 +195,16 @@ export async function createAdopterFromSubmission(
                 socials: input.socials ? extractSocials(input.socials) : [],
                 excludeAdopterId: adopterId,
             },
-            { mode: 'duplicate', minRelevance: 30, limit: 5 },
+            { mode: 'duplicate', minRelevance: 0, limit: 5 },
         );
 
         const matches = (dupResult.results as Array<{ adopterId: string; adopterName: string; matchTypes: string[]; relevancePercent: number }>) || [];
 
-        // Persist as pending candidates. Skip pairs that are already recorded
-        // (dismissed / merged) — the admin reconciliation route owns that
-        // state transition and we shouldn't reopen its decisions.
+        // Persist only matches above the noise floor. Skip pairs that are
+        // already recorded (dismissed / merged) — the admin reconciliation
+        // route owns that state transition and we shouldn't reopen its decisions.
         for (const match of matches) {
+            if (match.relevancePercent < PERSIST_THRESHOLD) continue;
             const [id1, id2] = adopterId < match.adopterId
                 ? [adopterId, match.adopterId]
                 : [match.adopterId, adopterId];
