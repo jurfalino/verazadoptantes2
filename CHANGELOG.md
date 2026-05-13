@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-20] - 2026-05-13
+
+**Phases 2 + 3 of the adopter-workflow plan: pending-dedup section on `/my-adopters` + source attribution pill on each adopter row.** Phase 1 (v2.14.10-18/-19) made every form submission auto-create an `adopters` row and persist pending duplicate-candidate pairs; this release surfaces those pairs in the UI so rescuers can triage them, and adds the visual indicator showing how each adopter record was created.
+
+### Added
+- **`src/components/PendingDedup.tsx`** (new) — top-of-page section that fetches `getPendingDuplicatesForUser()` and renders each pair as side-by-side compact cards (NEW vs EXISTING, older = merge primary). Actions: "Combinar perfiles" (call `mergeAdopters`) and "Mantener separados" (call `dismissDuplicateCandidate`). Hides itself when there are no pending pairs. All Tailwind classes verified themed per the `feedback_themed_colors_only` memory.
+- **`getPendingDuplicatesForUser()`** in `src/app/actions/duplicates.ts` — user-scoped feed (not single-adopter like `getDuplicateCandidates`). Returns up to 20 pending pairs where the current rescuer's email is on at least one side. Uses Promise.all per-id reads (no D1 inArray). Surfaces newest-first.
+- **`dismissDuplicateCandidate(candidateId)`** in `src/app/actions/duplicates.ts` — user-scoped variant of the existing admin dismiss. Actor must own at least one of the two adopters in the pair (admins always allowed).
+- **`SourcePill`** in `src/app/my-adopters/page.tsx` — inline next to the adopter name. Form / Contract / Imported show themed pills; Manual is omitted (default; rendering it everywhere is noise). Both desktop and mobile layouts.
+- **i18n keys** in new `myAdopters.*` namespace (ES + EN): `pending_dedup_title/subtitle/match/action_merge/action_keep/merged/side_new/side_existing` and `source_form/contract/imported` plus `*_full` tooltip variants.
+
+### Changed
+- **`src/app/my-adopters/page.tsx`** — the previous "Unlinked Forms" section is gone (Phase 1 makes every submission immediately linked). `<PendingDedup />` replaces it. The page also drops its second fetch (`/api/my-form-submissions/unlinked`) since the data path no longer exists.
+- **`Adopter` interface** in the page gains `source?: string`. The API already returns it (the action spreads `...adopter`); only the type needed updating.
+
+### Removed
+- **`getMyUnlinkedFormSubmissions()`** action — no caller after the page change. Also removed from the `src/app/actions/index.ts` barrel.
+- **`src/app/api/my-form-submissions/unlinked/route.ts`** — only caller was the page section we just deleted.
+- **`src/app/form-results/[submissionId]/link/page.tsx`** — only entry point was the old "Link to existing profile" button on the (now removed) Unlinked Forms section. Kept `getFormSubmissionPrefill` for backward-compat with `/adopter/create?fromForm=` (still rendered by `FormResultsContent` for any pre-Phase-1 unlinked submissions that survived).
+
 ## [2.14.10-19] - 2026-05-13
 
 **Fix two e2e regressions that blocked the Phase 1 deploy.** v2.14.10-18 built but failed the e2e gate on staging; this release lands both fixes so Phase 1 ships cleanly.

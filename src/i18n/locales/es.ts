@@ -959,6 +959,24 @@ export const es = {
         aboutToCreate: 'Estás por crear un nuevo perfil para',
         duplicateUrl: 'Este post de Facebook ya fue importado. Perfil existente:',
     },
+    myAdopters: {
+        // v2.14.10-20: pending-dedup section on /my-adopters
+        pending_dedup_title: 'Pendientes de revisar',
+        pending_dedup_subtitle: 'Encontramos perfiles que podrían ser la misma persona. Decidí si combinarlos.',
+        pending_dedup_side_new: 'Nuevo',
+        pending_dedup_side_existing: 'Existente',
+        pending_dedup_match: 'coincidencia',
+        pending_dedup_action_merge: 'Combinar perfiles',
+        pending_dedup_action_keep: 'Mantener separados',
+        pending_dedup_merged: 'Perfiles combinados',
+        // Source attribution pill (v2.14.10-20)
+        source_form: 'Formulario',
+        source_form_full: 'Creado desde una respuesta de formulario',
+        source_contract: 'Contrato',
+        source_contract_full: 'Creado al firmar un contrato',
+        source_imported: 'Importado',
+        source_imported_full: 'Importado en lote',
+    },
     myAnimals: {
         showcase_section_title: 'Tu catálogo público',
         showcase_section_desc: 'Compartí estos links para que las personas vean tus animales en adopción.',

@@ -202,48 +202,6 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
     }
 }
 
-export async function getMyUnlinkedFormSubmissions(): Promise<Array<{ id: string; name: string; email: string | null; notificationId: string | null; createdAt: Date | null }>> {
-    let userEmail: string | undefined;
-    try {
-        const db = await getDb();
-        if (!db) return [];
-        const session = await auth();
-        if (!session?.user?.email) return [];
-        userEmail = session.user.email;
-
-        const rows = await db
-            .select({
-                id: formSubmissions.id,
-                name: formSubmissions.name,
-                email: formSubmissions.email,
-                notificationId: formSubmissions.notificationId,
-                createdAt: formSubmissions.createdAt,
-            })
-            .from(formSubmissions)
-            .where(and(
-                eq(formSubmissions.userId, session.user.email),
-                isNull(formSubmissions.linkedAdopterId),
-            ))
-            .orderBy(sql`${formSubmissions.createdAt} DESC`)
-            .all();
-
-        const formIds = rows.map((r: { id: string }) => r.id);
-        const uniqueFormIds = new Set(formIds);
-        if (formIds.length !== uniqueFormIds.size) {
-            logger.warn('getMyUnlinkedFormSubmissions returned duplicate submission ids', {
-                total: rows.length,
-                unique: uniqueFormIds.size,
-                duplicated: formIds.length - uniqueFormIds.size,
-            });
-        }
-
-        return rows;
-    } catch (error) {
-        logger.error('getMyUnlinkedFormSubmissions failed', error, { userEmail });
-        return [];
-    }
-}
-
 export async function getMyAdoptions(filter: 'all' | 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet' = 'all', sort: 'date' | 'name' = 'date') {
     let userEmail: string | undefined;
     try {

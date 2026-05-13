@@ -9,6 +9,7 @@ import { RatingBadge } from '@/components/RatingBadge';
 import { formatShortDate } from '@/lib/dates';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
+import PendingDedup from '@/components/PendingDedup';
 
 import type { AdopterFlags } from '@/types/adopter';
 
@@ -28,14 +29,34 @@ interface Adopter {
     profileViews: number;
     formCount?: number;
     addedBy?: string | null;
+    /** v2.14.10-20: enum-via-text — 'manual' | 'form' | 'contract' | 'imported'. */
+    source?: string;
 }
 
-interface UnlinkedForm {
-    id: string;
-    name: string;
-    email: string | null;
-    notificationId: string | null;
-    createdAt: number | string | null;
+/**
+ * Source attribution pill (v2.14.10-20). Lives inline next to the adopter
+ * name on /my-adopters rows. Omitted for `source='manual'` (default; showing
+ * "Manual" everywhere is noise). All Tailwind classes verified themed per
+ * memory feedback_themed_colors_only.
+ */
+function SourcePill({ source, t }: { source?: string; t: (key: string) => string }) {
+    if (!source || source === 'manual') return null;
+    if (source === 'form') return (
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-teal-50 text-teal-700" title={t('myAdopters.source_form_full') || 'Created from form submission'}>
+            📝 {t('myAdopters.source_form') || 'Form'}
+        </span>
+    );
+    if (source === 'contract') return (
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-amber-50 text-amber-800" title={t('myAdopters.source_contract_full') || 'Created from signed contract'}>
+            ✍️ {t('myAdopters.source_contract') || 'Contract'}
+        </span>
+    );
+    if (source === 'imported') return (
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-stone-100 text-stone-600" title={t('myAdopters.source_imported_full') || 'Imported in bulk'}>
+            📥 {t('myAdopters.source_imported') || 'Imported'}
+        </span>
+    );
+    return null;
 }
 
 // Flag badges component for displaying all flags
@@ -98,16 +119,16 @@ export default function MyAdoptersPage() {
     const toast = useShowToast();
     const currentEmail = session?.user?.email || '';
     const [adopters, setAdopters] = useState<Adopter[]>([]);
-    const [unlinkedForms, setUnlinkedForms] = useState<UnlinkedForm[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        // v2.14.10-20: unlinked form submissions don't exist anymore — Phase 1
+        // auto-creates the adopter at submit time. The pending-dedup feed
+        // (rendered by <PendingDedup />) replaces the old "Unlinked Forms"
+        // section. Adopters fetch stays as-is.
         async function fetchData() {
             try {
-                const [adoptersRes, formsRes] = await Promise.all([
-                    fetch('/api/my-adopters'),
-                    fetch('/api/my-form-submissions/unlinked'),
-                ]);
+                const adoptersRes = await fetch('/api/my-adopters');
                 if (adoptersRes.ok) {
                     const data = await adoptersRes.json() as Adopter[];
                     const byId = new Map<string, Adopter>();
@@ -116,15 +137,6 @@ export default function MyAdoptersPage() {
                 } else {
                     const body = await adoptersRes.json().catch(() => ({})) as { error?: string; errorId?: string };
                     toast.error(t('errors.generic') || 'Error', body.error || 'Failed to load adopters.', body.errorId);
-                }
-                if (formsRes.ok) {
-                    const forms = await formsRes.json() as UnlinkedForm[];
-                    const byId = new Map<string, UnlinkedForm>();
-                    forms.forEach((f) => { if (!byId.has(f.id)) byId.set(f.id, f); });
-                    setUnlinkedForms(Array.from(byId.values()));
-                } else {
-                    const body = await formsRes.json().catch(() => ({})) as { error?: string; errorId?: string };
-                    toast.error(t('errors.generic') || 'Error', body.error || 'Failed to load form submissions.', body.errorId);
                 }
             } catch (e) {
                 toast.error(t('errors.generic') || 'Error', 'Failed to load data.', extractErrorId(e));
@@ -169,101 +181,9 @@ export default function MyAdoptersPage() {
                     </Link>
                 </div>
 
-                {/* Forms not linked to an adopter profile */}
-                {unlinkedForms.length > 0 && (
-                    <section className="mb-8">
-                        <h2 className="text-lg font-semibold text-stone-800 mb-3 flex items-center gap-2">
-                            {t('dashboard.unlinked_forms_title')}
-                            <span className="text-sm font-normal text-stone-500 bg-amber-50 px-2 py-0.5 rounded-full">{unlinkedForms.length}</span>
-                        </h2>
-                        {/* Desktop table */}
-                        <div className="hidden md:block bg-white rounded-2xl overflow-hidden shadow-sm border border-stone-200 mb-4">
-                            <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-stone-50 border-b border-stone-200 text-xs font-semibold text-stone-500 uppercase tracking-wide">
-                                <div className="col-span-3">{t('dashboard.unlinked_table_name')}</div>
-                                <div className="col-span-3">{t('dashboard.unlinked_table_contact')}</div>
-                                <div className="col-span-2">{t('dashboard.unlinked_table_date')}</div>
-                                <div className="col-span-4 text-right">{t('dashboard.table_actions')}</div>
-                            </div>
-                            <div className="divide-y divide-stone-100">
-                                {unlinkedForms.map((form, i) => (
-                                    <div
-                                        key={`unlinked-${form.id}-${i}`}
-                                        className="grid grid-cols-12 gap-2 px-4 py-3 hover:bg-stone-50/50 transition-colors items-center"
-                                    >
-                                        <div className="col-span-3 font-medium text-stone-900 truncate">{form.name}</div>
-                                        <div className="col-span-3 text-sm text-stone-600 truncate">{form.email || t('dashboard.no_contact')}</div>
-                                        <div className="col-span-2 text-sm text-stone-500">
-                                            {form.createdAt != null ? formatShortDate(form.createdAt) : '—'}
-                                        </div>
-                                        <div className="col-span-4 flex flex-wrap justify-end gap-2">
-                                            {form.id && (
-                                                <Link
-                                                    href={`/form-results/${form.id}`}
-                                                    className="text-sm text-teal-700 hover:text-teal-800 font-medium"
-                                                >
-                                                    {t('dashboard.unlinked_view_response')} →
-                                                </Link>
-                                            )}
-                                            <Link
-                                                href={`/adopter/create?fromForm=${form.id}`}
-                                                className="text-sm text-teal-700 hover:text-teal-800 font-medium"
-                                            >
-                                                {t('dashboard.unlinked_create_profile')}
-                                            </Link>
-                                            {form.id && (
-                                                <Link
-                                                    href={`/form-results/${form.id}/link`}
-                                                    className="text-sm text-stone-600 hover:text-stone-800 font-medium"
-                                                >
-                                                    {t('dashboard.unlinked_link_profile')}
-                                                </Link>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                        {/* Mobile cards */}
-                        <div className="md:hidden space-y-3">
-                            {unlinkedForms.map((form, i) => (
-                                <div
-                                    key={`unlinked-${form.id}-${i}`}
-                                    className="bg-white rounded-xl p-4 shadow-sm border border-stone-200"
-                                >
-                                    <div className="font-medium text-stone-900 mb-1 truncate" title={form.name}>{form.name}</div>
-                                    <div className="text-sm text-stone-600 mb-2 break-all">{form.email || t('dashboard.no_contact')}</div>
-                                    <div className="text-xs text-stone-500 mb-3">
-                                        {form.createdAt != null ? formatShortDate(form.createdAt) : '—'}
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        {form.id && (
-                                            <Link
-                                                href={`/form-results/${form.id}`}
-                                                className="px-3 py-1.5 text-sm bg-teal-100 text-teal-800 rounded-lg font-medium"
-                                            >
-                                                {t('dashboard.unlinked_view_response')}
-                                            </Link>
-                                        )}
-                                        <Link
-                                            href={`/adopter/create?fromForm=${form.id}`}
-                                            className="px-3 py-1.5 text-sm bg-teal-100 text-teal-800 rounded-lg font-medium"
-                                        >
-                                            {t('dashboard.unlinked_create_profile')}
-                                        </Link>
-                                        {form.id && (
-                                            <Link
-                                                href={`/form-results/${form.id}/link`}
-                                                className="px-3 py-1.5 text-sm bg-stone-100 text-stone-700 rounded-lg font-medium"
-                                            >
-                                                {t('dashboard.unlinked_link_profile')}
-                                            </Link>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </section>
-                )}
+                {/* Pending-dedup pairs (replaces the old "Unlinked Forms" section
+                    that existed before Phase 1 auto-created adopters at submit time). */}
+                <PendingDedup />
 
                 {adopters.length === 0 ? (
                     <div className="bg-white rounded-2xl p-12 text-center border border-stone-200 shadow-sm">
@@ -307,7 +227,10 @@ export default function MyAdoptersPage() {
                                                 )}
                                             </div>
                                             <div className="min-w-0">
-                                                <div className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate text-sm">{adopter.name}</div>
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <div className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate text-sm">{adopter.name}</div>
+                                                    <SourcePill source={adopter.source} t={t} />
+                                                </div>
                                                 <div className="text-xs text-stone-500 truncate">{adopter.contactInfo || t('dashboard.no_contact')}</div>
                                                 {adopter.addedBy && adopter.addedBy !== currentEmail && (
                                                     <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', adopter.addedBy)}</div>
@@ -378,7 +301,10 @@ export default function MyAdoptersPage() {
                                             )}
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <div className="font-semibold text-stone-900 truncate">{adopter.name}</div>
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <div className="font-semibold text-stone-900 truncate">{adopter.name}</div>
+                                                <SourcePill source={adopter.source} t={t} />
+                                            </div>
                                             <div className="text-xs text-stone-500 truncate">{adopter.contactInfo || t('dashboard.no_contact')}</div>
                                             {adopter.addedBy && adopter.addedBy !== currentEmail && (
                                                 <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', adopter.addedBy)}</div>
