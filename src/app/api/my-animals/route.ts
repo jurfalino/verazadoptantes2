@@ -73,7 +73,12 @@ export async function GET(request: NextRequest) {
         }
         logger.info('my-animals query', { view, userEmail, resultCount: results.length, uniqueCount: new Set(queryIds).size });
 
-        // Enrich with images and adopter name
+        // v2.14.10-21: applicants for the per-animal disclosure on /my-animals.
+        // Loaded once via getApplicantsForAnimal (D1-safe per-row enrichment).
+        const { getApplicantsForAnimal } = await import('@/app/actions/applicants');
+
+        // Enrich with images, adopter name, and (for available animals) the
+        // list of people who applied via the customized form.
         const enriched = await Promise.all(
             results.map(async (animal: typeof adoptions.$inferSelect) => {
                 const images = await db.select({
@@ -95,7 +100,11 @@ export async function GET(request: NextRequest) {
                     adopterName = adopter?.name || null;
                 }
 
-                return { ...animal, images, adopterName };
+                // Only fetch applicants for "available" animals — the card
+                // disclosure isn't useful once the animal has been adopted.
+                const applicants = animal.adopterId ? [] : await getApplicantsForAnimal(animal.id);
+
+                return { ...animal, images, adopterName, applicants };
             })
         );
 

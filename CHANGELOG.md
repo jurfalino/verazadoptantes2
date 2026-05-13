@@ -2,6 +2,29 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-21] - 2026-05-13
+
+**Phases 4 + 5 of the adopter-workflow plan: per-animal applicants disclosure on `/my-animals` cards + token-locked contract flow.** End of the planned series. Rescuers can now see which adopters have applied for each animal and issue a per-adopter contract URL that no one else can sign.
+
+### Added
+- **`src/app/actions/applicants.ts`** (new) — `getApplicantsForAnimal(animalId)` returns form-submission applicants joined to the adopter row + status flags (`hasInvite`, `isSigned`). D1-safe per-row enrichment via Promise.all (no `inArray`).
+- **`src/components/AnimalApplicants.tsx`** (new) — closed-by-default disclosure under each animal card. Lists applicants with rating + when. Per-row "Enviar contrato" button (or "Reenviar" if an invite is already outstanding, or "Firmado" badge once signed). Inline mini share modal (Copy / Open / WhatsApp / Email) takes the token URL directly.
+- **`src/app/actions/contract.ts`** (new) — `createContractInvitation(animalId, adopterId)` server action. Auths the rescuer, verifies the animal isn't already adopted, retires prior unused invites for the same animal (one-outstanding-per-animal semantics), inserts the new token row with a 30-day TTL, and returns `{ token, url }`.
+- **`src/app/api/contract/by-token/[token]/route.ts`** (new) — GET endpoint the contract-app calls when loading a `/c/<token>` URL. Returns the animal payload + adopter prefill (name split into first/last + parsed `contactInfo` lines for email/phone/address/document). 410 with `code` for expired/used/already_adopted; 404 for unknown.
+- **`/c/<token>` route** in `contract-app/src/App.tsx` — passes the token to `<ContractPage token={...} />`.
+
+### Changed
+- **`contract-app/src/ContractPage.tsx`** — accepts either `animalId` (legacy open path) or `token` (locked path). When in token mode it fetches `/api/contract/by-token/<token>` to pre-fill the form fields and shows a teal "Para {adopterName}" badge at the top of the page so the signer knows the link was prepared specifically for them. Submit POSTs `token` in the body so the backend takes the linked path.
+- **`src/app/api/contract/[id]/submit/route.ts`** — token-aware branch. When `body.token` is present: resolve invitation → link the existing adopter (no new row, no dedup detection), update the adopter's `contactInfo` with any typo-corrected fields, write an `adopter_history` row for `contract_signed_via_invitation`, mark `contract_invitations.used_at = now()`. Legacy open path (no token) is unchanged.
+- **`src/app/api/my-animals/route.ts`** — payload now includes `applicants[]` per available animal (empty for adopted ones to avoid wasted reads).
+- **`src/app/my-animals/page.tsx`** — renders `<AnimalApplicants />` between the adoption-status block and the actions footer when the animal has applicants.
+- **`myAnimals.*` i18n keys** in ES + EN: `applicants_count_one/many`, `applicants_send_contract`, `applicants_resend`, `applicants_signed`, `applicants_no_adopter`, `applicants_share_title/subtitle/text/footer`.
+
+### Notes
+- Multi-token semantics: only ONE outstanding invite per animal. Issuing a new one retires prior unused ones (`expires_at = now()`). Several across animals are fine; the constraint is per-animal. Decision rationale: the rescuer picks one adopter at a time; replacing the active invite matches the mental model.
+- Tokens are `crypto.randomUUID()` (122 bits of entropy, edge-safe). 30-day TTL. Marked `used_at` on first successful submit so a re-visit returns 410.
+- The legacy `/contract/<animalId>` open URL continues to work unchanged. New flow lives at `/c/<token>` so the two never collide.
+
 ## [2.14.10-20] - 2026-05-13
 
 **Phases 2 + 3 of the adopter-workflow plan: pending-dedup section on `/my-adopters` + source attribution pill on each adopter row.** Phase 1 (v2.14.10-18/-19) made every form submission auto-create an `adopters` row and persist pending duplicate-candidate pairs; this release surfaces those pairs in the UI so rescuers can triage them, and adds the visual indicator showing how each adopter record was created.

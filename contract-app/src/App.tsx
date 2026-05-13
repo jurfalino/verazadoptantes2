@@ -30,6 +30,20 @@ function App() {
         return <TermsPage />
     }
 
+    // ── /c/<token> — locked contract (v2.14.10-21 / Phase 5) ─────────
+    // Token-locked contract URL issued by the rescuer's "Enviar contrato"
+    // action. Pre-fills the adopter's info into the form and prevents
+    // anyone else from signing the same link. Tokens are UUIDs but the
+    // /c/ prefix keeps them out of the legacy /{uuid} branch above.
+    if (path.startsWith('c/')) {
+        const token = path.slice('c/'.length)
+        return (
+            <ErrorBoundary>
+                <ContractPage token={token} />
+            </ErrorBoundary>
+        )
+    }
+
     // ── /{uuid} ──────────────────────────────────────────────────────
     // Existing contract route. Must match BEFORE the named showcase
     // routes so a 36-char UUID-shaped path doesn't get caught by, say,

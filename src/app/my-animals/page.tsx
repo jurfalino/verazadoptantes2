@@ -9,6 +9,7 @@ import { formatShortDate } from '@/lib/dates';
 import { formatAge } from '@/lib/ageUtils';
 import ShareMenu from '@/components/ShareMenu';
 import ShareFormMenu from '@/components/ShareFormMenu';
+import AnimalApplicants from '@/components/AnimalApplicants';
 import ShowcaseUrlChips from '@/components/ShowcaseUrlChips';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
@@ -17,6 +18,16 @@ interface AnimalImage {
     id: string;
     url: string;
     caption: string | null;
+}
+
+interface Applicant {
+    submissionId: string;
+    adopterId: string | null;
+    adopterName: string;
+    adopterRating: number | null;
+    appliedAt: number | null;
+    hasInvite: boolean;
+    isSigned: boolean;
 }
 
 interface Animal {
@@ -34,6 +45,8 @@ interface Animal {
     sex: string | null;
     color: string | null;
     images: AnimalImage[];
+    /** v2.14.10-21: form-submission applicants targeted at this animal. */
+    applicants?: Applicant[];
 }
 
 export default function MyAnimalsPage() {
@@ -384,6 +397,17 @@ export default function MyAnimalsPage() {
                                         } catch { /* not JSON, ignore */ }
                                         return null;
                                     })()}
+
+                                    {/* Per-animal applicants disclosure (v2.14.10-21 / Phase 4).
+                                        Only renders when this animal is still available AND has
+                                        form-submission applicants targeting it. */}
+                                    {!animal.adopterId && animal.applicants && animal.applicants.length > 0 && (
+                                        <AnimalApplicants
+                                            animalId={animal.id}
+                                            animalName={animal.animalName || 'Animal'}
+                                            applicants={animal.applicants}
+                                        />
+                                    )}
 
                                     {/* Actions */}
                                     <div className="flex items-center justify-between gap-2 pt-3 border-t border-stone-100">

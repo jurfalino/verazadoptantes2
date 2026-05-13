@@ -992,6 +992,17 @@ export const es = {
         showcase_open: 'Abrir',
         showcase_photo_notice_title: 'Solo aparecen animales con foto',
         showcase_photo_notice_body: 'Los animales sin foto se ocultan automáticamente del catálogo público. Subí al menos una foto para que aparezcan.',
+        // Per-animal applicants disclosure + locked-contract share (v2.14.10-21)
+        applicants_count_one: '1 persona interesada',
+        applicants_count_many: '{n} personas interesadas',
+        applicants_send_contract: 'Enviar contrato',
+        applicants_resend: 'Reenviar contrato',
+        applicants_signed: 'Firmado',
+        applicants_no_adopter: 'Este postulante todavía no está vinculado a un perfil.',
+        applicants_share_title: 'Compartir contrato',
+        applicants_share_subtitle: 'Para {adopter}',
+        applicants_share_text: 'Contrato de adopción de {animal} para {adopter}',
+        applicants_share_footer: 'Solo este adoptante podrá firmar este link.',
     },
     petshield: {
         sections: {
