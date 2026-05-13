@@ -21,6 +21,14 @@ export const adopters = sqliteTable("adopters", {
     // Duplicate detection
     tokenHash: text("token_hash"), // Hash of tokenizable fields, null = needs tokenization
     deletedAt: integer("deleted_at", { mode: "timestamp" }), // Soft-delete for merged profiles
+
+    // Provenance (added in migration 0042): how was this adopter record created?
+    // 'manual' = rescuer typed it. 'form' = adopter submitted the application
+    // form. 'contract' = adopter signed the contract on the open legacy path.
+    // 'imported' = bulk-imported via ImportWizard. Default 'manual' so every
+    // pre-migration row stays valid; the backfill upgrades known form-sourced
+    // rows automatically.
+    source: text("source").notNull().default("manual"),
 }, (table) => ({
     nameIdx: index("name_idx").on(table.name),
 }));
@@ -348,6 +356,25 @@ export const formSubmissions = sqliteTable("form_submissions", {
 }, (table) => ({
     userIdx: index("idx_form_user").on(table.userId),
     statusIdx: index("idx_form_status").on(table.status),
+}));
+
+// ── Contract Invitations ─────────────────────────────────────────
+// Per-adopter contract token. Issued by createContractInvitation()
+// when a rescuer picks an applicant for an animal. Locks the contract
+// flow to one specific adopter so it's no longer "whoever signs first
+// wins". One outstanding invite per animal: issuing a new token retires
+// prior unused ones via server-action logic (no DB constraint needed).
+
+export const contractInvitations = sqliteTable("contract_invitations", {
+    token: text("token").primaryKey(),
+    animalId: text("animal_id").notNull(),
+    adopterId: text("adopter_id").notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: integer("created_at").notNull(),
+    usedAt: integer("used_at"),
+    expiresAt: integer("expires_at"),
+}, (table) => ({
+    animalIdx: index("idx_contract_inv_animal").on(table.animalId),
 }));
 
 // ── Organizations ────────────────────────────────────────────────

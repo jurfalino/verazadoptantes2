@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-18] - 2026-05-12
+
+**Auto-create adopters from form submissions + source attribution (Phase 1 of the new applicant→contract workflow).** Form submissions no longer sit in `form_submissions` purgatory until a rescuer manually links them — each submission now produces an `adopters` row immediately, with source attribution and pre-computed duplicate-candidate pairs so the upcoming pending-dedup section has data to render. Plan: `.agents/plans/snoopy-exploring-iverson.md` (local copy at `/home/jurfalino/.claude-personal/plans/snoopy-exploring-iverson.md`).
+
+### Added
+- **Migration `drizzle/0042_adopter_source_and_contract_invites.sql`** — adds `adopters.source TEXT NOT NULL DEFAULT 'manual'` (enum-via-text: `manual | form | contract | imported`), backfills `'form'` for adopters that have a back-reference from `form_submissions.linked_adopter_id`, and creates the `contract_invitations` table for the Phase 5 locked-contract flow. Safe vs 0041's trap: no UNIQUE INDEX on backfilled data; raw-SQL subquery instead of Drizzle `inArray`.
+- **`src/app/actions/_adopterFactory.ts`** (new, internal helper) — `createAdopterFromSubmission()`. Single source of truth for non-manual adopter creation. INSERTs adopter (with `source`), logs to `adopter_history`, **awaits** `tokenizeAdopter` synchronously (closes the concurrent-submission race window), runs `findAdopters({ mode: 'duplicate' })`, and persists pending pairs to `duplicate_candidates` so the upcoming pending-dedup section (Phase 2) renders something. Returns `{ adopterId, dupCandidates }` for the caller's notification metadata.
+
+### Changed
+- **`src/app/api/form/[userId]/submit/route.ts`** — after `form_submissions` INSERT, calls `createAdopterFromSubmission({ source: 'form', … })` and then `UPDATE form_submissions SET linked_adopter_id, status='linked'`. The route's previous separate `findAdopters` call is removed (the helper already runs it; the route uses the returned matches in the notification). `notifyOrgMembers` stays at the route level so the helper doesn't double-fan-out.
+- **`src/app/api/contract/[id]/submit/route.ts`** — adopter creation routed through `createAdopterFromSubmission({ source: 'contract', … })` for consistency. The contract route still owns the animal-linking UPDATE (`adoptions.adopterId`) and the notification fan-out — only the adopter / history / tokenize / dedup-detection bits move into the helper. Token-aware branch (Phase 5) is intentionally not in this release; legacy `/contract/<animalId>` URLs continue to work unchanged.
+- **`src/db/schema.ts`** — mirrors the migration: `adopters.source` field, new `contractInvitations` table with `idx_contract_inv_animal` index.
+
+### Notes
+- Phase 2 (pending-dedup section on `/my-adopters`) and Phase 3 (source pill on adopter list) build on this; both are queued.
+- Race-condition fix (synchronous tokenize) costs ~200-500ms per submission. Acceptable on submit; missed dupes on concurrent submissions were the worse failure mode.
+
 ## [2.14.10-17] - 2026-05-12
 
 Two coordinated fixes: (a) multiple dark-theme regressions across recent UI work, (b) `/my-animals` card share buttons sized inconsistently and wrapping awkwardly on narrow cards.

@@ -117,25 +117,53 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             } catch { /* fall through */ }
         }
 
-        logger.info('PetShield form submission stored', { submissionId, rescuerEmail, name });
-
-        // Fuzzy matching + notification (fire-and-forget style but awaited for reliability).
-        // Backed by findAdopters({ mode: 'duplicate' }) — single source of truth shared with
-        // ImportWizard / AdopterFlagging / contract submit. minRelevance:0 preserves recall.
+        // v2.14.10-18: auto-create an adopter row + run duplicate detection
+        // + persist pending-dedup candidates in one helper. Replaces the
+        // previous "form submissions live in purgatory until the rescuer
+        // manually links them" workflow. The matches returned here feed the
+        // notification below.
+        let adopterId: string | null = null;
+        let matches: Array<{ adopterId: string; adopterName: string; matchTypes: string[] }> = [];
         try {
-            const { findAdopters } = await import('@/app/actions/findAdopters');
-            const { extractPhones, extractEmails } = await import('@/lib/tokenizer');
-            const { createNotification } = await import('@/app/actions/notifications');
+            const { createAdopterFromSubmission } = await import('@/app/actions/_adopterFactory');
+            const result = await createAdopterFromSubmission({
+                source: 'form',
+                name,
+                addedBy: rescuerEmail,
+                email: email || null,
+                phone: phone || null,
+                address: address || null,
+                submissionId,
+                animalId: selectedAnimalId,
+                animalName: selectedAnimalName,
+            });
+            adopterId = result.adopterId;
+            matches = result.dupCandidates.map(c => ({
+                adopterId: c.adopterId,
+                adopterName: c.adopterName,
+                matchTypes: c.matchTypes,
+            }));
 
-            const dupResult = await findAdopters(
-                {
-                    name,
-                    phones: phone ? extractPhones(phone) : [],
-                    emails: email ? extractEmails(email) : [],
-                },
-                { mode: 'duplicate', minRelevance: 0, limit: 5 },
-            );
-            const matches = dupResult.results as Array<{ adopterId: string; adopterName: string; matchTypes: string[] }>;
+            // Link form submission to the new adopter and mark it linked
+            // so the old "Unlinked Forms" surface stays empty post-launch.
+            await db.update(formSubmissions).set({
+                linkedAdopterId: adopterId,
+                status: 'linked',
+            }).where(eq(formSubmissions.id, submissionId));
+        } catch (e) {
+            logger.warn('Form auto-create-adopter failed (continuing with notification only)', {
+                submissionId,
+                error: e instanceof Error ? e.message : String(e),
+            });
+        }
+
+        logger.info('PetShield form submission stored', { submissionId, rescuerEmail, name, adopterId });
+
+        // Notification + org fan-out. Helper above already ran duplicate
+        // detection and returned the matches; we just plug them into the
+        // notification metadata.
+        try {
+            const { createNotification } = await import('@/app/actions/notifications');
             const matchCount = matches.length;
 
             // When the submission targets a specific animal, prepend the

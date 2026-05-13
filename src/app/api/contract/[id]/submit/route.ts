@@ -33,7 +33,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const db = await getDb();
         if (!db) return withCors(NextResponse.json({ error: 'Database unavailable' }, { status: 500 }), origin);
 
-        const { adopters, adoptions, adopterHistory } = await import('@/db/schema');
+        const { adoptions } = await import('@/db/schema');
         const { eq } = await import('drizzle-orm');
 
         // 1. Find the animal record
@@ -72,29 +72,34 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             return withCors(NextResponse.json({ error: 'Contract document is required' }, { status: 400 }), origin);
         }
 
-        // 3. Build contact info from form data
-        const contactParts: string[] = [];
-        if (dni) contactParts.push(`Documento: ${dni}`);
-        if (email) contactParts.push(`Email: ${email}`);
-        if (phone) contactParts.push(`Tel: ${phone}`);
-        if (address) contactParts.push(`Dirección: ${address}`);
-        if (socialNetworks) contactParts.push(`Redes: ${socialNetworks}`);
-        const contactInfo = contactParts.join('\n');
-
         const fullName = `${name} ${lastName}`.trim();
 
-        // 4. Create the adopter
-        const adopterId = crypto.randomUUID();
-        await db.insert(adopters).values({
-            id: adopterId,
+        // 4. Create the adopter via the shared factory (v2.14.10-18):
+        // INSERTs adopter + adopter_history, synchronously tokenizes, runs
+        // duplicate detection, and persists pending dedup candidates so the
+        // /my-adopters pending-dedup section has data. source='contract'
+        // attribution. addedBy falls back to the literal 'contract' string
+        // when the animal was added anonymously (preserves prior semantic).
+        const { createAdopterFromSubmission } = await import('@/app/actions/_adopterFactory');
+        const factoryResult = await createAdopterFromSubmission({
+            source: 'contract',
             name: fullName,
-            contactInfo,
-            status: 'active',
             addedBy: animal.addedBy || 'contract',
-            country: null,
-            createdAt: new Date(),
-            updatedAt: new Date(),
+            email: email || null,
+            phone: phone || null,
+            address: address || null,
+            socials: socialNetworks || null,
+            documentId: dni || null,
+            animalId,
+            animalName: animal.animalName,
+            animalSpecies: animal.species,
         });
+        const adopterId = factoryResult.adopterId;
+        const matches = factoryResult.dupCandidates.map(c => ({
+            adopterId: c.adopterId,
+            adopterName: c.adopterName,
+            matchTypes: c.matchTypes,
+        }));
 
         // 5. Link the animal to the adopter (convert to adoption)
         await db.update(adoptions).set({
@@ -106,61 +111,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             comments: JSON.stringify({ contractScreenshot: contractUrl }),
         }).where(eq(adoptions.id, animalId));
 
-        // 6. Log history
-        await db.insert(adopterHistory).values({
-            id: crypto.randomUUID(),
-            adopterId,
-            changedBy: 'contract-submission',
-            changes: JSON.stringify({
-                adoption_via_contract: {
-                    animalId,
-                    animalName: animal.animalName,
-                    species: animal.species,
-                    dni,
-                    email,
-                    phone,
-                }
-            }),
-            changedAt: new Date(),
-        });
-
         logger.info('Contract adoption submitted', { animalId, adopterId, adopterName: fullName, contractUrl });
 
-        // 7a. Tokenize the new adopter for future duplicate detection (fire-and-forget)
-        import('@/app/actions/duplicates').then(({ tokenizeAdopter }) => {
-            tokenizeAdopter(adopterId).catch(e => { logger.warn('Tokenize adopter failed (fire-and-forget)', { adopterId, error: e instanceof Error ? e.message : String(e) }); });
-        });
-
-        // 7b. Fire-and-forget: fuzzy search + notification for the rescuer
-        // This NEVER blocks the response — adopter gets success regardless.
-        // Backed by findAdopters({ mode: 'duplicate' }) — single source of truth shared with
-        // ImportWizard / AdopterFlagging / form submit. minRelevance:0 preserves recall (vetting wants
-        // to surface even weak matches; missing a duplicate is worse than a false positive).
+        // 6. Notification for the rescuer using the matches the factory
+        // already computed (no second findAdopters call).
         try {
             const rescuerEmail = animal.addedBy;
             if (rescuerEmail && rescuerEmail !== 'anonymous' && rescuerEmail !== 'contract') {
-                const { findAdopters } = await import('@/app/actions/findAdopters');
-                const { extractPhones, extractEmails, extractSocials } = await import('@/lib/tokenizer');
                 const { createNotification } = await import('@/app/actions/notifications');
-
-                // Build duplicate-mode inputs.
-                // DNI is appended to phones because the bespoke matcher historically treated DNI as a
-                // phone-token; preserving that semantic keeps DNI-only matches working.
-                const phonesIn = phone ? extractPhones(phone) : [];
-                const dniDigits = dni ? dni.replace(/\D/g, '') : '';
-                if (dniDigits.length >= 5) phonesIn.push(dniDigits);
-
-                const dupResult = await findAdopters(
-                    {
-                        name: fullName,
-                        phones: phonesIn,
-                        emails: email ? extractEmails(email) : [],
-                        socials: socialNetworks ? extractSocials(socialNetworks) : [],
-                        excludeAdopterId: adopterId,
-                    },
-                    { mode: 'duplicate', minRelevance: 0, limit: 5 },
-                );
-                const matches = dupResult.results as Array<{ adopterId: string; adopterName: string; matchTypes: string[] }>;
                 const matchCount = matches.length;
                 const animalName = animal.animalName || 'Animal';
                 const notificationId = crypto.randomUUID();
