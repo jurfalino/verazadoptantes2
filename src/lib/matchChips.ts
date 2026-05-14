@@ -24,7 +24,7 @@ export interface MatchChip {
     isStrong: boolean;
 }
 
-const STRONG_TYPES = new Set(['phone', 'phone_suffix', 'email', 'social']);
+const STRONG_TYPES = new Set(['phone', 'phone_suffix', 'email', 'social', 'id_number']);
 
 /**
  * Build the chip list for one match. Pass a translator function so the helper
@@ -95,6 +95,8 @@ function chipFor(v: MatchValue, tr: (key: string, fallback: string) => string): 
             return { key, icon: '🏠', label: `"${v.value}"`, isStrong: false };
         case 'source_url':
             return { key, icon: '🔗', label: tr('adopter.dup_chip_source_url', 'mismo enlace de origen'), isStrong: false };
+        case 'id_number':
+            return { key, icon: '🪪', label: v.value, isStrong };
         default:
             return null;
     }

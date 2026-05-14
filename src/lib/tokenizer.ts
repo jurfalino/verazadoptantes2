@@ -6,7 +6,7 @@
  * adopters that share identifiers (phones, emails, names, etc.)
  */
 
-export type TokenType = 'name_full' | 'name_word' | 'phone' | 'phone_suffix' | 'email' | 'social' | 'address_word' | 'source_url';
+export type TokenType = 'name_full' | 'name_word' | 'phone' | 'phone_suffix' | 'email' | 'social' | 'address_word' | 'source_url' | 'id_number';
 
 export interface Token {
     type: TokenType;
@@ -70,6 +70,98 @@ export function extractPhoneSuffixes(phones: string[]): string[] {
         }
     }
     return [...new Set(suffixes)];
+}
+
+// ── Personal ID Extraction ───────────────────────────────────────
+
+/**
+ * Labels we recognize as preceding a personal identification number. Lowercased
+ * for case-insensitive match. Covers Argentina, Chile, Mexico, Colombia, Peru,
+ * Spain, Uruguay, Ecuador, Venezuela, Bolivia, Paraguay, Brazil, and generic
+ * "Pasaporte / Passport / Cédula / Documento" usage.
+ *
+ * Why label-driven: an unlabeled 7-8 digit sequence is ambiguous with a phone.
+ * Routing only labeled IDs to `id_number` is the conservative call — it never
+ * misclassifies a phone as an ID, and existing-record phones stay matchable.
+ * Unlabeled IDs continue to (incorrectly) tokenize as phones; a future pass can
+ * tighten this with locale-aware heuristics.
+ */
+const ID_LABELS = [
+    // Argentina
+    'dni', 'cuit', 'cuil', 'le', 'lc',
+    // Chile
+    'rut', 'run',
+    // Mexico
+    'curp', 'rfc', 'ine',
+    // Colombia
+    'cc', 'ce', 'ti', 'nuip',
+    // Peru (DNI shared with Arg/Spain), CE shared
+    // Spain
+    'nie', 'nif', 'cif',
+    // Uruguay/Ecuador/Bolivia/Paraguay/Venezuela
+    'ci',
+    // Brazil
+    'cpf', 'cnpj', 'rg',
+    // Generic
+    'pasaporte', 'passport', 'cedula', 'cédula', 'documento', 'doc',
+];
+
+const ID_LABEL_REGEX = new RegExp(
+    // \b(label) [optional . :] whitespace? (value: a single token — alnum start/end,
+    // internal dots/dashes/slashes only, NO whitespace). Whitespace inside the value
+    // would let "DNI 12345678 y tel 5555555" eat the phone digits — that's a worse
+    // failure than missing a rarely-written "DNI 12 345 678" form.
+    `\\b(${ID_LABELS.join('|')})\\b\\s*[:.]?\\s*([A-Za-z0-9][A-Za-z0-9.\\-/]{3,30}[A-Za-z0-9])`,
+    'gi',
+);
+
+/**
+ * Normalize an ID value: lowercase + strip everything except [a-z0-9].
+ * Examples:
+ *  - "12.345.678-9" → "123456789"
+ *  - "ABCD123456EFGHIJ01" → "abcd123456efghij01"
+ *  - "V-12345678" → "v12345678"
+ */
+function normalizeIdValue(raw: string): string {
+    return raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/** Extract labeled personal-ID numbers (DNI, RUT, RUN, CURP, RFC, CC, CPF, …).
+ *
+ * Filtering rules (false-positive control):
+ *  - Normalized length ≥ 5 — guards against "DNI ok" trivially capturing "ok".
+ *  - At least 4 digits — every real ID format has ≥ 4 digits, while accidental
+ *    matches like "le di un libro" or "Cc: name@example.com" have 0–1. This is
+ *    what makes short / common labels (LE, LC, CC, CE, TI, CI, RG, …) safe to
+ *    enable in regular Spanish/Portuguese prose.
+ */
+export function extractIds(text: string): string[] {
+    if (!text) return [];
+    const out = new Set<string>();
+    for (const m of text.matchAll(ID_LABEL_REGEX)) {
+        const norm = normalizeIdValue(m[2] || '');
+        if (norm.length < 5) continue;
+        const digitCount = (norm.match(/\d/g) || []).length;
+        if (digitCount < 4) continue;
+        out.add(norm);
+    }
+    return [...out];
+}
+
+/**
+ * Return the input text with all VALID labeled-ID matches replaced by spaces,
+ * so a subsequent extractPhones() call cannot also tokenize the same digits as
+ * a phone. Matches that fail extractIds's digit-count filter are left alone —
+ * otherwise a sentence like "le di 1234567 al cliente" would suppress the real
+ * phone digits without ever creating an id_number token.
+ */
+export function stripIdsFromText(text: string): string {
+    if (!text) return '';
+    return text.replace(ID_LABEL_REGEX, (full, _label, value) => {
+        const norm = normalizeIdValue(value || '');
+        const digitCount = (norm.match(/\d/g) || []).length;
+        return (norm.length >= 5 && digitCount >= 4) ? ' ' : full;
+    });
 }
 
 // ── Email Extraction ─────────────────────────────────────────────
@@ -235,11 +327,13 @@ export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[]):
         }
     }
 
-    // 3-5. Phones / emails / socials — harvest across ALL free-text fields, not just
-    // contactInfo. This prevents a phone the user typed in the name or address field
-    // from being silently fragmented into name_word / address_word digit tokens.
-    // Each extractor already normalizes (whitespace/punctuation stripping for phones,
-    // case for emails) so a single phone with internal spaces remains one token.
+    // 3-6. Phones / emails / socials / ID numbers — harvest across ALL free-text
+    // fields, not just contactInfo. Prevents a phone typed in the name or address
+    // field from fragmenting into name_word / address_word digit tokens.
+    //
+    // Ordering matters: extract IDs first (labeled DNI / RUT / CURP / …), then
+    // strip those substrings before phone extraction so a "DNI: 12345678" doesn't
+    // also tokenize as a phone.
     const allText = [
         adopter.contactInfo || '',
         adopter.name || '',
@@ -247,7 +341,10 @@ export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[]):
         adopter.familyMembers || '',
     ].join('\n');
 
-    const phones = extractPhones(allText);
+    for (const id of extractIds(allText)) add('id_number', id);
+
+    const phoneText = stripIdsFromText(allText);
+    const phones = extractPhones(phoneText);
     for (const phone of phones) add('phone', phone);
     for (const suffix of extractPhoneSuffixes(phones)) add('phone_suffix', suffix);
 

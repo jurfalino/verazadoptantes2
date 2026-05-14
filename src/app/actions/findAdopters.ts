@@ -28,7 +28,7 @@ import type {
 } from './types';
 import { enrichAdopters } from './enrichAdopters';
 import { normalizeConfidence, fuzzyNameScore, SEARCH_SCORE_CEILING, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
-import { normalizeText, extractPhones, extractEmails, extractSocials, isPlaceholderPhone } from '@/lib/tokenizer';
+import { normalizeText, extractPhones, extractEmails, extractSocials, isPlaceholderPhone, extractIds, stripIdsFromText } from '@/lib/tokenizer';
 import { count } from 'drizzle-orm';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -203,14 +203,20 @@ async function runDuplicateMode(
         }
     }
 
-    // Harvest phones / emails / socials across ALL free-text input fields so a
+    // Harvest IDs / phones / emails / socials across ALL free-text input fields so a
     // phone typed in the name field (or address) doesn't fragment into name_word
-    // tokens. Mirrors the tokenizer's all-text concatenation.
+    // tokens. Mirrors the tokenizer's all-text concatenation. IDs are extracted
+    // first and stripped from the phone-extraction text so a "DNI: 12345678" can't
+    // also tokenize as a phone.
     const allInputText = [
         input.contactInfo || '',
         input.name || '',
     ].join('\n');
-    const rawPhones = input.phones?.length ? input.phones : extractPhones(allInputText);
+    const ids = extractIds(allInputText);
+    for (const id of ids) rawTokens.push({ type: 'id_number', value: id });
+
+    const phoneText = stripIdsFromText(allInputText);
+    const rawPhones = input.phones?.length ? input.phones : extractPhones(phoneText);
     // Apply placeholder filter to pre-parsed phones too — extractPhones already filters internally.
     const phones = rawPhones.filter(p => !isPlaceholderPhone(p.replace(/\D/g, '')));
     const emails = input.emails?.length ? input.emails : extractEmails(allInputText);
@@ -351,6 +357,7 @@ async function runDuplicateMode(
         phone: 3, phone_suffix: 2, email: 3, social: 3,
         name_full: 2, name_phonetic: 1.5, name_word: 1,
         address_word: 1, source_url: 3, like_fallback: 0.5,
+        id_number: 3, // unique identity, same tier as phone/email
     };
 
     // Popularity down-ranking: tokens shared by many records are weak identity signals.
