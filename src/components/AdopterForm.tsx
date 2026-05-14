@@ -112,6 +112,8 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     const [dismissedStrongIds, setDismissedStrongIds] = useState<Set<string>>(() => new Set());
     // "Continuar con este perfil" loading guard — one in-flight call at a time.
     const [continueBusyId, setContinueBusyId] = useState<string | null>(null);
+    // Confirmation modal — pending append target until the user confirms.
+    const [pendingMerge, setPendingMerge] = useState<{ adopterId: string; adopterName: string } | null>(null);
 
     const DUPLICATE_DEBOUNCE_MS = 350;
 
@@ -215,10 +217,19 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         return parts.join(' ').trim();
     }, [data.name, data.contactInfo]);
 
-    // "Continuar con este perfil" — append in-progress fields to an existing
-    // adopter record instead of creating a new one. Preserves the user's typing.
-    const handleContinueWith = useCallback(async (targetId: string) => {
+    // "Continuar con este perfil" — open the confirmation modal first so the
+    // user knows their in-progress data will be merged into the existing record.
+    // The actual append fires only from confirmMerge() below.
+    const handleContinueWith = useCallback((targetId: string) => {
         if (continueBusyId) return;
+        const match = duplicateResults?.find(r => r.adopter.id === targetId);
+        if (!match) return;
+        setPendingMerge({ adopterId: targetId, adopterName: match.adopter.name });
+    }, [continueBusyId, duplicateResults]);
+
+    const confirmMerge = useCallback(async () => {
+        if (!pendingMerge || continueBusyId) return;
+        const targetId = pendingMerge.adopterId;
         setContinueBusyId(targetId);
         try {
             const result = await appendToExistingAdopter(targetId, {
@@ -231,13 +242,15 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                 // eslint-disable-next-line no-alert
                 alert(result.error || 'No se pudo continuar con este perfil');
                 setContinueBusyId(null);
+                setPendingMerge(null);
             }
         } catch (e) {
             // eslint-disable-next-line no-alert
             alert(e instanceof Error ? e.message : 'Error inesperado');
             setContinueBusyId(null);
+            setPendingMerge(null);
         }
-    }, [continueBusyId, data.contactInfo, data.familyMembers, router]);
+    }, [pendingMerge, continueBusyId, data.contactInfo, data.familyMembers, router]);
 
     // Debounced duplicate search while typing (create only)
     useEffect(() => {
@@ -886,6 +899,79 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                 className="px-4 py-2.5 text-sm font-semibold text-stone-600 hover:bg-stone-100 rounded-xl transition-colors"
                             >
                                 {t('common.cancel')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Confirmation: "Continuar con este perfil" merges typed data into target */}
+            {pendingMerge && (
+                <div
+                    className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-stone-900/50 backdrop-blur-sm animate-in fade-in duration-200"
+                    onClick={() => continueBusyId ? undefined : setPendingMerge(null)}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="continue-merge-title"
+                >
+                    <div
+                        className="relative bg-white rounded-2xl shadow-xl border border-stone-200 w-full max-w-md animate-in zoom-in-95 duration-200"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="p-5 pb-3 border-b border-stone-100">
+                            <h2 id="continue-merge-title" className="text-lg font-semibold text-stone-900">
+                                {(t('adopter.merge_confirm_title') || '¿Continuar con el perfil de {name}?').replace('{name}', pendingMerge.adopterName)}
+                            </h2>
+                            <p className="text-sm text-stone-600 mt-2">
+                                {t('adopter.merge_confirm_body') || 'La información que ingresaste se agregará a este perfil. Los datos que ya existan en el perfil no se duplicarán.'}
+                            </p>
+                        </div>
+                        {(data.contactInfo?.trim() || data.familyMembers?.trim()) ? (
+                            <div className="px-5 py-3 bg-amber-50 border-y border-amber-100">
+                                <p className="text-xs font-semibold uppercase tracking-wider text-amber-800 mb-2">
+                                    {t('adopter.merge_confirm_preview') || 'Se agregará:'}
+                                </p>
+                                <ul className="space-y-1.5 text-sm text-stone-800">
+                                    {data.contactInfo?.trim() && (
+                                        <li>
+                                            <span className="text-xs font-medium text-stone-500">{t('adopter.contact') || 'Contacto'}: </span>
+                                            <span className="break-words">{data.contactInfo.trim()}</span>
+                                        </li>
+                                    )}
+                                    {data.familyMembers?.trim() && (
+                                        <li>
+                                            <span className="text-xs font-medium text-stone-500">{t('adopter.family_members') || 'Familia'}: </span>
+                                            <span className="break-words">{data.familyMembers.trim()}</span>
+                                        </li>
+                                    )}
+                                </ul>
+                            </div>
+                        ) : (
+                            <div className="px-5 py-3 bg-stone-50 border-y border-stone-100">
+                                <p className="text-sm text-stone-600">
+                                    {t('adopter.merge_confirm_no_new') || 'No hay información nueva para agregar. Solo abriremos el perfil existente.'}
+                                </p>
+                            </div>
+                        )}
+                        <div className="p-5 pt-4 flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+                            <button
+                                type="button"
+                                onClick={() => setPendingMerge(null)}
+                                disabled={!!continueBusyId}
+                                className="px-4 py-2.5 text-sm font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 disabled:opacity-50 rounded-xl transition-colors"
+                            >
+                                {t('common.cancel') || 'Cancelar'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={confirmMerge}
+                                disabled={!!continueBusyId}
+                                autoFocus
+                                className="px-4 py-2.5 text-sm font-semibold text-white bg-teal-700 hover:bg-teal-600 disabled:opacity-50 rounded-xl transition-colors shadow-lg shadow-teal-700/30"
+                            >
+                                {continueBusyId
+                                    ? (t('common.processing') || 'Procesando...')
+                                    : (t('adopter.merge_confirm_action') || 'Sí, continuar')}
                             </button>
                         </div>
                     </div>
