@@ -186,7 +186,15 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     const [customSpecies, setCustomSpecies] = useState(() => initialDraft?.customSpecies ?? false);
     const [mode, setMode] = useState<'existing' | 'new'>(() => initialDraft?.mode ?? (shouldOpenFromWizard ? 'new' : 'existing'));
 
-    const [formData, setFormData] = useState(() => initialDraft?.formData ?? {
+    // The event date always defaults to today on open. We deliberately do NOT
+    // restore it from a draft — a draft can be days old, and "today" is the
+    // overwhelmingly-common intent when a rescuer reopens the wizard. They can
+    // still edit it via the DatePicker on step 2 if they need a back-date.
+    const todayISO = new Date().toISOString().split('T')[0];
+
+    const [formData, setFormData] = useState(() => initialDraft?.formData
+        ? { ...initialDraft.formData, date: prefillDate || todayISO }
+        : {
         animalName: prefillAnimalName,
         details: prefillDetails,
         status: 'completed',
@@ -195,7 +203,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
         species: prefillSpecies,
         adopterId: adopterId,
         recordType: prefillRecordType,
-        date: prefillDate,
+        date: prefillDate || todayISO,
         // Companion date used only for the dual-record follow_up/returned_pet
         // flow — when the user is logging an event for a brand-new animal that
         // wasn't previously in the system, we ask for both the original
@@ -208,10 +216,6 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     });
 
     const stepContainerRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        if (!formData.date) setFormData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Focus management and scrolling
     useEffect(() => {
@@ -269,21 +273,6 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
     }, [isOpen, onClose]);
-
-    // Is the wizard's state "dirty" — non-default? Drives the "Empezar de
-    // nuevo" button visibility in the modal header. We treat any step > 1,
-    // any non-default formData field, or unknownAnimal/customSpecies as dirty.
-    const isDirty = step > 1
-        || mode !== (shouldOpenFromWizard ? 'new' : 'existing')
-        || unknownAnimal || customSpecies
-        || !!formData.animalName
-        || !!formData.details
-        || !!formData.comments
-        || !!formData.animalId
-        || !!formData.adoptionDate
-        || formData.deliveredToHome
-        || formData.identityVerified
-        || (formData.verifiedAddress?.length ?? 0) > 0;
 
     const safeAvailableAnimals = Array.isArray(availableAnimals) ? availableAnimals : [];
     const safeAdopterAdoptions = Array.isArray(adopterAdoptions) ? adopterAdoptions : [];
@@ -508,11 +497,6 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     ];
 
     const close = () => { setIsOpen(false); onClose?.(); };
-    const startOver = () => {
-        if (window.confirm(t('wizard.start_over_confirm') || '¿Descartar lo que escribiste y empezar de nuevo?')) {
-            resetForm();
-        }
-    };
 
     return (
         <>
@@ -533,27 +517,14 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                     className="relative w-full max-w-2xl bg-white rounded-2xl border border-stone-200 shadow-2xl my-8 outline-none overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300"
                 >
                     <h2 id="wizard-title" className="sr-only">{t('wizard.title') || 'Registrar actividad'}</h2>
-                    {/* v40b: modal header — start-over (when dirty) + close. */}
-                    <div className="absolute top-3 right-3 z-10 flex items-center gap-1">
-                        {isDirty && (
-                            <button
-                                type="button"
-                                onClick={startOver}
-                                title={t('wizard.start_over_tooltip') || 'Descartar borrador y empezar de nuevo'}
-                                className="text-xs font-semibold px-2 py-1 rounded-lg text-stone-600 hover:bg-stone-100 transition-colors"
-                            >
-                                ↻ {t('wizard.start_over') || 'Empezar de nuevo'}
-                            </button>
-                        )}
-                        <button
-                            type="button"
-                            onClick={close}
-                            aria-label={t('common.close') || 'Close'}
-                            className="w-8 h-8 rounded-full flex items-center justify-center text-stone-500 hover:bg-stone-100"
-                        >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                        </button>
-                    </div>
+                    <button
+                        type="button"
+                        onClick={close}
+                        aria-label={t('common.close') || 'Close'}
+                        className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full flex items-center justify-center text-stone-500 hover:bg-stone-100"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
 
                 {/* Step Indicator */}
                 <div className="px-5 pt-5 pb-3">

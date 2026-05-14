@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react';
 
 interface AuthContextType {
     isLoginOpen: boolean;
@@ -15,22 +15,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [isLoginOpen, setIsLoginOpen] = useState(false);
     const [redirectPath, setRedirectPath] = useState<string | null>(null);
 
-    const openLogin = (path?: string) => {
+    const openLogin = useCallback((path?: string) => {
         if (path) setRedirectPath(path);
         setIsLoginOpen(true);
-    };
+    }, []);
 
-    const closeLogin = () => {
+    const closeLogin = useCallback(() => {
         setIsLoginOpen(false);
-        // We delay clearing the path in case login needs it during closing animation
-        // but for now, we can leave it or clear it. 
-        // Better to clear it on successful login consumer side? 
-        // Actually, LoginModal will read it.
+        // Delay clearing redirectPath so LoginModal can still read it during
+        // the closing animation.
         setTimeout(() => setRedirectPath(null), 500);
-    };
+    }, []);
+
+    // Memoized so consumers can safely put the returned value (or any of its
+    // destructured fields) in a deps array without triggering re-render loops.
+    const value = useMemo(
+        () => ({ isLoginOpen, openLogin, closeLogin, redirectPath }),
+        [isLoginOpen, openLogin, closeLogin, redirectPath],
+    );
 
     return (
-        <AuthContext.Provider value={{ isLoginOpen, openLogin, closeLogin, redirectPath }}>
+        <AuthContext.Provider value={value}>
             {children}
         </AuthContext.Provider>
     );
