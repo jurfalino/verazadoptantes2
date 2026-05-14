@@ -17,21 +17,15 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { createContractInvitation } from '@/app/actions/contract';
+import ApplicantDetailPanel from '@/components/ApplicantDetailPanel';
 
 // Sentinel: tracking the busy row by submissionId (always present) avoids the
 // `null === null` collision that occurred when an applicant had adopterId: null
 // — the comparison was true from initial render and the button showed
 // "Procesando..." forever without anything being clicked.
 
-export interface ApplicantRow {
-    submissionId: string;
-    adopterId: string | null;
-    adopterName: string;
-    adopterRating: number | null;
-    appliedAt: number | null;
-    hasInvite: boolean;
-    isSigned: boolean;
-}
+import type { ApplicantSummary } from '@/app/actions/applicants';
+export type ApplicantRow = ApplicantSummary;
 
 function relativeDate(unixSec: number | null, locale: string): string {
     if (!unixSec) return '';
@@ -45,6 +39,41 @@ function relativeDate(unixSec: number | null, locale: string): string {
         return locale === 'en' ? `${w}w ago` : `hace ${w}sem`;
     }
     return new Date(unixSec * 1000).toLocaleDateString();
+}
+
+/** 1-line summary of the form submission for the disclosure row. */
+function summaryLine(a: ApplicantRow, t: (k: string) => string): string {
+    const parts: string[] = [];
+    if (a.intent) {
+        const key = a.intent === 'self'
+            ? 'myAnimals.applicants_row_summary_intent_self'
+            : a.intent === 'gift'
+                ? 'myAnimals.applicants_row_summary_intent_gift'
+                : null;
+        if (key) parts.push(t(key));
+    }
+    if (a.lifeStage) {
+        const k = `myAnimals.applicants_row_summary_lifestage_${a.lifeStage}`;
+        const v = t(k);
+        if (v && v !== k) parts.push(v);
+    }
+    if (a.species) {
+        const k = `myAnimals.applicants_row_summary_species_${a.species}`;
+        const v = t(k);
+        if (v && v !== k) parts.push(v);
+    }
+    return parts.join(' · ');
+}
+
+/** Count of negative flags + whether identity is verified, for the row badge. */
+function flagSummary(flags: ApplicantRow['flags']): { warnCount: number; verified: boolean } {
+    if (!flags) return { warnCount: 0, verified: false };
+    let warnCount = 0;
+    if (flags.inaccurate) warnCount++;
+    if (flags.duplicate) warnCount++;
+    if (flags.tooManyAdoptions) warnCount++;
+    if (flags.tooManyRequests) warnCount++;
+    return { warnCount, verified: !!flags.verified_identity };
 }
 
 function MiniShareModal({
@@ -163,6 +192,7 @@ export default function AnimalApplicants({
     const [expanded, setExpanded] = useState(false);
     const [busySubmissionId, setBusySubmissionId] = useState<string | null>(null);
     const [shareUrl, setShareUrl] = useState<{ url: string; adopterName: string } | null>(null);
+    const [panelIndex, setPanelIndex] = useState<number | null>(null);
 
     if (applicants.length === 0) return null;
 
@@ -209,47 +239,74 @@ export default function AnimalApplicants({
                 </button>
                 {expanded && (
                     <ul className="divide-y divide-teal-100 border-t border-teal-100">
-                        {applicants.map((a) => (
-                            <li key={a.submissionId} className="px-3 py-2 flex items-center gap-2 bg-white">
-                                <div className="flex-1 min-w-0">
-                                    {a.adopterId ? (
-                                        <Link href={`/adopter/${a.adopterId}`} className="font-medium text-sm text-stone-900 hover:text-teal-700 truncate block">
-                                            {a.adopterName}
-                                        </Link>
-                                    ) : (
-                                        <span className="font-medium text-sm text-stone-900 truncate block">{a.adopterName}</span>
-                                    )}
-                                    <div className="text-xs text-stone-500 flex items-center gap-1.5">
-                                        {a.adopterRating != null && <span>★ {a.adopterRating.toFixed(1)}</span>}
-                                        {a.appliedAt && <span>· {relativeDate(a.appliedAt, locale)}</span>}
+                        {applicants.map((a, idx) => {
+                            const summary = summaryLine(a, t);
+                            const { warnCount, verified } = flagSummary(a.flags);
+                            return (
+                                <li
+                                    key={a.submissionId}
+                                    onClick={() => setPanelIndex(idx)}
+                                    className="px-3 py-2 flex items-center gap-2 bg-white hover:bg-teal-50/60 transition-colors cursor-pointer"
+                                >
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <span className="font-medium text-sm text-stone-900 truncate">{a.adopterName}</span>
+                                            {warnCount > 0 && (
+                                                <span
+                                                    className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 flex-shrink-0"
+                                                    title={t('myAnimals.applicants_row_flags_tooltip') || 'Alertas en el perfil'}
+                                                >
+                                                    ⚠ {warnCount}
+                                                </span>
+                                            )}
+                                            {verified && (
+                                                <span
+                                                    className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200 flex-shrink-0"
+                                                    title={t('flags.verified_identity') || 'Verified ID'}
+                                                >
+                                                    ✓
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="text-xs text-stone-500 flex items-center gap-1.5 flex-wrap">
+                                            {a.adopterRating != null && <span>★ {a.adopterRating.toFixed(1)}</span>}
+                                            {a.appliedAt && <span>· {relativeDate(a.appliedAt, locale)}</span>}
+                                        </div>
+                                        {summary && (
+                                            <div className="text-[11px] text-stone-500 truncate mt-0.5">
+                                                🏠 {summary}
+                                            </div>
+                                        )}
                                     </div>
-                                </div>
-                                {a.isSigned ? (
-                                    <span className="text-[11px] px-2 py-1 rounded-lg bg-teal-100 text-teal-800 font-semibold">✓ {t('myAnimals.applicants_signed') || 'Firmado'}</span>
-                                ) : !a.adopterId ? (
-                                    <Link
-                                        href={`/form-results/${a.submissionId}`}
-                                        className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-stone-100 text-stone-700 hover:bg-stone-200 transition-colors flex-shrink-0"
-                                        title={t('myAnimals.applicants_no_adopter') || 'This applicant has no linked adopter yet.'}
-                                    >
-                                        {t('myAnimals.applicants_view_form') || 'Ver formulario'}
-                                    </Link>
-                                ) : (
-                                    <button
-                                        type="button"
-                                        onClick={() => handleSend(a)}
-                                        disabled={busySubmissionId === a.submissionId}
-                                        className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-teal-700 text-white hover:bg-teal-600 disabled:opacity-50 transition-colors flex-shrink-0"
-                                    >
-                                        {busySubmissionId === a.submissionId
-                                            ? (t('common.processing') || '...')
-                                            : a.hasInvite
-                                                ? (t('myAnimals.applicants_resend') || 'Reenviar')
-                                                : (t('myAnimals.applicants_send_contract') || 'Enviar contrato')}
-                                    </button>
-                                )}
-                            </li>
-                        ))}
+                                    <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
+                                        {a.isSigned ? (
+                                            <span className="text-[11px] px-2 py-1 rounded-lg bg-teal-100 text-teal-800 font-semibold">✓ {t('myAnimals.applicants_signed') || 'Firmado'}</span>
+                                        ) : !a.adopterId ? (
+                                            <Link
+                                                href={`/form-results/${a.submissionId}`}
+                                                className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-stone-100 text-stone-700 hover:bg-stone-200 transition-colors inline-block"
+                                                title={t('myAnimals.applicants_no_adopter') || 'This applicant has no linked adopter yet.'}
+                                            >
+                                                {t('myAnimals.applicants_view_form') || 'Ver formulario'}
+                                            </Link>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleSend(a)}
+                                                disabled={busySubmissionId === a.submissionId}
+                                                className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-teal-700 text-white hover:bg-teal-600 disabled:opacity-50 transition-colors"
+                                            >
+                                                {busySubmissionId === a.submissionId
+                                                    ? (t('common.processing') || '...')
+                                                    : a.hasInvite
+                                                        ? (t('myAnimals.applicants_resend') || 'Reenviar')
+                                                        : (t('myAnimals.applicants_send_contract') || 'Enviar contrato')}
+                                            </button>
+                                        )}
+                                    </div>
+                                </li>
+                            );
+                        })}
                     </ul>
                 )}
             </div>
@@ -259,6 +316,15 @@ export default function AnimalApplicants({
                     adopterName={shareUrl.adopterName}
                     animalName={animalName}
                     onClose={() => setShareUrl(null)}
+                />
+            )}
+            {panelIndex !== null && (
+                <ApplicantDetailPanel
+                    applicants={applicants}
+                    initialIndex={panelIndex}
+                    animalId={animalId}
+                    animalName={animalName}
+                    onClose={() => setPanelIndex(null)}
                 />
             )}
         </>

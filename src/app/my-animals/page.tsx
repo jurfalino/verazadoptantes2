@@ -20,15 +20,7 @@ interface AnimalImage {
     caption: string | null;
 }
 
-interface Applicant {
-    submissionId: string;
-    adopterId: string | null;
-    adopterName: string;
-    adopterRating: number | null;
-    appliedAt: number | null;
-    hasInvite: boolean;
-    isSigned: boolean;
-}
+import type { ApplicantSummary as Applicant } from '@/app/actions/applicants';
 
 interface Animal {
     id: string;
