@@ -21,7 +21,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DiscoveryMatch } from '@/app/actions';
 import { buildMatchChips, hasStrongMatch, type MatchChip } from '@/lib/matchChips';
+import { highlightMatches } from '@/lib/matchHighlight';
 import { useLanguage } from '@/context/LanguageContext';
+
+const NAME_HL_TYPES = ['name_full', 'name_word'];
+const CONTACT_HL_TYPES = ['phone', 'phone_suffix', 'email', 'social', 'id_number', 'address_word', 'source_url'];
 
 interface Props {
     results: DiscoveryMatch[] | null;
@@ -193,9 +197,13 @@ export default function DuplicatePeek({ results, searching, onContinueWith, busy
                                                 </div>
                                             )}
                                             <div className="min-w-0 flex-1">
-                                                <p className="font-semibold text-stone-900 text-sm truncate">{result.adopter.name}</p>
+                                                <p className="font-semibold text-stone-900 text-sm break-words">
+                                                    {highlightMatches(result.adopter.name, result.matchValues, NAME_HL_TYPES)}
+                                                </p>
                                                 {result.adopter.contactInfo && (
-                                                    <p className="text-xs text-stone-500 truncate">{result.adopter.contactInfo}</p>
+                                                    <p className="text-xs text-stone-600 mt-0.5 break-words whitespace-pre-wrap">
+                                                        {highlightMatches(result.adopter.contactInfo, result.matchValues, CONTACT_HL_TYPES)}
+                                                    </p>
                                                 )}
                                                 <MatchChipsRow chips={chips} />
                                                 <div className="flex gap-2 mt-2.5">
