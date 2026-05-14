@@ -90,7 +90,12 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         const allAdoptionRecords = await db.select({
             adopterId: adoptions.adopterId,
             recordType: adoptions.recordType,
-            date: adoptions.date
+            date: adoptions.date,
+            // v37: rating MUST be in the projection — without it computeAvgRating
+            // sees r.rating === undefined, passes the `!== null` filter, then
+            // sums to NaN → JSON-serializes to null → every /my-adopters row
+            // rendered "—" regardless of actual rated activity.
+            rating: adoptions.rating,
         }).from(adoptions)
             .where(inArray(adoptions.adopterId, adopterIds))
             .all();
