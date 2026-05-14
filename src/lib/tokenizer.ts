@@ -235,24 +235,24 @@ export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[]):
         }
     }
 
-    // 3. Phones and phone suffixes
-    const phones = extractPhones(adopter.contactInfo || '');
-    for (const phone of phones) {
-        add('phone', phone);
-    }
-    for (const suffix of extractPhoneSuffixes(phones)) {
-        add('phone_suffix', suffix);
-    }
+    // 3-5. Phones / emails / socials — harvest across ALL free-text fields, not just
+    // contactInfo. This prevents a phone the user typed in the name or address field
+    // from being silently fragmented into name_word / address_word digit tokens.
+    // Each extractor already normalizes (whitespace/punctuation stripping for phones,
+    // case for emails) so a single phone with internal spaces remains one token.
+    const allText = [
+        adopter.contactInfo || '',
+        adopter.name || '',
+        adopter.addressInfo || '',
+        adopter.familyMembers || '',
+    ].join('\n');
 
-    // 4. Emails
-    for (const email of extractEmails(adopter.contactInfo || '')) {
-        add('email', email);
-    }
+    const phones = extractPhones(allText);
+    for (const phone of phones) add('phone', phone);
+    for (const suffix of extractPhoneSuffixes(phones)) add('phone_suffix', suffix);
 
-    // 5. Social handles
-    for (const social of extractSocials(adopter.contactInfo || '')) {
-        add('social', social);
-    }
+    for (const email of extractEmails(allText)) add('email', email);
+    for (const social of extractSocials(allText)) add('social', social);
 
     // 6. Address words
     for (const word of extractAddressWords(adopter.addressInfo || '')) {

@@ -436,6 +436,7 @@ export const es = {
         dup_strong_strip_title: 'Posible coincidencia exacta',
         dup_action_continue_with_existing: 'Continuar con este perfil',
         dup_action_view: 'Ver perfil',
+        dup_action_view_many: 'Ver perfiles',
         dup_action_dismiss: 'Descartar',
         identifications: 'Identificaciones',
         image_expired: 'Imagen expirada',

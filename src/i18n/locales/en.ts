@@ -437,6 +437,7 @@ export const en = {
         dup_strong_strip_title: 'Likely exact match',
         dup_action_continue_with_existing: 'Continue with this profile',
         dup_action_view: 'View profile',
+        dup_action_view_many: 'View profiles',
         dup_action_dismiss: 'Dismiss',
         add_profile_photo: 'Add profile photo',
         view_profile_photo: 'View profile photo',

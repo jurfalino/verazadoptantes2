@@ -203,12 +203,18 @@ async function runDuplicateMode(
         }
     }
 
-    const contactText = input.contactInfo || '';
-    const rawPhones = input.phones?.length ? input.phones : extractPhones(contactText);
+    // Harvest phones / emails / socials across ALL free-text input fields so a
+    // phone typed in the name field (or address) doesn't fragment into name_word
+    // tokens. Mirrors the tokenizer's all-text concatenation.
+    const allInputText = [
+        input.contactInfo || '',
+        input.name || '',
+    ].join('\n');
+    const rawPhones = input.phones?.length ? input.phones : extractPhones(allInputText);
     // Apply placeholder filter to pre-parsed phones too — extractPhones already filters internally.
     const phones = rawPhones.filter(p => !isPlaceholderPhone(p.replace(/\D/g, '')));
-    const emails = input.emails?.length ? input.emails : extractEmails(contactText);
-    const socials = input.socials?.length ? input.socials : extractSocials(contactText);
+    const emails = input.emails?.length ? input.emails : extractEmails(allInputText);
+    const socials = input.socials?.length ? input.socials : extractSocials(allInputText);
 
     for (const phone of phones) {
         const digits = phone.replace(/\D/g, '');

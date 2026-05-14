@@ -58,7 +58,6 @@ export default function DuplicatePeek({ results, searching, onContinueWith, busy
     const { t } = useLanguage();
     const [expanded, setExpanded] = useState(false);
     const [pulse, setPulse] = useState(false);
-    const [plusBadge, setPlusBadge] = useState<number>(0);
     const prevCountRef = useRef(0);
     const hasAutoOpenedRef = useRef(false);
 
@@ -69,19 +68,14 @@ export default function DuplicatePeek({ results, searching, onContinueWith, busy
     useEffect(() => {
         const prev = prevCountRef.current;
         if (count > prev) {
-            // Pulse on any growth — entry (0 → N) gets a stronger pulse via CSS animation length.
+            // Pulse on growth — entry (0 → N) gets a stronger pulse via CSS duration.
+            // The bar already shows the live count; no separate +N badge needed.
             setPulse(true);
             const id = setTimeout(() => setPulse(false), prev === 0 ? 1600 : 700);
-            // "+N" badge only when closed
-            if (!expanded && prev > 0) {
-                setPlusBadge(count - prev);
-                const idBadge = setTimeout(() => setPlusBadge(0), 2000);
-                return () => { clearTimeout(id); clearTimeout(idBadge); };
-            }
             return () => clearTimeout(id);
         }
         prevCountRef.current = count;
-    }, [count, expanded]);
+    }, [count]);
 
     useEffect(() => {
         // Auto-expand exactly once if the FIRST match arriving is strong.
@@ -131,17 +125,14 @@ export default function DuplicatePeek({ results, searching, onContinueWith, busy
                                     ? (t('adopter.dup_peek_pill_one') || '1 possible match — Review')
                                     : (t('adopter.dup_peek_pill_many') || '{n} possible matches — Review').replace('{n}', String(count))}
                             </span>
-                            {plusBadge > 0 && (
-                                <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-700 text-white animate-in zoom-in-95 duration-200">
-                                    +{plusBadge}
-                                </span>
-                            )}
                         </>
                     )}
                 </span>
                 {count > 0 && (
                     <span className="text-xs font-medium text-amber-800 flex-shrink-0">
-                        {t('adopter.dup_action_view') || 'View'} →
+                        {count === 1
+                            ? (t('adopter.dup_action_view') || 'View profile')
+                            : (t('adopter.dup_action_view_many') || 'View profiles')} →
                     </span>
                 )}
             </button>
@@ -149,7 +140,7 @@ export default function DuplicatePeek({ results, searching, onContinueWith, busy
             {/* ─── Side panel / bottom sheet ─────────────────────────────────── */}
             {expanded && (
                 <div
-                    className="fixed inset-0 z-40"
+                    className="fixed inset-0 z-[60]"
                     role="dialog"
                     aria-modal="true"
                     aria-label={t('adopter.dup_peek_panel_title') || 'Possible matches'}
