@@ -116,7 +116,7 @@ export default function ShowcaseUrlChips() {
         <>
             <button
                 onClick={(e) => { e.stopPropagation(); e.preventDefault(); setIsOpen(true); }}
-                className="inline-flex items-center gap-2 px-4 py-2.5 text-[13px] font-semibold text-indigo-700 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-200"
+                className="inline-flex items-center gap-2 px-4 py-2.5 text-[13px] font-semibold text-teal-700 bg-teal-50 rounded-xl hover:bg-teal-100 transition-colors border border-teal-200"
                 aria-label={t('myAnimals.showcase_menu_label')}
             >
                 <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
@@ -138,7 +138,7 @@ export default function ShowcaseUrlChips() {
                         <div className="p-5 pb-3 border-b border-stone-100">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-700">
+                                    <div className="w-10 h-10 rounded-xl bg-teal-100 flex items-center justify-center text-teal-700">
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 015.656 0l1.415 1.415a4 4 0 01-5.657 5.656l-1.414-1.414M10.172 13.828a4 4 0 01-5.656 0l-1.415-1.415a4 4 0 015.657-5.656l1.414 1.414" />
                                         </svg>
