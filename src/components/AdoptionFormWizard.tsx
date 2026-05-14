@@ -48,6 +48,74 @@ const RECORD_TYPES = [
     { value: 'returned_pet', icon: '↩️', labelKey: 'adoption.type_returned', fallback: 'Returned' },
 ] as const;
 
+// ── Local draft persistence (v40b) ─────────────────────────────────
+// The wizard is unmounted by VisitIntentCard on close, so React state
+// alone doesn't survive a dismiss → reopen. Drafts are kept per-adopter
+// in localStorage with a 7-day TTL so the rescuer's typing isn't lost
+// when they Esc out, click outside the modal, refresh the tab, or come
+// back hours later. Cleared on successful submit and on explicit
+// "Empezar de nuevo".
+const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+interface WizardDraft {
+    savedAt: number;
+    step: number;
+    mode: 'existing' | 'new';
+    unknownAnimal: boolean;
+    customSpecies: boolean;
+    formData: {
+        animalName: string;
+        details: string;
+        status: string;
+        rating: number;
+        comments: string;
+        species: string;
+        adopterId: string;
+        recordType: string;
+        date: string;
+        adoptionDate: string;
+        deliveredToHome: boolean;
+        verifiedAddress: string;
+        identityVerified: boolean;
+        animalId: string;
+    };
+}
+
+function draftKey(adopterId: string): string {
+    return `wizard-draft:${adopterId}`;
+}
+
+function readDraft(adopterId: string): WizardDraft | null {
+    if (typeof window === 'undefined' || !adopterId) return null;
+    try {
+        const raw = window.localStorage.getItem(draftKey(adopterId));
+        if (!raw) return null;
+        const d = JSON.parse(raw) as WizardDraft;
+        if (!d || typeof d.savedAt !== 'number' || Date.now() - d.savedAt > DRAFT_TTL_MS) {
+            window.localStorage.removeItem(draftKey(adopterId));
+            return null;
+        }
+        return d;
+    } catch {
+        return null;
+    }
+}
+
+function writeDraft(adopterId: string, d: Omit<WizardDraft, 'savedAt'>): void {
+    if (typeof window === 'undefined' || !adopterId) return;
+    try {
+        window.localStorage.setItem(draftKey(adopterId), JSON.stringify({ ...d, savedAt: Date.now() }));
+    } catch {
+        // Quota exceeded or storage disabled — silent. The wizard still works
+        // in-memory; just no cross-session preservation.
+    }
+}
+
+function clearDraft(adopterId: string): void {
+    if (typeof window === 'undefined' || !adopterId) return;
+    try { window.localStorage.removeItem(draftKey(adopterId)); } catch { /* ignore */ }
+}
+
 export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRating = null, tooManyAdoptions = null, tooManyRequests = null, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '', initialRecordType, autoOpen = false, onClose }: {
     adopterId: string;
     /** Display name of the adopter — used in step-1 guidance copy. */
@@ -101,18 +169,24 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     const prefillDetails = searchParams.get('details') || '';
     const prefillDate = searchParams.get('date') || '';
 
+    // v40b: hydrate from localStorage draft if one exists (and is < 7 days old).
+    // Falls back to the prefill defaults when there's no draft. Resolved once at
+    // first mount; subsequent state changes are written back via the save effect
+    // further below.
+    const initialDraft = readDraft(adopterId);
+
     const [isOpen, setIsOpen] = useState(shouldOpenFromWizard || autoOpen);
-    const [step, setStep] = useState(1);
+    const [step, setStep] = useState(() => initialDraft?.step ?? 1);
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [direction, setDirection] = useState<'forward' | 'back'>('forward');
     const [pendingImages, setPendingImages] = useState<Array<{ data: string; file?: File; isVideo: boolean; thumbnail?: string }>>([]);
     const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
-    const [unknownAnimal, setUnknownAnimal] = useState(false);
-    const [customSpecies, setCustomSpecies] = useState(false);
-    const [mode, setMode] = useState<'existing' | 'new'>(shouldOpenFromWizard ? 'new' : 'existing');
+    const [unknownAnimal, setUnknownAnimal] = useState(() => initialDraft?.unknownAnimal ?? false);
+    const [customSpecies, setCustomSpecies] = useState(() => initialDraft?.customSpecies ?? false);
+    const [mode, setMode] = useState<'existing' | 'new'>(() => initialDraft?.mode ?? (shouldOpenFromWizard ? 'new' : 'existing'));
 
-    const [formData, setFormData] = useState({
+    const [formData, setFormData] = useState(() => initialDraft?.formData ?? {
         animalName: prefillAnimalName,
         details: prefillDetails,
         status: 'completed',
@@ -160,7 +234,56 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
         setCustomSpecies(false);
         setMode('existing');
         setStep(1);
+        clearDraft(adopterId); // v40b: reset clears the stored draft
     };
+
+    // ── v40b: draft persistence + modal lifecycle effects ──────────────
+    // Save every relevant state change to localStorage. Cheap (~100μs per write
+    // on modern hardware); skipping the debounce keeps things simple.
+    useEffect(() => {
+        if (!isOpen) return;
+        writeDraft(adopterId, { step, mode, unknownAnimal, customSpecies, formData });
+    }, [adopterId, isOpen, step, mode, unknownAnimal, customSpecies, formData]);
+
+    // Body-scroll lock while the modal is open. Without this, the page below
+    // scrolls under the dialog when the user scrolls inside the wizard on
+    // mobile (the scroll chain leaks).
+    useEffect(() => {
+        if (!isOpen) return;
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => { document.body.style.overflow = prev; };
+    }, [isOpen]);
+
+    // Esc closes the wizard. Matches the close button's behavior at the bottom
+    // of the form (setIsOpen(false) + onClose). Draft remains in localStorage
+    // so re-opening resumes from the same step + values.
+    useEffect(() => {
+        if (!isOpen) return;
+        const handler = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                setIsOpen(false);
+                onClose?.();
+            }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [isOpen, onClose]);
+
+    // Is the wizard's state "dirty" — non-default? Drives the "Empezar de
+    // nuevo" button visibility in the modal header. We treat any step > 1,
+    // any non-default formData field, or unknownAnimal/customSpecies as dirty.
+    const isDirty = step > 1
+        || mode !== (shouldOpenFromWizard ? 'new' : 'existing')
+        || unknownAnimal || customSpecies
+        || !!formData.animalName
+        || !!formData.details
+        || !!formData.comments
+        || !!formData.animalId
+        || !!formData.adoptionDate
+        || formData.deliveredToHome
+        || formData.identityVerified
+        || (formData.verifiedAddress?.length ?? 0) > 0;
 
     const safeAvailableAnimals = Array.isArray(availableAnimals) ? availableAnimals : [];
     const safeAdopterAdoptions = Array.isArray(adopterAdoptions) ? adopterAdoptions : [];
@@ -384,11 +507,54 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
         t('wizard.step_evidence'),
     ];
 
+    const close = () => { setIsOpen(false); onClose?.(); };
+    const startOver = () => {
+        if (window.confirm(t('wizard.start_over_confirm') || '¿Descartar lo que escribiste y empezar de nuevo?')) {
+            resetForm();
+        }
+    };
+
     return (
         <>
             <MediaLightbox item={lightboxItem} onClose={() => setLightboxItem(null)} />
-            <div id="wizard-container" ref={stepContainerRef} tabIndex={-1} className="animate-in fade-in slide-in-from-bottom-2 duration-300 bg-white rounded-xl border-2 border-teal-400/50 shadow-lg relative ring-4 ring-teal-50/50 mb-4 outline-none overflow-hidden">
-                
+            <div
+                className="fixed inset-0 z-[60] flex items-start justify-center p-4 overflow-y-auto"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="wizard-title"
+                onClick={close}
+            >
+                <div className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm" aria-hidden />
+                <div
+                    id="wizard-container"
+                    ref={stepContainerRef}
+                    tabIndex={-1}
+                    onClick={(e) => e.stopPropagation()}
+                    className="relative w-full max-w-2xl bg-white rounded-2xl border border-stone-200 shadow-2xl my-8 outline-none overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300"
+                >
+                    <h2 id="wizard-title" className="sr-only">{t('wizard.title') || 'Registrar actividad'}</h2>
+                    {/* v40b: modal header — start-over (when dirty) + close. */}
+                    <div className="absolute top-3 right-3 z-10 flex items-center gap-1">
+                        {isDirty && (
+                            <button
+                                type="button"
+                                onClick={startOver}
+                                title={t('wizard.start_over_tooltip') || 'Descartar borrador y empezar de nuevo'}
+                                className="text-xs font-semibold px-2 py-1 rounded-lg text-stone-600 hover:bg-stone-100 transition-colors"
+                            >
+                                ↻ {t('wizard.start_over') || 'Empezar de nuevo'}
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            onClick={close}
+                            aria-label={t('common.close') || 'Close'}
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-stone-500 hover:bg-stone-100"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                    </div>
+
                 {/* Step Indicator */}
                 <div className="px-5 pt-5 pb-3">
                     <div className="flex items-center justify-between gap-2 relative">
@@ -684,6 +850,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                             </div>
                         </div>
                     )}
+                </div>
                 </div>
             </div>
         </>

@@ -62,7 +62,11 @@ function SourcePill({ source, t }: { source?: string; t: (key: string) => string
     return null;
 }
 
-// Flag badges component for displaying all flags
+// Alert badges: warnings only. v39+: verified_identity / verified_address
+// (positive signals) intentionally hidden from this column — the column now
+// reads "Alertas" and should only carry concerns. Verifications live on the
+// profile page; reviving them on the list belongs to a separate column if
+// we ever want them visible there again.
 function FlagBadges({ flags, t }: { flags: AdopterFlags; t: (key: string) => string }) {
     const badges = [];
 
@@ -77,20 +81,6 @@ function FlagBadges({ flags, t }: { flags: AdopterFlags; t: (key: string) => str
         badges.push(
             <span key="duplicate" className="text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap bg-amber-100 text-amber-700">
                 📄 {t('flags.duplicate') || 'Duplicate'}
-            </span>
-        );
-    }
-    if (flags.verified_identity) {
-        badges.push(
-            <span key="verified_id" className="text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap bg-teal-100 text-teal-700">
-                ✓ Identidad
-            </span>
-        );
-    }
-    if (flags.verified_address) {
-        badges.push(
-            <span key="verified_addr" className="text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap bg-teal-100 text-teal-700">
-                ✓ Direccion
             </span>
         );
     }
