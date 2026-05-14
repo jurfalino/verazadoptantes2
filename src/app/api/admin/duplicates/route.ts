@@ -8,6 +8,22 @@ import { auth } from '@/auth';
 import { isAdmin } from '@/config/admins';
 import { logger } from '@/lib/logger';
 import { extractTokens, computeTokenHash } from '@/lib/tokenizer';
+import { computeAvgRating } from '@/domain/ratings';
+
+/**
+ * Compute the average activity rating for an adopter. Cheap D1-safe lookup —
+ * one query per id. Returns null when the adopter has no rated records yet
+ * (matches the rest of the app's "no activity = no rating" convention).
+ * The legacy `adopter.status` column is deprecated; only avgRating is real.
+ */
+async function avgRatingFor(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, adopterId: string | null | undefined): Promise<number | null> {
+    if (!adopterId) return null;
+    const rows = await db.select({ rating: adoptions.rating })
+        .from(adoptions)
+        .where(eq(adoptions.adopterId, adopterId))
+        .all() as Array<{ rating: number | null }>;
+    return computeAvgRating(rows);
+}
 
 /**
  * GET /api/admin/duplicates
@@ -41,26 +57,28 @@ export async function GET(request: Request) {
             .from(adopterFlags)
             .where(eq(adopterFlags.reason, 'duplicate'));
 
-        // Enrich user-flagged with adopter names
+        // Enrich user-flagged with adopter names + computed avgRating.
         const userFlaggedEnriched = await Promise.all(
             userFlagged.map(async (flag: typeof userFlagged[number]) => {
-                const [adopter1, adopter2] = await Promise.all([
-                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo, status: adopters.status })
+                const [adopter1, adopter2, avg1, avg2] = await Promise.all([
+                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo })
                         .from(adopters).where(eq(adopters.id, flag.adopterId)).get(),
                     flag.targetAdopterId
-                        ? db.select({ name: adopters.name, contactInfo: adopters.contactInfo, status: adopters.status })
+                        ? db.select({ name: adopters.name, contactInfo: adopters.contactInfo })
                             .from(adopters).where(eq(adopters.id, flag.targetAdopterId)).get()
                         : null,
+                    avgRatingFor(db, flag.adopterId),
+                    avgRatingFor(db, flag.targetAdopterId),
                 ]);
                 return {
                     ...flag,
                     source: 'user' as const,
                     adopter1Name: adopter1?.name || 'Unknown',
                     adopter1Contact: adopter1?.contactInfo,
-                    adopter1Status: adopter1?.status,
+                    adopter1AvgRating: avg1,
                     adopter2Name: adopter2?.name || null,
                     adopter2Contact: adopter2?.contactInfo,
-                    adopter2Status: adopter2?.status,
+                    adopter2AvgRating: avg2,
                 };
             })
         );
@@ -73,24 +91,26 @@ export async function GET(request: Request) {
             .limit(limit)
             .offset(offset);
 
-        // Enrich with adopter data
+        // Enrich with adopter data + computed avgRating.
         const candidatesEnriched = await Promise.all(
             candidates.map(async (c: typeof candidates[number]) => {
-                const [adopter1, adopter2] = await Promise.all([
-                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo, status: adopters.status })
+                const [adopter1, adopter2, avg1, avg2] = await Promise.all([
+                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo })
                         .from(adopters).where(eq(adopters.id, c.adopter1Id)).get(),
-                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo, status: adopters.status })
+                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo })
                         .from(adopters).where(eq(adopters.id, c.adopter2Id)).get(),
+                    avgRatingFor(db, c.adopter1Id),
+                    avgRatingFor(db, c.adopter2Id),
                 ]);
                 return {
                     ...c,
                     source: 'system' as const,
                     adopter1Name: adopter1?.name || 'Deleted',
                     adopter1Contact: adopter1?.contactInfo,
-                    adopter1Status: adopter1?.status,
+                    adopter1AvgRating: avg1,
                     adopter2Name: adopter2?.name || 'Deleted',
                     adopter2Contact: adopter2?.contactInfo,
-                    adopter2Status: adopter2?.status,
+                    adopter2AvgRating: avg2,
                 };
             })
         );

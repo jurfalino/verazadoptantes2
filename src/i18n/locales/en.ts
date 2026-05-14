@@ -730,6 +730,7 @@ export const en = {
         created: 'Created',
         modified: 'Modified',
         table_rating: 'Rating',
+        table_source: 'Source',
         table_actions: 'Actions',
         view_profile: 'View Profile',
         view_adopter: 'View Adopter',
@@ -994,6 +995,8 @@ export const en = {
         source_contract_full: 'Created from a signed contract',
         source_imported: 'Imported',
         source_imported_full: 'Bulk-imported',
+        source_manual: 'Manual',
+        rating_empty_hint: 'No rated activity yet — appears once you log an adoption / request / observation with a rating',
     },
     myAnimals: {
         showcase_section_title: 'Your public catalog',

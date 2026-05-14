@@ -15,6 +15,7 @@
 import { logger } from '@/lib/logger';
 import { getDb } from './_db';
 import { auth } from '@/auth';
+import { computeAvgRating } from '@/domain/ratings';
 
 export interface ApplicantSummary {
     submissionId: string;
@@ -76,15 +77,23 @@ export async function getApplicantsForAnimal(animalId: string): Promise<Applican
             let adopterName = row.name;
             let adopterRating: number | null = null;
             if (row.linkedAdopterId) {
-                const adopter = await db.select({ name: adopters.name, status: adopters.status })
-                    .from(adopters)
-                    .where(eq(adopters.id, row.linkedAdopterId))
-                    .get();
+                // adopter.status is the deprecated legacy rating field (frozen at "5"
+                // for every record — see memory project-adopter-status-deprecated).
+                // The real rating is computed from the adopter's activity records'
+                // non-null `rating` values, via computeAvgRating.
+                const [adopter, records] = await Promise.all([
+                    db.select({ name: adopters.name })
+                        .from(adopters)
+                        .where(eq(adopters.id, row.linkedAdopterId))
+                        .get(),
+                    db.select({ rating: adoptions.rating })
+                        .from(adoptions)
+                        .where(eq(adoptions.adopterId, row.linkedAdopterId))
+                        .all() as Promise<Array<{ rating: number | null }>>,
+                ]);
                 if (adopter) {
                     adopterName = adopter.name;
-                    // status field stores rating 1-5 as text; parse defensively.
-                    const r = adopter.status ? Number(adopter.status) : NaN;
-                    adopterRating = Number.isFinite(r) ? r : null;
+                    adopterRating = computeAvgRating(records);
                 }
             }
 

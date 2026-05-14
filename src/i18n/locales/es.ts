@@ -721,6 +721,7 @@ export const es = {
         table_animal: 'Animal',
         table_species: 'Especie',
         table_status: 'Estado',
+        table_source: 'Origen',
         table_adoption_status: 'Estado de Adopción',
         table_date: 'Fecha',
         table_date_added: 'Fecha de Registro',
@@ -993,6 +994,8 @@ export const es = {
         source_contract_full: 'Creado al firmar un contrato',
         source_imported: 'Importado',
         source_imported_full: 'Importado en lote',
+        source_manual: 'Manual',
+        rating_empty_hint: 'Sin actividad calificada — aparecerá cuando registres una adopción / solicitud / observación con puntaje',
     },
     myAnimals: {
         showcase_section_title: 'Tu catálogo público',

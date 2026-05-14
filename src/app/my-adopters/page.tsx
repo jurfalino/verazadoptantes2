@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { RatingBadge } from '@/components/RatingBadge';
+import { RatingExplainer } from '@/components/RatingExplainer';
 import { formatShortDate } from '@/lib/dates';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
@@ -199,8 +200,9 @@ export default function MyAdoptersPage() {
                         <div className="hidden md:block bg-white rounded-2xl overflow-hidden shadow-sm border border-stone-200">
                             {/* Table Header */}
                             <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-stone-50 border-b border-stone-200 text-xs font-semibold text-stone-500 uppercase tracking-wide">
-                                <div className="col-span-4">{t('dashboard.table_adopter_name')}</div>
-                                <div className="col-span-2 text-center">{t('dashboard.table_status')}</div>
+                                <div className="col-span-3">{t('dashboard.table_adopter_name')}</div>
+                                <div className="col-span-2">{t('dashboard.table_source') || 'Origen'}</div>
+                                <div className="col-span-1 text-center">{t('dashboard.table_rating') || 'Calificación'}</div>
                                 <div className="col-span-2 text-center">{t('stats.profile_stats') ? 'Stats' : 'Stats'}</div>
                                 <div className="col-span-2">{t('dashboard.table_flags')}</div>
                                 <div className="col-span-2 text-right">{t('dashboard.table_dates') || 'Dates'}</div>
@@ -216,7 +218,7 @@ export default function MyAdoptersPage() {
                                         className="grid grid-cols-12 gap-2 px-4 py-3 hover:bg-stone-50 transition-colors group items-center"
                                     >
                                         {/* Name + Thumbnail */}
-                                        <div className="col-span-4 flex items-center gap-3 min-w-0">
+                                        <div className="col-span-3 flex items-center gap-3 min-w-0">
                                             <div className="w-9 h-9 rounded-full bg-stone-100 flex-shrink-0 overflow-hidden ring-2 ring-white shadow-sm">
                                                 {adopter.thumbnail ? (
                                                     <img src={adopter.thumbnail} alt={`${adopter.name} profile photo`} className="w-full h-full object-cover" />
@@ -227,10 +229,7 @@ export default function MyAdoptersPage() {
                                                 )}
                                             </div>
                                             <div className="min-w-0">
-                                                <div className="flex items-center gap-2 min-w-0">
-                                                    <div className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate text-sm">{adopter.name}</div>
-                                                    <SourcePill source={adopter.source} t={t} />
-                                                </div>
+                                                <div className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate text-sm">{adopter.name}</div>
                                                 <div className="text-xs text-stone-500 truncate">{adopter.contactInfo || t('dashboard.no_contact')}</div>
                                                 {adopter.addedBy && adopter.addedBy !== currentEmail && (
                                                     <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', adopter.addedBy)}</div>
@@ -238,9 +237,23 @@ export default function MyAdoptersPage() {
                                             </div>
                                         </div>
 
-                                        {/* Rating */}
-                                        <div className="col-span-2 flex justify-center">
-                                            {adopter.avgRating !== null && <RatingBadge rating={adopter.avgRating} size="sm" label="short" />}
+                                        {/* Origen — source attribution column */}
+                                        <div className="col-span-2 flex items-center">
+                                            {adopter.source && adopter.source !== 'manual'
+                                                ? <SourcePill source={adopter.source} t={t} />
+                                                : <span className="text-[11px] text-stone-400">{t('myAdopters.source_manual') || 'Manual'}</span>
+                                            }
+                                        </div>
+
+                                        {/* Calificación — avgRating from activity history (legacy `status` is deprecated) */}
+                                        <div className="col-span-1 flex justify-center">
+                                            {adopter.avgRating !== null ? (
+                                                <RatingExplainer rating={adopter.avgRating}>
+                                                    <RatingBadge rating={adopter.avgRating} size="sm" label="short" />
+                                                </RatingExplainer>
+                                            ) : (
+                                                <span className="text-xs text-stone-300" title={t('myAdopters.rating_empty_hint') || 'Sin actividad calificada'}>—</span>
+                                            )}
                                         </div>
 
                                         {/* Stats */}
@@ -310,7 +323,13 @@ export default function MyAdoptersPage() {
                                                 <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', adopter.addedBy)}</div>
                                             )}
                                         </div>
-                                        {adopter.avgRating !== null && <RatingBadge rating={adopter.avgRating} size="sm" label="short" />}
+                                        {adopter.avgRating !== null ? (
+                                            <RatingExplainer rating={adopter.avgRating}>
+                                                <RatingBadge rating={adopter.avgRating} size="sm" label="short" />
+                                            </RatingExplainer>
+                                        ) : (
+                                            <span className="text-xs text-stone-300" title={t('myAdopters.rating_empty_hint') || 'Sin actividad calificada'}>—</span>
+                                        )}
                                     </div>
 
                                     {/* Stats Row */}
