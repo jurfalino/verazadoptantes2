@@ -248,6 +248,22 @@ export function extractAddressWords(text: string): string[] {
 
 // ── Token Hash ───────────────────────────────────────────────────
 
+/**
+ * Bump this whenever any extractor below changes shape — regex, label list,
+ * placeholder filter, dedup rules, anything that could produce a different
+ * token set for the same input. The constant is prefixed into the hash so a
+ * version bump invalidates every stored adopter.tokenHash, which forces the
+ * /admin/duplicates Scan to re-tokenize on the next run.
+ *
+ * v1: original tokenizer (pre-v2.14.10-22)
+ * v2: bg-indigo/UX redesign era — added placeholder phone filter, harvest
+ *     across all fields, id_number extractor, social regex lookbehind (v31).
+ *     The lookbehind was the trigger: without a version bump, every record's
+ *     hash still matched the old extractor output and Scan skipped them,
+ *     keeping the bogus @gmail.com social tokens alive.
+ */
+const TOKENIZER_VERSION = 'v2';
+
 /** Compute a simple hash of all tokenizable fields for freshness tracking */
 export function computeTokenHash(adopter: {
     name: string;
@@ -257,6 +273,7 @@ export function computeTokenHash(adopter: {
     sourceUrl?: string | null;
 }): string {
     const parts = [
+        TOKENIZER_VERSION,
         adopter.name || '',
         adopter.contactInfo || '',
         adopter.addressInfo || '',
