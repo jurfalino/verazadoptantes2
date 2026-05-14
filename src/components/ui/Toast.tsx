@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react';
 import { X, CheckCircle, AlertCircle, AlertTriangle, Info, Copy, Check } from 'lucide-react';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info';
@@ -35,11 +35,17 @@ export function useToast() {
     return context;
 }
 
-// Convenience methods
+// Convenience methods.
+// IMPORTANT: the returned object is memoized so its identity is stable across
+// re-renders. Several call sites put `toast` in a useEffect/useCallback deps
+// array (PendingDedup, ClientErrorReporter, ...). Without useMemo, every
+// render produced a fresh object and those effects looped — at scale that
+// hammered the Next.js server-action endpoint (POSTs to the originating
+// route) hard enough to trip Cloudflare's 1102 worker-CPU limit.
 export function useShowToast() {
     const { showToast } = useToast();
 
-    return {
+    return useMemo(() => ({
         success: (title: string, message?: string, action?: { label: string; onClick?: () => void; href?: string }) =>
             showToast({ type: 'success', title, message, action, duration: action ? 0 : 5000 }),
         error: (title: string, message?: string, errorId?: string) =>
@@ -48,7 +54,7 @@ export function useShowToast() {
             showToast({ type: 'warning', title, message }),
         info: (title: string, message?: string) =>
             showToast({ type: 'info', title, message })
-    };
+    }), [showToast]);
 }
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -71,8 +77,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         setToasts(prev => prev.filter(t => t.id !== id));
     }, []);
 
+    const value = useMemo(
+        () => ({ toasts, showToast, dismissToast }),
+        [toasts, showToast, dismissToast],
+    );
+
     return (
-        <ToastContext.Provider value={{ toasts, showToast, dismissToast }}>
+        <ToastContext.Provider value={value}>
             {children}
             <ToastContainer toasts={toasts} onDismiss={dismissToast} />
         </ToastContext.Provider>

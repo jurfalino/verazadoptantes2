@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useMemo, ReactNode } from 'react';
 
 type Theme = 'light' | 'dark';
 
@@ -36,13 +36,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         }
     }, [theme, mounted]);
 
-    const setTheme = (newTheme: Theme) => {
+    const setTheme = useCallback((newTheme: Theme) => {
         setThemeState(newTheme);
-    };
+    }, []);
+
+    const value = useMemo(() => ({ theme, setTheme }), [theme, setTheme]);
 
     // Always provide context, even before mount (children will use defaults safely)
     return (
-        <ThemeContext.Provider value={{ theme, setTheme }}>
+        <ThemeContext.Provider value={value}>
             {children}
         </ThemeContext.Provider>
     );

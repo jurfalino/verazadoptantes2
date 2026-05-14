@@ -39,7 +39,7 @@ interface AdopterProfileV2Props {
     userNameMap?: Record<string, string>;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, formPrefill = null, userNameMap = {} }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {} }: AdopterProfileV2Props) {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const toast = useShowToast();
@@ -131,6 +131,39 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                         {backLabel}
                     </a>
                 </div>
+
+                {/* v39: pending-duplicate signal. Owner / admin gets the clickable
+                    "Revisar" affordance straight to /my-adopters#pending-dedup
+                    where the merge UI lives. Everyone else sees the same flag
+                    informationally — non-owners can't act on someone else's record. */}
+                {!isNew && adopter && duplicateCandidates && duplicateCandidates.length > 0 && (
+                    (isOwner || isAdmin) ? (
+                        <a
+                            href="/my-adopters#pending-dedup"
+                            className="block rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 transition-colors p-3 text-sm text-amber-900 flex items-center justify-between gap-3"
+                        >
+                            <span className="flex items-center gap-2 min-w-0">
+                                <span aria-hidden>🔍</span>
+                                <span className="font-semibold">
+                                    {duplicateCandidates.length === 1
+                                        ? (t('myAdopters.profile_pending_dup_one') || 'Posible duplicado detectado')
+                                        : (t('myAdopters.profile_pending_dup_many') || '{n} posibles duplicados detectados').replace('{n}', String(duplicateCandidates.length))}
+                                </span>
+                            </span>
+                            <span className="text-xs font-medium text-amber-800 flex-shrink-0">
+                                {t('myAdopters.profile_pending_dup_review') || 'Revisar'} →
+                            </span>
+                        </a>
+                    ) : (
+                        <div
+                            className="rounded-xl border border-stone-200 bg-stone-50 p-3 text-sm text-stone-700 flex items-center gap-2"
+                            title={t('myAdopters.profile_pending_dup_other_tooltip') || 'El sistema detectó otro registro similar. Solo el responsable del registro puede revisarlo.'}
+                        >
+                            <span aria-hidden>🔍</span>
+                            <span>{t('myAdopters.profile_pending_dup_other') || 'Posible duplicado — el responsable del registro puede revisarlo.'}</span>
+                        </div>
+                    )
+                )}
 
                 {/* Profile Form */}
                 <AdopterForm

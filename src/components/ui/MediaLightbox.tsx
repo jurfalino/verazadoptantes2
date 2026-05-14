@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 
 export interface MediaItem {
@@ -79,15 +79,20 @@ export function MediaLightbox({ item, onClose, actions }: MediaLightboxProps) {
         onClose();
     }, [blobUrl, onClose]);
 
-    // Keyboard close
+    // Keyboard close. Use a ref so the listener only re-binds when `item`
+    // changes — not every time `handleClose` or its `blobUrl`/`onClose` deps
+    // change. Parents typically pass an inline `onClose={() => …}`, which
+    // would otherwise re-register the global keydown handler on every render.
+    const handleCloseRef = useRef(handleClose);
+    useEffect(() => { handleCloseRef.current = handleClose; }, [handleClose]);
     useEffect(() => {
         if (!item) return;
         const handler = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') handleClose();
+            if (e.key === 'Escape') handleCloseRef.current();
         };
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
-    }, [item, handleClose]);
+    }, [item]);
 
     if (!item && !videoLoading) return null;
 

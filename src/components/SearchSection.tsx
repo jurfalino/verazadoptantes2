@@ -446,7 +446,12 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                                                 <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-amber-100 text-amber-700">📄 {t('flags.duplicate') || 'Duplicate'}</span>
                                             )}
                                             {res.flags.systemDuplicate && !res.flags.duplicate && (
-                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-stone-100 text-stone-500">🔗 {t('flags.possible_duplicate') || 'Possible duplicate'}</span>
+                                                <span
+                                                    title={t('search.possible_duplicate_tooltip') || 'El sistema detectó otro registro similar. El responsable del registro puede revisarlo.'}
+                                                    className="text-xs px-1.5 py-0.5 rounded font-medium bg-stone-100 text-stone-600 cursor-help"
+                                                >
+                                                    🔍 {t('flags.possible_duplicate') || 'Possible duplicate'}
+                                                </span>
                                             )}
                                             {res.flags.verified_identity && (
                                                 <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-teal-100 text-teal-700">✓ {t('flags.verified_identity') || 'Verified ID'}</span>
