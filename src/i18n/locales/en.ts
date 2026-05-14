@@ -1017,6 +1017,7 @@ export const en = {
         applicants_resend: 'Resend contract',
         applicants_signed: 'Signed',
         applicants_no_adopter: 'This applicant has no linked profile yet.',
+        applicants_view_form: 'View form',
         applicants_share_title: 'Share contract',
         applicants_share_subtitle: 'For {adopter}',
         applicants_share_text: 'Adoption contract for {animal} — {adopter}',

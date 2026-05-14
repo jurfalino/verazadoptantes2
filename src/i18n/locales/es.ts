@@ -1016,6 +1016,7 @@ export const es = {
         applicants_resend: 'Reenviar contrato',
         applicants_signed: 'Firmado',
         applicants_no_adopter: 'Este postulante todavía no está vinculado a un perfil.',
+        applicants_view_form: 'Ver formulario',
         applicants_share_title: 'Compartir contrato',
         applicants_share_subtitle: 'Para {adopter}',
         applicants_share_text: 'Contrato de adopción de {animal} para {adopter}',

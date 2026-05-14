@@ -18,6 +18,11 @@ import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { createContractInvitation } from '@/app/actions/contract';
 
+// Sentinel: tracking the busy row by submissionId (always present) avoids the
+// `null === null` collision that occurred when an applicant had adopterId: null
+// — the comparison was true from initial render and the button showed
+// "Procesando..." forever without anything being clicked.
+
 export interface ApplicantRow {
     submissionId: string;
     adopterId: string | null;
@@ -156,7 +161,7 @@ export default function AnimalApplicants({
     const { t, locale } = useLanguage();
     const toast = useShowToast();
     const [expanded, setExpanded] = useState(false);
-    const [busyAdopterId, setBusyAdopterId] = useState<string | null>(null);
+    const [busySubmissionId, setBusySubmissionId] = useState<string | null>(null);
     const [shareUrl, setShareUrl] = useState<{ url: string; adopterName: string } | null>(null);
 
     if (applicants.length === 0) return null;
@@ -166,8 +171,8 @@ export default function AnimalApplicants({
             toast.error(t('errors.generic') || 'Error', t('myAnimals.applicants_no_adopter') || 'This applicant has no linked adopter yet.');
             return;
         }
-        if (busyAdopterId) return;
-        setBusyAdopterId(applicant.adopterId);
+        if (busySubmissionId) return;
+        setBusySubmissionId(applicant.submissionId);
         try {
             const result = await createContractInvitation(animalId, applicant.adopterId);
             if (result.success && result.url) {
@@ -178,7 +183,7 @@ export default function AnimalApplicants({
         } catch (e) {
             toast.error(t('errors.generic') || 'Error', undefined, extractErrorId(e));
         } finally {
-            setBusyAdopterId(null);
+            setBusySubmissionId(null);
         }
     };
 
@@ -221,14 +226,22 @@ export default function AnimalApplicants({
                                 </div>
                                 {a.isSigned ? (
                                     <span className="text-[11px] px-2 py-1 rounded-lg bg-teal-100 text-teal-800 font-semibold">✓ {t('myAnimals.applicants_signed') || 'Firmado'}</span>
+                                ) : !a.adopterId ? (
+                                    <Link
+                                        href={`/form-results/${a.submissionId}`}
+                                        className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-stone-100 text-stone-700 hover:bg-stone-200 transition-colors flex-shrink-0"
+                                        title={t('myAnimals.applicants_no_adopter') || 'This applicant has no linked adopter yet.'}
+                                    >
+                                        {t('myAnimals.applicants_view_form') || 'Ver formulario'}
+                                    </Link>
                                 ) : (
                                     <button
                                         type="button"
                                         onClick={() => handleSend(a)}
-                                        disabled={busyAdopterId === a.adopterId}
+                                        disabled={busySubmissionId === a.submissionId}
                                         className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-teal-700 text-white hover:bg-teal-600 disabled:opacity-50 transition-colors flex-shrink-0"
                                     >
-                                        {busyAdopterId === a.adopterId
+                                        {busySubmissionId === a.submissionId
                                             ? (t('common.processing') || '...')
                                             : a.hasInvite
                                                 ? (t('myAnimals.applicants_resend') || 'Reenviar')
