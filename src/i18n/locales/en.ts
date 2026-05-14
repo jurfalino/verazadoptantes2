@@ -160,8 +160,11 @@ export const en = {
     stats: {
         searches: 'searches',
         views: 'views',
+        view_one: 'view',
         adoptions: 'adoptions',
+        adoption_one: 'adoption',
         requests: 'requests',
+        request_one: 'request',
         observations: 'observations',
         follow_ups: 'follow-ups',
         returns: 'returns',
@@ -731,6 +734,7 @@ export const en = {
         modified: 'Modified',
         table_rating: 'Rating',
         table_source: 'Source',
+        table_activity: 'Activity',
         table_actions: 'Actions',
         view_profile: 'View Profile',
         view_adopter: 'View Adopter',
@@ -997,6 +1001,8 @@ export const en = {
         source_imported_full: 'Bulk-imported',
         source_manual: 'Manual',
         rating_empty_hint: 'No rated activity yet — appears once you log an adoption / request / observation with a rating',
+        row_pending_dup: 'Possible duplicate',
+        row_pending_dup_tooltip: 'There is a possible duplicate pending review above',
     },
     myAnimals: {
         showcase_section_title: 'Your public catalog',

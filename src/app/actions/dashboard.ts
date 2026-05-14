@@ -1,7 +1,7 @@
 'use server';
 
-import { adopters, adoptions, adopterImages, adopterFlags, adopterStats, formSubmissions } from '@/db/schema';
-import { eq, sql, and, inArray, isNull } from 'drizzle-orm';
+import { adopters, adoptions, adopterImages, adopterFlags, adopterStats, formSubmissions, duplicateCandidates } from '@/db/schema';
+import { eq, sql, and, inArray, isNull, or } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { getDb } from './_db';
@@ -106,6 +106,26 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             .where(inArray(formSubmissions.linkedAdopterId, adopterIds))
             .groupBy(formSubmissions.linkedAdopterId)
             .all();
+        // v38: per-row "Posible duplicado" indicator. One query gets every
+        // pending dedup pair where either side is in the user's adopter list;
+        // the Set is consulted at render time below.
+        const dupPairs = await db.select({
+            a1: duplicateCandidates.adopter1Id,
+            a2: duplicateCandidates.adopter2Id,
+        }).from(duplicateCandidates)
+            .where(and(
+                eq(duplicateCandidates.status, 'pending'),
+                or(
+                    inArray(duplicateCandidates.adopter1Id, adopterIds),
+                    inArray(duplicateCandidates.adopter2Id, adopterIds),
+                ),
+            ))
+            .all() as Array<{ a1: string; a2: string }>;
+        const adoptersWithPendingDup = new Set<string>();
+        for (const p of dupPairs) {
+            adoptersWithPendingDup.add(p.a1);
+            adoptersWithPendingDup.add(p.a2);
+        }
 
         // Build lookup maps
         // Ratings: compute from allAdoptionRecords using domain function (replaces separate AVG SQL query)
@@ -196,7 +216,8 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                 requestCount: counts.requests,
                 searchHits: stats.searchHits,
                 profileViews: stats.profileViews,
-                formCount: formCountMap.get(adopter.id) ?? 0
+                formCount: formCountMap.get(adopter.id) ?? 0,
+                hasPendingDuplicate: adoptersWithPendingDup.has(adopter.id),
             };
         });
 

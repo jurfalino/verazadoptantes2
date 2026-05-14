@@ -32,6 +32,8 @@ interface Adopter {
     addedBy?: string | null;
     /** v2.14.10-20: enum-via-text — 'manual' | 'form' | 'contract' | 'imported'. */
     source?: string;
+    /** v38: true when this adopter appears in a pending duplicate_candidates pair. */
+    hasPendingDuplicate?: boolean;
 }
 
 /**
@@ -183,8 +185,11 @@ export default function MyAdoptersPage() {
                 </div>
 
                 {/* Pending-dedup pairs (replaces the old "Unlinked Forms" section
-                    that existed before Phase 1 auto-created adopters at submit time). */}
-                <PendingDedup />
+                    that existed before Phase 1 auto-created adopters at submit time).
+                    Anchor target for the per-row "🔍 Posible duplicado" pill (v38). */}
+                <div id="pending-dedup" className="scroll-mt-20">
+                    <PendingDedup />
+                </div>
 
                 {adopters.length === 0 ? (
                     <div className="bg-white rounded-2xl p-12 text-center border border-stone-200 shadow-sm">
@@ -201,9 +206,9 @@ export default function MyAdoptersPage() {
                             {/* Table Header */}
                             <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-stone-50 border-b border-stone-200 text-xs font-semibold text-stone-500 uppercase tracking-wide">
                                 <div className="col-span-3">{t('dashboard.table_adopter_name')}</div>
-                                <div className="col-span-2">{t('dashboard.table_source') || 'Origen'}</div>
-                                <div className="col-span-1 text-center">{t('dashboard.table_rating') || 'Calificación'}</div>
-                                <div className="col-span-2 text-center">{t('stats.profile_stats') ? 'Stats' : 'Stats'}</div>
+                                <div className="col-span-1">{t('dashboard.table_source') || 'Origen'}</div>
+                                <div className="col-span-2 text-center">{t('dashboard.table_rating') || 'Calificación'}</div>
+                                <div className="col-span-2">{t('dashboard.table_activity') || 'Actividad'}</div>
                                 <div className="col-span-2">{t('dashboard.table_flags')}</div>
                                 <div className="col-span-2 text-right">{t('dashboard.table_dates') || 'Dates'}</div>
                             </div>
@@ -229,7 +234,19 @@ export default function MyAdoptersPage() {
                                                 )}
                                             </div>
                                             <div className="min-w-0">
-                                                <div className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate text-sm">{adopter.name}</div>
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <div className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate text-sm">{adopter.name}</div>
+                                                    {adopter.hasPendingDuplicate && (
+                                                        <a
+                                                            href="#pending-dedup"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            title={t('myAdopters.row_pending_dup_tooltip') || 'Hay un posible duplicado pendiente de revisar arriba'}
+                                                            className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap hover:bg-amber-100 flex-shrink-0"
+                                                        >
+                                                            🔍 {t('myAdopters.row_pending_dup') || 'Posible duplicado'}
+                                                        </a>
+                                                    )}
+                                                </div>
                                                 <div className="text-xs text-stone-500 truncate">{adopter.contactInfo || t('dashboard.no_contact')}</div>
                                                 {adopter.addedBy && adopter.addedBy !== currentEmail && (
                                                     <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', adopter.addedBy)}</div>
@@ -237,16 +254,18 @@ export default function MyAdoptersPage() {
                                             </div>
                                         </div>
 
-                                        {/* Origen — source attribution column */}
-                                        <div className="col-span-2 flex items-center">
+                                        {/* Origen — source attribution column (col-1, just enough for the pill) */}
+                                        <div className="col-span-1 flex items-center min-w-0">
                                             {adopter.source && adopter.source !== 'manual'
                                                 ? <SourcePill source={adopter.source} t={t} />
                                                 : <span className="text-[11px] text-stone-400">{t('myAdopters.source_manual') || 'Manual'}</span>
                                             }
                                         </div>
 
-                                        {/* Calificación — avgRating from activity history (legacy `status` is deprecated) */}
-                                        <div className="col-span-1 flex justify-center">
+                                        {/* Calificación — avgRating from activity history (legacy `status` is deprecated).
+                                            Min-height pins both states (badge / "—") to the same row height so adjacent
+                                            rows stay vertically aligned. */}
+                                        <div className="col-span-2 flex justify-center items-center min-h-[2rem]">
                                             {adopter.avgRating !== null ? (
                                                 <RatingExplainer rating={adopter.avgRating}>
                                                     <RatingBadge rating={adopter.avgRating} size="sm" label="short" />
@@ -256,15 +275,16 @@ export default function MyAdoptersPage() {
                                             )}
                                         </div>
 
-                                        {/* Stats */}
-                                        <div className="col-span-2 flex flex-wrap justify-center gap-x-2 gap-y-1 text-xs text-stone-500">
-                                            <span>👁 {adopter.profileViews}</span>
-                                            <span>📋 {adopter.requestCount}</span>
-                                            <span>🏠 {adopter.adoptionCount}</span>
+                                        {/* Actividad — stacked stats with labels (v38). Each line has its own word
+                                            so the column reads naturally instead of relying on emoji recall. */}
+                                        <div className="col-span-2 text-xs text-stone-600 space-y-0.5">
+                                            <div>👁 {adopter.profileViews} {adopter.profileViews === 1 ? (t('stats.view_one') || 'vista') : (t('stats.views') || 'vistas')}</div>
+                                            <div>📋 {adopter.requestCount} {adopter.requestCount === 1 ? (t('stats.request_one') || 'pedido') : (t('stats.requests') || 'pedidos')}</div>
+                                            <div>🏠 {adopter.adoptionCount} {adopter.adoptionCount === 1 ? (t('stats.adoption_one') || 'adopción') : (t('stats.adoptions') || 'adopciones')}</div>
                                             {(adopter.formCount ?? 0) > 0 && (
-                                                <span className="text-teal-600 font-medium" title={t('dashboard.forms_linked') || 'Forms filled'}>
-                                                    📄 {adopter.formCount} {(adopter.formCount ?? 0) === 1 ? (t('dashboard.form_count_one') || 'form') : (t('dashboard.form_count') || 'forms')}
-                                                </span>
+                                                <div className="text-teal-600 font-medium">
+                                                    📄 {adopter.formCount} {(adopter.formCount ?? 0) === 1 ? (t('dashboard.form_count_one') || 'formulario') : (t('dashboard.form_count') || 'formularios')}
+                                                </div>
                                             )}
                                         </div>
 
@@ -314,9 +334,19 @@ export default function MyAdoptersPage() {
                                             )}
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 min-w-0">
+                                            <div className="flex items-center gap-2 min-w-0 flex-wrap">
                                                 <div className="font-semibold text-stone-900 truncate">{adopter.name}</div>
                                                 <SourcePill source={adopter.source} t={t} />
+                                                {adopter.hasPendingDuplicate && (
+                                                    <a
+                                                        href="#pending-dedup"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        title={t('myAdopters.row_pending_dup_tooltip') || 'Hay un posible duplicado pendiente de revisar arriba'}
+                                                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap hover:bg-amber-100"
+                                                    >
+                                                        🔍 {t('myAdopters.row_pending_dup') || 'Posible duplicado'}
+                                                    </a>
+                                                )}
                                             </div>
                                             <div className="text-xs text-stone-500 truncate">{adopter.contactInfo || t('dashboard.no_contact')}</div>
                                             {adopter.addedBy && adopter.addedBy !== currentEmail && (
