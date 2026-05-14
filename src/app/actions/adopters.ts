@@ -193,8 +193,16 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
                 logger.info('Adopter updated', { adopterId: data.id, changedBy });
                 logAudit({ userEmail: changedBy, action: 'adopter_updated', target: data.id as string, details: changes });
 
-                // Fire-and-forget: update duplicate detection tokens
-                tokenizeAdopter(data.id as string).catch(e => { logger.warn('Tokenize adopter failed (fire-and-forget)', { adopterId: data.id, error: e instanceof Error ? e.message : String(e) }); });
+                // Synchronous (v30): edge-runtime workers can reap a fire-and-forget
+                // tokenize before the per-token INSERTs finish, leaving rows with a
+                // valid tokenHash but an empty token set — invisible to the dedup
+                // matcher until an admin clicks Scan. ~250ms cost is acceptable;
+                // silent-token-loss is not. _adopterFactory already awaits the same way.
+                try {
+                    await tokenizeAdopter(data.id as string);
+                } catch (e) {
+                    logger.warn('Tokenize adopter failed (update path)', { adopterId: data.id, error: e instanceof Error ? e.message : String(e) });
+                }
             }
             return { success: true, id: data.id };
         } else {
@@ -225,8 +233,12 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
             logger.info('Adopter created', { adopterId: newId, changedBy });
             logAudit({ userEmail: changedBy, action: 'adopter_created', target: newId, details: { name: data.name } });
 
-            // Fire-and-forget: generate duplicate detection tokens
-            tokenizeAdopter(newId).catch(e => { logger.warn('Tokenize adopter failed (fire-and-forget)', { adopterId: newId, error: e instanceof Error ? e.message : String(e) }); });
+            // Synchronous (v30): see comment in update branch above.
+            try {
+                await tokenizeAdopter(newId);
+            } catch (e) {
+                logger.warn('Tokenize adopter failed (create path)', { adopterId: newId, error: e instanceof Error ? e.message : String(e) });
+            }
 
             return { success: true, id: newId };
         }
