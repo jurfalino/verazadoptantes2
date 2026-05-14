@@ -313,6 +313,7 @@ export const es = {
     },
     search: {
         title: 'Verificar Adoptante',
+        possible_duplicate_tooltip: 'El sistema detectó otro registro similar. El responsable del registro puede revisarlo.',
         placeholder: 'Nombre, Teléfono ó Dirección',
         hint: 'Probá buscando un teléfono o nombre para ver cómo funciona.',
         button: 'Buscar Registros',
@@ -1002,6 +1003,11 @@ export const es = {
         rating_empty_hint: 'Sin actividad calificada — aparecerá cuando registres una adopción / solicitud / observación con puntaje',
         row_pending_dup: 'Posible duplicado',
         row_pending_dup_tooltip: 'Hay un posible duplicado pendiente de revisar arriba',
+        profile_pending_dup_one: 'Posible duplicado detectado',
+        profile_pending_dup_many: '{n} posibles duplicados detectados',
+        profile_pending_dup_review: 'Revisar',
+        profile_pending_dup_other: 'Posible duplicado — el responsable del registro puede revisarlo.',
+        profile_pending_dup_other_tooltip: 'El sistema detectó otro registro similar. Solo el responsable del registro puede revisarlo.',
     },
     myAnimals: {
         showcase_section_title: 'Tu catálogo público',

@@ -314,6 +314,7 @@ export const en = {
     },
     search: {
         title: 'Vet an Adopter',
+        possible_duplicate_tooltip: 'The system detected another similar record. The responsible rescuer can review it.',
         placeholder: 'Name, Phone, or Address',
         hint: 'Try searching a phone number or name to see how it works.',
         button: 'Search Records',
@@ -1003,6 +1004,11 @@ export const en = {
         rating_empty_hint: 'No rated activity yet — appears once you log an adoption / request / observation with a rating',
         row_pending_dup: 'Possible duplicate',
         row_pending_dup_tooltip: 'There is a possible duplicate pending review above',
+        profile_pending_dup_one: 'Possible duplicate detected',
+        profile_pending_dup_many: '{n} possible duplicates detected',
+        profile_pending_dup_review: 'Review',
+        profile_pending_dup_other: 'Possible duplicate — the responsible rescuer can review.',
+        profile_pending_dup_other_tooltip: 'The system detected another similar record. Only the responsible rescuer can review.',
     },
     myAnimals: {
         showcase_section_title: 'Your public catalog',
