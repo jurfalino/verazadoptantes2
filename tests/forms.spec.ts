@@ -14,12 +14,15 @@ test.describe('External Form & Notifications Lifecycle', () => {
         await expect(shareBtn).toBeVisible({ timeout: 30000 });
         await shareBtn.click();
 
-        // 2. Extract the user ID from the "Open in new tab" link
+        // 2. Extract the user ID from the "Open in new tab" link. useContractBase()
+        // is async (fetches /api/contract-base after mount), so the href is empty
+        // for a beat after the link renders. Poll until it contains the param
+        // instead of grabbing it on the first paint.
         const openLink = pageA.getByRole('link', { name: /Open in new tab|Abrir en nueva pestaña/i });
         await expect(openLink).toBeVisible({ timeout: 30000 });
+        await expect.poll(async () => await openLink.getAttribute('href') || '', { timeout: 15000 }).toContain('u=');
         const href = await openLink.getAttribute('href');
-        expect(href).toContain('u=');
-        
+
         const urlParams = new URL(href!).searchParams;
         const userId = urlParams.get('u');
         expect(userId).toBeTruthy();
@@ -88,8 +91,12 @@ test.describe('External Form & Notifications Lifecycle', () => {
         await expect(pageA.getByText(testName).first()).toBeVisible({ timeout: 30000 });
         await expect(pageA.getByText(testEmail).first()).toBeVisible({ timeout: 30000 });
         
-        // Ensure "Create new profile" link is visible, proving it's an actionable form result
-        const createProfileLink = pageA.getByRole('link', { name: /Create new profile|Crear nuevo perfil/i }).first();
-        await expect(createProfileLink).toBeVisible({ timeout: 30000 });
+        // Phase 1 of v2.14.10-18 auto-creates an adopter for every form submission
+        // and marks status='linked' synchronously. The form-results page now
+        // renders a "View linked profile" CTA instead of the old "Create new
+        // profile" link. Assert the new behavior — proves the auto-create flow
+        // ran end-to-end.
+        const viewProfileLink = pageA.getByRole('link', { name: /View linked adopter profile|Ver perfil del adoptante vinculado/i }).first();
+        await expect(viewProfileLink).toBeVisible({ timeout: 30000 });
     });
 });

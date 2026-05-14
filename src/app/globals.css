@@ -610,6 +610,24 @@ button {
   border-color: rgba(99, 102, 241, 0.25) !important;
 }
 
+/* bg-indigo-50 mirrors bg-teal-50 in visual weight so the
+   /my-animals catalog-share button matches the form-share sibling. */
+[data-theme="dark"] .bg-indigo-50 {
+  background-color: rgba(129, 140, 248, 0.08) !important;
+}
+
+[data-theme="light"] .bg-indigo-50 {
+  background-color: rgba(99, 102, 241, 0.05) !important;
+}
+
+[data-theme="dark"] .hover\:bg-indigo-100:hover {
+  background-color: rgba(129, 140, 248, 0.18) !important;
+}
+
+[data-theme="light"] .hover\:bg-indigo-100:hover {
+  background-color: rgba(99, 102, 241, 0.12) !important;
+}
+
 /* ── Amber / Warning Colors ── */
 [data-theme="dark"] .bg-yellow-50 {
   background-color: rgba(250, 204, 21, 0.1) !important;

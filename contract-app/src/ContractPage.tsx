@@ -30,9 +30,20 @@ interface AnimalData {
     images: AnimalImage[]
 }
 
-export default function ContractPage({ animalId }: { animalId: string }) {
+/**
+ * Two entry shapes:
+ *   • Legacy open path — `<ContractPage animalId={uuid} />`. Anyone with the
+ *     link can sign; submitting creates a new adopter row (source='contract').
+ *   • Locked path (v2.14.10-21 / Phase 5) — `<ContractPage token={uuid} />`.
+ *     Token resolves to a specific (animalId, adopterId). Form is pre-filled
+ *     with the adopter's prior info and a "Para {name}" badge appears at the
+ *     top. Submitting links the existing adopter instead of creating one.
+ */
+export default function ContractPage({ animalId, token }: { animalId?: string; token?: string }) {
     const contractRef = useRef<HTMLDivElement>(null)
     const [animal, setAnimal] = useState<AnimalData | null>(null)
+    const [resolvedAnimalId, setResolvedAnimalId] = useState<string | null>(animalId || null)
+    const [intendedAdopterName, setIntendedAdopterName] = useState<string | null>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [errorId, setErrorId] = useState<string | null>(null)
@@ -57,17 +68,34 @@ export default function ContractPage({ animalId }: { animalId: string }) {
     useEffect(() => {
         async function load() {
             try {
-                const res = await fetch(`${API_URL}/api/contract/${animalId}`)
+                const url = token
+                    ? `${API_URL}/api/contract/by-token/${token}`
+                    : `${API_URL}/api/contract/${animalId}`
+                const res = await fetch(url)
                 if (!res.ok) {
                     const data = await res.json().catch(() => ({}))
-                    const errMsg = res.status === 404 ? 'Animal no encontrado' : (data.error || 'Error al cargar')
-                    const id = extractErrorId(data.error)
+                    const code = (data as { code?: string }).code
+                    let errMsg: string
+                    if (res.status === 404) errMsg = 'Contrato no encontrado'
+                    else if (res.status === 410 && code === 'used') errMsg = 'Este link ya fue usado'
+                    else if (res.status === 410 && code === 'expired') errMsg = 'Este link expiró'
+                    else if (res.status === 410 && code === 'already_adopted') errMsg = 'Este animal ya fue adoptado'
+                    else errMsg = (data as { error?: string }).error || 'Error al cargar'
+                    const id = extractErrorId((data as { error?: string }).error)
                     console.error(`[CONTRACT] Load failed (${res.status}):`, errMsg)
                     setError(errMsg)
                     if (id) setErrorId(id)
                     return
                 }
-                setAnimal(await res.json())
+                if (token) {
+                    const data = await res.json() as { animal: AnimalData; adopterName: string; prefill: { name: string; lastName: string; email: string; phone: string; address: string; dni: string } }
+                    setAnimal(data.animal)
+                    setResolvedAnimalId(data.animal.id)
+                    setIntendedAdopterName(data.adopterName)
+                    setForm(prev => ({ ...prev, ...data.prefill }))
+                } else {
+                    setAnimal(await res.json())
+                }
             } catch (err) {
                 console.error('[CONTRACT] Network error loading contract:', err)
                 setError('Error de red al cargar los datos del contrato')
@@ -76,7 +104,7 @@ export default function ContractPage({ animalId }: { animalId: string }) {
             }
         }
         load()
-    }, [animalId])
+    }, [animalId, token])
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -103,11 +131,13 @@ export default function ContractPage({ animalId }: { animalId: string }) {
                 console.log('[CONTRACT] Reusing existing PDF for retry')
             }
 
-            // 2. Submit the form data + PDF
-            const res = await fetch(`${API_URL}/api/contract/${animalId}/submit`, {
+            // 2. Submit the form data + PDF. When in token mode, pass the token
+            // so the backend links the existing adopter (no new row).
+            const targetAnimalId = resolvedAnimalId || animalId
+            const res = await fetch(`${API_URL}/api/contract/${targetAnimalId}/submit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...form, screenshot: contractDataUrl }),
+                body: JSON.stringify({ ...form, screenshot: contractDataUrl, token: token || undefined }),
             })
 
             if (res.ok) {
@@ -132,7 +162,8 @@ export default function ContractPage({ animalId }: { animalId: string }) {
         if (!contractPdfData) return
         setRetrying(true)
         try {
-            const res = await fetch(`${API_URL}/api/contract/${animalId}/upload`, {
+            const targetAnimalId = resolvedAnimalId || animalId
+            const res = await fetch(`${API_URL}/api/contract/${targetAnimalId}/upload`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ screenshot: contractPdfData }),
@@ -273,6 +304,15 @@ export default function ContractPage({ animalId }: { animalId: string }) {
 
     return (
         <div className="min-h-screen bg-stone-200 py-6 px-4 print:bg-white print:py-0">
+            {/* Intended-adopter banner (token / locked-link path only). Tells the
+                signer the link was prepared specifically for them, so they don't
+                wonder whether they should sign on behalf of someone else. */}
+            {intendedAdopterName && !submitted && (
+                <div className="max-w-3xl mx-auto mb-4 rounded-xl bg-teal-50 border border-teal-200 px-4 py-3 text-sm text-teal-800 flex items-center gap-2 print:hidden">
+                    <span className="text-base">✉️</span>
+                    <span><span className="font-semibold">Para {intendedAdopterName}:</span> este link fue preparado especialmente para vos. Tus datos ya están cargados — revisalos antes de firmar.</span>
+                </div>
+            )}
             <form onSubmit={handleSubmit}>
                 {/* ref wraps the entire contract for screenshot */}
                 <div

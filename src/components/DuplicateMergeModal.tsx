@@ -7,7 +7,11 @@ interface Adopter {
     id: string;
     name: string;
     contact?: string | null;
-    status?: string | null;
+    /** Computed average from activity records (computeAvgRating). The legacy
+     *  `adopter.status` field is deprecated — see memory
+     *  project-adopter-status-deprecated. Null when the adopter has no
+     *  rated activity yet. */
+    avgRating?: number | null;
 }
 
 interface DuplicateMergeModalProps {
@@ -153,8 +157,10 @@ function ProfileCard({
             {adopter.contact && (
                 <p className="text-xs text-stone-500 mt-2 line-clamp-2 break-words">{adopter.contact}</p>
             )}
-            {adopter.status && (
-                <p className="text-xs text-stone-500 mt-1">Rating: {adopter.status}</p>
+            {adopter.avgRating != null ? (
+                <p className="text-xs text-stone-500 mt-1">★ {adopter.avgRating.toFixed(1)}</p>
+            ) : (
+                <p className="text-xs text-stone-400 italic mt-1">Sin actividad calificada</p>
             )}
         </button>
     );

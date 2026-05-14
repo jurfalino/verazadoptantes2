@@ -14,7 +14,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     try {
         const body = await request.json();
-        const { name, lastName, dni, email, phone, address, socialNetworks, screenshot } = body as {
+        const { name, lastName, dni, email, phone, address, socialNetworks, screenshot, token } = body as {
             name: string;
             lastName: string;
             dni: string;
@@ -23,6 +23,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             address: string;
             socialNetworks: string;
             screenshot?: string; // base64 data URL of contract PDF
+            /** v2.14.10-21: when set, this is a locked-contract submission for a
+              * specific adopter — we resolve the token, link the existing adopter
+              * instead of creating a new one, and mark the invitation used. */
+            token?: string;
         };
 
         if (!name || !lastName) {
@@ -33,8 +37,31 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const db = await getDb();
         if (!db) return withCors(NextResponse.json({ error: 'Database unavailable' }, { status: 500 }), origin);
 
-        const { adopters, adoptions, adopterHistory } = await import('@/db/schema');
+        const { adoptions, contractInvitations } = await import('@/db/schema');
         const { eq } = await import('drizzle-orm');
+
+        // v2.14.10-21: resolve token (if present) BEFORE the animal lookup so we
+        // can also use the token to identify the animal. Token-based submissions
+        // are the new locked path; tokenless submissions use the legacy open path.
+        let invitation: typeof contractInvitations.$inferSelect | undefined;
+        if (token) {
+            invitation = await db.select().from(contractInvitations).where(eq(contractInvitations.token, token)).get();
+            if (!invitation) {
+                return withCors(NextResponse.json({ error: 'Invitation not found' }, { status: 404 }), origin);
+            }
+            if (invitation.usedAt) {
+                return withCors(NextResponse.json({ error: 'Invitation already used' }, { status: 410 }), origin);
+            }
+            const nowSec = Math.floor(Date.now() / 1000);
+            if (invitation.expiresAt && invitation.expiresAt < nowSec) {
+                return withCors(NextResponse.json({ error: 'Invitation expired' }, { status: 410 }), origin);
+            }
+            // The token's animalId takes precedence over the URL param (which the
+            // contract-app passes through for backward compat).
+            if (invitation.animalId !== animalId) {
+                return withCors(NextResponse.json({ error: 'Invitation does not match this animal' }, { status: 400 }), origin);
+            }
+        }
 
         // 1. Find the animal record
         const animal = await db.select().from(adoptions).where(eq(adoptions.id, animalId)).get();
@@ -72,29 +99,81 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             return withCors(NextResponse.json({ error: 'Contract document is required' }, { status: 400 }), origin);
         }
 
-        // 3. Build contact info from form data
-        const contactParts: string[] = [];
-        if (dni) contactParts.push(`Documento: ${dni}`);
-        if (email) contactParts.push(`Email: ${email}`);
-        if (phone) contactParts.push(`Tel: ${phone}`);
-        if (address) contactParts.push(`Dirección: ${address}`);
-        if (socialNetworks) contactParts.push(`Redes: ${socialNetworks}`);
-        const contactInfo = contactParts.join('\n');
-
         const fullName = `${name} ${lastName}`.trim();
 
-        // 4. Create the adopter
-        const adopterId = crypto.randomUUID();
-        await db.insert(adopters).values({
-            id: adopterId,
-            name: fullName,
-            contactInfo,
-            status: 'active',
-            addedBy: animal.addedBy || 'contract',
-            country: null,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-        });
+        // 4. Adopter creation:
+        //  • Token path (v2.14.10-21 / Phase 5): link the existing adopter
+        //    that the invitation was issued for. No new row, no duplicate
+        //    detection (this person is already in our DB).
+        //  • Legacy open path: route through createAdopterFromSubmission
+        //    (Phase 1) to create a fresh row with source='contract' and run
+        //    dedup detection.
+        let adopterId: string;
+        let matches: Array<{ adopterId: string; adopterName: string; matchTypes: string[] }> = [];
+        if (invitation) {
+            adopterId = invitation.adopterId;
+            // Best-effort update of the adopter's contactInfo with any
+            // typo-corrected fields the signer changed. Keep it simple:
+            // overwrite the contactInfo with the re-built string from the
+            // submitted fields. The original adopter row keeps its source.
+            const { adopters: adoptersTable, adopterHistory } = await import('@/db/schema');
+            const contactParts: string[] = [];
+            if (dni) contactParts.push(`Documento: ${dni}`);
+            if (email) contactParts.push(`Email: ${email}`);
+            if (phone) contactParts.push(`Tel: ${phone}`);
+            if (address) contactParts.push(`Dirección: ${address}`);
+            if (socialNetworks) contactParts.push(`Redes: ${socialNetworks}`);
+            const newContactInfo = contactParts.join('\n');
+
+            await db.update(adoptersTable).set({
+                name: fullName,
+                contactInfo: newContactInfo || null,
+                addressInfo: address || null,
+                updatedAt: new Date(),
+            }).where(eq(adoptersTable.id, adopterId));
+
+            await db.insert(adopterHistory).values({
+                id: crypto.randomUUID(),
+                adopterId,
+                changedBy: 'contract-signed-via-invitation',
+                changes: JSON.stringify({
+                    contract_signed_via_invitation: {
+                        token,
+                        animalId,
+                        animalName: animal.animalName,
+                    },
+                }),
+                changedAt: new Date(),
+            });
+
+            // Mark invitation used (must happen after a successful sign).
+            await db.update(contractInvitations).set({
+                usedAt: Math.floor(Date.now() / 1000),
+            }).where(eq(contractInvitations.token, token!));
+
+            logger.info('Contract signed via invitation', { animalId, adopterId, token });
+        } else {
+            const { createAdopterFromSubmission } = await import('@/app/actions/_adopterFactory');
+            const factoryResult = await createAdopterFromSubmission({
+                source: 'contract',
+                name: fullName,
+                addedBy: animal.addedBy || 'contract',
+                email: email || null,
+                phone: phone || null,
+                address: address || null,
+                socials: socialNetworks || null,
+                documentId: dni || null,
+                animalId,
+                animalName: animal.animalName,
+                animalSpecies: animal.species,
+            });
+            adopterId = factoryResult.adopterId;
+            matches = factoryResult.dupCandidates.map(c => ({
+                adopterId: c.adopterId,
+                adopterName: c.adopterName,
+                matchTypes: c.matchTypes,
+            }));
+        }
 
         // 5. Link the animal to the adopter (convert to adoption)
         await db.update(adoptions).set({
@@ -106,61 +185,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             comments: JSON.stringify({ contractScreenshot: contractUrl }),
         }).where(eq(adoptions.id, animalId));
 
-        // 6. Log history
-        await db.insert(adopterHistory).values({
-            id: crypto.randomUUID(),
-            adopterId,
-            changedBy: 'contract-submission',
-            changes: JSON.stringify({
-                adoption_via_contract: {
-                    animalId,
-                    animalName: animal.animalName,
-                    species: animal.species,
-                    dni,
-                    email,
-                    phone,
-                }
-            }),
-            changedAt: new Date(),
-        });
-
         logger.info('Contract adoption submitted', { animalId, adopterId, adopterName: fullName, contractUrl });
 
-        // 7a. Tokenize the new adopter for future duplicate detection (fire-and-forget)
-        import('@/app/actions/duplicates').then(({ tokenizeAdopter }) => {
-            tokenizeAdopter(adopterId).catch(e => { logger.warn('Tokenize adopter failed (fire-and-forget)', { adopterId, error: e instanceof Error ? e.message : String(e) }); });
-        });
-
-        // 7b. Fire-and-forget: fuzzy search + notification for the rescuer
-        // This NEVER blocks the response — adopter gets success regardless.
-        // Backed by findAdopters({ mode: 'duplicate' }) — single source of truth shared with
-        // ImportWizard / AdopterFlagging / form submit. minRelevance:0 preserves recall (vetting wants
-        // to surface even weak matches; missing a duplicate is worse than a false positive).
+        // 6. Notification for the rescuer using the matches the factory
+        // already computed (no second findAdopters call).
         try {
             const rescuerEmail = animal.addedBy;
             if (rescuerEmail && rescuerEmail !== 'anonymous' && rescuerEmail !== 'contract') {
-                const { findAdopters } = await import('@/app/actions/findAdopters');
-                const { extractPhones, extractEmails, extractSocials } = await import('@/lib/tokenizer');
                 const { createNotification } = await import('@/app/actions/notifications');
-
-                // Build duplicate-mode inputs.
-                // DNI is appended to phones because the bespoke matcher historically treated DNI as a
-                // phone-token; preserving that semantic keeps DNI-only matches working.
-                const phonesIn = phone ? extractPhones(phone) : [];
-                const dniDigits = dni ? dni.replace(/\D/g, '') : '';
-                if (dniDigits.length >= 5) phonesIn.push(dniDigits);
-
-                const dupResult = await findAdopters(
-                    {
-                        name: fullName,
-                        phones: phonesIn,
-                        emails: email ? extractEmails(email) : [],
-                        socials: socialNetworks ? extractSocials(socialNetworks) : [],
-                        excludeAdopterId: adopterId,
-                    },
-                    { mode: 'duplicate', minRelevance: 0, limit: 5 },
-                );
-                const matches = dupResult.results as Array<{ adopterId: string; adopterName: string; matchTypes: string[] }>;
                 const matchCount = matches.length;
                 const animalName = animal.animalName || 'Animal';
                 const notificationId = crypto.randomUUID();

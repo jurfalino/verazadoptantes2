@@ -2,7 +2,10 @@
 
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { saveAdopter, saveImage, findAdopters } from "@/app/actions";
+import { saveAdopter, saveImage, findAdopters, appendToExistingAdopter } from "@/app/actions";
+import { buildMatchChips, hasStrongMatch, type MatchChip } from "@/lib/matchChips";
+import DuplicatePeek from "@/components/DuplicatePeek";
+import StrongMatchStrip from "@/components/StrongMatchStrip";
 import { zarazTrack } from "@/lib/zaraz";
 import type { DiscoveryMatch } from "@/app/actions";
 import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
@@ -37,6 +40,28 @@ interface AdopterFormProps {
     isAdmin?: boolean;
     formPrefill?: FormSubmissionPrefill | null;
     hasDuplicateBanner?: boolean;
+}
+
+function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
+    if (chips.length === 0) return null;
+    return (
+        <div className="flex flex-wrap gap-1 mt-1.5">
+            {chips.map(chip => (
+                <span
+                    key={chip.key}
+                    className={
+                        chip.isStrong
+                            ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-100 text-amber-900 border border-amber-200"
+                            : "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-stone-100 text-stone-700 border border-stone-200"
+                    }
+                    title={chip.label}
+                >
+                    <span aria-hidden="true">{chip.icon}</span>
+                    <span className="truncate max-w-[160px]">{chip.label}</span>
+                </span>
+            ))}
+        </div>
+    );
 }
 
 export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin: _isAdmin = false, formPrefill = null, hasDuplicateBanner = false }: AdopterFormProps) {
@@ -82,6 +107,13 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     const saveDuplicateModalRef = useRef<HTMLDivElement>(null);
     const createAnywayButtonRef = useRef<HTMLButtonElement>(null);
     const duplicateDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Strong-match dismissal: ids the user explicitly ×-ed off the strong strip.
+    // Save-time modal only fires for strong matches NOT in this set.
+    const [dismissedStrongIds, setDismissedStrongIds] = useState<Set<string>>(() => new Set());
+    // "Continuar con este perfil" loading guard — one in-flight call at a time.
+    const [continueBusyId, setContinueBusyId] = useState<string | null>(null);
+    // Confirmation modal — pending append target until the user confirms.
+    const [pendingMerge, setPendingMerge] = useState<{ adopterId: string; adopterName: string } | null>(null);
 
     const DUPLICATE_DEBOUNCE_MS = 350;
 
@@ -184,6 +216,41 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         const parts = [data.name.trim(), data.contactInfo.trim()].filter(Boolean);
         return parts.join(' ').trim();
     }, [data.name, data.contactInfo]);
+
+    // "Continuar con este perfil" — open the confirmation modal first so the
+    // user knows their in-progress data will be merged into the existing record.
+    // The actual append fires only from confirmMerge() below.
+    const handleContinueWith = useCallback((targetId: string) => {
+        if (continueBusyId) return;
+        const match = duplicateResults?.find(r => r.adopter.id === targetId);
+        if (!match) return;
+        setPendingMerge({ adopterId: targetId, adopterName: match.adopter.name });
+    }, [continueBusyId, duplicateResults]);
+
+    const confirmMerge = useCallback(async () => {
+        if (!pendingMerge || continueBusyId) return;
+        const targetId = pendingMerge.adopterId;
+        setContinueBusyId(targetId);
+        try {
+            const result = await appendToExistingAdopter(targetId, {
+                contactInfo: data.contactInfo || undefined,
+                familyMembers: data.familyMembers || undefined,
+            });
+            if (result.success && result.adopterId) {
+                router.push(`/adopter/${result.adopterId}`);
+            } else {
+                // eslint-disable-next-line no-alert
+                alert(result.error || 'No se pudo continuar con este perfil');
+                setContinueBusyId(null);
+                setPendingMerge(null);
+            }
+        } catch (e) {
+            // eslint-disable-next-line no-alert
+            alert(e instanceof Error ? e.message : 'Error inesperado');
+            setContinueBusyId(null);
+            setPendingMerge(null);
+        }
+    }, [pendingMerge, continueBusyId, data.contactInfo, data.familyMembers, router]);
 
     // Debounced duplicate search while typing (create only)
     useEffect(() => {
@@ -327,8 +394,14 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                         { mode: 'discovery', enrich: true, minRelevance: 15 },
                     );
                     const confident = response.results as DiscoveryMatch[];
-                    if (!response.validationError && confident.length) {
-                        setSaveDuplicateModal({ matches: confident });
+                    // Gate: only fire the modal for STRONG matches the user hasn't already
+                    // dismissed from the strong strip. Weak-only result sets save silently
+                    // (the peek bar was enough). Per Phase D of the dedup-UX redesign.
+                    const strongUndismissed = confident.filter(m =>
+                        hasStrongMatch(m.matchValues) && !dismissedStrongIds.has(m.adopter.id),
+                    );
+                    if (!response.validationError && strongUndismissed.length > 0) {
+                        setSaveDuplicateModal({ matches: strongUndismissed });
                         return;
                     }
                 } catch {
@@ -397,6 +470,27 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             />
 
             <form onSubmit={handleSave} className="p-5">
+                {isNew && isEditing && (
+                    <>
+                        <DuplicatePeek
+                            results={duplicateResults}
+                            searching={duplicateSearching}
+                            onContinueWith={handleContinueWith}
+                            busyAdopterId={continueBusyId}
+                        />
+                        <StrongMatchStrip
+                            results={duplicateResults}
+                            dismissedIds={dismissedStrongIds}
+                            onDismiss={(id) => setDismissedStrongIds(prev => {
+                                const next = new Set(prev);
+                                next.add(id);
+                                return next;
+                            })}
+                            onContinueWith={handleContinueWith}
+                            busyAdopterId={continueBusyId}
+                        />
+                    </>
+                )}
                 {/* ═══ IDENTITY HEADER ═══ */}
                 <div className="flex flex-col gap-3 mb-4">
                     {/* Identity header row features avatar, name/input, and actions all inline */}
@@ -702,65 +796,6 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                         )}
                     </div>
 
-                    {/* Possible matching profiles (create only, non-blocking) */}
-                    {isNew && isEditing && (
-                        <>
-                            {duplicateSearching && (
-                                <div className="md:col-span-2 flex items-center gap-2 text-sm text-stone-500">
-                                    <span className="inline-block w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" aria-hidden />
-                                    {t('common.searching') || 'Searching'}…
-                                </div>
-                            )}
-                            {!duplicateSearching && duplicateResults && duplicateResults.length > 0 && (
-                                <div className="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50 p-4" role="region" aria-labelledby="duplicate-card-title">
-                                    <h4 id="duplicate-card-title" className="text-sm font-semibold text-amber-900 mb-1">
-                                        {t('import.duplicateCard_title') || 'Possible matching profiles'}
-                                    </h4>
-                                    <p className="text-xs text-amber-700 mb-3">
-                                        {t('import.duplicateCard_subtitle') || 'Similar names in your records'}
-                                    </p>
-                                    <ul className="space-y-2">
-                                        {duplicateResults.map((result) => (
-                                            <li key={result.adopter.id} className="flex items-center justify-between gap-3 p-2 rounded-lg bg-white/80 border border-amber-100">
-                                                <div className="flex items-center gap-3 min-w-0 flex-1">
-                                                    {result.thumbnail ? (
-                                                        <img src={result.thumbnail} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
-                                                    ) : (
-                                                        <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 font-semibold text-sm flex-shrink-0">
-                                                            {result.adopter.name?.charAt(0)?.toUpperCase() || '?'}
-                                                        </div>
-                                                    )}
-                                                    <div className="min-w-0">
-                                                        <p className="font-semibold text-stone-800 text-sm truncate">{result.adopter.name}</p>
-                                                        {result.adopter.contactInfo && (
-                                                            <p className="text-xs text-stone-500 truncate">{result.adopter.contactInfo}</p>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-1 flex-shrink-0">
-                                                    <a
-                                                        href={`/adopter/${result.adopter.id}`}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="px-2 py-1 text-xs font-medium text-stone-600 hover:text-stone-800 hover:bg-stone-100 rounded transition-colors"
-                                                    >
-                                                        {t('import.duplicateCard_view') || 'View'}
-                                                    </a>
-                                                    <a
-                                                        href={`/adopter/${result.adopter.id}`}
-                                                        className="px-3 py-1.5 text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors"
-                                                    >
-                                                        {t('import.duplicateCard_use_profile') || 'Use this profile'}
-                                                    </a>
-                                                </div>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
-                        </>
-                    )}
-
                     {/* Family Members (Full Width) */}
                     <div className="md:col-span-2">
                         <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.family_members')}</h3>
@@ -834,6 +869,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                             {result.adopter.contactInfo && (
                                                 <p className="text-xs text-stone-500 truncate">{result.adopter.contactInfo}</p>
                                             )}
+                                            <MatchChipsRow chips={buildMatchChips(result.matchValues, t)} />
                                         </div>
                                     </div>
                                     <a
@@ -863,6 +899,79 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                 className="px-4 py-2.5 text-sm font-semibold text-stone-600 hover:bg-stone-100 rounded-xl transition-colors"
                             >
                                 {t('common.cancel')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Confirmation: "Continuar con este perfil" merges typed data into target */}
+            {pendingMerge && (
+                <div
+                    className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-stone-900/50 backdrop-blur-sm animate-in fade-in duration-200"
+                    onClick={() => continueBusyId ? undefined : setPendingMerge(null)}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="continue-merge-title"
+                >
+                    <div
+                        className="relative bg-white rounded-2xl shadow-xl border border-stone-200 w-full max-w-md animate-in zoom-in-95 duration-200"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="p-5 pb-3 border-b border-stone-100">
+                            <h2 id="continue-merge-title" className="text-lg font-semibold text-stone-900">
+                                {(t('adopter.merge_confirm_title') || '¿Continuar con el perfil de {name}?').replace('{name}', pendingMerge.adopterName)}
+                            </h2>
+                            <p className="text-sm text-stone-600 mt-2">
+                                {t('adopter.merge_confirm_body') || 'La información que ingresaste se agregará a este perfil. Los datos que ya existan en el perfil no se duplicarán.'}
+                            </p>
+                        </div>
+                        {(data.contactInfo?.trim() || data.familyMembers?.trim()) ? (
+                            <div className="px-5 py-3 bg-amber-50 border-y border-amber-100">
+                                <p className="text-xs font-semibold uppercase tracking-wider text-amber-800 mb-2">
+                                    {t('adopter.merge_confirm_preview') || 'Se agregará:'}
+                                </p>
+                                <ul className="space-y-1.5 text-sm text-stone-800">
+                                    {data.contactInfo?.trim() && (
+                                        <li>
+                                            <span className="text-xs font-medium text-stone-500">{t('adopter.contact') || 'Contacto'}: </span>
+                                            <span className="break-words">{data.contactInfo.trim()}</span>
+                                        </li>
+                                    )}
+                                    {data.familyMembers?.trim() && (
+                                        <li>
+                                            <span className="text-xs font-medium text-stone-500">{t('adopter.family_members') || 'Familia'}: </span>
+                                            <span className="break-words">{data.familyMembers.trim()}</span>
+                                        </li>
+                                    )}
+                                </ul>
+                            </div>
+                        ) : (
+                            <div className="px-5 py-3 bg-stone-50 border-y border-stone-100">
+                                <p className="text-sm text-stone-600">
+                                    {t('adopter.merge_confirm_no_new') || 'No hay información nueva para agregar. Solo abriremos el perfil existente.'}
+                                </p>
+                            </div>
+                        )}
+                        <div className="p-5 pt-4 flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+                            <button
+                                type="button"
+                                onClick={() => setPendingMerge(null)}
+                                disabled={!!continueBusyId}
+                                className="px-4 py-2.5 text-sm font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 disabled:opacity-50 rounded-xl transition-colors"
+                            >
+                                {t('common.cancel') || 'Cancelar'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={confirmMerge}
+                                disabled={!!continueBusyId}
+                                autoFocus
+                                className="px-4 py-2.5 text-sm font-semibold text-white bg-teal-700 hover:bg-teal-600 disabled:opacity-50 rounded-xl transition-colors shadow-lg shadow-teal-700/30"
+                            >
+                                {continueBusyId
+                                    ? (t('common.processing') || 'Procesando...')
+                                    : (t('adopter.merge_confirm_action') || 'Sí, continuar')}
                             </button>
                         </div>
                     </div>

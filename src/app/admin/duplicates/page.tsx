@@ -16,10 +16,10 @@ interface DuplicateCandidate {
     source: 'system';
     adopter1Name: string;
     adopter1Contact?: string | null;
-    adopter1Status?: string | null;
+    adopter1AvgRating?: number | null;
     adopter2Name: string;
     adopter2Contact?: string | null;
-    adopter2Status?: string | null;
+    adopter2AvgRating?: number | null;
 }
 
 interface UserFlagged {
@@ -32,10 +32,10 @@ interface UserFlagged {
     source: 'user';
     adopter1Name: string;
     adopter1Contact?: string | null;
-    adopter1Status?: string | null;
+    adopter1AvgRating?: number | null;
     adopter2Name: string | null;
     adopter2Contact?: string | null;
-    adopter2Status?: string | null;
+    adopter2AvgRating?: number | null;
 }
 
 interface Counts {
@@ -132,8 +132,8 @@ export default function DuplicatesPage() {
                 return;
             }
             setMergeTarget({
-                a1: { id: flag.adopterId, name: flag.adopter1Name, contact: flag.adopter1Contact, status: flag.adopter1Status },
-                a2: { id: flag.targetAdopterId, name: flag.adopter2Name || 'Unknown', contact: flag.adopter2Contact, status: flag.adopter2Status },
+                a1: { id: flag.adopterId, name: flag.adopter1Name, contact: flag.adopter1Contact, avgRating: flag.adopter1AvgRating },
+                a2: { id: flag.targetAdopterId, name: flag.adopter2Name || 'Unknown', contact: flag.adopter2Contact, avgRating: flag.adopter2AvgRating },
                 matchTypes: ['user_flagged'],
                 flagId: flag.flagId,
             });
@@ -141,8 +141,8 @@ export default function DuplicatesPage() {
             const c = item as DuplicateCandidate;
             const types = JSON.parse(c.matchTypes || '[]');
             setMergeTarget({
-                a1: { id: c.adopter1Id, name: c.adopter1Name, contact: c.adopter1Contact, status: c.adopter1Status },
-                a2: { id: c.adopter2Id, name: c.adopter2Name, contact: c.adopter2Contact, status: c.adopter2Status },
+                a1: { id: c.adopter1Id, name: c.adopter1Name, contact: c.adopter1Contact, avgRating: c.adopter1AvgRating },
+                a2: { id: c.adopter2Id, name: c.adopter2Name, contact: c.adopter2Contact, avgRating: c.adopter2AvgRating },
                 matchTypes: types,
                 candidateId: c.id,
             });

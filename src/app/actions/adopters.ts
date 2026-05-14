@@ -27,6 +27,98 @@ export async function getAdopter(id: string) {
     }
 }
 
+/**
+ * Append in-progress create-form fields to an existing adopter record.
+ * Powers the "Continuar con este perfil" action in the dedup-UX redesign:
+ * when the user finds an existing record that's clearly the same person, we
+ * append their typed-but-not-saved contact data to the existing record's
+ * `contactInfo` / `addressInfo` / `familyMembers` / `sourceUrl` instead of
+ * discarding it. The target's identity (`name`, `status`) is untouched.
+ *
+ * Substring-idempotent: fields already contained in the target value are
+ * skipped, so running the same call twice does not duplicate lines.
+ */
+export async function appendToExistingAdopter(
+    targetId: string,
+    fields: { contactInfo?: string; addressInfo?: string; familyMembers?: string; sourceUrl?: string },
+): Promise<{ success: boolean; adopterId?: string; error?: string }> {
+    try {
+        if (!targetId) return { success: false, error: 'Missing target adopter id' };
+
+        const db = await getDb();
+        if (!db) return { success: false, error: 'Database not available' };
+
+        let actorEmail = '';
+        try { actorEmail = await getUser(); } catch { /* anonymous — will fail auth below */ }
+        if (!actorEmail) return { success: false, error: 'Not authenticated' };
+
+        const target = await db.select().from(adopters).where(eq(adopters.id, targetId)).get();
+        if (!target) return { success: false, error: 'Target adopter not found' };
+        if (target.deletedAt) return { success: false, error: 'Cannot append to a deleted adopter' };
+
+        // Auth: actor must own the target (addedBy) or be an admin. Mirrors mergeAdopters.
+        const { isAdmin } = await import('@/config/admins');
+        if (target.addedBy !== actorEmail && !isAdmin(actorEmail)) {
+            return { success: false, error: 'Not authorized to modify this adopter' };
+        }
+
+        const appendIfNew = (existing: string | null, incoming: string | undefined): string | null => {
+            if (!incoming || !incoming.trim()) return existing;
+            const trimmed = incoming.trim();
+            if (!existing || !existing.trim()) return trimmed;
+            // Substring-idempotent: skip if already present (case-insensitive substring)
+            if (existing.toLowerCase().includes(trimmed.toLowerCase())) return existing;
+            return `${existing}\n${trimmed}`;
+        };
+
+        const updates: Partial<typeof adopters.$inferInsert> = {};
+        const appendedFields: Record<string, string> = {};
+
+        const newContact = appendIfNew(target.contactInfo, fields.contactInfo);
+        if (newContact !== target.contactInfo) { updates.contactInfo = newContact; appendedFields.contactInfo = fields.contactInfo!.trim(); }
+
+        const newAddress = appendIfNew(target.addressInfo, fields.addressInfo);
+        if (newAddress !== target.addressInfo) { updates.addressInfo = newAddress; appendedFields.addressInfo = fields.addressInfo!.trim(); }
+
+        const newFamily = appendIfNew(target.familyMembers, fields.familyMembers);
+        if (newFamily !== target.familyMembers) { updates.familyMembers = newFamily; appendedFields.familyMembers = fields.familyMembers!.trim(); }
+
+        // sourceUrl is single-value, not appendable; only set if target has none.
+        if (fields.sourceUrl && fields.sourceUrl.trim() && !target.sourceUrl) {
+            updates.sourceUrl = fields.sourceUrl.trim();
+            appendedFields.sourceUrl = fields.sourceUrl.trim();
+        }
+
+        if (Object.keys(updates).length === 0) {
+            // Idempotent no-op — everything the user typed was already on the target.
+            return { success: true, adopterId: targetId };
+        }
+
+        await db.update(adopters).set({ ...updates, updatedAt: new Date() }).where(eq(adopters.id, targetId));
+
+        await db.insert(adopterHistory).values({
+            id: crypto.randomUUID(),
+            adopterId: targetId,
+            changedBy: actorEmail,
+            changes: JSON.stringify({ appended_from_create_flow: { appendedFields } }),
+            changedAt: new Date(),
+        });
+
+        logger.info('Adopter appended from create flow', { adopterId: targetId, actorEmail, fields: Object.keys(appendedFields) });
+        logAudit({ userEmail: actorEmail, action: 'adopter_appended', target: targetId, details: { appendedFields: Object.keys(appendedFields) } });
+
+        // Re-index tokens so the newly appended contact data is searchable.
+        tokenizeAdopter(targetId).catch(e => {
+            logger.warn('Tokenize after append failed (fire-and-forget)', { adopterId: targetId, error: e instanceof Error ? e.message : String(e) });
+        });
+
+        return { success: true, adopterId: targetId };
+    } catch (error) {
+        const errorId = logger.error('appendToExistingAdopter failed', error, { adopterId: targetId });
+        return { success: false, error: `Failed to append (Error ID: ${errorId})` };
+    }
+}
+
 export async function saveAdopter(data: typeof adopters.$inferInsert) {
     // Defense-in-depth: notes field deprecated in v2.12.1-28 (backfilled into
     // observation records). Strip from any incoming payload before validation
@@ -101,8 +193,16 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
                 logger.info('Adopter updated', { adopterId: data.id, changedBy });
                 logAudit({ userEmail: changedBy, action: 'adopter_updated', target: data.id as string, details: changes });
 
-                // Fire-and-forget: update duplicate detection tokens
-                tokenizeAdopter(data.id as string).catch(e => { logger.warn('Tokenize adopter failed (fire-and-forget)', { adopterId: data.id, error: e instanceof Error ? e.message : String(e) }); });
+                // Synchronous (v30): edge-runtime workers can reap a fire-and-forget
+                // tokenize before the per-token INSERTs finish, leaving rows with a
+                // valid tokenHash but an empty token set — invisible to the dedup
+                // matcher until an admin clicks Scan. ~250ms cost is acceptable;
+                // silent-token-loss is not. _adopterFactory already awaits the same way.
+                try {
+                    await tokenizeAdopter(data.id as string);
+                } catch (e) {
+                    logger.warn('Tokenize adopter failed (update path)', { adopterId: data.id, error: e instanceof Error ? e.message : String(e) });
+                }
             }
             return { success: true, id: data.id };
         } else {
@@ -133,8 +233,12 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
             logger.info('Adopter created', { adopterId: newId, changedBy });
             logAudit({ userEmail: changedBy, action: 'adopter_created', target: newId, details: { name: data.name } });
 
-            // Fire-and-forget: generate duplicate detection tokens
-            tokenizeAdopter(newId).catch(e => { logger.warn('Tokenize adopter failed (fire-and-forget)', { adopterId: newId, error: e instanceof Error ? e.message : String(e) }); });
+            // Synchronous (v30): see comment in update branch above.
+            try {
+                await tokenizeAdopter(newId);
+            } catch (e) {
+                logger.warn('Tokenize adopter failed (create path)', { adopterId: newId, error: e instanceof Error ? e.message : String(e) });
+            }
 
             return { success: true, id: newId };
         }

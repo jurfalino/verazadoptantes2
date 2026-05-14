@@ -514,6 +514,191 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
     }
 }
 
+// ── Pending-dedup section on /my-adopters (v2.14.10-20) ─────────────────
+
+export interface PendingDedupPair {
+    candidateId: string;
+    /** The "new" auto-created side — heuristically the more recent record. */
+    newAdopter: {
+        id: string;
+        name: string;
+        contactInfo: string | null;
+        source: string;
+        createdAt: number | null;
+    };
+    /** The "existing" side — older record. Use as merge primary. */
+    existingAdopter: {
+        id: string;
+        name: string;
+        contactInfo: string | null;
+        source: string;
+        createdAt: number | null;
+    };
+    matchTypes: string[];
+    confidence: string;
+    confidencePercent: number;
+}
+
+/**
+ * Pending-dedup feed for the current user's /my-adopters section.
+ * Returns up to 20 pending candidate pairs where the current rescuer is the
+ * `addedBy` on either side of the pair. The newer record is presented as
+ * "the new submission"; the older as "the existing profile" so the merge
+ * preserves the older record as primary.
+ *
+ * Different from getDuplicateCandidates(adopterId): that one is single-adopter
+ * + limit-5 (profile banner). This one is user-scoped + limit-20 (queue view).
+ */
+export async function getPendingDuplicatesForUser(): Promise<PendingDedupPair[]> {
+    try {
+        const { getUser } = await import('./_db');
+        const actorEmail = await getUser();
+
+        const db = await getDb();
+        if (!db) return [];
+
+        const a1 = adopters;
+        const candidates = await db.select({
+            candidateId: duplicateCandidates.id,
+            adopter1Id: duplicateCandidates.adopter1Id,
+            adopter2Id: duplicateCandidates.adopter2Id,
+            matchTypes: duplicateCandidates.matchTypes,
+            score: duplicateCandidates.score,
+            confidence: duplicateCandidates.confidence,
+            detectedAt: duplicateCandidates.detectedAt,
+        })
+            .from(duplicateCandidates)
+            .where(eq(duplicateCandidates.status, 'pending'))
+            .all() as Array<{ candidateId: string; adopter1Id: string; adopter2Id: string; matchTypes: string; score: number; confidence: string; detectedAt: Date | null }>;
+
+        if (candidates.length === 0) return [];
+
+        // Per CLAUDE.md: D1 has no inArray. Fan out per adopter id.
+        const allIds = new Set<string>();
+        for (const c of candidates) {
+            allIds.add(c.adopter1Id);
+            allIds.add(c.adopter2Id);
+        }
+        const adopterRows = await Promise.all(
+            [...allIds].map(id => db.select({
+                id: a1.id,
+                name: a1.name,
+                contactInfo: a1.contactInfo,
+                source: a1.source,
+                addedBy: a1.addedBy,
+                createdAt: a1.createdAt,
+                deletedAt: a1.deletedAt,
+            }).from(a1).where(eq(a1.id, id)).get())
+        );
+        const byId = new Map<string, { id: string; name: string; contactInfo: string | null; source: string; addedBy: string | null; createdAt: Date | null; deletedAt: Date | null }>();
+        for (const row of adopterRows) {
+            if (row) byId.set(row.id, row);
+        }
+
+        const pairs: PendingDedupPair[] = [];
+        for (const c of candidates) {
+            const a = byId.get(c.adopter1Id);
+            const b = byId.get(c.adopter2Id);
+            if (!a || !b) continue;
+            if (a.deletedAt || b.deletedAt) continue; // already merged elsewhere
+            // Scope to current user: actor must own at least one side
+            if (a.addedBy !== actorEmail && b.addedBy !== actorEmail) continue;
+
+            // Newer record is the "new" side; older is the "existing" (merge primary).
+            const aMs = a.createdAt?.getTime() ?? 0;
+            const bMs = b.createdAt?.getTime() ?? 0;
+            const newOne = aMs >= bMs ? a : b;
+            const oldOne = aMs >= bMs ? b : a;
+
+            pairs.push({
+                candidateId: c.candidateId,
+                newAdopter: {
+                    id: newOne.id,
+                    name: newOne.name,
+                    contactInfo: newOne.contactInfo,
+                    source: newOne.source,
+                    createdAt: newOne.createdAt ? Math.floor(newOne.createdAt.getTime() / 1000) : null,
+                },
+                existingAdopter: {
+                    id: oldOne.id,
+                    name: oldOne.name,
+                    contactInfo: oldOne.contactInfo,
+                    source: oldOne.source,
+                    createdAt: oldOne.createdAt ? Math.floor(oldOne.createdAt.getTime() / 1000) : null,
+                },
+                matchTypes: JSON.parse(c.matchTypes || '[]') as string[],
+                confidence: c.confidence,
+                confidencePercent: normalizeConfidence(c.score, PRACTICAL_MAX_DUPLICATE),
+            });
+
+            if (pairs.length >= 20) break;
+        }
+
+        // Most recently detected first.
+        pairs.sort((p, q) => q.newAdopter.createdAt! - p.newAdopter.createdAt!);
+
+        return pairs;
+    } catch (error) {
+        logger.warn('getPendingDuplicatesForUser failed', {
+            error: error instanceof Error ? error.message : String(error),
+        });
+        return [];
+    }
+}
+
+/**
+ * Dismiss a pending duplicate candidate. User-scoped variant of the admin
+ * /api/admin/duplicates/dismiss route: the actor must own at least one of
+ * the two adopters in the pair (admins are allowed regardless).
+ */
+export async function dismissDuplicateCandidate(candidateId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+        const { getUser } = await import('./_db');
+        const { isAdminAsync } = await import('@/config/admins');
+        const actorEmail = await getUser();
+
+        const db = await getDb();
+        if (!db) return { success: false, error: 'Database not available' };
+
+        const candidate = await db.select({
+            id: duplicateCandidates.id,
+            adopter1Id: duplicateCandidates.adopter1Id,
+            adopter2Id: duplicateCandidates.adopter2Id,
+            status: duplicateCandidates.status,
+        }).from(duplicateCandidates).where(eq(duplicateCandidates.id, candidateId)).get();
+
+        if (!candidate) return { success: false, error: 'Candidate not found' };
+        if (candidate.status !== 'pending') return { success: false, error: 'Candidate already resolved' };
+
+        const [a, b] = await Promise.all([
+            db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, candidate.adopter1Id)).get(),
+            db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, candidate.adopter2Id)).get(),
+        ]);
+
+        const isOwner = (a?.addedBy === actorEmail) || (b?.addedBy === actorEmail);
+        const isAdminUser = await isAdminAsync(actorEmail);
+
+        if (!isOwner && !isAdminUser) {
+            return { success: false, error: 'Not authorized to dismiss this pair' };
+        }
+
+        await db.update(duplicateCandidates).set({
+            status: 'dismissed',
+            resolvedAt: new Date(),
+            resolvedBy: actorEmail,
+        }).where(eq(duplicateCandidates.id, candidateId));
+
+        logger.info('Duplicate candidate dismissed by user', { candidateId, user: actorEmail });
+        return { success: true };
+    } catch (error) {
+        logger.warn('dismissDuplicateCandidate failed', {
+            candidateId,
+            error: error instanceof Error ? error.message : String(error),
+        });
+        return { success: false, error: 'Dismiss failed' };
+    }
+}
+
 export interface TokenMatchResult {
     adopterId: string;
     adopterName: string;

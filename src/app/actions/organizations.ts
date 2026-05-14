@@ -1,9 +1,42 @@
 'use server';
 
 import { organizations, orgMembers, orgInvites } from '@/db/schema';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, sql, ne } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { logger } from '@/lib/logger';
+
+/**
+ * Case-insensitive name-collision check. Returns true when *another* org
+ * already has the same name (after trim + lowercase). `excludeId` lets the
+ * rename path ignore the row being updated so a no-op rename doesn't
+ * report a conflict against itself.
+ *
+ * Why this exists: pre-v2.14.10 duplicate org names ("Michis" x2) silently
+ * worked because there was no slug column. The 0041 migration's backfill
+ * produced colliding slugs on prod and crashed the unique-index step,
+ * blocking master deploys until manually unstuck. Beyond the migration
+ * fragility, two visually-identical orgs in the UI is just confusing for
+ * rescuers ("which Michis am I joining?"). Slug uniqueness is already
+ * guaranteed at create time via `generateUniqueSlug`; this guards the
+ * user-visible *name* layer.
+ */
+async function nameAlreadyExists(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    db: any,
+    trimmed: string,
+    excludeId?: string,
+): Promise<boolean> {
+    const lower = trimmed.toLowerCase();
+    const baseWhere = sql`LOWER(${organizations.name}) = ${lower}`;
+    const where = excludeId
+        ? and(baseWhere, ne(organizations.id, excludeId))
+        : baseWhere;
+    const row = await db.select({ id: organizations.id })
+        .from(organizations)
+        .where(where)
+        .get();
+    return row != null;
+}
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -37,6 +70,11 @@ export async function createOrganization(name: string): Promise<{ success: boole
         user = await getUser();
         const db = await getDb();
         if (!db) return { success: false, error: 'Database unavailable' };
+
+        if (await nameAlreadyExists(db, trimmed)) {
+            return { success: false, error: 'org_name_exists' };
+        }
+
         const orgId = crypto.randomUUID();
         const memberId = crypto.randomUUID();
 
@@ -146,6 +184,10 @@ export async function updateOrganizationName(orgId: string, name: string): Promi
             .get();
 
         if (!membership) return { success: false, error: 'Not a member of this organization' };
+
+        if (await nameAlreadyExists(db, trimmed, orgId)) {
+            return { success: false, error: 'org_name_exists' };
+        }
 
         await db.update(organizations).set({ name: trimmed }).where(eq(organizations.id, orgId));
         return { success: true };

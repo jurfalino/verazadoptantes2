@@ -9,6 +9,7 @@ import { formatShortDate } from '@/lib/dates';
 import { formatAge } from '@/lib/ageUtils';
 import ShareMenu from '@/components/ShareMenu';
 import ShareFormMenu from '@/components/ShareFormMenu';
+import AnimalApplicants from '@/components/AnimalApplicants';
 import ShowcaseUrlChips from '@/components/ShowcaseUrlChips';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
@@ -18,6 +19,8 @@ interface AnimalImage {
     url: string;
     caption: string | null;
 }
+
+import type { ApplicantSummary as Applicant } from '@/app/actions/applicants';
 
 interface Animal {
     id: string;
@@ -34,6 +37,8 @@ interface Animal {
     sex: string | null;
     color: string | null;
     images: AnimalImage[];
+    /** v2.14.10-21: form-submission applicants targeted at this animal. */
+    applicants?: Applicant[];
 }
 
 export default function MyAnimalsPage() {
@@ -385,29 +390,41 @@ export default function MyAnimalsPage() {
                                         return null;
                                     })()}
 
+                                    {/* Per-animal applicants disclosure (v2.14.10-21 / Phase 4).
+                                        Only renders when this animal is still available AND has
+                                        form-submission applicants targeting it. */}
+                                    {!animal.adopterId && animal.applicants && animal.applicants.length > 0 && (
+                                        <AnimalApplicants
+                                            animalId={animal.id}
+                                            animalName={animal.animalName || 'Animal'}
+                                            applicants={animal.applicants}
+                                        />
+                                    )}
+
                                     {/* Actions */}
-                                    <div className="flex items-center justify-between pt-3 border-t border-stone-100">
-                                        <div className="text-xs text-stone-500">
+                                    <div className="flex items-center justify-between gap-2 pt-3 border-t border-stone-100">
+                                        <div className="text-xs text-stone-500 flex-shrink-0">
                                             {animal.date && (
                                                 <span>📅 {formatShortDate(animal.date)}</span>
                                             )}
                                         </div>
-                                        <div className="flex items-center gap-2 flex-wrap justify-end">
-                                            {!animal.adopterId && userId && (
-                                                <ShareFormMenu
-                                                    userId={userId}
-                                                    animalId={animal.id}
-                                                    animalName={animal.animalName || 'Animal'}
-                                                    compact
-                                                />
-                                            )}
-                                            {!animal.adopterId && (
+                                        {!animal.adopterId && (
+                                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                                                {userId && (
+                                                    <ShareFormMenu
+                                                        userId={userId}
+                                                        animalId={animal.id}
+                                                        animalName={animal.animalName || 'Animal'}
+                                                        compact
+                                                    />
+                                                )}
                                                 <ShareMenu
                                                     contractUrl={`/contract/${animal.id}`}
                                                     animalName={animal.animalName || 'Animal'}
+                                                    compact
                                                 />
-                                            )}
-                                        </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>

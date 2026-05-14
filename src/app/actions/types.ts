@@ -57,6 +57,8 @@ export interface DuplicateMatch {
     relevancePercent: number;
     /** Token types that fired (e.g. 'phone', 'name_word', 'name_word_fuzzy'). */
     matchTypes: string[];
+    /** Per-token (type, value) pairs that fired — for UI chip rendering. Empty in discovery mode. */
+    matchValues: Array<{ type: string; value: string }>;
     /** How the adopter was found — diagnostic only, not shown in UI. */
     source: 'token' | 'like' | 'both';
 }
@@ -75,6 +77,7 @@ export interface DiscoveryMatch {
     /** Normalized 0–100. Ceiling: SEARCH_SCORE_CEILING. */
     relevancePercent: number;
     matchTypes: string[];
+    matchValues: Array<{ type: string; value: string }>;
     source: 'token' | 'like' | 'both';
     /** Full adopter row — always populated in discovery mode. */
     adopter: typeof adopters.$inferSelect;

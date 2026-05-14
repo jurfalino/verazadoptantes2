@@ -2,6 +2,119 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.10-21] - 2026-05-13
+
+**Phases 4 + 5 of the adopter-workflow plan: per-animal applicants disclosure on `/my-animals` cards + token-locked contract flow.** End of the planned series. Rescuers can now see which adopters have applied for each animal and issue a per-adopter contract URL that no one else can sign.
+
+### Added
+- **`src/app/actions/applicants.ts`** (new) — `getApplicantsForAnimal(animalId)` returns form-submission applicants joined to the adopter row + status flags (`hasInvite`, `isSigned`). D1-safe per-row enrichment via Promise.all (no `inArray`).
+- **`src/components/AnimalApplicants.tsx`** (new) — closed-by-default disclosure under each animal card. Lists applicants with rating + when. Per-row "Enviar contrato" button (or "Reenviar" if an invite is already outstanding, or "Firmado" badge once signed). Inline mini share modal (Copy / Open / WhatsApp / Email) takes the token URL directly.
+- **`src/app/actions/contract.ts`** (new) — `createContractInvitation(animalId, adopterId)` server action. Auths the rescuer, verifies the animal isn't already adopted, retires prior unused invites for the same animal (one-outstanding-per-animal semantics), inserts the new token row with a 30-day TTL, and returns `{ token, url }`.
+- **`src/app/api/contract/by-token/[token]/route.ts`** (new) — GET endpoint the contract-app calls when loading a `/c/<token>` URL. Returns the animal payload + adopter prefill (name split into first/last + parsed `contactInfo` lines for email/phone/address/document). 410 with `code` for expired/used/already_adopted; 404 for unknown.
+- **`/c/<token>` route** in `contract-app/src/App.tsx` — passes the token to `<ContractPage token={...} />`.
+
+### Changed
+- **`contract-app/src/ContractPage.tsx`** — accepts either `animalId` (legacy open path) or `token` (locked path). When in token mode it fetches `/api/contract/by-token/<token>` to pre-fill the form fields and shows a teal "Para {adopterName}" badge at the top of the page so the signer knows the link was prepared specifically for them. Submit POSTs `token` in the body so the backend takes the linked path.
+- **`src/app/api/contract/[id]/submit/route.ts`** — token-aware branch. When `body.token` is present: resolve invitation → link the existing adopter (no new row, no dedup detection), update the adopter's `contactInfo` with any typo-corrected fields, write an `adopter_history` row for `contract_signed_via_invitation`, mark `contract_invitations.used_at = now()`. Legacy open path (no token) is unchanged.
+- **`src/app/api/my-animals/route.ts`** — payload now includes `applicants[]` per available animal (empty for adopted ones to avoid wasted reads).
+- **`src/app/my-animals/page.tsx`** — renders `<AnimalApplicants />` between the adoption-status block and the actions footer when the animal has applicants.
+- **`myAnimals.*` i18n keys** in ES + EN: `applicants_count_one/many`, `applicants_send_contract`, `applicants_resend`, `applicants_signed`, `applicants_no_adopter`, `applicants_share_title/subtitle/text/footer`.
+
+### Notes
+- Multi-token semantics: only ONE outstanding invite per animal. Issuing a new one retires prior unused ones (`expires_at = now()`). Several across animals are fine; the constraint is per-animal. Decision rationale: the rescuer picks one adopter at a time; replacing the active invite matches the mental model.
+- Tokens are `crypto.randomUUID()` (122 bits of entropy, edge-safe). 30-day TTL. Marked `used_at` on first successful submit so a re-visit returns 410.
+- The legacy `/contract/<animalId>` open URL continues to work unchanged. New flow lives at `/c/<token>` so the two never collide.
+
+## [2.14.10-20] - 2026-05-13
+
+**Phases 2 + 3 of the adopter-workflow plan: pending-dedup section on `/my-adopters` + source attribution pill on each adopter row.** Phase 1 (v2.14.10-18/-19) made every form submission auto-create an `adopters` row and persist pending duplicate-candidate pairs; this release surfaces those pairs in the UI so rescuers can triage them, and adds the visual indicator showing how each adopter record was created.
+
+### Added
+- **`src/components/PendingDedup.tsx`** (new) — top-of-page section that fetches `getPendingDuplicatesForUser()` and renders each pair as side-by-side compact cards (NEW vs EXISTING, older = merge primary). Actions: "Combinar perfiles" (call `mergeAdopters`) and "Mantener separados" (call `dismissDuplicateCandidate`). Hides itself when there are no pending pairs. All Tailwind classes verified themed per the `feedback_themed_colors_only` memory.
+- **`getPendingDuplicatesForUser()`** in `src/app/actions/duplicates.ts` — user-scoped feed (not single-adopter like `getDuplicateCandidates`). Returns up to 20 pending pairs where the current rescuer's email is on at least one side. Uses Promise.all per-id reads (no D1 inArray). Surfaces newest-first.
+- **`dismissDuplicateCandidate(candidateId)`** in `src/app/actions/duplicates.ts` — user-scoped variant of the existing admin dismiss. Actor must own at least one of the two adopters in the pair (admins always allowed).
+- **`SourcePill`** in `src/app/my-adopters/page.tsx` — inline next to the adopter name. Form / Contract / Imported show themed pills; Manual is omitted (default; rendering it everywhere is noise). Both desktop and mobile layouts.
+- **i18n keys** in new `myAdopters.*` namespace (ES + EN): `pending_dedup_title/subtitle/match/action_merge/action_keep/merged/side_new/side_existing` and `source_form/contract/imported` plus `*_full` tooltip variants.
+
+### Changed
+- **`src/app/my-adopters/page.tsx`** — the previous "Unlinked Forms" section is gone (Phase 1 makes every submission immediately linked). `<PendingDedup />` replaces it. The page also drops its second fetch (`/api/my-form-submissions/unlinked`) since the data path no longer exists.
+- **`Adopter` interface** in the page gains `source?: string`. The API already returns it (the action spreads `...adopter`); only the type needed updating.
+
+### Removed
+- **`getMyUnlinkedFormSubmissions()`** action — no caller after the page change. Also removed from the `src/app/actions/index.ts` barrel.
+- **`src/app/api/my-form-submissions/unlinked/route.ts`** — only caller was the page section we just deleted.
+- **`src/app/form-results/[submissionId]/link/page.tsx`** — only entry point was the old "Link to existing profile" button on the (now removed) Unlinked Forms section. Kept `getFormSubmissionPrefill` for backward-compat with `/adopter/create?fromForm=` (still rendered by `FormResultsContent` for any pre-Phase-1 unlinked submissions that survived).
+
+## [2.14.10-19] - 2026-05-13
+
+**Fix two e2e regressions that blocked the Phase 1 deploy.** v2.14.10-18 built but failed the e2e gate on staging; this release lands both fixes so Phase 1 ships cleanly.
+
+### Fixed
+- **`tests/forms.spec.ts:5`** — was asserting the OLD "Create new profile" CTA on `/form-results/<id>`. Phase 1 auto-creates an adopter for every submission and marks `status='linked'` synchronously, so the page now renders the "View linked adopter profile" CTA instead. Test updated to assert the new behavior — also proves the auto-create flow ran end-to-end.
+- **`tests/forms.spec.ts:21`** — preexisting race: the test grabbed `.href` immediately after the share-form link became visible, but `useContractBase()` resolves async and the href is empty for a beat. Now polls until the href contains `u=` (15s timeout). Phase 1's added DB work tipped the existing flake over the edge on CI.
+- **`src/app/actions/_adopterFactory.ts`** — `findAdopters` was called with `minRelevance: 30`, tighter than the existing contract-submit route's `0`. The contract-link e2e test sets up a borderline-confidence fixture and relies on the loose threshold to surface the match in the notification. Split the two thresholds: `0` for `findAdopters` (preserves notification recall), `≥30` for what's written to `duplicate_candidates` (keeps the pending-dedup table from filling with noise).
+
+### Notes
+- Migration 0042 was applied to staging by the prior run's `migrate-staging` job (which succeeded before the e2e timeout). No re-migration needed; the DB is already at the new shape.
+
+## [2.14.10-18] - 2026-05-12
+
+**Auto-create adopters from form submissions + source attribution (Phase 1 of the new applicant→contract workflow).** Form submissions no longer sit in `form_submissions` purgatory until a rescuer manually links them — each submission now produces an `adopters` row immediately, with source attribution and pre-computed duplicate-candidate pairs so the upcoming pending-dedup section has data to render. Plan: `.agents/plans/snoopy-exploring-iverson.md` (local copy at `/home/jurfalino/.claude-personal/plans/snoopy-exploring-iverson.md`).
+
+### Added
+- **Migration `drizzle/0042_adopter_source_and_contract_invites.sql`** — adds `adopters.source TEXT NOT NULL DEFAULT 'manual'` (enum-via-text: `manual | form | contract | imported`), backfills `'form'` for adopters that have a back-reference from `form_submissions.linked_adopter_id`, and creates the `contract_invitations` table for the Phase 5 locked-contract flow. Safe vs 0041's trap: no UNIQUE INDEX on backfilled data; raw-SQL subquery instead of Drizzle `inArray`.
+- **`src/app/actions/_adopterFactory.ts`** (new, internal helper) — `createAdopterFromSubmission()`. Single source of truth for non-manual adopter creation. INSERTs adopter (with `source`), logs to `adopter_history`, **awaits** `tokenizeAdopter` synchronously (closes the concurrent-submission race window), runs `findAdopters({ mode: 'duplicate' })`, and persists pending pairs to `duplicate_candidates` so the upcoming pending-dedup section (Phase 2) renders something. Returns `{ adopterId, dupCandidates }` for the caller's notification metadata.
+
+### Changed
+- **`src/app/api/form/[userId]/submit/route.ts`** — after `form_submissions` INSERT, calls `createAdopterFromSubmission({ source: 'form', … })` and then `UPDATE form_submissions SET linked_adopter_id, status='linked'`. The route's previous separate `findAdopters` call is removed (the helper already runs it; the route uses the returned matches in the notification). `notifyOrgMembers` stays at the route level so the helper doesn't double-fan-out.
+- **`src/app/api/contract/[id]/submit/route.ts`** — adopter creation routed through `createAdopterFromSubmission({ source: 'contract', … })` for consistency. The contract route still owns the animal-linking UPDATE (`adoptions.adopterId`) and the notification fan-out — only the adopter / history / tokenize / dedup-detection bits move into the helper. Token-aware branch (Phase 5) is intentionally not in this release; legacy `/contract/<animalId>` URLs continue to work unchanged.
+- **`src/db/schema.ts`** — mirrors the migration: `adopters.source` field, new `contractInvitations` table with `idx_contract_inv_animal` index.
+
+### Notes
+- Phase 2 (pending-dedup section on `/my-adopters`) and Phase 3 (source pill on adopter list) build on this; both are queued.
+- Race-condition fix (synchronous tokenize) costs ~200-500ms per submission. Acceptable on submit; missed dupes on concurrent submissions were the worse failure mode.
+
+## [2.14.10-17] - 2026-05-12
+
+Two coordinated fixes: (a) multiple dark-theme regressions across recent UI work, (b) `/my-animals` card share buttons sized inconsistently and wrapping awkwardly on narrow cards.
+
+### Fixed — dark theme
+
+Repeated bug pattern across recent commits: the codebase remaps Tailwind palettes via `[data-theme]` rules in `globals.css` (not Tailwind `dark:` variants). Any class that isn't in those rule blocks renders raw and clashes with the dark indigo surface. A new memory entry documents the rule so it stops recurring.
+
+- **`/quienes-somos` hero backdrop** — was a CSS `linear-gradient(180deg, #f5f5f4, #fafaf9)` (literal light-mode hex inside an inline `<style>`). Replaced with `var(--surface-base)` so it inherits the active theme. Brand-teal radial overlay stays.
+- **`/quienes-somos` mission banner** — used `bg-gradient-to-br from-teal-50 via-white to-teal-50`. Gradient stop classes (`from-*`, `via-*`, `to-*`) are not themed; `via-white` produced a bright stripe in dark mode. Replaced with solid `bg-teal-50` (themed).
+- **`/quienes-somos` pillar icon borders** — used `ring-4 ring-{tone}-200/60`. Ring utilities (including the `/opacity` form) are not themed. Replaced with `border-2 border-{tone}-200`, which IS in the theme rules for teal/rose/amber.
+- **`ShowcaseUrlChips` photo-notice** — used `text-amber-900` (not themed; only 700/800 are). Bumped parent to `text-amber-800`; removed the redundant override on the body line.
+
+### Fixed — `/my-animals` card share buttons
+
+The "Formulario" button I added in v2.14.10-14 was compact but `ShareMenu` (contract) stayed at the original full size — same teal styling but mismatched padding/text-size, looked like a draft. On narrow cards (3-col desktop ~280px), the two buttons plus date wouldn't fit and `flex-wrap` dropped one to a second line, creating a stagger.
+
+- **`src/components/ShareMenu.tsx`** — added `compact` prop mirroring `ShareFormMenu`. Same px-3 py-2 / text-[12px] / w-3.5 icon, label drops to `Contrato` (vs. `Compartir contrato`), `title` attribute keeps the full label discoverable on hover.
+- **`src/app/my-animals/page.tsx`** — both share buttons now compact and same metrics. Dropped `flex-wrap` (no longer needed: ~190px button group + 70px date + gaps fits even 3-col cards). Tighter `gap-1.5` *inside* the button group (they're related actions), `gap-2` between the group and the date (those are unrelated). Both sides `flex-shrink-0` so neither gets squeezed.
+- **i18n key** `dashboard.share_contract_short` in ES + EN (`Contrato` / `Contract`).
+
+### Notes
+- Saved a memory at `feedback_themed_colors_only.md` listing exactly which Tailwind shades are theme-safe per `globals.css`. Future UI work should grep that file before adding a color class.
+- Both share buttons stay teal (not differentiated by color). Considered primary/secondary visual hierarchy, but the two actions are peers — same animal, two stages (apply → sign) — and lying about hierarchy through color would mislead. Icons + labels handle differentiation.
+- Pre-existing theme breakages elsewhere (indigo accents in the `ShareFormMenu` modal interiors that predate my changes) are NOT in this PR; tackle later via adding indigo to the theme palette or replacing with themed alternatives.
+
+## [2.14.10-16] - 2026-05-12
+
+**Prevent duplicate organization names + manual prod fix for the same.** Earlier today the production deploy of v2.14.10 (showcase foundation) silently failed for several PR merges because the `0041_showcase_slugs.sql` migration's UNIQUE index on `organizations.slug` collided on two orgs both named "Michis" — backfilled slug clashed. Fixed manually on prod (renamed the duplicate test org → `Michis (test)` with slug `michis-test`) and applied the migration. This release adds the validation so it cannot recur.
+
+### Added
+- **Org name uniqueness check** in both `createOrganization` and `updateOrganizationName` (`src/app/actions/organizations.ts`). Case-insensitive comparison via `LOWER(name) = LOWER(input)`. Returns stable error code `org_name_exists`; the rename path passes `excludeId` so a no-op rename doesn't conflict with itself.
+- **i18n key** `organizations.error_name_exists` in ES + EN with friendly messaging ("Ya existe una organización con ese nombre. Probá con uno diferente." / "An organization with that name already exists. Try a different one.").
+
+### Changed
+- **`src/app/organizations/page.tsx`** — toast handler in both `handleCreate` and `handleSaveName` translates `org_name_exists` to the localized message; other error strings still pass through.
+
+### Notes
+- Slug uniqueness was already enforced at create time via `generateUniqueSlug` (integer-suffix-on-collision). This change guards the *display-name* layer that users actually see, which is what made two "Michis" possible.
+- Pre-existing duplicate orgs are grandfathered — they keep their names. The validation only blocks *new* duplicates.
+
 ## [2.14.10-15] - 2026-05-12
 
 **Fix: ShareFormMenu button looked broken in dark theme.** v2.14.10-14 shifted the button accent from teal to indigo to "match the form/showcase palette" — but only teal/rose/stone are remapped in `[data-theme="dark"]` in `globals.css`. Indigo classes pass through as raw Tailwind values, which clash badly against the dark surface base (`#0a1628`). Reverted the button to teal. Modal-internal indigo accents (small circle icon, "open in new tab" row icon) are unchanged since they predate v2.14.10-14 and the user hasn't flagged them.
