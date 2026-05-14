@@ -36,13 +36,29 @@ const _MIN_PHONE_DIGITS = 7;
 const PHONE_SUFFIX_LENGTH = 8;
 const MIN_PHONE_FOR_SUFFIX = 9;
 
+/**
+ * Placeholder/dummy phone values that should never tokenize. Conservative list:
+ * only patterns mathematically near-impossible to be a real phone (all-same-digit
+ * with 7+ repeats) plus a tiny explicit set of well-known dummies. Monotonic
+ * sequences like 23456789 are deliberately NOT filtered — they can be legit local
+ * numbers.
+ */
+const PLACEHOLDER_PHONES = new Set([
+    '1234567', '12345678', '123456789', '1234567890', '0123456789',
+]);
+
+export function isPlaceholderPhone(digits: string): boolean {
+    if (/^(\d)\1{6,}$/.test(digits)) return true; // 0000000, 9999999999, etc.
+    return PLACEHOLDER_PHONES.has(digits);
+}
+
 /** Extract phone digit sequences from free text */
 export function extractPhones(text: string): string[] {
     if (!text) return [];
     // Remove common separators, then find digit sequences
     const cleaned = text.replace(/[\s\-\.\(\)\+]/g, '');
     const matches = cleaned.match(/\d{7,}/g) || [];
-    return [...new Set(matches)];
+    return [...new Set(matches)].filter(p => !isPlaceholderPhone(p));
 }
 
 /** Get phone suffix tokens (last 8 digits) for area-code-agnostic matching */

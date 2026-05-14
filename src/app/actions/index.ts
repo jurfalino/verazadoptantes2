@@ -16,7 +16,7 @@ export { findAdopters } from './findAdopters';
 export type { FindAdoptersInput, FindAdoptersOptions, FindAdoptersResponse, DuplicateMatch, DiscoveryMatch, AdopterMatch, SearchMode } from './types';
 
 // Adopters
-export { getAdopter, saveAdopter, getAdopterStats, logProfileView, getAverageRating, getHistory, getLinkedFormSubmissions, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from './adopters';
+export { getAdopter, saveAdopter, appendToExistingAdopter, getAdopterStats, logProfileView, getAverageRating, getHistory, getLinkedFormSubmissions, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from './adopters';
 
 // Images
 export { saveImage, getImages, setProfilePicture, getAdoptionImages, deleteImage } from './images';

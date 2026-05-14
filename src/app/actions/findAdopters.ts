@@ -28,7 +28,8 @@ import type {
 } from './types';
 import { enrichAdopters } from './enrichAdopters';
 import { normalizeConfidence, fuzzyNameScore, SEARCH_SCORE_CEILING, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
-import { normalizeText, extractPhones, extractEmails, extractSocials } from '@/lib/tokenizer';
+import { normalizeText, extractPhones, extractEmails, extractSocials, isPlaceholderPhone } from '@/lib/tokenizer';
+import { count } from 'drizzle-orm';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -203,7 +204,9 @@ async function runDuplicateMode(
     }
 
     const contactText = input.contactInfo || '';
-    const phones = input.phones?.length ? input.phones : extractPhones(contactText);
+    const rawPhones = input.phones?.length ? input.phones : extractPhones(contactText);
+    // Apply placeholder filter to pre-parsed phones too — extractPhones already filters internally.
+    const phones = rawPhones.filter(p => !isPlaceholderPhone(p.replace(/\D/g, '')));
     const emails = input.emails?.length ? input.emails : extractEmails(contactText);
     const socials = input.socials?.length ? input.socials : extractSocials(contactText);
 
@@ -225,6 +228,17 @@ async function runDuplicateMode(
     // so minor typos don't silently prevent the JS Levenshtein step from running.
     // name_word tokens use prefix-LIKE; phone/email/social stay exact (security).
     const matchMap = new Map<string, Set<string>>();
+    // Per-adopter list of (type, value) pairs that triggered the match — used for chip rendering.
+    const matchValuesMap = new Map<string, Array<{ type: string; value: string }>>();
+    // Set of unique (type|value) pairs we'll later count for popularity-based down-ranking.
+    const popularityProbes = new Set<string>();
+
+    function recordMatchValue(adopterId: string, type: string, value: string) {
+        if (!matchValuesMap.has(adopterId)) matchValuesMap.set(adopterId, []);
+        const arr = matchValuesMap.get(adopterId)!;
+        // Dedup by (type, value) per adopter
+        if (!arr.some(v => v.type === type && v.value === value)) arr.push({ type, value });
+    }
 
     for (const token of rawTokens) {
         let rows: Array<{ adopterId: string; tokenValue: string }>;
@@ -254,6 +268,9 @@ async function runDuplicateMode(
             if (excludeId && m.adopterId === excludeId) continue;
             if (!matchMap.has(m.adopterId)) matchMap.set(m.adopterId, new Set());
             matchMap.get(m.adopterId)!.add(token.type);
+            // Capture the stored token value that triggered the match — that's what UI chips show.
+            recordMatchValue(m.adopterId, token.type, m.tokenValue);
+            popularityProbes.add(`${token.type}|${m.tokenValue}`);
         }
     }
 
@@ -330,12 +347,54 @@ async function runDuplicateMode(
         address_word: 1, source_url: 3, like_fallback: 0.5,
     };
 
+    // Popularity down-ranking: tokens shared by many records are weak identity signals.
+    // Only ambiguous-by-nature types are subject to down-ranking; phone/email/social/source_url
+    // are unique identifiers and stay at full weight even if (rarely) shared.
+    const POPULARITY_THRESHOLDS: Record<string, number> = {
+        phone_suffix: 5, name_word: 20, address_word: 30,
+    };
+    const popularityCounts = new Map<string, number>();
+    if (popularityProbes.size > 0) {
+        const probes = Array.from(popularityProbes)
+            .map(k => { const [t, ...rest] = k.split('|'); return { type: t, value: rest.join('|') }; })
+            .filter(p => p.type in POPULARITY_THRESHOLDS);
+        const probeRows = await Promise.all(probes.map(p =>
+            db.select({ n: count() }).from(duplicateTokens)
+                .where(and(eq(duplicateTokens.tokenType, p.type), eq(duplicateTokens.tokenValue, p.value)))
+                .catch((e: unknown) => {
+                    logger.warn('findAdopters: D1 fallback hit (popularity probe)', {
+                        type: p.type, error: e instanceof Error ? e.message : String(e),
+                    });
+                    return [{ n: 0 }];
+                })
+        ));
+        probes.forEach((p, i) => {
+            popularityCounts.set(`${p.type}|${p.value}`, probeRows[i]?.[0]?.n ?? 0);
+        });
+    }
+
+    function adjustedWeight(type: string, value: string): number {
+        const base = weights[type] || 1;
+        const threshold = POPULARITY_THRESHOLDS[type];
+        if (!threshold) return base;
+        const n = popularityCounts.get(`${type}|${value}`) ?? 0;
+        return n > threshold ? base * 0.5 : base;
+    }
+
     const inputNameWords = rawTokens.filter(t => t.type === 'name_word').map(t => t.value);
 
     const results: DuplicateMatch[] = [];
     for (const row of nameRows) {
         const types = Array.from(matchMap.get(row.id) || []);
-        let score = types.reduce((s, t) => s + (weights[t] || 1), 0);
+        const matchValues = matchValuesMap.get(row.id) || [];
+        // Score = sum of per-(type,value) adjusted weights for every distinct token-pair that fired,
+        // plus a flat weight contribution for types that have no captured value (like_fallback).
+        let score = 0;
+        const typesWithValues = new Set(matchValues.map(v => v.type));
+        for (const v of matchValues) score += adjustedWeight(v.type, v.value);
+        for (const t of types) {
+            if (!typesWithValues.has(t)) score += weights[t] || 1; // e.g. like_fallback
+        }
 
         // Levenshtein fuzzy bonus — per-input-token, capped at 1.0 each
         const storedWords = storedWordsByAdopter.get(row.id) || [];
@@ -356,7 +415,7 @@ async function runDuplicateMode(
         const hasLike = types.includes('like_fallback');
         const source: DuplicateMatch['source'] = hasToken && hasLike ? 'both' : hasToken ? 'token' : 'like';
 
-        results.push({ adopterId: row.id, adopterName: row.name, relevancePercent, matchTypes: types, source });
+        results.push({ adopterId: row.id, adopterName: row.name, relevancePercent, matchTypes: types, matchValues, source });
     }
 
     return results.sort((a, b) => b.relevancePercent - a.relevancePercent).slice(0, limit);
@@ -590,6 +649,7 @@ async function runDiscoveryMode(
             adopterName: a.name,
             relevancePercent,
             matchTypes,
+            matchValues: [], // discovery mode doesn't track per-token values (different scoring path)
             source: 'like', // LIKE-based discovery (token index not used in this mode)
             adopter: { ...a },
             matchSnippet: bestSnippet ? { ...bestSnippet } : null,
