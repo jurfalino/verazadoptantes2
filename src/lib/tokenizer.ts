@@ -181,8 +181,11 @@ const SOCIAL_PATTERNS = [
     // Facebook profile URLs
     /(?:https?:\/\/)?(?:www\.)?facebook\.com\/(?:profile\.php\?id=\d+|[a-zA-Z0-9.]+)/gi,
     /(?:https?:\/\/)?(?:www\.)?fb\.com\/[a-zA-Z0-9.]+/gi,
-    // Instagram handles
-    /@[a-zA-Z0-9._]{3,30}/g,
+    // Instagram handles. The negative lookbehind keeps the @ from matching inside
+    // email addresses — without it, "mpelli@gmail.com" produced a fake "@gmail.com"
+    // social token and every Gmail user got paired with every other Gmail user as
+    // a "medium-confidence duplicate by social handle".
+    /(?<![a-zA-Z0-9])@[a-zA-Z0-9._]{3,30}/g,
     // Instagram URLs
     /(?:https?:\/\/)?(?:www\.)?instagram\.com\/[a-zA-Z0-9._]+/gi,
 ];
