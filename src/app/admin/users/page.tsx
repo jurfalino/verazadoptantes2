@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { formatDateTime } from '@/lib/dates';
 import { getCountryByCode } from '@/config/countries';
 import { useLanguage } from '@/context/LanguageContext';
+import OrphanSubmissionsSection from '@/components/OrphanSubmissionsSection';
 
 function CopyIdButton({ id, className = '' }: { id: string; className?: string }) {
     const [copied, setCopied] = useState(false);
@@ -538,6 +539,8 @@ export default function AdminUsersPage() {
                     </div>
                 )}
             </div>
+
+            <OrphanSubmissionsSection />
         </div>
     );
 }
