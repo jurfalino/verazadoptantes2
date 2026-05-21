@@ -6,6 +6,10 @@ export const adopters = sqliteTable("adopters", {
     name: text("name").notNull(),
     // Free text blobs for flexible contact info and addresses
     contactInfo: text("contact_info"), // Stores phones, emails, socials, etc.
+    // Structured, categorized contact methods. JSON: ContactEntry[] (see
+    // src/lib/contactEntries.ts). contactInfo above is derived from this for
+    // every new/edited row; null on rows last saved before this column existed.
+    contactEntries: text("contact_entries"),
     addressInfo: text("address_info"), // Stores physical addresses
     familyMembers: text("family_members"), // Stores household members / aliases
     notes: text("notes"), // Free-text observations, age, behavior, etc.

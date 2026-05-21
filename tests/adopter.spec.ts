@@ -55,6 +55,39 @@ test.describe('Adopter Profile', () => {
         await expect(page).not.toHaveURL(/\/create/);
     });
 
+    test('Paste-categorizes contact info into typed entries', async ({ page }) => {
+        const uniqueName = `Contacto Test ${Date.now()}`;
+
+        await page.goto('/adopter/create');
+        await dismissCountryBanner(page);
+
+        await page.getByPlaceholder(/name|nombre/i).fill(uniqueName);
+
+        // Paste a mixed blob into the contact box, then categorize it.
+        await page.getByPlaceholder(/datos de contacto|contact info/i)
+            .fill('Tel: 11 2345-6789\njuan.contacto@example.com');
+        await page.getByRole('button', { name: /categoriz/i }).click();
+
+        // Categorization produced two typed entries: phone digits + email.
+        const entryValues = page.getByPlaceholder(/^valor$|^value$/i);
+        await expect(entryValues).toHaveCount(2, { timeout: 10000 });
+        await expect(entryValues.nth(0)).toHaveValue('1123456789');
+        await expect(entryValues.nth(1)).toHaveValue('juan.contacto@example.com');
+
+        await page.getByRole('button', { name: /save|guardar|create|crear/i }).click();
+        const createAnywayBtn = page.getByRole('button', { name: /Create new profile anyway|Crear perfil nuevo/i });
+        try {
+            await createAnywayBtn.waitFor({ state: 'visible', timeout: 3000 });
+            await createAnywayBtn.click();
+        } catch {
+            // No duplicates — fine.
+        }
+
+        // The saved profile shows the categorized contact value.
+        await expect(page.getByRole('heading', { name: uniqueName })).toBeVisible({ timeout: 30000 });
+        await expect(page.getByText('juan.contacto@example.com')).toBeVisible({ timeout: 30000 });
+    });
+
     test('Edit adopter name', async ({ page }) => {
         const newName = `Persona Editada ${Date.now()}`;
 

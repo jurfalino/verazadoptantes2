@@ -21,6 +21,7 @@ import { getDb, getUser } from './_db';
 import {
     SEARCH_RESULT_LIMIT, SEARCH_ENRICHMENT_LIMIT,
     REFINEMENT_NUDGE_THRESHOLD, LOW_RELEVANCE_PERCENT_THRESHOLD,
+    PHONE_SEARCH_MIN_DIGITS,
 } from '@/config/constants';
 import type {
     FindAdoptersInput, FindAdoptersOptions, FindAdoptersResponse,
@@ -32,8 +33,6 @@ import { normalizeText, extractPhones, extractEmails, extractSocials, isPlacehol
 import { count } from 'drizzle-orm';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
-
-const MIN_PHONE_DIGITS = 4;
 
 function isPhoneLikeQuery(q: string): boolean {
     const d = q.replace(/[\s\-\.\(\)\+]/g, '');
@@ -449,11 +448,11 @@ async function runDiscoveryMode(
 
     const isUnauthenticated = user === 'unknown';
 
-    if (isPhoneLikeQuery(normalizedQuery) && countDigits(normalizedQuery) < MIN_PHONE_DIGITS)
+    if (isPhoneLikeQuery(normalizedQuery) && countDigits(normalizedQuery) < PHONE_SEARCH_MIN_DIGITS)
         return { results: [], validationError: 'min_digits' };
 
     if (isUnauthenticated) {
-        if (normalizedQuery.includes('@') || (isPhoneLikeQuery(normalizedQuery) && countDigits(normalizedQuery) >= MIN_PHONE_DIGITS))
+        if (normalizedQuery.includes('@') || (isPhoneLikeQuery(normalizedQuery) && countDigits(normalizedQuery) >= PHONE_SEARCH_MIN_DIGITS))
             return { results: [], validationError: 'login_required' };
     }
 
@@ -681,6 +680,7 @@ async function runDiscoveryMode(
                 ?.replace(/[a-zA-Z0-9._%+-]+@/g, '•••@') || null;
             result.adopter.familyMembers = null;
             result.adopter.addressInfo = null;
+            result.adopter.contactEntries = null;
             if (result.matchSnippet) {
                 result.matchSnippet = { ...result.matchSnippet, snippet: '', highlights: [] };
             }

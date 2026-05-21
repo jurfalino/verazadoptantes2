@@ -10,6 +10,9 @@ import { zarazTrack } from "@/lib/zaraz";
 import type { DiscoveryMatch } from "@/app/actions";
 import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
+import ContactEntriesInput from "@/components/ContactEntriesInput";
+import ContactEntriesDisplay from "@/components/ContactEntriesDisplay";
+import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry } from "@/lib/contactEntries";
 
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
@@ -211,6 +214,21 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         familyMembers: initialData?.familyMembers || '',
     });
 
+    // Structured contact entries. Initialized from the stored JSON, falling
+    // back to a best-effort parse of the legacy contactInfo blob so editing an
+    // old (un-migrated) record still shows typed chips. data.contactInfo is
+    // kept in sync as the derived blob for the existing read sites below.
+    const [contactEntries, setContactEntries] = useState<ContactEntry[]>(() =>
+        initialData?.contactEntries
+            ? deserializeContactEntries(initialData.contactEntries)
+            : parseBlobToContactEntries(initialData?.contactInfo || formPrefill?.contactInfo || ''),
+    );
+    // View mode shows typed chips only for rows that genuinely have stored
+    // structured entries. Legacy rows (no contactEntries) keep rendering their
+    // raw contactInfo blob — parsing a legacy blob just for display would
+    // change how it looks without the user opting in.
+    const hasStoredContactEntries = !!initialData?.contactEntries;
+
     // Build search query from name + contact for duplicate check
     const getDuplicateSearchQuery = useCallback(() => {
         const parts = [data.name.trim(), data.contactInfo.trim()].filter(Boolean);
@@ -234,6 +252,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         try {
             const result = await appendToExistingAdopter(targetId, {
                 contactInfo: data.contactInfo || undefined,
+                contactEntries: contactEntries.length ? JSON.stringify(contactEntries) : undefined,
                 familyMembers: data.familyMembers || undefined,
             });
             if (result.success && result.adopterId) {
@@ -250,7 +269,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             setContinueBusyId(null);
             setPendingMerge(null);
         }
-    }, [pendingMerge, continueBusyId, data.contactInfo, data.familyMembers, router]);
+    }, [pendingMerge, continueBusyId, data.contactInfo, data.familyMembers, contactEntries, router]);
 
     // Debounced duplicate search while typing (create only)
     useEffect(() => {
@@ -293,7 +312,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     const performActualSave = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await saveAdopter(data);
+            const res = await saveAdopter({ ...data, contactEntries: JSON.stringify(contactEntries) });
             if (res.success) {
                 if (isNew) {
                     // Funnel-tracking event for Amplitude (via Zaraz). Fires
@@ -377,7 +396,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         } finally {
             setLoading(false);
         }
-    }, [data, isNew, formPrefill, searchParams, router, t]);
+    }, [data, contactEntries, isNew, formPrefill, searchParams, router, t]);
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -777,12 +796,12 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                     <div className="md:col-span-2">
                         <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.contact')}</h3>
                         {isEditing ? (
-                            <textarea
-                                rows={3}
-                                className="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-y min-h-[80px]"
-                                value={data.contactInfo}
-                                onChange={e => setData({ ...data, contactInfo: e.target.value })}
-                                placeholder={t('adopter.placeholder_contact')}
+                            <ContactEntriesInput
+                                entries={contactEntries}
+                                onChange={next => {
+                                    setContactEntries(next);
+                                    setData(d => ({ ...d, contactInfo: contactEntriesToBlob(next) }));
+                                }}
                             />
                         ) : (
                             <div
@@ -791,7 +810,9 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                 onClick={handleClickToEdit}
                                 title={t('common.edit') || 'Click to edit'}
                             >
-                                {renderTextWithLinks(data.contactInfo, { emptyLabel: t('audit.empty_val'), type: 'text' })}
+                                {hasStoredContactEntries && contactEntries.length > 0
+                                    ? <ContactEntriesDisplay entries={contactEntries} />
+                                    : renderTextWithLinks(data.contactInfo, { emptyLabel: t('audit.empty_val'), type: 'text' })}
                             </div>
                         )}
                     </div>

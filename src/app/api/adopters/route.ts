@@ -9,6 +9,7 @@ import { logger, generateErrorId } from '@/lib/logger';
 import { tokenizeAdopter } from '@/app/actions/duplicates';
 import { processImageForStorage, uploadToR2 } from '@/lib/r2';
 import { createAdopterApiSchema } from '@/app/actions/validation';
+import { deserializeContactEntries, contactEntriesToBlob } from '@/lib/contactEntries';
 
 export async function GET(request: Request) {
     const session = await auth();
@@ -150,6 +151,7 @@ export async function POST(request: Request) {
     let body: {
         name: string;
         contactInfo?: string | { phones?: string[]; emails?: string[]; socialProfiles?: string[]; addresses?: string[] };
+        contactEntries?: string;
         notes?: string;
         sourceUrl?: string;
         flags?: string[];
@@ -183,7 +185,7 @@ export async function POST(request: Request) {
         }, { status: 400 });
     }
 
-    const { name, contactInfo, notes, sourceUrl, flags, images, adoption } = parsed.data;
+    const { name, contactInfo, contactEntries, notes, sourceUrl, flags, images, adoption } = parsed.data;
 
     // Log the incoming request (without image data for size)
     logger.info('Adopter create: start', {
@@ -216,6 +218,17 @@ export async function POST(request: Request) {
             contactInfoStr = parts.join('\n');
         }
 
+        // Structured contact entries (ImportWizard) — derive the blob from them
+        // and persist the JSON so the categorization survives.
+        let contactEntriesJson: string | null = null;
+        if (contactEntries) {
+            const entries = deserializeContactEntries(contactEntries);
+            if (entries.length) {
+                contactEntriesJson = JSON.stringify(entries);
+                contactInfoStr = contactEntriesToBlob(entries);
+            }
+        }
+
 
 
         const newId = crypto.randomUUID();
@@ -238,6 +251,7 @@ export async function POST(request: Request) {
             id: newId,
             name,
             contactInfo: contactInfoStr || null,
+            contactEntries: contactEntriesJson,
             familyMembers: null,
             status: '5', // Default neutral/good
             addedBy: session.user.email || 'anonymous',

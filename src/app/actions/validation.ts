@@ -20,6 +20,10 @@ export const saveAdopterSchema = z.object({
     id: id.optional(),
     name: requiredText,
     contactInfo: optionalText,
+    // JSON-serialized ContactEntry[]. The string is length-bounded here; the
+    // structure (entry count, per-value length) is sanitized by
+    // deserializeContactEntries in src/lib/contactEntries.ts.
+    contactEntries: z.string().max(20_000).optional().nullable(),
     addressInfo: optionalText,
     familyMembers: optionalText,
     // notes: deprecated in v2.12.1-28 — backfilled into observation adoption records.
@@ -102,6 +106,8 @@ export const createAdopterApiSchema = z.object({
             addresses: z.array(z.string().max(1_000)).optional(),
         }),
     ]).optional(),
+    // JSON-serialized ContactEntry[]; structure sanitized by deserializeContactEntries.
+    contactEntries: z.string().max(20_000).optional(),
     notes: z.string().max(10_000).optional(),
     sourceUrl: z.string().url().max(2_000).optional().or(z.literal('')),
     flags: z.array(z.string().max(200)).max(20).optional(),

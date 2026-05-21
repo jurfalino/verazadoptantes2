@@ -117,17 +117,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             // overwrite the contactInfo with the re-built string from the
             // submitted fields. The original adopter row keeps its source.
             const { adopters: adoptersTable, adopterHistory } = await import('@/db/schema');
-            const contactParts: string[] = [];
-            if (dni) contactParts.push(`Documento: ${dni}`);
-            if (email) contactParts.push(`Email: ${email}`);
-            if (phone) contactParts.push(`Tel: ${phone}`);
-            if (address) contactParts.push(`Dirección: ${address}`);
-            if (socialNetworks) contactParts.push(`Redes: ${socialNetworks}`);
-            const newContactInfo = contactParts.join('\n');
+            const { buildContactEntries, contactEntriesToBlob } = await import('@/lib/contactEntries');
+            const contactEntries = buildContactEntries({
+                ids: dni ? [{ value: dni, label: 'Documento' }] : [],
+                emails: email ? [email] : [],
+                phones: phone ? [phone] : [],
+                socials: socialNetworks ? [socialNetworks] : [],
+            });
+            const newContactInfo = contactEntriesToBlob(contactEntries);
 
             await db.update(adoptersTable).set({
                 name: fullName,
                 contactInfo: newContactInfo || null,
+                contactEntries: contactEntries.length ? JSON.stringify(contactEntries) : null,
                 addressInfo: address || null,
                 updatedAt: new Date(),
             }).where(eq(adoptersTable.id, adopterId));

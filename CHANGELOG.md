@@ -2,6 +2,29 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.11] - 2026-05-21
+
+**Structured, paste-and-categorize contact info — plus a phone-search PII guardrail.** Contact details entered for an adopter are now split into typed entries (phone / email / social / id / note) stored in a new `adopters.contact_entries` JSON column. The free-text `contact_info` blob is kept as a derived value, so search, duplicate-token indexing and existing display paths are unchanged. Separately, the minimum digit count to search by phone number is raised from 4 to 6.
+
+### Added
+- **`src/lib/contactEntries.ts`** (new) — pure categorization/serialization module. `categorizeContactText` splits free text into typed `ContactEntry[]` (reusing the duplicate-detection tokenizer); `contactEntriesToBlob` derives the labeled `contact_info` blob (prose round-trips losslessly); `deserializeContactEntries` is the single sanitization chokepoint (drops malformed/empty entries, bounds count and per-type value length).
+- **`src/components/ContactEntriesInput.tsx`** (new) — paste-and-categorize input: a paste runs the tokenizer and appends typed, editable chips; each chip is reclassifiable (e.g. phone↔id) and removable.
+- **`src/components/ContactEntriesDisplay.tsx`** (new) — read-only typed-chip rendering for the profile view.
+- **`adopters.contact_entries`** column — migration `0043_add_adopter_contact_entries.sql`; JSON `ContactEntry[]`, nullable and additive (no backfill).
+- **Vitest** — `vitest.config.ts` + an `npm test` script; 16 unit tests for `contactEntries.ts`. First unit-test runner in the repo.
+- **`PHONE_SEARCH_MIN_DIGITS`** in `src/config/constants.ts`; e2e coverage for the paste-categorize flow in `tests/adopter.spec.ts`.
+
+### Changed
+- **`src/components/AdopterForm.tsx`** — the contact `<textarea>` is replaced by `ContactEntriesInput`; view mode shows typed chips for rows with stored entries, falling back to the raw blob for legacy (un-migrated) rows.
+- **`src/components/ImportWizard.tsx`** — the AI-extracted phone/email/social arrays now populate typed chips for review instead of being flattened back into a text blob.
+- **`src/app/actions/_adopterFactory.ts` + the contract-submit token path** — form and contract submissions persist structured `contact_entries`.
+- **`saveAdopter` / `appendToExistingAdopter`** — accept `contactEntries`, derive and store the `contact_info` blob, and merge entries with normalized de-duplication.
+- **`findAdopters`** — phone-search minimum raised 4 → 6 digits (`min_digits` validation); `contact_entries` is nulled out for unauthenticated search results.
+- **i18n (EN + ES)** — new `adopter.ce_*` keys for the contact input; `search.min_digits` message updated to "6".
+
+### Notes
+- The `contact_info` blob remains the source of truth for LIKE search and tokenization; `contact_entries` is purely additive. Editing any field on a legacy row re-derives (normalizes) its `contact_info` blob on save.
+
 ## [2.14.10-21] - 2026-05-13
 
 **Phases 4 + 5 of the adopter-workflow plan: per-animal applicants disclosure on `/my-animals` cards + token-locked contract flow.** End of the planned series. Rescuers can now see which adopters have applied for each animal and issue a per-adopter contract URL that no one else can sign.

@@ -8,6 +8,12 @@ import { getDb, getUser } from './_db';
 import { ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
 import { tokenizeAdopter } from './duplicates';
 import { saveAdopterSchema } from './validation';
+import {
+    deserializeContactEntries,
+    contactEntriesToBlob,
+    parseBlobToContactEntries,
+    mergeContactEntries,
+} from '@/lib/contactEntries';
 
 
 export async function getAdopter(id: string) {
@@ -40,7 +46,7 @@ export async function getAdopter(id: string) {
  */
 export async function appendToExistingAdopter(
     targetId: string,
-    fields: { contactInfo?: string; addressInfo?: string; familyMembers?: string; sourceUrl?: string },
+    fields: { contactInfo?: string; contactEntries?: string; addressInfo?: string; familyMembers?: string; sourceUrl?: string },
 ): Promise<{ success: boolean; adopterId?: string; error?: string }> {
     try {
         if (!targetId) return { success: false, error: 'Missing target adopter id' };
@@ -74,8 +80,25 @@ export async function appendToExistingAdopter(
         const updates: Partial<typeof adopters.$inferInsert> = {};
         const appendedFields: Record<string, string> = {};
 
-        const newContact = appendIfNew(target.contactInfo, fields.contactInfo);
-        if (newContact !== target.contactInfo) { updates.contactInfo = newContact; appendedFields.contactInfo = fields.contactInfo!.trim(); }
+        // Contact: prefer the structured-entry merge (normalized dedup) when
+        // the caller sends contactEntries; fall back to the legacy blob append
+        // for callers that only send a contactInfo string.
+        if (fields.contactEntries) {
+            const incoming = deserializeContactEntries(fields.contactEntries);
+            if (incoming.length) {
+                const targetEntries = deserializeContactEntries(target.contactEntries);
+                const base = targetEntries.length ? targetEntries : parseBlobToContactEntries(target.contactInfo);
+                const merged = mergeContactEntries(base, incoming);
+                if (merged.length !== base.length) {
+                    updates.contactEntries = JSON.stringify(merged);
+                    updates.contactInfo = contactEntriesToBlob(merged) || null;
+                    appendedFields.contactInfo = contactEntriesToBlob(incoming);
+                }
+            }
+        } else {
+            const newContact = appendIfNew(target.contactInfo, fields.contactInfo);
+            if (newContact !== target.contactInfo) { updates.contactInfo = newContact; appendedFields.contactInfo = fields.contactInfo!.trim(); }
+        }
 
         const newAddress = appendIfNew(target.addressInfo, fields.addressInfo);
         if (newAddress !== target.addressInfo) { updates.addressInfo = newAddress; appendedFields.addressInfo = fields.addressInfo!.trim(); }
@@ -130,6 +153,15 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
     const parsed = saveAdopterSchema.safeParse(data);
     if (!parsed.success) {
         throw new Error(`Invalid adopter data: ${parsed.error.issues.map(i => i.message).join(', ')}`);
+    }
+
+    // Derive the contactInfo blob from structured entries when the caller
+    // provides them, so the blob (read by LIKE search, the tokenizer and the
+    // profile display) stays consistent with contactEntries.
+    if (data.contactEntries !== undefined && data.contactEntries !== null) {
+        const entries = deserializeContactEntries(data.contactEntries);
+        data.contactEntries = entries.length ? JSON.stringify(entries) : null;
+        data.contactInfo = contactEntriesToBlob(entries) || null;
     }
 
     try {
