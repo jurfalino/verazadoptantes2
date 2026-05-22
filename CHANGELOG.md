@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.15.0] - 2026-05-22
+
+**PII access gating — request/approve workflow + admin oversight.** Completes the feature whose foundation shipped in 2.14.11-8. Still behind `ENABLE_PII_ACCESS_GATING` (default off) — no behavior change until the flag is enabled.
+
+### Added
+- Request / approve / revoke workflow: a viewer whose contact view is masked can request access via `RequestPiiAccessModal`; the record's owner, editors and admins approve or deny it from an on-profile panel (`PiiAccessRequestPanel`). Approval writes a full-contact grant; revoking it notifies the grantee. A denial starts a 14-day cooldown before the same viewer can re-request the same adopter.
+- Activity-linked opt-in: logging an activity in `AdoptionFormWizard` offers an explicit "I also need this adopter's contact info" checkbox that files a request linked to the new activity.
+- Admin dashboard at `/admin/pii-requests` — every pending request across all adopters, oldest-first, with inline approve/deny — the safety net when a record's owner is unresponsive.
+- Owner "who has access" disclosure on the profile: lists holders of an approved full-contact grant (each individually revocable), with search-match grants shown as an aggregate count.
+- In-app notifications for request, approval, denial and revocation; an `/admin/pii-requests` entry in the admin sidebar.
+
 ## [2.14.11-8] - 2026-05-22
 
 **PII access gating — foundation (phases 1–3, behind `ENABLE_PII_ACCESS_GATING`, default off).** No behavior change in this release; the flag is off.

@@ -13,6 +13,7 @@ const NAV_ITEMS: Array<{ href: string; labelKey: string; icon: string; special?:
     { href: '/admin/query', labelKey: 'nav_sql', icon: '⚡', special: true },
     { href: '/admin/config', labelKey: 'nav_config', icon: '⚙️' },
     { href: '/admin/data-requests', labelKey: 'nav_data_requests', icon: '📬' },
+    { href: '/admin/pii-requests', labelKey: 'nav_pii_requests', icon: '🔒' },
     { href: '/admin/notifications', labelKey: 'nav_communications', icon: '📡' },
     { href: '/admin/users', labelKey: 'nav_users', icon: '👥' },
     { href: '/admin/organizations', labelKey: 'nav_organizations', icon: '🏢' },

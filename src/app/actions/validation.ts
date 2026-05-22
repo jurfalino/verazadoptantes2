@@ -93,6 +93,20 @@ export const acceptTermsAndCountrySchema = z.object({
     version: z.number().int().min(1, 'Terms version must be a positive integer'),
 });
 
+// ── PII access requests ──────────────────────────────────────────
+
+export const requestPiiAccessSchema = z.object({
+    adopterId: id,
+    activityId: id.optional().nullable(),
+    justification: z.string().max(1_000).optional().nullable(),
+});
+
+export const resolvePiiRequestSchema = z.object({
+    requestId: id,
+    decision: z.enum(['approved', 'denied']),
+    note: z.string().max(1_000).optional().nullable(),
+});
+
 // ── Adopters API (POST /api/adopters) ────────────────
 
 export const createAdopterApiSchema = z.object({

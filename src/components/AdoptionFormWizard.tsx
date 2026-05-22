@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { saveAdoption } from '@/app/actions';
+import { requestPiiAccess } from '@/app/actions/piiAccess';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
@@ -116,7 +117,7 @@ function clearDraft(adopterId: string): void {
     try { window.localStorage.removeItem(draftKey(adopterId)); } catch { /* ignore */ }
 }
 
-export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRating = null, tooManyAdoptions = null, tooManyRequests = null, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '', initialRecordType, autoOpen = false, onClose }: {
+export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRating = null, tooManyAdoptions = null, tooManyRequests = null, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '', initialRecordType, autoOpen = false, onClose, piiOptInEligible = false }: {
     adopterId: string;
     /** Display name of the adopter — used in step-1 guidance copy. */
     adopterName?: string;
@@ -150,6 +151,12 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     autoOpen?: boolean;
     /** Called when the wizard closes (cancel or save). */
     onClose?: () => void;
+    /**
+     * When true, step 3 offers an opt-in checkbox to also request the adopter's
+     * contact info — set by the profile when the viewer's contact view is masked
+     * (PII access gating). Ticking it files a request linked to the new activity.
+     */
+    piiOptInEligible?: boolean;
 }) {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -178,6 +185,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     const [isOpen, setIsOpen] = useState(shouldOpenFromWizard || autoOpen);
     const [step, setStep] = useState(() => initialDraft?.step ?? 1);
     const [loading, setLoading] = useState(false);
+    const [requestPiiAccessOptIn, setRequestPiiAccessOptIn] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [direction, setDirection] = useState<'forward' | 'back'>('forward');
     const [pendingImages, setPendingImages] = useState<Array<{ data: string; file?: File; isVideo: boolean; thumbnail?: string }>>([]);
@@ -238,6 +246,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
         setCustomSpecies(false);
         setMode('existing');
         setStep(1);
+        setRequestPiiAccessOptIn(false);
         clearDraft(adopterId); // v40b: reset clears the stored draft
     };
 
@@ -440,7 +449,19 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                 });
                 await Promise.all(uploadPromises);
             }
-            
+
+            // PII access opt-in: a not-yet-privileged contributor ticked "I also
+            // need contact info" — file a request linked to the activity just
+            // logged. Non-fatal: a failure here never undoes the saved activity.
+            if (requestPiiAccessOptIn && result?.id) {
+                try {
+                    const res = await requestPiiAccess(adopterId, { activityId: result.id });
+                    if (res.ok && (res.status === 'created' || res.status === 'duplicate')) {
+                        toast.success('✓', t('adopter.pii_request_sent'));
+                    }
+                } catch { /* activity saved; the access request is best-effort */ }
+            }
+
             zarazTrack('adoption_created', { species: formData.species, recordType: formData.recordType, rating: Number(formData.rating), hasMedia: pendingImages.length > 0 ? 1 : 0 });
             
             resetForm();
@@ -810,6 +831,22 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                     <span className="text-xs text-teal-700">{pendingImages.length} {t('common.files_attached')}</span>
                                 </div>
                             </div>
+
+                            {/* PII access opt-in — only when the viewer's contact view is masked */}
+                            {piiOptInEligible && (
+                                <label className="flex items-start gap-3 p-3 bg-teal-50 rounded-lg border border-teal-100 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={requestPiiAccessOptIn}
+                                        onChange={e => setRequestPiiAccessOptIn(e.target.checked)}
+                                        className="mt-0.5 w-4 h-4 accent-teal-600"
+                                    />
+                                    <span className="text-sm text-teal-800">
+                                        <span className="font-semibold">{t('adopter.pii_optin_label')}</span>
+                                        <span className="block text-xs text-teal-700 mt-0.5">{t('adopter.pii_optin_hint')}</span>
+                                    </span>
+                                </label>
+                            )}
 
                             <div className="flex justify-between items-center pt-4 border-t border-teal-100/50">
                                 <button type="button" onClick={goBack} className="px-4 py-2 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors">← {t('wizard.back')}</button>

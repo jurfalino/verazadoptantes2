@@ -4,6 +4,9 @@ import { useMemo, useState } from 'react';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
 import { useSearchParams } from 'next/navigation';
 import { AdopterForm } from '@/components/AdopterForm';
+import RequestPiiAccessModal from '@/components/RequestPiiAccessModal';
+import PiiAccessRequestPanel from '@/components/PiiAccessRequestPanel';
+import PiiAccessGrantsDisclosure from '@/components/PiiAccessGrantsDisclosure';
 import { CollapsibleSection } from '@/components/CollapsibleSection';
 import AdoptionHistory from '@/components/AdoptionHistory';
 import AdoptionFormWizard from '@/components/AdoptionFormWizard';
@@ -19,6 +22,7 @@ import { useShowToast } from '@/components/ui/Toast';
 import { formatDateTime, formatShortDate, maskEmail } from '@/lib/dates';
 import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, HistoryEntry, AdopterStats, AdoptionConfig, DuplicateCandidateInfo } from '@/types/adopter';
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
+import type { AdopterPiiContext } from '@/lib/piiAccess';
 
 interface AdopterProfileV2Props {
     id: string;
@@ -37,17 +41,26 @@ interface AdopterProfileV2Props {
     duplicateCandidates?: DuplicateCandidateInfo[];
     formPrefill?: FormSubmissionPrefill | null;
     userNameMap?: Record<string, string>;
+    piiContext?: AdopterPiiContext | null;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {} }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null }: AdopterProfileV2Props) {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const toast = useShowToast();
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
     const [deleteLoading, setDeleteLoading] = useState(false);
+    const [requestModalOpen, setRequestModalOpen] = useState(false);
+    const [requestSubmitted, setRequestSubmitted] = useState(false);
     const [deleteCheck, setDeleteCheck] = useState<{ canDelete: boolean; collaborators: { adoptions: number; images: number; edits: number; flags: number; forms: number } } | null>(null);
 
     const isOwner = adopter?.addedBy === currentUser;
+
+    // PII opt-in is offered to a masked viewer with no request already in flight.
+    const piiOptInEligible = !!piiContext?.masked
+        && !requestSubmitted
+        && !piiContext.requestState.pending
+        && !piiContext.requestState.cooldownUntil;
 
     // VisitIntentCard is the canonical (and only) entry point for recording
     // activity on a profile (v2.14.8). After the wizard closes, the card
@@ -165,6 +178,47 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     )
                 )}
 
+                {/* PII access gating — approver panel + masked-viewer request CTA.
+                    Both surfaces are mutually exclusive: a privileged viewer sees
+                    the panel, a masked viewer sees the CTA. */}
+                {!isNew && adopter && piiContext?.gatingOn && (
+                    <>
+                        {piiContext.pendingRequests.length > 0 && (
+                            <PiiAccessRequestPanel requests={piiContext.pendingRequests} />
+                        )}
+                        {piiContext.privileged && (
+                            <PiiAccessGrantsDisclosure grants={piiContext.accessGrants} />
+                        )}
+                        {piiContext.masked && (
+                            <div className="rounded-xl border border-teal-200 bg-teal-50 p-4 flex items-start gap-3">
+                                <span aria-hidden className="text-lg">🔒</span>
+                                <div className="flex-1 min-w-0 space-y-1.5">
+                                    <p className="text-sm font-semibold text-teal-900">{t('adopter.pii_protected_title')}</p>
+                                    <p className="text-sm text-teal-800">{t('adopter.pii_protected_body')}</p>
+                                    {(requestSubmitted || piiContext.requestState.pending) ? (
+                                        <p className="text-sm font-medium text-teal-700">{t('adopter.pii_request_pending')}</p>
+                                    ) : piiContext.requestState.cooldownUntil ? (
+                                        <p className="text-sm text-stone-500">
+                                            {t('adopter.pii_request_cooldown').replace(
+                                                '{date}',
+                                                formatShortDate(new Date(piiContext.requestState.cooldownUntil)),
+                                            )}
+                                        </p>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={() => setRequestModalOpen(true)}
+                                            className="text-sm font-semibold text-teal-700 hover:opacity-70 transition-opacity"
+                                        >
+                                            {t('adopter.pii_request_cta')} →
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </>
+                )}
+
                 {/* Profile Form */}
                 <AdopterForm
                     initialData={adopter}
@@ -196,6 +250,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             adoptions={adoptions}
                             availableAnimals={availableAnimals}
                             adopterAddress={adopter?.contactInfo || ''}
+                            piiOptInEligible={piiOptInEligible}
                         />
                         <CollapsibleSection
                             title={t('adoption.title')}
@@ -215,6 +270,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                 adopterAdoptions={adoptions}
                                 currentUser={currentUser}
                                 adopterAddress={adopter?.contactInfo || ''}
+                                piiOptInEligible={piiOptInEligible}
                             />
                             <AdoptionHistory
                                 adoptions={adoptions as any}
@@ -380,6 +436,17 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             )}
                         </div>
                     </div>
+                )}
+
+                {/* PII access request modal — masked viewers only */}
+                {!isNew && adopter && piiContext?.masked && (
+                    <RequestPiiAccessModal
+                        adopterId={id}
+                        adopterName={adopter.name}
+                        open={requestModalOpen}
+                        onClose={() => setRequestModalOpen(false)}
+                        onRequested={() => setRequestSubmitted(true)}
+                    />
                 )}
             </div>
         </main>

@@ -312,3 +312,94 @@ export function redactHistoryChanges(changesJson: string | null, visibility: Vis
     }
     return JSON.stringify(obj);
 }
+
+// ── Request-workflow helpers ──────────────────────────────────────────────────
+
+/**
+ * Values that occupy `addedBy` / `changedBy` / a session but are not real
+ * users. Filtered out before anyone is treated as an actor, approver or
+ * notification recipient.
+ */
+const SENTINEL_ACTORS = new Set(['unknown', 'anonymous', 'form-submission', 'contract-submission', 'system']);
+
+/** True when `email` is a real user (not a sentinel / empty). */
+export function isRealActorEmail(email: string | null | undefined): email is string {
+    return !!email && !SENTINEL_ACTORS.has(email);
+}
+
+/** Days a denied requester must wait before re-requesting the same adopter (Resolution #4). */
+export const PII_DENIAL_COOLDOWN_DAYS = 14;
+
+/** When the re-request cooldown ends, given the timestamp the denial was resolved. */
+export function piiCooldownUntil(deniedAt: Date | number): Date {
+    const ms = typeof deniedAt === 'number' ? deniedAt : deniedAt.getTime();
+    return new Date(ms + PII_DENIAL_COOLDOWN_DAYS * 86_400_000);
+}
+
+// Shared request-workflow types live here (not in the `'use server'` action
+// file) so both the server actions and the client components can import them.
+
+export type RequestPiiAccessStatus = 'created' | 'duplicate' | 'has_access' | 'cooldown' | 'error';
+
+export interface RequestPiiAccessResult {
+    ok: boolean;
+    status: RequestPiiAccessStatus;
+    requestId?: string;
+    /** Epoch ms — set when status is 'cooldown'. */
+    cooldownUntil?: number;
+    error?: string;
+}
+
+/** A pending request as shown to an approver (panel + admin dashboard). */
+export interface PiiAccessRequestView {
+    id: string;
+    adopterId: string;
+    adopterName: string;
+    requesterEmail: string;
+    requesterName: string;
+    justification: string | null;
+    activityId: string | null;
+    /** Epoch ms the request was filed. */
+    createdAt: number | null;
+}
+
+/** The current viewer's request situation for one adopter. */
+export interface PiiAccessRequestState {
+    /** The viewer has a request awaiting a decision. */
+    pending: boolean;
+    /** Epoch ms until which a re-request is blocked by the denial cooldown, or null. */
+    cooldownUntil: number | null;
+    /** Approver's note on the most recent denial, if any. */
+    lastResolutionNote: string | null;
+}
+
+/** A live `all_contact` grant as shown in the owner "who has access" disclosure. */
+export interface PiiAllContactGrant {
+    grantId: string;
+    granteeEmail: string;
+    granteeName: string;
+    /** Epoch ms the grant was created. */
+    grantedAt: number | null;
+}
+
+/** Everything the adopter-profile UI needs to render the PII gating surfaces. */
+export interface AdopterPiiContext {
+    gatingOn: boolean;
+    /** Viewer is owner / editor / admin — sees the approver panel, never the request CTA. */
+    privileged: boolean;
+    /** Contact fields are masked for this viewer (gating on, not privileged, fields exist). */
+    masked: boolean;
+    maskedFieldCount: number;
+    requestState: PiiAccessRequestState;
+    /** Pending requests on this adopter the viewer may act on (privileged viewers only). */
+    pendingRequests: PiiAccessRequestView[];
+    /**
+     * Live grants on this adopter (privileged viewers only) — the "who has
+     * access" disclosure. Approved-request grants are listed individually and
+     * are revocable; search-match grants are an aggregate count (Resolution #2).
+     */
+    accessGrants: {
+        allContact: PiiAllContactGrant[];
+        searchMatchCount: number;
+    };
+}

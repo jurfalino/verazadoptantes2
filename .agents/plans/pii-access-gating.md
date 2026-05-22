@@ -1,8 +1,10 @@
 # Plan: PII access gating — "you only see the contact info you already have"
 
-> **Status (2026-05-22):** Steps 1–3 complete (edit-ACL gate, schema, flag,
-> server-side masking, search-match grants — all behind
-> `ENABLE_PII_ACCESS_GATING`, default off). Steps 4–5 in progress.
+> **Status (2026-05-22):** Steps 1–5 implemented behind `ENABLE_PII_ACCESS_GATING`
+> (default off) — edit gate, schema, masking, search-match grants, the
+> request/approve/revoke workflow, the admin dashboard, and the owner "who has
+> access" disclosure. Released as minor `2.15.0`. Remaining pre-rollout: the
+> first-run explainer banner (Resolution #9) and step 5.5.
 
 ## Context
 
@@ -247,11 +249,15 @@ intended trade-off. Residual risk + mitigations:
    scrub, also `adoption`-field), `/api/adopters` GET — behind the flag.
 3. ✅ **Search-match grants** — `matchSearchEntries` per-entry detection +
    `pii_access_grants` writes (`origin=search_match`) + audit.
-4. **Request/approve workflow** — explicit opt-in on the activity form + the
-   standalone request fallback; notification routing (push to owners/editors,
-   pull for admins, 7-day escalation); denial cooldown; the approver panel.
-5. **Admin dashboard** + grant revocation + the owner "who has access"
-   disclosure (scope-split) + the first-run rollout explainer banner.
+4. ✅ **Request/approve workflow** — explicit opt-in on the activity form + the
+   standalone request modal; push notifications to owners/editors; denial
+   cooldown; the approver panel. (7-day admin escalation deferred — admins use
+   the dashboard pull instead.)
+5. **Admin dashboard + grant revocation + owner disclosure** — ✅ admin
+   dashboard (`/admin/pii-requests`), ✅ grant revocation + grantee
+   notification, ✅ owner "who has access" disclosure (scope-split). ⏳ Deferred
+   to pre-rollout: the first-run explainer banner (Resolution #9) — needs
+   migration `0045` (a `user_profiles` dismissal column).
 5.5. **Legacy sentinel-owned records + write-path audit.** Before flipping the
    flag, audit the `adopters.added_by` distribution. Rows owned by sentinels
    become admin-only-editable once the flag is on. Backfill a real owner where

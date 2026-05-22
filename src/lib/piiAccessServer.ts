@@ -14,6 +14,7 @@ import { isAdminAsync } from '@/config/admins';
 import { logger } from '@/lib/logger';
 import {
     resolveVisibility,
+    isRealActorEmail,
     NO_ACCESS_VISIBILITY,
     type Visibility,
     type PiiGrantRow,
@@ -24,16 +25,8 @@ interface AdopterRef {
     addedBy: string | null;
 }
 
-/**
- * Values that occupy `addedBy` / `changedBy` but are not real users. A viewer
- * holding one of these never resolves to a real identity, so we skip the DB
- * round-trip and mask everything.
- */
-const SENTINEL_VIEWERS = new Set(['unknown', 'anonymous', 'form-submission', 'contract-submission']);
-
-function isRealViewer(email: string | null | undefined): email is string {
-    return !!email && !SENTINEL_VIEWERS.has(email);
-}
+/** A viewer is "real" when their email is a genuine user (see isRealActorEmail). */
+const isRealViewer = isRealActorEmail;
 
 /** Whether the PII access-gating feature flag is on. */
 export function isPiiGatingEnabled(): Promise<boolean> {

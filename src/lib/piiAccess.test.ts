@@ -7,8 +7,11 @@ import {
     maskContactEntries,
     maskAdopterContact,
     redactHistoryChanges,
+    isRealActorEmail,
+    piiCooldownUntil,
     PII_MASK,
     MASKED_CONTACT_PLACEHOLDER,
+    PII_DENIAL_COOLDOWN_DAYS,
     type Visibility,
     type PiiGrantRow,
 } from './piiAccess';
@@ -325,5 +328,31 @@ describe('matchSearchEntries', () => {
 
     it('returns nothing for an empty query', () => {
         expect(matchSearchEntries(entries, '   ')).toHaveLength(0);
+    });
+});
+
+describe('isRealActorEmail', () => {
+    it('accepts a genuine user email', () => {
+        expect(isRealActorEmail('rescuer@example.com')).toBe(true);
+    });
+
+    it('rejects sentinels and empty values', () => {
+        for (const v of ['anonymous', 'unknown', 'system', 'form-submission', 'contract-submission', '', null, undefined]) {
+            expect(isRealActorEmail(v)).toBe(false);
+        }
+    });
+});
+
+describe('piiCooldownUntil', () => {
+    it('adds the cooldown window to a denial Date', () => {
+        const denied = new Date('2026-05-01T00:00:00Z');
+        const until = piiCooldownUntil(denied);
+        const expectedDays = (until.getTime() - denied.getTime()) / 86_400_000;
+        expect(expectedDays).toBe(PII_DENIAL_COOLDOWN_DAYS);
+    });
+
+    it('accepts an epoch-ms number', () => {
+        const ms = Date.UTC(2026, 4, 1);
+        expect(piiCooldownUntil(ms).getTime()).toBe(ms + PII_DENIAL_COOLDOWN_DAYS * 86_400_000);
     });
 });

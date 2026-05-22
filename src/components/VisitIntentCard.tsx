@@ -29,6 +29,8 @@ interface Props {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     availableAnimals?: any[];
     adopterAddress?: string;
+    /** Forwarded to the wizard — offers a "request contact access" opt-in when masked. */
+    piiOptInEligible?: boolean;
 }
 
 /**
@@ -46,7 +48,7 @@ interface Props {
  * (v2.14.8 made this the only entry point — the standalone "Registrar
  * Actividad" CTA on AdoptionFormWizard was removed for UX consistency).
  */
-export default function VisitIntentCard({ adopterId, adopterName, avgRating = null, tooManyAdoptions = null, tooManyRequests = null, currentUser, adoptions, availableAnimals, adopterAddress = '' }: Props) {
+export default function VisitIntentCard({ adopterId, adopterName, avgRating = null, tooManyAdoptions = null, tooManyRequests = null, currentUser, adoptions, availableAnimals, adopterAddress = '', piiOptInEligible = false }: Props) {
     const { t } = useLanguage();
     const [openedRecordType, setOpenedRecordType] = useState<IntentType | null>(null);
     const [trackedShown, setTrackedShown] = useState(false);
@@ -74,6 +76,7 @@ export default function VisitIntentCard({ adopterId, adopterName, avgRating = nu
                 adopterAdoptions={adoptions}
                 currentUser={currentUser}
                 adopterAddress={adopterAddress}
+                piiOptInEligible={piiOptInEligible}
                 initialRecordType={openedRecordType}
                 autoOpen
                 onClose={() => {
