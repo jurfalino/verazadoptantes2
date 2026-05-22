@@ -18,7 +18,7 @@ describe('categorizeContactText', () => {
         const entries = categorizeContactText(
             'Tel: 11 2345-6789\njuan@gmail.com\nIG @juanp\nDNI 30123456',
         );
-        expect(valuesOf(entries, 'phone')).toEqual(['1123456789']);
+        expect(valuesOf(entries, 'phone')).toEqual(['11 2345-6789']);
         expect(valuesOf(entries, 'email')).toEqual(['juan@gmail.com']);
         expect(valuesOf(entries, 'social')).toEqual(['@juanp']);
         expect(valuesOf(entries, 'id')).toEqual(['30123456']);
@@ -46,7 +46,12 @@ describe('categorizeContactText', () => {
 
     it('de-duplicates the same phone written with different separators', () => {
         const entries = categorizeContactText('11 2345-6789\n1123456789');
-        expect(valuesOf(entries, 'phone')).toEqual(['1123456789']);
+        expect(valuesOf(entries, 'phone')).toEqual(['11 2345-6789']);
+    });
+
+    it('preserves the phone formatting the user entered', () => {
+        expect(valuesOf(categorizeContactText('+54 11 2345-6789'), 'phone')).toEqual(['+54 11 2345-6789']);
+        expect(valuesOf(categorizeContactText('Tel: (011) 4567-8900'), 'phone')).toEqual(['(011) 4567-8900']);
     });
 
     it('returns an empty array for blank input', () => {

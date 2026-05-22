@@ -12,7 +12,7 @@
  * typed entry.
  */
 
-import { extractPhones, extractEmails, extractSocials, extractIds, stripIdsFromText } from './tokenizer';
+import { extractEmails, extractSocials, extractIds, stripIdsFromText, isPlaceholderPhone } from './tokenizer';
 
 export type ContactEntryType = 'phone' | 'email' | 'social' | 'id' | 'address' | 'other';
 
@@ -121,6 +121,24 @@ function addressOrOther(text: string): ContactEntry {
 }
 
 /**
+ * Phone-like runs in a line, with the user's original formatting preserved.
+ * Mirrors the "is it a phone" decision of tokenizer.extractPhones (a run of
+ * 7+ digits, not a known placeholder) but keeps the matched substring verbatim
+ * — so "11 2345-6789" survives as the user typed it instead of collapsing to
+ * "1123456789". Dedup (normalizeEntryValue) and the duplicate-token index
+ * normalize to digits anyway, so a formatted stored value is safe.
+ */
+const PHONE_RUN_RE = /\+?\(?\d[\d\s().+\-]{5,}\d/g;
+function formattedPhonesIn(text: string): string[] {
+    const out: string[] = [];
+    for (const run of text.match(PHONE_RUN_RE) || []) {
+        const digits = run.replace(/\D/g, '');
+        if (digits.length >= 7 && !isPlaceholderPhone(digits)) out.push(run.trim());
+    }
+    return out;
+}
+
+/**
  * Categorize free-text (a paste, or a legacy contactInfo blob) into typed
  * contact entries. Unlabeled numbers land as `phone` by design — the chip UI
  * is where the user reclassifies them to `id`.
@@ -138,7 +156,7 @@ export function categorizeContactText(text: string | null | undefined): ContactE
         if (!rawLine.trim()) continue;
 
         const ids = extractIds(rawLine);
-        const phones = extractPhones(stripIdsFromText(rawLine));
+        const phones = formattedPhonesIn(stripIdsFromText(rawLine));
         const emails = extractEmails(rawLine);
         const socials = extractSocials(rawLine);
 

@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.11-2] - 2026-05-21
+
+**Contact display readability — labeled list + preserved phone formatting.**
+
+### Changed
+- `ContactEntriesDisplay` rewritten from a flat chip cloud into a labeled list: one row per entry (icon + type label + value), ordered by type. Phone and email values are actionable (`tel:` / `mailto:` links), and `other` notes are grouped, muted and separated below the contact methods.
+- `categorizeContactText` now preserves the phone formatting the user entered (`11 2345-6789`, `+54 …`, `(011) …`) instead of collapsing it to bare digits — a new `formattedPhonesIn` helper mirrors the tokenizer's phone detection but keeps the matched substring verbatim. Dedup and the duplicate-token index still normalize to digits, so this is storage-safe.
+
 ## [2.14.11-1] - 2026-05-21
 
 **Bugfix: `address` is now a first-class contact entry type.** Addresses previously had no typed home — they fell into the `other` ("Note") catch-all, and the three intake paths each stored them differently.
