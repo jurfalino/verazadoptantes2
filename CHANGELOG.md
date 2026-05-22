@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.15.0-2] - 2026-05-22
+
+### Added
+- `ENABLE_PII_ACCESS_GATING` is now toggleable from the Admin → Config feature-flags panel, so the PII access-gating rollout can be flipped from the UI rather than a raw DB command. The flag description marks it as a significant behavior change to enable deliberately.
+
+### Fixed
+- `ENABLE_CONTACT_PASTE` was missing from the `/api/admin/config` GET projection (overlooked when the flag shipped in 2.14.11-7), so its admin toggle always re-hydrated ON after a reload regardless of the stored value. Added it to the projection — the toggle now reflects the real stored state.
+
 ## [2.15.0-1] - 2026-05-22
 
 **PII access gating — pre-rollout polish.** Still behind `ENABLE_PII_ACCESS_GATING` (default off).

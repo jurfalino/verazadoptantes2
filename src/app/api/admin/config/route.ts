@@ -51,6 +51,8 @@ export async function GET() {
             ENABLE_CHAT_WIDGET: config['ENABLE_CHAT_WIDGET'] || 'false',
             ENABLE_MILESTONE_BADGE: config['ENABLE_MILESTONE_BADGE'] || 'true',
             ENABLE_QUICK_ACCESS_STRIP: config['ENABLE_QUICK_ACCESS_STRIP'] || 'true',
+            ENABLE_CONTACT_PASTE: config['ENABLE_CONTACT_PASTE'] || 'true',
+            ENABLE_PII_ACCESS_GATING: config['ENABLE_PII_ACCESS_GATING'] || 'false',
             // v2.14.10-1: showcase URL-chip visibility flags + Instagram URL for
             // the empty-state CTA. All three SHOWCASE_*_VISIBLE default OFF.
             SHOWCASE_GLOBAL_VISIBLE: config['SHOWCASE_GLOBAL_VISIBLE'] || 'false',

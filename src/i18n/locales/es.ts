@@ -90,6 +90,8 @@ export const es = {
         flag_desc_quick_access_strip: 'Mostrar las pastillas "Mis Animales / Mis Adopciones / Mis Adoptantes" con contadores en la portada. Si está apagada, los mismos contadores siguen disponibles en el menú de usuario. Por defecto activado.',
         flag_label_contact_paste: 'Pegado de contacto',
         flag_desc_contact_paste: 'Mostrar el cuadro de pegado en el editor de contacto del adoptante para pegar y categorizar datos en bloque. Si está apagada, los datos se ingresan solo con los campos manuales. Por defecto activado.',
+        flag_label_pii_access_gating: 'Proteger datos de contacto',
+        flag_desc_pii_access_gating: 'Cuando está activa, cada persona ve solo los datos de contacto que buscó o que le fueron otorgados; el resto queda oculto detrás de solicitudes de acceso aprobables, y editar el registro queda restringido al responsable o a un admin. Cambio de comportamiento importante — activar con cuidado. Por defecto desactivada.',
         flag_label_showcase_global: 'URL pública de catálogo global',
         flag_desc_showcase_global: 'Mostrar en /my-animals el link al catálogo público de todos los animales en adopción (raíz "/"). Por defecto apagado mientras se valida el flujo.',
         flag_label_showcase_org: 'URLs públicas por organización',

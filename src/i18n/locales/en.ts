@@ -90,6 +90,8 @@ export const en = {
         flag_desc_quick_access_strip: 'Show the "My Animals / My Adoptions / My Adopters" pills with counters on the homepage. When off, the same counters remain available in the user menu. Default ON.',
         flag_label_contact_paste: 'Contact Paste',
         flag_desc_contact_paste: 'Show the paste box in the adopter contact editor for bulk-pasting and auto-categorizing contact details. When off, contact info is entered only via the manual typed fields. Default ON.',
+        flag_label_pii_access_gating: 'Protect adopter contact info',
+        flag_desc_pii_access_gating: 'When on, a viewer sees only the contact details they searched for or were granted; the rest is masked behind approvable access requests, and editing the core record is restricted to its owner or an admin. Significant behavior change — roll out deliberately. Default OFF.',
         flag_label_showcase_global: 'Public global catalog URL',
         flag_desc_showcase_global: 'On /my-animals, show the public link to the global catalog of all available animals (root "/"). Off by default while the flow is validated.',
         flag_label_showcase_org: 'Public per-org URLs',
