@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.11-6] - 2026-05-22
+
+### Changed
+- The contact editor's paste box is now a collapsible panel *below* the field rows instead of a separate mode that hid them. The bottom action row pairs "Agregar manualmente" with a "Pegar" link that expands the paste box (flips to "Ocultar"); the field rows stay visible the whole time. Categorizing a paste merges into the existing entries and collapses the box. A new adopter still opens with the box expanded.
+
 ## [2.14.11-5] - 2026-05-22
 
 ### Changed
