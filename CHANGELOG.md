@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.11-4] - 2026-05-21
+
+### Fixed
+- Restored contact links lost in the v2.14.11 display rewrite: an address opens Google Maps, a social *URL* opens its platform (Facebook / Instagram / TikTok / X / LinkedIn — recognized generically, no hardcoded platform), and links inside free-text notes are clickable again via `renderTextWithLinks`. Phone (`tel:`) and email (`mailto:`) were restored earlier in 2.14.11-2. A bare `@handle` is intentionally left unlinked — its platform cannot be inferred from the handle alone.
+
 ## [2.14.11-3] - 2026-05-21
 
 ### Fixed
