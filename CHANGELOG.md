@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.11-3] - 2026-05-21
+
+### Fixed
+- The paste-categorize e2e test still asserted the old digit-collapsed phone value (`1123456789`); updated it to the preserved format (`11 2345-6789`) introduced in 2.14.11-2, which had failed the e2e gate and blocked the staging deploy.
+
 ## [2.14.11-2] - 2026-05-21
 
 **Contact display readability — labeled list + preserved phone formatting.**

@@ -68,10 +68,11 @@ test.describe('Adopter Profile', () => {
             .fill('Tel: 11 2345-6789\njuan.contacto@example.com');
         await page.getByRole('button', { name: /categoriz/i }).click();
 
-        // Categorization produced two typed entries: phone digits + email.
+        // Categorization produced two typed entries: phone + email. The phone
+        // keeps the formatting the user entered (not collapsed to bare digits).
         const entryValues = page.getByPlaceholder(/^valor$|^value$/i);
         await expect(entryValues).toHaveCount(2, { timeout: 10000 });
-        await expect(entryValues.nth(0)).toHaveValue('1123456789');
+        await expect(entryValues.nth(0)).toHaveValue('11 2345-6789');
         await expect(entryValues.nth(1)).toHaveValue('juan.contacto@example.com');
 
         await page.getByRole('button', { name: /save|guardar|create|crear/i }).click();
