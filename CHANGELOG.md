@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.11-7] - 2026-05-22
+
+### Added
+- `ENABLE_CONTACT_PASTE` feature flag (default on) — gates the paste box in the adopter contact editor. When an admin turns it off via the Admin config page, contact info is entered only through the manual typed fields; the "Pegar" affordance and paste box are hidden. Wired through `FEATURE_FLAGS`, `PUBLIC_FLAG_KEYS`/`PUBLIC_FLAG_DEFAULTS` (read client-side via `/api/config`), and the Admin config UI.
+
 ## [2.14.11-6] - 2026-05-22
 
 ### Changed

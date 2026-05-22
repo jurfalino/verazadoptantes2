@@ -20,6 +20,9 @@ export const FEATURE_FLAGS = {
     ENABLE_CHAT_WIDGET: false,
     ENABLE_MILESTONE_BADGE: true,
     ENABLE_QUICK_ACCESS_STRIP: true,
+    // Paste box in the adopter contact editor (bulk paste + auto-categorize).
+    // When off, contact info is entered only via the manual typed fields.
+    ENABLE_CONTACT_PASTE: true,
     // v2.14.10-1: three flags gate visibility of the public-showcase URL chips
     // on /my-animals. Each defaults FALSE so the URLs stay hidden until an
     // admin enables them explicitly per the staged rollout plan.
@@ -109,6 +112,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         ENABLE_CHAT_WIDGET: false,
         ENABLE_MILESTONE_BADGE: true,
         ENABLE_QUICK_ACCESS_STRIP: true,
+        ENABLE_CONTACT_PASTE: true,
         SHOWCASE_GLOBAL_VISIBLE: false,
         SHOWCASE_ORG_VISIBLE: false,
         SHOWCASE_USER_VISIBLE: false,

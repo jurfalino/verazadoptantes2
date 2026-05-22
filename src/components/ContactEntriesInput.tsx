@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ClipboardEvent } from 'react';
+import { useEffect, useState, type ClipboardEvent } from 'react';
 import { Phone, Mail, AtSign, IdCard, MapPin, StickyNote, X, Plus, type LucideIcon } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import {
@@ -28,15 +28,34 @@ const TYPE_ICON: Record<ContactEntryType, LucideIcon> = {
 
 /**
  * Contact input: editable typed-chip rows, plus an on-demand paste box that
- * expands BELOW the rows — the rows stay visible the whole time. A paste or
- * Categorize APPENDS typed entries (never replaces), then the paste box
- * collapses. For a new adopter (no entries) the paste box starts open as the
- * fast path; for an existing one it starts collapsed.
+ * expands BELOW the rows (the rows stay visible). A paste/categorize APPENDS
+ * typed entries (never replaces), then the paste box collapses.
+ *
+ * The paste affordance is gated by the `ENABLE_CONTACT_PASTE` public feature
+ * flag (read once from /api/config). When the flag is off, only the manual
+ * typed fields are shown.
  */
 export default function ContactEntriesInput({ entries, onChange }: ContactEntriesInputProps) {
     const { t } = useLanguage();
     const [draft, setDraft] = useState('');
     const [pasteOpen, setPasteOpen] = useState(() => entries.length === 0);
+    // Optimistic default ON — matches ENABLE_CONTACT_PASTE's default, so the
+    // common case has no flash; the fetch only flips it for an admin opt-out.
+    const [pasteEnabled, setPasteEnabled] = useState(true);
+
+    useEffect(() => {
+        let active = true;
+        fetch('/api/config')
+            .then(r => r.json())
+            .then(d => {
+                const config = (d as { config?: Record<string, string> }).config;
+                if (active) setPasteEnabled(config?.ENABLE_CONTACT_PASTE !== 'false');
+            })
+            .catch(() => { /* keep the optimistic default on a transient failure */ });
+        return () => { active = false; };
+    }, []);
+
+    const showPasteBox = pasteEnabled && pasteOpen;
 
     function commit(text: string) {
         const parsed = categorizeContactText(text);
@@ -102,7 +121,7 @@ export default function ContactEntriesInput({ entries, onChange }: ContactEntrie
                 </div>
             )}
 
-            {entries.length === 0 && !pasteOpen && (
+            {entries.length === 0 && !showPasteBox && (
                 <p className="text-sm text-stone-500 italic">{t('adopter.ce_empty')}</p>
             )}
 
@@ -115,13 +134,17 @@ export default function ContactEntriesInput({ entries, onChange }: ContactEntrie
                     <Plus className="w-4 h-4" aria-hidden="true" />
                     {t('adopter.ce_add')}
                 </button>
-                <span className="text-stone-300" aria-hidden="true">·</span>
-                <button type="button" onClick={() => setPasteOpen(o => !o)} className={linkClass}>
-                    {pasteOpen ? t('adopter.ce_paste_hide') : t('adopter.ce_mode_paste')}
-                </button>
+                {pasteEnabled && (
+                    <>
+                        <span className="text-stone-300" aria-hidden="true">·</span>
+                        <button type="button" onClick={() => setPasteOpen(o => !o)} className={linkClass}>
+                            {pasteOpen ? t('adopter.ce_paste_hide') : t('adopter.ce_mode_paste')}
+                        </button>
+                    </>
+                )}
             </div>
 
-            {pasteOpen && (
+            {showPasteBox && (
                 <div className="space-y-2">
                     <textarea
                         rows={3}
