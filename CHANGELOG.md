@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.11-5] - 2026-05-22
+
+### Changed
+- The adopter contact editor (`ContactEntriesInput`) no longer stacks a paste box permanently above the field rows. Paste and manual entry are now two switchable modes via a text-link toggle by the section title: a new adopter opens in paste mode, an existing one in fields mode; a paste categorizes and returns to the fields. Toggling only swaps the input surface — entries are never touched.
+
 ## [2.14.11-4] - 2026-05-21
 
 ### Fixed
