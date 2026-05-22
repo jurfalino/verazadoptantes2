@@ -477,6 +477,7 @@ export const en = {
         ce_type_email: 'Email',
         ce_type_social: 'Social',
         ce_type_id: 'ID',
+        ce_type_address: 'Address',
         ce_type_other: 'Note',
         ce_empty: 'No contact info yet — paste or type above.',
         upload_image: 'Upload Image',

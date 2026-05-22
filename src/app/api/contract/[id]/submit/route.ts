@@ -123,6 +123,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 emails: email ? [email] : [],
                 phones: phone ? [phone] : [],
                 socials: socialNetworks ? [socialNetworks] : [],
+                addresses: address ? [address] : [],
             });
             const newContactInfo = contactEntriesToBlob(contactEntries);
 

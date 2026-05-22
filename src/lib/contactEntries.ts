@@ -14,7 +14,7 @@
 
 import { extractPhones, extractEmails, extractSocials, extractIds, stripIdsFromText } from './tokenizer';
 
-export type ContactEntryType = 'phone' | 'email' | 'social' | 'id' | 'other';
+export type ContactEntryType = 'phone' | 'email' | 'social' | 'id' | 'address' | 'other';
 
 export interface ContactEntry {
     type: ContactEntryType;
@@ -29,10 +29,11 @@ const TYPE_LABEL: Record<Exclude<ContactEntryType, 'other'>, string> = {
     email: 'Email',
     social: 'Redes',
     id: 'Documento',
+    address: 'Dirección',
 };
 
 /** Order entries appear in the derived blob. */
-const BLOB_ORDER: ContactEntryType[] = ['id', 'email', 'phone', 'social', 'other'];
+const BLOB_ORDER: ContactEntryType[] = ['id', 'email', 'phone', 'social', 'address', 'other'];
 
 /**
  * Leading label words stripped when computing a line's leftover `other` text,
@@ -49,6 +50,19 @@ const LEADING_LABEL_RE = /^\s*(tel(?:[eé]fono)?|cel(?:ular)?|email|correo|e-?ma
 const STRIP_EMAIL = /[^\s@]+@[^\s@]+\.[^\s@]+/g;
 const STRIP_SOCIAL = /(?:https?:\/\/)?(?:www\.)?(?:facebook|instagram|fb)\.com\/\S+|(?<![a-zA-Z0-9])@[a-zA-Z0-9._]{2,}/gi;
 const STRIP_PHONE = /\d[\d\s().+\-]{5,}\d/g;
+
+/**
+ * Address detection (label-first). A line carrying no phone/email/id/social
+ * token is classified `address` when it LEADS with one of these keywords:
+ *  - LABEL keywords ("Dirección:", "Dir") are markers — stripped from the
+ *    stored value.
+ *  - STREET keywords ("Av", "Calle") are part of the address itself — kept.
+ * Leading-anchored, with an explicit separator/boundary so a longer word that
+ * merely starts with the same letters (e.g. "Avísame") does not trip it —
+ * note `\b` is ASCII-only and would false-match before an accented letter.
+ */
+const ADDRESS_LABEL_RE = /^\s*(direcci[oó]n|domicilio|address|direc|dir)[\s.:]+/i;
+const ADDRESS_STREET_RE = /^\s*(boulevard|diagonal|avenida|bulevar|manzana|pasaje|barrio|avda|calle|ruta|lote|diag|mza|pje|av|mz)(?=[\s.,]|$)/i;
 
 /** Normalized value used for de-duplication within an entry type. */
 function normalizeEntryValue(type: ContactEntryType, value: string): string {
@@ -89,6 +103,24 @@ function isMeaningfulProse(s: string): boolean {
 }
 
 /**
+ * Classify a free-text fragment (one with no phone/email/id/social token) as
+ * an `address` or a plain `other` note — see ADDRESS_LABEL_RE / ADDRESS_STREET_RE.
+ * Detection is label-first and conservative; the chip UI's type selector is
+ * the safety net for the cases a heuristic gets wrong.
+ */
+function addressOrOther(text: string): ContactEntry {
+    const t = text.trim();
+    const labelMatch = t.match(ADDRESS_LABEL_RE);
+    if (labelMatch) {
+        const value = t.slice(labelMatch[0].length).trim();
+        if (value) return { type: 'address', value };
+    } else if (ADDRESS_STREET_RE.test(t)) {
+        return { type: 'address', value: t };
+    }
+    return { type: 'other', value: t };
+}
+
+/**
  * Categorize free-text (a paste, or a legacy contactInfo blob) into typed
  * contact entries. Unlabeled numbers land as `phone` by design — the chip UI
  * is where the user reclassifies them to `id`.
@@ -120,9 +152,9 @@ export function categorizeContactText(text: string | null | undefined): ContactE
         // alongside an identifier keeps the note as leftover text.
         if (ids.length || phones.length || emails.length || socials.length) {
             const leftover = residualOf(rawLine);
-            if (isMeaningfulProse(leftover)) entries.push({ type: 'other', value: leftover });
+            if (isMeaningfulProse(leftover)) entries.push(addressOrOther(leftover));
         } else {
-            entries.push({ type: 'other', value: rawLine.trim() });
+            entries.push(addressOrOther(rawLine));
         }
     }
 
@@ -165,6 +197,7 @@ interface ContactParts {
     phones?: Array<string | null | undefined>;
     emails?: Array<string | null | undefined>;
     socials?: Array<string | null | undefined>;
+    addresses?: Array<string | null | undefined>;
 }
 
 /**
@@ -183,6 +216,7 @@ export function buildContactEntries(parts: ContactParts): ContactEntry[] {
     for (const p of parts.phones ?? []) if (p?.trim()) entries.push({ type: 'phone', value: p.trim() });
     for (const e of parts.emails ?? []) if (e?.trim()) entries.push({ type: 'email', value: e.trim() });
     for (const s of parts.socials ?? []) if (s?.trim()) entries.push({ type: 'social', value: s.trim() });
+    for (const a of parts.addresses ?? []) if (a?.trim()) entries.push({ type: 'address', value: a.trim() });
     return dedupe(entries);
 }
 
@@ -195,7 +229,7 @@ const MAX_LABEL_LEN = 40;
  * avoid silently clipping a long note on save.
  */
 const MAX_VALUE_LEN: Record<ContactEntryType, number> = {
-    phone: 500, email: 500, social: 500, id: 500, other: 4_000,
+    phone: 500, email: 500, social: 500, id: 500, address: 500, other: 4_000,
 };
 
 /**
@@ -208,7 +242,7 @@ export function deserializeContactEntries(json: string | null | undefined): Cont
     try {
         const parsed = JSON.parse(json);
         if (!Array.isArray(parsed)) return [];
-        const valid: ContactEntryType[] = ['phone', 'email', 'social', 'id', 'other'];
+        const valid: ContactEntryType[] = ['phone', 'email', 'social', 'id', 'address', 'other'];
         return parsed
             .filter((e): e is ContactEntry =>
                 e && typeof e.value === 'string' && valid.includes(e.type) && e.value.trim().length > 0)

@@ -478,6 +478,7 @@ export const es = {
         ce_type_email: 'Email',
         ce_type_social: 'Red social',
         ce_type_id: 'Documento',
+        ce_type_address: 'Dirección',
         ce_type_other: 'Nota',
         ce_empty: 'Sin datos de contacto — pegá o escribí arriba.',
         upload_image: 'Subir Imagen',

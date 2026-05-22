@@ -1,4 +1,4 @@
-import { Phone, Mail, AtSign, IdCard, StickyNote, type LucideIcon } from 'lucide-react';
+import { Phone, Mail, AtSign, IdCard, MapPin, StickyNote, type LucideIcon } from 'lucide-react';
 import type { ContactEntry, ContactEntryType } from '@/lib/contactEntries';
 
 const TYPE_ICON: Record<ContactEntryType, LucideIcon> = {
@@ -6,6 +6,7 @@ const TYPE_ICON: Record<ContactEntryType, LucideIcon> = {
     email: Mail,
     social: AtSign,
     id: IdCard,
+    address: MapPin,
     other: StickyNote,
 };
 

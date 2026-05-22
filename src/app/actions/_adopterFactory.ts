@@ -99,6 +99,7 @@ export async function createAdopterFromSubmission(
         emails: input.email ? [input.email] : [],
         phones: input.phone ? [input.phone] : [],
         socials: input.socials ? [input.socials] : [],
+        addresses: input.address ? [input.address] : [],
     });
     const contactInfo = contactEntriesToBlob(contactEntries);
     const now = new Date();

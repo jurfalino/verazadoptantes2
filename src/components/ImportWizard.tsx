@@ -486,15 +486,12 @@ export default function ImportWizard() {
             // Build typed contact entries from the AI-extracted arrays so the
             // categorization survives review instead of being flattened.
             if (aiData) {
-                const entries = buildContactEntries({
+                setContactEntries(buildContactEntries({
                     phones: aiData.phones,
                     emails: aiData.emails,
                     socials: aiData.socialProfiles,
-                });
-                const addressEntries: ContactEntry[] = (aiData.addresses ?? [])
-                    .filter(a => a?.trim())
-                    .map(a => ({ type: 'other', value: a.trim() }));
-                setContactEntries([...entries, ...addressEntries]);
+                    addresses: aiData.addresses,
+                }));
             }
             setCustomSpecies(false);
             setUnknownAnimal(!aiData.animalName);

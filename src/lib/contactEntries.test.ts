@@ -108,11 +108,53 @@ describe('buildContactEntries', () => {
             emails: ['a@b.com'],
             socials: ['@x'],
             ids: [{ value: '30123456', label: 'DNI' }],
+            addresses: ['Calle Falsa 123'],
         });
         expect(valuesOf(entries, 'phone')).toEqual(['1123456789']);
         expect(valuesOf(entries, 'email')).toEqual(['a@b.com']);
         expect(valuesOf(entries, 'social')).toEqual(['@x']);
+        expect(valuesOf(entries, 'address')).toEqual(['Calle Falsa 123']);
         expect(entries.find(e => e.type === 'id')).toEqual({ type: 'id', value: '30123456', label: 'DNI' });
+    });
+});
+
+describe('address entries', () => {
+    it('writes an address entry to the blob under the Dirección label', () => {
+        const blob = contactEntriesToBlob([{ type: 'address', value: 'Av. Siempre Viva 742' }]);
+        expect(blob).toBe('Dirección: Av. Siempre Viva 742');
+    });
+
+    it('round-trips a stored address entry through deserialize', () => {
+        const entries = deserializeContactEntries('[{"type":"address","value":"Av. Siempre Viva 742"}]');
+        expect(entries).toEqual([{ type: 'address', value: 'Av. Siempre Viva 742' }]);
+    });
+
+    it('classifies a street-keyword-led line as address, keeping the street type', () => {
+        const entries = categorizeContactText('Av. Corrientes 1234');
+        expect(valuesOf(entries, 'address')).toEqual(['Av. Corrientes 1234']);
+    });
+
+    it('strips a leading address label from the stored value', () => {
+        const entries = categorizeContactText('Dirección: Calle Falsa 123');
+        expect(valuesOf(entries, 'address')).toEqual(['Calle Falsa 123']);
+        expect(valuesOf(entries, 'other')).toEqual([]);
+    });
+
+    it('detects a "Dir" label written without a colon', () => {
+        const entries = categorizeContactText('Dir Av Siempre Viva 742');
+        expect(valuesOf(entries, 'address')).toEqual(['Av Siempre Viva 742']);
+    });
+
+    it('does not misclassify a word that merely starts with an address keyword', () => {
+        const entries = categorizeContactText('Avísame cuando puedas');
+        expect(valuesOf(entries, 'address')).toEqual([]);
+        expect(valuesOf(entries, 'other')).toEqual(['Avísame cuando puedas']);
+    });
+
+    it('detects an address line pasted alongside a phone line', () => {
+        const entries = categorizeContactText('Tel: 1123456789\nCalle Falsa 123');
+        expect(valuesOf(entries, 'phone')).toEqual(['1123456789']);
+        expect(valuesOf(entries, 'address')).toEqual(['Calle Falsa 123']);
     });
 });
 

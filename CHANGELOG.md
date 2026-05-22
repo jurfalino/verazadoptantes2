@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.11-1] - 2026-05-21
+
+**Bugfix: `address` is now a first-class contact entry type.** Addresses previously had no typed home — they fell into the `other` ("Note") catch-all, and the three intake paths each stored them differently.
+
+### Added
+- `address` added to `ContactEntryType`, with a `MapPin` icon in the contact-chip UI and an `Address` / `Dirección` i18n label.
+- Label-first address auto-detection in `categorizeContactText`: a pasted line with no phone/email/id/social token that leads with an address keyword becomes an `address` entry. Label keywords (`Dirección`, `Dir`, `Domicilio`) are stripped from the stored value; street keywords (`Av`, `Calle`, `Pasaje`, `Ruta`, `Barrio`, `Mz`, …) are kept. Leading-anchored to keep false positives low.
+
+### Changed
+- ImportWizard maps Gemini's extracted `addresses[]` to `address` entries instead of `other`.
+- The contract factory and the contract-submit token path emit an `address` entry, so all three intake paths store addresses consistently.
+
+### Notes
+- The `addressInfo` column is intentionally left untouched — reworking it belongs to the upcoming PII feature, not this bugfix. Legacy contract adopters whose `contactInfo` blob carries `Dirección: …` lines auto-migrate them into an `address` entry on next edit.
+
 ## [2.14.11] - 2026-05-21
 
 **Structured, paste-and-categorize contact info — plus a phone-search PII guardrail.** Contact details entered for an adopter are now split into typed entries (phone / email / social / id / note) stored in a new `adopters.contact_entries` JSON column. The free-text `contact_info` blob is kept as a derived value, so search, duplicate-token indexing and existing display paths are unchanged. Separately, the minimum digit count to search by phone number is raised from 4 to 6.
