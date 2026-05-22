@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.15.0-1] - 2026-05-22
+
+**PII access gating — pre-rollout polish.** Still behind `ENABLE_PII_ACCESS_GATING` (default off).
+
+### Added
+- Reusable `useOneTimeNotice` hook (localStorage-backed, SSR-safe) — powers a first-run "what's new" expanded state on the protected-contact banner: a one-time explainer dismissed with "Got it", after which the banner collapses to its concise form. Any future announcement can reuse the hook with its own versioned key.
+
+### Changed
+- Contract intake now stamps the created adopter's `addedBy` with the receiving rescuer (`animal.addedBy`), falling back to the recognized `anonymous` sentinel — never the unrecognized `contract` literal earlier code could emit. Form intake already stamped the real rescuer email. (Resolution #5 — new rows never land sentinel-owned.)
+- `SENTINEL_ACTORS` now recognizes `contract` and `contract-signed-via-invitation`, so they can't surface as phantom PII-request approvers or notification recipients.
+
 ## [2.15.0] - 2026-05-22
 
 **PII access gating — request/approve workflow + admin oversight.** Completes the feature whose foundation shipped in 2.14.11-8. Still behind `ENABLE_PII_ACCESS_GATING` (default off) — no behavior change until the flag is enabled.

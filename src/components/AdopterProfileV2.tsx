@@ -19,6 +19,7 @@ import { extractErrorId } from '@/lib/errorUtils';
 import { DisclaimerToast } from '@/components/DisclaimerToast';
 import { RatingBadge } from '@/components/RatingBadge';
 import { useShowToast } from '@/components/ui/Toast';
+import { useOneTimeNotice } from '@/hooks/useOneTimeNotice';
 import { formatDateTime, formatShortDate, maskEmail } from '@/lib/dates';
 import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, HistoryEntry, AdopterStats, AdoptionConfig, DuplicateCandidateInfo } from '@/types/adopter';
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
@@ -52,6 +53,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     const [deleteLoading, setDeleteLoading] = useState(false);
     const [requestModalOpen, setRequestModalOpen] = useState(false);
     const [requestSubmitted, setRequestSubmitted] = useState(false);
+    // First-run "what's new" explainer on the protected-contact banner (Resolution #9).
+    const { dismissed: piiNoticeDismissed, dismiss: dismissPiiNotice } = useOneTimeNotice('pii-access-gating-v1');
     const [deleteCheck, setDeleteCheck] = useState<{ canDelete: boolean; collaborators: { adoptions: number; images: number; edits: number; flags: number; forms: number } } | null>(null);
 
     const isOwner = adopter?.addedBy === currentUser;
@@ -195,6 +198,21 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                 <div className="flex-1 min-w-0 space-y-1.5">
                                     <p className="text-sm font-semibold text-teal-900">{t('adopter.pii_protected_title')}</p>
                                     <p className="text-sm text-teal-800">{t('adopter.pii_protected_body')}</p>
+                                    {!piiNoticeDismissed && (
+                                        <div className="border-t border-teal-200 pt-2 space-y-1.5">
+                                            <p className="text-sm text-teal-800">
+                                                <span className="font-semibold">{t('adopter.pii_whatsnew_label')}: </span>
+                                                {t('adopter.pii_whatsnew_body')}
+                                            </p>
+                                            <button
+                                                type="button"
+                                                onClick={dismissPiiNotice}
+                                                className="text-xs font-semibold text-teal-700 hover:opacity-70 transition-opacity"
+                                            >
+                                                {t('adopter.pii_whatsnew_dismiss')}
+                                            </button>
+                                        </div>
+                                    )}
                                     {(requestSubmitted || piiContext.requestState.pending) ? (
                                         <p className="text-sm font-medium text-teal-700">{t('adopter.pii_request_pending')}</p>
                                     ) : piiContext.requestState.cooldownUntil ? (

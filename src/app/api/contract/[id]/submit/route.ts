@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { withCors, corsPreflightResponse } from '@/lib/cors';
+import { isRealActorEmail } from '@/lib/piiAccess';
 
 export const runtime = 'edge';
 
@@ -160,7 +161,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             const factoryResult = await createAdopterFromSubmission({
                 source: 'contract',
                 name: fullName,
-                addedBy: animal.addedBy || 'contract',
+                // Forward-fix (Resolution #5): the receiving rescuer owns the row.
+                // `animal.addedBy` is that rescuer; fall back to the recognized
+                // 'anonymous' sentinel only when the animal itself is unowned —
+                // never the unrecognized 'contract' literal.
+                addedBy: isRealActorEmail(animal.addedBy) ? animal.addedBy : 'anonymous',
                 email: email || null,
                 phone: phone || null,
                 address: address || null,

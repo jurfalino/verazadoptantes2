@@ -320,7 +320,10 @@ export function redactHistoryChanges(changesJson: string | null, visibility: Vis
  * users. Filtered out before anyone is treated as an actor, approver or
  * notification recipient.
  */
-const SENTINEL_ACTORS = new Set(['unknown', 'anonymous', 'form-submission', 'contract-submission', 'system']);
+const SENTINEL_ACTORS = new Set([
+    'unknown', 'anonymous', 'system',
+    'form-submission', 'contract-submission', 'contract', 'contract-signed-via-invitation',
+]);
 
 /** True when `email` is a real user (not a sentinel / empty). */
 export function isRealActorEmail(email: string | null | undefined): email is string {
