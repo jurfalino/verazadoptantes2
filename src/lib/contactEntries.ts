@@ -21,6 +21,12 @@ export interface ContactEntry {
     value: string;
     /** Optional display label, e.g. "DNI" / "Documento" for an id entry. */
     label?: string;
+    /**
+     * Display-only flag set by the PII-masking layer (src/lib/piiAccess.ts)
+     * when this entry's value is hidden from the viewer. Never persisted —
+     * saveAdopter re-derives entries from the owner's unmasked form input.
+     */
+    masked?: boolean;
 }
 
 /** Labels written into the derived contactInfo blob — one line per entry. */
@@ -64,8 +70,13 @@ const STRIP_PHONE = /\d[\d\s().+\-]{5,}\d/g;
 const ADDRESS_LABEL_RE = /^\s*(direcci[oó]n|domicilio|address|direc|dir)[\s.:]+/i;
 const ADDRESS_STREET_RE = /^\s*(boulevard|diagonal|avenida|bulevar|manzana|pasaje|barrio|avda|calle|ruta|lote|diag|mza|pje|av|mz)(?=[\s.,]|$)/i;
 
-/** Normalized value used for de-duplication within an entry type. */
-function normalizeEntryValue(type: ContactEntryType, value: string): string {
+/**
+ * Normalized value used for de-duplication within an entry type, and as the
+ * canonical input to the PII search-match / entry-hash logic — every site that
+ * compares an entry value (dedup, grant `entryRef` hashing, query matching)
+ * MUST normalize through here so the comparisons agree.
+ */
+export function normalizeEntryValue(type: ContactEntryType, value: string): string {
     switch (type) {
         case 'phone': return value.replace(/\D/g, '');
         case 'id': return value.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -269,6 +280,7 @@ export function deserializeContactEntries(json: string | null | undefined): Cont
                 type: e.type,
                 value: e.value.slice(0, MAX_VALUE_LEN[e.type]),
                 ...(e.label ? { label: String(e.label).slice(0, MAX_LABEL_LEN) } : {}),
+                ...(e.masked === true ? { masked: true } : {}),
             }));
     } catch {
         return [];

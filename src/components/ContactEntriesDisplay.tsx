@@ -56,6 +56,18 @@ export default function ContactEntriesDisplay({ entries }: { entries: ContactEnt
             : t(`adopter.ce_type_${entry.type}`);
 
     const renderValue = (entry: ContactEntry) => {
+        // PII-masked entry: render the mask token as inert muted text — no
+        // tel:/mailto: link, with an aria-label so it's not read as bullets.
+        if (entry.masked) {
+            return (
+                <span
+                    className="text-stone-400 select-none"
+                    aria-label={`${labelFor(entry)}: ${t('adopter.ce_masked')}`}
+                >
+                    {entry.value}
+                </span>
+            );
+        }
         if (entry.type === 'phone') {
             return (
                 <a href={`tel:${entry.value.replace(/[^\d+]/g, '')}`} className={LINK_CLASS}>

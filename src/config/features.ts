@@ -23,6 +23,11 @@ export const FEATURE_FLAGS = {
     // Paste box in the adopter contact editor (bulk paste + auto-categorize).
     // When off, contact info is entered only via the manual typed fields.
     ENABLE_CONTACT_PASTE: true,
+    // PII access gating (phase 2). When on: non-owner viewers see only the
+    // contact info they searched/matched, the rest is masked behind approvable
+    // access requests, and core-record edits are restricted to owner+admin.
+    // Default off — server-side only, deliberately NOT in PUBLIC_FLAG_KEYS.
+    ENABLE_PII_ACCESS_GATING: false,
     // v2.14.10-1: three flags gate visibility of the public-showcase URL chips
     // on /my-animals. Each defaults FALSE so the URLs stay hidden until an
     // admin enables them explicitly per the staged rollout plan.
@@ -113,6 +118,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         ENABLE_MILESTONE_BADGE: true,
         ENABLE_QUICK_ACCESS_STRIP: true,
         ENABLE_CONTACT_PASTE: true,
+        ENABLE_PII_ACCESS_GATING: false,
         SHOWCASE_GLOBAL_VISIBLE: false,
         SHOWCASE_ORG_VISIBLE: false,
         SHOWCASE_USER_VISIBLE: false,

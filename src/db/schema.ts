@@ -163,6 +163,51 @@ export const dataRequests = sqliteTable("data_requests", {
     resolvedBy: text("resolved_by"),
 });
 
+// ── PII Access Gating ────────────────────────────────────────────
+// Behind the ENABLE_PII_ACCESS_GATING flag. Both tables are additive and
+// unused until the flag is enabled. A non-owner viewer who needs an adopter's
+// contact details files a request; the record owner / an editor / an admin
+// approves or denies it.
+
+// pii_access_requests — a viewer's request to see an adopter's contact info.
+export const piiAccessRequests = sqliteTable("pii_access_requests", {
+    id: text("id").primaryKey(),
+    adopterId: text("adopter_id").notNull(),
+    requesterEmail: text("requester_email").notNull(),
+    justification: text("justification"),
+    // The adoptions row that triggered the request, when activity-driven.
+    activityId: text("activity_id"),
+    status: text("status").notNull().default("pending"), // pending, approved, denied
+    resolvedByEmail: text("resolved_by_email"),
+    resolvedAt: integer("resolved_at", { mode: "timestamp" }),
+    resolutionNote: text("resolution_note"),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+    adopterStatusIdx: index("idx_pii_req_adopter_status").on(table.adopterId, table.status),
+    requesterStatusIdx: index("idx_pii_req_requester_status").on(table.requesterEmail, table.status),
+}));
+
+// pii_access_grants — the access facts. A live (non-revoked) row means
+// `grantee_email` can see some/all of `adopter_id`'s contact info.
+//   scope='entry'       — one entry, unlocked by a search match.
+//   scope='all_contact' — every contact field, unlocked by an approved request.
+export const piiAccessGrants = sqliteTable("pii_access_grants", {
+    id: text("id").primaryKey(),
+    adopterId: text("adopter_id").notNull(),
+    granteeEmail: text("grantee_email").notNull(),
+    scope: text("scope").notNull(), // all_contact, entry
+    // For scope='entry': hash of the normalized matched value (never raw PII).
+    entryRef: text("entry_ref"),
+    origin: text("origin").notNull(), // search_match, request
+    requestId: text("request_id"), // links the pii_access_requests row, when origin='request'
+    grantedByEmail: text("granted_by_email").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    revokedAt: integer("revoked_at", { mode: "timestamp" }),
+    revokedByEmail: text("revoked_by_email"),
+}, (table) => ({
+    granteeAdopterIdx: index("idx_pii_grant_grantee_adopter").on(table.granteeEmail, table.adopterId),
+}));
+
 
 
 // Auth.js Tables

@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.14.11-8] - 2026-05-22
+
+**PII access gating — foundation (phases 1–3, behind `ENABLE_PII_ACCESS_GATING`, default off).** No behavior change in this release; the flag is off.
+
+### Added
+- `ENABLE_PII_ACCESS_GATING` feature flag (default off, server-side only) and the `pii_access_requests` / `pii_access_grants` tables (migration `0044`).
+- Server-side contact-PII masking (`src/lib/piiAccess.ts` + `piiAccessServer.ts`): when the flag is on, a non-owner / non-editor / non-admin viewer sees an adopter's phone, email, social, ID and address masked. Enforced in `getAdopter`, `getHistory` (change-log redaction), `findAdopters` discovery (plus match-snippet scrub), and the `/api/adopters` duplicate-check. Names, family members and notes stay visible.
+- Search-match reveal: a discovery query that genuinely matches a contact entry (phone ≥6 digits, `@`-email, `@handle`/URL social) unlocks that entry for the searcher and records a persistent `pii_access_grants` row. A name-token query never unlocks an identifier.
+
+### Changed
+- Core-record edits (`saveAdopter`, `appendToExistingAdopter`) are restricted to the record owner or an admin when the flag is on — this keeps "edit a record ⇒ become an editor ⇒ gain PII visibility" closed. `appendToExistingAdopter` now resolves admins via `isAdminAsync` (DB-role admins included), matching `saveAdopter`'s gate.
+
 ## [2.14.11-7] - 2026-05-22
 
 ### Added

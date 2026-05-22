@@ -484,6 +484,7 @@ export const en = {
         ce_type_address: 'Address',
         ce_type_other: 'Note',
         ce_empty: 'No contact entries yet. Add one.',
+        ce_masked: 'hidden',
         upload_image: 'Upload Image',
         upload_media: 'Upload',
         video_too_large: 'Video Too Large',

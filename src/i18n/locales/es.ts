@@ -485,6 +485,7 @@ export const es = {
         ce_type_address: 'Dirección',
         ce_type_other: 'Nota',
         ce_empty: 'Aún no hay datos de contacto. Agregá uno.',
+        ce_masked: 'oculto',
         upload_image: 'Subir Imagen',
         upload_media: 'Subir',
         video_too_large: 'Video Demasiado Grande',

@@ -13,7 +13,7 @@
  * followed by JS Levenshtein scoring so typo variants (Jonatan/Jonathan) are never dropped.
  */
 
-import { adopters, searches, adopterHistory, adoptions, adopterStats, duplicateTokens } from '@/db/schema';
+import { adopters, searches, adopterHistory, adoptions, adopterStats, duplicateTokens, piiAccessGrants } from '@/db/schema';
 import { or, like, sql, and, isNull, eq, ne } from 'drizzle-orm';
 import { logger, withTrace } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
@@ -31,6 +31,9 @@ import { enrichAdopters } from './enrichAdopters';
 import { normalizeConfidence, fuzzyNameScore, SEARCH_SCORE_CEILING, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 import { normalizeText, extractPhones, extractEmails, extractSocials, isPlaceholderPhone, extractIds, stripIdsFromText } from '@/lib/tokenizer';
 import { count } from 'drizzle-orm';
+import { maskAdopterContact, matchSearchEntries } from '@/lib/piiAccess';
+import { isPiiGatingEnabled, resolveAdoptersVisibility } from '@/lib/piiAccessServer';
+import { deserializeContactEntries } from '@/lib/contactEntries';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -534,6 +537,17 @@ async function runDiscoveryMode(
     const allProfiles = [...directResults, ...extraProfiles];
     if (allProfiles.length === 0) return { results: [] };
 
+    // PII access gating: resolve per-result visibility once for the whole batch.
+    const piiGatingOn = !isUnauthenticated && await isPiiGatingEnabled();
+    const visibilityMap = piiGatingOn
+        ? await resolveAdoptersVisibility(
+            user,
+            allProfiles.map((a: typeof adopters.$inferSelect) => ({ id: a.id, addedBy: a.addedBy })),
+        )
+        : null;
+    // Search-match grants discovered while masking; persisted after the map.
+    const newGrants: Array<{ adopterId: string; entryRef: string }> = [];
+
     const adopterIds = allProfiles.map((a: any) => a.id);
     const enrichmentMap = shouldEnrich ? await enrichAdopters(db, adopterIds) : new Map();
 
@@ -685,6 +699,43 @@ async function runDiscoveryMode(
                 result.matchSnippet = { ...result.matchSnippet, snippet: '', highlights: [] };
             }
             result.relevancePercent = 0;
+        } else if (visibilityMap) {
+            // PII access gating: mask contact fields for authenticated
+            // non-privileged viewers.
+            let vis = visibilityMap.get(a.id);
+            if (vis && !vis.nothingMasked) {
+                // Search-match reveal: entries the query genuinely matched are
+                // unlocked for this response, and (if newly matched) earn a
+                // persistent grant — "you see what you searched for".
+                const matches = matchSearchEntries(deserializeContactEntries(a.contactEntries), normalizedQuery);
+                if (matches.length > 0) {
+                    const unlocked = new Set(vis.unlockedEntryHashes);
+                    for (const m of matches) {
+                        if (!unlocked.has(m.hash)) {
+                            unlocked.add(m.hash);
+                            newGrants.push({ adopterId: a.id, entryRef: m.hash });
+                        }
+                    }
+                    vis = { ...vis, unlockedEntryHashes: unlocked, tier: 'partial' };
+                }
+                const masked = maskAdopterContact(result.adopter, vis);
+                result.adopter = {
+                    ...result.adopter,
+                    contactInfo: masked.contactInfo,
+                    contactEntries: masked.contactEntries,
+                    addressInfo: masked.addressInfo,
+                };
+                // A contact/address snippet is a window cut from the blob and can
+                // surface adjacent unmatched lines. 'adoption' is scrubbed too —
+                // the import route packs `Contact: …` into adoptions.details.
+                if (result.matchSnippet && (
+                    result.matchSnippet.field === 'contact' ||
+                    result.matchSnippet.field === 'address' ||
+                    result.matchSnippet.field === 'adoption'
+                )) {
+                    result.matchSnippet = { ...result.matchSnippet, snippet: '', highlights: [] };
+                }
+            }
         }
 
         return result;
@@ -706,6 +757,34 @@ async function runDiscoveryMode(
     const totalCount = mainResults.length;
     logger.info('findAdopters:discovery', { query: normalizedQuery, tokens: tokens.length, resultCount: Math.min(totalCount, limit), user });
     logAudit({ userEmail: user, action: 'search', details: { query: normalizedQuery, resultCount: Math.min(totalCount, limit) } });
+
+    // PII access gating: persist search-match grants — one row per newly matched
+    // entry. Awaited so the reveal survives to the viewer's next visit. A write
+    // failure is logged but never breaks search (the viewer just re-grants).
+    if (newGrants.length > 0) {
+        try {
+            await Promise.all(newGrants.map(g => db.insert(piiAccessGrants).values({
+                id: crypto.randomUUID(),
+                adopterId: g.adopterId,
+                granteeEmail: user,
+                scope: 'entry',
+                entryRef: g.entryRef,
+                origin: 'search_match',
+                grantedByEmail: user,
+                createdAt: new Date(),
+            })));
+            logAudit({
+                userEmail: user,
+                action: 'pii_search_match_grant',
+                details: { count: newGrants.length, adopterIds: [...new Set(newGrants.map(g => g.adopterId))] },
+            });
+        } catch (e) {
+            logger.warn('findAdopters: PII search-match grant write failed', {
+                user, count: newGrants.length,
+                error: e instanceof Error ? e.message : String(e),
+            });
+        }
+    }
 
     const response: FindAdoptersResponse = {
         results: mainResults.slice(0, limit),

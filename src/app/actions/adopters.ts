@@ -14,6 +14,9 @@ import {
     parseBlobToContactEntries,
     mergeContactEntries,
 } from '@/lib/contactEntries';
+import { getFeatureFlag } from '@/config/features';
+import { canEditAdopterRecord, maskAdopterContact, redactHistoryChanges } from '@/lib/piiAccess';
+import { isPiiGatingEnabled, resolveAdopterVisibility } from '@/lib/piiAccessServer';
 
 
 export async function getAdopter(id: string) {
@@ -26,7 +29,20 @@ export async function getAdopter(id: string) {
         try { user = await getUser(); } catch { /* anonymous */ }
         logProfileView(id, user).catch((e) => { logger.warn('Fire-and-forget profile view failed', { adopterId: id, error: e instanceof Error ? e.message : String(e) }); });
 
-        return await db.select().from(adopters).where(eq(adopters.id, id)).get();
+        const adopter = await db.select().from(adopters).where(eq(adopters.id, id)).get();
+        if (!adopter) return null;
+
+        // PII access gating: mask contact fields for non-privileged viewers.
+        if (await isPiiGatingEnabled()) {
+            const visibility = await resolveAdopterVisibility(user, { id: adopter.id, addedBy: adopter.addedBy });
+            if (!visibility.nothingMasked) {
+                const masked = maskAdopterContact(adopter, visibility);
+                adopter.contactInfo = masked.contactInfo;
+                adopter.contactEntries = masked.contactEntries;
+                adopter.addressInfo = masked.addressInfo;
+            }
+        }
+        return adopter;
     } catch (error) {
         logger.error('Get adopter failed', error, { adopterId: id });
         return null;
@@ -62,9 +78,10 @@ export async function appendToExistingAdopter(
         if (!target) return { success: false, error: 'Target adopter not found' };
         if (target.deletedAt) return { success: false, error: 'Cannot append to a deleted adopter' };
 
-        // Auth: actor must own the target (addedBy) or be an admin. Mirrors mergeAdopters.
-        const { isAdmin } = await import('@/config/admins');
-        if (target.addedBy !== actorEmail && !isAdmin(actorEmail)) {
+        // Auth: actor must own the target (addedBy) or be an admin. isAdminAsync
+        // so DB-role admins pass too — same admin check as saveAdopter's edit gate.
+        const { isAdminAsync } = await import('@/config/admins');
+        if (target.addedBy !== actorEmail && !(await isAdminAsync(actorEmail))) {
             return { success: false, error: 'Not authorized to modify this adopter' };
         }
 
@@ -181,6 +198,20 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
         const existing = await db.select().from(adopters).where(eq(adopters.id, data.id || 'new')).get();
 
         if (existing) {
+            // PII access gating: when on, only the record owner or an admin
+            // may edit the core record — this keeps "edit a record ⇒ become an
+            // editor ⇒ gain PII visibility" closed. isAdminAsync so DB-role
+            // admins pass (same admin check as appendToExistingAdopter).
+            const gatingEnabled = await getFeatureFlag('ENABLE_PII_ACCESS_GATING');
+            if (gatingEnabled) {
+                const { isAdminAsync } = await import('@/config/admins');
+                const actorIsAdmin = await isAdminAsync(changedBy);
+                if (!canEditAdopterRecord({ gatingEnabled, actorEmail: changedBy, ownerEmail: existing.addedBy, actorIsAdmin })) {
+                    logger.warn('saveAdopter: edit blocked by PII access gating', { adopterId: data.id, actorEmail: changedBy });
+                    throw new Error('Not authorized to edit this adopter record.');
+                }
+            }
+
             // Calculate changes
             const changes: Record<string, any> = {};
             let hasChanges = false;
@@ -356,10 +387,28 @@ export async function getHistory(adopterId: string) {
         const db = await getDb();
         if (!db) return [];
         // desc order
-        return await db.select().from(adopterHistory)
+        const rows = await db.select().from(adopterHistory)
             .where(eq(adopterHistory.adopterId, adopterId))
             .orderBy(sql`${adopterHistory.changedAt} DESC`)
             .all();
+
+        // PII access gating: redact contact-field deltas for non-privileged
+        // viewers — the change log must not back-channel old/new contact values.
+        if (await isPiiGatingEnabled()) {
+            let viewer = 'unknown';
+            try { viewer = await getUser(); } catch { /* anonymous */ }
+            const adopter = await db.select({ addedBy: adopters.addedBy })
+                .from(adopters).where(eq(adopters.id, adopterId)).get();
+            const visibility = await resolveAdopterVisibility(viewer, {
+                id: adopterId, addedBy: adopter?.addedBy ?? null,
+            });
+            if (!visibility.nothingMasked) {
+                return rows.map((r: typeof adopterHistory.$inferSelect) => ({
+                    ...r, changes: redactHistoryChanges(r.changes, visibility),
+                }));
+            }
+        }
+        return rows;
     } catch (error) {
         logger.error('Get history failed', error, { adopterId });
         return [];

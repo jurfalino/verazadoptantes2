@@ -10,6 +10,35 @@ import { tokenizeAdopter } from '@/app/actions/duplicates';
 import { processImageForStorage, uploadToR2 } from '@/lib/r2';
 import { createAdopterApiSchema } from '@/app/actions/validation';
 import { deserializeContactEntries, contactEntriesToBlob } from '@/lib/contactEntries';
+import { maskAdopterContact } from '@/lib/piiAccess';
+import { isPiiGatingEnabled, resolveAdoptersVisibility } from '@/lib/piiAccessServer';
+
+type MaskableRow = {
+    id: string;
+    addedBy: string | null;
+    contactInfo: string | null;
+    contactEntries: string | null;
+    addressInfo: string | null;
+};
+
+/**
+ * PII access gating: mask the contact fields of duplicate-check matches for
+ * non-privileged viewers. The value the rescuer typed already matched these
+ * rows server-side; this hides the rest of each match's contact data.
+ */
+async function maskMatchesForViewer<T extends MaskableRow>(
+    rows: T[],
+    viewerEmail: string | null | undefined,
+): Promise<T[]> {
+    if (rows.length === 0 || !(await isPiiGatingEnabled())) return rows;
+    const visMap = await resolveAdoptersVisibility(viewerEmail, rows.map(r => ({ id: r.id, addedBy: r.addedBy })));
+    return rows.map(r => {
+        const vis = visMap.get(r.id);
+        if (!vis || vis.nothingMasked) return r;
+        const masked = maskAdopterContact(r, vis);
+        return { ...r, contactInfo: masked.contactInfo, contactEntries: masked.contactEntries, addressInfo: masked.addressInfo };
+    });
+}
 
 export async function GET(request: Request) {
     const session = await auth();
@@ -36,7 +65,10 @@ export async function GET(request: Request) {
             const matches = await db.select()
                 .from(adopters)
                 .where(and(isNull(adopters.deletedAt), eq(adopters.sourceUrl, sourceUrl)));
-            return NextResponse.json({ matches, matchType: 'url' });
+            return NextResponse.json({
+                matches: await maskMatchesForViewer(matches, session.user.email),
+                matchType: 'url',
+            });
         }
 
         // Mode 2: Multi-field person matching (different post, same person)
@@ -130,7 +162,7 @@ export async function GET(request: Request) {
         scoredMatches.sort((a: { confidence: string }, b: { confidence: string }) => confidenceOrder[a.confidence] - confidenceOrder[b.confidence]);
 
         return NextResponse.json({
-            matches: scoredMatches,
+            matches: await maskMatchesForViewer(scoredMatches, session.user.email),
             matchType: 'person',
             confidence: scoredMatches[0]?.confidence || 'none'
         });
