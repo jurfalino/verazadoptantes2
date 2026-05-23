@@ -289,14 +289,30 @@ describe('matchSearchEntries', () => {
         { type: 'email', value: 'juan@gmail.com' },
         { type: 'social', value: '@juanperez' },
         { type: 'id', value: '30123456' },
+        { type: 'address', value: 'Corrientes 3444' },
         { type: 'other', value: 'Vive en zona sur' },
     ];
 
     it('matches a phone entry on a digit-substring query', () => {
         const m = matchSearchEntries(entries, '2345-6789');
-        expect(m).toHaveLength(1);
-        expect(m[0].entry.type).toBe('phone');
+        expect(m.map(x => x.entry.type)).toEqual(['phone']);
         expect(m[0].hash).toBe(hashEntryValue('phone', '11 2345-6789'));
+    });
+
+    it('matches a phone via a digit run when the query carries other digits too (regression)', () => {
+        // The earlier code concatenated every query digit into one string and
+        // checked if the entry contained it — so "808080 Corrientes 3444"
+        // (qDigits "8080803444", 10 digits) could never match an 8-digit phone.
+        // The per-run path now matches "808080" against "80808080".
+        const local: ContactEntry[] = [{ type: 'phone', value: '80808080' }];
+        const m = matchSearchEntries(local, '808080 Corrientes 3444');
+        expect(m.map(x => x.entry.type)).toContain('phone');
+    });
+
+    it('keeps matching a formatted phone via the concatenated digits', () => {
+        const local: ContactEntry[] = [{ type: 'phone', value: '541123456789' }];
+        const m = matchSearchEntries(local, '+54 11 2345-6789');
+        expect(m.map(x => x.entry.type)).toContain('phone');
     });
 
     it('does not match a phone on a query shorter than the digit minimum', () => {
@@ -305,25 +321,51 @@ describe('matchSearchEntries', () => {
 
     it('matches an email entry on an @-containing query', () => {
         const m = matchSearchEntries(entries, 'juan@gmail.com');
-        expect(m).toHaveLength(1);
-        expect(m[0].entry.type).toBe('email');
+        expect(m.map(x => x.entry.type)).toEqual(['email']);
     });
 
     it('a name-token query never unlocks an email or any identifier', () => {
         // 'juan' is a substring of juan@gmail.com / @juanperez but is not
-        // identifier-shaped — it must not produce a grant.
+        // identifier-shaped — no anchor, no matches.
         expect(matchSearchEntries(entries, 'juan')).toHaveLength(0);
     });
 
     it('matches a social entry on an @handle query', () => {
         const m = matchSearchEntries(entries, '@juanperez');
-        expect(m).toHaveLength(1);
-        expect(m[0].entry.type).toBe('social');
+        expect(m.map(x => x.entry.type)).toEqual(['social']);
     });
 
-    it('never auto-unlocks id / address / other entries', () => {
+    it('does not auto-unlock id / address from an unanchored query (no fan-grant)', () => {
+        // Bare id digits / bare street-name queries don't anchor any
+        // identifier → no secondary unlock either.
         expect(matchSearchEntries(entries, '30123456')).toHaveLength(0);
+        expect(matchSearchEntries(entries, 'Corrientes 3444')).toHaveLength(0);
         expect(matchSearchEntries(entries, 'zona sur')).toHaveLength(0);
+    });
+
+    it('combined query (phone + address) unlocks the address when the phone anchors it', () => {
+        // The user's reported case: the searcher demonstrably has BOTH the
+        // phone digits AND the street + number → the address rides along.
+        const m = matchSearchEntries(entries, '2345-6789 Corrientes 3444');
+        const types = m.map(x => x.entry.type).sort();
+        expect(types).toEqual(['address', 'phone']);
+    });
+
+    it('combined query (phone + id) unlocks the id when the phone anchors it', () => {
+        const m = matchSearchEntries(entries, '2345-6789 30123456');
+        const types = m.map(x => x.entry.type).sort();
+        expect(types).toEqual(['id', 'phone']);
+    });
+
+    it('id matching is formatting-insensitive when anchored', () => {
+        // Entry "30123456" should still unlock when the query writes it as "30.123.456".
+        const m = matchSearchEntries(entries, '2345-6789 30.123.456');
+        expect(m.map(x => x.entry.type)).toContain('id');
+    });
+
+    it('never auto-unlocks the `other` note type, even when anchored', () => {
+        const m = matchSearchEntries(entries, '2345-6789 vive en zona sur');
+        expect(m.map(x => x.entry.type)).not.toContain('other');
     });
 
     it('returns nothing for an empty query', () => {

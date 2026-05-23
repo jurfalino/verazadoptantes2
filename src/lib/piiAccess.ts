@@ -94,33 +94,81 @@ export interface SearchEntryMatch {
 
 /**
  * Find the contact entries a discovery query genuinely matched — the basis for
- * a search-match grant ("you see what you searched for"). Conservative on
- * purpose: only an identifier-shaped query unlocks an identifier, so a
- * name-token search never reveals a phone / email / social.
- *  - phone:  query carries ≥ PHONE_SEARCH_MIN_DIGITS digits; entry digits contain them.
+ * a search-match grant ("you see what you searched for"). Two-phase:
+ *
+ * Phase 1 — IDENTIFIER ANCHORS. Only an identifier-shaped query unlocks an
+ * identifier, so a name-token search never reveals one.
+ *  - phone:  the query carries a digit run ≥ PHONE_SEARCH_MIN_DIGITS that is
+ *            a substring of the entry's digits. We check both each contiguous
+ *            digit run AND the full concatenated digits, so a mixed query like
+ *            "808080 Corrientes 3444" (per-run) and a formatted single phone
+ *            like "+54 11 2345-6789" (concat) both match.
  *  - email:  query contains '@' and is a substring of the entry value.
- *  - social: query is an @handle or a URL, and is a substring of the entry value.
- * `id` / `address` / `other` never auto-unlock — those go through a request.
+ *  - social: query is an @handle or URL, and is a substring of the entry value.
+ *
+ * Phase 2 — ANCHORED SECONDARY UNLOCK. If an identifier matched, this adopter
+ * is *anchored*: an `address` or `id` entry whose value also appears in the
+ * query unlocks too. The combined match (identifier + secondary) is itself the
+ * signal the searcher has both pieces. The anchor requirement is what keeps a
+ * bare "Corrientes" query from fan-granting every address on that street.
+ *
+ * `other` (free-text notes) never auto-unlocks under either phase.
  */
 export function matchSearchEntries(entries: ContactEntry[], query: string): SearchEntryMatch[] {
     const q = query.trim();
     if (!q) return [];
     const qDigits = q.replace(/\D/g, '');
     const qLower = q.toLowerCase();
+    // Plausible phone shapes in the query, deduped: the full concatenated
+    // digits (catches a single formatted phone like "+54 11 2345-6789" filling
+    // the whole query) plus each whitespace-separated token's digits (catches
+    // mixed queries, including a phone with internal separators living
+    // alongside other text, e.g. "11 2345-6789 Corrientes 3444" → "23456789").
+    const phoneCandSet = new Set<string>();
+    if (qDigits.length >= PHONE_SEARCH_MIN_DIGITS) phoneCandSet.add(qDigits);
+    for (const token of q.split(/\s+/)) {
+        const d = token.replace(/\D/g, '');
+        if (d.length >= PHONE_SEARCH_MIN_DIGITS) phoneCandSet.add(d);
+    }
+    const phoneCandidates = [...phoneCandSet];
+
+    // ── Phase 1: identifier anchors ──
     const out: SearchEntryMatch[] = [];
+    let anchored = false;
     for (const e of entries) {
         let matched = false;
         if (e.type === 'phone') {
-            matched = qDigits.length >= PHONE_SEARCH_MIN_DIGITS
-                && e.value.replace(/\D/g, '').includes(qDigits);
+            const entryDigits = e.value.replace(/\D/g, '');
+            matched = phoneCandidates.some(c => entryDigits.includes(c));
         } else if (e.type === 'email') {
             matched = q.includes('@') && q.length >= 6 && e.value.toLowerCase().includes(qLower);
         } else if (e.type === 'social') {
             const looksSocial = q.startsWith('@') || /^https?:\/\//i.test(q);
             matched = looksSocial && q.length >= 4 && e.value.toLowerCase().includes(qLower);
         }
-        if (matched) out.push({ entry: e, hash: hashEntryValue(e.type, e.value) });
+        if (matched) {
+            out.push({ entry: e, hash: hashEntryValue(e.type, e.value) });
+            anchored = true;
+        }
     }
+
+    // ── Phase 2: anchored secondary unlock (address, id) ──
+    if (anchored) {
+        const qIdNormalized = qLower.replace(/[^a-z0-9]/g, '');
+        for (const e of entries) {
+            if (e.type !== 'address' && e.type !== 'id') continue;
+            // ids normalize away formatting ("30.123.456" matches "30123456");
+            // addresses match as typed (case-insensitive).
+            const ev = e.type === 'id'
+                ? normalizeEntryValue('id', e.value)
+                : e.value.trim().toLowerCase();
+            const haystack = e.type === 'id' ? qIdNormalized : qLower;
+            if (ev.length >= 4 && haystack.includes(ev)) {
+                out.push({ entry: e, hash: hashEntryValue(e.type, e.value) });
+            }
+        }
+    }
+
     return out;
 }
 

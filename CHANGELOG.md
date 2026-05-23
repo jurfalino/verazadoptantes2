@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.15.0-3] - 2026-05-23
+
+PII access-gating search-match improvements — bug fix + an anchored secondary unlock for `address` / `id`. Still behind `ENABLE_PII_ACCESS_GATING` (off).
+
+### Fixed
+- `matchSearchEntries` previously concatenated *every* digit in the query into a single substring (so a mixed query like `808080 Corrientes 3444` produced the 10-digit candidate `8080803444`, which an 8-digit stored phone could not contain — the query couldn't unlock the phone). Candidates are now built from the concatenated digits *plus* the digits of each whitespace-separated token, deduped. The original `808080` query still matches, formatted phones (`+54 11 2345-6789`) still match via the concat, and a phone stored with internal separators next to other text in the query now matches via the per-token path.
+
+### Changed
+- Anchored secondary unlock: when an identifier entry (phone / email / social) of an adopter matches the query — anchoring that adopter — an `address` or `id` entry whose value also appears in the query unlocks too. The anchor requirement is what keeps a bare `Corrientes` query from fan-granting addresses; the combined match (identifier + secondary) is itself the signal the searcher has both pieces. `id` matching is formatting-insensitive (`30.123.456` matches `30123456`). `other` (free-text notes) never auto-unlocks under either phase.
+
 ## [2.15.0-2] - 2026-05-22
 
 ### Added
