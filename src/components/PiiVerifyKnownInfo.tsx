@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { verifyKnownInfo } from '@/app/actions/piiAccess';
@@ -17,7 +16,6 @@ import { verifyKnownInfo } from '@/app/actions/piiAccess';
 export default function PiiVerifyKnownInfo({ adopterId }: { adopterId: string }) {
     const { t } = useLanguage();
     const toast = useShowToast();
-    const router = useRouter();
     const [input, setInput] = useState('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -32,7 +30,13 @@ export default function PiiVerifyKnownInfo({ adopterId }: { adopterId: string })
             if (res.ok && res.revealed > 0) {
                 toast.success('✓', t('adopter.pii_verify_unlocked'));
                 setInput('');
-                router.refresh();
+                // router.refresh() re-fetches the server-rendered page, but in
+                // this app's Edge + RSC setup the unmasked values don't always
+                // re-render until a full reload. Force one so the unlock is
+                // visible immediately. Brief delay so the success toast lands
+                // before the page swap.
+                setTimeout(() => window.location.reload(), 500);
+                return;
             } else if (res.ok) {
                 setError(t('adopter.pii_verify_no_match'));
             } else {

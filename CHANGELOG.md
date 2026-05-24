@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.15.0-9] - 2026-05-24
+
+### Fixed
+- After a successful "I know this" verify match, the masked rows weren't visibly unmasking until a manual page reload — `router.refresh()` was not reliably re-rendering the server-rendered values in this app's Edge + RSC setup. `PiiVerifyKnownInfo` now triggers a full reload (with a short delay so the success toast registers first) so the unlock is visible immediately.
+
 ## [2.15.0-8] - 2026-05-24
 
 ### Changed
