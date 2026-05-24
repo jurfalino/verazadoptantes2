@@ -229,6 +229,33 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     // change how it looks without the user opting in.
     const hasStoredContactEntries = !!initialData?.contactEntries;
 
+    // Sync read-mode state from `initialData` when the prop reference changes.
+    // The two useState initializers above run ONCE on mount, so without this
+    // effect a `router.refresh()` triggered elsewhere — e.g. PiiVerifyKnownInfo
+    // unlocks a contact entry → page re-fetches → new `initialData` arrives —
+    // would leave the form's local state stale and the masked values wouldn't
+    // visibly update until a full reload. Guarded by `isEditing` so a draft
+    // isn't clobbered by a background refresh.
+    useEffect(() => {
+        if (isEditing || !initialData) return;
+        setData({
+            id: initialData.id || '',
+            name: initialData.name || formPrefill?.name || nameFromUrl || '',
+            status: initialData.status || defaultStatus,
+            contactInfo: initialData.contactInfo || formPrefill?.contactInfo || '',
+            familyMembers: initialData.familyMembers || '',
+        });
+        setContactEntries(
+            initialData.contactEntries
+                ? deserializeContactEntries(initialData.contactEntries)
+                : parseBlobToContactEntries(initialData.contactInfo || formPrefill?.contactInfo || ''),
+        );
+        // Intentional: re-sync only on a new `initialData` reference. The
+        // `isEditing` read is a guard, not a trigger — including it would
+        // cause edit-toggle to re-clobber state.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initialData]);
+
     // Build search query from name + contact for duplicate check
     const getDuplicateSearchQuery = useCallback(() => {
         const parts = [data.name.trim(), data.contactInfo.trim()].filter(Boolean);

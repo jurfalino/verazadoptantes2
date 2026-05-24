@@ -495,7 +495,7 @@ export const es = {
         ce_empty: 'Aún no hay datos de contacto. Agregá uno.',
         ce_masked: 'oculto',
         pii_protected_title: 'Datos de contacto protegidos',
-        pii_protected_body: 'Podés ver los datos de contacto que buscaste. Para desbloquear más, ingresá algo que sepas sobre esta persona acá abajo.',
+        pii_protected_body: 'Podés ver los datos de contacto que buscaste. ¿No estás seguro/a de que sea la persona que buscás? Ingresá otro dato que conozcas (teléfono, email, dirección…) para confirmar que coincide y desbloquearlo.',
         pii_request_cta: 'Solicitar acceso',
         pii_request_cta_fallback: 'o solicitar acceso si no conocés más datos',
         pii_request_pending: 'Acceso solicitado — esperando aprobación.',

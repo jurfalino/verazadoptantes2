@@ -494,7 +494,7 @@ export const en = {
         ce_empty: 'No contact entries yet. Add one.',
         ce_masked: 'hidden',
         pii_protected_title: 'Contact details are protected',
-        pii_protected_body: 'You can see the contact info you searched for. To unlock more, type anything you know about this person below.',
+        pii_protected_body: 'You can see the contact info you searched for. Not sure this is the right person? Type another detail you know (phone, email, address…) to confirm it matches and unlock it.',
         pii_request_cta: 'Request access',
         pii_request_cta_fallback: 'or request access if you don’t know more',
         pii_request_pending: 'Access requested — awaiting approval.',
