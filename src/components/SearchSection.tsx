@@ -422,11 +422,16 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                                                 )}
                                             </div>
                                         </div>
-                                        {/* Rating Badge */}
+                                        {/* Rating Badge — flex-shrink-0 so the badge claims its natural width
+                                            and the name (which has min-w-0 + truncate above) shrinks to fit;
+                                            without this, the inline-flex badge content overflows its box on
+                                            mobile and visually overlaps the truncated name. */}
                                         {res.avgRating !== null && (
-                                            <RatingExplainer rating={res.avgRating}>
-                                                <RatingBadge rating={res.avgRating} size="sm" label="search" />
-                                            </RatingExplainer>
+                                            <div className="flex-shrink-0">
+                                                <RatingExplainer rating={res.avgRating}>
+                                                    <RatingBadge rating={res.avgRating} size="sm" label="search" />
+                                                </RatingExplainer>
+                                            </div>
                                         )}
                                     </div>
 

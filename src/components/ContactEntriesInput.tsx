@@ -113,6 +113,7 @@ export default function ContactEntriesInput({ entries, onChange }: ContactEntrie
                                     placeholder={t(`adopter.ce_input_ph_${entry.type}`)}
                                     disabled={isMasked}
                                     aria-label={isMasked ? `${t(`adopter.ce_type_${entry.type}`)}: ${t('adopter.ce_masked')}` : undefined}
+                                    data-testid="contact-entry-value"
                                     className="flex-1 min-w-0 rounded-lg border border-teal-200 bg-white text-teal-900 text-sm px-3 py-1.5 outline-none focus:border-teal-500 disabled:bg-stone-100 disabled:text-stone-500 disabled:cursor-not-allowed"
                                 />
                                 <button

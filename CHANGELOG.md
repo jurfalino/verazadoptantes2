@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.15.0-7] - 2026-05-24
+
+### Fixed
+- Clicking the per-row **"I know this"** verify link in `ContactEntriesDisplay` flipped the contact section into edit mode — the button's click bubbled up to `AdopterForm`'s click-to-edit handler. The verify button + the expanded verify UI now stop click propagation.
+- **Search-card rating overlap on mobile**: the `RatingExplainer` wrapper had no `flex-shrink-0`, so on narrow viewports the badge box was flex-compressed and its non-wrapping `inline-flex` content visually overflowed onto the truncated name. Wrapped in `flex-shrink-0` so the badge claims its natural width and the name (already `min-w-0 truncate`) shrinks instead.
+- E2E `adopter.spec.ts` selector for the contact-entry value field — was selecting by the old generic `"Valor"/"Value"` placeholder (replaced by type-specific copy in 2.15.0-6). Now uses a stable `data-testid="contact-entry-value"` (also added on the input itself).
+
 ## [2.15.0-6] - 2026-05-24
 
 ### Changed

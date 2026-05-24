@@ -70,7 +70,10 @@ test.describe('Adopter Profile', () => {
 
         // Categorization produced two typed entries: phone + email. The phone
         // keeps the formatting the user entered (not collapsed to bare digits).
-        const entryValues = page.getByPlaceholder(/^valor$|^value$/i);
+        // v2.15.0-6 made the value placeholder type-specific (e.g. "+54 11 …",
+        // "name@example.com") — selecting by `data-testid` keeps the test
+        // stable across copy changes.
+        const entryValues = page.getByTestId('contact-entry-value');
         await expect(entryValues).toHaveCount(2, { timeout: 10000 });
         await expect(entryValues.nth(0)).toHaveValue('11 2345-6789');
         await expect(entryValues.nth(1)).toHaveValue('juan.contacto@example.com');

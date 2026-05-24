@@ -185,7 +185,12 @@ export default function ContactEntriesDisplay({ entries, adopterId }: ContactEnt
                                     {canVerify && !isVerifying && (
                                         <button
                                             type="button"
-                                            onClick={() => openVerify(key)}
+                                            // stopPropagation: the parent contact section in
+                                            // AdopterForm uses a click-to-edit handler. Without
+                                            // this, the verify button click bubbles up and
+                                            // flips the section into edit mode instead of
+                                            // opening the inline input.
+                                            onClick={e => { e.stopPropagation(); openVerify(key); }}
                                             className="shrink-0 text-xs font-semibold text-teal-700 hover:opacity-70 transition-opacity"
                                         >
                                             {t('adopter.pii_verify_cta')}
@@ -193,7 +198,9 @@ export default function ContactEntriesDisplay({ entries, adopterId }: ContactEnt
                                     )}
                                 </div>
                                 {isVerifying && (
-                                    <div className="flex flex-col gap-1 pl-6 sm:pl-32">
+                                    // Boundary that catches every click inside the verify UI
+                                    // so none of them reach the click-to-edit handler above.
+                                    <div className="flex flex-col gap-1 pl-6 sm:pl-32" onClick={e => e.stopPropagation()}>
                                         <div className="flex flex-wrap items-center gap-2">
                                             <input
                                                 autoFocus
