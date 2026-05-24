@@ -546,12 +546,71 @@ describe('matchSearchEntries', () => {
         expect(m.map(x => x.entry.type)).toEqual(['social']);
     });
 
-    it('does not auto-unlock id / address from an unanchored query (no fan-grant)', () => {
-        // Bare id digits / bare street-name queries don't anchor any
-        // identifier → no secondary unlock either.
-        expect(matchSearchEntries(entries, '30123456')).toHaveLength(0);
-        expect(matchSearchEntries(entries, 'Corrientes 3444')).toHaveLength(0);
+    it('a full id alone anchors and unlocks the id (confidence-rule reshape)', () => {
+        // Reshape: a full DNI is at least as specific as 6 phone digits;
+        // it should anchor on its own.
+        const m = matchSearchEntries(entries, '30123456');
+        expect(m.map(x => x.entry.type)).toEqual(['id']);
+    });
+
+    it('a full id with formatting alone anchors (digits-only normalized)', () => {
+        const m = matchSearchEntries(entries, '30.123.456');
+        expect(m.map(x => x.entry.type)).toEqual(['id']);
+    });
+
+    it('a short id (< 6 digits) cannot anchor on its own', () => {
+        const local: ContactEntry[] = [{ type: 'id', value: '12345' }];
+        expect(matchSearchEntries(local, '12345')).toHaveLength(0);
+    });
+
+    it('a full street-plus-number address alone anchors (specific part)', () => {
+        const m = matchSearchEntries(entries, 'Corrientes 3444');
+        expect(m.map(x => x.entry.type)).toEqual(['address']);
+    });
+
+    it('an address fragment (text-only, no number) alone does not anchor', () => {
+        // "Corrientes" (without the number) is a loose fragment; no anchor,
+        // no fan-grant. The fragment ride-along still works when something
+        // else anchors the adopter — see the combined-query test below.
+        expect(matchSearchEntries(entries, 'Corrientes')).toHaveLength(0);
         expect(matchSearchEntries(entries, 'zona sur')).toHaveLength(0);
+    });
+
+    it('a single loose address part (locality alone) does not anchor', () => {
+        const local: ContactEntry[] = [{ type: 'address', value: 'Peru 999, San Isidro, 3680' }];
+        expect(matchSearchEntries(local, 'San Isidro')).toHaveLength(0);
+    });
+
+    it('two loose address parts (locality + postal code) together anchor', () => {
+        const local: ContactEntry[] = [{ type: 'address', value: 'Peru 999, San Isidro, 3680' }];
+        const m = matchSearchEntries(local, 'San Isidro 3680');
+        expect(m.map(x => x.entry.type)).toEqual(['address']);
+    });
+
+    it('typo in a loose address part still anchors via Lev-1', () => {
+        // "Sprigfield" vs "Springfield" — one deletion. Combined with the
+        // postal code, two loose parts match → anchors.
+        const local: ContactEntry[] = [{ type: 'address', value: 'Calle Falsa 123, Springfield, 5555' }];
+        const m = matchSearchEntries(local, 'Sprigfield 5555');
+        expect(m.map(x => x.entry.type)).toEqual(['address']);
+    });
+
+    it('typo in a specific address part does not anchor (digit-confusion guard)', () => {
+        // "Peru 998" must not unlock entry "Peru 999". Specific parts use
+        // exact substring match — Lev-1 on a digit substitution would
+        // collapse the difference between neighboring street numbers.
+        const local: ContactEntry[] = [{ type: 'address', value: 'Peru 999, San Isidro, 3680' }];
+        expect(matchSearchEntries(local, 'Peru 998')).toHaveLength(0);
+    });
+
+    it('apartment-style part (e.g. "5B") is loose, not specific', () => {
+        // "5B" has a digit and a letter but fails min-letters (1 < 2) and
+        // min-length (2 < 5) — treated as loose, can't anchor alone.
+        const local: ContactEntry[] = [{ type: 'address', value: 'Av. Corrientes 3444, 5B, CABA' }];
+        expect(matchSearchEntries(local, '5B')).toHaveLength(0);
+        // The specific street-plus-number part still anchors when typed in full.
+        const m = matchSearchEntries(local, 'Av. Corrientes 3444');
+        expect(m.map(x => x.entry.type)).toEqual(['address']);
     });
 
     it('combined query (phone + address) unlocks the address when the phone anchors it', () => {

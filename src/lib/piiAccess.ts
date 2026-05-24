@@ -108,33 +108,123 @@ export interface SearchEntryMatch {
     hash: string;
 }
 
+const ID_ANCHOR_MIN_DIGITS = 6;
+const ADDRESS_PART_MIN_LEN = 2;
+const ADDRESS_SPECIFIC_MIN_LEN = 5;
+const ADDRESS_SPECIFIC_MIN_LETTERS = 2;
+
+/**
+ * Levenshtein distance ≤ 1 — same string, OR one insertion / deletion /
+ * substitution. Absorbs single-character typos in letter-only address parts
+ * ("Sprigfield" ↔ "Springfield"). Specific parts (text + digit run) use exact
+ * comparison instead — Lev-1 on numbers would let "Peru 998" silently match
+ * "Peru 999", and numerically adjacent doors are different addresses, not typos.
+ */
+function levAtMostOne(a: string, b: string): boolean {
+    if (a === b) return true;
+    const la = a.length, lb = b.length;
+    if (Math.abs(la - lb) > 1) return false;
+    let i = 0, j = 0, diff = 0;
+    while (i < la && j < lb) {
+        if (a[i] === b[j]) { i++; j++; continue; }
+        diff++;
+        if (diff > 1) return false;
+        if (la === lb) { i++; j++; }
+        else if (la > lb) { i++; }
+        else { j++; }
+    }
+    if (i < la || j < lb) diff++;
+    return diff <= 1;
+}
+
+/** Does `query` contain a substring within Lev-1 of `part`? Loose-part-only. */
+function queryContainsApprox(query: string, part: string): boolean {
+    if (part.length === 0) return false;
+    if (query.includes(part)) return true;
+    const lens = [part.length - 1, part.length + 1].filter(n => n >= 2);
+    for (const L of lens) {
+        if (L > query.length) continue;
+        for (let i = 0; i + L <= query.length; i++) {
+            if (levAtMostOne(part, query.slice(i, i + L))) return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Anchor rule for an address entry. The stored value is tokenized by comma;
+ * each normalized part is classified:
+ *  - SPECIFIC — has a digit AND ≥ 2 letters AND length ≥ 5 (a street + number).
+ *    A single match anchors the adopter. Exact substring required: typo
+ *    tolerance on the number is dangerous.
+ *  - LOOSE — anything else (locality, neighborhood, postal code, apartment).
+ *    Two loose matches together anchor; one alone is not enough. Lev-1
+ *    tolerance applies (typos in locality names).
+ *
+ * Combining loose parts ("San Isidro 3680") is itself the evidence — harder to
+ * coincidence into than either piece alone.
+ */
+function addressMatchesAsAnchor(addressValue: string, qNormalized: string): boolean {
+    const parts = addressValue.split(',').map(p => normalizeText(p)).filter(p => p.length >= ADDRESS_PART_MIN_LEN);
+    if (parts.length === 0) return false;
+    let specific = 0;
+    let loose = 0;
+    for (const part of parts) {
+        const hasDigit = /\d/.test(part);
+        const letterCount = part.replace(/[^a-z]/g, '').length;
+        const isSpecific = hasDigit && letterCount >= ADDRESS_SPECIFIC_MIN_LETTERS && part.length >= ADDRESS_SPECIFIC_MIN_LEN;
+        if (isSpecific) {
+            if (qNormalized.includes(part)) specific++;
+        } else {
+            if (queryContainsApprox(qNormalized, part)) loose++;
+        }
+    }
+    return specific >= 1 || loose >= 2;
+}
+
+/**
+ * Anchor rule for an id entry. The normalized digit-only stored value must
+ * appear in the query's digit-only form, with a minimum length to keep short
+ * ids from fan-granting. Exact (no Lev-1) — digit typos coincide with
+ * neighboring valid ids and are indistinguishable from a guess.
+ */
+function idMatchesAsAnchor(idValue: string, query: string): boolean {
+    const entryDigits = normalizeEntryValue('id', idValue);
+    if (entryDigits.length < ID_ANCHOR_MIN_DIGITS) return false;
+    const queryDigits = query.replace(/\D/g, '');
+    return queryDigits.includes(entryDigits);
+}
+
 /**
  * Find the contact entries a discovery query genuinely matched — the basis for
  * a search-match grant ("you see what you searched for"). Two-phase:
  *
- * Phase 1 — IDENTIFIER ANCHORS. Only an identifier-shaped query unlocks an
- * identifier, so a name-token search never reveals one.
+ * Phase 1 — ANCHOR (high-confidence match). Any type can anchor when the
+ * query matches the stored value at sufficient confidence. The shape-check is
+ * type-specific because "specific" means different things per type:
  *  - phone:  the query carries a digit run ≥ PHONE_SEARCH_MIN_DIGITS that is
- *            a substring of the entry's digits. We check both each contiguous
- *            digit run AND the full concatenated digits, so a mixed query like
- *            "808080 Corrientes 3444" (per-run) and a formatted single phone
- *            like "+54 11 2345-6789" (concat) both match.
+ *            a substring of the entry's digits. We check each contiguous run
+ *            AND the full concatenated digits, so mixed queries
+ *            ("808080 Corrientes 3444") and formatted single phones
+ *            ("+54 11 2345-6789") both match.
  *  - email:  query contains '@' and is a substring of the entry value.
  *  - social: query is an @handle or URL, and is a substring of the entry value.
+ *  - id:     full normalized id digits (≥ 6 chars) appear in the query digits
+ *            (formatting-insensitive: "30.123.456" matches "30123456").
+ *  - address: comma-tokenized part rule — see addressMatchesAsAnchor.
  *
- * Phase 2 — ANCHORED SECONDARY UNLOCK. If an identifier matched, this adopter
- * is *anchored*: an `address` or `id` entry whose value also appears in the
- * query unlocks too. The combined match (identifier + secondary) is itself the
- * signal the searcher has both pieces. The anchor requirement is what keeps a
- * bare "Corrientes" query from fan-granting every address on that street.
+ * Phase 2 — ANCHORED FRAGMENT RIDE-ALONG (address, id). If something already
+ * anchored this adopter in Phase 1, an `address` or `id` entry whose value
+ * also appears as a substring of the query (at a lower length threshold)
+ * unlocks too. Lets "1123456789 Corrientes" reveal the address fragment
+ * alongside the phone. Entries already matched in Phase 1 are skipped.
  *
  * `other` (free-text notes) never auto-unlocks under either phase.
  *
  * `options.anchorRequiredForSecondary` defaults to `true` (discovery context).
- * Set `false` for an on-profile "verify what you know" check that's already
+ * Set `false` for the on-profile "verify what you know" check that's already
  * scoped to one adopter — the cross-adopter fan-grant concern no longer
- * applies, so an address-only or id-only input can unlock its matching entry
- * without an identifier match elsewhere in the query.
+ * applies, so Phase 2 runs even without an anchor.
  */
 export function matchSearchEntries(
     entries: ContactEntry[],
@@ -145,6 +235,7 @@ export function matchSearchEntries(
     if (!q) return [];
     const qDigits = q.replace(/\D/g, '');
     const qLower = q.toLowerCase();
+    const qNormalized = normalizeText(q);
     // Plausible phone shapes in the query, deduped: the full concatenated
     // digits (catches a single formatted phone like "+54 11 2345-6789" filling
     // the whole query) plus each whitespace-separated token's digits (catches
@@ -158,8 +249,9 @@ export function matchSearchEntries(
     }
     const phoneCandidates = [...phoneCandSet];
 
-    // ── Phase 1: identifier anchors ──
+    // ── Phase 1: any-type anchor ──
     const out: SearchEntryMatch[] = [];
+    const matchedHashes = new Set<string>();
     let anchored = false;
     for (const e of entries) {
         let matched = false;
@@ -171,19 +263,29 @@ export function matchSearchEntries(
         } else if (e.type === 'social') {
             const looksSocial = q.startsWith('@') || /^https?:\/\//i.test(q);
             matched = looksSocial && q.length >= 4 && e.value.toLowerCase().includes(qLower);
+        } else if (e.type === 'id') {
+            matched = idMatchesAsAnchor(e.value, q);
+        } else if (e.type === 'address') {
+            matched = addressMatchesAsAnchor(e.value, qNormalized);
         }
         if (matched) {
-            out.push({ entry: e, hash: hashEntryValue(e.type, e.value) });
+            const hash = hashEntryValue(e.type, e.value);
+            if (!matchedHashes.has(hash)) {
+                out.push({ entry: e, hash });
+                matchedHashes.add(hash);
+            }
             anchored = true;
         }
     }
 
-    // ── Phase 2: anchored secondary unlock (address, id) ──
+    // ── Phase 2: anchored fragment ride-along (address, id) ──
     const anchorRequired = options.anchorRequiredForSecondary !== false;
     if (anchored || !anchorRequired) {
         const qIdNormalized = qLower.replace(/[^a-z0-9]/g, '');
         for (const e of entries) {
             if (e.type !== 'address' && e.type !== 'id') continue;
+            const hash = hashEntryValue(e.type, e.value);
+            if (matchedHashes.has(hash)) continue;
             // ids normalize away formatting ("30.123.456" matches "30123456");
             // addresses match as typed (case-insensitive).
             const ev = e.type === 'id'
@@ -191,7 +293,8 @@ export function matchSearchEntries(
                 : e.value.trim().toLowerCase();
             const haystack = e.type === 'id' ? qIdNormalized : qLower;
             if (ev.length >= 4 && haystack.includes(ev)) {
-                out.push({ entry: e, hash: hashEntryValue(e.type, e.value) });
+                out.push({ entry: e, hash });
+                matchedHashes.add(hash);
             }
         }
     }
