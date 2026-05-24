@@ -107,6 +107,11 @@ export const resolvePiiRequestSchema = z.object({
     note: z.string().max(1_000).optional().nullable(),
 });
 
+export const verifyKnownInfoSchema = z.object({
+    adopterId: id,
+    info: z.string().min(1).max(500),
+});
+
 // ── Adopters API (POST /api/adopters) ────────────────
 
 export const createAdopterApiSchema = z.object({

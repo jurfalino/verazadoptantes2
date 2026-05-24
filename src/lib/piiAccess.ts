@@ -113,8 +113,18 @@ export interface SearchEntryMatch {
  * bare "Corrientes" query from fan-granting every address on that street.
  *
  * `other` (free-text notes) never auto-unlocks under either phase.
+ *
+ * `options.anchorRequiredForSecondary` defaults to `true` (discovery context).
+ * Set `false` for an on-profile "verify what you know" check that's already
+ * scoped to one adopter — the cross-adopter fan-grant concern no longer
+ * applies, so an address-only or id-only input can unlock its matching entry
+ * without an identifier match elsewhere in the query.
  */
-export function matchSearchEntries(entries: ContactEntry[], query: string): SearchEntryMatch[] {
+export function matchSearchEntries(
+    entries: ContactEntry[],
+    query: string,
+    options: { anchorRequiredForSecondary?: boolean } = {},
+): SearchEntryMatch[] {
     const q = query.trim();
     if (!q) return [];
     const qDigits = q.replace(/\D/g, '');
@@ -153,7 +163,8 @@ export function matchSearchEntries(entries: ContactEntry[], query: string): Sear
     }
 
     // ── Phase 2: anchored secondary unlock (address, id) ──
-    if (anchored) {
+    const anchorRequired = options.anchorRequiredForSecondary !== false;
+    if (anchored || !anchorRequired) {
         const qIdNormalized = qLower.replace(/[^a-z0-9]/g, '');
         for (const e of entries) {
             if (e.type !== 'address' && e.type !== 'id') continue;

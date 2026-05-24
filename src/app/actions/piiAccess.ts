@@ -23,14 +23,16 @@ import {
     isRealActorEmail,
     piiCooldownUntil,
     maskAdopterContact,
+    matchSearchEntries,
     type RequestPiiAccessResult,
     type PiiAccessRequestView,
     type PiiAccessRequestState,
     type AdopterPiiContext,
     type PiiAllContactGrant,
 } from '@/lib/piiAccess';
+import { deserializeContactEntries } from '@/lib/contactEntries';
 import { createNotification, resolveDisplayName } from './notifications';
-import { requestPiiAccessSchema, resolvePiiRequestSchema } from './validation';
+import { requestPiiAccessSchema, resolvePiiRequestSchema, verifyKnownInfoSchema } from './validation';
 
 type PiiRequest = typeof piiAccessRequests.$inferSelect;
 type PiiGrant = typeof piiAccessGrants.$inferSelect;
@@ -483,5 +485,71 @@ export async function getAdopterPiiContext(adopterId: string): Promise<AdopterPi
     } catch (e) {
         logger.error('getAdopterPiiContext failed', e, { adopterId });
         return empty;
+    }
+}
+
+/**
+ * On-profile "I know this" self-serve verification. The viewer types something
+ * they think is part of the adopter's contact info; if it matches any of that
+ * adopter's still-masked entries it unlocks them — same `pii_access_grants`
+ * row a search match would write (`origin='search_match'`).
+ *
+ * Scoped to a single adopter, so the matcher runs without the cross-adopter
+ * anchor requirement: a bare address or id input here can unlock its matching
+ * entry on its own. Returns just a count — no leak of *which* entries exist.
+ */
+export async function verifyKnownInfo(
+    adopterId: string,
+    info: string,
+): Promise<{ ok: boolean; revealed: number; error?: string }> {
+    try {
+        if (!(await isPiiGatingEnabled())) return { ok: false, revealed: 0, error: 'PII gating not enabled' };
+
+        const parsed = verifyKnownInfoSchema.safeParse({ adopterId, info });
+        if (!parsed.success) return { ok: false, revealed: 0, error: 'Invalid input' };
+
+        let viewer = '';
+        try { viewer = await getUser(); } catch { /* unauthenticated */ }
+        if (!isRealActorEmail(viewer)) return { ok: false, revealed: 0, error: 'Not authenticated' };
+
+        const db = await getDb();
+        if (!db) return { ok: false, revealed: 0, error: 'No database' };
+
+        const adopter = await db.select({
+            id: adopters.id, addedBy: adopters.addedBy, contactEntries: adopters.contactEntries,
+        }).from(adopters).where(eq(adopters.id, adopterId)).get();
+        if (!adopter) return { ok: false, revealed: 0, error: 'Adopter not found' };
+
+        const visibility = await resolveAdopterVisibility(viewer, { id: adopter.id, addedBy: adopter.addedBy });
+        if (visibility.nothingMasked) return { ok: true, revealed: 0 };
+
+        const entries = deserializeContactEntries(adopter.contactEntries);
+        const matches = matchSearchEntries(entries, info, { anchorRequiredForSecondary: false });
+        if (matches.length === 0) return { ok: true, revealed: 0 };
+
+        const newGrants = matches.filter(m => !visibility.unlockedEntryHashes.has(m.hash));
+        if (newGrants.length === 0) return { ok: true, revealed: 0 };
+
+        await Promise.all(newGrants.map(g => db.insert(piiAccessGrants).values({
+            id: crypto.randomUUID(),
+            adopterId,
+            granteeEmail: viewer,
+            scope: 'entry',
+            entryRef: g.hash,
+            origin: 'search_match',
+            grantedByEmail: viewer,
+            createdAt: new Date(),
+        })));
+
+        logAudit({
+            userEmail: viewer,
+            action: 'pii_known_info_unlocked',
+            target: adopterId,
+            details: { count: newGrants.length },
+        });
+        return { ok: true, revealed: newGrants.length };
+    } catch (e) {
+        const errorId = logger.error('verifyKnownInfo failed', e, { adopterId });
+        return { ok: false, revealed: 0, error: `Failed to verify (ID: ${errorId})` };
     }
 }

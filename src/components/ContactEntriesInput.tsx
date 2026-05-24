@@ -88,13 +88,19 @@ export default function ContactEntriesInput({ entries, onChange }: ContactEntrie
                 <div className="space-y-2">
                     {entries.map((entry, i) => {
                         const Icon = TYPE_ICON[entry.type];
+                        // Masked rows are read-only — "can't edit what you can't see".
+                        // The saveAdopter owner/admin gate is the real security
+                        // control; this gives a clean UI rather than letting a user
+                        // type into •••••• and hit a 403 on save.
+                        const isMasked = !!entry.masked;
                         return (
-                            <div key={i} className="flex items-center gap-2">
+                            <div key={i} className={`flex items-center gap-2 ${isMasked ? 'opacity-60' : ''}`}>
                                 <Icon className="w-4 h-4 shrink-0 text-teal-600" aria-hidden="true" />
                                 <select
                                     value={entry.type}
                                     onChange={e => updateEntry(i, { type: e.target.value as ContactEntryType })}
-                                    className="shrink-0 rounded-lg border border-teal-200 bg-white text-teal-900 text-sm px-2 py-1.5 outline-none focus:border-teal-500"
+                                    disabled={isMasked}
+                                    className="shrink-0 rounded-lg border border-teal-200 bg-white text-teal-900 text-sm px-2 py-1.5 outline-none focus:border-teal-500 disabled:bg-stone-100 disabled:text-stone-500 disabled:cursor-not-allowed"
                                 >
                                     {TYPE_ORDER.map(type => (
                                         <option key={type} value={type}>{t(`adopter.ce_type_${type}`)}</option>
@@ -105,13 +111,16 @@ export default function ContactEntriesInput({ entries, onChange }: ContactEntrie
                                     value={entry.value}
                                     onChange={e => updateEntry(i, { value: e.target.value })}
                                     placeholder={t('adopter.ce_value_placeholder')}
-                                    className="flex-1 min-w-0 rounded-lg border border-teal-200 bg-white text-teal-900 text-sm px-3 py-1.5 outline-none focus:border-teal-500"
+                                    disabled={isMasked}
+                                    aria-label={isMasked ? `${t(`adopter.ce_type_${entry.type}`)}: ${t('adopter.ce_masked')}` : undefined}
+                                    className="flex-1 min-w-0 rounded-lg border border-teal-200 bg-white text-teal-900 text-sm px-3 py-1.5 outline-none focus:border-teal-500 disabled:bg-stone-100 disabled:text-stone-500 disabled:cursor-not-allowed"
                                 />
                                 <button
                                     type="button"
                                     onClick={() => removeEntry(i)}
+                                    disabled={isMasked}
                                     aria-label={t('adopter.ce_remove')}
-                                    className="shrink-0 p-1 text-stone-400 hover:opacity-70 transition-opacity"
+                                    className="shrink-0 p-1 text-stone-400 hover:opacity-70 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed"
                                 >
                                     <X className="w-4 h-4" aria-hidden="true" />
                                 </button>

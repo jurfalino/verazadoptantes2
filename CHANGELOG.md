@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.15.0-4] - 2026-05-24
+
+PII access-gating UX — per-field disable in the contact editor, and an on-profile self-serve verify so a viewer who has more known info can unlock contact rows without going through the request/approval cycle. Still behind `ENABLE_PII_ACCESS_GATING` (off).
+
+### Added
+- On-profile per-entry **"I know this"** verify on every masked contact row (`ContactEntriesDisplay`). Clicking it opens an inline input + Check button; if the typed info matches that adopter's still-masked entry, a `pii_access_grants` row is written (`origin='search_match'`, same audit trail as a real search match) and the row re-renders unmasked on refresh. No match → an inline "Doesn't match" stays under the input. The response carries only a count — it never leaks *which* entries exist. Backed by a new `verifyKnownInfo(adopterId, info)` server action.
+- `matchSearchEntries` gains an `{ anchorRequiredForSecondary?: boolean }` option — default `true` (discovery, cross-adopter fan-grant guard), `false` for the profile verify path (single-adopter scope, so an address-only or id-only input can unlock its match on its own).
+- 10 new `adopter.pii_verify_*` i18n keys (EN + ES).
+
+### Changed
+- `ContactEntriesInput` renders masked rows as read-only — the type select, value input and remove button are disabled, the row is shown at 60% opacity, and the input carries an `aria-label`. The `saveAdopter` owner/admin gate stays as the real security control; this stops the UI from offering an edit affordance for fields the viewer can't see, eliminating the "type into •••••• and hit a 403 on save" confusion.
+
 ## [2.15.0-3] - 2026-05-23
 
 PII access-gating search-match improvements — bug fix + an anchored secondary unlock for `address` / `id`. Still behind `ENABLE_PII_ACCESS_GATING` (off).

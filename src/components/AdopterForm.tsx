@@ -811,7 +811,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                 title={t('common.edit') || 'Click to edit'}
                             >
                                 {hasStoredContactEntries && contactEntries.length > 0
-                                    ? <ContactEntriesDisplay entries={contactEntries} />
+                                    ? <ContactEntriesDisplay entries={contactEntries} adopterId={adopterId} />
                                     : renderTextWithLinks(data.contactInfo, { emptyLabel: t('audit.empty_val'), type: 'text' })}
                             </div>
                         )}

@@ -371,6 +371,22 @@ describe('matchSearchEntries', () => {
     it('returns nothing for an empty query', () => {
         expect(matchSearchEntries(entries, '   ')).toHaveLength(0);
     });
+
+    it('with anchorRequiredForSecondary: false, an address-only query unlocks the address', () => {
+        // Profile-scoped verify path — no fan-grant concern, so a bare address
+        // works without an identifier anchor.
+        const m = matchSearchEntries(entries, 'Corrientes 3444', { anchorRequiredForSecondary: false });
+        expect(m.map(x => x.entry.type)).toContain('address');
+    });
+
+    it('with anchorRequiredForSecondary: false, an id-only query unlocks the id', () => {
+        const m = matchSearchEntries(entries, '30123456', { anchorRequiredForSecondary: false });
+        expect(m.map(x => x.entry.type)).toContain('id');
+    });
+
+    it('with anchorRequiredForSecondary: false, `other` still never auto-unlocks', () => {
+        expect(matchSearchEntries(entries, 'Vive en zona sur', { anchorRequiredForSecondary: false })).toHaveLength(0);
+    });
 });
 
 describe('isRealActorEmail', () => {
