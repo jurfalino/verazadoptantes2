@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.15.0-6] - 2026-05-24
+
+### Changed
+- Contact-entry editor value field now shows a type-specific placeholder (e.g. `+54 11 2345-6789` for phone, `name@example.com` for email, `Street, city, province` for address) instead of a generic "Value". Updates as the row's type select changes. The address example nudges toward the comma-separated form the masking layer extracts a locality from.
+
+### Fixed
+- E2E test that asserted the old unauth name-truncation format (`"Mar••••"`) — broken by the v2.15.0-5 unified mask. Replaced with assertions that match the per-token reveal: surnames the user didn't type (`"García"`, `"López"`) stay masked; the typed token (`"María"`) appears in the result card.
+
 ## [2.15.0-5] - 2026-05-24
 
 PII gating — unified mask for unauthenticated and authenticated-non-privileged viewers, and per-token name reveal driven by what the viewer has demonstrated they know. Still behind `ENABLE_PII_ACCESS_GATING` (off).

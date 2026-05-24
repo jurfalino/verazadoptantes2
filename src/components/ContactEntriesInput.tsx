@@ -110,7 +110,7 @@ export default function ContactEntriesInput({ entries, onChange }: ContactEntrie
                                     type="text"
                                     value={entry.value}
                                     onChange={e => updateEntry(i, { value: e.target.value })}
-                                    placeholder={t('adopter.ce_value_placeholder')}
+                                    placeholder={t(`adopter.ce_input_ph_${entry.type}`)}
                                     disabled={isMasked}
                                     aria-label={isMasked ? `${t(`adopter.ce_type_${entry.type}`)}: ${t('adopter.ce_masked')}` : undefined}
                                     className="flex-1 min-w-0 rounded-lg border border-teal-200 bg-white text-teal-900 text-sm px-3 py-1.5 outline-none focus:border-teal-500 disabled:bg-stone-100 disabled:text-stone-500 disabled:cursor-not-allowed"

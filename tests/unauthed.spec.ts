@@ -20,8 +20,16 @@ test.describe('Unauthenticated User — PII Masking', () => {
         // The full name "María García López" should NOT be visible
         await expect(page.getByText(TEST_NAMES.MARIA)).not.toBeVisible({ timeout: 30000 });
 
-        // Masked name pattern: first 3 chars + •••• (e.g. "Mar••••")
-        await expect(page.getByText('Mar••••').first()).toBeVisible({ timeout: 30000 });
+        // Per-token name reveal (v2.15.0-5): tokens that appear in the query
+        // reveal in full, the rest collapse to their initial. Searching for
+        // "María" against "María García López" renders as "María G L" on the
+        // card — surnames the user didn't type stay masked.
+        await expect(page.getByText('García')).toHaveCount(0);
+        await expect(page.getByText('López')).toHaveCount(0);
+        // The "María" token IS revealed because it's in the query.
+        const card = page.locator('a[href*="/adopter/"]').first();
+        await expect(card).toBeVisible({ timeout: 30000 });
+        await expect(card).toContainText('María');
     });
 
     test('Protected info banner shows for unauthenticated users', async ({ page }) => {
