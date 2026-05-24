@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.15.0-5] - 2026-05-24
+
+PII gating — unified mask for unauthenticated and authenticated-non-privileged viewers, and per-token name reveal driven by what the viewer has demonstrated they know. Still behind `ENABLE_PII_ACCESS_GATING` (off).
+
+### Added
+- **Shared `partialReveal()`** helper in `piiAccess.ts` covering every contact-entry type — phone keeps the first 4 digits with separators (`11 23••-••••`), email keeps `<first>•••@<domain>`, social keeps the platform/domain (`instagram.com/••••` or `@••••`), address keeps the last comma-separated locality (`•••••, CABA`), id stays fully masked (the row label names the type). Used by both the unauthenticated `findAdopters` branch and the authenticated PII-gating mask, so what a non-privileged viewer sees is the same in either case.
+- **`partialRevealAddressString()`** for the legacy `addressInfo` column. Legacy `contactInfo` blobs now parse → mask → re-derive instead of collapsing to a `"Contacto protegido"` placeholder.
+- **Per-token name reveal** — name is initials by default (`"Maria Gomez"` → `"M G"`). Tokens the viewer demonstrably knows are shown in full: persistent `scope='name_token'` `pii_access_grants` rows (auth viewers, accrued whenever a search query whole-word-matches a name token) plus transient current-query reveals (unauth viewers' only path). New `hashNameToken()`, `matchSearchNameTokens()`, `renderName()` helpers; `Visibility` carries a parallel `unlockedNameTokenHashes` set; `resolveVisibility` partitions grants by scope. Whole-word, accent-insensitive, ≥ 2-char min on both sides.
+
+### Changed
+- Unauthenticated discovery results no longer get the bespoke regex-mask, 3-char name truncation, nulled `addressInfo`/`contactEntries`, fully-scrubbed snippet, or zeroed `relevancePercent`. They go through the same `maskAdopterContact` + field-scoped snippet scrub + `renderName` as authenticated non-privileged viewers. The only remaining differences are the **login wall** for `@`-email and full-phone queries (accountability gate) and **grant persistence**, which is auth-only (no `granteeEmail` to attach to for unauth).
+- `familyMembers` is now hidden (`null`) for any non-privileged viewer in both paths. Previously visible to authenticated non-privileged viewers — but it's other people's PII, not vetting content.
+- `getAdopterPiiContext.accessGrants.searchMatchCount` bundles `scope='entry'` and `scope='name_token'` grants — both represent "things the viewer demonstrated knowing."
+
 ## [2.15.0-4] - 2026-05-24
 
 PII access-gating UX — per-field disable in the contact editor, and an on-profile self-serve verify so a viewer who has more known info can unlock contact rows without going through the request/approval cycle. Still behind `ENABLE_PII_ACCESS_GATING` (off).

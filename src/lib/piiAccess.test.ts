@@ -2,15 +2,20 @@ import { describe, it, expect } from 'vitest';
 import {
     canEditAdopterRecord,
     hashEntryValue,
+    hashNameToken,
     matchSearchEntries,
+    matchSearchNameTokens,
+    renderName,
     resolveVisibility,
     maskContactEntries,
     maskAdopterContact,
+    partialReveal,
+    partialRevealAddressString,
+    partialRevealName,
     redactHistoryChanges,
     isRealActorEmail,
     piiCooldownUntil,
     PII_MASK,
-    MASKED_CONTACT_PLACEHOLDER,
     PII_DENIAL_COOLDOWN_DAYS,
     type Visibility,
     type PiiGrantRow,
@@ -25,6 +30,7 @@ function vis(partial: Partial<Visibility>): Visibility {
         nothingMasked: false,
         hasAllContactGrant: false,
         unlockedEntryHashes: new Set(),
+        unlockedNameTokenHashes: new Set(),
         ...partial,
     };
 }
@@ -174,6 +180,187 @@ describe('resolveVisibility', () => {
     });
 });
 
+describe('partialReveal', () => {
+    it('phone: keeps first 4 digits, masks the rest, preserves separators', () => {
+        expect(partialReveal({ type: 'phone', value: '11 2345-6789' }).value).toBe('11 23••-••••');
+        expect(partialReveal({ type: 'phone', value: '+54 9 11 2345-6789' }).value).toBe('+54 9 1• ••••-••••');
+        expect(partialReveal({ type: 'phone', value: '1123456789' }).value).toBe('1123••••••');
+    });
+
+    it('email: keeps first char of local + full domain', () => {
+        expect(partialReveal({ type: 'email', value: 'juan@gmail.com' }).value).toBe('j•••@gmail.com');
+    });
+
+    it('social: URL keeps domain prefix; bare @handle keeps the @', () => {
+        expect(partialReveal({ type: 'social', value: 'https://instagram.com/juanperez' }).value).toBe('https://instagram.com/••••');
+        expect(partialReveal({ type: 'social', value: 'instagram.com/juanperez' }).value).toBe('instagram.com/••••');
+        expect(partialReveal({ type: 'social', value: '@juanperez' }).value).toBe('@••••');
+    });
+
+    it('address: keeps the last comma-separated locality, masks the street', () => {
+        expect(partialReveal({ type: 'address', value: 'Corrientes 3444, CABA' }).value).toBe('•••••, CABA');
+        expect(partialReveal({ type: 'address', value: 'Calle Falsa 123, Quilmes, Buenos Aires' }).value).toBe('•••••, Buenos Aires');
+        expect(partialReveal({ type: 'address', value: 'Corrientes 3444' }).value).toBe('•••••••');
+    });
+
+    it('id: fully masked (the row label names the type)', () => {
+        expect(partialReveal({ type: 'id', value: '30123456' }).value).toBe(PII_MASK);
+    });
+
+    it('other (notes): passed through unchanged, no `masked` flag', () => {
+        const note: ContactEntry = { type: 'other', value: 'Vive en zona sur' };
+        expect(partialReveal(note)).toEqual(note);
+        expect(partialReveal(note).masked).toBeUndefined();
+    });
+
+    it('always sets masked: true on a partial-revealed identifier', () => {
+        expect(partialReveal({ type: 'phone', value: '1234567' }).masked).toBe(true);
+        expect(partialReveal({ type: 'email', value: 'a@b.com' }).masked).toBe(true);
+        expect(partialReveal({ type: 'address', value: 'X, Y' }).masked).toBe(true);
+        expect(partialReveal({ type: 'id', value: '12345' }).masked).toBe(true);
+    });
+
+    it('preserves the entry label on masked output', () => {
+        const out = partialReveal({ type: 'id', value: '30123456', label: 'DNI' });
+        expect(out.label).toBe('DNI');
+    });
+});
+
+describe('partialRevealAddressString', () => {
+    it('keeps the locality when there is a comma', () => {
+        expect(partialRevealAddressString('Corrientes 3444, CABA')).toBe('•••••, CABA');
+    });
+
+    it('falls back to full mask when there is no comma', () => {
+        expect(partialRevealAddressString('Corrientes 3444')).toBe('•••••••');
+    });
+
+    it('returns empty string for empty / whitespace input', () => {
+        expect(partialRevealAddressString('')).toBe('');
+        expect(partialRevealAddressString('   ')).toBe('');
+    });
+});
+
+describe('partialRevealName', () => {
+    it('reduces a multi-word name to initials', () => {
+        expect(partialRevealName('Maria Gomez')).toBe('M G');
+        expect(partialRevealName('Maria Jose Gomez')).toBe('M J G');
+        expect(partialRevealName('  Maria   Gomez  ')).toBe('M G');
+        expect(partialRevealName('Maria')).toBe('M');
+    });
+
+    it('returns empty for empty / null / undefined input', () => {
+        expect(partialRevealName('')).toBe('');
+        expect(partialRevealName(null)).toBe('');
+        expect(partialRevealName(undefined)).toBe('');
+    });
+});
+
+describe('hashNameToken', () => {
+    it('is deterministic and accent-insensitive', () => {
+        expect(hashNameToken('Maria')).toBe(hashNameToken('maria'));
+        expect(hashNameToken('María')).toBe(hashNameToken('maria'));
+        expect(hashNameToken(' MARÍA  ')).toBe(hashNameToken('maria'));
+    });
+
+    it('produces different hashes for different tokens', () => {
+        expect(hashNameToken('Maria')).not.toBe(hashNameToken('Mario'));
+    });
+});
+
+describe('matchSearchNameTokens', () => {
+    it('returns the name tokens that appear (whole-word) in the query', () => {
+        expect(matchSearchNameTokens('Maria Gomez', 'Maria 1123456789')).toEqual(['Maria']);
+        expect(matchSearchNameTokens('Maria Jose Gomez', 'Jose Gomez')).toEqual(['Jose', 'Gomez']);
+        expect(matchSearchNameTokens('Maria Gomez', 'Maria Gomez extra')).toEqual(['Maria', 'Gomez']);
+    });
+
+    it('is accent-insensitive on both sides', () => {
+        expect(matchSearchNameTokens('María Gómez', 'maria gomez')).toEqual(['María', 'Gómez']);
+        expect(matchSearchNameTokens('Maria Gomez', 'María Gómez')).toEqual(['Maria', 'Gomez']);
+    });
+
+    it('does not match on a partial-word substring (Mariano ≠ Maria)', () => {
+        expect(matchSearchNameTokens('Maria Gomez', 'Mariano')).toEqual([]);
+    });
+
+    it('skips tokens shorter than 2 chars (so "M" / "a" never grant)', () => {
+        expect(matchSearchNameTokens('M G', 'M G Z')).toEqual([]);
+        expect(matchSearchNameTokens('Maria Gomez', 'm')).toEqual([]);
+    });
+
+    it('returns nothing for empty input', () => {
+        expect(matchSearchNameTokens('', 'Maria')).toEqual([]);
+        expect(matchSearchNameTokens('Maria', '')).toEqual([]);
+        expect(matchSearchNameTokens(null, 'Maria')).toEqual([]);
+    });
+});
+
+describe('renderName', () => {
+    it('returns the original name for a privileged viewer', () => {
+        expect(renderName('Maria Gomez', vis({ nothingMasked: true }))).toBe('Maria Gomez');
+    });
+
+    it('returns initials only with no grants and no query', () => {
+        expect(renderName('Maria Gomez', vis({}))).toBe('M G');
+        expect(renderName('Maria Jose Gomez', vis({}))).toBe('M J G');
+    });
+
+    it('reveals tokens carried in the current query (transient)', () => {
+        expect(renderName('Maria Gomez', vis({}), 'Maria 1123456789')).toBe('Maria G');
+        expect(renderName('Maria Gomez', vis({}), 'Maria Gomez')).toBe('Maria Gomez');
+        // Whole-word match — "Mariano" does NOT reveal "Maria".
+        expect(renderName('Maria Gomez', vis({}), 'Mariano')).toBe('M G');
+    });
+
+    it('reveals tokens covered by persistent name_token grants', () => {
+        const v = vis({ unlockedNameTokenHashes: new Set([hashNameToken('Maria')]) });
+        expect(renderName('Maria Gomez', v)).toBe('Maria G');
+    });
+
+    it('combines persistent grants with current-query reveals', () => {
+        const v = vis({ unlockedNameTokenHashes: new Set([hashNameToken('Maria')]) });
+        expect(renderName('Maria Jose Gomez', v, 'Gomez')).toBe('Maria J Gomez');
+    });
+
+    it('returns empty for empty / null / undefined input', () => {
+        expect(renderName('', vis({}))).toBe('');
+        expect(renderName(null, vis({}))).toBe('');
+        expect(renderName(undefined, vis({}))).toBe('');
+    });
+});
+
+describe('resolveVisibility — name_token grants', () => {
+    const base = { isAdmin: false, isEditor: false, grants: [] as PiiGrantRow[] };
+
+    it('populates unlockedNameTokenHashes from scope=name_token grants', () => {
+        const h = hashNameToken('Maria');
+        const v = resolveVisibility({
+            ...base, viewerEmail: 's@x.com', ownerEmail: 'o@x.com',
+            grants: [{ scope: 'name_token', entryRef: h, revokedAt: null }],
+        });
+        expect(v.unlockedNameTokenHashes.has(h)).toBe(true);
+        expect(v.tier).toBe('partial'); // name-token alone is enough to lift from 'none'
+        expect(v.nothingMasked).toBe(false);
+    });
+
+    it('keeps the two grant sets separate (entry vs name_token)', () => {
+        const eh = hashEntryValue('phone', '1123456789');
+        const nh = hashNameToken('Maria');
+        const v = resolveVisibility({
+            ...base, viewerEmail: 's@x.com', ownerEmail: 'o@x.com',
+            grants: [
+                { scope: 'entry', entryRef: eh, revokedAt: null },
+                { scope: 'name_token', entryRef: nh, revokedAt: null },
+            ],
+        });
+        expect(v.unlockedEntryHashes.has(eh)).toBe(true);
+        expect(v.unlockedNameTokenHashes.has(nh)).toBe(true);
+        expect(v.unlockedEntryHashes.has(nh)).toBe(false);
+        expect(v.unlockedNameTokenHashes.has(eh)).toBe(false);
+    });
+});
+
 describe('maskContactEntries', () => {
     const entries: ContactEntry[] = [
         { type: 'phone', value: '1123456789' },
@@ -187,11 +374,13 @@ describe('maskContactEntries', () => {
         expect(r.entries).toBe(entries);
     });
 
-    it('masks locked identifier entries and keeps notes', () => {
+    it('partial-reveals locked identifier entries and keeps notes', () => {
+        // Locked entries now get the partial-reveal shape (first 4 phone
+        // digits, first char of email local) rather than a flat ••••••.
         const r = maskContactEntries(entries, vis({}));
         expect(r.maskedCount).toBe(2);
-        expect(r.entries[0]).toEqual({ type: 'phone', value: PII_MASK, masked: true });
-        expect(r.entries[1]).toEqual({ type: 'email', value: PII_MASK, masked: true });
+        expect(r.entries[0]).toEqual({ type: 'phone', value: '1123••••••', masked: true });
+        expect(r.entries[1]).toEqual({ type: 'email', value: 'a•••@b.com', masked: true });
         expect(r.entries[2]).toEqual({ type: 'other', value: 'Llamar después de las 18h' });
     });
 
@@ -221,26 +410,48 @@ describe('maskAdopterContact', () => {
         expect(r.addressInfo).toBe('Calle 1');
     });
 
-    it('masks structured entries plus the address column', () => {
+    it('partial-reveals structured entries plus the address column', () => {
         const r = maskAdopterContact(
             { contactInfo: 'Tel: 1123456789\nEmail: a@b.com', contactEntries: entriesJson, addressInfo: 'Calle 1' },
             vis({}),
         );
         expect(r.maskedFieldCount).toBe(3); // 2 entries + address
-        expect(r.addressInfo).toBe(PII_MASK);
+        // addressInfo runs through the address rule — no comma in "Calle 1"
+        // so it falls back to the masked street form.
+        expect(r.addressInfo).toBe('•••••••');
         const parsed = JSON.parse(r.contactEntries as string);
         expect(parsed.every((e: ContactEntry) => e.masked)).toBe(true);
+        // Full phone digits are no longer in the derived blob, but the
+        // partial-reveal prefix is.
         expect(r.contactInfo).not.toContain('1123456789');
+        expect(r.contactInfo).toContain('1123');
     });
 
-    it('masks a legacy blob (no structured entries) to the placeholder', () => {
+    it('partial-reveals a legacy blob by parsing → masking → re-deriving', () => {
         const r = maskAdopterContact(
             { contactInfo: 'Tel: 1123456789', contactEntries: null, addressInfo: null },
             vis({}),
         );
-        expect(r.contactInfo).toBe(MASKED_CONTACT_PLACEHOLDER);
-        expect(r.contactEntries).toBeNull();
+        // Legacy rows now get the same partial-reveal: the parsed phone is
+        // shown as 1123•••••• in the rebuilt blob — not the all-or-nothing
+        // placeholder we used before.
+        expect(r.contactInfo).toContain('1123');
+        expect(r.contactInfo).not.toContain('1123456789');
+        expect(r.contactEntries).toBeNull(); // legacy rows stay structurally legacy
         expect(r.maskedFieldCount).toBe(1);
+    });
+
+    it('falls back to the placeholder only when a legacy blob parses to nothing', () => {
+        const r = maskAdopterContact(
+            { contactInfo: 'just a random sentence with no identifiers', contactEntries: null, addressInfo: null },
+            vis({}),
+        );
+        // The blob parses into an `other` (note) entry, which doesn't auto-mask.
+        // No identifier → maskedCount 0 → blob re-derived from the unchanged
+        // note → no placeholder is needed.
+        expect(r.maskedFieldCount).toBe(0);
+        // contactInfo carries the original prose (verbatim, since notes pass through).
+        expect(r.contactInfo).toContain('random sentence');
     });
 
     it('keeps a search-unlocked entry visible', () => {

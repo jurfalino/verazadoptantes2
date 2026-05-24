@@ -15,7 +15,7 @@ import {
     mergeContactEntries,
 } from '@/lib/contactEntries';
 import { getFeatureFlag } from '@/config/features';
-import { canEditAdopterRecord, maskAdopterContact, redactHistoryChanges } from '@/lib/piiAccess';
+import { canEditAdopterRecord, maskAdopterContact, redactHistoryChanges, renderName } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, resolveAdopterVisibility } from '@/lib/piiAccessServer';
 
 
@@ -40,6 +40,11 @@ export async function getAdopter(id: string) {
                 adopter.contactInfo = masked.contactInfo;
                 adopter.contactEntries = masked.contactEntries;
                 adopter.addressInfo = masked.addressInfo;
+                // Name → initials baseline + per-token reveal from name_token
+                // grants (no currentQuery on the profile — only grants apply).
+                // familyMembers → hidden (PII).
+                adopter.name = renderName(adopter.name, visibility);
+                adopter.familyMembers = null;
             }
         }
         return adopter;

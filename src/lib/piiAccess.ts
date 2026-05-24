@@ -11,9 +11,11 @@ import {
     type ContactEntryType,
     deserializeContactEntries,
     contactEntriesToBlob,
+    parseBlobToContactEntries,
     normalizeEntryValue,
 } from './contactEntries';
 import { PHONE_SEARCH_MIN_DIGITS } from '@/config/constants';
+import { normalizeText } from './tokenizer';
 
 /** Visible token shown in place of a hidden value. */
 export const PII_MASK = '••••••';
@@ -62,16 +64,11 @@ export function canEditAdopterRecord({
 
 // ── Entry-value hashing ───────────────────────────────────────────────────────
 
-/**
- * Stable, non-reversible hash of a normalized entry value — stored as
- * `pii_access_grants.entryRef`. A search match and the render-time mask both
- * hash through here, so a `scope='entry'` grant matches its entry iff the value
- * is unchanged. Not cryptographic: the raw value already lives in
- * `adopters.contactEntries`, so this is data-minimization for the grants table,
- * not a secrecy boundary. cyrb53 — a fast 53-bit string hash.
- */
-export function hashEntryValue(type: ContactEntryType, value: string): string {
-    const str = normalizeEntryValue(type, value);
+/** cyrb53 — fast 53-bit string hash. Not cryptographic; used here for
+ * data-minimization on the grants table (the raw value lives in
+ * `adopters.contactEntries`, so a hash collision attack on a stored grant
+ * gives an attacker nothing they couldn't read from that table directly). */
+function cyrb53Hex(str: string): string {
     let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
     for (let i = 0; i < str.length; i++) {
         const ch = str.charCodeAt(i);
@@ -82,6 +79,25 @@ export function hashEntryValue(type: ContactEntryType, value: string): string {
     h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
     const combined = 4294967296 * (2097151 & h2) + (h1 >>> 0);
     return combined.toString(16);
+}
+
+/**
+ * Stable, non-reversible hash of a normalized contact-entry value — stored as
+ * `pii_access_grants.entryRef` for `scope='entry'` rows. A search match and the
+ * render-time mask both hash through here, so a grant matches its entry iff
+ * the value is unchanged.
+ */
+export function hashEntryValue(type: ContactEntryType, value: string): string {
+    return cyrb53Hex(normalizeEntryValue(type, value));
+}
+
+/**
+ * Stable, non-reversible hash of a normalized name token — stored as
+ * `pii_access_grants.entryRef` for `scope='name_token'` rows. Lowercased and
+ * accent-stripped via `normalizeText`, so `"María"` and `"maria"` hash the same.
+ */
+export function hashNameToken(token: string): string {
+    return cyrb53Hex(normalizeText(token));
 }
 
 // ── Search-match detection ────────────────────────────────────────────────────
@@ -183,6 +199,29 @@ export function matchSearchEntries(
     return out;
 }
 
+/**
+ * Whole-token, case- and accent-insensitive intersection of a name and a
+ * query — the basis for a `scope='name_token'` grant. Each whitespace-
+ * separated token of the name is checked against the query's tokens
+ * (normalized via the tokenizer's `normalizeText`). A token shorter than 2
+ * chars is skipped so a single-letter query can't unlock anything. Returns
+ * the matched tokens in their original casing/accents — the caller hashes
+ * each via `hashNameToken`.
+ */
+export function matchSearchNameTokens(name: string | null | undefined, query: string): string[] {
+    if (!name || !query) return [];
+    const queryTokens = new Set(
+        query.trim().split(/\s+/).map(t => normalizeText(t)).filter(t => t.length >= 2),
+    );
+    if (queryTokens.size === 0) return [];
+    const out: string[] = [];
+    for (const token of name.trim().split(/\s+/)) {
+        const normalized = normalizeText(token);
+        if (normalized.length >= 2 && queryTokens.has(normalized)) out.push(token);
+    }
+    return out;
+}
+
 // ── Visibility resolution ─────────────────────────────────────────────────────
 
 export type VisibilityTier = 'full' | 'partial' | 'none';
@@ -212,8 +251,10 @@ export interface Visibility {
     /** True ⇒ no contact field is masked for this viewer (privileged OR holds an all-contact grant). */
     nothingMasked: boolean;
     hasAllContactGrant: boolean;
-    /** entryRef hashes the viewer has unlocked via search-match grants. */
+    /** entryRef hashes the viewer has unlocked via `scope='entry'` search-match grants. */
     unlockedEntryHashes: Set<string>;
+    /** Normalized-name-token hashes unlocked via `scope='name_token'` grants. */
+    unlockedNameTokenHashes: Set<string>;
 }
 
 /**
@@ -230,11 +271,14 @@ export function resolveVisibility(input: ResolveVisibilityInput): Visibility {
     const unlockedEntryHashes = new Set<string>(
         live.filter(g => g.scope === 'entry' && g.entryRef).map(g => g.entryRef as string),
     );
+    const unlockedNameTokenHashes = new Set<string>(
+        live.filter(g => g.scope === 'name_token' && g.entryRef).map(g => g.entryRef as string),
+    );
     const nothingMasked = privileged || hasAllContactGrant;
     const tier: VisibilityTier = privileged
         ? 'full'
-        : (hasAllContactGrant || unlockedEntryHashes.size > 0) ? 'partial' : 'none';
-    return { tier, privileged, nothingMasked, hasAllContactGrant, unlockedEntryHashes };
+        : (hasAllContactGrant || unlockedEntryHashes.size > 0 || unlockedNameTokenHashes.size > 0) ? 'partial' : 'none';
+    return { tier, privileged, nothingMasked, hasAllContactGrant, unlockedEntryHashes, unlockedNameTokenHashes };
 }
 
 /** A viewer with no email (unauthenticated / unresolved) — everything masked. */
@@ -244,7 +288,138 @@ export const NO_ACCESS_VISIBILITY: Visibility = {
     nothingMasked: false,
     hasAllContactGrant: false,
     unlockedEntryHashes: new Set(),
+    unlockedNameTokenHashes: new Set(),
 };
+
+// ── Partial-reveal ────────────────────────────────────────────────────────────
+
+/**
+ * Partial-reveal an entry value — shows just enough for a non-privileged viewer
+ * to recognize their person ("yes, this is the +54 11 number I have") without
+ * exposing the full identifier. The SAME mask shape is used by both the
+ * unauthenticated discovery path and the authenticated PII-gating mask, so what
+ * an outsider sees is the same in either case.
+ *
+ *   phone   — first 4 digits visible (country + area), rest replaced (separators kept)
+ *   email   — first char of local part, then "•••@<domain>"
+ *   social  — URL form → keep "domain[/path-base]/", mask handle. Bare @handle → "@••••"
+ *   address — last comma-separated token kept as locality, street masked
+ *   id      — fully masked (the row's label already names the type)
+ *   other   — passed through unchanged (notes are not contact PII)
+ */
+export function partialReveal(entry: ContactEntry): ContactEntry {
+    if (!entry.value) return entry;
+    const mark = (value: string): ContactEntry => ({
+        type: entry.type,
+        value,
+        ...(entry.label ? { label: entry.label } : {}),
+        masked: true,
+    });
+    switch (entry.type) {
+        case 'phone': {
+            let seen = 0;
+            return mark(entry.value.replace(/\d/g, d => (++seen <= 4 ? d : '•')));
+        }
+        case 'email': {
+            const at = entry.value.indexOf('@');
+            if (at <= 0) return mark('•••••@•••');
+            return mark(`${entry.value.slice(0, 1)}•••${entry.value.slice(at)}`);
+        }
+        case 'social': {
+            const v = entry.value.trim();
+            const urlMatch = v.match(/^(https?:\/\/[^/]+\/)/i);
+            if (urlMatch) return mark(`${urlMatch[1]}••••`);
+            const bareDomain = v.match(/^([\w-]+(?:\.[\w-]+)+\/)/);
+            if (bareDomain) return mark(`${bareDomain[1]}••••`);
+            if (v.startsWith('@')) return mark('@••••');
+            return mark('••••••');
+        }
+        case 'address': {
+            // Heuristic: the last comma-separated chunk is typically the
+            // locality (city / province). Reveal that, mask the rest.
+            // "Corrientes 3444, CABA" → "•••••, CABA". No comma → full mask.
+            const v = entry.value.trim();
+            const lastComma = v.lastIndexOf(',');
+            if (lastComma > 0) {
+                const locality = v.slice(lastComma + 1).trim();
+                if (locality) return mark(`•••••, ${locality}`);
+            }
+            return mark('•••••••');
+        }
+        case 'id':
+            return mark('••••••');
+        case 'other':
+        default:
+            return entry;
+    }
+}
+
+/**
+ * Apply the address partial-reveal rule to a free-text address string
+ * (`adopters.addressInfo` column, which isn't a typed contact entry). Last
+ * comma-separated token kept as locality; otherwise full mask.
+ */
+export function partialRevealAddressString(text: string): string {
+    const v = text.trim();
+    if (!v) return v;
+    const lastComma = v.lastIndexOf(',');
+    if (lastComma > 0) {
+        const locality = v.slice(lastComma + 1).trim();
+        if (locality) return `•••••, ${locality}`;
+    }
+    return '•••••••';
+}
+
+/**
+ * Initials-only baseline for an adopter name shown to a non-privileged viewer
+ * ("Maria Gomez" → "M G"). One letter per whitespace-separated word; preserves
+ * the word count so a multi-word name still reads as multi-word. Per-query and
+ * per-grant token reveal on top of this baseline is a separate concern.
+ *
+ * Returns the empty string for empty input; the caller is expected to fall
+ * back to the original value if extraction yields nothing meaningful.
+ */
+export function partialRevealName(name: string | null | undefined): string {
+    if (!name) return '';
+    return name.trim().split(/\s+/).map(w => w.charAt(0)).filter(Boolean).join(' ');
+}
+
+/**
+ * Render a name with per-token reveal — the chunk-1 `partialRevealName`
+ * initials baseline, plus full reveal for any token the viewer has
+ * demonstrated knowing:
+ *  - tokens whose hash is in `visibility.unlockedNameTokenHashes` (persistent
+ *    `scope='name_token'` grants — auth viewers only),
+ *  - tokens that appear (whole word, normalized) in `currentQuery` (transient
+ *    reveal — works for unauth too, just doesn't carry across pages).
+ *
+ * A privileged viewer (owner / editor / admin / all-contact grant) gets the
+ * unchanged name. Falls back to the original name if extraction yields the
+ * empty string (e.g. a name made of only punctuation).
+ */
+export function renderName(
+    name: string | null | undefined,
+    visibility: Visibility,
+    currentQuery?: string,
+): string {
+    if (visibility.nothingMasked) return name ?? '';
+    if (!name) return '';
+
+    const queryTokens = currentQuery
+        ? new Set(currentQuery.trim().split(/\s+/).map(t => normalizeText(t)).filter(t => t.length >= 2))
+        : null;
+
+    const rendered = name.trim().split(/\s+/).map(token => {
+        const normalized = normalizeText(token);
+        if (normalized.length >= 2) {
+            if (visibility.unlockedNameTokenHashes.has(hashNameToken(token))) return token;
+            if (queryTokens && queryTokens.has(normalized)) return token;
+        }
+        return token.charAt(0) || '';
+    }).filter(Boolean).join(' ');
+
+    return rendered || name;
+}
 
 // ── Masking ───────────────────────────────────────────────────────────────────
 
@@ -265,8 +440,11 @@ export interface AdopterContactMask {
 
 /**
  * Mask one contact-entry list against a visibility verdict. `other` (notes)
- * entries are always kept. A locked identifier entry keeps its type/label but
- * its value becomes the mask token and gains `masked: true`.
+ * entries are always kept. A locked identifier entry is run through
+ * `partialReveal` — keeping just enough (country/area for a phone, domain for
+ * an email, locality for an address, …) for the viewer to recognise their
+ * person without exposing the full value. The entry keeps its type and label
+ * and gains `masked: true` so the UI renders it inert (no `tel:` / `mailto:`).
  */
 export function maskContactEntries(
     entries: ContactEntry[],
@@ -278,7 +456,7 @@ export function maskContactEntries(
         if (e.type === 'other') return e;
         if (visibility.unlockedEntryHashes.has(hashEntryValue(e.type, e.value))) return e;
         maskedCount++;
-        return { type: e.type, value: PII_MASK, ...(e.label ? { label: e.label } : {}), masked: true };
+        return partialReveal(e);
     });
     return { entries: out, maskedCount };
 }
@@ -297,15 +475,19 @@ export function maskAdopterContact(adopter: MaskableAdopter, visibility: Visibil
         return { contactInfo, contactEntries: contactEntriesJson, addressInfo, maskedFieldCount: 0 };
     }
 
+    // Source entries: prefer structured contactEntries; for legacy rows parse
+    // the blob so partial-reveal applies there too (no more all-or-nothing
+    // placeholder for legacy rows).
     const parsed = deserializeContactEntries(contactEntriesJson);
-    const { entries: maskedEntries, maskedCount } = maskContactEntries(parsed, visibility);
+    const sourceEntries = parsed.length > 0 ? parsed : parseBlobToContactEntries(contactInfo);
+    const { entries: maskedEntries, maskedCount } = maskContactEntries(sourceEntries, visibility);
     let maskedFieldCount = maskedCount;
 
-    // contactInfo blob: derive from the masked entries when the row HAS entries
-    // (so the blob agrees with the masked chips); for a legacy row with only a
-    // blob, swap the whole blob for the placeholder since fields can't be split.
+    // Re-derive contactInfo from the partial-revealed entries; works for both
+    // structured and legacy rows. Only fall back to the placeholder when the
+    // blob is non-empty but parses to nothing (extremely rare).
     let maskedContactInfo: string | null;
-    if (parsed.length > 0) {
+    if (sourceEntries.length > 0) {
         maskedContactInfo = contactEntriesToBlob(maskedEntries) || null;
     } else if (contactInfo && contactInfo.trim()) {
         maskedContactInfo = MASKED_CONTACT_PLACEHOLDER;
@@ -314,9 +496,11 @@ export function maskAdopterContact(adopter: MaskableAdopter, visibility: Visibil
         maskedContactInfo = null;
     }
 
+    // addressInfo column (legacy free-text) — apply the same address rule as
+    // a structured `address` entry: keep the locality, mask the street.
     let maskedAddress = addressInfo;
     if (addressInfo && addressInfo.trim()) {
-        maskedAddress = PII_MASK;
+        maskedAddress = partialRevealAddressString(addressInfo);
         maskedFieldCount++;
     }
 

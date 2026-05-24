@@ -31,7 +31,7 @@ import { enrichAdopters } from './enrichAdopters';
 import { normalizeConfidence, fuzzyNameScore, SEARCH_SCORE_CEILING, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 import { normalizeText, extractPhones, extractEmails, extractSocials, isPlaceholderPhone, extractIds, stripIdsFromText } from '@/lib/tokenizer';
 import { count } from 'drizzle-orm';
-import { maskAdopterContact, matchSearchEntries } from '@/lib/piiAccess';
+import { maskAdopterContact, matchSearchEntries, matchSearchNameTokens, hashNameToken, renderName, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, resolveAdoptersVisibility } from '@/lib/piiAccessServer';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 
@@ -546,7 +546,7 @@ async function runDiscoveryMode(
         )
         : null;
     // Search-match grants discovered while masking; persisted after the map.
-    const newGrants: Array<{ adopterId: string; entryRef: string }> = [];
+    const newGrants: Array<{ adopterId: string; entryRef: string; scope: 'entry' | 'name_token' }> = [];
 
     const adopterIds = allProfiles.map((a: any) => a.id);
     const enrichmentMap = shouldEnrich ? await enrichAdopters(db, adopterIds) : new Map();
@@ -685,56 +685,63 @@ async function runDiscoveryMode(
             flags: enrichment?.flags ?? defaultFlags,
         };
 
-        // PII masking for unauthenticated users
-        if (isUnauthenticated) {
-            result.adopter = { ...result.adopter };
-            result.adopter.name = result.adopter.name?.length > 3 ? result.adopter.name.slice(0, 3) + '••••' : '••••';
-            result.adopter.contactInfo = result.adopter.contactInfo
-                ?.replace(/(\d{2,3})[\d\s\-.()]{4,}/g, '$1••••••')
-                ?.replace(/[a-zA-Z0-9._%+-]+@/g, '•••@') || null;
-            result.adopter.familyMembers = null;
-            result.adopter.addressInfo = null;
-            result.adopter.contactEntries = null;
-            if (result.matchSnippet) {
-                result.matchSnippet = { ...result.matchSnippet, snippet: '', highlights: [] };
-            }
-            result.relevancePercent = 0;
-        } else if (visibilityMap) {
-            // PII access gating: mask contact fields for authenticated
-            // non-privileged viewers.
-            let vis = visibilityMap.get(a.id);
-            if (vis && !vis.nothingMasked) {
-                // Search-match reveal: entries the query genuinely matched are
-                // unlocked for this response, and (if newly matched) earn a
-                // persistent grant — "you see what you searched for".
-                const matches = matchSearchEntries(deserializeContactEntries(a.contactEntries), normalizedQuery);
-                if (matches.length > 0) {
+        // Unified mask for any non-privileged viewer (unauth — always — and
+        // auth without grants when the flag is on). Auth viewers additionally
+        // accrue search-match grants so their reveals persist across visits;
+        // unauth viewers can't (grants are keyed on `granteeEmail`).
+        let vis: Visibility | undefined;
+        if (isUnauthenticated) vis = NO_ACCESS_VISIBILITY;
+        else if (visibilityMap) vis = visibilityMap.get(a.id);
+
+        if (vis && !vis.nothingMasked) {
+            // Search-match grant write (auth only). Two flavours, same pattern:
+            // contact-entry matches and name-token matches both write a grant
+            // and augment `vis` so this response renders the unlocked values.
+            if (!isUnauthenticated) {
+                const entryMatches = matchSearchEntries(deserializeContactEntries(a.contactEntries), normalizedQuery);
+                if (entryMatches.length > 0) {
                     const unlocked = new Set(vis.unlockedEntryHashes);
-                    for (const m of matches) {
+                    for (const m of entryMatches) {
                         if (!unlocked.has(m.hash)) {
                             unlocked.add(m.hash);
-                            newGrants.push({ adopterId: a.id, entryRef: m.hash });
+                            newGrants.push({ adopterId: a.id, entryRef: m.hash, scope: 'entry' });
                         }
                     }
                     vis = { ...vis, unlockedEntryHashes: unlocked, tier: 'partial' };
                 }
-                const masked = maskAdopterContact(result.adopter, vis);
-                result.adopter = {
-                    ...result.adopter,
-                    contactInfo: masked.contactInfo,
-                    contactEntries: masked.contactEntries,
-                    addressInfo: masked.addressInfo,
-                };
-                // A contact/address snippet is a window cut from the blob and can
-                // surface adjacent unmatched lines. 'adoption' is scrubbed too —
-                // the import route packs `Contact: …` into adoptions.details.
-                if (result.matchSnippet && (
-                    result.matchSnippet.field === 'contact' ||
-                    result.matchSnippet.field === 'address' ||
-                    result.matchSnippet.field === 'adoption'
-                )) {
-                    result.matchSnippet = { ...result.matchSnippet, snippet: '', highlights: [] };
+                const nameMatches = matchSearchNameTokens(a.name, normalizedQuery);
+                if (nameMatches.length > 0) {
+                    const unlockedNames = new Set(vis.unlockedNameTokenHashes);
+                    for (const token of nameMatches) {
+                        const h = hashNameToken(token);
+                        if (!unlockedNames.has(h)) {
+                            unlockedNames.add(h);
+                            newGrants.push({ adopterId: a.id, entryRef: h, scope: 'name_token' });
+                        }
+                    }
+                    vis = { ...vis, unlockedNameTokenHashes: unlockedNames, tier: 'partial' };
                 }
+            }
+            // Partial-reveal mask — identical for both paths. `renderName`
+            // also picks up transient per-query reveals for unauth (no grants).
+            const masked = maskAdopterContact(result.adopter, vis);
+            result.adopter = {
+                ...result.adopter,
+                name: renderName(result.adopter.name, vis, normalizedQuery),
+                contactInfo: masked.contactInfo,
+                contactEntries: masked.contactEntries,
+                addressInfo: masked.addressInfo,
+                familyMembers: null, // PII — hidden from non-privileged viewers
+            };
+            // Field-scoped snippet scrub. 'contact'/'address' are windows into
+            // the (now masked) blob; 'adoption' is scrubbed because the import
+            // route packs `Contact: …` into adoptions.details.
+            if (result.matchSnippet && (
+                result.matchSnippet.field === 'contact' ||
+                result.matchSnippet.field === 'address' ||
+                result.matchSnippet.field === 'adoption'
+            )) {
+                result.matchSnippet = { ...result.matchSnippet, snippet: '', highlights: [] };
             }
         }
 
@@ -767,7 +774,7 @@ async function runDiscoveryMode(
                 id: crypto.randomUUID(),
                 adopterId: g.adopterId,
                 granteeEmail: user,
-                scope: 'entry',
+                scope: g.scope,
                 entryRef: g.entryRef,
                 origin: 'search_match',
                 grantedByEmail: user,

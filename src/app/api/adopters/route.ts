@@ -10,21 +10,24 @@ import { tokenizeAdopter } from '@/app/actions/duplicates';
 import { processImageForStorage, uploadToR2 } from '@/lib/r2';
 import { createAdopterApiSchema } from '@/app/actions/validation';
 import { deserializeContactEntries, contactEntriesToBlob } from '@/lib/contactEntries';
-import { maskAdopterContact } from '@/lib/piiAccess';
+import { maskAdopterContact, renderName } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, resolveAdoptersVisibility } from '@/lib/piiAccessServer';
 
 type MaskableRow = {
     id: string;
     addedBy: string | null;
+    name: string;
     contactInfo: string | null;
     contactEntries: string | null;
     addressInfo: string | null;
+    familyMembers: string | null;
 };
 
 /**
- * PII access gating: mask the contact fields of duplicate-check matches for
- * non-privileged viewers. The value the rescuer typed already matched these
- * rows server-side; this hides the rest of each match's contact data.
+ * PII access gating: mask the matched-adopter rows for non-privileged viewers.
+ * Contact fields go through `maskAdopterContact` (partial-reveal); the name
+ * collapses to initials and family members are hidden — same treatment the
+ * search results get.
  */
 async function maskMatchesForViewer<T extends MaskableRow>(
     rows: T[],
@@ -36,7 +39,14 @@ async function maskMatchesForViewer<T extends MaskableRow>(
         const vis = visMap.get(r.id);
         if (!vis || vis.nothingMasked) return r;
         const masked = maskAdopterContact(r, vis);
-        return { ...r, contactInfo: masked.contactInfo, contactEntries: masked.contactEntries, addressInfo: masked.addressInfo };
+        return {
+            ...r,
+            name: renderName(r.name, vis),
+            contactInfo: masked.contactInfo,
+            contactEntries: masked.contactEntries,
+            addressInfo: masked.addressInfo,
+            familyMembers: null,
+        };
     });
 }
 

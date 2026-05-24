@@ -477,7 +477,11 @@ export async function getAdopterPiiContext(adopterId: string): Promise<AdopterPi
                 }));
             accessGrants = {
                 allContact,
-                searchMatchCount: grantRows.filter(g => g.scope === 'entry').length,
+                // Search-match count bundles both contact-entry grants and
+                // name-token grants — both are "things this viewer demonstrated
+                // knowing." The owner's "who has access" disclosure shows it as
+                // a single aggregate count.
+                searchMatchCount: grantRows.filter(g => g.scope === 'entry' || g.scope === 'name_token').length,
             };
         }
 
