@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.15.0-8] - 2026-05-24
+
+### Changed
+- **PII verify-known-info UX redesigned.** The per-row "I know this" affordance — cryptic copy, layout shift on every row, one click per masked field — is replaced by a single shared input at the top of the protected-contact banner. Type anything you know (phone, email, address, ID, @handle) and whatever matches across the masked entries unlocks; the server matcher was already adopter-scoped, so per-field targeting was scope creep that bought nothing except friction.
+- The "Request access" CTA is now a smaller secondary link directly under the verify input (with the same pending / cooldown states), positioned as the fallback when there's genuinely no more info to type.
+- `ContactEntriesDisplay` is back to a pure read-only component — no `adopterId` prop, no per-row state, no `verifyKnownInfo` import. The bubble-to-edit-mode bug from 2.15.0-7 is structurally gone (the new input lives in `AdopterProfileV2`'s flow, outside the contact section's click-to-edit zone).
+- Dropped now-unused i18n keys (`pii_verify_cta`, `pii_verify_ph_*`); added `pii_verify_prompt_ph` + `pii_request_cta_fallback`; reworded `pii_protected_body` to point at the new flow.
+
 ## [2.15.0-7] - 2026-05-24
 
 ### Fixed

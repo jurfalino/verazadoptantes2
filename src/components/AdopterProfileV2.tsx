@@ -7,6 +7,7 @@ import { AdopterForm } from '@/components/AdopterForm';
 import RequestPiiAccessModal from '@/components/RequestPiiAccessModal';
 import PiiAccessRequestPanel from '@/components/PiiAccessRequestPanel';
 import PiiAccessGrantsDisclosure from '@/components/PiiAccessGrantsDisclosure';
+import PiiVerifyKnownInfo from '@/components/PiiVerifyKnownInfo';
 import { CollapsibleSection } from '@/components/CollapsibleSection';
 import AdoptionHistory from '@/components/AdoptionHistory';
 import AdoptionFormWizard from '@/components/AdoptionFormWizard';
@@ -213,6 +214,12 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                             </button>
                                         </div>
                                     )}
+                                    {/* Self-serve unlock: type anything known about this
+                                        person — phone, email, address, ID, @handle — and
+                                        whatever matches across the masked entries unlocks.
+                                        Always available (verify is independent of the
+                                        request-access cooldown). */}
+                                    <PiiVerifyKnownInfo adopterId={id} />
                                     {(requestSubmitted || piiContext.requestState.pending) ? (
                                         <p className="text-sm font-medium text-teal-700">{t('adopter.pii_request_pending')}</p>
                                     ) : piiContext.requestState.cooldownUntil ? (
@@ -226,9 +233,9 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                         <button
                                             type="button"
                                             onClick={() => setRequestModalOpen(true)}
-                                            className="text-sm font-semibold text-teal-700 hover:opacity-70 transition-opacity"
+                                            className="text-sm text-stone-600 hover:text-teal-700 transition-colors"
                                         >
-                                            {t('adopter.pii_request_cta')} →
+                                            {t('adopter.pii_request_cta_fallback')}
                                         </button>
                                     )}
                                 </div>
