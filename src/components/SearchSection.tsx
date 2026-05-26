@@ -379,11 +379,19 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                     )}
                     {results.map((res) => {
                         const isAuthenticated = !!session?.user;
+                        // Carry the search query through to the profile so a
+                        // post-signin replay can re-run the match-and-grant
+                        // logic for the now-authenticated viewer. Without this
+                        // the unmasked reveal seen in the result card vanishes
+                        // when the profile opens (no grant got written because
+                        // an unauth viewer has no email to attribute one to).
+                        const qParam = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : '';
+                        const profileHref = `/adopter/${res.adopter.id}${qParam}`;
 
                         const handleCardClick = (e: React.MouseEvent) => {
                             if (!isAuthenticated) {
                                 e.preventDefault();
-                                openLogin(`/adopter/${res.adopter.id}`);
+                                openLogin(profileHref);
                             }
                         };
 
@@ -392,7 +400,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                         const updatedDate = res.adopter.updatedAt ? formatShortDate(res.adopter.updatedAt) : null;
 
                         return (
-                            <a key={res.adopter.id} href={`/adopter/${res.adopter.id}`} onClick={handleCardClick} className="block group">
+                            <a key={res.adopter.id} href={profileHref} onClick={handleCardClick} className="block group">
                                 <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-200 group-hover:border-teal-300 group-hover:shadow-md transition-all">
                                     {/* Top Row: Avatar + Name/Contact + Rating */}
                                     <div className="flex items-center gap-3 mb-3">

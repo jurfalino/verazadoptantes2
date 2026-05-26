@@ -14,11 +14,11 @@ import { verifyKnownInfo } from '@/app/actions/piiAccess';
  * earlier per-row "I know this" UI (one click instead of one-per-field, no
  * layout shift).
  */
-export default function PiiVerifyKnownInfo({ adopterId }: { adopterId: string }) {
+export default function PiiVerifyKnownInfo({ adopterId, initialValue = null }: { adopterId: string; initialValue?: string | null }) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
-    const [input, setInput] = useState('');
+    const [input, setInput] = useState(initialValue ?? '');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 

@@ -44,9 +44,13 @@ interface AdopterProfileV2Props {
     formPrefill?: FormSubmissionPrefill | null;
     userNameMap?: Record<string, string>;
     piiContext?: AdopterPiiContext | null;
+    /** Search query carried through the post-signin redirect (`?q=`). Pre-fills
+     * the verify-known-info input as a fallback if the replay didn't unlock
+     * everything the user expected. */
+    initialVerifyQuery?: string | null;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, initialVerifyQuery = null }: AdopterProfileV2Props) {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const toast = useShowToast();
@@ -219,7 +223,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                         whatever matches across the masked entries unlocks.
                                         Always available (verify is independent of the
                                         request-access cooldown). */}
-                                    <PiiVerifyKnownInfo adopterId={id} />
+                                    <PiiVerifyKnownInfo adopterId={id} initialValue={initialVerifyQuery} />
                                     {(requestSubmitted || piiContext.requestState.pending) ? (
                                         <p className="text-sm font-medium text-teal-700">{t('adopter.pii_request_pending')}</p>
                                     ) : piiContext.requestState.cooldownUntil ? (

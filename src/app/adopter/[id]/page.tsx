@@ -4,6 +4,7 @@ import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, get
 import { resolveUserNames } from '@/app/actions/userNames';
 import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
 import { getAdopterPiiContext } from '@/app/actions/piiAccess';
+import { replaySearchMatchGrants } from '@/lib/piiAccessServer';
 import { logger } from '@/lib/logger';
 import { AdopterProfileV2 } from '@/components/AdopterProfileV2';
 import type { AdopterPiiContext } from '@/lib/piiAccess';
@@ -13,10 +14,10 @@ export default async function AdopterPage({
     searchParams,
 }: {
     params: Promise<{ id: string }>;
-    searchParams: Promise<{ fromForm?: string }>;
+    searchParams: Promise<{ fromForm?: string; q?: string }>;
 }) {
     const { id } = await params;
-    const { fromForm } = await searchParams;
+    const { fromForm, q } = await searchParams;
     const isNew = id === 'create';
 
     // Batch 1a: Auth (mandatory — failure means redirect to login)
@@ -27,6 +28,16 @@ export default async function AdopterPage({
     } catch (e: any) {
         if (e?.digest?.startsWith('NEXT_REDIRECT')) throw e;
         redirect(`/?authRequired=1&callbackUrl=${encodeURIComponent(`/adopter/${id}`)}`);
+    }
+
+    // Batch 1a.5: Post-signin search-match replay. When a user arrives from
+    // an unauth search (clicked a result, signed in, was redirected back here
+    // with `?q=` preserved), the unauthenticated search couldn't persist
+    // grants — re-run the matchers now with their email so the unmasked
+    // reveal they saw in the result card survives the auth boundary.
+    // Idempotent + quiet-failure (see piiAccessServer.replaySearchMatchGrants).
+    if (!isNew && q && currentUser) {
+        await replaySearchMatchGrants({ adopterId: id, query: q, viewerEmail: currentUser });
     }
 
     // Batch 1b: Config (degrade-on-failure — page renders with defaults if these throw,
@@ -121,6 +132,7 @@ export default async function AdopterPage({
             formPrefill={formPrefill}
             userNameMap={userNameMap}
             piiContext={piiContext}
+            initialVerifyQuery={q ?? null}
         />
     );
 }
