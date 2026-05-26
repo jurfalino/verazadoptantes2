@@ -70,6 +70,15 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
+      # Idempotent data backfill — parses legacy `contact_info` blobs into
+      # structured `contact_entries` for pre-v2.14.x rows so the PII popover
+      # has a chip to anchor to. Re-runs are no-ops once a row is migrated
+      # (the script's WHERE clause skips rows that already have entries).
+      - name: Backfill contact_entries (idempotent)
+        run: npx tsx scripts/backfill-contact-entries.ts --target=production --apply
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
   # Apply D1 migrations on staging deploy
   migrate-staging:
     name: 🗃️ Apply Staging Migrations
@@ -92,6 +101,13 @@ jobs:
 
       - name: Apply migrations to staging
         run: npx wrangler d1 migrations apply pet-adoption-db-staging --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      # Idempotent data backfill — same as production (see migrate-production).
+      # Running on staging too keeps the two environments in lockstep.
+      - name: Backfill contact_entries (idempotent)
+        run: npx tsx scripts/backfill-contact-entries.ts --target=staging --apply
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 

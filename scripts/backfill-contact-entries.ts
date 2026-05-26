@@ -114,14 +114,11 @@ if (!apply) {
         `-- Target: ${targetArg} (${target.db})`,
         `-- Generated: ${new Date().toISOString()}`,
         `-- ${updates.length} rows`,
-        '',
-        'BEGIN TRANSACTION;',
+        '-- D1 wraps the --file batch in its own transaction; explicit BEGIN/COMMIT are rejected.',
         '',
         ...updates.map(u =>
             `UPDATE adopters SET contact_entries = ${sqlEscape(u.jsonValue)}, updated_at = updated_at WHERE id = ${sqlEscape(u.id)} AND (contact_entries IS NULL OR contact_entries = '' OR contact_entries = '[]');`,
         ),
-        '',
-        'COMMIT;',
     ].join('\n');
     writeFileSync(outPath, sql);
     console.error(`Dry-run — wrote ${updates.length} UPDATE statements to ${outPath}`);
@@ -148,13 +145,9 @@ if (targetArg === 'production') {
 // 5. Write the SQL file then apply via wrangler --file. Doing it as one file
 // (vs N --command invocations) is way faster and runs atomically per chunk.
 const sqlPath = `/tmp/backfill-contact-entries-${targetArg}-apply.sql`;
-const applySql = [
-    'BEGIN TRANSACTION;',
-    ...updates.map(u =>
-        `UPDATE adopters SET contact_entries = ${sqlEscape(u.jsonValue)}, updated_at = updated_at WHERE id = ${sqlEscape(u.id)} AND (contact_entries IS NULL OR contact_entries = '' OR contact_entries = '[]');`,
-    ),
-    'COMMIT;',
-].join('\n');
+const applySql = updates.map(u =>
+    `UPDATE adopters SET contact_entries = ${sqlEscape(u.jsonValue)}, updated_at = updated_at WHERE id = ${sqlEscape(u.id)} AND (contact_entries IS NULL OR contact_entries = '' OR contact_entries = '[]');`,
+).join('\n');
 writeFileSync(sqlPath, applySql);
 
 console.error(`Applying ${updates.length} updates via wrangler --file ${sqlPath}...`);
