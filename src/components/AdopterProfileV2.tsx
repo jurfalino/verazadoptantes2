@@ -7,7 +7,8 @@ import { AdopterForm } from '@/components/AdopterForm';
 import RequestPiiAccessModal from '@/components/RequestPiiAccessModal';
 import PiiAccessRequestPanel from '@/components/PiiAccessRequestPanel';
 import PiiAccessGrantsDisclosure from '@/components/PiiAccessGrantsDisclosure';
-import PiiVerifyKnownInfo from '@/components/PiiVerifyKnownInfo';
+import PiiVerifyPopover from '@/components/PiiVerifyPopover';
+import type { ContactEntryType } from '@/lib/contactEntries';
 import { CollapsibleSection } from '@/components/CollapsibleSection';
 import AdoptionHistory from '@/components/AdoptionHistory';
 import AdoptionFormWizard from '@/components/AdoptionFormWizard';
@@ -20,7 +21,6 @@ import { extractErrorId } from '@/lib/errorUtils';
 import { DisclaimerToast } from '@/components/DisclaimerToast';
 import { RatingBadge } from '@/components/RatingBadge';
 import { useShowToast } from '@/components/ui/Toast';
-import { useOneTimeNotice } from '@/hooks/useOneTimeNotice';
 import { formatDateTime, formatShortDate, maskEmail } from '@/lib/dates';
 import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, HistoryEntry, AdopterStats, AdoptionConfig, DuplicateCandidateInfo } from '@/types/adopter';
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
@@ -58,8 +58,11 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     const [deleteLoading, setDeleteLoading] = useState(false);
     const [requestModalOpen, setRequestModalOpen] = useState(false);
     const [requestSubmitted, setRequestSubmitted] = useState(false);
-    // First-run "what's new" explainer on the protected-contact banner (Resolution #9).
-    const { dismissed: piiNoticeDismissed, dismiss: dismissPiiNotice } = useOneTimeNotice('pii-access-gating-v1');
+    // Verify/request popover state — set to the entryType the user clicked,
+    // or 'open' for a generic (non-chip-anchored) trigger. Replaces the
+    // always-visible banner; the explainer + verify input now live inside
+    // the popover and surface on demand.
+    const [verifyPopoverOpen, setVerifyPopoverOpen] = useState<ContactEntryType | null>(null);
     const [deleteCheck, setDeleteCheck] = useState<{ canDelete: boolean; collaborators: { adoptions: number; images: number; edits: number; flags: number; forms: number } } | null>(null);
 
     const isOwner = adopter?.addedBy === currentUser;
@@ -186,9 +189,11 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     )
                 )}
 
-                {/* PII access gating — approver panel + masked-viewer request CTA.
-                    Both surfaces are mutually exclusive: a privileged viewer sees
-                    the panel, a masked viewer sees the CTA. */}
+                {/* PII access gating — approver panel + grants disclosure for
+                    privileged viewers. The masked-viewer unlock UI used to live
+                    here as a banner; it now opens as a per-field popover when a
+                    masked chip is clicked (see PiiVerifyPopover below + the
+                    onMaskedContactClick callback passed into AdopterForm). */}
                 {!isNew && adopter && piiContext?.gatingOn && (
                     <>
                         {piiContext.pendingRequests.length > 0 && (
@@ -196,54 +201,6 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                         )}
                         {piiContext.privileged && (
                             <PiiAccessGrantsDisclosure grants={piiContext.accessGrants} />
-                        )}
-                        {piiContext.masked && (
-                            <div className="rounded-xl border border-teal-200 bg-teal-50 p-4 flex items-start gap-3">
-                                <span aria-hidden className="text-lg">🔒</span>
-                                <div className="flex-1 min-w-0 space-y-1.5">
-                                    <p className="text-sm font-semibold text-teal-900">{t('adopter.pii_protected_title')}</p>
-                                    <p className="text-sm text-teal-800">{t('adopter.pii_protected_body')}</p>
-                                    {!piiNoticeDismissed && (
-                                        <div className="border-t border-teal-200 pt-2 space-y-1.5">
-                                            <p className="text-sm text-teal-800">
-                                                <span className="font-semibold">{t('adopter.pii_whatsnew_label')}: </span>
-                                                {t('adopter.pii_whatsnew_body')}
-                                            </p>
-                                            <button
-                                                type="button"
-                                                onClick={dismissPiiNotice}
-                                                className="text-xs font-semibold text-teal-700 hover:opacity-70 transition-opacity"
-                                            >
-                                                {t('adopter.pii_whatsnew_dismiss')}
-                                            </button>
-                                        </div>
-                                    )}
-                                    {/* Self-serve unlock: type anything known about this
-                                        person — phone, email, address, ID, @handle — and
-                                        whatever matches across the masked entries unlocks.
-                                        Always available (verify is independent of the
-                                        request-access cooldown). */}
-                                    <PiiVerifyKnownInfo adopterId={id} initialValue={initialVerifyQuery} />
-                                    {(requestSubmitted || piiContext.requestState.pending) ? (
-                                        <p className="text-sm font-medium text-teal-700">{t('adopter.pii_request_pending')}</p>
-                                    ) : piiContext.requestState.cooldownUntil ? (
-                                        <p className="text-sm text-stone-500">
-                                            {t('adopter.pii_request_cooldown').replace(
-                                                '{date}',
-                                                formatShortDate(new Date(piiContext.requestState.cooldownUntil)),
-                                            )}
-                                        </p>
-                                    ) : (
-                                        <button
-                                            type="button"
-                                            onClick={() => setRequestModalOpen(true)}
-                                            className="text-sm text-stone-600 hover:text-teal-700 transition-colors"
-                                        >
-                                            {t('adopter.pii_request_cta_fallback')}
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
                         )}
                     </>
                 )}
@@ -263,6 +220,11 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     formPrefill={formPrefill}
                     hasDuplicateBanner={false}
                     canEdit={!piiContext?.gatingOn || piiContext.privileged}
+                    onMaskedContactClick={
+                        piiContext?.masked
+                            ? (entryType) => setVerifyPopoverOpen(entryType)
+                            : undefined
+                    }
                 />
 
                 {/* Adoptions — with Wizard Form */}
@@ -476,6 +438,31 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                         open={requestModalOpen}
                         onClose={() => setRequestModalOpen(false)}
                         onRequested={() => setRequestSubmitted(true)}
+                    />
+                )}
+
+                {/* Per-field verify/request popover. Replaces the always-on
+                    banner; opens when the user clicks a masked contact chip.
+                    Verify is always enabled (independent of any request
+                    cooldown); the request CTA / pending state / cooldown state
+                    sit underneath as the secondary action. */}
+                {!isNew && adopter && piiContext?.masked && (
+                    <PiiVerifyPopover
+                        open={verifyPopoverOpen !== null}
+                        onClose={() => setVerifyPopoverOpen(null)}
+                        adopterId={id}
+                        entryType={verifyPopoverOpen ?? undefined}
+                        requestState={
+                            (requestSubmitted || piiContext.requestState.pending)
+                                ? { kind: 'pending' }
+                                : piiContext.requestState.cooldownUntil
+                                    ? { kind: 'cooldown', cooldownUntil: piiContext.requestState.cooldownUntil }
+                                    : { kind: 'available' }
+                        }
+                        onRequestAccess={
+                            piiOptInEligible ? () => setRequestModalOpen(true) : undefined
+                        }
+                        initialValue={initialVerifyQuery}
                     />
                 )}
             </div>

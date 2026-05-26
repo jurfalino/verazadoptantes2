@@ -12,7 +12,7 @@ import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
 import ContactEntriesInput from "@/components/ContactEntriesInput";
 import ContactEntriesDisplay from "@/components/ContactEntriesDisplay";
-import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry } from "@/lib/contactEntries";
+import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
 
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
@@ -50,6 +50,12 @@ interface AdopterFormProps {
      * surfaces that don't compute it (e.g. the new-adopter form).
      */
     canEdit?: boolean;
+    /**
+     * Click handler for a masked contact entry chip. When provided, the chips
+     * become buttons that open the parent-owned verify/request popover. When
+     * absent, masked chips render inert (legacy behavior).
+     */
+    onMaskedContactClick?: (entryType: ContactEntryType) => void;
 }
 
 function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
@@ -74,7 +80,7 @@ function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
     );
 }
 
-export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin: _isAdmin = false, formPrefill = null, hasDuplicateBanner = false, canEdit = true }: AdopterFormProps) {
+export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin: _isAdmin = false, formPrefill = null, hasDuplicateBanner = false, canEdit = true, onMaskedContactClick }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -243,7 +249,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
 
     // Sync read-mode state from `initialData` when the prop reference changes.
     // The two useState initializers above run ONCE on mount, so without this
-    // effect a `router.refresh()` triggered elsewhere — e.g. PiiVerifyKnownInfo
+    // effect a `router.refresh()` triggered elsewhere — e.g. PiiVerifyPopover
     // unlocks a contact entry → page re-fetches → new `initialData` arrives —
     // would leave the form's local state stale and the masked values wouldn't
     // visibly update until a full reload. Guarded by `isEditing` so a draft
@@ -852,7 +858,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                 title={canEdit ? (t('common.edit') || 'Click to edit') : undefined}
                             >
                                 {hasStoredContactEntries && contactEntries.length > 0
-                                    ? <ContactEntriesDisplay entries={contactEntries} />
+                                    ? <ContactEntriesDisplay entries={contactEntries} onMaskedClick={onMaskedContactClick} />
                                     : renderTextWithLinks(data.contactInfo, { emptyLabel: t('audit.empty_val'), type: 'text' })}
                             </div>
                         )}

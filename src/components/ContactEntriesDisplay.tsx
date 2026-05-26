@@ -1,6 +1,6 @@
 'use client';
 
-import { Phone, Mail, AtSign, IdCard, MapPin, StickyNote, type LucideIcon } from 'lucide-react';
+import { Phone, Mail, AtSign, IdCard, MapPin, StickyNote, Lock, type LucideIcon } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { renderTextWithLinks } from '@/lib/textUtils';
 import type { ContactEntry, ContactEntryType } from '@/lib/contactEntries';
@@ -39,12 +39,17 @@ function socialHref(value: string): string | null {
  * social URL (profile link). `other` notes are grouped, muted and separated
  * below; any link inside a note's text stays clickable via renderTextWithLinks.
  *
- * Masked rows (`entry.masked === true`) render their partial-revealed value as
- * inert muted text with an aria-label — no `tel:` / `mailto:` link. Unlocking
- * happens via the shared `PiiVerifyKnownInfo` input in the protected-contact
- * banner above (or by the search-match grant mechanism).
+ * Masked rows (`entry.masked === true`) render the partial-revealed value as a
+ * button — click opens the verify/request popover (via `onMaskedClick`). The
+ * type is passed back so the popover can type-tune its placeholder. Without
+ * `onMaskedClick` the masked value renders inert (read-only contexts).
  */
-export default function ContactEntriesDisplay({ entries }: { entries: ContactEntry[] }) {
+interface Props {
+    entries: ContactEntry[];
+    onMaskedClick?: (entryType: ContactEntryType) => void;
+}
+
+export default function ContactEntriesDisplay({ entries, onMaskedClick }: Props) {
     const { t } = useLanguage();
     if (entries.length === 0) return null;
 
@@ -61,6 +66,23 @@ export default function ContactEntriesDisplay({ entries }: { entries: ContactEnt
 
     const renderValue = (entry: ContactEntry) => {
         if (entry.masked) {
+            // Clickable affordance opens the verify/request popover when a
+            // handler is supplied (gated profile view). Without one, the
+            // masked value renders as inert text (used in any read-only
+            // context like printable views).
+            if (onMaskedClick) {
+                return (
+                    <button
+                        type="button"
+                        onClick={() => onMaskedClick(entry.type)}
+                        aria-label={t('adopter.pii_masked_chip_aria')}
+                        className="inline-flex items-center gap-1.5 text-stone-500 hover:text-teal-700 hover:bg-teal-50 -mx-1.5 -my-0.5 px-1.5 py-0.5 rounded-md transition-colors cursor-pointer group"
+                    >
+                        <Lock className="w-3 h-3 opacity-60 group-hover:opacity-100" aria-hidden="true" />
+                        <span className="select-none">{entry.value}</span>
+                    </button>
+                );
+            }
             return (
                 <span
                     className="text-stone-400 select-none"
