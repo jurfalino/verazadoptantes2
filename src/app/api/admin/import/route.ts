@@ -2,126 +2,144 @@ export const runtime = 'edge';
 import { auth } from "@/auth";
 import { isAdminAsync } from "@/config/admins";
 import { getDb } from "@/app/actions";
-import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, appConfig } from "@/db/schema";
+import { TABLE_BY_KEY, coerceRow, pickInsertOrder, pickDeleteOrder } from "@/lib/dataMigration";
 import { NextResponse } from "next/server";
-import { sql } from "drizzle-orm";
-import { logger } from '@/lib/logger';
+import { sql, getTableName } from "drizzle-orm";
+import type { AnySQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
+import { logger } from "@/lib/logger";
 
-// Table config: drizzle table ref + raw table name for DELETE
-const TABLE_MAP = {
-    adopters: { ref: adopters, name: 'adopters' },
-    adoptions: { ref: adoptions, name: 'adoptions' },
-    adopter_images: { ref: adopterImages, name: 'adopter_images' },
-    adopter_flags: { ref: adopterFlags, name: 'adopter_flags' },
-    adopter_history: { ref: adopterHistory, name: 'adopter_history' },
-    app_config: { ref: appConfig, name: 'app_config' },
-} as const;
+interface ImportPayload {
+    version?: string;
+    tables?: Record<string, Record<string, unknown>[]>;
+    mode?: "merge" | "replace";
+    selectedTables?: string[]; // Subset of tables in the payload to actually import
+}
 
-type TableKey = keyof typeof TABLE_MAP;
-
-// Ordered for FK safety: children first, parents last (for replace mode deletion)
-const DELETE_ORDER: TableKey[] = [
-    'adopter_images',
-    'adopter_flags',
-    'adopter_history',
-    'adoptions',
-    'app_config',
-    'adopters',
-];
-
-// Ordered for FK safety: parents first, children last (for insertion)
-const INSERT_ORDER: TableKey[] = [
-    'adopters',
-    'app_config',
-    'adoptions',
-    'adopter_flags',
-    'adopter_history',
-    'adopter_images',
-];
+// Resolve a JS column name to its drizzle column reference on the table.
+// We trust the table object since it's constructed from our schema.
+function jsColumn(table: SQLiteTable, jsName: string): AnySQLiteColumn {
+    return (table as unknown as Record<string, AnySQLiteColumn>)[jsName];
+}
 
 export async function POST(request: Request) {
     const session = await auth();
     if (!session?.user?.email || !await isAdminAsync(session.user.email)) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const actorEmail = session.user.email;
 
     const db = await getDb();
     if (!db) return NextResponse.json({ error: "Database unavailable" }, { status: 500 });
 
+    let body: ImportPayload;
     try {
-        const body = await request.json() as {
-            version?: string;
-            tables?: Record<string, Record<string, unknown>[]>;
-            mode?: 'merge' | 'replace';
-        };
+        body = await request.json() as ImportPayload;
+    } catch {
+        return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
 
-        // Validate structure
-        if (!body.version || !body.tables) {
-            return NextResponse.json({ error: "Invalid export file format: missing version or tables" }, { status: 400 });
-        }
+    if (!body.version || !body.tables) {
+        return NextResponse.json({ error: "Invalid export file: missing version or tables" }, { status: 400 });
+    }
 
-        const mode: 'merge' | 'replace' = body.mode || 'merge';
-        const summary: Record<string, number> = {};
+    const mode: "merge" | "replace" = body.mode === "replace" ? "replace" : "merge";
 
-        // Replace mode: delete all existing data first (in FK-safe order)
-        if (mode === 'replace') {
-            for (const key of DELETE_ORDER) {
-                if (body.tables[key]) {
-                    await db.run(sql.raw(`DELETE FROM ${TABLE_MAP[key].name}`));
+    // Decide which keys to import: caller-selected ∩ keys actually present
+    // in the upload ∩ keys we recognise. Unknown keys (e.g. from a future
+    // export) are silently ignored.
+    const presentInPayload = Object.keys(body.tables).filter(k => !!TABLE_BY_KEY[k]);
+    const selectedKeys = body.selectedTables && body.selectedTables.length > 0
+        ? presentInPayload.filter(k => body.selectedTables!.includes(k))
+        : presentInPayload;
+
+    if (selectedKeys.length === 0) {
+        return NextResponse.json({ error: "No matching tables to import" }, { status: 400 });
+    }
+
+    const summary: Record<string, { inserted: number; failed: number; skipped: number }> = {};
+    const errors: Array<{ table: string; error: string }> = [];
+
+    try {
+        // Replace mode: delete first, in reverse FK order
+        if (mode === "replace") {
+            for (const entry of pickDeleteOrder(selectedKeys)) {
+                const tableName = getTableName(entry.table);
+                try {
+                    await db.run(sql.raw(`DELETE FROM ${tableName}`));
+                } catch (e) {
+                    const msg = e instanceof Error ? e.message : String(e);
+                    logger.warn("import: DELETE failed", { table: entry.key, actorEmail, error: msg });
+                    errors.push({ table: entry.key, error: `delete: ${msg}` });
                 }
             }
         }
 
-        // Insert data in FK-safe order
-        for (const key of INSERT_ORDER) {
-            const rows = body.tables[key];
-            if (!rows || !Array.isArray(rows) || rows.length === 0) {
-                summary[key] = 0;
-                continue;
-            }
+        // Insert in FK order
+        for (const entry of pickInsertOrder(selectedKeys)) {
+            const rows = body.tables[entry.key];
+            const stat = { inserted: 0, failed: 0, skipped: 0 };
+            summary[entry.key] = stat;
 
-            const tableName = TABLE_MAP[key].name;
+            if (!Array.isArray(rows) || rows.length === 0) continue;
 
-            // Build column list from first row
-            const columns = Object.keys(rows[0]);
-            const columnList = columns.map(c => `"${c}"`).join(', ');
+            const pkCols = entry.pk.map(name => jsColumn(entry.table, name));
 
-            // Insert rows in batches to avoid hitting query size limits
-            const BATCH_SIZE = 50;
-            let inserted = 0;
+            for (const raw of rows) {
+                // Skip rows missing a PK component — they can't conflict-resolve.
+                const missingPk = entry.pk.find(name => raw[name] === undefined || raw[name] === null);
+                if (missingPk) {
+                    stat.skipped++;
+                    continue;
+                }
 
-            for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-                const batch = rows.slice(i, i + BATCH_SIZE);
+                const coerced = coerceRow(entry.table, raw);
 
-                for (const row of batch) {
-                    const values = columns.map(c => {
-                        const v = row[c];
-                        if (v === null || v === undefined) return 'NULL';
-                        if (typeof v === 'number') return String(v);
-                        // Escape single quotes in strings
-                        return `'${String(v).replace(/'/g, "''")}'`;
-                    }).join(', ');
+                // Build the SET clause = every present column except the PK,
+                // so the upsert overwrites everything else from the import.
+                const setClause: Record<string, unknown> = { ...coerced };
+                for (const pkName of entry.pk) delete setClause[pkName];
 
-                    const verb = mode === 'merge' ? 'INSERT OR REPLACE' : 'INSERT';
-                    await db.run(sql.raw(`${verb} INTO ${tableName} (${columnList}) VALUES (${values})`));
-                    inserted++;
+                try {
+                    if (Object.keys(setClause).length === 0) {
+                        // PK-only table (unlikely, but possible): nothing to update on conflict
+                        await db.insert(entry.table).values(coerced).onConflictDoNothing();
+                    } else {
+                        await db.insert(entry.table).values(coerced).onConflictDoUpdate({
+                            target: pkCols,
+                            set: setClause,
+                        });
+                    }
+                    stat.inserted++;
+                } catch (e) {
+                    stat.failed++;
+                    const msg = e instanceof Error ? e.message : String(e);
+                    // Log first 3 row-level errors per table; after that, keep counting silently.
+                    if (stat.failed <= 3) {
+                        logger.warn("import: row insert failed", {
+                            table: entry.key,
+                            actorEmail,
+                            error: msg,
+                        });
+                    }
                 }
             }
 
-            summary[key] = inserted;
+            if (stat.failed > 0) {
+                errors.push({ table: entry.key, error: `${stat.failed} row(s) failed to insert` });
+            }
         }
 
         return NextResponse.json({
-            success: true,
+            success: errors.length === 0,
             mode,
             summary,
+            errors,
             importedAt: new Date().toISOString(),
-            importedBy: session.user.email,
+            importedBy: actorEmail,
         });
-
     } catch (error: unknown) {
-        const errorId = logger.error('Import failed', error, { actorEmail: session?.user?.email });
+        const errorId = logger.error("Import failed", error, { actorEmail });
         const message = error instanceof Error ? error.message : "Unknown error";
-        return NextResponse.json({ error: `Import failed: ${message}`, errorId }, { status: 500 });
+        return NextResponse.json({ error: `Import failed: ${message}`, errorId, summary, errors }, { status: 500 });
     }
 }
