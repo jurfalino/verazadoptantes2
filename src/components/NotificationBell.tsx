@@ -129,6 +129,19 @@ export default function NotificationBell() {
         return () => clearInterval(interval);
     }, [open, isAuthenticated, fetchFullList]);
 
+    // Body scroll lock — only on mobile (below sm: where the dropdown renders
+    // as a bottom sheet). Without this, swiping on the notifications list
+    // bleeds through to page scroll, pushing the nav off-screen and leaving
+    // the user looking at just the bottom of the panel.
+    useEffect(() => {
+        if (!open) return;
+        if (typeof window === 'undefined') return;
+        if (window.matchMedia('(min-width: 640px)').matches) return;
+        const prevOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => { document.body.style.overflow = prevOverflow; };
+    }, [open]);
+
     // Click a notification → mark read + navigate
     const handleClick = async (item: NotificationItem) => {
         if (!item.read) {
@@ -189,10 +202,24 @@ export default function NotificationBell() {
                 )}
             </button>
 
-            {/* Dropdown Panel — uses inline styles with CSS vars for theme safety */}
+            {/* Backdrop — mobile only. Catches taps outside the bottom sheet so
+                dismissal is discoverable on touch (the mousedown click-outside
+                handler is unreliable on mobile when the sheet covers most of
+                the viewport). */}
             {open && (
                 <div
-                    className="fixed inset-x-0 bottom-0 max-h-[80vh] rounded-t-2xl sm:absolute sm:inset-auto sm:right-0 sm:top-auto sm:bottom-auto sm:mt-2 sm:max-h-none sm:w-96 sm:rounded-2xl shadow-2xl overflow-hidden z-50 flex flex-col"
+                    className="fixed inset-0 z-40 bg-black/30 sm:hidden"
+                    onClick={() => setOpen(false)}
+                    aria-hidden="true"
+                />
+            )}
+
+            {/* Dropdown Panel — uses inline styles with CSS vars for theme safety.
+                Mobile (default): bottom sheet pinned to the bottom edge.
+                Desktop (sm: and up): popover anchored to the bell. */}
+            {open && (
+                <div
+                    className="fixed inset-x-0 bottom-0 max-h-[85vh] rounded-t-2xl sm:absolute sm:inset-auto sm:right-0 sm:top-auto sm:bottom-auto sm:mt-2 sm:max-h-none sm:w-96 sm:rounded-2xl shadow-2xl overflow-hidden z-50 flex flex-col"
                     style={{
                         background: 'var(--surface-card)',
                         color: 'var(--text-primary)',
@@ -200,7 +227,17 @@ export default function NotificationBell() {
                         backdropFilter: 'blur(20px)',
                         paddingBottom: 'env(safe-area-inset-bottom)',
                     }}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={t('notifications.title')}
                 >
+                    {/* Drag-handle bar — mobile-only visual affordance that this
+                        is a dismissible sheet. Not functionally draggable; the
+                        backdrop tap and the existing items provide dismissal. */}
+                    <div className="sm:hidden flex justify-center pt-2 pb-1">
+                        <div className="h-1.5 w-12 rounded-full" style={{ background: 'var(--border-default)' }} />
+                    </div>
+
                     {/* Header */}
                     <div
                         className="flex items-center justify-between px-4 py-3"
@@ -220,8 +257,13 @@ export default function NotificationBell() {
                         )}
                     </div>
 
-                    {/* Items */}
-                    <div className="max-h-80 overflow-y-auto">
+                    {/* Items — `flex-1` so the list fills the available height
+                        inside the bottom-sheet's `max-h-[85vh]` cap. Previously
+                        a fixed `max-h-80` (320px) was nested inside the larger
+                        sheet container, so the list never grew to use the
+                        sheet's available vertical space. On desktop the
+                        sm:max-h-80 keeps the popover's compact height. */}
+                    <div className="flex-1 sm:flex-none sm:max-h-80 overflow-y-auto overscroll-contain">
                         {loading ? (
                             <div className="flex items-center justify-center py-8">
                                 <div
