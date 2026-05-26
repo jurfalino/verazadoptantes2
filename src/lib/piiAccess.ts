@@ -152,14 +152,22 @@ function queryContainsApprox(query: string, part: string): boolean {
 }
 
 /**
- * Anchor rule for an address entry. The stored value is tokenized by comma;
- * each normalized part is classified:
- *  - SPECIFIC — has a digit AND ≥ 2 letters AND length ≥ 5 (a street + number).
- *    A single match anchors the adopter. Exact substring required: typo
- *    tolerance on the number is dangerous.
- *  - LOOSE — anything else (locality, neighborhood, postal code, apartment).
- *    Two loose matches together anchor; one alone is not enough. Lev-1
- *    tolerance applies (typos in locality names).
+ * Anchor rule for an address entry. Three shapes:
+ *
+ *  STRUCTURED — entry has `streetAndNumber`. The gated half is structurally
+ *  known to be the street + number, so the rule reduces to "exact substring
+ *  match of normalized `streetAndNumber` in the normalized query". No
+ *  comma-tokenization, no specific/loose heuristic, no Lev-1 (same
+ *  digit-confusion concern as before: "Peru 998" must not unlock "Peru 999").
+ *  Min length 5 prevents trivially short streets ("Av 1") from fan-granting.
+ *
+ *  RAW / LEGACY — entry has `raw` (escape-hatch) or only a free-text `value`.
+ *  Falls back to the comma-tokenized rule below:
+ *   - SPECIFIC — has a digit AND ≥ 2 letters AND length ≥ 5 (a street +
+ *     number). A single match anchors. Exact substring required.
+ *   - LOOSE — anything else (locality, neighborhood, postal code, apartment).
+ *     Two loose matches together anchor; one alone is not enough. Lev-1
+ *     tolerance applies (typos in locality names).
  *
  * Combining loose parts ("San Isidro 3680") is itself the evidence — harder to
  * coincidence into than either piece alone.
@@ -266,7 +274,17 @@ export function matchSearchEntries(
         } else if (e.type === 'id') {
             matched = idMatchesAsAnchor(e.value, q);
         } else if (e.type === 'address') {
-            matched = addressMatchesAsAnchor(e.value, qNormalized);
+            // Structured shape: exact-substring match of the gated half
+            // (streetAndNumber) against the normalized query. Locality is
+            // non-gated and therefore not a matcher concern. Min length 5
+            // prevents trivially short streets from fan-granting.
+            if (e.streetAndNumber && e.streetAndNumber.trim().length >= 5) {
+                const sn = normalizeText(e.streetAndNumber);
+                matched = !!sn && qNormalized.includes(sn);
+            } else {
+                // Raw / legacy: fall back to the comma-tokenized rule over `value`.
+                matched = addressMatchesAsAnchor(e.value, qNormalized);
+            }
         }
         if (matched) {
             const hash = hashEntryValue(e.type, e.value);
@@ -438,14 +456,40 @@ export function partialReveal(entry: ContactEntry): ContactEntry {
             return mark('••••••');
         }
         case 'address': {
-            // Heuristic: the last comma-separated chunk is typically the
-            // locality (city / province). Reveal that, mask the rest.
+            // Structured two-field shape: only `streetAndNumber` is gated;
+            // `locality` is non-gated and always visible. Re-derive `value`
+            // from the masked half + the visible half so any read site that
+            // reads `entry.value` shows the right thing automatically.
+            if (entry.streetAndNumber || entry.locality) {
+                const maskedStreet = entry.streetAndNumber ? '•••••' : '';
+                const locality = entry.locality?.trim() ?? '';
+                const value = [maskedStreet, locality].filter(Boolean).join(', ');
+                return {
+                    type: 'address',
+                    value: value || '•••••',
+                    ...(entry.label ? { label: entry.label } : {}),
+                    ...(entry.streetAndNumber ? { streetAndNumber: maskedStreet } : {}),
+                    ...(locality ? { locality } : {}),
+                    masked: true,
+                };
+            }
+            // Raw-paste / legacy fall back to the comma-tokenized text heuristic
+            // (the last comma-separated chunk is typically the locality).
             // "Corrientes 3444, CABA" → "•••••, CABA". No comma → full mask.
-            const v = entry.value.trim();
-            const lastComma = v.lastIndexOf(',');
+            const source = entry.raw?.trim() || entry.value.trim();
+            const lastComma = source.lastIndexOf(',');
             if (lastComma > 0) {
-                const locality = v.slice(lastComma + 1).trim();
-                if (locality) return mark(`•••••, ${locality}`);
+                const locality = source.slice(lastComma + 1).trim();
+                if (locality) {
+                    const value = `•••••, ${locality}`;
+                    return {
+                        type: 'address',
+                        value,
+                        ...(entry.label ? { label: entry.label } : {}),
+                        ...(entry.raw ? { raw: value } : {}),
+                        masked: true,
+                    };
+                }
             }
             return mark('•••••••');
         }

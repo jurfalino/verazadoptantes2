@@ -603,6 +603,57 @@ describe('matchSearchEntries', () => {
         expect(matchSearchEntries(local, 'Peru 998')).toHaveLength(0);
     });
 
+    it('structured address: exact substring of streetAndNumber anchors (no comma-tokenization)', () => {
+        const local: ContactEntry[] = [{
+            type: 'address',
+            value: 'Peru 999, San Isidro',
+            streetAndNumber: 'Peru 999',
+            locality: 'San Isidro',
+        }];
+        const m = matchSearchEntries(local, 'Peru 999');
+        expect(m.map(x => x.entry.type)).toEqual(['address']);
+    });
+
+    it('structured address: locality-only query does NOT anchor (locality is non-gated)', () => {
+        const local: ContactEntry[] = [{
+            type: 'address',
+            value: 'Peru 999, San Isidro',
+            streetAndNumber: 'Peru 999',
+            locality: 'San Isidro',
+        }];
+        expect(matchSearchEntries(local, 'San Isidro')).toHaveLength(0);
+    });
+
+    it('structured address: typo in streetAndNumber does NOT anchor (exact required)', () => {
+        const local: ContactEntry[] = [{
+            type: 'address',
+            value: 'Peru 999, San Isidro',
+            streetAndNumber: 'Peru 999',
+            locality: 'San Isidro',
+        }];
+        expect(matchSearchEntries(local, 'Peru 998')).toHaveLength(0);
+    });
+
+    it('structured address: short streetAndNumber (< 5 chars) does not anchor', () => {
+        const local: ContactEntry[] = [{
+            type: 'address',
+            value: 'Av 1, CABA',
+            streetAndNumber: 'Av 1',
+            locality: 'CABA',
+        }];
+        expect(matchSearchEntries(local, 'Av 1')).toHaveLength(0);
+    });
+
+    it('raw-paste address falls back to the comma-tokenized rule on `value`', () => {
+        const local: ContactEntry[] = [{
+            type: 'address',
+            value: 'Peru 999, San Isidro, 3680',
+            raw: 'Peru 999, San Isidro, 3680',
+        }];
+        const m = matchSearchEntries(local, 'Peru 999');
+        expect(m.map(x => x.entry.type)).toEqual(['address']);
+    });
+
     it('apartment-style part (e.g. "5B") is loose, not specific', () => {
         // "5B" has a digit and a letter but fails min-letters (1 < 2) and
         // min-length (2 < 5) — treated as loose, can't anchor alone.

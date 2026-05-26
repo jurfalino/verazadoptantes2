@@ -18,6 +18,13 @@ export type ContactEntryType = 'phone' | 'email' | 'social' | 'id' | 'address' |
 
 export interface ContactEntry {
     type: ContactEntryType;
+    /**
+     * Canonical rendered string — always populated. For a structured address
+     * this is the joined "streetAndNumber, locality"; for a raw-paste address
+     * it's the raw text; for any other type it's the value as typed.
+     * Read sites (display, dedup, blob, tokenizer) can keep reading `value`
+     * unchanged.
+     */
     value: string;
     /** Optional display label, e.g. "DNI" / "Documento" for an id entry. */
     label?: string;
@@ -27,6 +34,36 @@ export interface ContactEntry {
      * saveAdopter re-derives entries from the owner's unmasked form input.
      */
     masked?: boolean;
+    /**
+     * Address-only structured fields (additive — `value` stays the joined
+     * source of truth). `streetAndNumber` is the PII-gated half; `locality`
+     * is the non-gated half (locality + city + province + cp combined as a
+     * single free-text field). Together they form the new two-field address.
+     */
+    streetAndNumber?: string;
+    locality?: string;
+    /**
+     * Address escape-hatch: the user opted to type their address as a single
+     * free-text blob (rural, informal, "Lote 5 Manzana 12 Barrio X"). When
+     * set, the structured fields are absent and the matcher falls back to
+     * the comma-tokenized rule on `value`.
+     */
+    raw?: string;
+}
+
+/** Join structured address parts into the canonical `value` string. */
+export function joinedAddressValue(streetAndNumber?: string | null, locality?: string | null): string {
+    return [streetAndNumber?.trim(), locality?.trim()].filter(Boolean).join(', ');
+}
+
+/** True if the entry is an address using the new structured two-field shape. */
+export function isStructuredAddress(entry: ContactEntry): boolean {
+    return entry.type === 'address' && !!(entry.streetAndNumber || entry.locality);
+}
+
+/** True if the entry is an address using the raw-paste escape-hatch shape. */
+export function isRawAddress(entry: ContactEntry): boolean {
+    return entry.type === 'address' && !!entry.raw && !entry.streetAndNumber && !entry.locality;
 }
 
 /** Labels written into the derived contactInfo blob — one line per entry. */
@@ -281,6 +318,17 @@ export function deserializeContactEntries(json: string | null | undefined): Cont
                 value: e.value.slice(0, MAX_VALUE_LEN[e.type]),
                 ...(e.label ? { label: String(e.label).slice(0, MAX_LABEL_LEN) } : {}),
                 ...(e.masked === true ? { masked: true } : {}),
+                // Structured-address additive fields. Only kept for type='address';
+                // ignored on any other type even if a malformed row carries them.
+                ...(e.type === 'address' && typeof e.streetAndNumber === 'string' && e.streetAndNumber.trim()
+                    ? { streetAndNumber: e.streetAndNumber.slice(0, MAX_VALUE_LEN.address) }
+                    : {}),
+                ...(e.type === 'address' && typeof e.locality === 'string' && e.locality.trim()
+                    ? { locality: e.locality.slice(0, MAX_VALUE_LEN.address) }
+                    : {}),
+                ...(e.type === 'address' && typeof e.raw === 'string' && e.raw.trim()
+                    ? { raw: e.raw.slice(0, MAX_VALUE_LEN.address) }
+                    : {}),
             }));
     } catch {
         return [];
