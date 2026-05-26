@@ -1,5 +1,6 @@
 'use server';
 
+import { headers } from 'next/headers';
 import { adopters, adopterHistory, adopterStats } from '@/db/schema';
 import { eq, sql, and } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
@@ -277,7 +278,11 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
             // Create
             const newId = data.id || crypto.randomUUID();
 
-            // Look up the user's country to stamp on the adopter
+            // Look up the user's country to stamp on the adopter. Two-tier
+            // fallback: user_profiles.country (set on first sign-in from
+            // CF-IPCountry), then live CF-IPCountry header of the current
+            // request — covers the brand-new-user case where the profile
+            // hasn't been geo-seeded yet.
             let userCountry: string | null = null;
             try {
                 const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
@@ -287,7 +292,18 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
                     ).bind(changedBy).first<{ country: string | null }>();
                     userCountry = row?.country || null;
                 }
-            } catch { /* best-effort */ }
+            } catch (e) {
+                logger.warn('Country lookup from user_profiles failed; trying header fallback', {
+                    changedBy,
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            }
+            if (!userCountry) {
+                try {
+                    const h = await headers();
+                    userCountry = h?.get?.('cf-ipcountry') || null;
+                } catch { /* headers() unavailable in some non-request contexts — fine, leave null */ }
+            }
 
             await db.insert(adopters).values({
                 ...data,
