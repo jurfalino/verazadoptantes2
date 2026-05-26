@@ -63,6 +63,11 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     // always-visible banner; the explainer + verify input now live inside
     // the popover and surface on demand.
     const [verifyPopoverOpen, setVerifyPopoverOpen] = useState<ContactEntryType | null>(null);
+    // Consume the post-signin `?q=` replay seed only on the FIRST popover
+    // open. Subsequent clicks on other masked fields must start blank —
+    // otherwise the stale phone query is pre-filled into the address popover
+    // and looks like a bug to the user. Cleared on the first close.
+    const [verifySeed, setVerifySeed] = useState<string | null>(initialVerifyQuery);
     const [deleteCheck, setDeleteCheck] = useState<{ canDelete: boolean; collaborators: { adoptions: number; images: number; edits: number; flags: number; forms: number } } | null>(null);
 
     const isOwner = adopter?.addedBy === currentUser;
@@ -449,7 +454,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                 {!isNew && adopter && piiContext?.masked && (
                     <PiiVerifyPopover
                         open={verifyPopoverOpen !== null}
-                        onClose={() => setVerifyPopoverOpen(null)}
+                        onClose={() => { setVerifyPopoverOpen(null); setVerifySeed(null); }}
                         adopterId={id}
                         entryType={verifyPopoverOpen ?? undefined}
                         requestState={
@@ -462,7 +467,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                         onRequestAccess={
                             piiOptInEligible ? () => setRequestModalOpen(true) : undefined
                         }
-                        initialValue={initialVerifyQuery}
+                        initialValue={verifySeed}
                     />
                 )}
             </div>

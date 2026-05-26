@@ -118,6 +118,12 @@ export default function PiiVerifyPopover({
     const placeholderKey = entryType ? `adopter.pii_verify_ph_${entryType}` : 'adopter.pii_verify_prompt_ph';
     const placeholder = t(placeholderKey) || t('adopter.pii_verify_prompt_ph');
 
+    // Type-specific body — names the exact attribute the viewer clicked, so the
+    // prompt doesn't list every possible field. Falls back to the generic copy
+    // when the popover opens without a known entry type.
+    const bodyKey = entryType ? `adopter.pii_verify_body_${entryType}` : 'adopter.pii_protected_body';
+    const bodyText = t(bodyKey) || t('adopter.pii_protected_body');
+
     const inputType = entryType === 'phone' ? 'tel' : entryType === 'email' ? 'email' : 'text';
 
     return (
@@ -179,7 +185,7 @@ export default function PiiVerifyPopover({
 
                     <div className="space-y-1.5">
                         <p className="text-sm font-semibold text-teal-900">{t('adopter.pii_protected_title')}</p>
-                        <p className="text-sm text-teal-800">{t('adopter.pii_protected_body')}</p>
+                        <p className="text-sm text-teal-800">{bodyText}</p>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">

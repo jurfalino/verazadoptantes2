@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.15.0-18] - 2026-05-26
+
+### Fixed
+- **PII verify popover pre-filled stale `?q=` on every open.** The post-signin `?q=` replay seed is meant to land in the verify input on the *first* popover open after sign-in. The popover unmounts on close, so a stable `initialVerifyQuery` prop reseeded on every subsequent click — clicking a phone field after signing in for an address query showed the address text pre-filled into the phone popover. The seed is now state-backed in the parent and cleared on first close; later opens start blank.
+
+### Changed
+- **Per-attribute verify copy.** The popover body used to list every possible field ("Ingresá otro dato que conozcas (teléfono, email, dirección…)") regardless of which masked chip was clicked. Now the body names the specific attribute: clicking the phone chip prompts "Ingresá el teléfono que tengas para confirmar que coincide" (and similarly per type). Falls back to the generic line when no entry type is known.
+- **CTA renamed `Desbloquear` → `Verificar` / `Unlock` → `Verify`.** The action is "prove you already know this," not "earn access" — and the new label aligns with the `pii_verify_*` key naming.
+
 ## [2.15.0-9] - 2026-05-24
 
 ### Fixed
