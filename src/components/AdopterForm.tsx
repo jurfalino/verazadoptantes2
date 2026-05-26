@@ -43,6 +43,13 @@ interface AdopterFormProps {
     isAdmin?: boolean;
     formPrefill?: FormSubmissionPrefill | null;
     hasDuplicateBanner?: boolean;
+    /**
+     * Mirrors the server-side `canEditAdopterRecord` decision. When false, the
+     * form blocks entry into edit mode (no pencil, no click-to-edit hover
+     * affordance, no-op handler). Default `true` preserves legacy behavior on
+     * surfaces that don't compute it (e.g. the new-adopter form).
+     */
+    canEdit?: boolean;
 }
 
 function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
@@ -67,7 +74,7 @@ function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
     );
 }
 
-export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin: _isAdmin = false, formPrefill = null, hasDuplicateBanner = false }: AdopterFormProps) {
+export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin: _isAdmin = false, formPrefill = null, hasDuplicateBanner = false, canEdit = true }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -190,13 +197,18 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     const MIN_NAME_LENGTH_FOR_SEARCH = 2;
     const MAX_DUPLICATE_CARD_RESULTS = 5;
 
-    // Auth-gated click-to-edit: clicking any view field enables editing
+    // Auth-gated click-to-edit: clicking any view field enables editing.
+    // Also mirrors the server-side `canEditAdopterRecord` gate — a viewer
+    // who can't save shouldn't be able to enter edit mode in the first place,
+    // otherwise hitting Save without any changes produces a confusing
+    // permission error.
     const handleClickToEdit = () => {
         if (isEditing) return;
         if (!isAuthenticated) {
             openLogin();
             return;
         }
+        if (!canEdit) return;
         setIsEditing(true);
     };
 
@@ -661,14 +673,16 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                         </>
                                     ) : (
                                         <>
-                                            <button
-                                                type="button"
-                                                onClick={handleClickToEdit}
-                                                className="flex items-center justify-center w-8 h-8 text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-lg transition-colors"
-                                                title={t('common.edit') || 'Edit'}
-                                            >
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                                            </button>
+                                            {canEdit && (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleClickToEdit}
+                                                    className="flex items-center justify-center w-8 h-8 text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-lg transition-colors"
+                                                    title={t('common.edit') || 'Edit'}
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                                </button>
+                                            )}
                                             {/* Overflow menu */}
                                             {!isNew && initialData && (
                                                 <div className="relative">
@@ -832,10 +846,10 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                             />
                         ) : (
                             <div
-                                className="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 font-medium leading-relaxed min-h-[60px] cursor-pointer hover:border-teal-400 transition-colors"
+                                className={`w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 font-medium leading-relaxed min-h-[60px] transition-colors ${canEdit ? 'cursor-pointer hover:border-teal-400' : 'cursor-default'}`}
                                 style={{ overflowWrap: 'anywhere' }}
                                 onClick={handleClickToEdit}
-                                title={t('common.edit') || 'Click to edit'}
+                                title={canEdit ? (t('common.edit') || 'Click to edit') : undefined}
                             >
                                 {hasStoredContactEntries && contactEntries.length > 0
                                     ? <ContactEntriesDisplay entries={contactEntries} />
@@ -858,10 +872,10 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                         ) : (
                             data.familyMembers ? (
                                 <div
-                                    className="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 font-medium leading-relaxed min-h-[60px] cursor-pointer hover:border-teal-400 transition-colors"
+                                    className={`w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 font-medium leading-relaxed min-h-[60px] transition-colors ${canEdit ? 'cursor-pointer hover:border-teal-400' : 'cursor-default'}`}
                                     style={{ overflowWrap: 'anywhere' }}
                                     onClick={handleClickToEdit}
-                                    title={t('common.edit') || 'Click to edit'}
+                                    title={canEdit ? (t('common.edit') || 'Click to edit') : undefined}
                                 >
                                     {renderTextWithLinks(data.familyMembers, { emptyLabel: t('audit.empty_val') })}
                                 </div>

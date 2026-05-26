@@ -258,6 +258,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     isAdmin={isAdmin}
                     formPrefill={formPrefill}
                     hasDuplicateBanner={false}
+                    canEdit={!piiContext?.gatingOn || piiContext.privileged}
                 />
 
                 {/* Adoptions — with Wizard Form */}
