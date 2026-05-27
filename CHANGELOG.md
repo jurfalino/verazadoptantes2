@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.15.0-19] - 2026-05-26
+
+### Added
+- **Collaborative contact-detail contribution.** Any authenticated user can now add a contact detail (phone, email, social, ID, address) to a PII-gated adopter profile via a new "Agregar dato de contacto" CTA on the profile. The new entry lands immediately and is attributed to the contributor in `adopter_history`. The creator + editors (and admins on their dashboard) get a notification. Contributing data does NOT silently grant the contributor full PII visibility on the profile — they only see what they typed.
+- New server action `addContactEntry` — append-only, open to any authenticated user, with the same risk-profile and audit posture as activity adds.
+
+### Changed
+- `adopter_history` rows now carry a `kind` tag — `'edit'` (mutations of the core record by owner/admin via `saveAdopter` / `appendToExistingAdopter`) or `'contribution'` (additive writes via the new path). The PII visibility resolver counts only `kind='edit'` rows toward editor status, so contributing data cannot back-channel into full PII access. Existing rows default to `'edit'`.
+
+### Migration
+- `drizzle/0045_adopter_history_kind.sql` — adds `kind TEXT NOT NULL DEFAULT 'edit'` to `adopter_history`. Applied automatically by the `migrate-staging` / `migrate-production` CI jobs.
+
 ## [2.15.0-18] - 2026-05-26
 
 ### Fixed
