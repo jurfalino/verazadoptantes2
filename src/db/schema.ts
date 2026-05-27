@@ -66,6 +66,10 @@ export const adopterHistory = sqliteTable("adopter_history", {
     changedBy: text("changed_by").default("anonymous"),
     changes: text("changes"), // JSON string of what changed
     changedAt: integer("changed_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    // 'edit' (owner/admin core-record write via saveAdopter / appendToExistingAdopter)
+    // | 'contribution' (any authenticated user via addContactEntry). Only 'edit'
+    // rows make the writer an "editor" for PII visibility purposes.
+    kind: text("kind").notNull().default('edit'),
 });
 
 export const searches = sqliteTable("searches", {
