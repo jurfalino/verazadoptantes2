@@ -44,8 +44,14 @@ async function loadApprovers(adopterId: string): Promise<{ owner: string | null;
     const adopter = await db.select({ addedBy: adopters.addedBy })
         .from(adopters).where(eq(adopters.id, adopterId)).get();
     const owner = isRealActorEmail(adopter?.addedBy) ? adopter!.addedBy : null;
+    // Only kind='edit' rows count toward editor status. Contributors
+    // (kind='contribution') are not approvers — they merely added one
+    // contact detail and have no authority over the rest of the record.
     const editorRows = await db.selectDistinct({ email: adopterHistory.changedBy })
-        .from(adopterHistory).where(eq(adopterHistory.adopterId, adopterId));
+        .from(adopterHistory).where(and(
+            eq(adopterHistory.adopterId, adopterId),
+            eq(adopterHistory.kind, 'edit'),
+        ));
     const editors = editorRows
         .map((r: { email: string | null }) => r.email)
         .filter(isRealActorEmail);

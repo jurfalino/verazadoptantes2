@@ -49,8 +49,15 @@ export async function resolveAdopterVisibility(
         if (!db) return NO_ACCESS_VISIBILITY;
         const [isAdmin, editorRows, grantRows] = await Promise.all([
             isAdminAsync(viewerEmail),
+            // Editor status: only kind='edit' rows count. kind='contribution'
+            // rows (additive writes via addContactEntry) must NOT promote the
+            // writer to editor — that would silently grant full PII visibility.
             db.select({ id: adopterHistory.adopterId }).from(adopterHistory)
-                .where(and(eq(adopterHistory.adopterId, adopter.id), eq(adopterHistory.changedBy, viewerEmail)))
+                .where(and(
+                    eq(adopterHistory.adopterId, adopter.id),
+                    eq(adopterHistory.changedBy, viewerEmail),
+                    eq(adopterHistory.kind, 'edit'),
+                ))
                 .limit(1),
             db.select({
                 scope: piiAccessGrants.scope,
@@ -96,8 +103,12 @@ export async function resolveAdoptersVisibility(
         if (!db) throw new Error('No database');
         const [isAdmin, editorRows, grantRows] = await Promise.all([
             isAdminAsync(viewerEmail),
+            // Same kind='edit' filter as the per-adopter resolver above.
             db.selectDistinct({ id: adopterHistory.adopterId }).from(adopterHistory)
-                .where(eq(adopterHistory.changedBy, viewerEmail)),
+                .where(and(
+                    eq(adopterHistory.changedBy, viewerEmail),
+                    eq(adopterHistory.kind, 'edit'),
+                )),
             db.select({
                 adopterId: piiAccessGrants.adopterId,
                 scope: piiAccessGrants.scope,
