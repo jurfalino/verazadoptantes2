@@ -8,6 +8,7 @@ import RequestPiiAccessModal from '@/components/RequestPiiAccessModal';
 import PiiAccessRequestPanel from '@/components/PiiAccessRequestPanel';
 import PiiAccessGrantsDisclosure from '@/components/PiiAccessGrantsDisclosure';
 import PiiVerifyPopover from '@/components/PiiVerifyPopover';
+import AddContactEntryModal from '@/components/AddContactEntryModal';
 import type { ContactEntryType } from '@/lib/contactEntries';
 import { CollapsibleSection } from '@/components/CollapsibleSection';
 import AdoptionHistory from '@/components/AdoptionHistory';
@@ -68,6 +69,9 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     // otherwise the stale phone query is pre-filled into the address popover
     // and looks like a bug to the user. Cleared on the first close.
     const [verifySeed, setVerifySeed] = useState<string | null>(initialVerifyQuery);
+    // Contribution affordance — any authenticated viewer on a gated profile
+    // can add a contact detail they know (append-only, notifies owner+editors).
+    const [addModalOpen, setAddModalOpen] = useState(false);
     const [deleteCheck, setDeleteCheck] = useState<{ canDelete: boolean; collaborators: { adoptions: number; images: number; edits: number; flags: number; forms: number } } | null>(null);
 
     const isOwner = adopter?.addedBy === currentUser;
@@ -206,6 +210,18 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                         )}
                         {piiContext.privileged && (
                             <PiiAccessGrantsDisclosure grants={piiContext.accessGrants} />
+                        )}
+                        {piiContext.masked && currentUser && (
+                            <div className="flex justify-end">
+                                <button
+                                    type="button"
+                                    onClick={() => setAddModalOpen(true)}
+                                    data-testid="contrib-cta"
+                                    className="text-sm font-medium text-teal-700 hover:text-teal-900 transition-colors underline-offset-2 hover:underline"
+                                >
+                                    + {t('adopter.contrib_cta')}
+                                </button>
+                            </div>
                         )}
                     </>
                 )}
@@ -443,6 +459,18 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                         open={requestModalOpen}
                         onClose={() => setRequestModalOpen(false)}
                         onRequested={() => setRequestSubmitted(true)}
+                    />
+                )}
+
+                {/* Contribution modal — append-only contact-detail add for any
+                    authenticated viewer on a gated profile. The action gates
+                    auth itself, so we can render the modal whenever masking is
+                    on (matching the verify popover's visibility rule). */}
+                {!isNew && adopter && piiContext?.masked && (
+                    <AddContactEntryModal
+                        open={addModalOpen}
+                        onClose={() => setAddModalOpen(false)}
+                        adopterId={id}
                     />
                 )}
 
