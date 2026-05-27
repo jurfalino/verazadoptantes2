@@ -17,6 +17,7 @@ export type { FindAdoptersInput, FindAdoptersOptions, FindAdoptersResponse, Dupl
 
 // Adopters
 export { getAdopter, saveAdopter, appendToExistingAdopter, getAdopterStats, logProfileView, getAverageRating, getHistory, getLinkedFormSubmissions, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from './adopters';
+export { addContactEntry } from './addContactEntry';
 
 // Images
 export { saveImage, getImages, setProfilePicture, getAdoptionImages, deleteImage } from './images';

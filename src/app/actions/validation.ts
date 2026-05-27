@@ -16,6 +16,17 @@ const requiredText = z.string().min(1).max(5_000);
 
 // ── Adopter ──────────────────────────────────────────────────────
 
+// addContactEntry — the open-to-all-authenticated-users contribution path.
+// Validates one typed entry. For address, accepts the v2.15.0-17 structured
+// shape (streetAndNumber + locality) in addition to the joined `value`.
+export const addContactEntrySchema = z.object({
+    adopterId: z.string().min(1).max(64),
+    type: z.enum(['phone', 'email', 'social', 'id', 'address', 'other']),
+    value: z.string().min(1).max(500),
+    streetAndNumber: z.string().max(500).optional(),
+    locality: z.string().max(500).optional(),
+});
+
 export const saveAdopterSchema = z.object({
     id: id.optional(),
     name: requiredText,
