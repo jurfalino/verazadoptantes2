@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-7] - 2026-05-28
+
+### Fixed
+- **`PiiVerifyPopover` no longer pre-fills the input on first open.** v2.15.0-18 plumbed the post-signin `?q=` search-term through `initialVerifyQuery` → `verifySeed` → `initialValue` so the first-clicked masked chip's popover opened pre-filled — saving the user a retype. But the seed often didn't match the type of field they actually clicked first (search for a phone → tap an address chip → see the phone digits sitting in the address input), which read as a bug regardless of the type-match case. Ripped out the entire pre-fill chain (`page.tsx` → `AdopterProfileV2.tsx` → `PiiVerifyPopover.tsx`); the popover always opens blank now. The `?q=` URL param still drives `replaySearchMatchGrants` server-side on profile load, so the search-to-grant behavior is unchanged.
+
 ## [2.16.0-6] - 2026-05-28
 
 ### Fixed

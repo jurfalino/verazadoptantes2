@@ -44,13 +44,9 @@ interface AdopterProfileV2Props {
     formPrefill?: FormSubmissionPrefill | null;
     userNameMap?: Record<string, string>;
     piiContext?: AdopterPiiContext | null;
-    /** Search query carried through the post-signin redirect (`?q=`). Pre-fills
-     * the verify-known-info input as a fallback if the replay didn't unlock
-     * everything the user expected. */
-    initialVerifyQuery?: string | null;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, initialVerifyQuery = null }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null }: AdopterProfileV2Props) {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const toast = useShowToast();
@@ -63,11 +59,11 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     // always-visible banner; the explainer + verify input now live inside
     // the popover and surface on demand.
     const [verifyPopoverOpen, setVerifyPopoverOpen] = useState<ContactEntryType | null>(null);
-    // Consume the post-signin `?q=` replay seed only on the FIRST popover
-    // open. Subsequent clicks on other masked fields must start blank —
-    // otherwise the stale phone query is pre-filled into the address popover
-    // and looks like a bug to the user. Cleared on the first close.
-    const [verifySeed, setVerifySeed] = useState<string | null>(initialVerifyQuery);
+    // Note: v2.15.0-18 plumbed an `initialVerifyQuery` seed through here to
+    // pre-fill the verify input with the post-signin `?q=` value. v2.16.0-7
+    // removed it — the pre-fill confused users (the seed often didn't match
+    // the field they actually clicked, and looked like a bug). The popover
+    // now always opens blank.
     // (Contribution-modal state removed in v2.16.0-2; ContactEntriesSection
     // in Phase B will host the unified add path inline next to the chip list.)
     const [deleteCheck, setDeleteCheck] = useState<{ canDelete: boolean; collaborators: { adoptions: number; images: number; edits: number; flags: number; forms: number } } | null>(null);
@@ -462,7 +458,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                 {!isNew && adopter && piiContext?.masked && (
                     <PiiVerifyPopover
                         open={verifyPopoverOpen !== null}
-                        onClose={() => { setVerifyPopoverOpen(null); setVerifySeed(null); }}
+                        onClose={() => setVerifyPopoverOpen(null)}
                         adopterId={id}
                         entryType={verifyPopoverOpen ?? undefined}
                         requestState={
@@ -475,7 +471,6 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                         onRequestAccess={
                             piiOptInEligible ? () => setRequestModalOpen(true) : undefined
                         }
-                        initialValue={verifySeed}
                     />
                 )}
             </div>

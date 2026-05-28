@@ -132,7 +132,6 @@ export default async function AdopterPage({
             formPrefill={formPrefill}
             userNameMap={userNameMap}
             piiContext={piiContext}
-            initialVerifyQuery={q ?? null}
         />
     );
 }

@@ -26,10 +26,6 @@ interface Props {
     /** Trigger to open the explicit-request modal (owned by the parent so
      * its single instance can be reused across many popover opens). */
     onRequestAccess?: () => void;
-    /** Pre-fill the input on the FIRST open — used to carry through the URL
-     * `?q=` from the post-signin replay redirect. Cleared on close; subsequent
-     * opens start blank. */
-    initialValue?: string | null;
 }
 
 /**
@@ -46,20 +42,20 @@ export default function PiiVerifyPopover({
     entryType,
     requestState,
     onRequestAccess,
-    initialValue = null,
 }: Props) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
-    const [input, setInput] = useState(initialValue ?? '');
+    // Always start blank. v2.15.0-18 had a `?q=` pre-fill via an `initialValue`
+    // prop, but the seed often didn't match the field the user actually
+    // clicked and looked like a bug (v2.16.0-7 ripped it out).
+    const [input, setInput] = useState('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const { dismissed: noticeDismissed, dismiss: dismissNotice } = useOneTimeNotice('pii-access-gating-v1');
 
-    // Clear input on close (transition from open → closed). Tracks the prior
-    // state via ref so the initial mount with open=false doesn't clobber the
-    // `initialValue` seed. Stale per-entry input across reopen attempts would
-    // be confusing.
+    // Clear input on close (transition from open → closed). Stale per-entry
+    // input across reopen attempts would be confusing.
     const wasOpenRef = useRef(false);
     useEffect(() => {
         if (wasOpenRef.current && !open) {
