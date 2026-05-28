@@ -8,8 +8,7 @@ import RequestPiiAccessModal from '@/components/RequestPiiAccessModal';
 import PiiAccessRequestPanel from '@/components/PiiAccessRequestPanel';
 import PiiAccessGrantsDisclosure from '@/components/PiiAccessGrantsDisclosure';
 import PiiVerifyPopover from '@/components/PiiVerifyPopover';
-import { deserializeContactEntries, parseBlobToContactEntries, type ContactEntryType } from '@/lib/contactEntries';
-import ContactEntriesSection from '@/components/ContactEntriesSection';
+import type { ContactEntryType } from '@/lib/contactEntries';
 import { CollapsibleSection } from '@/components/CollapsibleSection';
 import AdoptionHistory from '@/components/AdoptionHistory';
 import AdoptionFormWizard from '@/components/AdoptionFormWizard';
@@ -213,44 +212,12 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     </>
                 )}
 
-                {/* Unified contact section — single surface for everyone. Chip
-                    list + always-visible inline composer. Owner/admin chips get
-                    pencil + trash; contributors see read-only chips + the
-                    composer. Replaces the separate "+ Agregar dato" CTA + modal
-                    pair (v2.15.0-19) and the in-form contact editor's mutation
-                    role for existing adopters. */}
-                {!isNew && adopter && (() => {
-                    // Legacy rows have a contactInfo blob but no structured
-                    // contactEntries column — fall back to parsing the blob so
-                    // the section still displays the data. Parsed-from-blob
-                    // entries have no `id`, which the section uses to disable
-                    // edit/delete affordances (no stable anchor to mutate).
-                    // Adding a fresh entry via the composer writes a real
-                    // contactEntries row, and from then on chips are editable.
-                    const stored = deserializeContactEntries(adopter.contactEntries);
-                    const entries = stored.length > 0
-                        ? stored
-                        : parseBlobToContactEntries(adopter.contactInfo);
-                    return (
-                        <div className="rounded-2xl border border-teal-200 bg-white p-4">
-                            <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">
-                                {t('adopter.contact')}
-                            </h3>
-                            <ContactEntriesSection
-                                entries={entries}
-                                adopterId={id}
-                                canEdit={isOwner || isAdmin}
-                                onMaskedClick={
-                                    piiContext?.masked
-                                        ? (entryType) => setVerifyPopoverOpen(entryType)
-                                        : undefined
-                                }
-                            />
-                        </div>
-                    );
-                })()}
-
-                {/* Profile Form */}
+                {/* Profile Form — owns the contact section internally (via
+                    ContactEntriesSection) so the page reads top-down as
+                    "header → contact → family". The masked-chip click handler
+                    is plumbed through here so the parent-owned verify popover
+                    still opens when a non-privileged viewer taps a hidden
+                    chip on a PII-gated profile. */}
                 <AdopterForm
                     initialData={adopter}
                     currentUser={currentUser}
@@ -265,6 +232,11 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     formPrefill={formPrefill}
                     hasDuplicateBanner={false}
                     canEdit={!piiContext?.gatingOn || piiContext.privileged}
+                    onMaskedContactClick={
+                        piiContext?.masked
+                            ? (entryType) => setVerifyPopoverOpen(entryType)
+                            : undefined
+                    }
                 />
 
                 {/* Adoptions — with Wizard Form */}

@@ -11,7 +11,8 @@ import type { DiscoveryMatch } from "@/app/actions";
 import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
 import ContactEntriesInput from "@/components/ContactEntriesInput";
-import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry } from "@/lib/contactEntries";
+import ContactEntriesSection from "@/components/ContactEntriesSection";
+import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
 
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
@@ -49,6 +50,13 @@ interface AdopterFormProps {
      * surfaces that don't compute it (e.g. the new-adopter form).
      */
     canEdit?: boolean;
+    /**
+     * Click handler for a masked contact entry chip on a PII-gated profile.
+     * When provided, masked chips open the parent-owned verify/request popover.
+     * When absent (gating off, or viewer is privileged), the chips render the
+     * un-masked value directly via the existing ContactEntriesSection display.
+     */
+    onMaskedContactClick?: (entryType: ContactEntryType) => void;
 }
 
 function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
@@ -73,7 +81,7 @@ function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
     );
 }
 
-export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin: _isAdmin = false, formPrefill = null, hasDuplicateBanner = false, canEdit = true }: AdopterFormProps) {
+export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, canEdit = true, onMaskedContactClick }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -833,14 +841,20 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
 
                 {/* SHARED CONTENT GRID */}
                 <div className={`grid md:grid-cols-2 gap-6 ${isEditing ? 'opacity-100' : 'opacity-90'}`}>
-                    {/* Contact Info — only rendered on NEW-adopter creation. For
-                        existing adopters, the unified ContactEntriesSection above
-                        AdopterForm owns the contact surface (per-entry add / edit
-                        / remove). Including it here would mean two competing
-                        contact editors on the same page. */}
-                    {isNew && (
-                        <div className="md:col-span-2">
-                            <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.contact')}</h3>
+                    {/* Contact — two shapes for two jobs:
+                        • New adopter: ContactEntriesInput (chip rows + paste
+                          flow) so an owner can drop in a CV-style block on
+                          first-data entry.
+                        • Existing adopter: the unified ContactEntriesSection —
+                          per-entry add / edit / remove. Lives here (inside the
+                          shared content grid, between the header and the rest
+                          of the profile data) so the page reads top-down as
+                          "who is this → how do I reach them → who do they live
+                          with". Owner/admin gets edit affordances, everyone
+                          else gets read-only chips with the inline composer. */}
+                    <div className="md:col-span-2">
+                        <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.contact')}</h3>
+                        {isNew ? (
                             <ContactEntriesInput
                                 entries={contactEntries}
                                 onChange={next => {
@@ -848,8 +862,32 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                     setData(d => ({ ...d, contactInfo: contactEntriesToBlob(next) }));
                                 }}
                             />
-                        </div>
-                    )}
+                        ) : initialData && (() => {
+                            // Legacy rows have a contactInfo blob but no
+                            // structured contactEntries column — fall back to
+                            // parsing the blob so the section still displays
+                            // the data. Parsed-from-blob entries have no `id`,
+                            // which ContactEntriesSection uses to suppress
+                            // edit/delete affordances (no stable anchor to
+                            // mutate). Adding a fresh entry via the composer
+                            // writes a real contactEntries row, and from there
+                            // chips gain real IDs and become editable.
+                            const stored = deserializeContactEntries(initialData.contactEntries);
+                            const entriesForSection = stored.length > 0
+                                ? stored
+                                : parseBlobToContactEntries(initialData.contactInfo);
+                            const isOwner = initialData.addedBy === currentUser;
+                            return (
+                                <ContactEntriesSection
+                                    entries={entriesForSection}
+                                    adopterId={id}
+                                    canEdit={isOwner || isAdmin}
+                                    onMaskedClick={onMaskedContactClick}
+                                />
+                            );
+                        })()}
+                    </div>
+
 
                     {/* Family Members (Full Width) */}
                     <div className="md:col-span-2">

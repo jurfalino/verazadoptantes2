@@ -87,6 +87,19 @@ export default function ContactEntriesSection({ entries, adopterId, canEdit, onM
         if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
     }, []);
 
+    // Focus restoration — when the composer closes (either after a successful
+    // add or after Cancelar), return focus to the trigger button so keyboard
+    // users can continue without re-tabbing. wasOpenRef gates the first mount
+    // so we don't steal focus from the page on initial render.
+    const triggerRef = useRef<HTMLButtonElement>(null);
+    const wasComposerOpenRef = useRef(false);
+    useEffect(() => {
+        if (wasComposerOpenRef.current && !composerOpen) {
+            triggerRef.current?.focus();
+        }
+        wasComposerOpenRef.current = composerOpen;
+    }, [composerOpen]);
+
     const visibleEntries = entries.filter(e => e.id !== pendingDeleteId);
     const sorted = [...visibleEntries].sort(
         (a, b) => DISPLAY_ORDER.indexOf(a.type) - DISPLAY_ORDER.indexOf(b.type),
@@ -378,7 +391,7 @@ export default function ContactEntriesSection({ entries, adopterId, canEdit, onM
                                                 {renderValueReadOnly(entry)}
                                             </span>
                                             {canEdit && !entry.masked && entry.id && (
-                                                <span className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                                                <span className="flex items-center gap-1 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 transition-opacity">
                                                     <button
                                                         type="button"
                                                         onClick={() => startEdit(entry)}
@@ -410,15 +423,31 @@ export default function ContactEntriesSection({ entries, adopterId, canEdit, onM
                 </ul>
             )}
 
-            {/* Inline add composer. Collapsed: just the "+ Agregar dato" link.
+            {/* Empty state — when there are no entries to show, surface a
+                hint and emphasise the composer trigger so it reads as the
+                primary affordance instead of a faint link tucked at the
+                bottom. Suppressed when an undo bar is up (the deleted entry's
+                temporary absence isn't an empty state). */}
+            {sorted.length === 0 && !pendingDeleteId && !composerOpen && (
+                <p className="text-sm text-stone-500 italic">{t('adopter.ce_empty')}</p>
+            )}
+
+            {/* Inline add composer. Collapsed: just the "+ Agregar dato" trigger.
+                Styled as a faint link when entries exist (secondary action) and
+                as a button when the list is empty (primary action — see above).
                 Expanded: type chip row + value input + cancel/add buttons. */}
             <div className="pt-1">
                 {!composerOpen ? (
                     <button
                         type="button"
+                        ref={triggerRef}
                         onClick={() => setComposerOpen(true)}
                         data-testid="ce-add-trigger"
-                        className="inline-flex items-center gap-1 text-sm font-medium text-teal-700 hover:text-teal-900 transition-colors"
+                        className={
+                            sorted.length === 0
+                                ? 'inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-teal-800 bg-teal-50 border border-teal-200 hover:bg-teal-100 rounded-md transition-colors'
+                                : 'inline-flex items-center gap-1 text-sm font-medium text-teal-700 hover:text-teal-900 transition-colors'
+                        }
                     >
                         <Plus className="w-4 h-4" />
                         {t('adopter.contrib_cta')}

@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-4] - 2026-05-28
+
+### Fixed
+- **Contact section was rendering above the profile header.** v2.16.0-2 mounted `ContactEntriesSection` in `AdopterProfileV2` *before* `AdopterForm`, putting phone numbers and emails above the name + rating + audit identity — wrong information architecture for a vetting platform, where confirming "whose profile is this?" must come first. The section is now mounted *inside* `AdopterForm`'s shared content grid, in the same slot the bulk `ContactEntriesInput` always occupied: header → flag pills → divider → contact → family members → activity. `AdopterProfileV2` simply passes the masked-chip click handler down; `AdopterForm` computes the owner+admin gate internally.
+- **Edit and delete affordances were hidden behind hover.** `opacity-0 group-hover:opacity-100` meant the pencil and trash buttons were invisible on touch viewports. Now: always visible on mobile, hover-revealed on desktop (`opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100`).
+- **Empty contact section gave no orientation.** When an adopter has zero entries, the only affordance was a faint "+ Agregar dato de contacto" link easy to miss. Now: a small "Aún no hay datos de contacto" hint above an emphasised button-styled composer trigger.
+- **Focus drifted to `<body>` after a successful add.** Keyboard users had to re-tab back into the page. The composer trigger now `.focus()`-restores after the composer closes (gated by a `wasOpen` ref so initial mount doesn't steal focus).
+
 ## [2.16.0-3] - 2026-05-28
 
 ### Fixed
