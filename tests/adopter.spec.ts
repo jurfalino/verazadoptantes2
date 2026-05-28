@@ -55,7 +55,12 @@ test.describe('Adopter Profile', () => {
         await expect(page).not.toHaveURL(/\/create/);
     });
 
-    test('Paste-categorizes contact info into typed entries', async ({ page }) => {
+    test('Adds typed contact entries via the inline composer on creation', async ({ page }) => {
+        // v2.16.0-5 unified the contact add UI across new and existing adopters:
+        // new-adopter creation now uses ContactEntriesSection's inline composer
+        // instead of ContactEntriesInput's paste-and-categorize. This test
+        // confirms entries added through the composer in local mode (no
+        // adopterId yet) survive the saveAdopter create call.
         const uniqueName = `Contacto Test ${Date.now()}`;
 
         await page.goto('/adopter/create');
@@ -63,20 +68,21 @@ test.describe('Adopter Profile', () => {
 
         await page.getByPlaceholder(/name|nombre/i).fill(uniqueName);
 
-        // Paste a mixed blob into the contact box, then categorize it.
-        await page.getByPlaceholder(/datos de contacto|contact info/i)
-            .fill('Tel: 11 2345-6789\njuan.contacto@example.com');
-        await page.getByRole('button', { name: /categoriz/i }).click();
+        // Open the composer (its trigger has a stable data-testid). Phone is
+        // the default selected type, so we can type the value straight in.
+        await page.getByTestId('ce-add-trigger').click();
+        await page.locator('input[placeholder*="2345-6789"], input[placeholder*="+54"]').first().fill('11 2345-6789');
+        await page.getByTestId('ce-composer-submit').click();
 
-        // Categorization produced two typed entries: phone + email. The phone
-        // keeps the formatting the user entered (not collapsed to bare digits).
-        // v2.15.0-6 made the value placeholder type-specific (e.g. "+54 11 …",
-        // "name@example.com") — selecting by `data-testid` keeps the test
-        // stable across copy changes.
-        const entryValues = page.getByTestId('contact-entry-value');
-        await expect(entryValues).toHaveCount(2, { timeout: 10000 });
-        await expect(entryValues.nth(0)).toHaveValue('11 2345-6789');
-        await expect(entryValues.nth(1)).toHaveValue('juan.contacto@example.com');
+        // Open the composer again for an email entry, switch type, submit.
+        await page.getByTestId('ce-add-trigger').click();
+        await page.getByTestId('ce-type-email').click();
+        await page.locator('input[placeholder*="@example.com"], input[placeholder*="name@"]').first().fill('juan.contacto@example.com');
+        await page.getByTestId('ce-composer-submit').click();
+
+        // Both chips render in the section now.
+        const chips = page.getByTestId('ce-chip');
+        await expect(chips).toHaveCount(2, { timeout: 10000 });
 
         await page.getByRole('button', { name: /save|guardar|create|crear/i }).click();
         const createAnywayBtn = page.getByRole('button', { name: /Create new profile anyway|Crear perfil nuevo/i });
@@ -87,7 +93,7 @@ test.describe('Adopter Profile', () => {
             // No duplicates — fine.
         }
 
-        // The saved profile shows the categorized contact value.
+        // The saved profile shows the entered contact value.
         await expect(page.getByRole('heading', { name: uniqueName })).toBeVisible({ timeout: 30000 });
         await expect(page.getByText('juan.contacto@example.com')).toBeVisible({ timeout: 30000 });
     });

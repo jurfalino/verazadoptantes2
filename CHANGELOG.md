@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-6] - 2026-05-28
+
+### Fixed
+- E2E test `Paste-categorizes contact info into typed entries` was still driving the removed `ContactEntriesInput` paste box on `/adopter/create`. Rewritten to exercise the new inline composer flow (open trigger, type chip, fill value, Guardar — twice, for phone + email) and renamed `Adds typed contact entries via the inline composer on creation`.
+
 ## [2.16.0-5] - 2026-05-28
 
 ### Changed
