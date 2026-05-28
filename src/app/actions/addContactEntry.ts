@@ -95,8 +95,12 @@ export async function addContactEntry(
 
         // Grant the contributor entry-scope visibility on the value they typed —
         // same model as origin='search_match'. Idempotent: skip if a live grant
-        // for this (grantee, adopter, ref) already exists.
-        await insertContributionGrant(db, adopterId, actor, newEntry);
+        // for this (grantee, adopter, ref) already exists. Skip entirely for
+        // `alias` — alias entries are not PII-gated (name-like, visible to all
+        // viewers), so a grant would be inert.
+        if (newEntry.type !== 'alias') {
+            await insertContributionGrant(db, adopterId, actor, newEntry);
+        }
 
         if (appended) {
             // Fire-and-forget side effects.
@@ -165,6 +169,7 @@ async function notifyApprovers(
         social: 'una red social',
         id: 'un documento',
         address: 'una dirección',
+        alias: 'un nombre alternativo',
         other: 'un dato de contacto',
     };
     await Promise.all([...recipients].map(email => createNotification({

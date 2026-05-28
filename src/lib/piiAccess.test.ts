@@ -392,6 +392,17 @@ describe('maskContactEntries', () => {
         expect(r.entries[0].masked).toBe(true);          // phone masked
         expect(r.entries[1]).toEqual({ type: 'email', value: 'a@b.com' }); // email unlocked
     });
+
+    it('never masks alias entries (name-like, not PII)', () => {
+        const withAlias: ContactEntry[] = [
+            { type: 'phone', value: '1123456789' },
+            { type: 'alias', value: 'Juan Garcia' },
+        ];
+        const r = maskContactEntries(withAlias, vis({}));
+        expect(r.maskedCount).toBe(1); // only the phone
+        expect(r.entries[1]).toEqual({ type: 'alias', value: 'Juan Garcia' });
+        expect(r.entries[1].masked).toBeUndefined();
+    });
 });
 
 describe('maskAdopterContact', () => {

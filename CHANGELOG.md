@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-1] - 2026-05-28
+
+Phase A of the unified per-entry contact section refactor — server-side and forward-compatible. No user-visible UI changes; Phase B will flip the UI to surface the new per-entry actions and the alias type.
+
+### Added
+- **Stable contact-entry IDs.** Every `ContactEntry` now carries an `id`. Legacy entries (pre-2.16) gain one on read via `deserializeContactEntries`; persisted on next write. Per-entry update / remove targets a specific entry across reorderings.
+- **`alias` contact-entry type.** Records alternate names a person is known by ("conocido/a como"). Tokenizes as a name word (matches name searches), is NOT PII-gated (visible to all viewers, mirrors how `adopters.name` is treated). Resolves the same-phone-different-name scenario without destructive renames.
+- **`updateContactEntry` server action** — owner+admin gated. Mutates one entry identified by `id`. Writes `adopter_history` with `kind='edit'` and hashed before/after values (no raw PII in history.changes). Re-tokenizes.
+- **`removeContactEntry` server action** — owner+admin gated. Removes one entry by `id`, revokes matching `pii_access_grants`, writes history, re-tokenizes.
+
+### Changed
+- **`saveAdopter` ACL tightened.** The owner+admin gate now applies on *every* core-record edit, not only when `ENABLE_PII_ACCESS_GATING` is on. Closes a production gap where the flag-off state left any authenticated user able to rewrite an adopter's name, family members and notes. Adopts the "adds open, mutations gated" model: contributing data (activities, contact entries, aliases) is open; rewriting existing fields is owner+admin only.
+- Tokenizer accepts an optional `aliases` parameter so `'alias'` contact entries contribute `name_word` tokens. `tokenizeAdopter` and the admin scan route now pass aliases through.
+
 ## [2.15.0-19] - 2026-05-26
 
 ### Added

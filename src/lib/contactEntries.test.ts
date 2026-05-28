@@ -131,7 +131,7 @@ describe('address entries', () => {
 
     it('round-trips a stored address entry through deserialize', () => {
         const entries = deserializeContactEntries('[{"type":"address","value":"Av. Siempre Viva 742"}]');
-        expect(entries).toEqual([{ type: 'address', value: 'Av. Siempre Viva 742' }]);
+        expect(entries).toMatchObject([{ type: 'address', value: 'Av. Siempre Viva 742' }]);
     });
 
     it('classifies a street-keyword-led line as address, keeping the street type', () => {
@@ -166,7 +166,7 @@ describe('address entries', () => {
 describe('deserializeContactEntries', () => {
     it('parses valid stored JSON', () => {
         const entries = deserializeContactEntries('[{"type":"phone","value":"123"}]');
-        expect(entries).toEqual([{ type: 'phone', value: '123' }]);
+        expect(entries).toMatchObject([{ type: 'phone', value: '123' }]);
     });
 
     it('returns an empty array for null, invalid JSON, or non-arrays', () => {
@@ -178,6 +178,30 @@ describe('deserializeContactEntries', () => {
     it('drops entries with an unknown type', () => {
         expect(deserializeContactEntries('[{"type":"bogus","value":"x"}]')).toEqual([]);
     });
+
+    it('assigns an id to legacy entries that lack one', () => {
+        const entries = deserializeContactEntries('[{"type":"phone","value":"123"}]');
+        expect(entries[0].id).toBeDefined();
+        expect(typeof entries[0].id).toBe('string');
+        expect(entries[0].id!.length).toBeGreaterThan(0);
+    });
+
+    it('preserves an existing id', () => {
+        const entries = deserializeContactEntries('[{"id":"abc-123","type":"phone","value":"123"}]');
+        expect(entries[0].id).toBe('abc-123');
+    });
+
+    it('assigns different ids to two legacy entries', () => {
+        const entries = deserializeContactEntries('[{"type":"phone","value":"1"},{"type":"phone","value":"2"}]');
+        expect(entries[0].id).not.toBe(entries[1].id);
+    });
+
+    it('accepts alias type', () => {
+        const entries = deserializeContactEntries('[{"type":"alias","value":"Juan Garcia"}]');
+        expect(entries).toHaveLength(1);
+        expect(entries[0].type).toBe('alias');
+        expect(entries[0].value).toBe('Juan Garcia');
+    });
 });
 
 describe('mergeContactEntries', () => {
@@ -188,5 +212,43 @@ describe('mergeContactEntries', () => {
         );
         expect(valuesOf(merged, 'phone')).toEqual(['1123456789']);
         expect(valuesOf(merged, 'email')).toEqual(['a@b.com']);
+    });
+
+    it('preserves the older entry id when deduping', () => {
+        const merged = mergeContactEntries(
+            [{ id: 'older', type: 'phone', value: '1123456789' }],
+            [{ id: 'newer', type: 'phone', value: '11 2345-6789' }],
+        );
+        expect(merged).toHaveLength(1);
+        expect(merged[0].id).toBe('older');
+    });
+});
+
+describe('alias contact entries', () => {
+    it('writes an alias entry to the blob under the Conocido/a como label', () => {
+        const blob = contactEntriesToBlob([{ type: 'alias', value: 'Juan Garcia' }]);
+        expect(blob).toContain('Conocido/a como: Juan Garcia');
+    });
+
+    it('round-trips an alias entry through deserialize', () => {
+        const entries = deserializeContactEntries('[{"type":"alias","value":"Juan Garcia"}]');
+        expect(entries[0].type).toBe('alias');
+        expect(entries[0].value).toBe('Juan Garcia');
+    });
+
+    it('deduplicates two aliases with the same normalized value', () => {
+        const merged = mergeContactEntries(
+            [{ type: 'alias', value: 'Juan Garcia' }],
+            [{ type: 'alias', value: 'juan garcia' }],
+        );
+        expect(merged).toHaveLength(1);
+    });
+
+    it('keeps two distinct aliases as separate entries', () => {
+        const merged = mergeContactEntries(
+            [{ type: 'alias', value: 'Juan Garcia' }],
+            [{ type: 'alias', value: 'Juan Pérez' }],
+        );
+        expect(merged).toHaveLength(2);
     });
 });

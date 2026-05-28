@@ -8,6 +8,7 @@ import { auth } from '@/auth';
 import { isAdmin } from '@/config/admins';
 import { logger } from '@/lib/logger';
 import { extractTokens, computeTokenHash } from '@/lib/tokenizer';
+import { deserializeContactEntries } from '@/lib/contactEntries';
 import { computeAvgRating } from '@/domain/ratings';
 
 /**
@@ -196,7 +197,12 @@ export async function POST(_request: Request) {
                 const adopterAdoptions = await db.select({ onBehalfOf: adoptions.onBehalfOf })
                     .from(adoptions).where(eq(adoptions.adopterId, adopter.id));
 
-                const tokens = extractTokens(adopter, adopterAdoptions);
+                // Aliases tokenize as name_words (see extractTokens docs).
+                const aliases = deserializeContactEntries(adopter.contactEntries)
+                    .filter(e => e.type === 'alias')
+                    .map(e => e.value);
+
+                const tokens = extractTokens(adopter, adopterAdoptions, aliases);
 
                 // Replace tokens
                 await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, adopter.id));

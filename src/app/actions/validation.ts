@@ -21,10 +21,26 @@ const requiredText = z.string().min(1).max(5_000);
 // shape (streetAndNumber + locality) in addition to the joined `value`.
 export const addContactEntrySchema = z.object({
     adopterId: z.string().min(1).max(64),
-    type: z.enum(['phone', 'email', 'social', 'id', 'address', 'other']),
+    type: z.enum(['phone', 'email', 'social', 'id', 'address', 'alias', 'other']),
     value: z.string().min(1).max(500),
     streetAndNumber: z.string().max(500).optional(),
     locality: z.string().max(500).optional(),
+});
+
+// updateContactEntry — owner+admin only. Mutates an existing entry identified
+// by its stable id. Type is not editable (change-of-type is a delete + add).
+export const updateContactEntrySchema = z.object({
+    adopterId: z.string().min(1).max(64),
+    entryId: z.string().min(1).max(64),
+    value: z.string().min(1).max(500),
+    streetAndNumber: z.string().max(500).optional(),
+    locality: z.string().max(500).optional(),
+});
+
+// removeContactEntry — owner+admin only. Removes an existing entry by id.
+export const removeContactEntrySchema = z.object({
+    adopterId: z.string().min(1).max(64),
+    entryId: z.string().min(1).max(64),
 });
 
 export const saveAdopterSchema = z.object({

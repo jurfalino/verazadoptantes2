@@ -28,7 +28,9 @@ export const PII_MASK = '••••••';
  */
 export const MASKED_CONTACT_PLACEHOLDER = 'Contacto protegido';
 
-/** Contact-entry types whose values are PII and get masked. `other` (notes) never is. */
+/** Contact-entry types whose values are PII and get masked. `other` (notes) and
+ * `alias` (name-like) never are — aliases are visible to all viewers, mirroring
+ * the way `adopters.name` is name-data, not contact PII. */
 export const MASKED_ENTRY_TYPES: readonly ContactEntryType[] = ['phone', 'email', 'social', 'id', 'address'];
 
 export interface AdopterEditAuth {
@@ -495,6 +497,7 @@ export function partialReveal(entry: ContactEntry): ContactEntry {
         }
         case 'id':
             return mark('••••••');
+        case 'alias':
         case 'other':
         default:
             return entry;
@@ -600,7 +603,9 @@ export function maskContactEntries(
     if (visibility.nothingMasked) return { entries, maskedCount: 0 };
     let maskedCount = 0;
     const out = entries.map((e): ContactEntry => {
-        if (e.type === 'other') return e;
+        // `other` (notes) and `alias` (name-like) are never masked. `alias`
+        // mirrors how `adopters.name` itself is treated — name data, not PII.
+        if (e.type === 'other' || e.type === 'alias') return e;
         if (visibility.unlockedEntryHashes.has(hashEntryValue(e.type, e.value))) return e;
         maskedCount++;
         return partialReveal(e);

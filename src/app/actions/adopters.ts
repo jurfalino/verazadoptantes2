@@ -15,7 +15,6 @@ import {
     parseBlobToContactEntries,
     mergeContactEntries,
 } from '@/lib/contactEntries';
-import { getFeatureFlag } from '@/config/features';
 import { canEditAdopterRecord, maskAdopterContact, redactHistoryChanges, renderName } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, resolveAdopterVisibility } from '@/lib/piiAccessServer';
 
@@ -204,18 +203,21 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
         const existing = await db.select().from(adopters).where(eq(adopters.id, data.id || 'new')).get();
 
         if (existing) {
-            // PII access gating: when on, only the record owner or an admin
-            // may edit the core record — this keeps "edit a record ⇒ become an
-            // editor ⇒ gain PII visibility" closed. isAdminAsync so DB-role
-            // admins pass (same admin check as appendToExistingAdopter).
-            const gatingEnabled = await getFeatureFlag('ENABLE_PII_ACCESS_GATING');
-            if (gatingEnabled) {
-                const { isAdminAsync } = await import('@/config/admins');
-                const actorIsAdmin = await isAdminAsync(changedBy);
-                if (!canEditAdopterRecord({ gatingEnabled, actorEmail: changedBy, ownerEmail: existing.addedBy, actorIsAdmin })) {
-                    logger.warn('saveAdopter: edit blocked by PII access gating', { adopterId: data.id, actorEmail: changedBy });
-                    throw new Error('Not authorized to edit this adopter record.');
-                }
+            // ACL: edits to a core adopter record are restricted to the owner
+            // or an admin, ALWAYS — not conditionally on ENABLE_PII_ACCESS_GATING.
+            // The "adds open, mutations gated" collaborative model (see
+            // collaborative-vetting-model memory): contributing data is open via
+            // addContactEntry / saveAdoption, but rewriting existing fields is
+            // owner+admin only. Previously this check was conditional on the PII
+            // flag, leaving production (flag off) open to any authenticated user.
+            // The per-entry server actions (updateContactEntry, removeContactEntry)
+            // apply the same gate, so a contributor who can append a phone via
+            // addContactEntry still can't rewrite or delete one through saveAdopter.
+            const { isAdminAsync } = await import('@/config/admins');
+            const actorIsAdmin = await isAdminAsync(changedBy);
+            if (!canEditAdopterRecord({ gatingEnabled: true, actorEmail: changedBy, ownerEmail: existing.addedBy, actorIsAdmin })) {
+                logger.warn('saveAdopter: edit blocked — not owner/admin', { adopterId: data.id, actorEmail: changedBy });
+                throw new Error('Not authorized to edit this adopter record.');
             }
 
             // Calculate changes

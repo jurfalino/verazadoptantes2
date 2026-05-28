@@ -105,6 +105,7 @@ export default function AddContactEntryModal({ open, onClose, adopterId }: Props
         social: t('adopter.ce_type_social'),
         id: t('adopter.ce_type_id'),
         address: t('adopter.ce_type_address'),
+        alias: t('adopter.ce_type_alias'),
         other: t('adopter.ce_type_other'),
     };
 

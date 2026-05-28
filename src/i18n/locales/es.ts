@@ -492,6 +492,7 @@ export const es = {
         ce_type_id: 'Documento',
         ce_type_address: 'Dirección',
         ce_type_other: 'Nota',
+        ce_type_alias: 'Conocido/a como',
         ce_empty: 'Aún no hay datos de contacto. Agregá uno.',
         ce_masked: 'oculto',
         pii_protected_title: 'Datos de contacto protegidos',

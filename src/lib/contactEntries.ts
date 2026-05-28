@@ -14,10 +14,16 @@
 
 import { extractEmails, extractSocials, extractIds, stripIdsFromText, isPlaceholderPhone } from './tokenizer';
 
-export type ContactEntryType = 'phone' | 'email' | 'social' | 'id' | 'address' | 'other';
+export type ContactEntryType = 'phone' | 'email' | 'social' | 'id' | 'address' | 'alias' | 'other';
 
 export interface ContactEntry {
     type: ContactEntryType;
+    /**
+     * Stable identifier — assigned on read by `deserializeContactEntries` for
+     * any legacy entry that lacks one, persisted on next write. Lets per-entry
+     * update / remove target a specific row across reorderings.
+     */
+    id?: string;
     /**
      * Canonical rendered string — always populated. For a structured address
      * this is the joined "streetAndNumber, locality"; for a raw-paste address
@@ -73,10 +79,11 @@ const TYPE_LABEL: Record<Exclude<ContactEntryType, 'other'>, string> = {
     social: 'Redes',
     id: 'Documento',
     address: 'Dirección',
+    alias: 'Conocido/a como',
 };
 
 /** Order entries appear in the derived blob. */
-const BLOB_ORDER: ContactEntryType[] = ['id', 'email', 'phone', 'social', 'address', 'other'];
+const BLOB_ORDER: ContactEntryType[] = ['id', 'email', 'phone', 'social', 'address', 'alias', 'other'];
 
 /**
  * Leading label words stripped when computing a line's leftover `other` text,
@@ -295,7 +302,7 @@ const MAX_LABEL_LEN = 40;
  * avoid silently clipping a long note on save.
  */
 const MAX_VALUE_LEN: Record<ContactEntryType, number> = {
-    phone: 500, email: 500, social: 500, id: 500, address: 500, other: 4_000,
+    phone: 500, email: 500, social: 500, id: 500, address: 500, alias: 200, other: 4_000,
 };
 
 /**
@@ -308,12 +315,15 @@ export function deserializeContactEntries(json: string | null | undefined): Cont
     try {
         const parsed = JSON.parse(json);
         if (!Array.isArray(parsed)) return [];
-        const valid: ContactEntryType[] = ['phone', 'email', 'social', 'id', 'address', 'other'];
+        const valid: ContactEntryType[] = ['phone', 'email', 'social', 'id', 'address', 'alias', 'other'];
         return parsed
             .filter((e): e is ContactEntry =>
                 e && typeof e.value === 'string' && valid.includes(e.type) && e.value.trim().length > 0)
             .slice(0, MAX_ENTRIES)
             .map(e => ({
+                // Legacy entries (pre-2.16) had no `id`; assign one on read. Persisted
+                // on the next write. IDs are identity, never dedup keys.
+                id: typeof e.id === 'string' && e.id.trim() ? e.id : crypto.randomUUID(),
                 type: e.type,
                 value: e.value.slice(0, MAX_VALUE_LEN[e.type]),
                 ...(e.label ? { label: String(e.label).slice(0, MAX_LABEL_LEN) } : {}),

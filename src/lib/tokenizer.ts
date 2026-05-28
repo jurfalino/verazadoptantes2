@@ -306,8 +306,14 @@ interface AdoptionData {
 /**
  * Extract all tokens from an adopter record and its related adoptions.
  * Returns a deduplicated array of tokens.
+ *
+ * `aliases` (optional): values of `contactEntries` rows with `type='alias'`.
+ * Tokenized as name_words (and added to the `name_full` candidate set when
+ * the canonical name is empty) so searching for an alias finds the adopter.
+ * Callers deserialize `adopter.contactEntries` themselves to avoid the
+ * tokenizer → contactEntries circular import.
  */
-export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[]): Token[] {
+export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], aliases?: string[]): Token[] {
     const tokens: Token[] = [];
     const seen = new Set<string>();
 
@@ -327,7 +333,8 @@ export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[]):
         }
     }
 
-    // 2. Name words — from name, familyMembers, and adoption.onBehalfOf
+    // 2. Name words — from name, familyMembers, adoption.onBehalfOf, and
+    //    `alias`-type contact entries (alternate names a person is known by).
     const nameSources = [
         adopter.name,
         adopter.familyMembers,
@@ -337,6 +344,11 @@ export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[]):
             if (adoption.onBehalfOf) {
                 nameSources.push(adoption.onBehalfOf);
             }
+        }
+    }
+    if (aliases) {
+        for (const alias of aliases) {
+            if (alias) nameSources.push(alias);
         }
     }
     for (const source of nameSources) {

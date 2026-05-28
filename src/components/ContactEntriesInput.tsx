@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ClipboardEvent } from 'react';
-import { Phone, Mail, AtSign, IdCard, MapPin, StickyNote, X, Plus, type LucideIcon } from 'lucide-react';
+import { Phone, Mail, AtSign, IdCard, MapPin, StickyNote, X, Plus, UserRound, type LucideIcon } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import {
     categorizeContactText,
@@ -17,7 +17,7 @@ interface ContactEntriesInputProps {
     onChange: (entries: ContactEntry[]) => void;
 }
 
-const TYPE_ORDER: ContactEntryType[] = ['phone', 'email', 'social', 'id', 'address', 'other'];
+const TYPE_ORDER: ContactEntryType[] = ['phone', 'email', 'social', 'id', 'address', 'alias', 'other'];
 
 const TYPE_ICON: Record<ContactEntryType, LucideIcon> = {
     phone: Phone,
@@ -25,6 +25,7 @@ const TYPE_ICON: Record<ContactEntryType, LucideIcon> = {
     social: AtSign,
     id: IdCard,
     address: MapPin,
+    alias: UserRound,
     other: StickyNote,
 };
 

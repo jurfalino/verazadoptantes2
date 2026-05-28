@@ -1,6 +1,6 @@
 'use client';
 
-import { Phone, Mail, AtSign, IdCard, MapPin, StickyNote, Lock, type LucideIcon } from 'lucide-react';
+import { Phone, Mail, AtSign, IdCard, MapPin, StickyNote, Lock, UserRound, type LucideIcon } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { renderTextWithLinks } from '@/lib/textUtils';
 import type { ContactEntry, ContactEntryType } from '@/lib/contactEntries';
@@ -11,11 +11,13 @@ const TYPE_ICON: Record<ContactEntryType, LucideIcon> = {
     social: AtSign,
     id: IdCard,
     address: MapPin,
+    alias: UserRound,
     other: StickyNote,
 };
 
-/** Read order — actionable contact methods first, notes last. */
-const DISPLAY_ORDER: ContactEntryType[] = ['phone', 'email', 'social', 'address', 'id', 'other'];
+/** Read order — actionable contact methods first, aliases near the top (they're
+ * name-like), notes last. */
+const DISPLAY_ORDER: ContactEntryType[] = ['alias', 'phone', 'email', 'social', 'address', 'id', 'other'];
 
 const LINK_CLASS = 'text-teal-700 hover:underline';
 

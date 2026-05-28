@@ -6,6 +6,7 @@ import { logger } from '@/lib/logger';
 import { getDb } from './_db';
 import { extractTokens, computeTokenHash, normalizeText, extractPhones, extractEmails, extractSocials, type Token } from '@/lib/tokenizer';
 import { normalizeConfidence, confidenceBand, fuzzyNameScore, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
+import { deserializeContactEntries } from '@/lib/contactEntries';
 
 /**
  * Tokenize an adopter for duplicate detection.
@@ -32,8 +33,14 @@ export async function tokenizeAdopter(adopterId: string): Promise<void> {
             onBehalfOf: adoptions.onBehalfOf,
         }).from(adoptions).where(eq(adoptions.adopterId, adopterId));
 
+        // Aliases (contactEntries with type='alias') tokenize as name_words so
+        // searching for an alternate name finds the adopter.
+        const aliases = deserializeContactEntries(adopter.contactEntries)
+            .filter(e => e.type === 'alias')
+            .map(e => e.value);
+
         // Extract tokens
-        const tokens: Token[] = extractTokens(adopter, adopterAdoptions);
+        const tokens: Token[] = extractTokens(adopter, adopterAdoptions, aliases);
 
         // Delete old tokens for this adopter
         await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, adopterId));
