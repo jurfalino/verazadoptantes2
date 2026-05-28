@@ -189,6 +189,21 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
             if (res.ok) {
                 resetComposer();
                 router.refresh();
+                // Contextual feedback. The server returns 'appended' for a
+                // brand-new entry, 'unlocked_existing' when the typed value
+                // matched an existing (probably masked) entry and earned the
+                // viewer a fresh entry-scope grant ("you proved you know it,
+                // here it is"), and 'no_change' when the value was already
+                // visible to the viewer. The unlocked-existing toast is the
+                // load-bearing one — without it the user thinks the add
+                // silently did nothing when actually a masked chip is about
+                // to reveal itself in the refreshed list.
+                if (res.status === 'appended') {
+                    toast.success('✓', t('adopter.ce_add_toast_added'));
+                } else if (res.status === 'unlocked_existing') {
+                    toast.success('🔓', t('adopter.ce_add_toast_unlocked'));
+                }
+                // status === 'no_change' → silent (it would be noise).
             } else {
                 toast.error(t('errors.generic'), res.error || t('adopter.ce_add_error'));
             }

@@ -495,6 +495,8 @@ export const en = {
         ce_delete_toast: 'Entry deleted',
         ce_delete_error: 'Could not delete the entry.',
         ce_add_error: 'Could not add the entry.',
+        ce_add_toast_added: 'Entry added',
+        ce_add_toast_unlocked: 'You confirmed an existing entry — it’s now unlocked',
         ce_undo: 'Undo',
         ce_type_phone: 'Phone',
         ce_type_email: 'Email',

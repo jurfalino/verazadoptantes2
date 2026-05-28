@@ -41,9 +41,20 @@ import { getAdopterApprovers } from './piiAccess';
  * adopter row, but still ensures the grant exists so the actor sees what
  * they demonstrated knowledge of.
  */
+/**
+ * Status of the addContactEntry operation:
+ *  - `appended` — value was new; a new entry was written to contactEntries.
+ *  - `unlocked_existing` — value matched an existing (possibly masked)
+ *    entry; nothing new written, but a fresh pii_access_grant was inserted,
+ *    so a previously-masked entry is now visible to the actor on next read.
+ *  - `no_change` — value matched an existing entry AND a live grant already
+ *    existed (actor had access). No observable change.
+ */
+export type AddContactEntryStatus = 'appended' | 'unlocked_existing' | 'no_change';
+
 export async function addContactEntry(
     input: { adopterId: string; type: ContactEntry['type']; value: string; streetAndNumber?: string; locality?: string },
-): Promise<{ ok: true; adopterId: string; appended: boolean } | { ok: false; error: string }> {
+): Promise<{ ok: true; adopterId: string; appended: boolean; status: AddContactEntryStatus } | { ok: false; error: string }> {
     const parsed = addContactEntrySchema.safeParse(input);
     if (!parsed.success) return { ok: false, error: 'Invalid input' };
     const { adopterId, type, value } = parsed.data;
@@ -137,8 +148,12 @@ export async function addContactEntry(
         // for this (grantee, adopter, ref) already exists. Skip entirely for
         // `alias` — alias entries are not PII-gated (name-like, visible to all
         // viewers), so a grant would be inert.
+        // The boolean tells us whether a NEW grant was created; combined with
+        // `appended` below it drives the response status that the UI surfaces
+        // as a contextual toast ("added" vs "you unlocked an existing entry").
+        let grantInserted = false;
         if (newEntry.type !== 'alias') {
-            await insertContributionGrant(db, adopterId, actor, newEntry);
+            grantInserted = await insertContributionGrant(db, adopterId, actor, newEntry);
         }
 
         if (appended) {
@@ -156,7 +171,21 @@ export async function addContactEntry(
             logAudit({ userEmail: actor, action: 'contact_entry_added', target: adopterId, details: { type } });
         }
 
-        return { ok: true, adopterId, appended };
+        // Derive the user-facing status:
+        //  - `appended`: a brand-new entry was written.
+        //  - `unlocked_existing`: dedup collapsed the value into an existing
+        //    entry AND a new pii_access_grant was inserted for the actor —
+        //    so on next render a previously-masked chip will reveal itself.
+        //    This is the "you proved you know this value, here it is" path.
+        //  - `no_change`: dedup collapsed AND no new grant was needed (the
+        //    actor already had access, or the type was alias and doesn't
+        //    carry grants). Genuinely a no-op for the viewer.
+        const status: AddContactEntryStatus = appended
+            ? 'appended'
+            : grantInserted
+                ? 'unlocked_existing'
+                : 'no_change';
+        return { ok: true, adopterId, appended, status };
     } catch (error) {
         const errorId = logger.error('addContactEntry failed', error, { adopterId, actor });
         return { ok: false, error: `Failed (Error ID: ${errorId})` };
@@ -168,7 +197,7 @@ async function insertContributionGrant(
     adopterId: string,
     actor: string,
     entry: ContactEntry,
-): Promise<void> {
+): Promise<boolean> {
     const ref = hashEntryValue(entry.type, entry.value);
     const existing = await db.select({ id: piiAccessGrants.id }).from(piiAccessGrants)
         .where(and(
@@ -177,7 +206,7 @@ async function insertContributionGrant(
             eq(piiAccessGrants.entryRef, ref),
             isNull(piiAccessGrants.revokedAt),
         )).get();
-    if (existing) return;
+    if (existing) return false;
     await db.insert(piiAccessGrants).values({
         id: crypto.randomUUID(),
         adopterId,
@@ -188,6 +217,7 @@ async function insertContributionGrant(
         grantedByEmail: actor,
         createdAt: new Date(),
     });
+    return true;
 }
 
 async function notifyApprovers(

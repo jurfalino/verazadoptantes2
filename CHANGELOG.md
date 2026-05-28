@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-10] - 2026-05-28
+
+### Changed
+- **Contextual feedback when adding a contact detail that matches an existing (masked) entry.** The backend has always done the right thing: typing a value via the composer that collides with an existing entry causes `mergeContactEntries` to dedup (no new write) BUT `insertContributionGrant` still fires — so a `pii_access_grant` for the hashed value is created, and on the next render the previously-masked chip reveals itself for the viewer. Until now the UX was silent about this; users typed a value, the composer closed, and a chip somewhere in the list quietly transitioned from masked to unlocked with no acknowledgement. `addContactEntry` now returns an explicit `status: 'appended' | 'unlocked_existing' | 'no_change'`, and `ContactEntriesSection` surfaces a contextual toast: "Dato agregado" for a brand-new entry, "Reconociste un dato existente — ahora aparece desbloqueado" for the unlock-by-knowing case, silent for the no-op case. No behavior change, just visible feedback.
+
 ## [2.16.0-9] - 2026-05-28
 
 ### Changed

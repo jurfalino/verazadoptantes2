@@ -496,6 +496,8 @@ export const es = {
         ce_delete_toast: 'Dato eliminado',
         ce_delete_error: 'No se pudo eliminar el dato.',
         ce_add_error: 'No se pudo agregar el dato.',
+        ce_add_toast_added: 'Dato agregado',
+        ce_add_toast_unlocked: 'Reconociste un dato existente — ahora aparece desbloqueado',
         ce_undo: 'Deshacer',
         ce_type_phone: 'Teléfono',
         ce_type_email: 'Email',
