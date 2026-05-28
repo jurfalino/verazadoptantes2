@@ -312,3 +312,29 @@ describe('legacy contactInfo → structured contactEntries (lazy migration)', ()
         expect(merged[0].id).toBe('id-phone-555-1234');
     });
 });
+
+// v2.16.0-9 adds per-entry contributor attribution so a contributor can edit
+// the entries they themselves added. The persistence shape and dedupe
+// behavior have to honor `addedBy` symmetrically with `id`.
+describe('per-entry addedBy attribution', () => {
+    it('deserializeContactEntries preserves addedBy when present', () => {
+        const entries = deserializeContactEntries(
+            '[{"id":"a","type":"phone","value":"555-1234","addedBy":"alice@example.com"}]',
+        );
+        expect(entries[0].addedBy).toBe('alice@example.com');
+    });
+
+    it('deserializeContactEntries leaves addedBy undefined on legacy entries', () => {
+        const entries = deserializeContactEntries('[{"type":"phone","value":"555-1234"}]');
+        expect(entries[0].addedBy).toBeUndefined();
+    });
+
+    it('mergeContactEntries keeps the older entry’s addedBy on value collision', () => {
+        const merged = mergeContactEntries(
+            [{ id: 'older', type: 'phone', value: '1123456789', addedBy: 'first@example.com' }],
+            [{ id: 'newer', type: 'phone', value: '11 2345-6789', addedBy: 'second@example.com' }],
+        );
+        expect(merged).toHaveLength(1);
+        expect(merged[0].addedBy).toBe('first@example.com');
+    });
+});

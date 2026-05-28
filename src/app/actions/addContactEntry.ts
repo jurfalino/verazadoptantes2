@@ -67,8 +67,9 @@ export async function addContactEntry(
                 value: joinedAddressValue(parsed.data.streetAndNumber ?? '', parsed.data.locality ?? '') || value,
                 streetAndNumber: parsed.data.streetAndNumber || undefined,
                 locality: parsed.data.locality || undefined,
+                addedBy: actor,
             }
-            : { id: crypto.randomUUID(), type, value };
+            : { id: crypto.randomUUID(), type, value, addedBy: actor };
 
         // Lazy legacy-row migration: rows that pre-date the structured
         // contactEntries column have NULL contactEntries but a populated

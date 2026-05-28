@@ -25,6 +25,16 @@ export interface ContactEntry {
      */
     id?: string;
     /**
+     * Email of the user who added THIS specific entry. Populated by
+     * `addContactEntry` (v2.16.0-9+); undefined for entries that pre-date the
+     * field, for entries materialized from the legacy `contactInfo` blob (no
+     * attribution available), and for entries inserted by the admin backfill.
+     * Used by the UI + the per-entry update/remove server gates to let a
+     * contributor edit/remove the entries they themselves added — owner and
+     * admin can edit anything regardless.
+     */
+    addedBy?: string;
+    /**
      * Canonical rendered string — always populated. For a structured address
      * this is the joined "streetAndNumber, locality"; for a raw-paste address
      * it's the raw text; for any other type it's the value as typed.
@@ -328,6 +338,11 @@ export function deserializeContactEntries(json: string | null | undefined): Cont
                 value: e.value.slice(0, MAX_VALUE_LEN[e.type]),
                 ...(e.label ? { label: String(e.label).slice(0, MAX_LABEL_LEN) } : {}),
                 ...(e.masked === true ? { masked: true } : {}),
+                // Per-entry contributor attribution (v2.16.0-9+). Length-capped
+                // defensively; undefined if absent (most pre-existing rows).
+                ...(typeof e.addedBy === 'string' && e.addedBy.trim()
+                    ? { addedBy: e.addedBy.slice(0, 256) }
+                    : {}),
                 // Structured-address additive fields. Only kept for type='address';
                 // ignored on any other type even if a malformed row carries them.
                 ...(e.type === 'address' && typeof e.streetAndNumber === 'string' && e.streetAndNumber.trim()

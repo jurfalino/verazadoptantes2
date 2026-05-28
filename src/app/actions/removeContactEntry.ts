@@ -49,17 +49,23 @@ export async function removeContactEntry(
         if (!target) return { ok: false, error: 'Adopter not found' };
         if (target.deletedAt) return { ok: false, error: 'Cannot edit a deleted adopter' };
 
-        const actorIsAdmin = await isAdminAsync(actor);
-        if (target.addedBy !== actor && !actorIsAdmin) {
-            logger.warn('removeContactEntry: not owner/admin', { adopterId, actor });
-            return { ok: false, error: 'Not authorized to edit this adopter record.' };
-        }
-
         const entries = deserializeContactEntries(target.contactEntries);
         const idx = entries.findIndex(e => e.id === entryId);
         if (idx < 0) return { ok: false, error: 'Entry not found' };
 
         const removed = entries[idx];
+
+        // Per-entry mutation gate: owner, admin, OR the original contributor
+        // of this entry (matching updateContactEntry's relaxation). Entries
+        // with no `addedBy` (legacy / blob-migrated) stay owner+admin-only.
+        const isOwner = target.addedBy === actor;
+        const actorIsAdmin = await isAdminAsync(actor);
+        const isOwnContribution = !!removed.addedBy && removed.addedBy === actor;
+        if (!isOwner && !actorIsAdmin && !isOwnContribution) {
+            logger.warn('removeContactEntry: not owner/admin/contributor', { adopterId, actor, entryId });
+            return { ok: false, error: 'Not authorized to remove this entry.' };
+        }
+
         const removedHash = hashEntryValue(removed.type, removed.value);
         const remaining = [...entries.slice(0, idx), ...entries.slice(idx + 1)];
 

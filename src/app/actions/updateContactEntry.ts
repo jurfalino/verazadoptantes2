@@ -53,19 +53,33 @@ export async function updateContactEntry(
         if (!target) return { ok: false, error: 'Adopter not found' };
         if (target.deletedAt) return { ok: false, error: 'Cannot edit a deleted adopter' };
 
-        const actorIsAdmin = await isAdminAsync(actor);
-        if (target.addedBy !== actor && !actorIsAdmin) {
-            logger.warn('updateContactEntry: not owner/admin', { adopterId, actor });
-            return { ok: false, error: 'Not authorized to edit this adopter record.' };
-        }
-
         const entries = deserializeContactEntries(target.contactEntries);
         const idx = entries.findIndex(e => e.id === entryId);
         if (idx < 0) return { ok: false, error: 'Entry not found' };
 
         const original = entries[idx];
+
+        // Per-entry mutation gate: owner, admin, OR the original contributor
+        // of this specific entry. The contributor-self carve-out lets people
+        // fix typos in entries they themselves added (e.g. "ac@gmaio.com" →
+        // "ac@gmail.com"). Owner+admin keep their record-wide edit power;
+        // contributors only get rights on entries that carry their `addedBy`.
+        // Entries with no `addedBy` (legacy / blob-migrated / pre-2.16.0-9)
+        // stay owner+admin-only by virtue of failing the third check.
+        const isOwner = target.addedBy === actor;
+        const actorIsAdmin = await isAdminAsync(actor);
+        const isOwnContribution = !!original.addedBy && original.addedBy === actor;
+        if (!isOwner && !actorIsAdmin && !isOwnContribution) {
+            logger.warn('updateContactEntry: not owner/admin/contributor', { adopterId, actor, entryId });
+            return { ok: false, error: 'Not authorized to edit this entry.' };
+        }
+
         const previousValueHash = hashEntryValue(original.type, original.value);
 
+        // Preserve the original `addedBy` on the updated entry — an edit by
+        // the owner doesn't reattribute the entry, and an edit by the
+        // contributor themselves trivially keeps them as the attributed
+        // contributor.
         const updated: ContactEntry = original.type === 'address' && (parsed.data.streetAndNumber || parsed.data.locality)
             ? {
                 id: original.id,
@@ -73,12 +87,14 @@ export async function updateContactEntry(
                 value: joinedAddressValue(parsed.data.streetAndNumber ?? '', parsed.data.locality ?? '') || value,
                 streetAndNumber: parsed.data.streetAndNumber || undefined,
                 locality: parsed.data.locality || undefined,
+                ...(original.addedBy ? { addedBy: original.addedBy } : {}),
             }
             : {
                 id: original.id,
                 type: original.type,
                 value,
                 ...(original.label ? { label: original.label } : {}),
+                ...(original.addedBy ? { addedBy: original.addedBy } : {}),
             };
 
         const newValueHash = hashEntryValue(updated.type, updated.value);

@@ -852,7 +852,8 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                         {isNew ? (
                             <ContactEntriesSection
                                 entries={contactEntries}
-                                canEdit={true}
+                                canEditAll={true}
+                                currentUser={currentUser}
                                 onChange={next => {
                                     setContactEntries(next);
                                     setData(d => ({ ...d, contactInfo: contactEntriesToBlob(next) }));
@@ -877,7 +878,8 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                 <ContactEntriesSection
                                     entries={entriesForSection}
                                     adopterId={id}
-                                    canEdit={isOwner || isAdmin}
+                                    canEditAll={isOwner || isAdmin}
+                                    currentUser={currentUser}
                                     onMaskedClick={onMaskedContactClick}
                                 />
                             );

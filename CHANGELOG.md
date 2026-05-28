@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-9] - 2026-05-28
+
+### Changed
+- **Contributors can now edit and remove the contact entries they themselves added.** Previously the rule was "mutations = owner + admin only" — any contributor who typo'd an email they'd just contributed had to ask the owner to fix it. The rule now reads: adds open, mutations gated to owner ∨ admin ∨ the original contributor of *that specific entry*. `ContactEntry` gains an optional `addedBy` field stamped by `addContactEntry` on every new entry; the per-entry server actions (`updateContactEntry`, `removeContactEntry`) accept the contributor-self case alongside owner/admin, and `ContactEntriesSection` surfaces pencil + trash affordances on chips the viewer themselves added. Entries with no `addedBy` (legacy / blob-migrated / pre-2.16.0-9 contributions) stay owner+admin-only as before — no retro-attribution.
+
+### Added
+- 3 tests in `contactEntries.test.ts` covering: `addedBy` round-trips through deserialize when present; legacy entries stay undefined; older entry's `addedBy` wins on merge collision (mirrors the existing `id` preservation rule).
+
 ## [2.16.0-8] - 2026-05-28
 
 Production-readiness for the unified contact section. Investigation showed prod is on migration 0042 (no `contact_entries` column) while staging is on 0045 — so the moment staging→master merges and `migrate-production` applies 0043, **every existing prod adopter row enters the legacy state** (NULL `contact_entries`, populated `contact_info` blob), exposing the data-loss bug below and the "no edit affordance" UX gap on every chip. Three coordinated fixes ship together.

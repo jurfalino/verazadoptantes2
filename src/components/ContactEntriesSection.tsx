@@ -51,9 +51,15 @@ interface Props {
      */
     adopterId?: string;
     onChange?: (next: ContactEntry[]) => void;
-    /** True if the viewer can edit/remove existing entries (owner/admin).
-     *  In local mode always true (you're creating it). */
-    canEdit: boolean;
+    /** True if the viewer can edit/remove ANY entry (owner/admin). In local
+     *  mode always true (you're creating it). Per-entry contributor-self
+     *  edit is computed in addition to this — see `currentUser` below. */
+    canEditAll: boolean;
+    /** Current viewer's email. Combined with each entry's `addedBy` to
+     *  surface edit/delete on entries the viewer themselves contributed,
+     *  even when they are not owner/admin. Server gates apply the same
+     *  rule, so a stale/tampered UI can't bypass it. */
+    currentUser?: string;
     /** Tap-handler for masked chips — opens the verify popover. Undefined when
      * the viewer is not subject to PII gating. Server mode only. */
     onMaskedClick?: (entryType: ContactEntryType) => void;
@@ -73,11 +79,17 @@ function socialHref(value: string): string | null {
     return null;
 }
 
-export default function ContactEntriesSection({ entries, adopterId, onChange, canEdit, onMaskedClick }: Props) {
+export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick }: Props) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
     const isLocalMode = !!onChange;
+
+    // Per-entry edit gate: owner/admin can edit anything; everyone else can
+    // edit entries they themselves contributed (matches the server-side
+    // gate in update/removeContactEntry).
+    const canEditEntry = (entry: ContactEntry): boolean =>
+        canEditAll || (!!currentUser && !!entry.addedBy && entry.addedBy === currentUser);
 
     // Add composer state.
     const [composerOpen, setComposerOpen] = useState(false);
@@ -460,7 +472,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                             <span className="font-medium text-stone-800 flex-1 min-w-0" style={{ overflowWrap: 'anywhere' }}>
                                                 {renderValueReadOnly(entry)}
                                             </span>
-                                            {canEdit && !entry.masked && entry.id && (
+                                            {canEditEntry(entry) && !entry.masked && entry.id && (
                                                 <span className="flex items-center gap-1 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 transition-opacity">
                                                     <button
                                                         type="button"
