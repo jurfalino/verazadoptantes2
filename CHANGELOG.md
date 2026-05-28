@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-3] - 2026-05-28
+
+### Fixed
+- **Legacy adopters with `contactInfo` blob but no structured `contactEntries` rendered an empty contact section** (regressed the data display on every row that hadn't been edited since the structured-entries migration — broke `tests/adopter.spec.ts` "View full adopter profile" and `tests/search.spec.ts` "View adopter profile shows decision-making info" against the seed Maria row). `AdopterProfileV2` now falls back to `parseBlobToContactEntries` when the structured column is empty. Parsed-from-blob entries carry no `id`, so `ContactEntriesSection` correctly suppresses edit/delete affordances on them — adding a fresh entry through the composer writes a real `contactEntries` row, and from there chips become editable.
+
 ## [2.16.0-2] - 2026-05-28
 
 Phase B of the unified per-entry contact section refactor — the UI flip. The contact section is now a single surface on every profile, used the same way by owners and contributors. Replaces the v2.15.0-19 `+ Agregar dato de contacto` CTA + modal pair and the bulk contact-entries editor inside `Editar` mode.
