@@ -220,11 +220,20 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
                 throw new Error('Not authorized to edit this adopter record.');
             }
 
+            // Defense-in-depth: contact entries are owned exclusively by the
+            // per-entry server actions (addContactEntry / updateContactEntry /
+            // removeContactEntry) once an adopter exists. Strip them from any
+            // UPDATE payload so a stale or malicious client can't wipe / rewrite
+            // the contact list through this path. The CREATE branch below still
+            // accepts them — that's how initial data lands.
+            delete (data as Record<string, unknown>).contactEntries;
+            delete (data as Record<string, unknown>).contactInfo;
+
             // Calculate changes
             const changes: Record<string, any> = {};
             let hasChanges = false;
 
-            const fields = ['name', 'contactInfo', 'status', 'familyMembers'] as const;
+            const fields = ['name', 'status', 'familyMembers'] as const;
             for (const field of fields) {
                 // @ts-ignore
                 if (data[field] !== undefined && data[field] !== existing[field]) {

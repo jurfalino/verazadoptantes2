@@ -8,8 +8,8 @@ import RequestPiiAccessModal from '@/components/RequestPiiAccessModal';
 import PiiAccessRequestPanel from '@/components/PiiAccessRequestPanel';
 import PiiAccessGrantsDisclosure from '@/components/PiiAccessGrantsDisclosure';
 import PiiVerifyPopover from '@/components/PiiVerifyPopover';
-import AddContactEntryModal from '@/components/AddContactEntryModal';
-import type { ContactEntryType } from '@/lib/contactEntries';
+import { deserializeContactEntries, type ContactEntryType } from '@/lib/contactEntries';
+import ContactEntriesSection from '@/components/ContactEntriesSection';
 import { CollapsibleSection } from '@/components/CollapsibleSection';
 import AdoptionHistory from '@/components/AdoptionHistory';
 import AdoptionFormWizard from '@/components/AdoptionFormWizard';
@@ -69,9 +69,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     // otherwise the stale phone query is pre-filled into the address popover
     // and looks like a bug to the user. Cleared on the first close.
     const [verifySeed, setVerifySeed] = useState<string | null>(initialVerifyQuery);
-    // Contribution affordance — any authenticated viewer on a gated profile
-    // can add a contact detail they know (append-only, notifies owner+editors).
-    const [addModalOpen, setAddModalOpen] = useState(false);
+    // (Contribution-modal state removed in v2.16.0-2; ContactEntriesSection
+    // in Phase B will host the unified add path inline next to the chip list.)
     const [deleteCheck, setDeleteCheck] = useState<{ canDelete: boolean; collaborators: { adoptions: number; images: number; edits: number; flags: number; forms: number } } | null>(null);
 
     const isOwner = adopter?.addedBy === currentUser;
@@ -211,19 +210,31 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                         {piiContext.privileged && (
                             <PiiAccessGrantsDisclosure grants={piiContext.accessGrants} />
                         )}
-                        {piiContext.masked && currentUser && (
-                            <div className="flex justify-end">
-                                <button
-                                    type="button"
-                                    onClick={() => setAddModalOpen(true)}
-                                    data-testid="contrib-cta"
-                                    className="text-sm font-medium text-teal-700 hover:text-teal-900 transition-colors underline-offset-2 hover:underline"
-                                >
-                                    + {t('adopter.contrib_cta')}
-                                </button>
-                            </div>
-                        )}
                     </>
+                )}
+
+                {/* Unified contact section — single surface for everyone. Chip
+                    list + always-visible inline composer. Owner/admin chips get
+                    pencil + trash; contributors see read-only chips + the
+                    composer. Replaces the separate "+ Agregar dato" CTA + modal
+                    pair (v2.15.0-19) and the in-form contact editor's mutation
+                    role for existing adopters. */}
+                {!isNew && adopter && (
+                    <div className="rounded-2xl border border-teal-200 bg-white p-4">
+                        <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">
+                            {t('adopter.contact')}
+                        </h3>
+                        <ContactEntriesSection
+                            entries={deserializeContactEntries(adopter.contactEntries)}
+                            adopterId={id}
+                            canEdit={isOwner || isAdmin}
+                            onMaskedClick={
+                                piiContext?.masked
+                                    ? (entryType) => setVerifyPopoverOpen(entryType)
+                                    : undefined
+                            }
+                        />
+                    </div>
                 )}
 
                 {/* Profile Form */}
@@ -241,11 +252,6 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     formPrefill={formPrefill}
                     hasDuplicateBanner={false}
                     canEdit={!piiContext?.gatingOn || piiContext.privileged}
-                    onMaskedContactClick={
-                        piiContext?.masked
-                            ? (entryType) => setVerifyPopoverOpen(entryType)
-                            : undefined
-                    }
                 />
 
                 {/* Adoptions — with Wizard Form */}
@@ -462,17 +468,6 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     />
                 )}
 
-                {/* Contribution modal — append-only contact-detail add for any
-                    authenticated viewer on a gated profile. The action gates
-                    auth itself, so we can render the modal whenever masking is
-                    on (matching the verify popover's visibility rule). */}
-                {!isNew && adopter && piiContext?.masked && (
-                    <AddContactEntryModal
-                        open={addModalOpen}
-                        onClose={() => setAddModalOpen(false)}
-                        adopterId={id}
-                    />
-                )}
 
                 {/* Per-field verify/request popover. Replaces the always-on
                     banner; opens when the user clicks a masked contact chip.

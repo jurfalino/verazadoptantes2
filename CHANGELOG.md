@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-2] - 2026-05-28
+
+Phase B of the unified per-entry contact section refactor — the UI flip. The contact section is now a single surface on every profile, used the same way by owners and contributors. Replaces the v2.15.0-19 `+ Agregar dato de contacto` CTA + modal pair and the bulk contact-entries editor inside `Editar` mode.
+
+### Added
+- **`ContactEntriesSection` component.** One surface for the contact list, rendered on every existing-adopter profile. Always-visible inline composer at the bottom (type chips + value input + Agregar) for every authenticated viewer. Owner/admin chips show pencil + trash on hover; non-owner chips render read-only. Masked chips on PII-gated profiles still route to the verify popover. `'alias'` is one of the composable types.
+- **Inline edit (owner/admin).** Tap pencil → the chip's value transforms into an input in place (single field, or 2 stacked for address). Enter saves; Esc cancels. Calls `updateContactEntry`.
+- **Optimistic delete + 5-second undo (owner/admin).** Tap trash → entry disappears immediately, inline undo bar appears with "Deshacer". After 5 seconds with no undo, `removeContactEntry` fires (and revokes any matching `pii_access_grants`).
+
+### Changed
+- **`AdopterForm` Editar no longer mutates contact entries.** The form's contact section is rendered only for new-adopter creation (where `ContactEntriesInput`'s paste flow stays the fast path to first-data). For existing adopters, all contact mutations go through `ContactEntriesSection` and the per-entry server actions.
+- **`saveAdopter` strips `contactEntries` + `contactInfo` from UPDATE payloads.** Defense-in-depth — a stale or malicious client can no longer wipe the contact list through the bulk path. CREATE still accepts both.
+
+### Removed
+- `src/components/AddContactEntryModal.tsx` and the `contrib_modal_*` i18n keys. Replaced by the inline composer.
+
 ## [2.16.0-1] - 2026-05-28
 
 Phase A of the unified per-entry contact section refactor — server-side and forward-compatible. No user-visible UI changes; Phase B will flip the UI to surface the new per-entry actions and the alias type.

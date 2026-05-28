@@ -11,8 +11,7 @@ import type { DiscoveryMatch } from "@/app/actions";
 import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
 import ContactEntriesInput from "@/components/ContactEntriesInput";
-import ContactEntriesDisplay from "@/components/ContactEntriesDisplay";
-import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
+import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry } from "@/lib/contactEntries";
 
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
@@ -50,12 +49,6 @@ interface AdopterFormProps {
      * surfaces that don't compute it (e.g. the new-adopter form).
      */
     canEdit?: boolean;
-    /**
-     * Click handler for a masked contact entry chip. When provided, the chips
-     * become buttons that open the parent-owned verify/request popover. When
-     * absent, masked chips render inert (legacy behavior).
-     */
-    onMaskedContactClick?: (entryType: ContactEntryType) => void;
 }
 
 function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
@@ -80,7 +73,7 @@ function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
     );
 }
 
-export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin: _isAdmin = false, formPrefill = null, hasDuplicateBanner = false, canEdit = true, onMaskedContactClick }: AdopterFormProps) {
+export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin: _isAdmin = false, formPrefill = null, hasDuplicateBanner = false, canEdit = true }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -241,12 +234,6 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             ? deserializeContactEntries(initialData.contactEntries)
             : parseBlobToContactEntries(initialData?.contactInfo || formPrefill?.contactInfo || ''),
     );
-    // View mode shows typed chips only for rows that genuinely have stored
-    // structured entries. Legacy rows (no contactEntries) keep rendering their
-    // raw contactInfo blob — parsing a legacy blob just for display would
-    // change how it looks without the user opting in.
-    const hasStoredContactEntries = !!initialData?.contactEntries;
-
     // Sync read-mode state from `initialData` when the prop reference changes.
     // The two useState initializers above run ONCE on mount, so without this
     // effect a `router.refresh()` triggered elsewhere — e.g. PiiVerifyPopover
@@ -357,7 +344,14 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     const performActualSave = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await saveAdopter({ ...data, contactEntries: JSON.stringify(contactEntries) });
+            // For existing adopters, contact entries are mutated via the unified
+            // ContactEntriesSection (per-entry add/edit/remove server actions).
+            // Strip them from the saveAdopter payload so the bulk replace path
+            // doesn't override what those actions wrote.
+            const payload = isNew
+                ? { ...data, contactEntries: JSON.stringify(contactEntries) }
+                : { ...data, contactEntries: undefined, contactInfo: undefined };
+            const res = await saveAdopter(payload);
             if (res.success) {
                 if (isNew) {
                     // Funnel-tracking event for Amplitude (via Zaraz). Fires
@@ -839,10 +833,14 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
 
                 {/* SHARED CONTENT GRID */}
                 <div className={`grid md:grid-cols-2 gap-6 ${isEditing ? 'opacity-100' : 'opacity-90'}`}>
-                    {/* Contact Info */}
-                    <div className="md:col-span-2">
-                        <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.contact')}</h3>
-                        {isEditing ? (
+                    {/* Contact Info — only rendered on NEW-adopter creation. For
+                        existing adopters, the unified ContactEntriesSection above
+                        AdopterForm owns the contact surface (per-entry add / edit
+                        / remove). Including it here would mean two competing
+                        contact editors on the same page. */}
+                    {isNew && (
+                        <div className="md:col-span-2">
+                            <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.contact')}</h3>
                             <ContactEntriesInput
                                 entries={contactEntries}
                                 onChange={next => {
@@ -850,19 +848,8 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                     setData(d => ({ ...d, contactInfo: contactEntriesToBlob(next) }));
                                 }}
                             />
-                        ) : (
-                            <div
-                                className={`w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 font-medium leading-relaxed min-h-[60px] transition-colors ${canEdit ? 'cursor-pointer hover:border-teal-400' : 'cursor-default'}`}
-                                style={{ overflowWrap: 'anywhere' }}
-                                onClick={handleClickToEdit}
-                                title={canEdit ? (t('common.edit') || 'Click to edit') : undefined}
-                            >
-                                {hasStoredContactEntries && contactEntries.length > 0
-                                    ? <ContactEntriesDisplay entries={contactEntries} onMaskedClick={onMaskedContactClick} />
-                                    : renderTextWithLinks(data.contactInfo, { emptyLabel: t('audit.empty_val'), type: 'text' })}
-                            </div>
-                        )}
-                    </div>
+                        </div>
+                    )}
 
                     {/* Family Members (Full Width) */}
                     <div className="md:col-span-2">
