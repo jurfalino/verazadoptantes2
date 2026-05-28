@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-11] - 2026-05-28
+
+### Changed
+- **Identifier-anchor search matches auto-grant the matched record's full name.** Previously a phone/email/social/id/address search produced a search-match grant only for the matched contact entry — the adopter's name still rendered with initials-plus-revealed-tokens, so the user could see "555-1234 belongs to *M G*" but not "555-1234 belongs to Maria García". After this change, the same code path in `findAdopters.ts` (entry-anchor branch) also pushes `scope='name_token'` grants for every name token of the matched adopter, so an identifier match auto-reveals the full name as part of the same confidence transaction. Name-fragment searches keep their current per-token behavior — typing "Jonh" does not grant Maria's last name just because it appears in another record.
+
+### Added
+- **Name verification on the profile.** `verifyKnownInfo` now runs `matchSearchNameTokens(adopter.name, info)` alongside the existing entry matching — any matched name tokens insert `scope='name_token'` grants (de-duped against live grants). On a PII-gated profile, the partially-revealed name header (initials-only tokens like "M G") becomes a tap-target opening the verify popover; the user types the full name they expect and matching tokens reveal. Closes the gap where a viewer with a weak-match search ("Jonh") couldn't validate the rest of the name on the candidate profile.
+- Two i18n keys: `pii_masked_name_aria` / `pii_masked_name_title` for the clickable h1.
+
+### Tweaked
+- Verify popover body copy now mentions name as an accepted input ("teléfono, email, dirección o el nombre" / "phone, email, address, or the name"), matching the expanded server-side behavior.
+
 ## [2.16.0-10] - 2026-05-28
 
 ### Changed

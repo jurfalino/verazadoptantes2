@@ -24,6 +24,8 @@ import {
     piiCooldownUntil,
     maskAdopterContact,
     matchSearchEntries,
+    matchSearchNameTokens,
+    hashNameToken,
     type RequestPiiAccessResult,
     type PiiAccessRequestView,
     type PiiAccessRequestState,
@@ -526,38 +528,65 @@ export async function verifyKnownInfo(
         if (!db) return { ok: false, revealed: 0, error: 'No database' };
 
         const adopter = await db.select({
-            id: adopters.id, addedBy: adopters.addedBy, contactEntries: adopters.contactEntries,
+            id: adopters.id, addedBy: adopters.addedBy, name: adopters.name, contactEntries: adopters.contactEntries,
         }).from(adopters).where(eq(adopters.id, adopterId)).get();
         if (!adopter) return { ok: false, revealed: 0, error: 'Adopter not found' };
 
         const visibility = await resolveAdopterVisibility(viewer, { id: adopter.id, addedBy: adopter.addedBy });
         if (visibility.nothingMasked) return { ok: true, revealed: 0 };
 
+        // Try BOTH contact-entry matching and name-token matching against the
+        // user's typed input. Lets a single popover/verify input handle "I know
+        // this phone" AND "I know this person's full name" — same proof-by-
+        // knowledge model, different grant scope. Without name matching here
+        // the user can only verify contact identifiers; their hypothesis about
+        // the name (the common "is this who I think it is?" case after a phone
+        // match) stays unconfirmable.
         const entries = deserializeContactEntries(adopter.contactEntries);
-        const matches = matchSearchEntries(entries, info, { anchorRequiredForSecondary: false });
-        if (matches.length === 0) return { ok: true, revealed: 0 };
+        const entryMatches = matchSearchEntries(entries, info, { anchorRequiredForSecondary: false });
+        const nameTokenMatches = matchSearchNameTokens(adopter.name, info);
 
-        const newGrants = matches.filter(m => !visibility.unlockedEntryHashes.has(m.hash));
-        if (newGrants.length === 0) return { ok: true, revealed: 0 };
+        const newEntryGrants = entryMatches.filter(m => !visibility.unlockedEntryHashes.has(m.hash));
+        const newNameGrants: { hash: string }[] = [];
+        for (const token of nameTokenMatches) {
+            const h = hashNameToken(token);
+            if (!visibility.unlockedNameTokenHashes.has(h) && !newNameGrants.some(g => g.hash === h)) {
+                newNameGrants.push({ hash: h });
+            }
+        }
+        const totalNew = newEntryGrants.length + newNameGrants.length;
+        if (totalNew === 0) return { ok: true, revealed: 0 };
 
-        await Promise.all(newGrants.map(g => db.insert(piiAccessGrants).values({
-            id: crypto.randomUUID(),
-            adopterId,
-            granteeEmail: viewer,
-            scope: 'entry',
-            entryRef: g.hash,
-            origin: 'search_match',
-            grantedByEmail: viewer,
-            createdAt: new Date(),
-        })));
+        await Promise.all([
+            ...newEntryGrants.map(g => db.insert(piiAccessGrants).values({
+                id: crypto.randomUUID(),
+                adopterId,
+                granteeEmail: viewer,
+                scope: 'entry',
+                entryRef: g.hash,
+                origin: 'search_match',
+                grantedByEmail: viewer,
+                createdAt: new Date(),
+            })),
+            ...newNameGrants.map(g => db.insert(piiAccessGrants).values({
+                id: crypto.randomUUID(),
+                adopterId,
+                granteeEmail: viewer,
+                scope: 'name_token',
+                entryRef: g.hash,
+                origin: 'search_match',
+                grantedByEmail: viewer,
+                createdAt: new Date(),
+            })),
+        ]);
 
         logAudit({
             userEmail: viewer,
             action: 'pii_known_info_unlocked',
             target: adopterId,
-            details: { count: newGrants.length },
+            details: { entryCount: newEntryGrants.length, nameTokenCount: newNameGrants.length },
         });
-        return { ok: true, revealed: newGrants.length };
+        return { ok: true, revealed: totalNew };
     } catch (e) {
         const errorId = logger.error('verifyKnownInfo failed', e, { adopterId });
         return { ok: false, revealed: 0, error: `Failed to verify (ID: ${errorId})` };

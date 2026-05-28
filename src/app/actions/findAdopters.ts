@@ -707,7 +707,22 @@ async function runDiscoveryMode(
                             newGrants.push({ adopterId: a.id, entryRef: m.hash, scope: 'entry' });
                         }
                     }
-                    vis = { ...vis, unlockedEntryHashes: unlocked, tier: 'partial' };
+                    // Anchor-grade identifier match (phone / email / social / id /
+                    // address) is strong evidence the viewer means THIS person.
+                    // Auto-grant every name token alongside the entry grant so the
+                    // viewer doesn't have to verify-the-name as a second step —
+                    // they already proved they knew an identifier. Skips initials
+                    // / single-char tokens which can't self-grant.
+                    const unlockedNames = new Set(vis.unlockedNameTokenHashes);
+                    for (const token of (a.name ?? '').trim().split(/\s+/)) {
+                        if (token.length < 2) continue;
+                        const h = hashNameToken(token);
+                        if (!unlockedNames.has(h)) {
+                            unlockedNames.add(h);
+                            newGrants.push({ adopterId: a.id, entryRef: h, scope: 'name_token' });
+                        }
+                    }
+                    vis = { ...vis, unlockedEntryHashes: unlocked, unlockedNameTokenHashes: unlockedNames, tier: 'partial' };
                 }
                 const nameMatches = matchSearchNameTokens(a.name, normalizedQuery);
                 if (nameMatches.length > 0) {

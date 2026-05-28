@@ -56,6 +56,13 @@ interface AdopterFormProps {
      * un-masked value directly via the existing ContactEntriesSection display.
      */
     onMaskedContactClick?: (entryType: ContactEntryType) => void;
+    /**
+     * Click handler for the (partially-revealed) name header on a PII-gated
+     * profile. Opens the parent-owned verify popover so the viewer can type
+     * the full name they expect and have matching tokens unlocked. Absent
+     * when gating is off or the viewer is privileged.
+     */
+    onMaskedNameClick?: () => void;
 }
 
 function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
@@ -80,7 +87,7 @@ function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
     );
 }
 
-export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, canEdit = true, onMaskedContactClick }: AdopterFormProps) {
+export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, canEdit = true, onMaskedContactClick, onMaskedNameClick }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -653,11 +660,36 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                             placeholder={t('adopter.placeholder_name_aliases')}
                                             autoFocus
                                         />
-                                    ) : (
-                                        <h1 className="text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate">
-                                            {!isNew && initialData ? initialData.name : t('adopter.title_new')}
-                                        </h1>
-                                    )}
+                                    ) : (() => {
+                                        const displayName = !isNew && initialData ? initialData.name : t('adopter.title_new');
+                                        // Initial-only tokens (1-char words separated by whitespace) are
+                                        // the visual signature of `partialRevealName` — when present the
+                                        // viewer has only the initials of those tokens. Make the whole
+                                        // h1 a tap target that opens the verify popover so they can
+                                        // confirm a hypothesis about the full name. No-op when the
+                                        // parent didn't supply the handler (gating off / privileged
+                                        // viewer / new-adopter form).
+                                        const tokens = (displayName ?? '').trim().split(/\s+/);
+                                        const looksPartiallyRevealed = tokens.some(t => t.length === 1);
+                                        if (onMaskedNameClick && looksPartiallyRevealed) {
+                                            return (
+                                                <button
+                                                    type="button"
+                                                    onClick={onMaskedNameClick}
+                                                    aria-label={t('adopter.pii_masked_name_aria') || displayName}
+                                                    title={t('adopter.pii_masked_name_title') || ''}
+                                                    className="text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate text-left hover:underline underline-offset-4 decoration-teal-400 transition-colors cursor-pointer"
+                                                >
+                                                    {displayName}
+                                                </button>
+                                            );
+                                        }
+                                        return (
+                                            <h1 className="text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate">
+                                                {displayName}
+                                            </h1>
+                                        );
+                                    })()}
                                 </div>
                                 {/* Actions (right-aligned inline) */}
                                 <div className="flex items-center justify-end gap-2 flex-shrink-0">

@@ -58,7 +58,14 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     // or 'open' for a generic (non-chip-anchored) trigger. Replaces the
     // always-visible banner; the explainer + verify input now live inside
     // the popover and surface on demand.
-    const [verifyPopoverOpen, setVerifyPopoverOpen] = useState<ContactEntryType | null>(null);
+    // The verify popover can be opened in three ways:
+    //  - With a specific ContactEntryType — user tapped a masked chip; the
+    //    popover's per-type body copy + input type tunes to that.
+    //  - With 'open' — user tapped the partially-revealed name; generic
+    //    body copy, plain text input. verifyKnownInfo handles both name and
+    //    contact-entry inputs.
+    //  - null — closed.
+    const [verifyPopoverOpen, setVerifyPopoverOpen] = useState<ContactEntryType | 'open' | null>(null);
     // Note: v2.15.0-18 plumbed an `initialVerifyQuery` seed through here to
     // pre-fill the verify input with the post-signin `?q=` value. v2.16.0-7
     // removed it — the pre-fill confused users (the seed often didn't match
@@ -231,6 +238,11 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     onMaskedContactClick={
                         piiContext?.masked
                             ? (entryType) => setVerifyPopoverOpen(entryType)
+                            : undefined
+                    }
+                    onMaskedNameClick={
+                        piiContext?.masked
+                            ? () => setVerifyPopoverOpen('open')
                             : undefined
                     }
                 />
@@ -460,7 +472,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                         open={verifyPopoverOpen !== null}
                         onClose={() => setVerifyPopoverOpen(null)}
                         adopterId={id}
-                        entryType={verifyPopoverOpen ?? undefined}
+                        entryType={verifyPopoverOpen && verifyPopoverOpen !== 'open' ? verifyPopoverOpen : undefined}
                         requestState={
                             (requestSubmitted || piiContext.requestState.pending)
                                 ? { kind: 'pending' }
