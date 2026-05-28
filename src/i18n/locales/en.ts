@@ -487,7 +487,6 @@ export const en = {
         ce_input_ph_other: 'Notes…',
         ce_input_ph_locality: 'City / Locality',
         ce_alias_ph: 'Another name this person goes by',
-        ce_composer_add: 'Add',
         ce_edit_label: 'Edit',
         ce_delete_label: 'Delete',
         ce_edit_save: 'Save',

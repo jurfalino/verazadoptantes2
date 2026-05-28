@@ -488,7 +488,6 @@ export const es = {
         ce_input_ph_other: 'Notas…',
         ce_input_ph_locality: 'Ciudad / Localidad',
         ce_alias_ph: 'Otro nombre por el que se conoce a esta persona',
-        ce_composer_add: 'Agregar',
         ce_edit_label: 'Editar',
         ce_delete_label: 'Eliminar',
         ce_edit_save: 'Guardar',

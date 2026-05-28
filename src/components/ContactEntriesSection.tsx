@@ -38,11 +38,24 @@ const UNDO_DELAY_MS = 5000;
 
 interface Props {
     entries: ContactEntry[];
-    adopterId: string;
-    /** True if the viewer can edit/remove existing entries (owner/admin). */
+    /**
+     * Server mode (existing adopter): `adopterId` set, no `onChange`. Add /
+     * edit / delete fire the corresponding server actions. Required for the
+     * profile-page rendering.
+     *
+     * Local mode (new-adopter creation): `adopterId` omitted, `onChange`
+     * provided. Add / edit / delete mutate locally and emit the next entries
+     * array via `onChange`. The parent batches everything through saveAdopter
+     * on create. Lets the SAME component drive both flows so the user sees
+     * the same add UX regardless of context.
+     */
+    adopterId?: string;
+    onChange?: (next: ContactEntry[]) => void;
+    /** True if the viewer can edit/remove existing entries (owner/admin).
+     *  In local mode always true (you're creating it). */
     canEdit: boolean;
     /** Tap-handler for masked chips — opens the verify popover. Undefined when
-     * the viewer is not subject to PII gating. */
+     * the viewer is not subject to PII gating. Server mode only. */
     onMaskedClick?: (entryType: ContactEntryType) => void;
 }
 
@@ -60,10 +73,11 @@ function socialHref(value: string): string | null {
     return null;
 }
 
-export default function ContactEntriesSection({ entries, adopterId, canEdit, onMaskedClick }: Props) {
+export default function ContactEntriesSection({ entries, adopterId, onChange, canEdit, onMaskedClick }: Props) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
+    const isLocalMode = !!onChange;
 
     // Add composer state.
     const [composerOpen, setComposerOpen] = useState(false);
@@ -118,22 +132,47 @@ export default function ContactEntriesSection({ entries, adopterId, canEdit, onM
         setComposerOpen(false);
     }
 
+    function buildNewEntry(): ContactEntry {
+        if (composerType === 'address') {
+            return {
+                id: crypto.randomUUID(),
+                type: 'address',
+                value: [composerStreet.trim(), composerLocality.trim()].filter(Boolean).join(', '),
+                streetAndNumber: composerStreet.trim() || undefined,
+                locality: composerLocality.trim() || undefined,
+            };
+        }
+        return { id: crypto.randomUUID(), type: composerType, value: composerValue.trim() };
+    }
+
     async function handleAdd() {
         const hasContent = composerType === 'address'
             ? (composerStreet.trim().length > 0 || composerLocality.trim().length > 0)
             : composerValue.trim().length > 0;
         if (!hasContent || composerBusy) return;
+
+        // Local mode (new-adopter creation): mutate in place, emit via onChange.
+        // No server action; the parent batches everything through saveAdopter
+        // on create.
+        if (isLocalMode) {
+            const newEntry = buildNewEntry();
+            onChange!([...entries, newEntry]);
+            resetComposer();
+            return;
+        }
+
+        // Server mode (existing adopter): the original addContactEntry path.
         setComposerBusy(true);
         try {
             const payload: Parameters<typeof addContactEntry>[0] = composerType === 'address'
                 ? {
-                    adopterId,
+                    adopterId: adopterId!,
                     type: 'address',
                     value: [composerStreet.trim(), composerLocality.trim()].filter(Boolean).join(', '),
                     streetAndNumber: composerStreet.trim() || undefined,
                     locality: composerLocality.trim() || undefined,
                 }
-                : { adopterId, type: composerType, value: composerValue.trim() };
+                : { adopterId: adopterId!, type: composerType, value: composerValue.trim() };
             const res = await addContactEntry(payload);
             if (res.ok) {
                 resetComposer();
@@ -172,16 +211,38 @@ export default function ContactEntriesSection({ entries, adopterId, canEdit, onM
             ? (editDraft.streetAndNumber.trim().length > 0 || editDraft.locality.trim().length > 0)
             : editDraft.value.trim().length > 0;
         if (!hasContent) return;
-        setEditBusy(true);
-        try {
-            const payload: Parameters<typeof updateContactEntry>[0] = entry.type === 'address'
+
+        // Local mode: build the updated entry in place, emit.
+        if (isLocalMode) {
+            const updated: ContactEntry = entry.type === 'address'
                 ? {
-                    adopterId, entryId: entry.id,
+                    id: entry.id,
+                    type: 'address',
                     value: [editDraft.streetAndNumber.trim(), editDraft.locality.trim()].filter(Boolean).join(', '),
                     streetAndNumber: editDraft.streetAndNumber.trim() || undefined,
                     locality: editDraft.locality.trim() || undefined,
                 }
-                : { adopterId, entryId: entry.id, value: editDraft.value.trim() };
+                : {
+                    id: entry.id,
+                    type: entry.type,
+                    value: editDraft.value.trim(),
+                    ...(entry.label ? { label: entry.label } : {}),
+                };
+            onChange!(entries.map(e => (e.id === entry.id ? updated : e)));
+            cancelEdit();
+            return;
+        }
+
+        setEditBusy(true);
+        try {
+            const payload: Parameters<typeof updateContactEntry>[0] = entry.type === 'address'
+                ? {
+                    adopterId: adopterId!, entryId: entry.id,
+                    value: [editDraft.streetAndNumber.trim(), editDraft.locality.trim()].filter(Boolean).join(', '),
+                    streetAndNumber: editDraft.streetAndNumber.trim() || undefined,
+                    locality: editDraft.locality.trim() || undefined,
+                }
+                : { adopterId: adopterId!, entryId: entry.id, value: editDraft.value.trim() };
             const res = await updateContactEntry(payload);
             if (res.ok) {
                 cancelEdit();
@@ -204,10 +265,19 @@ export default function ContactEntriesSection({ entries, adopterId, canEdit, onM
         // Cancel any other in-flight delete first; chain them serially.
         cancelPendingDelete();
         setPendingDeleteId(entry.id);
+        const entryIdToDelete = entry.id;
         deleteTimerRef.current = setTimeout(async () => {
             deleteTimerRef.current = null;
+
+            // Local mode: emit the filtered array, done.
+            if (isLocalMode) {
+                onChange!(entries.filter(e => e.id !== entryIdToDelete));
+                setPendingDeleteId(null);
+                return;
+            }
+
             try {
-                const res = await removeContactEntry({ adopterId, entryId: entry.id! });
+                const res = await removeContactEntry({ adopterId: adopterId!, entryId: entryIdToDelete });
                 if (!res.ok) {
                     // Restore on server failure.
                     setPendingDeleteId(null);
@@ -365,23 +435,23 @@ export default function ContactEntriesSection({ entries, adopterId, canEdit, onM
                                                     autoFocus
                                                 />
                                             )}
-                                            <div className="flex items-center gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => commitEdit(entry)}
-                                                    disabled={editBusy}
-                                                    className="inline-flex items-center gap-1 px-2 py-1 bg-teal-600 hover:bg-teal-700 text-white text-xs font-medium rounded disabled:opacity-50"
-                                                    data-testid="ce-edit-save"
-                                                >
-                                                    <Check className="w-3 h-3" /> {t('adopter.ce_edit_save')}
-                                                </button>
+                                            <div className="flex items-center gap-2 justify-end">
                                                 <button
                                                     type="button"
                                                     onClick={cancelEdit}
                                                     disabled={editBusy}
-                                                    className="inline-flex items-center gap-1 px-2 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-medium rounded"
+                                                    className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-stone-700 bg-stone-100 hover:bg-stone-200 rounded transition-colors"
                                                 >
-                                                    <X className="w-3 h-3" /> {t('adopter.ce_edit_cancel')}
+                                                    <X className="w-3.5 h-3.5" /> {t('adopter.ce_edit_cancel')}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => commitEdit(entry)}
+                                                    disabled={editBusy}
+                                                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
+                                                    data-testid="ce-edit-save"
+                                                >
+                                                    <Check className="w-3.5 h-3.5" /> {t('adopter.ce_edit_save')}
                                                 </button>
                                             </div>
                                         </div>
@@ -508,23 +578,27 @@ export default function ContactEntriesSection({ entries, adopterId, canEdit, onM
                                 autoFocus
                             />
                         )}
+                        {/* Bottom action row — kept structurally identical to
+                            the inline-edit row above (right-aligned, same
+                            sizing, same icons, same Cancel + Save order) so
+                            adding a new entry feels the same as editing one. */}
                         <div className="flex items-center gap-2 justify-end">
                             <button
                                 type="button"
                                 onClick={resetComposer}
                                 disabled={composerBusy}
-                                className="px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-200 rounded transition-colors"
+                                className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-stone-700 bg-stone-100 hover:bg-stone-200 rounded transition-colors"
                             >
-                                {t('adopter.ce_edit_cancel')}
+                                <X className="w-3.5 h-3.5" /> {t('adopter.ce_edit_cancel')}
                             </button>
                             <button
                                 type="button"
                                 onClick={handleAdd}
                                 disabled={composerBusy}
-                                className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
+                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
                                 data-testid="ce-composer-submit"
                             >
-                                {t('adopter.ce_composer_add')}
+                                <Check className="w-3.5 h-3.5" /> {t('adopter.ce_edit_save')}
                             </button>
                         </div>
                     </div>

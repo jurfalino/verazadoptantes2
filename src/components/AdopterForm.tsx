@@ -10,7 +10,6 @@ import { zarazTrack } from "@/lib/zaraz";
 import type { DiscoveryMatch } from "@/app/actions";
 import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
-import ContactEntriesInput from "@/components/ContactEntriesInput";
 import ContactEntriesSection from "@/components/ContactEntriesSection";
 import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
 
@@ -841,22 +840,19 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
 
                 {/* SHARED CONTENT GRID */}
                 <div className={`grid md:grid-cols-2 gap-6 ${isEditing ? 'opacity-100' : 'opacity-90'}`}>
-                    {/* Contact — two shapes for two jobs:
-                        • New adopter: ContactEntriesInput (chip rows + paste
-                          flow) so an owner can drop in a CV-style block on
-                          first-data entry.
-                        • Existing adopter: the unified ContactEntriesSection —
-                          per-entry add / edit / remove. Lives here (inside the
-                          shared content grid, between the header and the rest
-                          of the profile data) so the page reads top-down as
-                          "who is this → how do I reach them → who do they live
-                          with". Owner/admin gets edit affordances, everyone
-                          else gets read-only chips with the inline composer. */}
+                    {/* Contact — same surface for both jobs (consistency
+                        across new vs existing). ContactEntriesSection runs
+                        in local mode for new-adopter creation (no adopterId,
+                        with onChange wiring) and in server mode for existing
+                        adopters (with adopterId, calls the per-entry actions).
+                        Either way the add UX, edit UX and chip rendering are
+                        identical. */}
                     <div className="md:col-span-2">
                         <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.contact')}</h3>
                         {isNew ? (
-                            <ContactEntriesInput
+                            <ContactEntriesSection
                                 entries={contactEntries}
+                                canEdit={true}
                                 onChange={next => {
                                     setContactEntries(next);
                                     setData(d => ({ ...d, contactInfo: contactEntriesToBlob(next) }));

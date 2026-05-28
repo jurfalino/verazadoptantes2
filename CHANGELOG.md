@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-5] - 2026-05-28
+
+### Changed
+- **New-adopter creation now uses the same contact UI as existing adopters.**  `ContactEntriesSection` runs in a new local mode (`onChange` instead of `adopterId` — mutations go to parent state rather than the per-entry server actions) and replaces `ContactEntriesInput` in `AdopterForm`'s new-adopter slot. Same chip list, same "+ Agregar dato de contacto" trigger, same inline composer, same edit/delete affordances on every chip — regardless of whether you're adding the first attribute to a brand-new profile or the tenth attribute to an existing one.
+- **Add composer and edit-in-place form now have an identical bottom button row.**  Both render right-aligned `[✕ Cancelar] [✓ Guardar]` with the same sizing, icons, colors and order. Previously the composer had bigger right-aligned buttons without icons while edit-in-place had smaller left-aligned icon pills in reversed order. The composer's primary label is now "Guardar" too (matching the edit verb).
+- `ImportWizard` keeps using `ContactEntriesInput` — admin bulk-import is a different mental model where the paste-and-categorize flow is the point. Out of scope for the consistency principle that drove this change.
+
+### Removed
+- `ce_composer_add` i18n key — the "Agregar" composer-submit string is no longer rendered (`ce_edit_save` "Guardar" / "Save" covers both add and edit).
+
 ## [2.16.0-4] - 2026-05-28
 
 ### Fixed
