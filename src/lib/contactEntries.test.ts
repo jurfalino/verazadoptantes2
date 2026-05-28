@@ -252,3 +252,63 @@ describe('alias contact entries', () => {
         expect(merged).toHaveLength(2);
     });
 });
+
+// Pure-function coverage for the lazy legacy-row migration path used by
+// addContactEntry, updateContactEntry, removeContactEntry, and the admin
+// backfill. The server-side glue (DB read/write/auth) is exercised on
+// staging; what's testable in isolation is the parse → assign IDs → merge
+// chain, and that's exactly the regression class we care about (a parser
+// bug here silently destroys real production data on migration).
+describe('legacy contactInfo → structured contactEntries (lazy migration)', () => {
+    function migrate(blob: string) {
+        const parsed = parseBlobToContactEntries(blob);
+        // Mirrors the id-assignment in addContactEntry's lazy branch.
+        return parsed.map(e => ({ id: `id-${e.type}-${e.value}`, ...e }));
+    }
+
+    it('parses a labeled phone blob and every produced entry has an id', () => {
+        const seeded = migrate('Teléfonos: +54 9 11 3161-7720');
+        // At minimum one phone entry; the categorizer may also produce an
+        // `other` residual from the label, which is fine — the load-bearing
+        // claim is "phone is captured and id-assigned, not silently dropped."
+        expect(seeded.length).toBeGreaterThan(0);
+        const phones = seeded.filter(e => e.type === 'phone');
+        expect(phones).toHaveLength(1);
+        expect(phones[0].value).toContain('3161-7720');
+        expect(seeded.every(e => !!e.id)).toBe(true);
+    });
+
+    it('parses a multi-line social+address blob into typed entries', () => {
+        const seeded = migrate(
+            'Redes sociales: https://www.facebook.com/Dario.Fernandez\nDirección: Jujuy 1842, Quilmes',
+        );
+        // Social and address both surface as their typed entries. The exact
+        // value formatting (URL normalization, casing) is the categorizer's
+        // call and tested elsewhere; here we just need the types present.
+        expect(seeded.some(e => e.type === 'social')).toBe(true);
+        expect(seeded.some(e => e.type === 'address')).toBe(true);
+        expect(seeded.every(e => !!e.id)).toBe(true);
+    });
+
+    it('merging a new entry on top of the seeded legacy entries preserves both', () => {
+        // The data-loss bug shape: pre-fix, the merge would have run against
+        // an empty existing array (deserialize on NULL returns []) and the
+        // saved row would be just the new entry, losing the legacy data.
+        const seeded = migrate('Tel: 555-1234\nEmail: maria@example.com');
+        const newEntry: ContactEntry = { id: 'new-1', type: 'phone', value: '555-9999' };
+        const merged = mergeContactEntries(seeded, [newEntry]);
+        // Original phone + email preserved, new phone added — three entries total.
+        expect(merged).toHaveLength(3);
+        expect(valuesOf(merged, 'phone')).toContain('555-9999');
+        expect(valuesOf(merged, 'email')).toEqual(['maria@example.com']);
+    });
+
+    it('merging a duplicate of a seeded legacy entry keeps the original (dedup wins)', () => {
+        const seeded = migrate('Tel: 555-1234');
+        const newEntry: ContactEntry = { id: 'new-1', type: 'phone', value: '555-1234' };
+        const merged = mergeContactEntries(seeded, [newEntry]);
+        expect(merged).toHaveLength(1);
+        // The original (seeded) entry's id wins per the older-entry-id rule.
+        expect(merged[0].id).toBe('id-phone-555-1234');
+    });
+});

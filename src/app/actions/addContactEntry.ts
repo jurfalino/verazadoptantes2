@@ -11,6 +11,7 @@ import {
     mergeContactEntries,
     contactEntriesToBlob,
     joinedAddressValue,
+    parseBlobToContactEntries,
     type ContactEntry,
 } from '@/lib/contactEntries';
 import { tokenizeAdopter } from './duplicates';
@@ -61,36 +62,73 @@ export async function addContactEntry(
 
         const newEntry: ContactEntry = type === 'address' && (parsed.data.streetAndNumber || parsed.data.locality)
             ? {
+                id: crypto.randomUUID(),
                 type: 'address',
                 value: joinedAddressValue(parsed.data.streetAndNumber ?? '', parsed.data.locality ?? '') || value,
                 streetAndNumber: parsed.data.streetAndNumber || undefined,
                 locality: parsed.data.locality || undefined,
             }
-            : { type, value };
+            : { id: crypto.randomUUID(), type, value };
 
-        const existing = deserializeContactEntries(target.contactEntries);
+        // Lazy legacy-row migration: rows that pre-date the structured
+        // contactEntries column have NULL contactEntries but a populated
+        // contactInfo blob. Before merging the new entry, parse the blob and
+        // seed those entries with fresh IDs so the structured column is
+        // populated correctly. Without this, the merge would emit only the
+        // new entry and saving would overwrite contactInfo with just that —
+        // silently destroying every other phone/email/address on the row.
+        // After migration the structured column wins; this branch never
+        // fires again for the same row.
+        let existing = deserializeContactEntries(target.contactEntries);
+        if (existing.length === 0 && target.contactInfo && target.contactInfo.trim()) {
+            const fromBlob = parseBlobToContactEntries(target.contactInfo);
+            if (fromBlob.length > 0) {
+                existing = fromBlob.map(e => ({ id: crypto.randomUUID(), ...e }));
+                logger.info('addContactEntry: lazy legacy contactEntries migration', {
+                    adopterId, parsedCount: existing.length,
+                });
+            }
+        }
         const merged = mergeContactEntries(existing, [newEntry]);
         const appended = merged.length !== existing.length;
+        const structuralWrite = appended || merged.length !== deserializeContactEntries(target.contactEntries).length;
 
-        if (appended) {
-            await db.update(adopters)
+        if (structuralWrite) {
+            // Optimistic concurrency: only commit if updatedAt hasn't shifted
+            // since we read the row. Mirrors saveAdopter's pattern (adopters.ts:248).
+            // Without this, two contributors hitting addContactEntry on the
+            // same row at the same time both read the same `existing`, both
+            // append, last-writer-wins, and the other's entry vanishes.
+            const updateResult = await db.update(adopters)
                 .set({
                     contactEntries: JSON.stringify(merged),
                     contactInfo: contactEntriesToBlob(merged) || null,
                     updatedAt: new Date(),
                 })
-                .where(eq(adopters.id, adopterId));
+                .where(and(
+                    eq(adopters.id, adopterId),
+                    target.updatedAt
+                        ? eq(adopters.updatedAt, target.updatedAt)
+                        : isNull(adopters.updatedAt),
+                ));
+            const rowsAffected = (updateResult as unknown as { rowsAffected?: number }).rowsAffected ?? 1;
+            if (rowsAffected === 0) {
+                logger.warn('addContactEntry: concurrent modification — retry needed', { adopterId, actor });
+                return { ok: false, error: 'This record was modified by another user. Please refresh and try again.' };
+            }
 
-            // History with kind='contribution' — does NOT make the writer an editor.
-            // Intentionally omit the value from `changes` to limit PII spread.
-            await db.insert(adopterHistory).values({
-                id: crypto.randomUUID(),
-                adopterId,
-                changedBy: actor,
-                kind: 'contribution',
-                changes: JSON.stringify({ contributed_entry: { type } }),
-                changedAt: new Date(),
-            });
+            if (appended) {
+                // History with kind='contribution' — does NOT make the writer an editor.
+                // Intentionally omit the value from `changes` to limit PII spread.
+                await db.insert(adopterHistory).values({
+                    id: crypto.randomUUID(),
+                    adopterId,
+                    changedBy: actor,
+                    kind: 'contribution',
+                    changes: JSON.stringify({ contributed_entry: { type } }),
+                    changedAt: new Date(),
+                });
+            }
         }
 
         // Grant the contributor entry-scope visibility on the value they typed —

@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-8] - 2026-05-28
+
+Production-readiness for the unified contact section. Investigation showed prod is on migration 0042 (no `contact_entries` column) while staging is on 0045 — so the moment staging→master merges and `migrate-production` applies 0043, **every existing prod adopter row enters the legacy state** (NULL `contact_entries`, populated `contact_info` blob), exposing the data-loss bug below and the "no edit affordance" UX gap on every chip. Three coordinated fixes ship together.
+
+### Fixed
+- **Data loss on first composer add against legacy rows.** `addContactEntry` previously read `deserializeContactEntries(target.contactEntries)` (→ `[]` for legacy NULL), merged the new entry on top, and saved `[newEntry]` back — silently overwriting `contactInfo` and discarding every phone / email / address the row had before. Now, when the structured column is empty but the blob is non-empty, the action parses the blob via `categorizeContactText`, assigns IDs, and merges the new entry on top of *those* entries. Idempotent: the existing-structured short-circuit keeps the old behavior for already-migrated rows.
+- **Concurrent-write race on contactEntries.** Two contributors hitting `addContactEntry` on the same row at the same time could lose one entry to last-writer-wins. Adopted `saveAdopter`'s optimistic compare-and-set pattern (`adopters.ts:248`) — updates now match on `updatedAt`, return "modified by another user, please refresh" on collision.
+
+### Added
+- **Admin-triggered one-shot backfill** (`backfillLegacyContactEntries` server action + `AdminContactEntriesBackfill` button on `/admin`). Iterates every row where `contactEntries IS NULL` and `contactInfo IS NOT NULL`, runs the same parser + ID-assignment, writes structured `contactEntries`. Idempotent. Audited per row. After the prod deploy admin clicks once → all 46 prod rows materialize → legacy state gone.
+- **Pure-function test coverage** for the parse → merge → ID-assignment chain (`contactEntries.test.ts`). Four new cases. The shared regression class both the lazy migration and the backfill rely on. Establishes the pattern that's been deferred since v2.15.0-19.
+
+### Audit
+- Each lazy migration writes `logger.info('addContactEntry: lazy legacy contactEntries migration', { adopterId, parsedCount })` so the transition is traceable. Backfill writes a `logAudit` row per migrated adopter (`action: 'contact_entries_backfilled'`).
+
 ## [2.16.0-7] - 2026-05-28
 
 ### Fixed

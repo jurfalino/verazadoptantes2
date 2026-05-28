@@ -167,3 +167,100 @@ export async function purgeAllData(confirmationCode: string) {
         throw new Error(`Failed to purge data (Error ID: ${errorId})`);
     }
 }
+
+/**
+ * One-shot backfill of structured `contactEntries` from the legacy
+ * `contactInfo` blob for every row that still has the legacy shape.
+ *
+ * Runs once after the staging→master deploy where migration 0043 first
+ * introduces the column. Without this, every existing production row sits
+ * in the "no edit affordance + first-composer-write nukes the blob" state
+ * until someone happens to add a new entry (lazy migration in
+ * `addContactEntry` covers that case as defense-in-depth, but pure-read
+ * profiles would stay broken indefinitely).
+ *
+ * Idempotent: only touches rows where `contactEntries IS NULL` and
+ * `contactInfo` is non-empty. Safe to re-run.
+ */
+export async function backfillLegacyContactEntries(): Promise<
+    | { ok: true; migrated: number; skipped: number; errors: { adopterId: string; error: string }[] }
+    | { ok: false; error: string }
+> {
+    const session = await auth();
+    const actor = session?.user?.email ?? '';
+    if (!actor || !(await checkIsAdminAsync(actor))) {
+        return { ok: false, error: 'Unauthorized' };
+    }
+
+    const { parseBlobToContactEntries } = await import('@/lib/contactEntries');
+
+    try {
+        const db = await getDb();
+        if (!db) return { ok: false, error: 'No database' };
+
+        // Read candidates: legacy = contactEntries unset + contactInfo populated.
+        const candidates = await db.select({
+            id: adopters.id,
+            contactInfo: adopters.contactInfo,
+            updatedAt: adopters.updatedAt,
+        }).from(adopters);
+
+        let migrated = 0;
+        let skipped = 0;
+        const errors: { adopterId: string; error: string }[] = [];
+
+        for (const row of candidates) {
+            // Re-read contactEntries from the full row to handle concurrent
+            // edits during the run. Cheap on a small population.
+            const full = await db.select().from(adopters)
+                .where(eq(adopters.id, row.id)).get();
+            if (!full) { skipped++; continue; }
+            if (full.deletedAt) { skipped++; continue; }
+            if (full.contactEntries && full.contactEntries.trim() && full.contactEntries !== '[]') {
+                // Already migrated (or has user-added entries).
+                skipped++;
+                continue;
+            }
+            if (!full.contactInfo || !full.contactInfo.trim()) {
+                // Nothing to migrate.
+                skipped++;
+                continue;
+            }
+
+            try {
+                const parsed = parseBlobToContactEntries(full.contactInfo);
+                if (parsed.length === 0) { skipped++; continue; }
+                const withIds = parsed.map(e => ({ id: crypto.randomUUID(), ...e }));
+
+                await db.update(adopters).set({
+                    contactEntries: JSON.stringify(withIds),
+                    // Don't touch contactInfo — it's the source the parser
+                    // works from; if anything goes wrong the blob is still
+                    // there for re-parsing. The derive-blob-from-entries
+                    // path that runs on future writes will catch it up.
+                    updatedAt: new Date(),
+                }).where(eq(adopters.id, full.id));
+
+                logAudit({
+                    userEmail: actor,
+                    action: 'contact_entries_backfilled',
+                    target: full.id,
+                    details: { entryCount: withIds.length },
+                });
+                migrated++;
+            } catch (e) {
+                errors.push({ adopterId: full.id, error: e instanceof Error ? e.message : String(e) });
+            }
+        }
+
+        logger.info('backfillLegacyContactEntries: complete', {
+            actor, migrated, skipped, errorCount: errors.length,
+        });
+
+        revalidatePath('/admin');
+        return { ok: true, migrated, skipped, errors };
+    } catch (error) {
+        const errorId = logger.error('backfillLegacyContactEntries failed', error, { actor });
+        return { ok: false, error: `Failed (Error ID: ${errorId})` };
+    }
+}
