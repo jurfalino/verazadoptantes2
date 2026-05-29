@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
@@ -50,8 +51,17 @@ export default function NotificationBell() {
     const [items, setItems] = useState<NotificationItem[]>([]);
     const [loading, setLoading] = useState(false);
     const [freshPulse, setFreshPulse] = useState(false);
-    const dropdownRef = useRef<HTMLDivElement>(null);
+    const [mounted, setMounted] = useState(false);
+    // Two refs because the bell button stays inside the nav while the
+    // dropdown panel (and its backdrop) is rendered into a portal — the
+    // click-outside handler needs to check both DOM trees independently.
+    const buttonRef = useRef<HTMLButtonElement>(null);
+    const panelRef = useRef<HTMLDivElement>(null);
     const prevCountRef = useRef(0);
+
+    // Portal target — `document.body`. Gated by `mounted` so we don't try
+    // to use document during SSR or before the React tree has hydrated.
+    useEffect(() => { setMounted(true); }, []);
 
     const isAuthenticated = !!session?.user?.email;
 
@@ -101,12 +111,14 @@ export default function NotificationBell() {
         };
     }, [fetchCount, isAuthenticated]);
 
-    // Close dropdown on click outside
+    // Close dropdown on click outside. The button and the portalled panel
+    // live in different DOM subtrees now, so we check both refs.
     useEffect(() => {
         function handleClickOutside(e: MouseEvent) {
-            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-                setOpen(false);
-            }
+            const target = e.target as Node;
+            if (buttonRef.current?.contains(target)) return;
+            if (panelRef.current?.contains(target)) return;
+            setOpen(false);
         }
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -179,10 +191,22 @@ export default function NotificationBell() {
 
     const isEs = locale === 'es';
 
+    // The dropdown/sheet is rendered into a portal because the <nav>
+    // ancestor uses `backdrop-blur-md` (== `backdrop-filter`), which makes
+    // it a *containing block* for `position: fixed` descendants — meaning
+    // an in-place fixed sheet would be anchored to the nav, not the
+    // viewport. On mobile (`inset-x-0 bottom-0`), that resolved to "at the
+    // nav's bottom edge growing upward" — the sheet's top went off the top
+    // of the screen and the user saw only the footer. Portalling to the
+    // body sidesteps the containing-block scope so fixed-positioning works
+    // as intended. v2.16.0-20 fix; the prior svh swap (v2.16.0-19) is still
+    // correct and stays.
+
     return (
-        <div className="relative" ref={dropdownRef}>
+        <>
             {/* Bell Button */}
             <button
+                ref={buttonRef}
                 onClick={handleToggle}
                 className="relative p-2 rounded-lg text-stone-500 hover:text-stone-700 hover:bg-stone-100 transition-colors"
                 aria-label={t('notifications.title')}
@@ -202,24 +226,30 @@ export default function NotificationBell() {
                 )}
             </button>
 
-            {/* Backdrop — mobile only. Catches taps outside the bottom sheet so
+            {/* Backdrop + Panel — portalled to document.body to escape the
+                nav's backdrop-filter containing-block scope (see comment
+                above the return). Both stay together so taps on the
+                backdrop dismiss the panel. */}
+            {open && mounted && createPortal(
+                <>
+                    {/* Backdrop — mobile only. Catches taps outside the bottom sheet so
                 dismissal is discoverable on touch (the mousedown click-outside
                 handler is unreliable on mobile when the sheet covers most of
                 the viewport). */}
-            {open && (
                 <div
                     className="fixed inset-0 z-40 bg-black/30 sm:hidden"
                     onClick={() => setOpen(false)}
                     aria-hidden="true"
                 />
-            )}
 
-            {/* Dropdown Panel — uses inline styles with CSS vars for theme safety.
-                Mobile (default): bottom sheet pinned to the bottom edge.
-                Desktop (sm: and up): popover anchored to the bell. */}
-            {open && (
+                {/* Dropdown Panel — uses inline styles with CSS vars for theme safety.
+                    Mobile (default): bottom sheet pinned to the bottom edge.
+                    Desktop (sm: and up): popover near the top-right (since
+                    the portal can't anchor relative to the bell button, we
+                    pin to the viewport's top-right with some padding). */}
                 <div
-                    className="fixed inset-x-0 bottom-0 max-h-[85svh] rounded-t-2xl sm:absolute sm:inset-auto sm:right-0 sm:top-auto sm:bottom-auto sm:mt-2 sm:max-h-none sm:w-96 sm:rounded-2xl shadow-2xl overflow-hidden z-50 flex flex-col"
+                    ref={panelRef}
+                    className="fixed inset-x-0 bottom-0 max-h-[85svh] rounded-t-2xl sm:inset-auto sm:right-4 sm:top-16 sm:bottom-auto sm:max-h-none sm:w-96 sm:rounded-2xl shadow-2xl overflow-hidden z-50 flex flex-col"
                     style={{
                         background: 'var(--surface-card)',
                         color: 'var(--text-primary)',
@@ -340,7 +370,9 @@ export default function NotificationBell() {
                         {isEs ? 'Ver todas →' : 'See all →'}
                     </a>
                 </div>
+                </>,
+                document.body,
             )}
-        </div>
+        </>
     );
 }

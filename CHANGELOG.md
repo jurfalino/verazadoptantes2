@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-20] - 2026-05-29
+
+### Fixed
+- **NotificationBell sheet was anchored to the nav, not the viewport.** The actual root cause of the mobile cut-off the v2.16.0-19 svh swap didn't fix. The `<nav>` has `backdrop-blur-md` → CSS `backdrop-filter` → makes the nav a **containing block** for `position: fixed` descendants. So the sheet's `bottom-0` resolved to "bottom of the 64px nav" (≈ y=64) and the sheet grew *upward* from there — for any content taller than the nav, the top went off the top of the screen and the user saw only the footer.
+
+  Fix: render the dropdown panel + backdrop via `createPortal(..., document.body)` so they're not DOM descendants of the nav. The bell button stays where it is. Click-outside handler now checks both the button ref and the portalled panel ref. SSR-safe via a `mounted` flag.
+
+  Desktop popover repositioned to `right-4 top-16` (relative to viewport) since the portal can't anchor to the bell button anymore — visually equivalent to the prior nav-relative position.
+
+  The v2.16.0-19 svh swap is still correct and stays — it just wasn't load-bearing for the cut-off symptom.
+
 ## [2.16.0-19] - 2026-05-29
 
 ### Fixed
