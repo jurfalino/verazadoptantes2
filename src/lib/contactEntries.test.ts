@@ -431,3 +431,39 @@ describe('legacy address field derivation (v2.16.0-13)', () => {
         expect(deriveLocality(entry)).toBe('Y');
     });
 });
+
+// v2.16.0-14: social normalize strips the leading @ so '@handle' and
+// 'handle' collapse to the same dedup key. Without this, contributing the
+// bare handle of an existing '@handle' chip created a duplicate entry
+// AND a grant against a different hash (so the original chip stayed
+// masked).
+describe('social handle normalization (v2.16.0-14)', () => {
+    it('mergeContactEntries collapses @-prefixed and bare handles of the same value', () => {
+        const merged = mergeContactEntries(
+            [{ type: 'social', value: '@adriel_caminos_ortega' }],
+            [{ type: 'social', value: 'adriel_caminos_ortega' }],
+        );
+        expect(merged).toHaveLength(1);
+        // Older entry wins (existing dedup rule), keeping the user's
+        // original @-prefixed display value.
+        expect(merged[0].value).toBe('@adriel_caminos_ortega');
+    });
+
+    it('mergeContactEntries also collapses case differences', () => {
+        const merged = mergeContactEntries(
+            [{ type: 'social', value: '@Adriel' }],
+            [{ type: 'social', value: 'adriel' }],
+        );
+        expect(merged).toHaveLength(1);
+    });
+
+    it('does not collapse a URL into a bare handle (different shapes)', () => {
+        const merged = mergeContactEntries(
+            [{ type: 'social', value: 'https://instagram.com/adriel' }],
+            [{ type: 'social', value: '@adriel' }],
+        );
+        // URLs stay distinct from bare handles — they're different data shapes
+        // (the URL embeds the platform). Dedup is value-equality only.
+        expect(merged).toHaveLength(2);
+    });
+});

@@ -271,8 +271,16 @@ export function matchSearchEntries(
         } else if (e.type === 'email') {
             matched = q.includes('@') && q.length >= 6 && e.value.toLowerCase().includes(qLower);
         } else if (e.type === 'social') {
-            const looksSocial = q.startsWith('@') || /^https?:\/\//i.test(q);
-            matched = looksSocial && q.length >= 4 && e.value.toLowerCase().includes(qLower);
+            // v2.16.0-14: normalize both sides (lowercase + trim + strip
+            // leading @) and require EXACT equality. The user's reported case
+            // — stored '@handle', typed 'handle' — works because both
+            // normalize to 'handle'. Substring matching would let bare-name
+            // queries like 'juan' fish out '@juanperez' from any profile;
+            // exact match keeps the anti-fishing posture. URLs stored as-is
+            // ('https://instagram.com/x') only match a query of the same URL.
+            const entryNorm = normalizeEntryValue('social', e.value);
+            const qNorm = normalizeEntryValue('social', q);
+            matched = qNorm.length >= 4 && entryNorm === qNorm;
         } else if (e.type === 'id') {
             matched = idMatchesAsAnchor(e.value, q);
         } else if (e.type === 'address') {

@@ -604,6 +604,25 @@ describe('matchSearchEntries', () => {
         expect(m.map(x => x.entry.type)).toEqual(['social']);
     });
 
+    it('matches a social entry on a BARE handle query (no @ prefix, v2.16.0-14)', () => {
+        // Pre-v2.16.0-14 the social branch required the query to start with
+        // '@' or 'https://' — so the bare handle never reached the match
+        // path. Now both forms normalize to the same string and substring-
+        // match works.
+        const m = matchSearchEntries(entries, 'juanperez');
+        expect(m.map(x => x.entry.type)).toEqual(['social']);
+    });
+
+    it('matches a social entry on a different-case query', () => {
+        const m = matchSearchEntries(entries, 'JuanPerez');
+        expect(m.map(x => x.entry.type)).toEqual(['social']);
+    });
+
+    it('short social query (<4 normalized chars) does not match (anti-fishing floor)', () => {
+        expect(matchSearchEntries(entries, '@ju')).toHaveLength(0);
+        expect(matchSearchEntries(entries, 'jua')).toHaveLength(0);
+    });
+
     it('a full id alone anchors and unlocks the id (confidence-rule reshape)', () => {
         // Reshape: a full DNI is at least as specific as 6 phone digits;
         // it should anchor on its own.

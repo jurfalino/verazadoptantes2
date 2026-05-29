@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-14] - 2026-05-29
+
+### Fixed
+- **Bare social handle (no leading `@`) didn't dedupe / unlock an existing `@handle` entry.** Three call sites were derailing on the same normalization quirk:
+  - `normalizeEntryValue` social branch was `lowercase + trim` only — `@x` and `x` produced different dedup keys, so the contributor's add created a duplicate entry instead of collapsing.
+  - `hashEntryValue` followed → grants for the bare-handle add went to a different hash than the existing chip, so the existing chip stayed masked.
+  - `matchSearchEntries` social branch gated on `q.startsWith('@') || /https/` — a bare-handle query into the verify popover never even reached the match attempt.
+
+  Fix: strip a leading `@` (and lowercase + trim) in `normalizeEntryValue` for social. `matchSearchEntries` now compares normalized entry and query with **exact equality** (a deliberately stricter rule than the previous substring check, to keep bare-name fishing — typing `juan` to reveal `@juanperez` — off the table while still letting the user's `with-or-without-@` case match). Pre-existing PII grants on social entries become orphans (re-acquired by re-search or re-add); no prod impact because the flag is off in prod.
+
+### Tests
+- 3 new in `contactEntries.test.ts` (dedupe `@`/bare collapse, case-folding, distinct from URLs).
+- 3 new in `piiAccess.test.ts` (bare-handle match, case-folding, anti-fishing length floor).
+
 ## [2.16.0-13] - 2026-05-29
 
 ### Fixed

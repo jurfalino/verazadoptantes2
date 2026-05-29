@@ -146,8 +146,18 @@ export function normalizeEntryValue(type: ContactEntryType, value: string): stri
     switch (type) {
         case 'phone': return value.replace(/\D/g, '');
         case 'id': return value.toLowerCase().replace(/[^a-z0-9]/g, '');
-        case 'email':
-        case 'social': return value.toLowerCase().trim();
+        case 'email': return value.toLowerCase().trim();
+        case 'social': {
+            // Strip a leading `@` (or whitespace before it) so '@handle' and
+            // 'handle' collapse to the same dedup key + hash. Without this,
+            // a contributor who types the bare handle creates a duplicate
+            // entry AND a grant against a different hash than the existing
+            // '@handle' chip — the existing chip stays masked (v2.16.0-14).
+            // URLs ('https://...', 'instagram.com/...') keep their full form;
+            // the substring-match path in matchSearchEntries handles
+            // cross-form lookups.
+            return value.toLowerCase().trim().replace(/^@+/, '');
+        }
         default: return value.trim().toLowerCase();
     }
 }
