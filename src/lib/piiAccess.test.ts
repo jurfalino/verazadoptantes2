@@ -741,6 +741,55 @@ describe('matchSearchEntries', () => {
         expect(m.map(x => x.entry.type)).toEqual(['address']);
     });
 
+    // v2.16.0-18 — street+number pair anchor lets natural address queries
+    // unlock a stored address even when the whole comma-tokenized chunk
+    // can't be substring-matched. The reported case: stored
+    // "calle cuba 2734 pb 6, CABA"; queries containing the street + number
+    // pair ("cuba 2734" in some form) anchor; queries with only the street
+    // or only the number do not (anti-fishing).
+    it('street+number pair anchors when the substring rule misses (legacy value)', () => {
+        const local: ContactEntry[] = [{ type: 'address', value: 'calle cuba 2734 pb 6, CABA' }];
+        // The three user-reported queries — all anchor now.
+        expect(matchSearchEntries(local, 'cuba 2734 pb 6').map(x => x.entry.type))
+            .toEqual(['address']);
+        expect(matchSearchEntries(local, 'calle cuba 2734').map(x => x.entry.type))
+            .toEqual(['address']);
+        // "pb6" (run-together) doesn't break the anchor — the pair check
+        // operates on the address-word tokens, "pb6" is irrelevant.
+        expect(matchSearchEntries(local, 'calle cuba 2734 pb6').map(x => x.entry.type))
+            .toEqual(['address']);
+    });
+
+    it('street+number pair also works in the structured streetAndNumber branch', () => {
+        const local: ContactEntry[] = [{
+            type: 'address',
+            value: 'Calle Cuba 2734 PB 6, CABA',
+            streetAndNumber: 'Calle Cuba 2734 PB 6',
+            locality: 'CABA',
+        }];
+        expect(matchSearchEntries(local, 'cuba 2734').map(x => x.entry.type))
+            .toEqual(['address']);
+    });
+
+    it('street-only or number-only query does NOT anchor (anti-fishing)', () => {
+        const local: ContactEntry[] = [{ type: 'address', value: 'calle cuba 2734 pb 6, CABA' }];
+        // Only the street name — could match any of many "Cuba ..." addresses.
+        expect(matchSearchEntries(local, 'cuba')).toHaveLength(0);
+        // Only the number — could match any door 2734 anywhere.
+        expect(matchSearchEntries(local, '2734')).toHaveLength(0);
+        // Street + WRONG number — wrong building.
+        expect(matchSearchEntries(local, 'cuba 1234')).toHaveLength(0);
+        // WRONG street + right number — wrong block.
+        expect(matchSearchEntries(local, 'martin 2734')).toHaveLength(0);
+    });
+
+    it('stopword-only name does not anchor (street type words like "calle" are not evidence)', () => {
+        // "calle 2734" — the only name-shaped word is the street-type
+        // stopword, which extractAddressWords drops. No real name → no pair.
+        const local: ContactEntry[] = [{ type: 'address', value: 'calle cuba 2734, CABA' }];
+        expect(matchSearchEntries(local, 'calle 2734')).toHaveLength(0);
+    });
+
     it('combined query (phone + address) unlocks the address when the phone anchors it', () => {
         // The user's reported case: the searcher demonstrably has BOTH the
         // phone digits AND the street + number → the address rides along.

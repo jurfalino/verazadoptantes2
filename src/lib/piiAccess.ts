@@ -15,7 +15,7 @@ import {
     normalizeEntryValue,
 } from './contactEntries';
 import { PHONE_SEARCH_MIN_DIGITS } from '@/config/constants';
-import { normalizeText } from './tokenizer';
+import { normalizeText, extractAddressWords } from './tokenizer';
 
 /** Visible token shown in place of a hidden value. */
 export const PII_MASK = '••••••';
@@ -174,6 +174,32 @@ function queryContainsApprox(query: string, part: string): boolean {
  * Combining loose parts ("San Isidro 3680") is itself the evidence — harder to
  * coincidence into than either piece alone.
  */
+/**
+ * Pair-anchor fallback for an address SPECIFIC chunk (v2.16.0-18). The
+ * original substring-includes rule required the query to contain the whole
+ * normalized chunk verbatim — "calle cuba 2734 pb 6" as a single string —
+ * which is too rigid for natural address knowledge ("cuba 2734" gets
+ * rejected even though it clearly demonstrates knowledge of the address).
+ *
+ * Anchors when the query contains BOTH a name word AND a number that
+ * appear in the stored part — both as whole address-word tokens. Reuses
+ * `extractAddressWords` from the tokenizer, which already strips stopwords
+ * (calle, av, de, piso, etc.) and short fragments (<3 chars). The pair
+ * requirement is the anti-fishing guarantee: typing only the street name
+ * OR only the number doesn't anchor — you must demonstrate knowledge of
+ * the specific intersection of street + door.
+ */
+function containsStreetNumberPair(qNormalized: string, part: string): boolean {
+    const partWords = extractAddressWords(part);
+    const partNames = partWords.filter(w => /^[a-z]+$/.test(w));
+    const partNumbers = partWords.filter(w => /^\d+$/.test(w));
+    if (partNames.length === 0 || partNumbers.length === 0) return false;
+    const qWords = new Set(extractAddressWords(qNormalized));
+    const hasName = partNames.some(n => qWords.has(n));
+    const hasNumber = partNumbers.some(n => qWords.has(n));
+    return hasName && hasNumber;
+}
+
 function addressMatchesAsAnchor(addressValue: string, qNormalized: string): boolean {
     const parts = addressValue.split(',').map(p => normalizeText(p)).filter(p => p.length >= ADDRESS_PART_MIN_LEN);
     if (parts.length === 0) return false;
@@ -184,7 +210,9 @@ function addressMatchesAsAnchor(addressValue: string, qNormalized: string): bool
         const letterCount = part.replace(/[^a-z]/g, '').length;
         const isSpecific = hasDigit && letterCount >= ADDRESS_SPECIFIC_MIN_LETTERS && part.length >= ADDRESS_SPECIFIC_MIN_LEN;
         if (isSpecific) {
-            if (qNormalized.includes(part)) specific++;
+            // Substring is the strict-but-narrow check; pair is the
+            // looser-but-anti-fishing fallback. Either suffices for an anchor.
+            if (qNormalized.includes(part) || containsStreetNumberPair(qNormalized, part)) specific++;
         } else {
             if (queryContainsApprox(qNormalized, part)) loose++;
         }
@@ -284,13 +312,15 @@ export function matchSearchEntries(
         } else if (e.type === 'id') {
             matched = idMatchesAsAnchor(e.value, q);
         } else if (e.type === 'address') {
-            // Structured shape: exact-substring match of the gated half
-            // (streetAndNumber) against the normalized query. Locality is
-            // non-gated and therefore not a matcher concern. Min length 5
-            // prevents trivially short streets from fan-granting.
+            // Structured shape: substring of the gated half (streetAndNumber)
+            // against the normalized query, OR the looser street+number pair
+            // anchor (v2.16.0-18) that lets a query like "cuba 2734" unlock a
+            // stored "Calle Cuba 2734 PB 6" without requiring the whole chunk
+            // verbatim. Locality is non-gated and not a matcher concern. Min
+            // length 5 prevents trivially short streets from fan-granting.
             if (e.streetAndNumber && e.streetAndNumber.trim().length >= 5) {
                 const sn = normalizeText(e.streetAndNumber);
-                matched = !!sn && qNormalized.includes(sn);
+                matched = !!sn && (qNormalized.includes(sn) || containsStreetNumberPair(qNormalized, sn));
             } else {
                 // Raw / legacy: fall back to the comma-tokenized rule over `value`.
                 matched = addressMatchesAsAnchor(e.value, qNormalized);

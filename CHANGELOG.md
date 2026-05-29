@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-18] - 2026-05-29
+
+### Fixed
+- **Address chips weren't unlocked by natural address knowledge queries.** Stored `"calle cuba 2734 pb 6, CABA"` — queries like `cuba 2734 pb 6`, `calle cuba 2734`, or `calle cuba 2734 pb6` all left the chip masked, even though each one clearly demonstrates knowledge of the address. Root cause: `addressMatchesAsAnchor`'s SPECIFIC branch required the query to contain the whole normalized comma-tokenized chunk verbatim — `cuba 2734 pb 6` doesn't include the leading `calle`, `calle cuba 2734` is missing `pb 6`, and `pb6` vs `pb 6` differs on a space. Fix: when the substring rule misses, fall through to a **street+number pair anchor**. The query must contain both a name word AND a number that appear in the stored chunk — both as whole address-word tokens (stopwords like `calle`, `av`, `de`, `piso` filtered out via the existing tokenizer helper). Anti-fishing posture preserved: street-only or number-only never anchors. Applied to both the structured `streetAndNumber` branch and the legacy raw-value branch. 4 new tests cover the user's three queries plus four anti-fishing cases (street-only, number-only, wrong number, wrong street).
+
 ## [2.16.0-17] - 2026-05-29
 
 ### Fixed
