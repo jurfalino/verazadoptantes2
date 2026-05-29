@@ -1,0 +1,22 @@
+Claude state migration bundle
+=============================
+
+Generated:        2026-05-29 20:56:52 UTC
+Source host:      JURFALINO-NB
+Source user:      jurfalino
+Source repo root: /mnt/c/dev/test
+Source key:       -mnt-c-dev-test
+Git ref:          f9e8ff9
+Git branch:       staging
+
+Contents:
+  - memory files:        23
+  - session transcripts: 3 of 11 (most recent by mtime)
+  - personal plans:      6
+  - user-level config:   skipped (re-login on the Mac to recreate)
+
+Size: 39M
+
+To restore on the destination machine:
+  1. cd into the destination repo root
+  2. ./scripts/migrate-claude-state/restore.sh
