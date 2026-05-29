@@ -3,6 +3,7 @@ import { getDb } from "@/app/actions";
 import { adopters, adoptions, adopterFlags } from "@/db/schema";
 import { count, isNull, and, ne } from "drizzle-orm";
 import AdminDangerZone from "@/components/AdminDangerZone";
+import AdminContactEntriesBackfill from "@/components/AdminContactEntriesBackfill";
 import { getErrorsCount, getTopErrors, getTraceLatencies, getActiveRescuers, getAxiomDeepLinkUrl } from "@/lib/axiom";
 import { FLAG_REASONS } from "@/domain/constants";
 
@@ -254,6 +255,9 @@ export default async function AdminOverviewPage() {
                     </>
                 )}
             </section>
+
+            {/* One-shot maintenance tasks */}
+            <AdminContactEntriesBackfill />
 
             {/* Danger Zone */}
             <AdminDangerZone />

@@ -113,7 +113,7 @@ export default function HomepageActionCard({
 
             {pickerOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white p-6 rounded-2xl shadow-xl border border-stone-200 w-full max-w-2xl mx-auto max-h-[90vh] overflow-y-auto relative">
+                    <div className="bg-white p-6 rounded-2xl shadow-xl border border-stone-200 w-full max-w-2xl mx-auto max-h-[90svh] overflow-y-auto relative">
                         <button
                             onClick={() => setPickerOpen(false)}
                             className="absolute top-4 right-4 text-stone-500 hover:text-stone-700"

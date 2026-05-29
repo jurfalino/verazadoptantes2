@@ -155,7 +155,7 @@ export default function DuplicatePeek({ results, searching, onContinueWith, busy
                         className={[
                             'absolute bg-white shadow-2xl border-stone-200 animate-in duration-300 overflow-y-auto',
                             // Mobile: bottom sheet
-                            'inset-x-0 bottom-0 max-h-[80vh] rounded-t-2xl border-t slide-in-from-bottom-4',
+                            'inset-x-0 bottom-0 max-h-[80svh] rounded-t-2xl border-t slide-in-from-bottom-4',
                             // Desktop: right-side panel
                             'md:left-auto md:top-0 md:bottom-0 md:right-0 md:w-[28rem] md:max-h-none md:rounded-none md:rounded-l-2xl md:border-l md:border-t-0 md:slide-in-from-right-4',
                         ].join(' ')}

@@ -24,6 +24,10 @@ export const PUBLIC_FLAG_KEYS = [
     'ENABLE_SEARCH_CARD_METADATA',
     'ENABLE_MILESTONE_BADGE',
     'ENABLE_QUICK_ACCESS_STRIP',
+    'ENABLE_CONTACT_PASTE',
+    // v2.16.0-16: hides the two activity cards from the homepage; the
+    // surviving import affordance demotes to a secondary link-pill.
+    'ENABLE_CLEAN_HOMEPAGE',
     'SOCIAL_PROOF_ENABLED',
     'SOCIAL_PROOF_MESSAGES',
     // v2.14.10-1: showcase URL-chip visibility + Instagram CTA target.
@@ -42,6 +46,8 @@ export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
     ENABLE_SEARCH_CARD_METADATA: 'true',
     ENABLE_MILESTONE_BADGE: 'true',
     ENABLE_QUICK_ACCESS_STRIP: 'true',
+    ENABLE_CONTACT_PASTE: 'true',
+    ENABLE_CLEAN_HOMEPAGE: 'false',
     SOCIAL_PROOF_ENABLED: 'false',
     SOCIAL_PROOF_MESSAGES: '[]',
     SHOWCASE_GLOBAL_VISIBLE: 'false',

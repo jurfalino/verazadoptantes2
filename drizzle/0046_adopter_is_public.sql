@@ -1,0 +1,15 @@
+-- 0046_adopter_is_public.sql
+-- Adds the per-profile public flag (admin override). Gated at runtime by the
+-- ENABLE_PUBLIC_PROFILES feature flag — until that flag is on, the resolver
+-- ignores this column and existing PII gating behavior is unchanged.
+--
+-- When the flag is on AND is_public = 1, the visibility resolver short-
+-- circuits to "nothingMasked" for any authenticated viewer: name renders
+-- fully, contact entries unmasked, addressInfo unmasked. The flag is the
+-- admin's "I've confirmed the whole record is publicly known" override that
+-- supersedes per-entry isPublic flags (so it also exposes entries a later
+-- contributor added through non-public channels — the explicit admin opt-in
+-- is the green light for that).
+--
+-- Per-entry isPublic lives in the contactEntries JSON (no DDL needed).
+ALTER TABLE adopters ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0;

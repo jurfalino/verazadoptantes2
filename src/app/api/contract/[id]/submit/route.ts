@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { withCors, corsPreflightResponse } from '@/lib/cors';
+import { isRealActorEmail } from '@/lib/piiAccess';
 
 export const runtime = 'edge';
 
@@ -117,17 +118,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             // overwrite the contactInfo with the re-built string from the
             // submitted fields. The original adopter row keeps its source.
             const { adopters: adoptersTable, adopterHistory } = await import('@/db/schema');
-            const contactParts: string[] = [];
-            if (dni) contactParts.push(`Documento: ${dni}`);
-            if (email) contactParts.push(`Email: ${email}`);
-            if (phone) contactParts.push(`Tel: ${phone}`);
-            if (address) contactParts.push(`Dirección: ${address}`);
-            if (socialNetworks) contactParts.push(`Redes: ${socialNetworks}`);
-            const newContactInfo = contactParts.join('\n');
+            const { buildContactEntries, contactEntriesToBlob } = await import('@/lib/contactEntries');
+            const contactEntries = buildContactEntries({
+                ids: dni ? [{ value: dni, label: 'Documento' }] : [],
+                emails: email ? [email] : [],
+                phones: phone ? [phone] : [],
+                socials: socialNetworks ? [socialNetworks] : [],
+                addresses: address ? [address] : [],
+            });
+            const newContactInfo = contactEntriesToBlob(contactEntries);
 
             await db.update(adoptersTable).set({
                 name: fullName,
                 contactInfo: newContactInfo || null,
+                contactEntries: contactEntries.length ? JSON.stringify(contactEntries) : null,
                 addressInfo: address || null,
                 updatedAt: new Date(),
             }).where(eq(adoptersTable.id, adopterId));
@@ -157,7 +161,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             const factoryResult = await createAdopterFromSubmission({
                 source: 'contract',
                 name: fullName,
-                addedBy: animal.addedBy || 'contract',
+                // Forward-fix (Resolution #5): the receiving rescuer owns the row.
+                // `animal.addedBy` is that rescuer; fall back to the recognized
+                // 'anonymous' sentinel only when the animal itself is unowned —
+                // never the unrecognized 'contract' literal.
+                addedBy: isRealActorEmail(animal.addedBy) ? animal.addedBy : 'anonymous',
                 email: email || null,
                 phone: phone || null,
                 address: address || null,

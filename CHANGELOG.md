@@ -2,6 +2,391 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-20] - 2026-05-29
+
+### Fixed
+- **NotificationBell sheet was anchored to the nav, not the viewport.** The actual root cause of the mobile cut-off the v2.16.0-19 svh swap didn't fix. The `<nav>` has `backdrop-blur-md` → CSS `backdrop-filter` → makes the nav a **containing block** for `position: fixed` descendants. So the sheet's `bottom-0` resolved to "bottom of the 64px nav" (≈ y=64) and the sheet grew *upward* from there — for any content taller than the nav, the top went off the top of the screen and the user saw only the footer.
+
+  Fix: render the dropdown panel + backdrop via `createPortal(..., document.body)` so they're not DOM descendants of the nav. The bell button stays where it is. Click-outside handler now checks both the button ref and the portalled panel ref. SSR-safe via a `mounted` flag.
+
+  Desktop popover repositioned to `right-4 top-16` (relative to viewport) since the portal can't anchor to the bell button anymore — visually equivalent to the prior nav-relative position.
+
+  The v2.16.0-19 svh swap is still correct and stays — it just wasn't load-bearing for the cut-off symptom.
+
+## [2.16.0-19] - 2026-05-29
+
+### Fixed
+- **NotificationBell sheet (and 8 other modals) was cut off at the top on iOS mobile.** Sheets clamped to `max-h-[85vh]` use the **large** viewport which counts the browser address bar as viewport even when it's visible. Result: the sheet computes taller than the actual visible area; since it's bottom-anchored, the top portion (drag handle + header + first items) overflows above the viewport. A separate previous fix made the list grow to fill the sheet — that was a different issue. This one is the outer container's height unit.
+
+  Swapped every modal/sheet `vh` clamp to `svh` (small viewport height) — Tailwind 4 natively supports it. `svh` always equals the visible area with browser chrome present, so the sheet's intrinsic height never exceeds what the user can actually see, regardless of address-bar state.
+
+  Fixed sites:
+  - 3 mobile bottom sheets (NotificationBell, PiiVerifyPopover, DuplicatePeek) — the acute case.
+  - 6 centered-card modals (AdopterForm save-duplicate, AdopterFlagging, CountryConfirmBanner, DuplicateMergeModal, HomepageActionCard, plus the desktop branch of PiiVerifyPopover) — less acute but same root cause.
+
+## [2.16.0-18] - 2026-05-29
+
+### Fixed
+- **Address chips weren't unlocked by natural address knowledge queries.** Stored `"calle cuba 2734 pb 6, CABA"` — queries like `cuba 2734 pb 6`, `calle cuba 2734`, or `calle cuba 2734 pb6` all left the chip masked, even though each one clearly demonstrates knowledge of the address. Root cause: `addressMatchesAsAnchor`'s SPECIFIC branch required the query to contain the whole normalized comma-tokenized chunk verbatim — `cuba 2734 pb 6` doesn't include the leading `calle`, `calle cuba 2734` is missing `pb 6`, and `pb6` vs `pb 6` differs on a space. Fix: when the substring rule misses, fall through to a **street+number pair anchor**. The query must contain both a name word AND a number that appear in the stored chunk — both as whole address-word tokens (stopwords like `calle`, `av`, `de`, `piso` filtered out via the existing tokenizer helper). Anti-fishing posture preserved: street-only or number-only never anchors. Applied to both the structured `streetAndNumber` branch and the legacy raw-value branch. 4 new tests cover the user's three queries plus four anti-fishing cases (street-only, number-only, wrong number, wrong street).
+
+## [2.16.0-17] - 2026-05-29
+
+### Fixed
+- **Phone-shaped queries (digits-only) didn't find profiles whose stored phone has separators.** Searching `64622274` returned no match against a profile with `Tel: 6462-2274` because the homepage discovery search runs `LIKE '%64622274%'` on `adopters.contactInfo`, which preserves the user's verbatim formatting (hyphens / spaces / parens). The hyphen broke the substring. Fix: added `searchPhoneTokenMatches` — a parallel lookup against `duplicate_tokens` (which already canonicalizes phones to digit-only strings via `tokenizer.extractPhones`) for phone-shaped queries with ≥6 digits. The IDs join the existing extras set and flow through the same enrichment + scoring + masking pipeline that history/adoption matches already use. Anti-fishing posture preserved (same `PHONE_SEARCH_MIN_DIGITS` floor). Purely additive — no DB schema change, no migration, no behavior change for any query the LIKE search already matched.
+
+## [2.16.0-16] - 2026-05-29
+
+### Added
+- **`ENABLE_CLEAN_HOMEPAGE` feature flag** (default off, admin-toggleable via `/admin/config`). When on: the two activity cards on the homepage ("Registrar una adopción" + "Dejar una observación") are hidden, and the surviving import affordance demotes from a peer card to a single inline link-pill below the search. Rationale: when the activity entry points are removed, leaving a single peer-card looks orphaned and over-promotes import to a "primary action" tier — wrong signal since the homepage's primary action is search. The link-pill keeps import discoverable without competing with search for visual weight, matching the existing secondary-tier pattern used by `QuickAccessStrip`. New i18n key `home.action_import_secondary` for the compact link copy.
+
+## [2.16.0-15] - 2026-05-29
+
+### Fixed
+- **`ENABLE_PUBLIC_PROFILES` toggle wasn't showing on `/admin/config`.** The page hard-codes which flags appear (TypeScript type union + `FEATURE_FLAGS` render array + initial `useState` + read mapping from `data.config`). I added the flag to `features.ts` in v2.16.0-12 but forgot the four /admin/config touch-points, so the toggle was silently missing. Plumbed it through now plus the matching es/en i18n keys (`flag_label_public_profiles` + `flag_desc_public_profiles`). Admin only — the flag is intentionally not in `PUBLIC_FLAG_KEYS` since clients don't read it.
+
+## [2.16.0-14] - 2026-05-29
+
+### Fixed
+- **Bare social handle (no leading `@`) didn't dedupe / unlock an existing `@handle` entry.** Three call sites were derailing on the same normalization quirk:
+  - `normalizeEntryValue` social branch was `lowercase + trim` only — `@x` and `x` produced different dedup keys, so the contributor's add created a duplicate entry instead of collapsing.
+  - `hashEntryValue` followed → grants for the bare-handle add went to a different hash than the existing chip, so the existing chip stayed masked.
+  - `matchSearchEntries` social branch gated on `q.startsWith('@') || /https/` — a bare-handle query into the verify popover never even reached the match attempt.
+
+  Fix: strip a leading `@` (and lowercase + trim) in `normalizeEntryValue` for social. `matchSearchEntries` now compares normalized entry and query with **exact equality** (a deliberately stricter rule than the previous substring check, to keep bare-name fishing — typing `juan` to reveal `@juanperez` — off the table while still letting the user's `with-or-without-@` case match). Pre-existing PII grants on social entries become orphans (re-acquired by re-search or re-add); no prod impact because the flag is off in prod.
+
+### Tests
+- 3 new in `contactEntries.test.ts` (dedupe `@`/bare collapse, case-folding, distinct from URLs).
+- 3 new in `piiAccess.test.ts` (bare-handle match, case-folding, anti-fishing length floor).
+
+## [2.16.0-13] - 2026-05-29
+
+### Fixed
+- **Editing or deleting a legacy contact entry failed with "Entry not found."** Bug shape: `deserializeContactEntries` was assigning a fresh `crypto.randomUUID()` to every entry that lacked a persisted `id` — so the client's id (assigned at render time) never matched the server's id (re-assigned at request time). Both `updateContactEntry.ts:57` and `removeContactEntry.ts:53` were affected; the user-reported case was an address edit but the same bug silently broke delete on every legacy chip. Fix: switched to a deterministic id derived from `type|normalizedValue` (`legacy-<8hex>-<8hex>`) so client and server independently agree on the same id. Once any per-entry action writes the row back, the persisted id is carried through and the deterministic path stops firing for that entry.
+- **Editing a legacy address chip showed empty input fields.** When the persisted entry had only `value` (no `streetAndNumber` / `locality` — the pre-v2.15 structured-address shape), `startEdit` seeded both inputs from undefined. Fix: `ContactEntriesSection.startEdit` now uses the shared `deriveStreet` / `deriveLocality` helpers (lifted from `ContactEntriesInput` into `lib/contactEntries.ts`) which split on the first comma, falling back to the whole value as street when no comma is present. The user-reported "MAIPU 800/CABA" now pre-fills in the street field instead of leaving the form empty.
+
+### Changed
+- `deriveStreet` and `deriveLocality` moved from `ContactEntriesInput.tsx` into `lib/contactEntries.ts` as exported helpers, reused by both the bulk-edit (ImportWizard) and per-entry-edit (ContactEntriesSection) components.
+
+## [2.16.0-12] - 2026-05-29
+
+### Added
+- **Public-mode profiles** (gated by new `ENABLE_PUBLIC_PROFILES` flag, default off). Two switches, one for each privacy posture:
+  - **Per contact entry (`isPublic` field inside the `contactEntries` JSON)**: stamped `true` at import time on entries derived from public social posts (the `/api/adopters` POST handler does it when the new `source: 'imported'` payload field is set). The visibility resolver skips masking those entries for any authenticated viewer. Contributor-added entries on the same profile stay PII-gated — they didn't come from a public source.
+  - **Per adopter (`is_public` column, admin override)**: per-row toggle on `/admin/adopters` flips this. When set, the visibility resolver short-circuits to "nothingMasked" for the whole record: name renders fully, all contact entries unmasked (including contributor-added ones), `addressInfo` unmasked. Use when the admin has confirmed the whole record is publicly known.
+- New server action `setAdopterPublic(adopterId, isPublic)` (admin-gated, audited).
+- New migration `drizzle/0046_adopter_is_public.sql` adds the column with `DEFAULT 0`.
+- 7 new unit tests covering: `isPublic` round-trip through deserialize + merge; per-entry bypass; admin-override short-circuit; `renderName` unmasking under the override.
+
+### Changed
+- `ImportWizard`'s POST to `/api/adopters` now sends `source: 'imported'` — surfaces the "Imported" badge on `/my-adopters` (which already had display code but no row ever carried the value) AND gates the per-entry `isPublic` stamp.
+- `createAdopterApiSchema` accepts `source: 'imported'` as an optional field.
+
+### Behavior under flag = off
+- Both `isPublic` signals completely ignored by the visibility resolver.
+- Admin toggle hidden on `/admin/adopters`.
+- Imports DO still set `source='imported'` (no harm — it was always supposed to) but do NOT stamp per-entry `isPublic` (the conditional check requires the flag).
+
+## [2.16.0-11] - 2026-05-28
+
+### Changed
+- **Identifier-anchor search matches auto-grant the matched record's full name.** Previously a phone/email/social/id/address search produced a search-match grant only for the matched contact entry — the adopter's name still rendered with initials-plus-revealed-tokens, so the user could see "555-1234 belongs to *M G*" but not "555-1234 belongs to Maria García". After this change, the same code path in `findAdopters.ts` (entry-anchor branch) also pushes `scope='name_token'` grants for every name token of the matched adopter, so an identifier match auto-reveals the full name as part of the same confidence transaction. Name-fragment searches keep their current per-token behavior — typing "Jonh" does not grant Maria's last name just because it appears in another record.
+
+### Added
+- **Name verification on the profile.** `verifyKnownInfo` now runs `matchSearchNameTokens(adopter.name, info)` alongside the existing entry matching — any matched name tokens insert `scope='name_token'` grants (de-duped against live grants). On a PII-gated profile, the partially-revealed name header (initials-only tokens like "M G") becomes a tap-target opening the verify popover; the user types the full name they expect and matching tokens reveal. Closes the gap where a viewer with a weak-match search ("Jonh") couldn't validate the rest of the name on the candidate profile.
+- Two i18n keys: `pii_masked_name_aria` / `pii_masked_name_title` for the clickable h1.
+
+### Tweaked
+- Verify popover body copy now mentions name as an accepted input ("teléfono, email, dirección o el nombre" / "phone, email, address, or the name"), matching the expanded server-side behavior.
+
+## [2.16.0-10] - 2026-05-28
+
+### Changed
+- **Contextual feedback when adding a contact detail that matches an existing (masked) entry.** The backend has always done the right thing: typing a value via the composer that collides with an existing entry causes `mergeContactEntries` to dedup (no new write) BUT `insertContributionGrant` still fires — so a `pii_access_grant` for the hashed value is created, and on the next render the previously-masked chip reveals itself for the viewer. Until now the UX was silent about this; users typed a value, the composer closed, and a chip somewhere in the list quietly transitioned from masked to unlocked with no acknowledgement. `addContactEntry` now returns an explicit `status: 'appended' | 'unlocked_existing' | 'no_change'`, and `ContactEntriesSection` surfaces a contextual toast: "Dato agregado" for a brand-new entry, "Reconociste un dato existente — ahora aparece desbloqueado" for the unlock-by-knowing case, silent for the no-op case. No behavior change, just visible feedback.
+
+## [2.16.0-9] - 2026-05-28
+
+### Changed
+- **Contributors can now edit and remove the contact entries they themselves added.** Previously the rule was "mutations = owner + admin only" — any contributor who typo'd an email they'd just contributed had to ask the owner to fix it. The rule now reads: adds open, mutations gated to owner ∨ admin ∨ the original contributor of *that specific entry*. `ContactEntry` gains an optional `addedBy` field stamped by `addContactEntry` on every new entry; the per-entry server actions (`updateContactEntry`, `removeContactEntry`) accept the contributor-self case alongside owner/admin, and `ContactEntriesSection` surfaces pencil + trash affordances on chips the viewer themselves added. Entries with no `addedBy` (legacy / blob-migrated / pre-2.16.0-9 contributions) stay owner+admin-only as before — no retro-attribution.
+
+### Added
+- 3 tests in `contactEntries.test.ts` covering: `addedBy` round-trips through deserialize when present; legacy entries stay undefined; older entry's `addedBy` wins on merge collision (mirrors the existing `id` preservation rule).
+
+## [2.16.0-8] - 2026-05-28
+
+Production-readiness for the unified contact section. Investigation showed prod is on migration 0042 (no `contact_entries` column) while staging is on 0045 — so the moment staging→master merges and `migrate-production` applies 0043, **every existing prod adopter row enters the legacy state** (NULL `contact_entries`, populated `contact_info` blob), exposing the data-loss bug below and the "no edit affordance" UX gap on every chip. Three coordinated fixes ship together.
+
+### Fixed
+- **Data loss on first composer add against legacy rows.** `addContactEntry` previously read `deserializeContactEntries(target.contactEntries)` (→ `[]` for legacy NULL), merged the new entry on top, and saved `[newEntry]` back — silently overwriting `contactInfo` and discarding every phone / email / address the row had before. Now, when the structured column is empty but the blob is non-empty, the action parses the blob via `categorizeContactText`, assigns IDs, and merges the new entry on top of *those* entries. Idempotent: the existing-structured short-circuit keeps the old behavior for already-migrated rows.
+- **Concurrent-write race on contactEntries.** Two contributors hitting `addContactEntry` on the same row at the same time could lose one entry to last-writer-wins. Adopted `saveAdopter`'s optimistic compare-and-set pattern (`adopters.ts:248`) — updates now match on `updatedAt`, return "modified by another user, please refresh" on collision.
+
+### Added
+- **Admin-triggered one-shot backfill** (`backfillLegacyContactEntries` server action + `AdminContactEntriesBackfill` button on `/admin`). Iterates every row where `contactEntries IS NULL` and `contactInfo IS NOT NULL`, runs the same parser + ID-assignment, writes structured `contactEntries`. Idempotent. Audited per row. After the prod deploy admin clicks once → all 46 prod rows materialize → legacy state gone.
+- **Pure-function test coverage** for the parse → merge → ID-assignment chain (`contactEntries.test.ts`). Four new cases. The shared regression class both the lazy migration and the backfill rely on. Establishes the pattern that's been deferred since v2.15.0-19.
+
+### Audit
+- Each lazy migration writes `logger.info('addContactEntry: lazy legacy contactEntries migration', { adopterId, parsedCount })` so the transition is traceable. Backfill writes a `logAudit` row per migrated adopter (`action: 'contact_entries_backfilled'`).
+
+## [2.16.0-7] - 2026-05-28
+
+### Fixed
+- **`PiiVerifyPopover` no longer pre-fills the input on first open.** v2.15.0-18 plumbed the post-signin `?q=` search-term through `initialVerifyQuery` → `verifySeed` → `initialValue` so the first-clicked masked chip's popover opened pre-filled — saving the user a retype. But the seed often didn't match the type of field they actually clicked first (search for a phone → tap an address chip → see the phone digits sitting in the address input), which read as a bug regardless of the type-match case. Ripped out the entire pre-fill chain (`page.tsx` → `AdopterProfileV2.tsx` → `PiiVerifyPopover.tsx`); the popover always opens blank now. The `?q=` URL param still drives `replaySearchMatchGrants` server-side on profile load, so the search-to-grant behavior is unchanged.
+
+## [2.16.0-6] - 2026-05-28
+
+### Fixed
+- E2E test `Paste-categorizes contact info into typed entries` was still driving the removed `ContactEntriesInput` paste box on `/adopter/create`. Rewritten to exercise the new inline composer flow (open trigger, type chip, fill value, Guardar — twice, for phone + email) and renamed `Adds typed contact entries via the inline composer on creation`.
+
+## [2.16.0-5] - 2026-05-28
+
+### Changed
+- **New-adopter creation now uses the same contact UI as existing adopters.**  `ContactEntriesSection` runs in a new local mode (`onChange` instead of `adopterId` — mutations go to parent state rather than the per-entry server actions) and replaces `ContactEntriesInput` in `AdopterForm`'s new-adopter slot. Same chip list, same "+ Agregar dato de contacto" trigger, same inline composer, same edit/delete affordances on every chip — regardless of whether you're adding the first attribute to a brand-new profile or the tenth attribute to an existing one.
+- **Add composer and edit-in-place form now have an identical bottom button row.**  Both render right-aligned `[✕ Cancelar] [✓ Guardar]` with the same sizing, icons, colors and order. Previously the composer had bigger right-aligned buttons without icons while edit-in-place had smaller left-aligned icon pills in reversed order. The composer's primary label is now "Guardar" too (matching the edit verb).
+- `ImportWizard` keeps using `ContactEntriesInput` — admin bulk-import is a different mental model where the paste-and-categorize flow is the point. Out of scope for the consistency principle that drove this change.
+
+### Removed
+- `ce_composer_add` i18n key — the "Agregar" composer-submit string is no longer rendered (`ce_edit_save` "Guardar" / "Save" covers both add and edit).
+
+## [2.16.0-4] - 2026-05-28
+
+### Fixed
+- **Contact section was rendering above the profile header.** v2.16.0-2 mounted `ContactEntriesSection` in `AdopterProfileV2` *before* `AdopterForm`, putting phone numbers and emails above the name + rating + audit identity — wrong information architecture for a vetting platform, where confirming "whose profile is this?" must come first. The section is now mounted *inside* `AdopterForm`'s shared content grid, in the same slot the bulk `ContactEntriesInput` always occupied: header → flag pills → divider → contact → family members → activity. `AdopterProfileV2` simply passes the masked-chip click handler down; `AdopterForm` computes the owner+admin gate internally.
+- **Edit and delete affordances were hidden behind hover.** `opacity-0 group-hover:opacity-100` meant the pencil and trash buttons were invisible on touch viewports. Now: always visible on mobile, hover-revealed on desktop (`opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100`).
+- **Empty contact section gave no orientation.** When an adopter has zero entries, the only affordance was a faint "+ Agregar dato de contacto" link easy to miss. Now: a small "Aún no hay datos de contacto" hint above an emphasised button-styled composer trigger.
+- **Focus drifted to `<body>` after a successful add.** Keyboard users had to re-tab back into the page. The composer trigger now `.focus()`-restores after the composer closes (gated by a `wasOpen` ref so initial mount doesn't steal focus).
+
+## [2.16.0-3] - 2026-05-28
+
+### Fixed
+- **Legacy adopters with `contactInfo` blob but no structured `contactEntries` rendered an empty contact section** (regressed the data display on every row that hadn't been edited since the structured-entries migration — broke `tests/adopter.spec.ts` "View full adopter profile" and `tests/search.spec.ts` "View adopter profile shows decision-making info" against the seed Maria row). `AdopterProfileV2` now falls back to `parseBlobToContactEntries` when the structured column is empty. Parsed-from-blob entries carry no `id`, so `ContactEntriesSection` correctly suppresses edit/delete affordances on them — adding a fresh entry through the composer writes a real `contactEntries` row, and from there chips become editable.
+
+## [2.16.0-2] - 2026-05-28
+
+Phase B of the unified per-entry contact section refactor — the UI flip. The contact section is now a single surface on every profile, used the same way by owners and contributors. Replaces the v2.15.0-19 `+ Agregar dato de contacto` CTA + modal pair and the bulk contact-entries editor inside `Editar` mode.
+
+### Added
+- **`ContactEntriesSection` component.** One surface for the contact list, rendered on every existing-adopter profile. Always-visible inline composer at the bottom (type chips + value input + Agregar) for every authenticated viewer. Owner/admin chips show pencil + trash on hover; non-owner chips render read-only. Masked chips on PII-gated profiles still route to the verify popover. `'alias'` is one of the composable types.
+- **Inline edit (owner/admin).** Tap pencil → the chip's value transforms into an input in place (single field, or 2 stacked for address). Enter saves; Esc cancels. Calls `updateContactEntry`.
+- **Optimistic delete + 5-second undo (owner/admin).** Tap trash → entry disappears immediately, inline undo bar appears with "Deshacer". After 5 seconds with no undo, `removeContactEntry` fires (and revokes any matching `pii_access_grants`).
+
+### Changed
+- **`AdopterForm` Editar no longer mutates contact entries.** The form's contact section is rendered only for new-adopter creation (where `ContactEntriesInput`'s paste flow stays the fast path to first-data). For existing adopters, all contact mutations go through `ContactEntriesSection` and the per-entry server actions.
+- **`saveAdopter` strips `contactEntries` + `contactInfo` from UPDATE payloads.** Defense-in-depth — a stale or malicious client can no longer wipe the contact list through the bulk path. CREATE still accepts both.
+
+### Removed
+- `src/components/AddContactEntryModal.tsx` and the `contrib_modal_*` i18n keys. Replaced by the inline composer.
+
+## [2.16.0-1] - 2026-05-28
+
+Phase A of the unified per-entry contact section refactor — server-side and forward-compatible. No user-visible UI changes; Phase B will flip the UI to surface the new per-entry actions and the alias type.
+
+### Added
+- **Stable contact-entry IDs.** Every `ContactEntry` now carries an `id`. Legacy entries (pre-2.16) gain one on read via `deserializeContactEntries`; persisted on next write. Per-entry update / remove targets a specific entry across reorderings.
+- **`alias` contact-entry type.** Records alternate names a person is known by ("conocido/a como"). Tokenizes as a name word (matches name searches), is NOT PII-gated (visible to all viewers, mirrors how `adopters.name` is treated). Resolves the same-phone-different-name scenario without destructive renames.
+- **`updateContactEntry` server action** — owner+admin gated. Mutates one entry identified by `id`. Writes `adopter_history` with `kind='edit'` and hashed before/after values (no raw PII in history.changes). Re-tokenizes.
+- **`removeContactEntry` server action** — owner+admin gated. Removes one entry by `id`, revokes matching `pii_access_grants`, writes history, re-tokenizes.
+
+### Changed
+- **`saveAdopter` ACL tightened.** The owner+admin gate now applies on *every* core-record edit, not only when `ENABLE_PII_ACCESS_GATING` is on. Closes a production gap where the flag-off state left any authenticated user able to rewrite an adopter's name, family members and notes. Adopts the "adds open, mutations gated" model: contributing data (activities, contact entries, aliases) is open; rewriting existing fields is owner+admin only.
+- Tokenizer accepts an optional `aliases` parameter so `'alias'` contact entries contribute `name_word` tokens. `tokenizeAdopter` and the admin scan route now pass aliases through.
+
+## [2.15.0-19] - 2026-05-26
+
+### Added
+- **Collaborative contact-detail contribution.** Any authenticated user can now add a contact detail (phone, email, social, ID, address) to a PII-gated adopter profile via a new "Agregar dato de contacto" CTA on the profile. The new entry lands immediately and is attributed to the contributor in `adopter_history`. The creator + editors (and admins on their dashboard) get a notification. Contributing data does NOT silently grant the contributor full PII visibility on the profile — they only see what they typed.
+- New server action `addContactEntry` — append-only, open to any authenticated user, with the same risk-profile and audit posture as activity adds.
+
+### Changed
+- `adopter_history` rows now carry a `kind` tag — `'edit'` (mutations of the core record by owner/admin via `saveAdopter` / `appendToExistingAdopter`) or `'contribution'` (additive writes via the new path). The PII visibility resolver counts only `kind='edit'` rows toward editor status, so contributing data cannot back-channel into full PII access. Existing rows default to `'edit'`.
+
+### Migration
+- `drizzle/0045_adopter_history_kind.sql` — adds `kind TEXT NOT NULL DEFAULT 'edit'` to `adopter_history`. Applied automatically by the `migrate-staging` / `migrate-production` CI jobs.
+
+## [2.15.0-18] - 2026-05-26
+
+### Fixed
+- **PII verify popover pre-filled stale `?q=` on every open.** The post-signin `?q=` replay seed is meant to land in the verify input on the *first* popover open after sign-in. The popover unmounts on close, so a stable `initialVerifyQuery` prop reseeded on every subsequent click — clicking a phone field after signing in for an address query showed the address text pre-filled into the phone popover. The seed is now state-backed in the parent and cleared on first close; later opens start blank.
+
+### Changed
+- **Per-attribute verify copy.** The popover body used to list every possible field ("Ingresá otro dato que conozcas (teléfono, email, dirección…)") regardless of which masked chip was clicked. Now the body names the specific attribute: clicking the phone chip prompts "Ingresá el teléfono que tengas para confirmar que coincide" (and similarly per type). Falls back to the generic line when no entry type is known.
+- **CTA renamed `Desbloquear` → `Verificar` / `Unlock` → `Verify`.** The action is "prove you already know this," not "earn access" — and the new label aligns with the `pii_verify_*` key naming.
+
+## [2.15.0-9] - 2026-05-24
+
+### Fixed
+- After a successful "I know this" verify match, the masked rows weren't visibly unmasking until a manual page reload — `router.refresh()` was not reliably re-rendering the server-rendered values in this app's Edge + RSC setup. `PiiVerifyKnownInfo` now triggers a full reload (with a short delay so the success toast registers first) so the unlock is visible immediately.
+
+## [2.15.0-8] - 2026-05-24
+
+### Changed
+- **PII verify-known-info UX redesigned.** The per-row "I know this" affordance — cryptic copy, layout shift on every row, one click per masked field — is replaced by a single shared input at the top of the protected-contact banner. Type anything you know (phone, email, address, ID, @handle) and whatever matches across the masked entries unlocks; the server matcher was already adopter-scoped, so per-field targeting was scope creep that bought nothing except friction.
+- The "Request access" CTA is now a smaller secondary link directly under the verify input (with the same pending / cooldown states), positioned as the fallback when there's genuinely no more info to type.
+- `ContactEntriesDisplay` is back to a pure read-only component — no `adopterId` prop, no per-row state, no `verifyKnownInfo` import. The bubble-to-edit-mode bug from 2.15.0-7 is structurally gone (the new input lives in `AdopterProfileV2`'s flow, outside the contact section's click-to-edit zone).
+- Dropped now-unused i18n keys (`pii_verify_cta`, `pii_verify_ph_*`); added `pii_verify_prompt_ph` + `pii_request_cta_fallback`; reworded `pii_protected_body` to point at the new flow.
+
+## [2.15.0-7] - 2026-05-24
+
+### Fixed
+- Clicking the per-row **"I know this"** verify link in `ContactEntriesDisplay` flipped the contact section into edit mode — the button's click bubbled up to `AdopterForm`'s click-to-edit handler. The verify button + the expanded verify UI now stop click propagation.
+- **Search-card rating overlap on mobile**: the `RatingExplainer` wrapper had no `flex-shrink-0`, so on narrow viewports the badge box was flex-compressed and its non-wrapping `inline-flex` content visually overflowed onto the truncated name. Wrapped in `flex-shrink-0` so the badge claims its natural width and the name (already `min-w-0 truncate`) shrinks instead.
+- E2E `adopter.spec.ts` selector for the contact-entry value field — was selecting by the old generic `"Valor"/"Value"` placeholder (replaced by type-specific copy in 2.15.0-6). Now uses a stable `data-testid="contact-entry-value"` (also added on the input itself).
+
+## [2.15.0-6] - 2026-05-24
+
+### Changed
+- Contact-entry editor value field now shows a type-specific placeholder (e.g. `+54 11 2345-6789` for phone, `name@example.com` for email, `Street, city, province` for address) instead of a generic "Value". Updates as the row's type select changes. The address example nudges toward the comma-separated form the masking layer extracts a locality from.
+
+### Fixed
+- E2E test that asserted the old unauth name-truncation format (`"Mar••••"`) — broken by the v2.15.0-5 unified mask. Replaced with assertions that match the per-token reveal: surnames the user didn't type (`"García"`, `"López"`) stay masked; the typed token (`"María"`) appears in the result card.
+
+## [2.15.0-5] - 2026-05-24
+
+PII gating — unified mask for unauthenticated and authenticated-non-privileged viewers, and per-token name reveal driven by what the viewer has demonstrated they know. Still behind `ENABLE_PII_ACCESS_GATING` (off).
+
+### Added
+- **Shared `partialReveal()`** helper in `piiAccess.ts` covering every contact-entry type — phone keeps the first 4 digits with separators (`11 23••-••••`), email keeps `<first>•••@<domain>`, social keeps the platform/domain (`instagram.com/••••` or `@••••`), address keeps the last comma-separated locality (`•••••, CABA`), id stays fully masked (the row label names the type). Used by both the unauthenticated `findAdopters` branch and the authenticated PII-gating mask, so what a non-privileged viewer sees is the same in either case.
+- **`partialRevealAddressString()`** for the legacy `addressInfo` column. Legacy `contactInfo` blobs now parse → mask → re-derive instead of collapsing to a `"Contacto protegido"` placeholder.
+- **Per-token name reveal** — name is initials by default (`"Maria Gomez"` → `"M G"`). Tokens the viewer demonstrably knows are shown in full: persistent `scope='name_token'` `pii_access_grants` rows (auth viewers, accrued whenever a search query whole-word-matches a name token) plus transient current-query reveals (unauth viewers' only path). New `hashNameToken()`, `matchSearchNameTokens()`, `renderName()` helpers; `Visibility` carries a parallel `unlockedNameTokenHashes` set; `resolveVisibility` partitions grants by scope. Whole-word, accent-insensitive, ≥ 2-char min on both sides.
+
+### Changed
+- Unauthenticated discovery results no longer get the bespoke regex-mask, 3-char name truncation, nulled `addressInfo`/`contactEntries`, fully-scrubbed snippet, or zeroed `relevancePercent`. They go through the same `maskAdopterContact` + field-scoped snippet scrub + `renderName` as authenticated non-privileged viewers. The only remaining differences are the **login wall** for `@`-email and full-phone queries (accountability gate) and **grant persistence**, which is auth-only (no `granteeEmail` to attach to for unauth).
+- `familyMembers` is now hidden (`null`) for any non-privileged viewer in both paths. Previously visible to authenticated non-privileged viewers — but it's other people's PII, not vetting content.
+- `getAdopterPiiContext.accessGrants.searchMatchCount` bundles `scope='entry'` and `scope='name_token'` grants — both represent "things the viewer demonstrated knowing."
+
+## [2.15.0-4] - 2026-05-24
+
+PII access-gating UX — per-field disable in the contact editor, and an on-profile self-serve verify so a viewer who has more known info can unlock contact rows without going through the request/approval cycle. Still behind `ENABLE_PII_ACCESS_GATING` (off).
+
+### Added
+- On-profile per-entry **"I know this"** verify on every masked contact row (`ContactEntriesDisplay`). Clicking it opens an inline input + Check button; if the typed info matches that adopter's still-masked entry, a `pii_access_grants` row is written (`origin='search_match'`, same audit trail as a real search match) and the row re-renders unmasked on refresh. No match → an inline "Doesn't match" stays under the input. The response carries only a count — it never leaks *which* entries exist. Backed by a new `verifyKnownInfo(adopterId, info)` server action.
+- `matchSearchEntries` gains an `{ anchorRequiredForSecondary?: boolean }` option — default `true` (discovery, cross-adopter fan-grant guard), `false` for the profile verify path (single-adopter scope, so an address-only or id-only input can unlock its match on its own).
+- 10 new `adopter.pii_verify_*` i18n keys (EN + ES).
+
+### Changed
+- `ContactEntriesInput` renders masked rows as read-only — the type select, value input and remove button are disabled, the row is shown at 60% opacity, and the input carries an `aria-label`. The `saveAdopter` owner/admin gate stays as the real security control; this stops the UI from offering an edit affordance for fields the viewer can't see, eliminating the "type into •••••• and hit a 403 on save" confusion.
+
+## [2.15.0-3] - 2026-05-23
+
+PII access-gating search-match improvements — bug fix + an anchored secondary unlock for `address` / `id`. Still behind `ENABLE_PII_ACCESS_GATING` (off).
+
+### Fixed
+- `matchSearchEntries` previously concatenated *every* digit in the query into a single substring (so a mixed query like `808080 Corrientes 3444` produced the 10-digit candidate `8080803444`, which an 8-digit stored phone could not contain — the query couldn't unlock the phone). Candidates are now built from the concatenated digits *plus* the digits of each whitespace-separated token, deduped. The original `808080` query still matches, formatted phones (`+54 11 2345-6789`) still match via the concat, and a phone stored with internal separators next to other text in the query now matches via the per-token path.
+
+### Changed
+- Anchored secondary unlock: when an identifier entry (phone / email / social) of an adopter matches the query — anchoring that adopter — an `address` or `id` entry whose value also appears in the query unlocks too. The anchor requirement is what keeps a bare `Corrientes` query from fan-granting addresses; the combined match (identifier + secondary) is itself the signal the searcher has both pieces. `id` matching is formatting-insensitive (`30.123.456` matches `30123456`). `other` (free-text notes) never auto-unlocks under either phase.
+
+## [2.15.0-2] - 2026-05-22
+
+### Added
+- `ENABLE_PII_ACCESS_GATING` is now toggleable from the Admin → Config feature-flags panel, so the PII access-gating rollout can be flipped from the UI rather than a raw DB command. The flag description marks it as a significant behavior change to enable deliberately.
+
+### Fixed
+- `ENABLE_CONTACT_PASTE` was missing from the `/api/admin/config` GET projection (overlooked when the flag shipped in 2.14.11-7), so its admin toggle always re-hydrated ON after a reload regardless of the stored value. Added it to the projection — the toggle now reflects the real stored state.
+
+## [2.15.0-1] - 2026-05-22
+
+**PII access gating — pre-rollout polish.** Still behind `ENABLE_PII_ACCESS_GATING` (default off).
+
+### Added
+- Reusable `useOneTimeNotice` hook (localStorage-backed, SSR-safe) — powers a first-run "what's new" expanded state on the protected-contact banner: a one-time explainer dismissed with "Got it", after which the banner collapses to its concise form. Any future announcement can reuse the hook with its own versioned key.
+
+### Changed
+- Contract intake now stamps the created adopter's `addedBy` with the receiving rescuer (`animal.addedBy`), falling back to the recognized `anonymous` sentinel — never the unrecognized `contract` literal earlier code could emit. Form intake already stamped the real rescuer email. (Resolution #5 — new rows never land sentinel-owned.)
+- `SENTINEL_ACTORS` now recognizes `contract` and `contract-signed-via-invitation`, so they can't surface as phantom PII-request approvers or notification recipients.
+
+## [2.15.0] - 2026-05-22
+
+**PII access gating — request/approve workflow + admin oversight.** Completes the feature whose foundation shipped in 2.14.11-8. Still behind `ENABLE_PII_ACCESS_GATING` (default off) — no behavior change until the flag is enabled.
+
+### Added
+- Request / approve / revoke workflow: a viewer whose contact view is masked can request access via `RequestPiiAccessModal`; the record's owner, editors and admins approve or deny it from an on-profile panel (`PiiAccessRequestPanel`). Approval writes a full-contact grant; revoking it notifies the grantee. A denial starts a 14-day cooldown before the same viewer can re-request the same adopter.
+- Activity-linked opt-in: logging an activity in `AdoptionFormWizard` offers an explicit "I also need this adopter's contact info" checkbox that files a request linked to the new activity.
+- Admin dashboard at `/admin/pii-requests` — every pending request across all adopters, oldest-first, with inline approve/deny — the safety net when a record's owner is unresponsive.
+- Owner "who has access" disclosure on the profile: lists holders of an approved full-contact grant (each individually revocable), with search-match grants shown as an aggregate count.
+- In-app notifications for request, approval, denial and revocation; an `/admin/pii-requests` entry in the admin sidebar.
+
+## [2.14.11-8] - 2026-05-22
+
+**PII access gating — foundation (phases 1–3, behind `ENABLE_PII_ACCESS_GATING`, default off).** No behavior change in this release; the flag is off.
+
+### Added
+- `ENABLE_PII_ACCESS_GATING` feature flag (default off, server-side only) and the `pii_access_requests` / `pii_access_grants` tables (migration `0044`).
+- Server-side contact-PII masking (`src/lib/piiAccess.ts` + `piiAccessServer.ts`): when the flag is on, a non-owner / non-editor / non-admin viewer sees an adopter's phone, email, social, ID and address masked. Enforced in `getAdopter`, `getHistory` (change-log redaction), `findAdopters` discovery (plus match-snippet scrub), and the `/api/adopters` duplicate-check. Names, family members and notes stay visible.
+- Search-match reveal: a discovery query that genuinely matches a contact entry (phone ≥6 digits, `@`-email, `@handle`/URL social) unlocks that entry for the searcher and records a persistent `pii_access_grants` row. A name-token query never unlocks an identifier.
+
+### Changed
+- Core-record edits (`saveAdopter`, `appendToExistingAdopter`) are restricted to the record owner or an admin when the flag is on — this keeps "edit a record ⇒ become an editor ⇒ gain PII visibility" closed. `appendToExistingAdopter` now resolves admins via `isAdminAsync` (DB-role admins included), matching `saveAdopter`'s gate.
+
+## [2.14.11-7] - 2026-05-22
+
+### Added
+- `ENABLE_CONTACT_PASTE` feature flag (default on) — gates the paste box in the adopter contact editor. When an admin turns it off via the Admin config page, contact info is entered only through the manual typed fields; the "Pegar" affordance and paste box are hidden. Wired through `FEATURE_FLAGS`, `PUBLIC_FLAG_KEYS`/`PUBLIC_FLAG_DEFAULTS` (read client-side via `/api/config`), and the Admin config UI.
+
+## [2.14.11-6] - 2026-05-22
+
+### Changed
+- The contact editor's paste box is now a collapsible panel *below* the field rows instead of a separate mode that hid them. The bottom action row pairs "Agregar manualmente" with a "Pegar" link that expands the paste box (flips to "Ocultar"); the field rows stay visible the whole time. Categorizing a paste merges into the existing entries and collapses the box. A new adopter still opens with the box expanded.
+
+## [2.14.11-5] - 2026-05-22
+
+### Changed
+- The adopter contact editor (`ContactEntriesInput`) no longer stacks a paste box permanently above the field rows. Paste and manual entry are now two switchable modes via a text-link toggle by the section title: a new adopter opens in paste mode, an existing one in fields mode; a paste categorizes and returns to the fields. Toggling only swaps the input surface — entries are never touched.
+
+## [2.14.11-4] - 2026-05-21
+
+### Fixed
+- Restored contact links lost in the v2.14.11 display rewrite: an address opens Google Maps, a social *URL* opens its platform (Facebook / Instagram / TikTok / X / LinkedIn — recognized generically, no hardcoded platform), and links inside free-text notes are clickable again via `renderTextWithLinks`. Phone (`tel:`) and email (`mailto:`) were restored earlier in 2.14.11-2. A bare `@handle` is intentionally left unlinked — its platform cannot be inferred from the handle alone.
+
+## [2.14.11-3] - 2026-05-21
+
+### Fixed
+- The paste-categorize e2e test still asserted the old digit-collapsed phone value (`1123456789`); updated it to the preserved format (`11 2345-6789`) introduced in 2.14.11-2, which had failed the e2e gate and blocked the staging deploy.
+
+## [2.14.11-2] - 2026-05-21
+
+**Contact display readability — labeled list + preserved phone formatting.**
+
+### Changed
+- `ContactEntriesDisplay` rewritten from a flat chip cloud into a labeled list: one row per entry (icon + type label + value), ordered by type. Phone and email values are actionable (`tel:` / `mailto:` links), and `other` notes are grouped, muted and separated below the contact methods.
+- `categorizeContactText` now preserves the phone formatting the user entered (`11 2345-6789`, `+54 …`, `(011) …`) instead of collapsing it to bare digits — a new `formattedPhonesIn` helper mirrors the tokenizer's phone detection but keeps the matched substring verbatim. Dedup and the duplicate-token index still normalize to digits, so this is storage-safe.
+
+## [2.14.11-1] - 2026-05-21
+
+**Bugfix: `address` is now a first-class contact entry type.** Addresses previously had no typed home — they fell into the `other` ("Note") catch-all, and the three intake paths each stored them differently.
+
+### Added
+- `address` added to `ContactEntryType`, with a `MapPin` icon in the contact-chip UI and an `Address` / `Dirección` i18n label.
+- Label-first address auto-detection in `categorizeContactText`: a pasted line with no phone/email/id/social token that leads with an address keyword becomes an `address` entry. Label keywords (`Dirección`, `Dir`, `Domicilio`) are stripped from the stored value; street keywords (`Av`, `Calle`, `Pasaje`, `Ruta`, `Barrio`, `Mz`, …) are kept. Leading-anchored to keep false positives low.
+
+### Changed
+- ImportWizard maps Gemini's extracted `addresses[]` to `address` entries instead of `other`.
+- The contract factory and the contract-submit token path emit an `address` entry, so all three intake paths store addresses consistently.
+
+### Notes
+- The `addressInfo` column is intentionally left untouched — reworking it belongs to the upcoming PII feature, not this bugfix. Legacy contract adopters whose `contactInfo` blob carries `Dirección: …` lines auto-migrate them into an `address` entry on next edit.
+
+## [2.14.11] - 2026-05-21
+
+**Structured, paste-and-categorize contact info — plus a phone-search PII guardrail.** Contact details entered for an adopter are now split into typed entries (phone / email / social / id / note) stored in a new `adopters.contact_entries` JSON column. The free-text `contact_info` blob is kept as a derived value, so search, duplicate-token indexing and existing display paths are unchanged. Separately, the minimum digit count to search by phone number is raised from 4 to 6.
+
+### Added
+- **`src/lib/contactEntries.ts`** (new) — pure categorization/serialization module. `categorizeContactText` splits free text into typed `ContactEntry[]` (reusing the duplicate-detection tokenizer); `contactEntriesToBlob` derives the labeled `contact_info` blob (prose round-trips losslessly); `deserializeContactEntries` is the single sanitization chokepoint (drops malformed/empty entries, bounds count and per-type value length).
+- **`src/components/ContactEntriesInput.tsx`** (new) — paste-and-categorize input: a paste runs the tokenizer and appends typed, editable chips; each chip is reclassifiable (e.g. phone↔id) and removable.
+- **`src/components/ContactEntriesDisplay.tsx`** (new) — read-only typed-chip rendering for the profile view.
+- **`adopters.contact_entries`** column — migration `0043_add_adopter_contact_entries.sql`; JSON `ContactEntry[]`, nullable and additive (no backfill).
+- **Vitest** — `vitest.config.ts` + an `npm test` script; 16 unit tests for `contactEntries.ts`. First unit-test runner in the repo.
+- **`PHONE_SEARCH_MIN_DIGITS`** in `src/config/constants.ts`; e2e coverage for the paste-categorize flow in `tests/adopter.spec.ts`.
+
+### Changed
+- **`src/components/AdopterForm.tsx`** — the contact `<textarea>` is replaced by `ContactEntriesInput`; view mode shows typed chips for rows with stored entries, falling back to the raw blob for legacy (un-migrated) rows.
+- **`src/components/ImportWizard.tsx`** — the AI-extracted phone/email/social arrays now populate typed chips for review instead of being flattened back into a text blob.
+- **`src/app/actions/_adopterFactory.ts` + the contract-submit token path** — form and contract submissions persist structured `contact_entries`.
+- **`saveAdopter` / `appendToExistingAdopter`** — accept `contactEntries`, derive and store the `contact_info` blob, and merge entries with normalized de-duplication.
+- **`findAdopters`** — phone-search minimum raised 4 → 6 digits (`min_digits` validation); `contact_entries` is nulled out for unauthenticated search results.
+- **i18n (EN + ES)** — new `adopter.ce_*` keys for the contact input; `search.min_digits` message updated to "6".
+
+### Notes
+- The `contact_info` blob remains the source of truth for LIKE search and tokenization; `contact_entries` is purely additive. Editing any field on a legacy row re-derives (normalizes) its `contact_info` blob on save.
+
 ## [2.14.10-21] - 2026-05-13
 
 **Phases 4 + 5 of the adopter-workflow plan: per-animal applicants disclosure on `/my-animals` cards + token-locked contract flow.** End of the planned series. Rescuers can now see which adopters have applied for each animal and issue a per-adopter contract URL that no one else can sign.

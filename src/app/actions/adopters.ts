@@ -1,5 +1,6 @@
 'use server';
 
+import { headers } from 'next/headers';
 import { adopters, adopterHistory, adopterStats } from '@/db/schema';
 import { eq, sql, and } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
@@ -8,6 +9,14 @@ import { getDb, getUser } from './_db';
 import { ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
 import { tokenizeAdopter } from './duplicates';
 import { saveAdopterSchema } from './validation';
+import {
+    deserializeContactEntries,
+    contactEntriesToBlob,
+    parseBlobToContactEntries,
+    mergeContactEntries,
+} from '@/lib/contactEntries';
+import { canEditAdopterRecord, maskAdopterContact, redactHistoryChanges, renderName } from '@/lib/piiAccess';
+import { isPiiGatingEnabled, resolveAdopterVisibility, buildMaskOptions } from '@/lib/piiAccessServer';
 
 
 export async function getAdopter(id: string) {
@@ -20,7 +29,29 @@ export async function getAdopter(id: string) {
         try { user = await getUser(); } catch { /* anonymous */ }
         logProfileView(id, user).catch((e) => { logger.warn('Fire-and-forget profile view failed', { adopterId: id, error: e instanceof Error ? e.message : String(e) }); });
 
-        return await db.select().from(adopters).where(eq(adopters.id, id)).get();
+        const adopter = await db.select().from(adopters).where(eq(adopters.id, id)).get();
+        if (!adopter) return null;
+
+        // PII access gating: mask contact fields for non-privileged viewers.
+        if (await isPiiGatingEnabled()) {
+            const visibility = await resolveAdopterVisibility(user, { id: adopter.id, addedBy: adopter.addedBy });
+            // adopterIsPublic option short-circuits the per-entry mask when
+            // the admin has flagged the whole record public (v2.16.0-12+).
+            const maskOpts = await buildMaskOptions(adopter);
+            const fullyVisible = visibility.nothingMasked || !!maskOpts.adopterIsPublic;
+            if (!fullyVisible) {
+                const masked = maskAdopterContact(adopter, visibility, maskOpts);
+                adopter.contactInfo = masked.contactInfo;
+                adopter.contactEntries = masked.contactEntries;
+                adopter.addressInfo = masked.addressInfo;
+                // Name → initials baseline + per-token reveal from name_token
+                // grants (no currentQuery on the profile — only grants apply).
+                // familyMembers → hidden (PII).
+                adopter.name = renderName(adopter.name, visibility, undefined, maskOpts);
+                adopter.familyMembers = null;
+            }
+        }
+        return adopter;
     } catch (error) {
         logger.error('Get adopter failed', error, { adopterId: id });
         return null;
@@ -40,7 +71,7 @@ export async function getAdopter(id: string) {
  */
 export async function appendToExistingAdopter(
     targetId: string,
-    fields: { contactInfo?: string; addressInfo?: string; familyMembers?: string; sourceUrl?: string },
+    fields: { contactInfo?: string; contactEntries?: string; addressInfo?: string; familyMembers?: string; sourceUrl?: string },
 ): Promise<{ success: boolean; adopterId?: string; error?: string }> {
     try {
         if (!targetId) return { success: false, error: 'Missing target adopter id' };
@@ -56,9 +87,10 @@ export async function appendToExistingAdopter(
         if (!target) return { success: false, error: 'Target adopter not found' };
         if (target.deletedAt) return { success: false, error: 'Cannot append to a deleted adopter' };
 
-        // Auth: actor must own the target (addedBy) or be an admin. Mirrors mergeAdopters.
-        const { isAdmin } = await import('@/config/admins');
-        if (target.addedBy !== actorEmail && !isAdmin(actorEmail)) {
+        // Auth: actor must own the target (addedBy) or be an admin. isAdminAsync
+        // so DB-role admins pass too — same admin check as saveAdopter's edit gate.
+        const { isAdminAsync } = await import('@/config/admins');
+        if (target.addedBy !== actorEmail && !(await isAdminAsync(actorEmail))) {
             return { success: false, error: 'Not authorized to modify this adopter' };
         }
 
@@ -74,8 +106,25 @@ export async function appendToExistingAdopter(
         const updates: Partial<typeof adopters.$inferInsert> = {};
         const appendedFields: Record<string, string> = {};
 
-        const newContact = appendIfNew(target.contactInfo, fields.contactInfo);
-        if (newContact !== target.contactInfo) { updates.contactInfo = newContact; appendedFields.contactInfo = fields.contactInfo!.trim(); }
+        // Contact: prefer the structured-entry merge (normalized dedup) when
+        // the caller sends contactEntries; fall back to the legacy blob append
+        // for callers that only send a contactInfo string.
+        if (fields.contactEntries) {
+            const incoming = deserializeContactEntries(fields.contactEntries);
+            if (incoming.length) {
+                const targetEntries = deserializeContactEntries(target.contactEntries);
+                const base = targetEntries.length ? targetEntries : parseBlobToContactEntries(target.contactInfo);
+                const merged = mergeContactEntries(base, incoming);
+                if (merged.length !== base.length) {
+                    updates.contactEntries = JSON.stringify(merged);
+                    updates.contactInfo = contactEntriesToBlob(merged) || null;
+                    appendedFields.contactInfo = contactEntriesToBlob(incoming);
+                }
+            }
+        } else {
+            const newContact = appendIfNew(target.contactInfo, fields.contactInfo);
+            if (newContact !== target.contactInfo) { updates.contactInfo = newContact; appendedFields.contactInfo = fields.contactInfo!.trim(); }
+        }
 
         const newAddress = appendIfNew(target.addressInfo, fields.addressInfo);
         if (newAddress !== target.addressInfo) { updates.addressInfo = newAddress; appendedFields.addressInfo = fields.addressInfo!.trim(); }
@@ -132,6 +181,15 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
         throw new Error(`Invalid adopter data: ${parsed.error.issues.map(i => i.message).join(', ')}`);
     }
 
+    // Derive the contactInfo blob from structured entries when the caller
+    // provides them, so the blob (read by LIKE search, the tokenizer and the
+    // profile display) stays consistent with contactEntries.
+    if (data.contactEntries !== undefined && data.contactEntries !== null) {
+        const entries = deserializeContactEntries(data.contactEntries);
+        data.contactEntries = entries.length ? JSON.stringify(entries) : null;
+        data.contactInfo = contactEntriesToBlob(entries) || null;
+    }
+
     try {
         const db = await getDb();
         if (!db) {
@@ -149,11 +207,37 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
         const existing = await db.select().from(adopters).where(eq(adopters.id, data.id || 'new')).get();
 
         if (existing) {
+            // ACL: edits to a core adopter record are restricted to the owner
+            // or an admin, ALWAYS — not conditionally on ENABLE_PII_ACCESS_GATING.
+            // The "adds open, mutations gated" collaborative model (see
+            // collaborative-vetting-model memory): contributing data is open via
+            // addContactEntry / saveAdoption, but rewriting existing fields is
+            // owner+admin only. Previously this check was conditional on the PII
+            // flag, leaving production (flag off) open to any authenticated user.
+            // The per-entry server actions (updateContactEntry, removeContactEntry)
+            // apply the same gate, so a contributor who can append a phone via
+            // addContactEntry still can't rewrite or delete one through saveAdopter.
+            const { isAdminAsync } = await import('@/config/admins');
+            const actorIsAdmin = await isAdminAsync(changedBy);
+            if (!canEditAdopterRecord({ gatingEnabled: true, actorEmail: changedBy, ownerEmail: existing.addedBy, actorIsAdmin })) {
+                logger.warn('saveAdopter: edit blocked — not owner/admin', { adopterId: data.id, actorEmail: changedBy });
+                throw new Error('Not authorized to edit this adopter record.');
+            }
+
+            // Defense-in-depth: contact entries are owned exclusively by the
+            // per-entry server actions (addContactEntry / updateContactEntry /
+            // removeContactEntry) once an adopter exists. Strip them from any
+            // UPDATE payload so a stale or malicious client can't wipe / rewrite
+            // the contact list through this path. The CREATE branch below still
+            // accepts them — that's how initial data lands.
+            delete (data as Record<string, unknown>).contactEntries;
+            delete (data as Record<string, unknown>).contactInfo;
+
             // Calculate changes
             const changes: Record<string, any> = {};
             let hasChanges = false;
 
-            const fields = ['name', 'contactInfo', 'status', 'familyMembers'] as const;
+            const fields = ['name', 'status', 'familyMembers'] as const;
             for (const field of fields) {
                 // @ts-ignore
                 if (data[field] !== undefined && data[field] !== existing[field]) {
@@ -209,7 +293,11 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
             // Create
             const newId = data.id || crypto.randomUUID();
 
-            // Look up the user's country to stamp on the adopter
+            // Look up the user's country to stamp on the adopter. Two-tier
+            // fallback: user_profiles.country (set on first sign-in from
+            // CF-IPCountry), then live CF-IPCountry header of the current
+            // request — covers the brand-new-user case where the profile
+            // hasn't been geo-seeded yet.
             let userCountry: string | null = null;
             try {
                 const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
@@ -219,7 +307,18 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
                     ).bind(changedBy).first<{ country: string | null }>();
                     userCountry = row?.country || null;
                 }
-            } catch { /* best-effort */ }
+            } catch (e) {
+                logger.warn('Country lookup from user_profiles failed; trying header fallback', {
+                    changedBy,
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            }
+            if (!userCountry) {
+                try {
+                    const h = await headers();
+                    userCountry = h?.get?.('cf-ipcountry') || null;
+                } catch { /* headers() unavailable in some non-request contexts — fine, leave null */ }
+            }
 
             await db.insert(adopters).values({
                 ...data,
@@ -324,10 +423,32 @@ export async function getHistory(adopterId: string) {
         const db = await getDb();
         if (!db) return [];
         // desc order
-        return await db.select().from(adopterHistory)
+        const rows = await db.select().from(adopterHistory)
             .where(eq(adopterHistory.adopterId, adopterId))
             .orderBy(sql`${adopterHistory.changedAt} DESC`)
             .all();
+
+        // PII access gating: redact contact-field deltas for non-privileged
+        // viewers — the change log must not back-channel old/new contact values.
+        if (await isPiiGatingEnabled()) {
+            let viewer = 'unknown';
+            try { viewer = await getUser(); } catch { /* anonymous */ }
+            const adopter = await db.select({ addedBy: adopters.addedBy, isPublic: adopters.isPublic })
+                .from(adopters).where(eq(adopters.id, adopterId)).get();
+            const visibility = await resolveAdopterVisibility(viewer, {
+                id: adopterId, addedBy: adopter?.addedBy ?? null,
+            });
+            const maskOpts = await buildMaskOptions(adopter);
+            // Public profiles bypass redaction — if the whole record is admin-
+            // flagged public, the change history is part of what's visible.
+            const fullyVisible = visibility.nothingMasked || !!maskOpts.adopterIsPublic;
+            if (!fullyVisible) {
+                return rows.map((r: typeof adopterHistory.$inferSelect) => ({
+                    ...r, changes: redactHistoryChanges(r.changes, visibility),
+                }));
+            }
+        }
+        return rows;
     } catch (error) {
         logger.error('Get history failed', error, { adopterId });
         return [];

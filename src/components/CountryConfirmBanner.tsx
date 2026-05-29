@@ -312,7 +312,7 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
         return (
             <div className={overlayClass}>
                 <div className={backdropClass} />
-                <div className={`${cardClass} max-h-[90vh] overflow-y-auto p-8`}>
+                <div className={`${cardClass} max-h-[90svh] overflow-y-auto p-8`}>
                     <div className="text-center mb-6">
                         <span className="text-5xl block mb-4">{country.flag}</span>
                         <h2 className="text-xl font-semibold text-stone-800 tracking-tight">
@@ -364,7 +364,7 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
     return (
         <div className={overlayClass}>
             <div className={backdropClass} />
-            <div className={`${cardClass} max-h-[90vh] overflow-y-auto p-8`}>
+            <div className={`${cardClass} max-h-[90svh] overflow-y-auto p-8`}>
                 <div className="text-center mb-6">
                     <span className="text-5xl block mb-4">🌎</span>
                     <h2 className="text-xl font-semibold text-stone-800 tracking-tight">

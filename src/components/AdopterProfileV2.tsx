@@ -4,6 +4,11 @@ import { useMemo, useState } from 'react';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
 import { useSearchParams } from 'next/navigation';
 import { AdopterForm } from '@/components/AdopterForm';
+import RequestPiiAccessModal from '@/components/RequestPiiAccessModal';
+import PiiAccessRequestPanel from '@/components/PiiAccessRequestPanel';
+import PiiAccessGrantsDisclosure from '@/components/PiiAccessGrantsDisclosure';
+import PiiVerifyPopover from '@/components/PiiVerifyPopover';
+import type { ContactEntryType } from '@/lib/contactEntries';
 import { CollapsibleSection } from '@/components/CollapsibleSection';
 import AdoptionHistory from '@/components/AdoptionHistory';
 import AdoptionFormWizard from '@/components/AdoptionFormWizard';
@@ -19,6 +24,7 @@ import { useShowToast } from '@/components/ui/Toast';
 import { formatDateTime, formatShortDate, maskEmail } from '@/lib/dates';
 import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, HistoryEntry, AdopterStats, AdoptionConfig, DuplicateCandidateInfo } from '@/types/adopter';
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
+import type { AdopterPiiContext } from '@/lib/piiAccess';
 
 interface AdopterProfileV2Props {
     id: string;
@@ -37,17 +43,45 @@ interface AdopterProfileV2Props {
     duplicateCandidates?: DuplicateCandidateInfo[];
     formPrefill?: FormSubmissionPrefill | null;
     userNameMap?: Record<string, string>;
+    piiContext?: AdopterPiiContext | null;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {} }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null }: AdopterProfileV2Props) {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const toast = useShowToast();
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
     const [deleteLoading, setDeleteLoading] = useState(false);
+    const [requestModalOpen, setRequestModalOpen] = useState(false);
+    const [requestSubmitted, setRequestSubmitted] = useState(false);
+    // Verify/request popover state — set to the entryType the user clicked,
+    // or 'open' for a generic (non-chip-anchored) trigger. Replaces the
+    // always-visible banner; the explainer + verify input now live inside
+    // the popover and surface on demand.
+    // The verify popover can be opened in three ways:
+    //  - With a specific ContactEntryType — user tapped a masked chip; the
+    //    popover's per-type body copy + input type tunes to that.
+    //  - With 'open' — user tapped the partially-revealed name; generic
+    //    body copy, plain text input. verifyKnownInfo handles both name and
+    //    contact-entry inputs.
+    //  - null — closed.
+    const [verifyPopoverOpen, setVerifyPopoverOpen] = useState<ContactEntryType | 'open' | null>(null);
+    // Note: v2.15.0-18 plumbed an `initialVerifyQuery` seed through here to
+    // pre-fill the verify input with the post-signin `?q=` value. v2.16.0-7
+    // removed it — the pre-fill confused users (the seed often didn't match
+    // the field they actually clicked, and looked like a bug). The popover
+    // now always opens blank.
+    // (Contribution-modal state removed in v2.16.0-2; ContactEntriesSection
+    // in Phase B will host the unified add path inline next to the chip list.)
     const [deleteCheck, setDeleteCheck] = useState<{ canDelete: boolean; collaborators: { adoptions: number; images: number; edits: number; flags: number; forms: number } } | null>(null);
 
     const isOwner = adopter?.addedBy === currentUser;
+
+    // PII opt-in is offered to a masked viewer with no request already in flight.
+    const piiOptInEligible = !!piiContext?.masked
+        && !requestSubmitted
+        && !piiContext.requestState.pending
+        && !piiContext.requestState.cooldownUntil;
 
     // VisitIntentCard is the canonical (and only) entry point for recording
     // activity on a profile (v2.14.8). After the wizard closes, the card
@@ -165,7 +199,28 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     )
                 )}
 
-                {/* Profile Form */}
+                {/* PII access gating — approver panel + grants disclosure for
+                    privileged viewers. The masked-viewer unlock UI used to live
+                    here as a banner; it now opens as a per-field popover when a
+                    masked chip is clicked (see PiiVerifyPopover below + the
+                    onMaskedContactClick callback passed into AdopterForm). */}
+                {!isNew && adopter && piiContext?.gatingOn && (
+                    <>
+                        {piiContext.pendingRequests.length > 0 && (
+                            <PiiAccessRequestPanel requests={piiContext.pendingRequests} />
+                        )}
+                        {piiContext.privileged && (
+                            <PiiAccessGrantsDisclosure grants={piiContext.accessGrants} />
+                        )}
+                    </>
+                )}
+
+                {/* Profile Form — owns the contact section internally (via
+                    ContactEntriesSection) so the page reads top-down as
+                    "header → contact → family". The masked-chip click handler
+                    is plumbed through here so the parent-owned verify popover
+                    still opens when a non-privileged viewer taps a hidden
+                    chip on a PII-gated profile. */}
                 <AdopterForm
                     initialData={adopter}
                     currentUser={currentUser}
@@ -179,6 +234,17 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     isAdmin={isAdmin}
                     formPrefill={formPrefill}
                     hasDuplicateBanner={false}
+                    canEdit={!piiContext?.gatingOn || piiContext.privileged}
+                    onMaskedContactClick={
+                        piiContext?.masked
+                            ? (entryType) => setVerifyPopoverOpen(entryType)
+                            : undefined
+                    }
+                    onMaskedNameClick={
+                        piiContext?.masked
+                            ? () => setVerifyPopoverOpen('open')
+                            : undefined
+                    }
                 />
 
                 {/* Adoptions — with Wizard Form */}
@@ -196,6 +262,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             adoptions={adoptions}
                             availableAnimals={availableAnimals}
                             adopterAddress={adopter?.contactInfo || ''}
+                            piiOptInEligible={piiOptInEligible}
                         />
                         <CollapsibleSection
                             title={t('adoption.title')}
@@ -215,6 +282,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                 adopterAdoptions={adoptions}
                                 currentUser={currentUser}
                                 adopterAddress={adopter?.contactInfo || ''}
+                                piiOptInEligible={piiOptInEligible}
                             />
                             <AdoptionHistory
                                 adoptions={adoptions as any}
@@ -380,6 +448,42 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             )}
                         </div>
                     </div>
+                )}
+
+                {/* PII access request modal — masked viewers only */}
+                {!isNew && adopter && piiContext?.masked && (
+                    <RequestPiiAccessModal
+                        adopterId={id}
+                        adopterName={adopter.name}
+                        open={requestModalOpen}
+                        onClose={() => setRequestModalOpen(false)}
+                        onRequested={() => setRequestSubmitted(true)}
+                    />
+                )}
+
+
+                {/* Per-field verify/request popover. Replaces the always-on
+                    banner; opens when the user clicks a masked contact chip.
+                    Verify is always enabled (independent of any request
+                    cooldown); the request CTA / pending state / cooldown state
+                    sit underneath as the secondary action. */}
+                {!isNew && adopter && piiContext?.masked && (
+                    <PiiVerifyPopover
+                        open={verifyPopoverOpen !== null}
+                        onClose={() => setVerifyPopoverOpen(null)}
+                        adopterId={id}
+                        entryType={verifyPopoverOpen && verifyPopoverOpen !== 'open' ? verifyPopoverOpen : undefined}
+                        requestState={
+                            (requestSubmitted || piiContext.requestState.pending)
+                                ? { kind: 'pending' }
+                                : piiContext.requestState.cooldownUntil
+                                    ? { kind: 'cooldown', cooldownUntil: piiContext.requestState.cooldownUntil }
+                                    : { kind: 'available' }
+                        }
+                        onRequestAccess={
+                            piiOptInEligible ? () => setRequestModalOpen(true) : undefined
+                        }
+                    />
                 )}
             </div>
         </main>

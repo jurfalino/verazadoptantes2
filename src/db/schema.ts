@@ -6,6 +6,10 @@ export const adopters = sqliteTable("adopters", {
     name: text("name").notNull(),
     // Free text blobs for flexible contact info and addresses
     contactInfo: text("contact_info"), // Stores phones, emails, socials, etc.
+    // Structured, categorized contact methods. JSON: ContactEntry[] (see
+    // src/lib/contactEntries.ts). contactInfo above is derived from this for
+    // every new/edited row; null on rows last saved before this column existed.
+    contactEntries: text("contact_entries"),
     addressInfo: text("address_info"), // Stores physical addresses
     familyMembers: text("family_members"), // Stores household members / aliases
     notes: text("notes"), // Free-text observations, age, behavior, etc.
@@ -29,6 +33,16 @@ export const adopters = sqliteTable("adopters", {
     // pre-migration row stays valid; the backfill upgrades known form-sourced
     // rows automatically.
     source: text("source").notNull().default("manual"),
+
+    // Public profile flag (added in migration 0046, gated by
+    // ENABLE_PUBLIC_PROFILES). Admin override that bypasses PII gating on the
+    // whole record for any authenticated viewer — name renders fully, all
+    // contact entries unmasked, addressInfo unmasked. Per-entry `isPublic`
+    // (inside the contactEntries JSON) is the finer-grained primitive; this
+    // column is the "the admin has confirmed the whole record is publicly
+    // known" override that wins over a contributor's later-added private
+    // contact entries too. 0 = private (default), 1 = public.
+    isPublic: integer("is_public").notNull().default(0),
 }, (table) => ({
     nameIdx: index("name_idx").on(table.name),
 }));
@@ -62,6 +76,10 @@ export const adopterHistory = sqliteTable("adopter_history", {
     changedBy: text("changed_by").default("anonymous"),
     changes: text("changes"), // JSON string of what changed
     changedAt: integer("changed_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    // 'edit' (owner/admin core-record write via saveAdopter / appendToExistingAdopter)
+    // | 'contribution' (any authenticated user via addContactEntry). Only 'edit'
+    // rows make the writer an "editor" for PII visibility purposes.
+    kind: text("kind").notNull().default('edit'),
 });
 
 export const searches = sqliteTable("searches", {
@@ -158,6 +176,51 @@ export const dataRequests = sqliteTable("data_requests", {
     resolvedAt: integer("resolved_at", { mode: "timestamp" }),
     resolvedBy: text("resolved_by"),
 });
+
+// ── PII Access Gating ────────────────────────────────────────────
+// Behind the ENABLE_PII_ACCESS_GATING flag. Both tables are additive and
+// unused until the flag is enabled. A non-owner viewer who needs an adopter's
+// contact details files a request; the record owner / an editor / an admin
+// approves or denies it.
+
+// pii_access_requests — a viewer's request to see an adopter's contact info.
+export const piiAccessRequests = sqliteTable("pii_access_requests", {
+    id: text("id").primaryKey(),
+    adopterId: text("adopter_id").notNull(),
+    requesterEmail: text("requester_email").notNull(),
+    justification: text("justification"),
+    // The adoptions row that triggered the request, when activity-driven.
+    activityId: text("activity_id"),
+    status: text("status").notNull().default("pending"), // pending, approved, denied
+    resolvedByEmail: text("resolved_by_email"),
+    resolvedAt: integer("resolved_at", { mode: "timestamp" }),
+    resolutionNote: text("resolution_note"),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+    adopterStatusIdx: index("idx_pii_req_adopter_status").on(table.adopterId, table.status),
+    requesterStatusIdx: index("idx_pii_req_requester_status").on(table.requesterEmail, table.status),
+}));
+
+// pii_access_grants — the access facts. A live (non-revoked) row means
+// `grantee_email` can see some/all of `adopter_id`'s contact info.
+//   scope='entry'       — one entry, unlocked by a search match.
+//   scope='all_contact' — every contact field, unlocked by an approved request.
+export const piiAccessGrants = sqliteTable("pii_access_grants", {
+    id: text("id").primaryKey(),
+    adopterId: text("adopter_id").notNull(),
+    granteeEmail: text("grantee_email").notNull(),
+    scope: text("scope").notNull(), // all_contact, entry
+    // For scope='entry': hash of the normalized matched value (never raw PII).
+    entryRef: text("entry_ref"),
+    origin: text("origin").notNull(), // search_match, request
+    requestId: text("request_id"), // links the pii_access_requests row, when origin='request'
+    grantedByEmail: text("granted_by_email").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    revokedAt: integer("revoked_at", { mode: "timestamp" }),
+    revokedByEmail: text("revoked_by_email"),
+}, (table) => ({
+    granteeAdopterIdx: index("idx_pii_grant_grantee_adopter").on(table.granteeEmail, table.adopterId),
+}));
 
 
 

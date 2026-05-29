@@ -9,6 +9,50 @@ import { logger, generateErrorId } from '@/lib/logger';
 import { tokenizeAdopter } from '@/app/actions/duplicates';
 import { processImageForStorage, uploadToR2 } from '@/lib/r2';
 import { createAdopterApiSchema } from '@/app/actions/validation';
+import { deserializeContactEntries, contactEntriesToBlob } from '@/lib/contactEntries';
+import { maskAdopterContact, renderName } from '@/lib/piiAccess';
+import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
+
+type MaskableRow = {
+    id: string;
+    addedBy: string | null;
+    name: string;
+    contactInfo: string | null;
+    contactEntries: string | null;
+    addressInfo: string | null;
+    familyMembers: string | null;
+    /** Optional — when present + flag on, the whole row bypasses masking. */
+    isPublic?: number | null;
+};
+
+/**
+ * PII access gating: mask the matched-adopter rows for non-privileged viewers.
+ * Contact fields go through `maskAdopterContact` (partial-reveal); the name
+ * collapses to initials and family members are hidden — same treatment the
+ * search results get.
+ */
+async function maskMatchesForViewer<T extends MaskableRow>(
+    rows: T[],
+    viewerEmail: string | null | undefined,
+): Promise<T[]> {
+    if (rows.length === 0 || !(await isPiiGatingEnabled())) return rows;
+    const visMap = await resolveAdoptersVisibility(viewerEmail, rows.map(r => ({ id: r.id, addedBy: r.addedBy })));
+    const publicProfilesFlag = await isPublicProfilesEnabled();
+    return rows.map(r => {
+        const vis = visMap.get(r.id);
+        const maskOpts = maskOptionsFor(publicProfilesFlag, r);
+        if (!vis || vis.nothingMasked || maskOpts.adopterIsPublic) return r;
+        const masked = maskAdopterContact(r, vis, maskOpts);
+        return {
+            ...r,
+            name: renderName(r.name, vis, undefined, maskOpts),
+            contactInfo: masked.contactInfo,
+            contactEntries: masked.contactEntries,
+            addressInfo: masked.addressInfo,
+            familyMembers: null,
+        };
+    });
+}
 
 export async function GET(request: Request) {
     const session = await auth();
@@ -35,7 +79,10 @@ export async function GET(request: Request) {
             const matches = await db.select()
                 .from(adopters)
                 .where(and(isNull(adopters.deletedAt), eq(adopters.sourceUrl, sourceUrl)));
-            return NextResponse.json({ matches, matchType: 'url' });
+            return NextResponse.json({
+                matches: await maskMatchesForViewer(matches, session.user.email),
+                matchType: 'url',
+            });
         }
 
         // Mode 2: Multi-field person matching (different post, same person)
@@ -129,7 +176,7 @@ export async function GET(request: Request) {
         scoredMatches.sort((a: { confidence: string }, b: { confidence: string }) => confidenceOrder[a.confidence] - confidenceOrder[b.confidence]);
 
         return NextResponse.json({
-            matches: scoredMatches,
+            matches: await maskMatchesForViewer(scoredMatches, session.user.email),
             matchType: 'person',
             confidence: scoredMatches[0]?.confidence || 'none'
         });
@@ -150,6 +197,7 @@ export async function POST(request: Request) {
     let body: {
         name: string;
         contactInfo?: string | { phones?: string[]; emails?: string[]; socialProfiles?: string[]; addresses?: string[] };
+        contactEntries?: string;
         notes?: string;
         sourceUrl?: string;
         flags?: string[];
@@ -183,7 +231,7 @@ export async function POST(request: Request) {
         }, { status: 400 });
     }
 
-    const { name, contactInfo, notes, sourceUrl, flags, images, adoption } = parsed.data;
+    const { name, contactInfo, contactEntries, notes, sourceUrl, flags, images, adoption, source } = parsed.data;
 
     // Log the incoming request (without image data for size)
     logger.info('Adopter create: start', {
@@ -216,6 +264,27 @@ export async function POST(request: Request) {
             contactInfoStr = parts.join('\n');
         }
 
+        // Structured contact entries (ImportWizard) — derive the blob from them
+        // and persist the JSON so the categorization survives.
+        // When source='imported' AND the public-profiles flag is on, stamp
+        // isPublic=true on each entry so authenticated viewers see them
+        // unmasked even under PII gating (the data came from a public social
+        // source). Per-entry granularity here is important: a later
+        // contributor who adds a non-public phone to the same profile will
+        // NOT have their addition flagged public.
+        let contactEntriesJson: string | null = null;
+        if (contactEntries) {
+            const entries = deserializeContactEntries(contactEntries);
+            if (entries.length) {
+                const stampPublic = source === 'imported' && await isPublicProfilesEnabled();
+                const persisted = stampPublic
+                    ? entries.map(e => ({ ...e, isPublic: true }))
+                    : entries;
+                contactEntriesJson = JSON.stringify(persisted);
+                contactInfoStr = contactEntriesToBlob(persisted);
+            }
+        }
+
 
 
         const newId = crypto.randomUUID();
@@ -238,11 +307,17 @@ export async function POST(request: Request) {
             id: newId,
             name,
             contactInfo: contactInfoStr || null,
+            contactEntries: contactEntriesJson,
             familyMembers: null,
             status: '5', // Default neutral/good
             addedBy: session.user.email || 'anonymous',
             sourceUrl: sourceUrl || null,
             country: userCountry,
+            // Provenance: 'imported' when the caller (ImportWizard) tells us
+            // so; everything else falls through to the column default 'manual'.
+            // Surfaces the 'Imported' badge on /my-adopters and gates the
+            // per-entry isPublic stamp above.
+            ...(source === 'imported' ? { source: 'imported' as const } : {}),
             // createdAt and updatedAt use database defaults
         });
 

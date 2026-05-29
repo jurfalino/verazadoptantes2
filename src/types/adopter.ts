@@ -7,6 +7,8 @@ export interface Adopter {
     id: string;
     name: string;
     contactInfo?: string | null;
+    /** JSON-serialized ContactEntry[] — see src/lib/contactEntries.ts. */
+    contactEntries?: string | null;
     addressInfo?: string | null;
     familyMembers?: string | null;
     notes?: string | null;

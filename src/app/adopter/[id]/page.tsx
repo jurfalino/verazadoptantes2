@@ -3,18 +3,21 @@ import { redirect } from 'next/navigation';
 import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getAdoptionConfig, getDuplicateCandidates } from '@/app/actions';
 import { resolveUserNames } from '@/app/actions/userNames';
 import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
+import { getAdopterPiiContext } from '@/app/actions/piiAccess';
+import { replaySearchMatchGrants } from '@/lib/piiAccessServer';
 import { logger } from '@/lib/logger';
 import { AdopterProfileV2 } from '@/components/AdopterProfileV2';
+import type { AdopterPiiContext } from '@/lib/piiAccess';
 
 export default async function AdopterPage({
     params,
     searchParams,
 }: {
     params: Promise<{ id: string }>;
-    searchParams: Promise<{ fromForm?: string }>;
+    searchParams: Promise<{ fromForm?: string; q?: string }>;
 }) {
     const { id } = await params;
-    const { fromForm } = await searchParams;
+    const { fromForm, q } = await searchParams;
     const isNew = id === 'create';
 
     // Batch 1a: Auth (mandatory — failure means redirect to login)
@@ -25,6 +28,16 @@ export default async function AdopterPage({
     } catch (e: any) {
         if (e?.digest?.startsWith('NEXT_REDIRECT')) throw e;
         redirect(`/?authRequired=1&callbackUrl=${encodeURIComponent(`/adopter/${id}`)}`);
+    }
+
+    // Batch 1a.5: Post-signin search-match replay. When a user arrives from
+    // an unauth search (clicked a result, signed in, was redirected back here
+    // with `?q=` preserved), the unauthenticated search couldn't persist
+    // grants — re-run the matchers now with their email so the unmasked
+    // reveal they saw in the result card survives the auth boundary.
+    // Idempotent + quiet-failure (see piiAccessServer.replaySearchMatchGrants).
+    if (!isNew && q && currentUser) {
+        await replaySearchMatchGrants({ adopterId: id, query: q, viewerEmail: currentUser });
     }
 
     // Batch 1b: Config (degrade-on-failure — page renders with defaults if these throw,
@@ -51,6 +64,7 @@ export default async function AdopterPage({
     let stats = null;
     let avgRating = null;
     let dupCandidates: any[] = [];
+    let piiContext: AdopterPiiContext | null = null;
 
     if (!isNew) {
         // Per-fetch fallback: if any single query throws (e.g. transient D1 outage), the page
@@ -65,7 +79,7 @@ export default async function AdopterPage({
             });
             return def;
         };
-        [adopter, history, adoptions, images, flags, stats, avgRating, availableAnimals, dupCandidates] = await Promise.all([
+        [adopter, history, adoptions, images, flags, stats, avgRating, availableAnimals, dupCandidates, piiContext] = await Promise.all([
             getAdopter(id).catch(fallback('getAdopter', null)),
             getHistory(id).catch(fallback<any[]>('getHistory', [])),
             getAdoptions(id).catch(fallback<any[]>('getAdoptions', [])),
@@ -75,6 +89,7 @@ export default async function AdopterPage({
             getAverageRating(id).catch(fallback<number | null>('getAverageRating', null)),
             getAvailableAnimals().catch(fallback<any[]>('getAvailableAnimals', [])),
             getDuplicateCandidates(id).catch(fallback<any[]>('getDuplicateCandidates', [])),
+            getAdopterPiiContext(id).catch(fallback<AdopterPiiContext | null>('getAdopterPiiContext', null)),
         ]);
     } else {
         availableAnimals = await getAvailableAnimals().catch(e => {
@@ -116,6 +131,7 @@ export default async function AdopterPage({
             duplicateCandidates={dupCandidates}
             formPrefill={formPrefill}
             userNameMap={userNameMap}
+            piiContext={piiContext}
         />
     );
 }

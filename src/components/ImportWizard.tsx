@@ -16,6 +16,8 @@ import { findAdopters } from '@/app/actions';
 import type { DuplicateMatch } from '@/app/actions';
 import { confidenceBand } from '@/lib/scoring';
 import type { ExtractedAdopterData } from '@/lib/gemini';
+import ContactEntriesInput from '@/components/ContactEntriesInput';
+import { buildContactEntries, contactEntriesToBlob, type ContactEntry } from '@/lib/contactEntries';
 
 interface PersonMatch {
     id: string;
@@ -168,7 +170,7 @@ export default function ImportWizard() {
 
     // AI extraction state
     const [extractedData, setExtractedData] = useState<ExtractedAdopterData | null>(null);
-    const [contactInfoText, setContactInfoText] = useState('');
+    const [contactEntries, setContactEntries] = useState<ContactEntry[]>([]);
     const [processedImages, setProcessedImages] = useState<Array<{ data: string; mimeType: string; originalUrl?: string }>>([]);
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [selectedModel, setSelectedModel] = useState<string>('');
@@ -481,15 +483,15 @@ export default function ImportWizard() {
             }
 
             setExtractedData(aiData);
-            // Build contact info text from extracted arrays
+            // Build typed contact entries from the AI-extracted arrays so the
+            // categorization survives review instead of being flattened.
             if (aiData) {
-                const parts: string[] = [];
-                const isEs = locale === 'es';
-                if (aiData.phones?.length) parts.push(`${isEs ? 'Teléfonos' : 'Phones'}: ${aiData.phones.join(', ')}`);
-                if (aiData.emails?.length) parts.push(`${isEs ? 'Correos' : 'Emails'}: ${aiData.emails.join(', ')}`);
-                if (aiData.socialProfiles?.length) parts.push(`${isEs ? 'Redes sociales' : 'Socials'}: ${aiData.socialProfiles.join(', ')}`);
-                if (aiData.addresses?.length) parts.push(`${isEs ? 'Dirección' : 'Address'}: ${aiData.addresses.join(', ')}`);
-                setContactInfoText(parts.join('\n'));
+                setContactEntries(buildContactEntries({
+                    phones: aiData.phones,
+                    emails: aiData.emails,
+                    socials: aiData.socialProfiles,
+                    addresses: aiData.addresses,
+                }));
             }
             setCustomSpecies(false);
             setUnknownAnimal(!aiData.animalName);
@@ -510,7 +512,7 @@ export default function ImportWizard() {
         const timer = setTimeout(async () => {
             try {
                 const response = await findAdopters(
-                    { name: extractedData.name, contactInfo: contactInfoText },
+                    { name: extractedData.name, contactInfo: contactEntriesToBlob(contactEntries) },
                     { mode: 'duplicate' },
                 );
                 setFieldOverlapHints(response.results as DuplicateMatch[]);
@@ -519,7 +521,7 @@ export default function ImportWizard() {
             }
         }, 600);
         return () => clearTimeout(timer);
-    }, [step, extractedData?.name, contactInfoText]);
+    }, [step, extractedData?.name, contactEntries]);
 
     // Pre-save duplicate check
     const handlePreSave = async () => {
@@ -552,7 +554,7 @@ export default function ImportWizard() {
                 const response = await findAdopters(
                     {
                         name: extractedData.name,
-                        contactInfo: contactInfoText,
+                        contactInfo: contactEntriesToBlob(contactEntries),
                         phones: extractedData.phones,
                         emails: extractedData.emails,
                         socials: extractedData.socialProfiles,
@@ -603,9 +605,13 @@ export default function ImportWizard() {
 
             const payload = {
                 name: extractedData.name,
-                contactInfo: contactInfoText || undefined,
+                contactEntries: contactEntries.length ? JSON.stringify(contactEntries) : undefined,
                 notes: extractedData.notes,
                 sourceUrl,
+                // Marks the row as imported-from-social so the API writes
+                // source='imported' AND (when ENABLE_PUBLIC_PROFILES is on)
+                // stamps isPublic=true on the contact entries it persists.
+                source: 'imported' as const,
                 flags,
                 images: [
                     ...(processedImages.length > 0 ? processedImages : manualImages.filter(img => !img.file).map(img => ({ data: img.data, mimeType: img.mimeType }))),
@@ -696,7 +702,7 @@ export default function ImportWizard() {
             const payload = {
                 sourceUrl,
                 notes: extractedData.notes,
-                contactInfo: contactInfoText || undefined,
+                contactInfo: contactEntriesToBlob(contactEntries) || undefined,
                 adoption: {
                     animalName: unknownAnimal ? '' : (extractedData.animalName || 'Unknown'),
                     species: extractedData.animalSpecies,
@@ -1168,15 +1174,10 @@ export default function ImportWizard() {
                         />
                     </div>
 
-                    {/* Contact Info — single textarea, stored as-is */}
+                    {/* Contact Info — typed entries, AI-categorized and editable */}
                     <div>
                         <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.contactInfo') || 'Contact Info'}</label>
-                        <textarea
-                            value={contactInfoText}
-                            onChange={e => setContactInfoText(e.target.value)}
-                            className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm min-h-[80px] resize-y focus:ring-2 focus:ring-blue-500"
-                            placeholder={t('import.contactPlaceholder') || 'Phones, emails, addresses, social profiles...'}
-                        />
+                        <ContactEntriesInput entries={contactEntries} onChange={setContactEntries} />
                         {/* Field overlap hints — bucketed by confidence */}
                         {fieldOverlapHints.length > 0 && (() => {
                             const LOW_THRESHOLD = 15;

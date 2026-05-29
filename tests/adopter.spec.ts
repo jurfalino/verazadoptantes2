@@ -55,6 +55,49 @@ test.describe('Adopter Profile', () => {
         await expect(page).not.toHaveURL(/\/create/);
     });
 
+    test('Adds typed contact entries via the inline composer on creation', async ({ page }) => {
+        // v2.16.0-5 unified the contact add UI across new and existing adopters:
+        // new-adopter creation now uses ContactEntriesSection's inline composer
+        // instead of ContactEntriesInput's paste-and-categorize. This test
+        // confirms entries added through the composer in local mode (no
+        // adopterId yet) survive the saveAdopter create call.
+        const uniqueName = `Contacto Test ${Date.now()}`;
+
+        await page.goto('/adopter/create');
+        await dismissCountryBanner(page);
+
+        await page.getByPlaceholder(/name|nombre/i).fill(uniqueName);
+
+        // Open the composer (its trigger has a stable data-testid). Phone is
+        // the default selected type, so we can type the value straight in.
+        await page.getByTestId('ce-add-trigger').click();
+        await page.locator('input[placeholder*="2345-6789"], input[placeholder*="+54"]').first().fill('11 2345-6789');
+        await page.getByTestId('ce-composer-submit').click();
+
+        // Open the composer again for an email entry, switch type, submit.
+        await page.getByTestId('ce-add-trigger').click();
+        await page.getByTestId('ce-type-email').click();
+        await page.locator('input[placeholder*="@example.com"], input[placeholder*="name@"]').first().fill('juan.contacto@example.com');
+        await page.getByTestId('ce-composer-submit').click();
+
+        // Both chips render in the section now.
+        const chips = page.getByTestId('ce-chip');
+        await expect(chips).toHaveCount(2, { timeout: 10000 });
+
+        await page.getByRole('button', { name: /save|guardar|create|crear/i }).click();
+        const createAnywayBtn = page.getByRole('button', { name: /Create new profile anyway|Crear perfil nuevo/i });
+        try {
+            await createAnywayBtn.waitFor({ state: 'visible', timeout: 3000 });
+            await createAnywayBtn.click();
+        } catch {
+            // No duplicates — fine.
+        }
+
+        // The saved profile shows the entered contact value.
+        await expect(page.getByRole('heading', { name: uniqueName })).toBeVisible({ timeout: 30000 });
+        await expect(page.getByText('juan.contacto@example.com')).toBeVisible({ timeout: 30000 });
+    });
+
     test('Edit adopter name', async ({ page }) => {
         const newName = `Persona Editada ${Date.now()}`;
 

@@ -13,7 +13,7 @@
  * followed by JS Levenshtein scoring so typo variants (Jonatan/Jonathan) are never dropped.
  */
 
-import { adopters, searches, adopterHistory, adoptions, adopterStats, duplicateTokens } from '@/db/schema';
+import { adopters, searches, adopterHistory, adoptions, adopterStats, duplicateTokens, piiAccessGrants } from '@/db/schema';
 import { or, like, sql, and, isNull, eq, ne } from 'drizzle-orm';
 import { logger, withTrace } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
@@ -21,6 +21,7 @@ import { getDb, getUser } from './_db';
 import {
     SEARCH_RESULT_LIMIT, SEARCH_ENRICHMENT_LIMIT,
     REFINEMENT_NUDGE_THRESHOLD, LOW_RELEVANCE_PERCENT_THRESHOLD,
+    PHONE_SEARCH_MIN_DIGITS,
 } from '@/config/constants';
 import type {
     FindAdoptersInput, FindAdoptersOptions, FindAdoptersResponse,
@@ -30,10 +31,11 @@ import { enrichAdopters } from './enrichAdopters';
 import { normalizeConfidence, fuzzyNameScore, SEARCH_SCORE_CEILING, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 import { normalizeText, extractPhones, extractEmails, extractSocials, isPlaceholderPhone, extractIds, stripIdsFromText } from '@/lib/tokenizer';
 import { count } from 'drizzle-orm';
+import { maskAdopterContact, matchSearchEntries, matchSearchNameTokens, hashNameToken, renderName, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
+import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
+import { deserializeContactEntries } from '@/lib/contactEntries';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
-
-const MIN_PHONE_DIGITS = 4;
 
 function isPhoneLikeQuery(q: string): boolean {
     const d = q.replace(/[\s\-\.\(\)\+]/g, '');
@@ -156,6 +158,41 @@ async function searchAdoptionMatches(db: any, tokens: string[]): Promise<DeepMat
         });
     } catch (e) {
         logger.warn('Adoption search error', { error: e instanceof Error ? e.message : String(e) });
+        return [];
+    }
+}
+
+/**
+ * Phone-token lookup against `duplicate_tokens` for phone-shaped queries
+ * (v2.16.0-17). The discovery LIKE path runs on `adopters.contactInfo`
+ * which stores the user's verbatim phone formatting ("Tel: 6462-2274"),
+ * so a digit-only query ("64622274") slides past the LIKE substring.
+ * The tokenizer canonicalizes phones to digits-only when populating
+ * duplicate_tokens, so the same digit-only query matches there.
+ *
+ * This is purely additive — IDs found here are unioned into the existing
+ * extras set and flow through the same enrichment + scoring + masking
+ * pipeline that history/adoption matches already use. Same min-digits
+ * floor (PHONE_SEARCH_MIN_DIGITS) keeps the anti-fishing posture.
+ */
+async function searchPhoneTokenMatches(db: any, normalizedQuery: string): Promise<string[]> {
+    try {
+        if (!isPhoneLikeQuery(normalizedQuery)) return [];
+        const qDigits = normalizedQuery.replace(/\D/g, '');
+        if (qDigits.length < PHONE_SEARCH_MIN_DIGITS) return [];
+        const rows = await db.select({ adopterId: duplicateTokens.adopterId })
+            .from(duplicateTokens)
+            .where(and(
+                or(
+                    eq(duplicateTokens.tokenType, 'phone'),
+                    eq(duplicateTokens.tokenType, 'phone_suffix'),
+                ),
+                like(duplicateTokens.tokenValue, `%${escapeLike(qDigits)}%`),
+            ))
+            .limit(SEARCH_RESULT_LIMIT);
+        return rows.map((r: { adopterId: string }) => r.adopterId);
+    } catch (e) {
+        logger.warn('Phone-token search error', { error: e instanceof Error ? e.message : String(e) });
         return [];
     }
 }
@@ -449,11 +486,11 @@ async function runDiscoveryMode(
 
     const isUnauthenticated = user === 'unknown';
 
-    if (isPhoneLikeQuery(normalizedQuery) && countDigits(normalizedQuery) < MIN_PHONE_DIGITS)
+    if (isPhoneLikeQuery(normalizedQuery) && countDigits(normalizedQuery) < PHONE_SEARCH_MIN_DIGITS)
         return { results: [], validationError: 'min_digits' };
 
     if (isUnauthenticated) {
-        if (normalizedQuery.includes('@') || (isPhoneLikeQuery(normalizedQuery) && countDigits(normalizedQuery) >= MIN_PHONE_DIGITS))
+        if (normalizedQuery.includes('@') || (isPhoneLikeQuery(normalizedQuery) && countDigits(normalizedQuery) >= PHONE_SEARCH_MIN_DIGITS))
             return { results: [], validationError: 'login_required' };
     }
 
@@ -489,10 +526,14 @@ async function runDiscoveryMode(
     const profileConds: any[] = [isNull(adopters.deletedAt), buildProfileSearchConditions(tokens)];
     if (userCountry) profileConds.push(eq(adopters.country, userCountry));
 
-    const [directResults, historyMatches, adoptionMatches] = await Promise.all([
+    const [directResults, historyMatches, adoptionMatches, phoneTokenIds] = await Promise.all([
         db.select().from(adopters).where(and(...profileConds)).limit(SEARCH_ENRICHMENT_LIMIT),
         searchHistoryMatches(db, tokens),
         searchAdoptionMatches(db, tokens),
+        // v2.16.0-17: catches digit-only phone queries (e.g. "64622274") that
+        // the LIKE search above misses because the stored contactInfo blob
+        // keeps the user's verbatim formatting ("Tel: 6462-2274").
+        searchPhoneTokenMatches(db, normalizedQuery),
     ]);
 
     const historyTextMap = new Map<string, string>();
@@ -509,7 +550,7 @@ async function runDiscoveryMode(
         if (!adoptionTextMap.has(m.adopterId)) adoptionTextMap.set(m.adopterId, m.matchedText);
     }
 
-    const extraIds = new Set([...historyIds, ...adoptionIds]);
+    const extraIds = new Set([...historyIds, ...adoptionIds, ...phoneTokenIds]);
     directResults.forEach((r: any) => extraIds.delete(r.id));
 
     // D1-compatible: fan out with eq() per ID instead of inArray() which silently breaks on D1
@@ -534,6 +575,20 @@ async function runDiscoveryMode(
 
     const allProfiles = [...directResults, ...extraProfiles];
     if (allProfiles.length === 0) return { results: [] };
+
+    // PII access gating: resolve per-result visibility once for the whole batch.
+    const piiGatingOn = !isUnauthenticated && await isPiiGatingEnabled();
+    const visibilityMap = piiGatingOn
+        ? await resolveAdoptersVisibility(
+            user,
+            allProfiles.map((a: typeof adopters.$inferSelect) => ({ id: a.id, addedBy: a.addedBy })),
+        )
+        : null;
+    // Public-profiles flag is read once and then applied per-adopter via the
+    // adopter's `isPublic` column (v2.16.0-12+).
+    const publicProfilesFlag = piiGatingOn && await isPublicProfilesEnabled();
+    // Search-match grants discovered while masking; persisted after the map.
+    const newGrants: Array<{ adopterId: string; entryRef: string; scope: 'entry' | 'name_token' }> = [];
 
     const adopterIds = allProfiles.map((a: any) => a.id);
     const enrichmentMap = shouldEnrich ? await enrichAdopters(db, adopterIds) : new Map();
@@ -672,19 +727,84 @@ async function runDiscoveryMode(
             flags: enrichment?.flags ?? defaultFlags,
         };
 
-        // PII masking for unauthenticated users
-        if (isUnauthenticated) {
-            result.adopter = { ...result.adopter };
-            result.adopter.name = result.adopter.name?.length > 3 ? result.adopter.name.slice(0, 3) + '••••' : '••••';
-            result.adopter.contactInfo = result.adopter.contactInfo
-                ?.replace(/(\d{2,3})[\d\s\-.()]{4,}/g, '$1••••••')
-                ?.replace(/[a-zA-Z0-9._%+-]+@/g, '•••@') || null;
-            result.adopter.familyMembers = null;
-            result.adopter.addressInfo = null;
-            if (result.matchSnippet) {
+        // Unified mask for any non-privileged viewer (unauth — always — and
+        // auth without grants when the flag is on). Auth viewers additionally
+        // accrue search-match grants so their reveals persist across visits;
+        // unauth viewers can't (grants are keyed on `granteeEmail`).
+        let vis: Visibility | undefined;
+        if (isUnauthenticated) vis = NO_ACCESS_VISIBILITY;
+        else if (visibilityMap) vis = visibilityMap.get(a.id);
+
+        // Public-profile bypass: when the whole record is admin-flagged
+        // public AND the feature flag is on, treat the viewer as if they
+        // had nothing-masked visibility for this row.
+        const maskOpts = maskOptionsFor(publicProfilesFlag, a);
+        if (vis && !vis.nothingMasked && !maskOpts.adopterIsPublic) {
+            // Search-match grant write (auth only). Two flavours, same pattern:
+            // contact-entry matches and name-token matches both write a grant
+            // and augment `vis` so this response renders the unlocked values.
+            if (!isUnauthenticated) {
+                const entryMatches = matchSearchEntries(deserializeContactEntries(a.contactEntries), normalizedQuery);
+                if (entryMatches.length > 0) {
+                    const unlocked = new Set(vis.unlockedEntryHashes);
+                    for (const m of entryMatches) {
+                        if (!unlocked.has(m.hash)) {
+                            unlocked.add(m.hash);
+                            newGrants.push({ adopterId: a.id, entryRef: m.hash, scope: 'entry' });
+                        }
+                    }
+                    // Anchor-grade identifier match (phone / email / social / id /
+                    // address) is strong evidence the viewer means THIS person.
+                    // Auto-grant every name token alongside the entry grant so the
+                    // viewer doesn't have to verify-the-name as a second step —
+                    // they already proved they knew an identifier. Skips initials
+                    // / single-char tokens which can't self-grant.
+                    const unlockedNames = new Set(vis.unlockedNameTokenHashes);
+                    for (const token of (a.name ?? '').trim().split(/\s+/)) {
+                        if (token.length < 2) continue;
+                        const h = hashNameToken(token);
+                        if (!unlockedNames.has(h)) {
+                            unlockedNames.add(h);
+                            newGrants.push({ adopterId: a.id, entryRef: h, scope: 'name_token' });
+                        }
+                    }
+                    vis = { ...vis, unlockedEntryHashes: unlocked, unlockedNameTokenHashes: unlockedNames, tier: 'partial' };
+                }
+                const nameMatches = matchSearchNameTokens(a.name, normalizedQuery);
+                if (nameMatches.length > 0) {
+                    const unlockedNames = new Set(vis.unlockedNameTokenHashes);
+                    for (const token of nameMatches) {
+                        const h = hashNameToken(token);
+                        if (!unlockedNames.has(h)) {
+                            unlockedNames.add(h);
+                            newGrants.push({ adopterId: a.id, entryRef: h, scope: 'name_token' });
+                        }
+                    }
+                    vis = { ...vis, unlockedNameTokenHashes: unlockedNames, tier: 'partial' };
+                }
+            }
+            // Partial-reveal mask — identical for both paths. `renderName`
+            // also picks up transient per-query reveals for unauth (no grants).
+            // maskOpts is empty under unauth (publicProfilesFlag is false then).
+            const masked = maskAdopterContact(result.adopter, vis, maskOpts);
+            result.adopter = {
+                ...result.adopter,
+                name: renderName(result.adopter.name, vis, normalizedQuery, maskOpts),
+                contactInfo: masked.contactInfo,
+                contactEntries: masked.contactEntries,
+                addressInfo: masked.addressInfo,
+                familyMembers: null, // PII — hidden from non-privileged viewers
+            };
+            // Field-scoped snippet scrub. 'contact'/'address' are windows into
+            // the (now masked) blob; 'adoption' is scrubbed because the import
+            // route packs `Contact: …` into adoptions.details.
+            if (result.matchSnippet && (
+                result.matchSnippet.field === 'contact' ||
+                result.matchSnippet.field === 'address' ||
+                result.matchSnippet.field === 'adoption'
+            )) {
                 result.matchSnippet = { ...result.matchSnippet, snippet: '', highlights: [] };
             }
-            result.relevancePercent = 0;
         }
 
         return result;
@@ -706,6 +826,34 @@ async function runDiscoveryMode(
     const totalCount = mainResults.length;
     logger.info('findAdopters:discovery', { query: normalizedQuery, tokens: tokens.length, resultCount: Math.min(totalCount, limit), user });
     logAudit({ userEmail: user, action: 'search', details: { query: normalizedQuery, resultCount: Math.min(totalCount, limit) } });
+
+    // PII access gating: persist search-match grants — one row per newly matched
+    // entry. Awaited so the reveal survives to the viewer's next visit. A write
+    // failure is logged but never breaks search (the viewer just re-grants).
+    if (newGrants.length > 0) {
+        try {
+            await Promise.all(newGrants.map(g => db.insert(piiAccessGrants).values({
+                id: crypto.randomUUID(),
+                adopterId: g.adopterId,
+                granteeEmail: user,
+                scope: g.scope,
+                entryRef: g.entryRef,
+                origin: 'search_match',
+                grantedByEmail: user,
+                createdAt: new Date(),
+            })));
+            logAudit({
+                userEmail: user,
+                action: 'pii_search_match_grant',
+                details: { count: newGrants.length, adopterIds: [...new Set(newGrants.map(g => g.adopterId))] },
+            });
+        } catch (e) {
+            logger.warn('findAdopters: PII search-match grant write failed', {
+                user, count: newGrants.length,
+                error: e instanceof Error ? e.message : String(e),
+            });
+        }
+    }
 
     const response: FindAdoptersResponse = {
         results: mainResults.slice(0, limit),

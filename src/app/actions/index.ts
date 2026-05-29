@@ -17,6 +17,9 @@ export type { FindAdoptersInput, FindAdoptersOptions, FindAdoptersResponse, Dupl
 
 // Adopters
 export { getAdopter, saveAdopter, appendToExistingAdopter, getAdopterStats, logProfileView, getAverageRating, getHistory, getLinkedFormSubmissions, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from './adopters';
+export { addContactEntry } from './addContactEntry';
+export { updateContactEntry } from './updateContactEntry';
+export { removeContactEntry } from './removeContactEntry';
 
 // Images
 export { saveImage, getImages, setProfilePicture, getAdoptionImages, deleteImage } from './images';
@@ -31,7 +34,7 @@ export { flagAdopter, getFlags, dismissFlag, removeVerification } from './flags'
 export { getMyAdopters, getMyAdoptions } from './dashboard';
 
 // Admin
-export { runAdminQuery, deleteAdopter, purgeAllData } from './admin';
+export { runAdminQuery, deleteAdopter, purgeAllData, backfillLegacyContactEntries, setAdopterPublic } from './admin';
 
 // Duplicates
 export { getDuplicateCandidates, checkTokenDuplicates } from './duplicates';

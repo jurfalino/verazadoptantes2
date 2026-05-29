@@ -26,6 +26,22 @@ export const REFINEMENT_NUDGE_THRESHOLD = 10;
  */
 export const LOW_RELEVANCE_PERCENT_THRESHOLD = 10;
 
+/**
+ * Minimum digit count for a phone-like search query. A query that looks like
+ * a phone number but carries fewer digits than this is rejected outright
+ * (`min_digits`) instead of being run.
+ *
+ * This is a PII guardrail: a short numeric fragment matches a large slice of
+ * stored phone numbers, which makes the search usable for fishing rather than
+ * for looking up a known contact. Raised 4 → 6 to tighten that.
+ *
+ * If this ever needs to vary per country, resolve `userCountry` (already
+ * fetched in runDiscoveryMode) before the digit check and key a lookup map
+ * off it — province granularity is deliberately NOT used: a province changes
+ * the area code, not a phone number's total length.
+ */
+export const PHONE_SEARCH_MIN_DIGITS = 6;
+
 
 // ── Stats / Analytics ───────────────────────────────────────────
 /** Seconds in 90 days — used for the "last 90 days" stats window. */

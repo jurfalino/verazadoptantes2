@@ -66,16 +66,6 @@ export interface CreateAdopterResult {
     dupCandidates: DupCandidateSummary[];
 }
 
-function buildContactInfo(input: CreateAdopterInput): string {
-    const parts: string[] = [];
-    if (input.documentId) parts.push(`Documento: ${input.documentId}`);
-    if (input.email) parts.push(`Email: ${input.email}`);
-    if (input.phone) parts.push(`Tel: ${input.phone}`);
-    if (input.address) parts.push(`Dirección: ${input.address}`);
-    if (input.socials) parts.push(`Redes: ${input.socials}`);
-    return parts.join('\n');
-}
-
 function bucketConfidence(relevancePercent: number): 'high' | 'medium' | 'low' {
     if (relevancePercent >= 70) return 'high';
     if (relevancePercent >= 40) return 'medium';
@@ -101,7 +91,17 @@ export async function createAdopterFromSubmission(
     const { eq, and } = await import('drizzle-orm');
 
     const adopterId = crypto.randomUUID();
-    const contactInfo = buildContactInfo(input);
+    // Dynamic import to match this module's edge-route import convention.
+    // `address` is intentionally excluded — it goes to addressInfo, not contactEntries.
+    const { buildContactEntries, contactEntriesToBlob } = await import('@/lib/contactEntries');
+    const contactEntries = buildContactEntries({
+        ids: input.documentId ? [{ value: input.documentId, label: 'Documento' }] : [],
+        emails: input.email ? [input.email] : [],
+        phones: input.phone ? [input.phone] : [],
+        socials: input.socials ? [input.socials] : [],
+        addresses: input.address ? [input.address] : [],
+    });
+    const contactInfo = contactEntriesToBlob(contactEntries);
     const now = new Date();
 
     // 1. Insert adopter
@@ -109,6 +109,7 @@ export async function createAdopterFromSubmission(
         id: adopterId,
         name: trimmedName,
         contactInfo: contactInfo || null,
+        contactEntries: contactEntries.length ? JSON.stringify(contactEntries) : null,
         addressInfo: input.address || null,
         addedBy: input.addedBy || 'anonymous',
         source: input.source,

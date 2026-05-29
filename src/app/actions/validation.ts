@@ -16,10 +16,41 @@ const requiredText = z.string().min(1).max(5_000);
 
 // ── Adopter ──────────────────────────────────────────────────────
 
+// addContactEntry — the open-to-all-authenticated-users contribution path.
+// Validates one typed entry. For address, accepts the v2.15.0-17 structured
+// shape (streetAndNumber + locality) in addition to the joined `value`.
+export const addContactEntrySchema = z.object({
+    adopterId: z.string().min(1).max(64),
+    type: z.enum(['phone', 'email', 'social', 'id', 'address', 'alias', 'other']),
+    value: z.string().min(1).max(500),
+    streetAndNumber: z.string().max(500).optional(),
+    locality: z.string().max(500).optional(),
+});
+
+// updateContactEntry — owner+admin only. Mutates an existing entry identified
+// by its stable id. Type is not editable (change-of-type is a delete + add).
+export const updateContactEntrySchema = z.object({
+    adopterId: z.string().min(1).max(64),
+    entryId: z.string().min(1).max(64),
+    value: z.string().min(1).max(500),
+    streetAndNumber: z.string().max(500).optional(),
+    locality: z.string().max(500).optional(),
+});
+
+// removeContactEntry — owner+admin only. Removes an existing entry by id.
+export const removeContactEntrySchema = z.object({
+    adopterId: z.string().min(1).max(64),
+    entryId: z.string().min(1).max(64),
+});
+
 export const saveAdopterSchema = z.object({
     id: id.optional(),
     name: requiredText,
     contactInfo: optionalText,
+    // JSON-serialized ContactEntry[]. The string is length-bounded here; the
+    // structure (entry count, per-value length) is sanitized by
+    // deserializeContactEntries in src/lib/contactEntries.ts.
+    contactEntries: z.string().max(20_000).optional().nullable(),
     addressInfo: optionalText,
     familyMembers: optionalText,
     // notes: deprecated in v2.12.1-28 — backfilled into observation adoption records.
@@ -89,6 +120,25 @@ export const acceptTermsAndCountrySchema = z.object({
     version: z.number().int().min(1, 'Terms version must be a positive integer'),
 });
 
+// ── PII access requests ──────────────────────────────────────────
+
+export const requestPiiAccessSchema = z.object({
+    adopterId: id,
+    activityId: id.optional().nullable(),
+    justification: z.string().max(1_000).optional().nullable(),
+});
+
+export const resolvePiiRequestSchema = z.object({
+    requestId: id,
+    decision: z.enum(['approved', 'denied']),
+    note: z.string().max(1_000).optional().nullable(),
+});
+
+export const verifyKnownInfoSchema = z.object({
+    adopterId: id,
+    info: z.string().min(1).max(500),
+});
+
 // ── Adopters API (POST /api/adopters) ────────────────
 
 export const createAdopterApiSchema = z.object({
@@ -102,8 +152,15 @@ export const createAdopterApiSchema = z.object({
             addresses: z.array(z.string().max(1_000)).optional(),
         }),
     ]).optional(),
+    // JSON-serialized ContactEntry[]; structure sanitized by deserializeContactEntries.
+    contactEntries: z.string().max(20_000).optional(),
     notes: z.string().max(10_000).optional(),
     sourceUrl: z.string().url().max(2_000).optional().or(z.literal('')),
+    // Provenance hint from the caller (v2.16.0-12+). Only 'imported' is
+    // accepted — other values fall through to the column default 'manual'.
+    // When 'imported' AND ENABLE_PUBLIC_PROFILES is on, the route stamps
+    // isPublic=true on every persisted contact entry.
+    source: z.literal('imported').optional(),
     flags: z.array(z.string().max(200)).max(20).optional(),
     images: z.array(z.object({
         data: z.string().max(10_000_000), // ~7.5MB base64

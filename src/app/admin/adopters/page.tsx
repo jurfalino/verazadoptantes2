@@ -7,6 +7,7 @@ import AdminAdopterList from "@/components/AdminAdopterList";
 import UserFilterSelect from "@/components/UserFilterSelect";
 import { enrichAdopters } from "@/app/actions/enrichAdopters";
 import { getRatingColors, getRatingDescription } from "@/lib/ratingColors";
+import { getFeatureFlag } from "@/config/features";
 
 
 export default async function AdminAdoptersPage({ searchParams }: { searchParams: Promise<{ q?: string; country?: string; rating?: string; user?: string }> }) {
@@ -271,6 +272,7 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
             </div>
 
             <AdminAdopterList
+                publicProfilesFlag={await getFeatureFlag('ENABLE_PUBLIC_PROFILES')}
                 adopters={filteredList.map((adopter: typeof adopters.$inferSelect) => ({
                     adopter: {
                         id: adopter.id,
@@ -278,6 +280,7 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                         contactInfo: adopter.contactInfo,
                         country: adopter.country,
                         addedBy: adopter.addedBy,
+                        isPublic: adopter.isPublic === 1,
                         createdAt: adopter.createdAt ? adopter.createdAt.toISOString() : null,
                         updatedAt: adopter.updatedAt ? adopter.updatedAt.toISOString() : null,
                     },

@@ -10,6 +10,8 @@ import { zarazTrack } from "@/lib/zaraz";
 import type { DiscoveryMatch } from "@/app/actions";
 import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
+import ContactEntriesSection from "@/components/ContactEntriesSection";
+import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
 
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
@@ -40,6 +42,27 @@ interface AdopterFormProps {
     isAdmin?: boolean;
     formPrefill?: FormSubmissionPrefill | null;
     hasDuplicateBanner?: boolean;
+    /**
+     * Mirrors the server-side `canEditAdopterRecord` decision. When false, the
+     * form blocks entry into edit mode (no pencil, no click-to-edit hover
+     * affordance, no-op handler). Default `true` preserves legacy behavior on
+     * surfaces that don't compute it (e.g. the new-adopter form).
+     */
+    canEdit?: boolean;
+    /**
+     * Click handler for a masked contact entry chip on a PII-gated profile.
+     * When provided, masked chips open the parent-owned verify/request popover.
+     * When absent (gating off, or viewer is privileged), the chips render the
+     * un-masked value directly via the existing ContactEntriesSection display.
+     */
+    onMaskedContactClick?: (entryType: ContactEntryType) => void;
+    /**
+     * Click handler for the (partially-revealed) name header on a PII-gated
+     * profile. Opens the parent-owned verify popover so the viewer can type
+     * the full name they expect and have matching tokens unlocked. Absent
+     * when gating is off or the viewer is privileged.
+     */
+    onMaskedNameClick?: () => void;
 }
 
 function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
@@ -64,7 +87,7 @@ function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
     );
 }
 
-export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin: _isAdmin = false, formPrefill = null, hasDuplicateBanner = false }: AdopterFormProps) {
+export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, canEdit = true, onMaskedContactClick, onMaskedNameClick }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -187,13 +210,18 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     const MIN_NAME_LENGTH_FOR_SEARCH = 2;
     const MAX_DUPLICATE_CARD_RESULTS = 5;
 
-    // Auth-gated click-to-edit: clicking any view field enables editing
+    // Auth-gated click-to-edit: clicking any view field enables editing.
+    // Also mirrors the server-side `canEditAdopterRecord` gate — a viewer
+    // who can't save shouldn't be able to enter edit mode in the first place,
+    // otherwise hitting Save without any changes produces a confusing
+    // permission error.
     const handleClickToEdit = () => {
         if (isEditing) return;
         if (!isAuthenticated) {
             openLogin();
             return;
         }
+        if (!canEdit) return;
         setIsEditing(true);
     };
 
@@ -210,6 +238,42 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
 
         familyMembers: initialData?.familyMembers || '',
     });
+
+    // Structured contact entries. Initialized from the stored JSON, falling
+    // back to a best-effort parse of the legacy contactInfo blob so editing an
+    // old (un-migrated) record still shows typed chips. data.contactInfo is
+    // kept in sync as the derived blob for the existing read sites below.
+    const [contactEntries, setContactEntries] = useState<ContactEntry[]>(() =>
+        initialData?.contactEntries
+            ? deserializeContactEntries(initialData.contactEntries)
+            : parseBlobToContactEntries(initialData?.contactInfo || formPrefill?.contactInfo || ''),
+    );
+    // Sync read-mode state from `initialData` when the prop reference changes.
+    // The two useState initializers above run ONCE on mount, so without this
+    // effect a `router.refresh()` triggered elsewhere — e.g. PiiVerifyPopover
+    // unlocks a contact entry → page re-fetches → new `initialData` arrives —
+    // would leave the form's local state stale and the masked values wouldn't
+    // visibly update until a full reload. Guarded by `isEditing` so a draft
+    // isn't clobbered by a background refresh.
+    useEffect(() => {
+        if (isEditing || !initialData) return;
+        setData({
+            id: initialData.id || '',
+            name: initialData.name || formPrefill?.name || nameFromUrl || '',
+            status: initialData.status || defaultStatus,
+            contactInfo: initialData.contactInfo || formPrefill?.contactInfo || '',
+            familyMembers: initialData.familyMembers || '',
+        });
+        setContactEntries(
+            initialData.contactEntries
+                ? deserializeContactEntries(initialData.contactEntries)
+                : parseBlobToContactEntries(initialData.contactInfo || formPrefill?.contactInfo || ''),
+        );
+        // Intentional: re-sync only on a new `initialData` reference. The
+        // `isEditing` read is a guard, not a trigger — including it would
+        // cause edit-toggle to re-clobber state.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initialData]);
 
     // Build search query from name + contact for duplicate check
     const getDuplicateSearchQuery = useCallback(() => {
@@ -234,6 +298,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         try {
             const result = await appendToExistingAdopter(targetId, {
                 contactInfo: data.contactInfo || undefined,
+                contactEntries: contactEntries.length ? JSON.stringify(contactEntries) : undefined,
                 familyMembers: data.familyMembers || undefined,
             });
             if (result.success && result.adopterId) {
@@ -250,7 +315,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             setContinueBusyId(null);
             setPendingMerge(null);
         }
-    }, [pendingMerge, continueBusyId, data.contactInfo, data.familyMembers, router]);
+    }, [pendingMerge, continueBusyId, data.contactInfo, data.familyMembers, contactEntries, router]);
 
     // Debounced duplicate search while typing (create only)
     useEffect(() => {
@@ -293,7 +358,14 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     const performActualSave = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await saveAdopter(data);
+            // For existing adopters, contact entries are mutated via the unified
+            // ContactEntriesSection (per-entry add/edit/remove server actions).
+            // Strip them from the saveAdopter payload so the bulk replace path
+            // doesn't override what those actions wrote.
+            const payload = isNew
+                ? { ...data, contactEntries: JSON.stringify(contactEntries) }
+                : { ...data, contactEntries: undefined, contactInfo: undefined };
+            const res = await saveAdopter(payload);
             if (res.success) {
                 if (isNew) {
                     // Funnel-tracking event for Amplitude (via Zaraz). Fires
@@ -377,7 +449,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         } finally {
             setLoading(false);
         }
-    }, [data, isNew, formPrefill, searchParams, router, t]);
+    }, [data, contactEntries, isNew, formPrefill, searchParams, router, t]);
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -588,11 +660,36 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                             placeholder={t('adopter.placeholder_name_aliases')}
                                             autoFocus
                                         />
-                                    ) : (
-                                        <h1 className="text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate">
-                                            {!isNew && initialData ? initialData.name : t('adopter.title_new')}
-                                        </h1>
-                                    )}
+                                    ) : (() => {
+                                        const displayName = !isNew && initialData ? initialData.name : t('adopter.title_new');
+                                        // Initial-only tokens (1-char words separated by whitespace) are
+                                        // the visual signature of `partialRevealName` — when present the
+                                        // viewer has only the initials of those tokens. Make the whole
+                                        // h1 a tap target that opens the verify popover so they can
+                                        // confirm a hypothesis about the full name. No-op when the
+                                        // parent didn't supply the handler (gating off / privileged
+                                        // viewer / new-adopter form).
+                                        const tokens = (displayName ?? '').trim().split(/\s+/);
+                                        const looksPartiallyRevealed = tokens.some(t => t.length === 1);
+                                        if (onMaskedNameClick && looksPartiallyRevealed) {
+                                            return (
+                                                <button
+                                                    type="button"
+                                                    onClick={onMaskedNameClick}
+                                                    aria-label={t('adopter.pii_masked_name_aria') || displayName}
+                                                    title={t('adopter.pii_masked_name_title') || ''}
+                                                    className="text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate text-left hover:underline underline-offset-4 decoration-teal-400 transition-colors cursor-pointer"
+                                                >
+                                                    {displayName}
+                                                </button>
+                                            );
+                                        }
+                                        return (
+                                            <h1 className="text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate">
+                                                {displayName}
+                                            </h1>
+                                        );
+                                    })()}
                                 </div>
                                 {/* Actions (right-aligned inline) */}
                                 <div className="flex items-center justify-end gap-2 flex-shrink-0">
@@ -615,14 +712,16 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                         </>
                                     ) : (
                                         <>
-                                            <button
-                                                type="button"
-                                                onClick={handleClickToEdit}
-                                                className="flex items-center justify-center w-8 h-8 text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-lg transition-colors"
-                                                title={t('common.edit') || 'Edit'}
-                                            >
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                                            </button>
+                                            {canEdit && (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleClickToEdit}
+                                                    className="flex items-center justify-center w-8 h-8 text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-lg transition-colors"
+                                                    title={t('common.edit') || 'Edit'}
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                                </button>
+                                            )}
                                             {/* Overflow menu */}
                                             {!isNew && initialData && (
                                                 <div className="relative">
@@ -773,28 +872,52 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
 
                 {/* SHARED CONTENT GRID */}
                 <div className={`grid md:grid-cols-2 gap-6 ${isEditing ? 'opacity-100' : 'opacity-90'}`}>
-                    {/* Contact Info */}
+                    {/* Contact — same surface for both jobs (consistency
+                        across new vs existing). ContactEntriesSection runs
+                        in local mode for new-adopter creation (no adopterId,
+                        with onChange wiring) and in server mode for existing
+                        adopters (with adopterId, calls the per-entry actions).
+                        Either way the add UX, edit UX and chip rendering are
+                        identical. */}
                     <div className="md:col-span-2">
                         <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.contact')}</h3>
-                        {isEditing ? (
-                            <textarea
-                                rows={3}
-                                className="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-y min-h-[80px]"
-                                value={data.contactInfo}
-                                onChange={e => setData({ ...data, contactInfo: e.target.value })}
-                                placeholder={t('adopter.placeholder_contact')}
+                        {isNew ? (
+                            <ContactEntriesSection
+                                entries={contactEntries}
+                                canEditAll={true}
+                                currentUser={currentUser}
+                                onChange={next => {
+                                    setContactEntries(next);
+                                    setData(d => ({ ...d, contactInfo: contactEntriesToBlob(next) }));
+                                }}
                             />
-                        ) : (
-                            <div
-                                className="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 font-medium leading-relaxed min-h-[60px] cursor-pointer hover:border-teal-400 transition-colors"
-                                style={{ overflowWrap: 'anywhere' }}
-                                onClick={handleClickToEdit}
-                                title={t('common.edit') || 'Click to edit'}
-                            >
-                                {renderTextWithLinks(data.contactInfo, { emptyLabel: t('audit.empty_val'), type: 'text' })}
-                            </div>
-                        )}
+                        ) : initialData && (() => {
+                            // Legacy rows have a contactInfo blob but no
+                            // structured contactEntries column — fall back to
+                            // parsing the blob so the section still displays
+                            // the data. Parsed-from-blob entries have no `id`,
+                            // which ContactEntriesSection uses to suppress
+                            // edit/delete affordances (no stable anchor to
+                            // mutate). Adding a fresh entry via the composer
+                            // writes a real contactEntries row, and from there
+                            // chips gain real IDs and become editable.
+                            const stored = deserializeContactEntries(initialData.contactEntries);
+                            const entriesForSection = stored.length > 0
+                                ? stored
+                                : parseBlobToContactEntries(initialData.contactInfo);
+                            const isOwner = initialData.addedBy === currentUser;
+                            return (
+                                <ContactEntriesSection
+                                    entries={entriesForSection}
+                                    adopterId={id}
+                                    canEditAll={isOwner || isAdmin}
+                                    currentUser={currentUser}
+                                    onMaskedClick={onMaskedContactClick}
+                                />
+                            );
+                        })()}
                     </div>
+
 
                     {/* Family Members (Full Width) */}
                     <div className="md:col-span-2">
@@ -810,10 +933,10 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                         ) : (
                             data.familyMembers ? (
                                 <div
-                                    className="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 font-medium leading-relaxed min-h-[60px] cursor-pointer hover:border-teal-400 transition-colors"
+                                    className={`w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 font-medium leading-relaxed min-h-[60px] transition-colors ${canEdit ? 'cursor-pointer hover:border-teal-400' : 'cursor-default'}`}
                                     style={{ overflowWrap: 'anywhere' }}
                                     onClick={handleClickToEdit}
-                                    title={t('common.edit') || 'Click to edit'}
+                                    title={canEdit ? (t('common.edit') || 'Click to edit') : undefined}
                                 >
                                     {renderTextWithLinks(data.familyMembers, { emptyLabel: t('audit.empty_val') })}
                                 </div>
@@ -844,7 +967,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                 >
                     <div
                         ref={saveDuplicateModalRef}
-                        className="relative bg-white rounded-2xl shadow-xl border border-stone-200 w-full max-w-md max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200"
+                        className="relative bg-white rounded-2xl shadow-xl border border-stone-200 w-full max-w-md max-h-[90svh] overflow-y-auto animate-in zoom-in-95 duration-200"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <h2 id="save-duplicate-modal-title" className="text-lg font-semibold text-stone-900 p-5 pb-2">
