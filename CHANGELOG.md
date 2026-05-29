@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-15] - 2026-05-29
+
+### Fixed
+- **`ENABLE_PUBLIC_PROFILES` toggle wasn't showing on `/admin/config`.** The page hard-codes which flags appear (TypeScript type union + `FEATURE_FLAGS` render array + initial `useState` + read mapping from `data.config`). I added the flag to `features.ts` in v2.16.0-12 but forgot the four /admin/config touch-points, so the toggle was silently missing. Plumbed it through now plus the matching es/en i18n keys (`flag_label_public_profiles` + `flag_desc_public_profiles`). Admin only — the flag is intentionally not in `PUBLIC_FLAG_KEYS` since clients don't read it.
+
 ## [2.16.0-14] - 2026-05-29
 
 ### Fixed
