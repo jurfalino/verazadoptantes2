@@ -137,9 +137,9 @@ export default function PiiVerifyPopover({
             <div
                 className="
                     fixed z-50 flex flex-col overflow-hidden shadow-2xl
-                    inset-x-0 bottom-0 max-h-[85vh] rounded-t-2xl
+                    inset-x-0 bottom-0 max-h-[85svh] rounded-t-2xl
                     sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2
-                    sm:w-[min(28rem,calc(100vw-2rem))] sm:max-h-[80vh] sm:rounded-2xl
+                    sm:w-[min(28rem,calc(100vw-2rem))] sm:max-h-[80svh] sm:rounded-2xl
                 "
                 style={{
                     background: 'var(--surface-card)',

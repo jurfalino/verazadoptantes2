@@ -967,7 +967,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                 >
                     <div
                         ref={saveDuplicateModalRef}
-                        className="relative bg-white rounded-2xl shadow-xl border border-stone-200 w-full max-w-md max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200"
+                        className="relative bg-white rounded-2xl shadow-xl border border-stone-200 w-full max-w-md max-h-[90svh] overflow-y-auto animate-in zoom-in-95 duration-200"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <h2 id="save-duplicate-modal-title" className="text-lg font-semibold text-stone-900 p-5 pb-2">

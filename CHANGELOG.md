@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-19] - 2026-05-29
+
+### Fixed
+- **NotificationBell sheet (and 8 other modals) was cut off at the top on iOS mobile.** Sheets clamped to `max-h-[85vh]` use the **large** viewport which counts the browser address bar as viewport even when it's visible. Result: the sheet computes taller than the actual visible area; since it's bottom-anchored, the top portion (drag handle + header + first items) overflows above the viewport. A separate previous fix made the list grow to fill the sheet — that was a different issue. This one is the outer container's height unit.
+
+  Swapped every modal/sheet `vh` clamp to `svh` (small viewport height) — Tailwind 4 natively supports it. `svh` always equals the visible area with browser chrome present, so the sheet's intrinsic height never exceeds what the user can actually see, regardless of address-bar state.
+
+  Fixed sites:
+  - 3 mobile bottom sheets (NotificationBell, PiiVerifyPopover, DuplicatePeek) — the acute case.
+  - 6 centered-card modals (AdopterForm save-duplicate, AdopterFlagging, CountryConfirmBanner, DuplicateMergeModal, HomepageActionCard, plus the desktop branch of PiiVerifyPopover) — less acute but same root cause.
+
 ## [2.16.0-18] - 2026-05-29
 
 ### Fixed

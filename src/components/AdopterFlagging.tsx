@@ -435,7 +435,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
             {/* Modal */}
             {isOpen && (
                 <div className="fixed inset-0 bg-teal-950/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-8 max-h-[90vh] overflow-y-auto transform transition-all scale-100 border border-teal-100">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-8 max-h-[90svh] overflow-y-auto transform transition-all scale-100 border border-teal-100">
                         <div className="flex justify-between items-start mb-6">
                             <h3 className="text-2xl font-semibold text-teal-900 tracking-tight">
                                 {reason === 'duplicate' && (t('flagging.title_duplicate') || 'Report Duplicate')}

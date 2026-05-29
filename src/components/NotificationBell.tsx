@@ -219,7 +219,7 @@ export default function NotificationBell() {
                 Desktop (sm: and up): popover anchored to the bell. */}
             {open && (
                 <div
-                    className="fixed inset-x-0 bottom-0 max-h-[85vh] rounded-t-2xl sm:absolute sm:inset-auto sm:right-0 sm:top-auto sm:bottom-auto sm:mt-2 sm:max-h-none sm:w-96 sm:rounded-2xl shadow-2xl overflow-hidden z-50 flex flex-col"
+                    className="fixed inset-x-0 bottom-0 max-h-[85svh] rounded-t-2xl sm:absolute sm:inset-auto sm:right-0 sm:top-auto sm:bottom-auto sm:mt-2 sm:max-h-none sm:w-96 sm:rounded-2xl shadow-2xl overflow-hidden z-50 flex flex-col"
                     style={{
                         background: 'var(--surface-card)',
                         color: 'var(--text-primary)',
@@ -258,11 +258,15 @@ export default function NotificationBell() {
                     </div>
 
                     {/* Items — `flex-1` so the list fills the available height
-                        inside the bottom-sheet's `max-h-[85vh]` cap. Previously
+                        inside the bottom-sheet's `max-h-[85svh]` cap. Previously
                         a fixed `max-h-80` (320px) was nested inside the larger
                         sheet container, so the list never grew to use the
                         sheet's available vertical space. On desktop the
-                        sm:max-h-80 keeps the popover's compact height. */}
+                        sm:max-h-80 keeps the popover's compact height.
+                        (svh — small viewport height — is the iOS Safari-safe
+                        unit that always excludes browser chrome; vh counts
+                        the address bar as viewport even when visible, which
+                        pushed the sheet's top off-screen on mobile.) */}
                     <div className="flex-1 sm:flex-none sm:max-h-80 overflow-y-auto overscroll-contain">
                         {loading ? (
                             <div className="flex items-center justify-center py-8">

@@ -54,7 +54,7 @@ export default function DuplicateMergeModal({
     return (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
             <div
-                className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+                className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90svh] overflow-y-auto"
                 onClick={e => e.stopPropagation()}
             >
                 <div className="p-6 border-b border-stone-200">
