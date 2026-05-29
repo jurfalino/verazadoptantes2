@@ -32,7 +32,7 @@ import { normalizeConfidence, fuzzyNameScore, SEARCH_SCORE_CEILING, PRACTICAL_MA
 import { normalizeText, extractPhones, extractEmails, extractSocials, isPlaceholderPhone, extractIds, stripIdsFromText } from '@/lib/tokenizer';
 import { count } from 'drizzle-orm';
 import { maskAdopterContact, matchSearchEntries, matchSearchNameTokens, hashNameToken, renderName, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
-import { isPiiGatingEnabled, resolveAdoptersVisibility } from '@/lib/piiAccessServer';
+import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -545,6 +545,9 @@ async function runDiscoveryMode(
             allProfiles.map((a: typeof adopters.$inferSelect) => ({ id: a.id, addedBy: a.addedBy })),
         )
         : null;
+    // Public-profiles flag is read once and then applied per-adopter via the
+    // adopter's `isPublic` column (v2.16.0-12+).
+    const publicProfilesFlag = piiGatingOn && await isPublicProfilesEnabled();
     // Search-match grants discovered while masking; persisted after the map.
     const newGrants: Array<{ adopterId: string; entryRef: string; scope: 'entry' | 'name_token' }> = [];
 
@@ -693,7 +696,11 @@ async function runDiscoveryMode(
         if (isUnauthenticated) vis = NO_ACCESS_VISIBILITY;
         else if (visibilityMap) vis = visibilityMap.get(a.id);
 
-        if (vis && !vis.nothingMasked) {
+        // Public-profile bypass: when the whole record is admin-flagged
+        // public AND the feature flag is on, treat the viewer as if they
+        // had nothing-masked visibility for this row.
+        const maskOpts = maskOptionsFor(publicProfilesFlag, a);
+        if (vis && !vis.nothingMasked && !maskOpts.adopterIsPublic) {
             // Search-match grant write (auth only). Two flavours, same pattern:
             // contact-entry matches and name-token matches both write a grant
             // and augment `vis` so this response renders the unlocked values.
@@ -739,10 +746,11 @@ async function runDiscoveryMode(
             }
             // Partial-reveal mask — identical for both paths. `renderName`
             // also picks up transient per-query reveals for unauth (no grants).
-            const masked = maskAdopterContact(result.adopter, vis);
+            // maskOpts is empty under unauth (publicProfilesFlag is false then).
+            const masked = maskAdopterContact(result.adopter, vis, maskOpts);
             result.adopter = {
                 ...result.adopter,
-                name: renderName(result.adopter.name, vis, normalizedQuery),
+                name: renderName(result.adopter.name, vis, normalizedQuery, maskOpts),
                 contactInfo: masked.contactInfo,
                 contactEntries: masked.contactEntries,
                 addressInfo: masked.addressInfo,

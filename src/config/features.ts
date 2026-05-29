@@ -28,6 +28,19 @@ export const FEATURE_FLAGS = {
     // access requests, and core-record edits are restricted to owner+admin.
     // Default off — server-side only, deliberately NOT in PUBLIC_FLAG_KEYS.
     ENABLE_PII_ACCESS_GATING: false,
+    // Public-mode profiles (v2.16.0-12). When on:
+    //  - Contact entries with `isPublic=true` (stamped by the ImportWizard
+    //    write path on entries derived from public social posts) are NOT
+    //    masked for any authenticated viewer.
+    //  - Adopters with `is_public=1` (admin override via /admin/adopters
+    //    pill toggle) have their whole record bypass PII masking — name
+    //    renders fully, every contact entry unmasked, addressInfo unmasked.
+    //    The admin override exposes even contributor-added entries that
+    //    don't carry their own isPublic flag.
+    // When off: both signals are completely ignored; existing PII gating
+    // behavior is unchanged and the admin toggle is hidden.
+    // Default off — server-side only, deliberately NOT in PUBLIC_FLAG_KEYS.
+    ENABLE_PUBLIC_PROFILES: false,
     // v2.14.10-1: three flags gate visibility of the public-showcase URL chips
     // on /my-animals. Each defaults FALSE so the URLs stay hidden until an
     // admin enables them explicitly per the staged rollout plan.
@@ -119,6 +132,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         ENABLE_QUICK_ACCESS_STRIP: true,
         ENABLE_CONTACT_PASTE: true,
         ENABLE_PII_ACCESS_GATING: false,
+        ENABLE_PUBLIC_PROFILES: false,
         SHOWCASE_GLOBAL_VISIBLE: false,
         SHOWCASE_ORG_VISIBLE: false,
         SHOWCASE_USER_VISIBLE: false,

@@ -156,6 +156,11 @@ export const createAdopterApiSchema = z.object({
     contactEntries: z.string().max(20_000).optional(),
     notes: z.string().max(10_000).optional(),
     sourceUrl: z.string().url().max(2_000).optional().or(z.literal('')),
+    // Provenance hint from the caller (v2.16.0-12+). Only 'imported' is
+    // accepted — other values fall through to the column default 'manual'.
+    // When 'imported' AND ENABLE_PUBLIC_PROFILES is on, the route stamps
+    // isPublic=true on every persisted contact entry.
+    source: z.literal('imported').optional(),
     flags: z.array(z.string().max(200)).max(20).optional(),
     images: z.array(z.object({
         data: z.string().max(10_000_000), // ~7.5MB base64

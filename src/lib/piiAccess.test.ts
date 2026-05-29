@@ -403,6 +403,30 @@ describe('maskContactEntries', () => {
         expect(r.entries[1]).toEqual({ type: 'alias', value: 'Juan Garcia' });
         expect(r.entries[1].masked).toBeUndefined();
     });
+
+    // v2.16.0-12: per-entry and per-profile public bypass.
+    it('per-entry isPublic bypasses the mask', () => {
+        const mixed: ContactEntry[] = [
+            { type: 'phone', value: '1123456789', isPublic: true },  // imported from public source
+            { type: 'email', value: 'a@b.com' },                      // contributor-added, still private
+        ];
+        const r = maskContactEntries(mixed, vis({}));
+        expect(r.maskedCount).toBe(1);
+        expect(r.entries[0]).toEqual({ type: 'phone', value: '1123456789', isPublic: true });
+        expect(r.entries[1].masked).toBe(true);
+    });
+
+    it('adopterIsPublic option short-circuits ALL entries (admin override)', () => {
+        // Even contributor-added entries (no per-entry isPublic) are exposed
+        // when the admin has flagged the whole profile public.
+        const mixed: ContactEntry[] = [
+            { type: 'phone', value: '1123456789', isPublic: true },
+            { type: 'email', value: 'a@b.com' },
+        ];
+        const r = maskContactEntries(mixed, vis({}), { adopterIsPublic: true });
+        expect(r.maskedCount).toBe(0);
+        expect(r.entries.every(e => !e.masked)).toBe(true);
+    });
 });
 
 describe('maskAdopterContact', () => {
@@ -474,6 +498,29 @@ describe('maskAdopterContact', () => {
         const parsed = JSON.parse(r.contactEntries as string) as ContactEntry[];
         expect(parsed.find(e => e.type === 'phone')?.value).toBe('1123456789');
         expect(parsed.find(e => e.type === 'email')?.masked).toBe(true);
+    });
+
+    it('adopterIsPublic short-circuits the whole record (admin override, v2.16.0-12)', () => {
+        // No grants, non-privileged viewer — but the admin has flagged the
+        // adopter public. Everything passes through unmasked, addressInfo
+        // included. maskedFieldCount = 0 so the gating banner won't render.
+        const r = maskAdopterContact(
+            { contactInfo: 'Tel: 1123456789\nEmail: a@b.com', contactEntries: entriesJson, addressInfo: 'Calle 1, CABA' },
+            vis({}),
+            { adopterIsPublic: true },
+        );
+        expect(r.maskedFieldCount).toBe(0);
+        expect(r.contactInfo).toContain('1123456789');
+        expect(r.contactEntries).toBe(entriesJson);
+        expect(r.addressInfo).toBe('Calle 1, CABA');
+    });
+
+    it('renderName returns the full name when adopterIsPublic is set', () => {
+        expect(renderName('María García López', vis({}), undefined, { adopterIsPublic: true }))
+            .toBe('María García López');
+        // Sanity: WITHOUT the option the same call partial-reveals to initials.
+        expect(renderName('María García López', vis({})))
+            .toBe('M G L');
     });
 });
 

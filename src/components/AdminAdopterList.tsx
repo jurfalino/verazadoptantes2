@@ -18,6 +18,9 @@ interface AdopterRow {
     contactInfo: string | null;
     country: string | null;
     addedBy: string | null;
+    /** Admin-flagged public override (v2.16.0-12+). Only meaningful when
+     *  publicProfilesFlag prop is true. */
+    isPublic?: boolean;
     createdAt: Date | string | null;
     updatedAt: Date | string | null;
 }
@@ -35,6 +38,9 @@ interface CountrySummary {
 interface Props {
     adopters: EnrichedAdopter[];
     countries: CountrySummary[];
+    /** When true, render the per-row "🌐 Público / 🔒 Privado" toggle and
+     *  honor the row's isPublic field. When false, the column is ignored. */
+    publicProfilesFlag?: boolean;
 }
 
 // ── Country helpers ──────────────────────────────────────────────────────
@@ -68,13 +74,52 @@ const COUNTRY_OPTIONS = [
 
 // ── Component ────────────────────────────────────────────────────────────
 
-export default function AdminAdopterList({ adopters, countries: _countries }: Props) {
+export default function AdminAdopterList({ adopters, countries: _countries, publicProfilesFlag = false }: Props) {
     const { t } = useLanguage();
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(false);
     const [actionCountry, setActionCountry] = useState('');
+    // Optimistic local state for the per-row public toggle. Keyed by adopter
+    // id so multiple toggles in flight don't trample each other.
+    const [publicBusy, setPublicBusy] = useState<Set<string>>(new Set());
+    const [publicOverride, setPublicOverride] = useState<Map<string, boolean>>(new Map());
     const router = useRouter();
     const toast = useShowToast();
+
+    const togglePublic = useCallback(async (adopterId: string, nextValue: boolean) => {
+        setPublicBusy(prev => new Set(prev).add(adopterId));
+        // Optimistic — show the new state immediately.
+        setPublicOverride(prev => new Map(prev).set(adopterId, nextValue));
+        try {
+            const { setAdopterPublic } = await import('@/app/actions/admin');
+            const res = await setAdopterPublic(adopterId, nextValue);
+            if (res.ok) {
+                toast.success(nextValue ? '🌐' : '🔒', nextValue ? 'Perfil marcado público' : 'Perfil marcado privado');
+                router.refresh();
+            } else {
+                // Roll back the optimistic update.
+                setPublicOverride(prev => {
+                    const next = new Map(prev);
+                    next.set(adopterId, !nextValue);
+                    return next;
+                });
+                toast.error('Error', res.error);
+            }
+        } catch (e) {
+            setPublicOverride(prev => {
+                const next = new Map(prev);
+                next.set(adopterId, !nextValue);
+                return next;
+            });
+            toast.error('Error', extractErrorId(e) || 'No se pudo cambiar el estado');
+        } finally {
+            setPublicBusy(prev => {
+                const next = new Set(prev);
+                next.delete(adopterId);
+                return next;
+            });
+        }
+    }, [router, toast]);
 
     const toggleSelect = useCallback((id: string) => {
         setSelectedIds(prev => {
@@ -218,6 +263,29 @@ export default function AdminAdopterList({ adopters, countries: _countries }: Pr
                                         {countryFlag(adopter.country)} {adopter.country.toUpperCase()}
                                     </span>
                                 )}
+                                {/* Public/Private toggle pill (v2.16.0-12). Hidden when
+                                    the feature flag is off — the column is a no-op then. */}
+                                {publicProfilesFlag && (() => {
+                                    const optimistic = publicOverride.get(adopter.id);
+                                    const effective = optimistic !== undefined ? optimistic : !!adopter.isPublic;
+                                    const busy = publicBusy.has(adopter.id);
+                                    return (
+                                        <button
+                                            type="button"
+                                            onClick={() => togglePublic(adopter.id, !effective)}
+                                            disabled={busy}
+                                            aria-pressed={effective}
+                                            title={effective ? 'Marcar como privado (PII gating activo)' : 'Marcar como público (bypass PII gating)'}
+                                            className={`text-xs px-2 py-0.5 rounded-full font-medium transition-colors disabled:opacity-60 ${
+                                                effective
+                                                    ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                                                    : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                                            }`}
+                                        >
+                                            {effective ? '🌐 Público' : '🔒 Privado'}
+                                        </button>
+                                    );
+                                })()}
                                 {/* Rating Badge */}
                                 {avgRating !== null && (
                                     <RatingBadge rating={avgRating} size="sm" label="short" />

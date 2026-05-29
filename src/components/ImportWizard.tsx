@@ -608,6 +608,10 @@ export default function ImportWizard() {
                 contactEntries: contactEntries.length ? JSON.stringify(contactEntries) : undefined,
                 notes: extractedData.notes,
                 sourceUrl,
+                // Marks the row as imported-from-social so the API writes
+                // source='imported' AND (when ENABLE_PUBLIC_PROFILES is on)
+                // stamps isPublic=true on the contact entries it persists.
+                source: 'imported' as const,
                 flags,
                 images: [
                     ...(processedImages.length > 0 ? processedImages : manualImages.filter(img => !img.file).map(img => ({ data: img.data, mimeType: img.mimeType }))),

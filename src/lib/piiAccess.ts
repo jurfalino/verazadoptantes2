@@ -551,8 +551,11 @@ export function renderName(
     name: string | null | undefined,
     visibility: Visibility,
     currentQuery?: string,
+    options: MaskContactOptions = {},
 ): string {
-    if (visibility.nothingMasked) return name ?? '';
+    // `adopterIsPublic` is the admin "this whole record is publicly known"
+    // override — name renders fully alongside the contact bypass (v2.16.0-12+).
+    if (visibility.nothingMasked || options.adopterIsPublic) return name ?? '';
     if (!name) return '';
 
     const queryTokens = currentQuery
@@ -596,16 +599,34 @@ export interface AdopterContactMask {
  * person without exposing the full value. The entry keeps its type and label
  * and gains `masked: true` so the UI renders it inert (no `tel:` / `mailto:`).
  */
+export interface MaskContactOptions {
+    /**
+     * The whole adopter's `is_public` flag is on AND the
+     * `ENABLE_PUBLIC_PROFILES` feature flag is enabled (v2.16.0-12+). When
+     * true, every entry bypasses the mask — admin override for "this whole
+     * record is publicly known," wins over per-entry `isPublic` (so
+     * contributor-added entries are exposed too).
+     */
+    adopterIsPublic?: boolean;
+}
+
 export function maskContactEntries(
     entries: ContactEntry[],
     visibility: Visibility,
+    options: MaskContactOptions = {},
 ): { entries: ContactEntry[]; maskedCount: number } {
     if (visibility.nothingMasked) return { entries, maskedCount: 0 };
+    if (options.adopterIsPublic) return { entries, maskedCount: 0 };
     let maskedCount = 0;
     const out = entries.map((e): ContactEntry => {
         // `other` (notes) and `alias` (name-like) are never masked. `alias`
         // mirrors how `adopters.name` itself is treated — name data, not PII.
         if (e.type === 'other' || e.type === 'alias') return e;
+        // Per-entry "sourced from a public channel" flag (v2.16.0-12+) —
+        // unmasked even for non-privileged viewers. Distinct from
+        // `adopterIsPublic`: this only exposes the entry that was itself
+        // imported from a public source, NOT later contributor-added entries.
+        if (e.isPublic) return e;
         if (visibility.unlockedEntryHashes.has(hashEntryValue(e.type, e.value))) return e;
         maskedCount++;
         return partialReveal(e);
@@ -618,12 +639,18 @@ export function maskContactEntries(
  * `addressInfo`) against a visibility verdict. Name, family members and notes
  * are NOT contact PII and are untouched.
  */
-export function maskAdopterContact(adopter: MaskableAdopter, visibility: Visibility): AdopterContactMask {
+export function maskAdopterContact(
+    adopter: MaskableAdopter,
+    visibility: Visibility,
+    options: MaskContactOptions = {},
+): AdopterContactMask {
     const contactInfo = adopter.contactInfo ?? null;
     const contactEntriesJson = adopter.contactEntries ?? null;
     const addressInfo = adopter.addressInfo ?? null;
 
-    if (visibility.nothingMasked) {
+    // Either privileged (owner / editor / admin / all-contact grant) or the
+    // whole adopter is admin-flagged public — pass everything through.
+    if (visibility.nothingMasked || options.adopterIsPublic) {
         return { contactInfo, contactEntries: contactEntriesJson, addressInfo, maskedFieldCount: 0 };
     }
 
@@ -632,7 +659,7 @@ export function maskAdopterContact(adopter: MaskableAdopter, visibility: Visibil
     // placeholder for legacy rows).
     const parsed = deserializeContactEntries(contactEntriesJson);
     const sourceEntries = parsed.length > 0 ? parsed : parseBlobToContactEntries(contactInfo);
-    const { entries: maskedEntries, maskedCount } = maskContactEntries(sourceEntries, visibility);
+    const { entries: maskedEntries, maskedCount } = maskContactEntries(sourceEntries, visibility, options);
     let maskedFieldCount = maskedCount;
 
     // Re-derive contactInfo from the partial-revealed entries; works for both

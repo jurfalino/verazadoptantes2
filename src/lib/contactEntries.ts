@@ -35,6 +35,18 @@ export interface ContactEntry {
      */
     addedBy?: string;
     /**
+     * True when this specific entry was sourced from a public channel — set
+     * by the ImportWizard write path on entries derived from public social
+     * posts (v2.16.0-12+). When `ENABLE_PUBLIC_PROFILES` is on the visibility
+     * resolver skips masking these entries for any authenticated viewer.
+     * Contributor-added entries don't get this flag — their contact info may
+     * not be public. The per-profile `adopters.isPublic` is the admin
+     * override that exposes ALL entries (including contributor-private ones)
+     * for cases where the admin has confirmed the whole record is publicly
+     * known.
+     */
+    isPublic?: boolean;
+    /**
      * Canonical rendered string — always populated. For a structured address
      * this is the joined "streetAndNumber, locality"; for a raw-paste address
      * it's the raw text; for any other type it's the value as typed.
@@ -343,6 +355,9 @@ export function deserializeContactEntries(json: string | null | undefined): Cont
                 ...(typeof e.addedBy === 'string' && e.addedBy.trim()
                     ? { addedBy: e.addedBy.slice(0, 256) }
                     : {}),
+                // Per-entry "sourced from a public channel" flag (v2.16.0-12+).
+                // Stored only when explicitly true to keep the JSON tight.
+                ...(e.isPublic === true ? { isPublic: true } : {}),
                 // Structured-address additive fields. Only kept for type='address';
                 // ignored on any other type even if a malformed row carries them.
                 ...(e.type === 'address' && typeof e.streetAndNumber === 'string' && e.streetAndNumber.trim()

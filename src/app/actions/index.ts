@@ -34,7 +34,7 @@ export { flagAdopter, getFlags, dismissFlag, removeVerification } from './flags'
 export { getMyAdopters, getMyAdoptions } from './dashboard';
 
 // Admin
-export { runAdminQuery, deleteAdopter, purgeAllData } from './admin';
+export { runAdminQuery, deleteAdopter, purgeAllData, backfillLegacyContactEntries, setAdopterPublic } from './admin';
 
 // Duplicates
 export { getDuplicateCandidates, checkTokenDuplicates } from './duplicates';

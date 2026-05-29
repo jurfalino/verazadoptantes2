@@ -2,6 +2,25 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-12] - 2026-05-29
+
+### Added
+- **Public-mode profiles** (gated by new `ENABLE_PUBLIC_PROFILES` flag, default off). Two switches, one for each privacy posture:
+  - **Per contact entry (`isPublic` field inside the `contactEntries` JSON)**: stamped `true` at import time on entries derived from public social posts (the `/api/adopters` POST handler does it when the new `source: 'imported'` payload field is set). The visibility resolver skips masking those entries for any authenticated viewer. Contributor-added entries on the same profile stay PII-gated — they didn't come from a public source.
+  - **Per adopter (`is_public` column, admin override)**: per-row toggle on `/admin/adopters` flips this. When set, the visibility resolver short-circuits to "nothingMasked" for the whole record: name renders fully, all contact entries unmasked (including contributor-added ones), `addressInfo` unmasked. Use when the admin has confirmed the whole record is publicly known.
+- New server action `setAdopterPublic(adopterId, isPublic)` (admin-gated, audited).
+- New migration `drizzle/0046_adopter_is_public.sql` adds the column with `DEFAULT 0`.
+- 7 new unit tests covering: `isPublic` round-trip through deserialize + merge; per-entry bypass; admin-override short-circuit; `renderName` unmasking under the override.
+
+### Changed
+- `ImportWizard`'s POST to `/api/adopters` now sends `source: 'imported'` — surfaces the "Imported" badge on `/my-adopters` (which already had display code but no row ever carried the value) AND gates the per-entry `isPublic` stamp.
+- `createAdopterApiSchema` accepts `source: 'imported'` as an optional field.
+
+### Behavior under flag = off
+- Both `isPublic` signals completely ignored by the visibility resolver.
+- Admin toggle hidden on `/admin/adopters`.
+- Imports DO still set `source='imported'` (no harm — it was always supposed to) but do NOT stamp per-entry `isPublic` (the conditional check requires the flag).
+
 ## [2.16.0-11] - 2026-05-28
 
 ### Changed

@@ -16,7 +16,7 @@ import {
     mergeContactEntries,
 } from '@/lib/contactEntries';
 import { canEditAdopterRecord, maskAdopterContact, redactHistoryChanges, renderName } from '@/lib/piiAccess';
-import { isPiiGatingEnabled, resolveAdopterVisibility } from '@/lib/piiAccessServer';
+import { isPiiGatingEnabled, resolveAdopterVisibility, buildMaskOptions } from '@/lib/piiAccessServer';
 
 
 export async function getAdopter(id: string) {
@@ -35,15 +35,19 @@ export async function getAdopter(id: string) {
         // PII access gating: mask contact fields for non-privileged viewers.
         if (await isPiiGatingEnabled()) {
             const visibility = await resolveAdopterVisibility(user, { id: adopter.id, addedBy: adopter.addedBy });
-            if (!visibility.nothingMasked) {
-                const masked = maskAdopterContact(adopter, visibility);
+            // adopterIsPublic option short-circuits the per-entry mask when
+            // the admin has flagged the whole record public (v2.16.0-12+).
+            const maskOpts = await buildMaskOptions(adopter);
+            const fullyVisible = visibility.nothingMasked || !!maskOpts.adopterIsPublic;
+            if (!fullyVisible) {
+                const masked = maskAdopterContact(adopter, visibility, maskOpts);
                 adopter.contactInfo = masked.contactInfo;
                 adopter.contactEntries = masked.contactEntries;
                 adopter.addressInfo = masked.addressInfo;
                 // Name → initials baseline + per-token reveal from name_token
                 // grants (no currentQuery on the profile — only grants apply).
                 // familyMembers → hidden (PII).
-                adopter.name = renderName(adopter.name, visibility);
+                adopter.name = renderName(adopter.name, visibility, undefined, maskOpts);
                 adopter.familyMembers = null;
             }
         }
@@ -429,12 +433,16 @@ export async function getHistory(adopterId: string) {
         if (await isPiiGatingEnabled()) {
             let viewer = 'unknown';
             try { viewer = await getUser(); } catch { /* anonymous */ }
-            const adopter = await db.select({ addedBy: adopters.addedBy })
+            const adopter = await db.select({ addedBy: adopters.addedBy, isPublic: adopters.isPublic })
                 .from(adopters).where(eq(adopters.id, adopterId)).get();
             const visibility = await resolveAdopterVisibility(viewer, {
                 id: adopterId, addedBy: adopter?.addedBy ?? null,
             });
-            if (!visibility.nothingMasked) {
+            const maskOpts = await buildMaskOptions(adopter);
+            // Public profiles bypass redaction — if the whole record is admin-
+            // flagged public, the change history is part of what's visible.
+            const fullyVisible = visibility.nothingMasked || !!maskOpts.adopterIsPublic;
+            if (!fullyVisible) {
                 return rows.map((r: typeof adopterHistory.$inferSelect) => ({
                     ...r, changes: redactHistoryChanges(r.changes, visibility),
                 }));

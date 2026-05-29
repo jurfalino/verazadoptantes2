@@ -264,3 +264,48 @@ export async function backfillLegacyContactEntries(): Promise<
         return { ok: false, error: `Failed (Error ID: ${errorId})` };
     }
 }
+
+/**
+ * Admin override: flag (or unflag) a whole adopter row as public. When the
+ * `ENABLE_PUBLIC_PROFILES` feature flag is on AND this column is 1, the
+ * visibility resolver short-circuits to "nothingMasked" for any
+ * authenticated viewer — name renders fully, all contact entries unmasked,
+ * addressInfo unmasked. The admin override is intentionally coarse: it
+ * exposes contributor-added entries too, on the basis that the admin has
+ * confirmed the whole record is publicly known. Per-entry isPublic (set at
+ * import time on social-sourced entries) is the finer-grain primitive.
+ */
+export async function setAdopterPublic(adopterId: string, isPublic: boolean):
+    Promise<{ ok: true; adopterId: string; isPublic: boolean } | { ok: false; error: string }> {
+    const session = await auth();
+    const actor = session?.user?.email ?? '';
+    if (!actor || !(await checkIsAdminAsync(actor))) {
+        return { ok: false, error: 'Unauthorized' };
+    }
+    if (!adopterId || typeof adopterId !== 'string') {
+        return { ok: false, error: 'Missing adopter id' };
+    }
+    try {
+        const db = await getDb();
+        if (!db) return { ok: false, error: 'No database' };
+        const result = await db.update(adopters)
+            .set({ isPublic: isPublic ? 1 : 0, updatedAt: new Date() })
+            .where(eq(adopters.id, adopterId));
+        const rowsAffected = (result as unknown as { rowsAffected?: number }).rowsAffected ?? 1;
+        if (rowsAffected === 0) {
+            return { ok: false, error: 'Adopter not found' };
+        }
+        logAudit({
+            userEmail: actor,
+            action: isPublic ? 'adopter_made_public' : 'adopter_made_private',
+            target: adopterId,
+        });
+        revalidatePath('/admin');
+        revalidatePath('/admin/adopters');
+        revalidatePath(`/adopter/${adopterId}`);
+        return { ok: true, adopterId, isPublic };
+    } catch (error) {
+        const errorId = logger.error('setAdopterPublic failed', error, { adopterId, actor });
+        return { ok: false, error: `Failed (Error ID: ${errorId})` };
+    }
+}

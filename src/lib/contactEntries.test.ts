@@ -338,3 +338,29 @@ describe('per-entry addedBy attribution', () => {
         expect(merged[0].addedBy).toBe('first@example.com');
     });
 });
+
+// v2.16.0-12 adds per-entry isPublic so import-time stamping marks entries
+// that came from public social sources. Round-trip must survive serialize ⇄
+// deserialize and the dedupe-keep-older rule has to be symmetric with id/addedBy.
+describe('per-entry isPublic flag', () => {
+    it('deserializeContactEntries preserves isPublic=true when present', () => {
+        const entries = deserializeContactEntries(
+            '[{"id":"a","type":"phone","value":"555-1234","isPublic":true}]',
+        );
+        expect(entries[0].isPublic).toBe(true);
+    });
+
+    it('deserializeContactEntries leaves isPublic undefined on legacy entries', () => {
+        const entries = deserializeContactEntries('[{"type":"phone","value":"555-1234"}]');
+        expect(entries[0].isPublic).toBeUndefined();
+    });
+
+    it('mergeContactEntries keeps the older entry’s isPublic on value collision', () => {
+        const merged = mergeContactEntries(
+            [{ id: 'older', type: 'phone', value: '1123456789', isPublic: true }],
+            [{ id: 'newer', type: 'phone', value: '11 2345-6789' }],
+        );
+        expect(merged).toHaveLength(1);
+        expect(merged[0].isPublic).toBe(true);
+    });
+});

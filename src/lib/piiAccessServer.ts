@@ -23,6 +23,7 @@ import {
     hashNameToken,
     type Visibility,
     type PiiGrantRow,
+    type MaskContactOptions,
 } from '@/lib/piiAccess';
 
 interface AdopterRef {
@@ -36,6 +37,35 @@ const isRealViewer = isRealActorEmail;
 /** Whether the PII access-gating feature flag is on. */
 export function isPiiGatingEnabled(): Promise<boolean> {
     return getFeatureFlag('ENABLE_PII_ACCESS_GATING');
+}
+
+/** Whether the public-profiles feature flag is on (v2.16.0-12+). */
+export function isPublicProfilesEnabled(): Promise<boolean> {
+    return getFeatureFlag('ENABLE_PUBLIC_PROFILES');
+}
+
+/**
+ * Build the `MaskContactOptions` for a single adopter once per request.
+ * Callers that already have the flag value should use `maskOptionsFor`
+ * below to avoid re-fetching.
+ */
+export async function buildMaskOptions(
+    adopter: { isPublic?: number | boolean | null } | null | undefined,
+): Promise<MaskContactOptions> {
+    const flag = await isPublicProfilesEnabled();
+    return { adopterIsPublic: !!flag && !!adopter?.isPublic };
+}
+
+/**
+ * Cheap per-adopter derivation when the flag has already been fetched
+ * (e.g. inside a list-rendering path that resolves many adopters at once).
+ * Returns the same shape `buildMaskOptions` does.
+ */
+export function maskOptionsFor(
+    publicProfilesFlag: boolean,
+    adopter: { isPublic?: number | boolean | null } | null | undefined,
+): MaskContactOptions {
+    return { adopterIsPublic: !!publicProfilesFlag && !!adopter?.isPublic };
 }
 
 /** Resolve visibility for a single (viewer, adopter) pair. Fails closed on error. */

@@ -33,6 +33,16 @@ export const adopters = sqliteTable("adopters", {
     // pre-migration row stays valid; the backfill upgrades known form-sourced
     // rows automatically.
     source: text("source").notNull().default("manual"),
+
+    // Public profile flag (added in migration 0046, gated by
+    // ENABLE_PUBLIC_PROFILES). Admin override that bypasses PII gating on the
+    // whole record for any authenticated viewer — name renders fully, all
+    // contact entries unmasked, addressInfo unmasked. Per-entry `isPublic`
+    // (inside the contactEntries JSON) is the finer-grained primitive; this
+    // column is the "the admin has confirmed the whole record is publicly
+    // known" override that wins over a contributor's later-added private
+    // contact entries too. 0 = private (default), 1 = public.
+    isPublic: integer("is_public").notNull().default(0),
 }, (table) => ({
     nameIdx: index("name_idx").on(table.name),
 }));
