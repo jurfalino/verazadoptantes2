@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-16] - 2026-05-29
+
+### Added
+- **`ENABLE_CLEAN_HOMEPAGE` feature flag** (default off, admin-toggleable via `/admin/config`). When on: the two activity cards on the homepage ("Registrar una adopción" + "Dejar una observación") are hidden, and the surviving import affordance demotes from a peer card to a single inline link-pill below the search. Rationale: when the activity entry points are removed, leaving a single peer-card looks orphaned and over-promotes import to a "primary action" tier — wrong signal since the homepage's primary action is search. The link-pill keeps import discoverable without competing with search for visual weight, matching the existing secondary-tier pattern used by `QuickAccessStrip`. New i18n key `home.action_import_secondary` for the compact link copy.
+
 ## [2.16.0-15] - 2026-05-29
 
 ### Fixed

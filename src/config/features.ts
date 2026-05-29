@@ -41,6 +41,13 @@ export const FEATURE_FLAGS = {
     // behavior is unchanged and the admin toggle is hidden.
     // Default off — server-side only, deliberately NOT in PUBLIC_FLAG_KEYS.
     ENABLE_PUBLIC_PROFILES: false,
+    // Clean-homepage mode (v2.16.0-16). When on: the two activity cards
+    // ("Registrar una adopción" + "Dejar una observación") are hidden and
+    // the surviving import affordance is rendered as a small secondary
+    // link-pill below the search instead of a peer card. Search becomes
+    // unambiguously the homepage's primary action; import stays
+    // discoverable for power users. Default off.
+    ENABLE_CLEAN_HOMEPAGE: false,
     // v2.14.10-1: three flags gate visibility of the public-showcase URL chips
     // on /my-animals. Each defaults FALSE so the URLs stay hidden until an
     // admin enables them explicitly per the staged rollout plan.
@@ -133,6 +140,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         ENABLE_CONTACT_PASTE: true,
         ENABLE_PII_ACCESS_GATING: false,
         ENABLE_PUBLIC_PROFILES: false,
+        ENABLE_CLEAN_HOMEPAGE: false,
         SHOWCASE_GLOBAL_VISIBLE: false,
         SHOWCASE_ORG_VISIBLE: false,
         SHOWCASE_USER_VISIBLE: false,

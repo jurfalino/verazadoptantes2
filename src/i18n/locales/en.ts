@@ -94,6 +94,8 @@ export const en = {
         flag_desc_pii_access_gating: 'When on, a viewer sees only the contact details they searched for or were granted; the rest is masked behind approvable access requests, and editing the core record is restricted to its owner or an admin. Significant behavior change — roll out deliberately. Default OFF.',
         flag_label_public_profiles: 'Public profiles',
         flag_desc_public_profiles: 'When on, contact entries imported from public social posts render unmasked to any authenticated viewer (they were public to begin with). Admins can also mark a whole profile public from /admin/adopters (🌐/🔒 toggle) to expose contributor-added entries too. Requires PII gating to be enabled. Default OFF.',
+        flag_label_clean_homepage: 'Minimal homepage',
+        flag_desc_clean_homepage: 'When on, hides the two activity cards on the homepage ("Register an adoption" and "Leave an observation"). Search becomes the sole primary action; the import-from-social affordance stays accessible as a secondary link below the search. Useful to focus the homepage on adopter lookup. Default OFF.',
         flag_label_showcase_global: 'Public global catalog URL',
         flag_desc_showcase_global: 'On /my-animals, show the public link to the global catalog of all available animals (root "/"). Off by default while the flow is validated.',
         flag_label_showcase_org: 'Public per-org URLs',
@@ -372,6 +374,9 @@ export const en = {
         action_import_title: 'Import from a post',
         action_import_desc: 'Paste a link or screenshot from social media and we extract the info automatically.',
         action_import_btn: 'Import Now',
+        // Compact label used in clean-homepage mode where import lives below
+        // the search as a single secondary link (no card chrome).
+        action_import_secondary: 'Import a profile from social media',
         // Sample record
         sample_record: 'See an example profile',
         process_guide: 'Adoption Process Guide',

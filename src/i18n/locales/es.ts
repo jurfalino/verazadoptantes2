@@ -94,6 +94,8 @@ export const es = {
         flag_desc_pii_access_gating: 'Cuando está activa, cada persona ve solo los datos de contacto que buscó o que le fueron otorgados; el resto queda oculto detrás de solicitudes de acceso aprobables, y editar el registro queda restringido al responsable o a un admin. Cambio de comportamiento importante — activar con cuidado. Por defecto desactivada.',
         flag_label_public_profiles: 'Perfiles públicos',
         flag_desc_public_profiles: 'Cuando está activa, los datos de contacto importados desde redes sociales se muestran sin máscara a cualquier viewer autenticado (porque venían de una fuente pública). Además, el admin puede marcar un perfil entero como público desde /admin/adopters (toggle 🌐/🔒) para exponer también los datos agregados por contribuyentes. Requiere que la protección PII esté activada. Por defecto desactivada.',
+        flag_label_clean_homepage: 'Homepage minimalista',
+        flag_desc_clean_homepage: 'Cuando está activa, oculta las dos tarjetas de actividad de la homepage ("Registrar una adopción" y "Dejar una observación"). Solo queda la búsqueda como acción principal; el botón de importar desde redes sociales sigue accesible como link secundario debajo de la búsqueda. Útil para enfocar la homepage en consulta de adoptantes. Por defecto desactivada.',
         flag_label_showcase_global: 'URL pública de catálogo global',
         flag_desc_showcase_global: 'Mostrar en /my-animals el link al catálogo público de todos los animales en adopción (raíz "/"). Por defecto apagado mientras se valida el flujo.',
         flag_label_showcase_org: 'URLs públicas por organización',
@@ -371,6 +373,9 @@ export const es = {
         action_import_title: 'Importar desde un post',
         action_import_desc: 'Pegá un link o captura de redes sociales y extraemos la info automáticamente.',
         action_import_btn: 'Importar Ahora',
+        // Compact label used in clean-homepage mode where import lives below
+        // the search as a single secondary link (no card chrome).
+        action_import_secondary: 'Importar perfil desde redes sociales',
         // Sample record
         sample_record: 'Ver un perfil de ejemplo',
         process_guide: 'Guía del Proceso de Adopción',
