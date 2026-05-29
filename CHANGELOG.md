@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-13] - 2026-05-29
+
+### Fixed
+- **Editing or deleting a legacy contact entry failed with "Entry not found."** Bug shape: `deserializeContactEntries` was assigning a fresh `crypto.randomUUID()` to every entry that lacked a persisted `id` — so the client's id (assigned at render time) never matched the server's id (re-assigned at request time). Both `updateContactEntry.ts:57` and `removeContactEntry.ts:53` were affected; the user-reported case was an address edit but the same bug silently broke delete on every legacy chip. Fix: switched to a deterministic id derived from `type|normalizedValue` (`legacy-<8hex>-<8hex>`) so client and server independently agree on the same id. Once any per-entry action writes the row back, the persisted id is carried through and the deterministic path stops firing for that entry.
+- **Editing a legacy address chip showed empty input fields.** When the persisted entry had only `value` (no `streetAndNumber` / `locality` — the pre-v2.15 structured-address shape), `startEdit` seeded both inputs from undefined. Fix: `ContactEntriesSection.startEdit` now uses the shared `deriveStreet` / `deriveLocality` helpers (lifted from `ContactEntriesInput` into `lib/contactEntries.ts`) which split on the first comma, falling back to the whole value as street when no comma is present. The user-reported "MAIPU 800/CABA" now pre-fills in the street field instead of leaving the form empty.
+
+### Changed
+- `deriveStreet` and `deriveLocality` moved from `ContactEntriesInput.tsx` into `lib/contactEntries.ts` as exported helpers, reused by both the bulk-edit (ImportWizard) and per-entry-edit (ContactEntriesSection) components.
+
 ## [2.16.0-12] - 2026-05-29
 
 ### Added

@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
-import type { ContactEntry, ContactEntryType } from '@/lib/contactEntries';
+import { deriveStreet, deriveLocality, type ContactEntry, type ContactEntryType } from '@/lib/contactEntries';
 import { addContactEntry } from '@/app/actions/addContactEntry';
 import { updateContactEntry } from '@/app/actions/updateContactEntry';
 import { removeContactEntry } from '@/app/actions/removeContactEntry';
@@ -220,10 +220,14 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         // lose the entry they just opened.
         cancelPendingDelete();
         setEditingId(entry.id);
+        // For address entries: when the legacy single-`value` shape is the
+        // only thing present, fall back through deriveStreet / deriveLocality
+        // (split on first comma) so the form pre-fills with the existing
+        // text instead of empty inputs. v2.16.0-13 fix.
         setEditDraft({
             value: entry.value,
-            streetAndNumber: entry.streetAndNumber ?? '',
-            locality: entry.locality ?? '',
+            streetAndNumber: entry.type === 'address' ? deriveStreet(entry) : (entry.streetAndNumber ?? ''),
+            locality: entry.type === 'address' ? deriveLocality(entry) : (entry.locality ?? ''),
         });
     }
 

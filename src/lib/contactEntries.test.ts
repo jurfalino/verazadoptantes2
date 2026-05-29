@@ -6,6 +6,9 @@ import {
     buildContactEntries,
     deserializeContactEntries,
     mergeContactEntries,
+    deriveStableLegacyId,
+    deriveStreet,
+    deriveLocality,
     type ContactEntry,
 } from './contactEntries';
 
@@ -362,5 +365,69 @@ describe('per-entry isPublic flag', () => {
         );
         expect(merged).toHaveLength(1);
         expect(merged[0].isPublic).toBe(true);
+    });
+});
+
+// v2.16.0-13 — the deterministic-id fix for legacy entries. The bug shape:
+// deserialize was assigning a fresh crypto.randomUUID() to every entry that
+// lacked an id, so the client's id never matched the server's id on
+// update/remove → "Entry not found." Switching to a stable hash makes both
+// sides agree and unblocks per-entry mutation on legacy rows.
+describe('deterministic legacy id (v2.16.0-13)', () => {
+    it('two deserializations of the same legacy JSON produce the same id', () => {
+        const json = '[{"type":"address","value":"MAIPU 800/CABA"}]';
+        const a = deserializeContactEntries(json);
+        const b = deserializeContactEntries(json);
+        expect(a[0].id).toBe(b[0].id);
+        expect(a[0].id).toMatch(/^legacy-/);
+    });
+
+    it('legacy id changes when the value changes (rebuilt after a typo fix)', () => {
+        const a = deserializeContactEntries('[{"type":"phone","value":"555-1234"}]');
+        const b = deserializeContactEntries('[{"type":"phone","value":"555-9999"}]');
+        expect(a[0].id).not.toBe(b[0].id);
+    });
+
+    it('persisted-id entries are unchanged (no legacy- prefix)', () => {
+        const entries = deserializeContactEntries(
+            '[{"id":"550e8400-e29b-41d4-a716-446655440000","type":"phone","value":"555-1234"}]',
+        );
+        expect(entries[0].id).toBe('550e8400-e29b-41d4-a716-446655440000');
+    });
+
+    it('deriveStableLegacyId is normalization-stable (phone formatting variants → same id)', () => {
+        // Phones normalize to digits only — so the same digit sequence with
+        // different separators must derive the same id. (Different digit
+        // sequences are correctly different numbers.)
+        expect(deriveStableLegacyId('phone', '11 2345-6789'))
+            .toBe(deriveStableLegacyId('phone', '11-2345.6789'));
+        expect(deriveStableLegacyId('phone', '11 2345-6789'))
+            .toBe(deriveStableLegacyId('phone', '1123456789'));
+    });
+});
+
+describe('legacy address field derivation (v2.16.0-13)', () => {
+    it('deriveStreet returns streetAndNumber when set (structured-shape passthrough)', () => {
+        const entry: ContactEntry = { type: 'address', value: 'X, Y', streetAndNumber: 'X', locality: 'Y' };
+        expect(deriveStreet(entry)).toBe('X');
+    });
+
+    it('deriveStreet splits on first comma when only value is present', () => {
+        const entry: ContactEntry = { type: 'address', value: 'MAIPU 800, CABA' };
+        expect(deriveStreet(entry)).toBe('MAIPU 800');
+        expect(deriveLocality(entry)).toBe('CABA');
+    });
+
+    it('deriveStreet returns the whole value when no comma (the user-reported case)', () => {
+        // "MAIPU 800/CABA" — no comma → can't split; surface the whole thing
+        // in the street field rather than empty.
+        const entry: ContactEntry = { type: 'address', value: 'MAIPU 800/CABA' };
+        expect(deriveStreet(entry)).toBe('MAIPU 800/CABA');
+        expect(deriveLocality(entry)).toBe('');
+    });
+
+    it('deriveLocality returns locality when set (structured passthrough)', () => {
+        const entry: ContactEntry = { type: 'address', value: 'X, Y', streetAndNumber: 'X', locality: 'Y' };
+        expect(deriveLocality(entry)).toBe('Y');
     });
 });

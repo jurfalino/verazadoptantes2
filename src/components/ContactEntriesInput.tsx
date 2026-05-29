@@ -8,6 +8,8 @@ import {
     mergeContactEntries,
     joinedAddressValue,
     isRawAddress,
+    deriveStreet,
+    deriveLocality,
     type ContactEntry,
     type ContactEntryType,
 } from '@/lib/contactEntries';
@@ -85,22 +87,10 @@ export default function ContactEntriesInput({ entries, onChange }: ContactEntrie
 
     // Address-specific updates — keep `value` in sync as the canonical
     // rendered string (joined for structured shape, raw for escape-hatch).
-    // Lazy-migration source: a legacy address row has only `value`; the form
-    // splits it by the first comma to seed the two fields visually, and the
+    // Lazy-migration source: a legacy address row has only `value`; the
+    // shared helpers `deriveStreet` / `deriveLocality` (in lib/contactEntries)
+    // split it by the first comma to seed the two fields visually, and the
     // first edit promotes those into stored `streetAndNumber` / `locality`.
-    function deriveStreet(entry: ContactEntry): string {
-        if (typeof entry.streetAndNumber === 'string') return entry.streetAndNumber;
-        const v = entry.value || '';
-        const firstComma = v.indexOf(',');
-        return firstComma > 0 ? v.slice(0, firstComma).trim() : v.trim();
-    }
-    function deriveLocality(entry: ContactEntry): string {
-        if (typeof entry.locality === 'string') return entry.locality;
-        const v = entry.value || '';
-        const firstComma = v.indexOf(',');
-        return firstComma > 0 ? v.slice(firstComma + 1).trim() : '';
-    }
-
     function updateAddressStreet(index: number, streetAndNumber: string) {
         const entry = entries[index];
         const locality = deriveLocality(entry);

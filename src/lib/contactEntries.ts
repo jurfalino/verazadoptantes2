@@ -152,6 +152,64 @@ export function normalizeEntryValue(type: ContactEntryType, value: string): stri
     }
 }
 
+/**
+ * Derive a stable id for a legacy entry that lacks one in its persisted
+ * JSON. Both client and server independently call `deserializeContactEntries`
+ * — using `crypto.randomUUID()` here would assign a different id to the
+ * SAME entry on each call, breaking the per-entry update/remove round-trip
+ * (the client sends id A, the server's re-deserialize sees id B, lookup
+ * fails with "Entry not found"). Deriving the id deterministically from
+ * `type|normalizedValue` makes both sides agree.
+ *
+ * Format: `legacy-<8hex>-<8hex>` so it visually distinguishes itself from
+ * a real crypto.randomUUID() output (which uses canonical 8-4-4-4-12
+ * hyphen grouping). Once any per-entry mutation writes the row back, the
+ * persisted JSON carries this id and the deterministic path stops firing
+ * for that entry.
+ */
+export function deriveStableLegacyId(type: ContactEntryType, value: string): string {
+    const key = `${type}|${normalizeEntryValue(type, value)}`;
+    let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+    for (let i = 0; i < key.length; i++) {
+        const ch = key.charCodeAt(i);
+        h1 = Math.imul(h1 ^ ch, 2654435761);
+        h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    const a = (h1 >>> 0).toString(16).padStart(8, '0');
+    const b = (h2 >>> 0).toString(16).padStart(8, '0');
+    return `legacy-${a}-${b}`;
+}
+
+/**
+ * Derive the street/number portion of an address entry's two-field form
+ * from whatever the entry actually carries. For an entry already in the
+ * structured shape (`streetAndNumber` set), return that. For a legacy
+ * single-`value` entry, fall back to splitting on the first comma so
+ * "MAIPU 800, CABA" → street="MAIPU 800". No comma → return the whole
+ * value as the street.
+ *
+ * Used by both `ContactEntriesInput` (bulk edit on ImportWizard) and
+ * `ContactEntriesSection` (per-entry inline edit) so legacy address rows
+ * render with their existing value pre-filled in the edit form instead of
+ * empty.
+ */
+export function deriveStreet(entry: ContactEntry): string {
+    if (typeof entry.streetAndNumber === 'string') return entry.streetAndNumber;
+    const v = entry.value || '';
+    const firstComma = v.indexOf(',');
+    return firstComma > 0 ? v.slice(0, firstComma).trim() : v.trim();
+}
+
+/** Companion to deriveStreet — extracts the locality half for legacy single-value entries. */
+export function deriveLocality(entry: ContactEntry): string {
+    if (typeof entry.locality === 'string') return entry.locality;
+    const v = entry.value || '';
+    const firstComma = v.indexOf(',');
+    return firstComma > 0 ? v.slice(firstComma + 1).trim() : '';
+}
+
 function dedupe(entries: ContactEntry[]): ContactEntry[] {
     const seen = new Set<string>();
     const out: ContactEntry[] = [];
@@ -343,9 +401,15 @@ export function deserializeContactEntries(json: string | null | undefined): Cont
                 e && typeof e.value === 'string' && valid.includes(e.type) && e.value.trim().length > 0)
             .slice(0, MAX_ENTRIES)
             .map(e => ({
-                // Legacy entries (pre-2.16) had no `id`; assign one on read. Persisted
-                // on the next write. IDs are identity, never dedup keys.
-                id: typeof e.id === 'string' && e.id.trim() ? e.id : crypto.randomUUID(),
+                // Legacy entries (pre-2.16) had no `id`; assign one on read. Use a
+                // deterministic hash of type+normalizedValue so client and server
+                // independently derive the SAME id for the same entry — without
+                // this, every deserialize would produce different UUIDs and the
+                // per-entry update/remove round-trip would fail with
+                // "Entry not found" (see v2.16.0-13). Real-id entries keep theirs.
+                id: typeof e.id === 'string' && e.id.trim()
+                    ? e.id
+                    : deriveStableLegacyId(e.type, e.value),
                 type: e.type,
                 value: e.value.slice(0, MAX_VALUE_LEN[e.type]),
                 ...(e.label ? { label: String(e.label).slice(0, MAX_LABEL_LEN) } : {}),
