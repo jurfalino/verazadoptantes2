@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-17] - 2026-05-29
+
+### Fixed
+- **Phone-shaped queries (digits-only) didn't find profiles whose stored phone has separators.** Searching `64622274` returned no match against a profile with `Tel: 6462-2274` because the homepage discovery search runs `LIKE '%64622274%'` on `adopters.contactInfo`, which preserves the user's verbatim formatting (hyphens / spaces / parens). The hyphen broke the substring. Fix: added `searchPhoneTokenMatches` — a parallel lookup against `duplicate_tokens` (which already canonicalizes phones to digit-only strings via `tokenizer.extractPhones`) for phone-shaped queries with ≥6 digits. The IDs join the existing extras set and flow through the same enrichment + scoring + masking pipeline that history/adoption matches already use. Anti-fishing posture preserved (same `PHONE_SEARCH_MIN_DIGITS` floor). Purely additive — no DB schema change, no migration, no behavior change for any query the LIKE search already matched.
+
 ## [2.16.0-16] - 2026-05-29
 
 ### Added

@@ -162,6 +162,41 @@ async function searchAdoptionMatches(db: any, tokens: string[]): Promise<DeepMat
     }
 }
 
+/**
+ * Phone-token lookup against `duplicate_tokens` for phone-shaped queries
+ * (v2.16.0-17). The discovery LIKE path runs on `adopters.contactInfo`
+ * which stores the user's verbatim phone formatting ("Tel: 6462-2274"),
+ * so a digit-only query ("64622274") slides past the LIKE substring.
+ * The tokenizer canonicalizes phones to digits-only when populating
+ * duplicate_tokens, so the same digit-only query matches there.
+ *
+ * This is purely additive — IDs found here are unioned into the existing
+ * extras set and flow through the same enrichment + scoring + masking
+ * pipeline that history/adoption matches already use. Same min-digits
+ * floor (PHONE_SEARCH_MIN_DIGITS) keeps the anti-fishing posture.
+ */
+async function searchPhoneTokenMatches(db: any, normalizedQuery: string): Promise<string[]> {
+    try {
+        if (!isPhoneLikeQuery(normalizedQuery)) return [];
+        const qDigits = normalizedQuery.replace(/\D/g, '');
+        if (qDigits.length < PHONE_SEARCH_MIN_DIGITS) return [];
+        const rows = await db.select({ adopterId: duplicateTokens.adopterId })
+            .from(duplicateTokens)
+            .where(and(
+                or(
+                    eq(duplicateTokens.tokenType, 'phone'),
+                    eq(duplicateTokens.tokenType, 'phone_suffix'),
+                ),
+                like(duplicateTokens.tokenValue, `%${escapeLike(qDigits)}%`),
+            ))
+            .limit(SEARCH_RESULT_LIMIT);
+        return rows.map((r: { adopterId: string }) => r.adopterId);
+    } catch (e) {
+        logger.warn('Phone-token search error', { error: e instanceof Error ? e.message : String(e) });
+        return [];
+    }
+}
+
 // ── Discovery scoring weights ─────────────────────────────────────────────────
 
 const WEIGHTS = {
@@ -491,10 +526,14 @@ async function runDiscoveryMode(
     const profileConds: any[] = [isNull(adopters.deletedAt), buildProfileSearchConditions(tokens)];
     if (userCountry) profileConds.push(eq(adopters.country, userCountry));
 
-    const [directResults, historyMatches, adoptionMatches] = await Promise.all([
+    const [directResults, historyMatches, adoptionMatches, phoneTokenIds] = await Promise.all([
         db.select().from(adopters).where(and(...profileConds)).limit(SEARCH_ENRICHMENT_LIMIT),
         searchHistoryMatches(db, tokens),
         searchAdoptionMatches(db, tokens),
+        // v2.16.0-17: catches digit-only phone queries (e.g. "64622274") that
+        // the LIKE search above misses because the stored contactInfo blob
+        // keeps the user's verbatim formatting ("Tel: 6462-2274").
+        searchPhoneTokenMatches(db, normalizedQuery),
     ]);
 
     const historyTextMap = new Map<string, string>();
@@ -511,7 +550,7 @@ async function runDiscoveryMode(
         if (!adoptionTextMap.has(m.adopterId)) adoptionTextMap.set(m.adopterId, m.matchedText);
     }
 
-    const extraIds = new Set([...historyIds, ...adoptionIds]);
+    const extraIds = new Set([...historyIds, ...adoptionIds, ...phoneTokenIds]);
     directResults.forEach((r: any) => extraIds.delete(r.id));
 
     // D1-compatible: fan out with eq() per ID instead of inArray() which silently breaks on D1
