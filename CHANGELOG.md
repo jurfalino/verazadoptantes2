@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-27] - 2026-05-30
+
+### Fixed
+- **`DuplicateMergeModal` buttons missing `type="button"` were submitting the parent `AdopterForm`** when opened from `DuplicateHint`. AdopterForm wraps everything in `<form onSubmit={handleSave}>` (line 544); inside a form, a `<button>` without an explicit `type` defaults to `type="submit"`. So clicking Keep/Delete (the ProfileCard), Cancel, or Merge in the modal submitted the surrounding adopter form to `/adopter/{id}?q=...`, producing the 500 + "An error occurred in the Server Components render…" double toast. Fix is one-line per button: `type="button"` on all four `<button>` elements in the modal (both ProfileCards + Cancel + Merge). The existing admin dedup page didn't hit this because its DuplicateMergeModal isn't rendered inside a parent form.
+
 ## [2.16.0-26] - 2026-05-30
 
 ### Fixed

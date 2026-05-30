@@ -107,12 +107,14 @@ export default function DuplicateMergeModal({
 
                 <div className="p-6 border-t border-stone-200 flex justify-end gap-3">
                     <button
+                        type="button"
                         onClick={onClose}
                         className="px-4 py-2 text-sm font-medium text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200"
                     >
                         Cancel
                     </button>
                     <button
+                        type="button"
                         onClick={handleMerge}
                         disabled={merging}
                         className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50"
@@ -138,6 +140,7 @@ function ProfileCard({
 }) {
     return (
         <button
+            type="button"
             onClick={onSelect}
             className={`text-left p-4 rounded-xl border-2 transition-all ${isSelected
                 ? 'border-teal-500 bg-teal-50/50'
