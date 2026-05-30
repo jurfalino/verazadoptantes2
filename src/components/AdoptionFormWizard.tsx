@@ -180,7 +180,21 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     // Falls back to the prefill defaults when there's no draft. Resolved once at
     // first mount; subsequent state changes are written back via the save effect
     // further below.
-    const initialDraft = readDraft(adopterId);
+    //
+    // Exception: VisitIntentCard passes an explicit initialRecordType captured
+    // from a freshly-clicked intent. A stale draft whose recordType disagrees
+    // would silently win the lazy-init race (formData.recordType comes from the
+    // draft, overriding prefillRecordType) and the wizard renders the previous
+    // intent. When that conflict happens, drop the draft so the new intent
+    // wins — the user just made an explicit choice.
+    const rawDraft = readDraft(adopterId);
+    const draftConflictsWithIntent = !!initialRecordType
+        && !!rawDraft?.formData?.recordType
+        && rawDraft.formData.recordType !== initialRecordType;
+    if (draftConflictsWithIntent) {
+        clearDraft(adopterId);
+    }
+    const initialDraft = draftConflictsWithIntent ? null : rawDraft;
 
     const [isOpen, setIsOpen] = useState(shouldOpenFromWizard || autoOpen);
     const [step, setStep] = useState(() => initialDraft?.step ?? 1);
