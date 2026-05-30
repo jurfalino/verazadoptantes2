@@ -744,8 +744,8 @@ export default function ImportWizard() {
                 await fetch('/api/upload-media', { method: 'POST', body: fd });
             }
 
-            toast.success('Record added to profile', adopterName, {
-                label: '→ Ver Perfil',
+            toast.success(t('import.record_added_to_profile') || 'Registro agregado al perfil', adopterName, {
+                label: t('import.go_to_profile_link') || '→ Ver perfil',
                 href: `/adopter/${adopterId}`,
             });
 

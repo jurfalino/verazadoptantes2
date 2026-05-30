@@ -1397,6 +1397,9 @@ export const es = {
         section_matches: 'Perfiles coincidentes',
     },
     import: {
+        // Toasts post-import
+        record_added_to_profile: 'Registro agregado al perfil',
+        go_to_profile_link: '→ Ver perfil',
         // Botón en página principal
         button: 'Importar Contenido',
         // Encabezado de página

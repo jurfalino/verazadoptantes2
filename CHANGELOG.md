@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-29] - 2026-05-30
+
+### Fixed
+- **ImportWizard post-merge toast was hardcoded English.** After importing a record onto an existing profile, the success toast displayed "Record added to profile" with a "→ Ver Perfil" CTA (mixed English title + Spanish CTA). Spanish rescuers using the import flow saw the English title every time. Wired through `t('import.record_added_to_profile')` + `t('import.go_to_profile_link')` with both locale files updated.
+
+### Translation audit notes
+- Other apparent English-string findings in the broader audit are non-issues for Spanish users in practice:
+  - Hardcoded `'Error'` literals in several `toast.error(...)` calls — "Error" reads identically in ES and EN.
+  - `CountryConfirmBanner` and `ImportWizard:971` use `locale === 'es' ? 'X' : 'Y'` ternaries instead of `t()`; functionally translated, just not following the standard pattern.
+  - Admin-only surfaces (`AdminDangerZone`, `AdminContactEntriesBackfill`, `AdminAdopterList` toasts, `/admin/config` save buttons, `/admin/page.tsx` greeting) intentionally left untranslated for now — admin sessions tolerate English.
+
 ## [2.16.0-28] - 2026-05-30
 
 ### Changed

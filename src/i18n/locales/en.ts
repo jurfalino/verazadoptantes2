@@ -1398,6 +1398,9 @@ export const en = {
         section_matches: 'Matching profiles',
     },
     import: {
+        // Post-import toasts
+        record_added_to_profile: 'Record added to profile',
+        go_to_profile_link: '→ View profile',
         // Home page button
         button: 'Import Content',
         // Page header
