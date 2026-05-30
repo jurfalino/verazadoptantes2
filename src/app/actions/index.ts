@@ -38,8 +38,9 @@ export { getMyAdopters, getMyAdoptions } from './dashboard';
 export { runAdminQuery, deleteAdopter, purgeAllData, backfillLegacyContactEntries, setAdopterPublic } from './admin';
 
 // Duplicates
-export { getDuplicateCandidates, checkTokenDuplicates, mergeAdoptersFromHint } from './duplicates';
+export { getDuplicateCandidates, checkTokenDuplicates } from './duplicates';
 export type { DuplicateCandidate, TokenMatchResult } from './duplicates';
+export { flagAdopterAsDuplicate } from './flagAdopterAsDuplicate';
 
 // Enrichment
 export { enrichAdopters } from './enrichAdopters';

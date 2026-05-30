@@ -11,9 +11,15 @@
  *     a search-match grant (via `grantSearchMatchAccess`) so the destination
  *     renders unmasked. New tab keeps the user's in-progress composer state
  *     intact.
- *   - "Fusionar" — opens the existing `DuplicateMergeModal` with the
- *     current adopter and the matched adopter pre-selected. Confirms via
- *     `mergeAdoptersFromHint` (owner-or-admin gated server-side).
+ *   - "Marcar como duplicados" — flags the pair (via `flagAdopterAsDuplicate`)
+ *     so it lands in /admin/duplicates → userFlagged feed for admin triage.
+ *     Admin then weighs context and decides to dismiss or merge.
+ *
+ * Why flag instead of merge directly (segregation of duties): merging
+ * soft-deletes the secondary record, which may be owned by a different
+ * rescuer. A contributor adding a phone shouldn't be able to unilaterally
+ * destroy someone else's record. Flagging surfaces the candidate without
+ * the destructive action — admin decides.
  *
  * Why initials and not full name: `findAdopters` mode='duplicate' returns
  * `adopterName` raw (the response shape predates PII gating; admin scans
@@ -29,12 +35,11 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { findAdopters, grantSearchMatchAccess, mergeAdoptersFromHint, type DuplicateMatch } from '@/app/actions';
+import { findAdopters, grantSearchMatchAccess, flagAdopterAsDuplicate, type DuplicateMatch } from '@/app/actions';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import type { ContactEntryType } from '@/lib/contactEntries';
-import DuplicateMergeModal from '@/components/DuplicateMergeModal';
 
 interface Props {
     /** Strong identifier type the user just typed. Address/alias/other are no-op. */
@@ -43,8 +48,6 @@ interface Props {
     value: string;
     /** Adopter to exclude from results (the user's own profile when editing). */
     excludeAdopterId?: string;
-    /** Current adopter's display name — needed to populate the merge modal. */
-    currentAdopterName?: string;
     /** Optional callback fired after grant write succeeds, before navigation. */
     onMatch?: (adopterId: string) => void;
     className?: string;
@@ -85,14 +88,17 @@ function initials(name: string): string {
         .join(' ');
 }
 
-export default function DuplicateHint({ type, value, excludeAdopterId, currentAdopterName, onMatch, className }: Props) {
+export default function DuplicateHint({ type, value, excludeAdopterId, onMatch, className }: Props) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const [matches, setMatches] = useState<DuplicateMatch[]>([]);
     const [loading, setLoading] = useState(false);
     const [viewing, setViewing] = useState<string | null>(null);
-    const [mergeTarget, setMergeTarget] = useState<DuplicateMatch | null>(null);
-    const [merging, setMerging] = useState(false);
+    const [flagging, setFlagging] = useState<string | null>(null);
+    // Per-render set of adopterIds the user has already flagged in this
+    // session. Prevents duplicate flag-row insertions on rapid double-click
+    // and gives the user clear feedback ("Marcado") without a reload.
+    const [flagged, setFlagged] = useState<ReadonlySet<string>>(new Set());
     const abortRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
@@ -167,35 +173,33 @@ export default function DuplicateHint({ type, value, excludeAdopterId, currentAd
         }
     };
 
-    const handleMerge = async (primaryId: string, secondaryId: string) => {
-        setMerging(true);
+    const handleFlag = async (m: DuplicateMatch) => {
+        if (!excludeAdopterId) return;
+        setFlagging(m.adopterId);
         try {
-            const result = await mergeAdoptersFromHint(primaryId, secondaryId);
-            if (result.success) {
-                // ALWAYS navigate to the surviving primary, regardless of
-                // which side the current page was. Reloading the current
-                // page when the current adopter was just soft-deleted
-                // produced an RSC-render error (the page's server component
-                // tried to fetch a deletedAt-set row). Hard-navigating to
-                // the primary's URL avoids that entirely — primary always
-                // exists post-merge. Do NOT setMergeTarget(null) first;
-                // unmounting the modal mid-navigation can race with the
-                // browser teardown.
-                toast.success('✓', t('adopter.dup_hint_merge_success') || 'Perfiles fusionados');
-                window.location.href = `/adopter/${primaryId}`;
+            const res = await flagAdopterAsDuplicate({
+                currentAdopterId: excludeAdopterId,
+                matchedAdopterId: m.adopterId,
+                matchedAdopterName: m.adopterName,
+            });
+            if (res.ok) {
+                toast.success('🚩', t('adopter.dup_hint_flag_success') || 'Marcado para revisión por administradores');
+                setFlagged(prev => {
+                    const next = new Set(prev);
+                    next.add(m.adopterId);
+                    return next;
+                });
             } else {
                 toast.error(
                     t('errors.generic') || 'Error',
-                    result.error || (t('adopter.dup_hint_merge_failed') || 'No se pudo fusionar'),
+                    t('adopter.dup_hint_flag_failed') || 'No se pudo marcar',
                 );
             }
         } catch (e) {
-            // Surface the actual rejection so future bugs are diagnosable —
-            // ClientErrorReporter would only show a generic "Algo salió mal".
-            console.error('[DuplicateHint] mergeAdoptersFromHint threw:', e);
+            console.error('[DuplicateHint] flagAdopterAsDuplicate threw:', e);
             toast.error(t('errors.generic') || 'Error', undefined, extractErrorId(e));
         } finally {
-            setMerging(false);
+            setFlagging(null);
         }
     };
 
@@ -206,61 +210,55 @@ export default function DuplicateHint({ type, value, excludeAdopterId, currentAd
     const headerText = (t(headerKey) || headerFallback).replace('{n}', String(matches.length));
 
     return (
-        <>
-            <div
-                className={`mt-2 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3 ${className ?? ''}`}
-                role="note"
-            >
-                <span className="text-amber-700 shrink-0 mt-0.5" aria-hidden>⚠</span>
-                <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium text-amber-800">{headerText}</p>
-                    <ul className="mt-1.5 space-y-1.5">
-                        {matches.map(m => {
-                            const isViewing = viewing === m.adopterId;
-                            const busy = isViewing || merging;
-                            return (
-                                <li key={m.adopterId} className="flex flex-wrap items-center gap-2 text-xs">
-                                    <span className="font-medium text-stone-800 truncate">
-                                        {initials(m.adopterName) || '—'}
-                                    </span>
-                                    <div className="ml-auto flex items-center gap-1.5">
+        <div
+            className={`mt-2 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3 ${className ?? ''}`}
+            role="note"
+        >
+            <span className="text-amber-700 shrink-0 mt-0.5" aria-hidden>⚠</span>
+            <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium text-amber-800">{headerText}</p>
+                <ul className="mt-1.5 space-y-1.5">
+                    {matches.map(m => {
+                        const isViewing = viewing === m.adopterId;
+                        const isFlagging = flagging === m.adopterId;
+                        const wasFlagged = flagged.has(m.adopterId);
+                        const busy = isViewing || isFlagging;
+                        return (
+                            <li key={m.adopterId} className="flex flex-wrap items-center gap-2 text-xs">
+                                <span className="font-medium text-stone-800 truncate">
+                                    {initials(m.adopterName) || '—'}
+                                </span>
+                                <div className="ml-auto flex items-center gap-1.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleView(m.adopterId)}
+                                        disabled={busy}
+                                        className="px-2 py-0.5 rounded-md text-[11px] font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 disabled:opacity-50 border border-amber-200"
+                                    >
+                                        {isViewing
+                                            ? (t('adopter.dup_hint_navigating') || 'Abriendo...')
+                                            : (t('adopter.dup_hint_view') || 'Ver perfil')}
+                                    </button>
+                                    {excludeAdopterId && (
                                         <button
                                             type="button"
-                                            onClick={() => handleView(m.adopterId)}
-                                            disabled={busy}
-                                            className="px-2 py-0.5 rounded-md text-[11px] font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 disabled:opacity-50 border border-amber-200"
+                                            onClick={() => handleFlag(m)}
+                                            disabled={busy || wasFlagged}
+                                            className="px-2 py-0.5 rounded-md text-[11px] font-semibold text-white bg-amber-700 hover:bg-amber-800 disabled:opacity-50"
                                         >
-                                            {isViewing
-                                                ? (t('adopter.dup_hint_navigating') || 'Abriendo...')
-                                                : (t('adopter.dup_hint_view') || 'Ver perfil')}
+                                            {wasFlagged
+                                                ? (t('adopter.dup_hint_flagged') || 'Marcado')
+                                                : isFlagging
+                                                    ? (t('adopter.dup_hint_flagging') || 'Marcando...')
+                                                    : (t('adopter.dup_hint_flag') || 'Marcar como duplicados')}
                                         </button>
-                                        {excludeAdopterId && currentAdopterName && (
-                                            <button
-                                                type="button"
-                                                onClick={() => setMergeTarget(m)}
-                                                disabled={busy}
-                                                className="px-2 py-0.5 rounded-md text-[11px] font-semibold text-white bg-teal-700 hover:bg-teal-600 disabled:opacity-50"
-                                            >
-                                                {t('adopter.dup_hint_merge') || 'Fusionar'}
-                                            </button>
-                                        )}
-                                    </div>
-                                </li>
-                            );
-                        })}
-                    </ul>
-                </div>
+                                    )}
+                                </div>
+                            </li>
+                        );
+                    })}
+                </ul>
             </div>
-
-            {mergeTarget && excludeAdopterId && currentAdopterName && (
-                <DuplicateMergeModal
-                    adopter1={{ id: excludeAdopterId, name: currentAdopterName }}
-                    adopter2={{ id: mergeTarget.adopterId, name: mergeTarget.adopterName }}
-                    matchTypes={mergeTarget.matchTypes}
-                    onMerge={handleMerge}
-                    onClose={() => { if (!merging) setMergeTarget(null); }}
-                />
-            )}
-        </>
+        </div>
     );
 }

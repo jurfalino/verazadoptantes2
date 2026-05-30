@@ -913,7 +913,6 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                     canEditAll={isOwner || isAdmin}
                                     currentUser={currentUser}
                                     onMaskedClick={onMaskedContactClick}
-                                    currentAdopterName={initialData.name}
                                 />
                             );
                         })()}

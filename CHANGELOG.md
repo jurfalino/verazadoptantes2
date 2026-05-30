@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-28] - 2026-05-30
+
+### Changed
+- **Segregation of duties on the DuplicateHint: `Fusionar` → `Marcar como duplicados`.** Letting any contributor merge two profiles was a destructive-action mismatch — merging soft-deletes the secondary record, possibly owned by another rescuer, without their consent. The pivot: clicking the new button calls `flagAdopterAsDuplicate` which inserts an `adopter_flags` row with `reason='duplicate'` and `targetAdopterId={matched}`. That lands in `/admin/duplicates` under the existing `userFlagged` feed (the infrastructure was already built — `FLAG_REASONS.DUPLICATE`, the admin page's user-flag display, and the merge modal it opens). Admin then weighs context and dismisses or merges. Per-match state shows "Marcado" after a successful flag (prevents duplicate flag rows from rapid clicks).
+- Removed the now-unused `mergeAdoptersFromHint` server action wrapper. The underlying `mergeAdopters` stays untouched (admin route + contract-attach continue to call it directly with their own gates).
+
+### Fixed
+- **DuplicateMergeModal fully translated to Spanish.** Previously the modal hardcoded English strings throughout (title, subtitle, role badges, bullets, buttons, match-type chip labels) — even though "Sin actividad calificada" had snuck in as the only translated line. All strings now flow through `t('admin.dmm_*')` with both `es.ts` and `en.ts` keys. The bold-name bullets ("X will be kept") use a small `withBoldName` helper that splits on `{name}` to avoid `dangerouslySetInnerHTML` against a user-controlled adopter name field.
+
 ## [2.16.0-27] - 2026-05-30
 
 ### Fixed

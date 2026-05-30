@@ -64,9 +64,6 @@ interface Props {
     /** Tap-handler for masked chips — opens the verify popover. Undefined when
      * the viewer is not subject to PII gating. Server mode only. */
     onMaskedClick?: (entryType: ContactEntryType) => void;
-    /** Current adopter's display name — used by <DuplicateHint> to populate
-     *  the merge modal. Server mode only. */
-    currentAdopterName?: string;
 }
 
 interface EditDraft {
@@ -83,7 +80,7 @@ function socialHref(value: string): string | null {
     return null;
 }
 
-export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick, currentAdopterName }: Props) {
+export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick }: Props) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
@@ -633,7 +630,6 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 type={composerType}
                                 value={hintValue}
                                 excludeAdopterId={adopterId}
-                                currentAdopterName={currentAdopterName}
                             />
                         )}
                         {/* Bottom action row — kept structurally identical to
