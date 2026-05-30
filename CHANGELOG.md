@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-23] - 2026-05-30
+
+### Added
+- **Density alerts (`tooManyAdoptions` / `tooManyRequests`) now fire on the `foster` and `follow_up` wizards too**, not just `adoption` / `adoption_request`. A profile flagged as "too many recent adoptions" was previously silent in the tránsito and seguimiento flows — exactly the contexts where the warning is most actionable. Drops the `buildAlerts` early-return in `RecordTypeGuidance.tsx` and adds four new i18n strings per locale under `wizard.guidance.alerts.{too_many_adoptions,too_many_requests}.{foster,follow_up}` with copy tailored to each activity (the `follow_up` text was supplied by the user verbatim). `observation` and `returned_pet` deliberately stay silent — they're retrospective records where the alert would be noise.
+
+## [2.16.0-22] - 2026-05-30
+
+### Removed
+- Homepage results "ℹ️ ¿Qué significan estas insignias?" toggle and the expandable legend below it. The badges (verified ✓, warning ⚠, duplicate 📄) are self-explanatory enough in context; the extra explainer was noise on the search results screen. Drops `flags.legend_title`, `flags.legend_warning`, and `flags.legend_duplicate` from both locales (`legend_verified` stays — still used by `AdopterFlagging.tsx`).
+
+## [2.16.0-21] - 2026-05-30
+
+### Fixed
+- **AdoptionFormWizard showed the wrong intent's content when a stale draft existed.** Repro: user clicks an intent on `VisitIntentCard` (say "Adopté"), starts the wizard, abandons it without saving — `useEffect` had been continuously persisting the in-progress state to `localStorage` keyed by `adopterId`. Later the same user clicks a different intent ("Observación") on the same profile. Wizard remounts; the three `useState` lazy initializers (`step`, `mode`, `formData`) read the draft FIRST, and `formData.recordType` comes from the draft, silently overriding the freshly-passed `initialRecordType` prop. The wizard renders the previous intent.
+
+  Fix in `AdoptionFormWizard.tsx`: when `initialRecordType` is provided AND it disagrees with the draft's `formData.recordType`, treat the draft as stale — `clearDraft(adopterId)` and fall through to the prefill defaults. The user just made an explicit choice via VisitIntentCard, that wins. Drafts whose recordType matches the new intent still hydrate normally, so the genuinely-useful "close tab, resume same flow" case is preserved.
+
 ## [2.16.0-20] - 2026-05-29
 
 ### Fixed
