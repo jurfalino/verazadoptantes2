@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-31] - 2026-05-30
+
+### Diagnostic
+- **`/api/admin/duplicates` GET 500 now returns the actual error message + errorId in the response body** so failures on the admin dedup page are debuggable. Investigating a reported "page shows nothing, 4xx/5xx" state on `/admin/duplicates` — couldn't reproduce from local inspection (staging D1 data integrity OK: 3 dup flags + 2 pending candidates, all referenced adopter IDs exist). Generic 500 was swallowing the cause; expose it for the admin endpoint (leaking the message is fine on an admin-only surface).
+
 ## [2.16.0-30] - 2026-05-30
 
 ### Fixed

@@ -136,8 +136,16 @@ export async function GET(request: Request) {
             hasMore: candidates.length === limit,
         });
     } catch (error) {
-        logger.error('Duplicate list failed', error);
-        return NextResponse.json({ error: 'Failed to load duplicates' }, { status: 500 });
+        const errorId = logger.error('Duplicate list failed', error instanceof Error ? error : new Error(String(error)), {
+            session: session.user.email,
+        });
+        // Return the errorId + message in the response so the admin can paste
+        // it back when reporting. Admin endpoint — leaking the message is OK.
+        return NextResponse.json({
+            error: 'Failed to load duplicates',
+            errorId,
+            message: error instanceof Error ? error.message : String(error),
+        }, { status: 500 });
     }
 }
 
