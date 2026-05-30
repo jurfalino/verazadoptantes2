@@ -244,6 +244,46 @@ export async function mergeAdopters(
 }
 
 /**
+ * Permission-gated wrapper around `mergeAdopters` for the DuplicateHint
+ * surface (user types an identifier that matches another adopter, clicks
+ * "Fusionar"). Caller must own at least one of the two profiles OR be
+ * admin — same gate `dismissDuplicateCandidate` enforces. Other merge
+ * surfaces (admin route, contract-attach) have their own gates and call
+ * `mergeAdopters` directly.
+ */
+export async function mergeAdoptersFromHint(
+    primaryId: string,
+    secondaryId: string,
+): Promise<MergeAdoptersResult> {
+    try {
+        const { getUser } = await import('./_db');
+        const { isAdminAsync } = await import('@/config/admins');
+        const actorEmail = await getUser();
+        if (!actorEmail) return { success: false, error: 'Not authenticated' };
+
+        const db = await getDb();
+        if (!db) return { success: false, error: 'Database not available' };
+
+        const [a, b] = await Promise.all([
+            db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, primaryId)).get(),
+            db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, secondaryId)).get(),
+        ]);
+        if (!a || !b) return { success: false, error: 'One or both adopters not found' };
+
+        const isOwner = a.addedBy === actorEmail || b.addedBy === actorEmail;
+        const isAdminUser = await isAdminAsync(actorEmail);
+        if (!isOwner && !isAdminUser) {
+            return { success: false, error: 'Not authorized — you must own one of the two profiles or be an admin' };
+        }
+
+        return await mergeAdopters(primaryId, secondaryId, actorEmail);
+    } catch (error) {
+        const errorId = logger.error('mergeAdoptersFromHint failed', error, { primaryId, secondaryId });
+        return { success: false, error: `Merge failed (Error ID: ${errorId})` };
+    }
+}
+
+/**
  * Attach a just-signed contract's adoption to an existing matched adopter profile,
  * removing the auto-created orphan adopter. Self-service merge for the rescuer who
  * received the contract-result notification.

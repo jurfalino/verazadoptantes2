@@ -5,32 +5,36 @@
  *
  * Fires when the user types a high-confidence identifier (phone / email /
  * social / id) that matches another adopter. Renders an amber chip with up
- * to N masked matches and a "View match" button that triggers the
- * search-match grant write (via `grantSearchMatchAccess`) before navigating
- * to the destination profile.
+ * to N masked matches and two actions per match:
+ *
+ *   - "Ver perfil" — opens the matched profile in a NEW TAB after writing
+ *     a search-match grant (via `grantSearchMatchAccess`) so the destination
+ *     renders unmasked. New tab keeps the user's in-progress composer state
+ *     intact.
+ *   - "Fusionar" — opens the existing `DuplicateMergeModal` with the
+ *     current adopter and the matched adopter pre-selected. Confirms via
+ *     `mergeAdoptersFromHint` (owner-or-admin gated server-side).
  *
  * Why initials and not full name: `findAdopters` mode='duplicate' returns
  * `adopterName` raw (the response shape predates PII gating; admin scans
  * and the unauthenticated contract route are its only other callers).
  * Rendering initials here keeps the hint from leaking name PII before the
- * user explicitly clicks "View match" — which IS proof they know the
+ * user explicitly clicks "Ver perfil" — which IS proof they know the
  * identifier and earns them a search-match grant.
  *
- * Why no auto-debounce on prop change: the consumer controls when to set
- * `value` to a non-empty string (typically the user's explicit +Add click
- * or 350ms debounce). This component re-fetches whenever `value` changes
- * and aborts in-flight requests on subsequent changes.
- *
- * Themed Tailwind only (per `feedback_themed_colors_only`): amber-50/100/
- * 200 + text-amber-700/800/900 + stone-* — all verified against
- * globals.css.
+ * Theming: text-amber-800 (NOT 900) on the dark-tinted background. amber-900
+ * has no [data-theme="dark"] remap and renders as near-black on the amber
+ * tint (the v2.14.9-4 contrast bug, documented in RecordTypeGuidance.tsx).
+ * amber-50/100/200 backgrounds and amber-700 icon ARE remapped.
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { findAdopters, grantSearchMatchAccess, type DuplicateMatch } from '@/app/actions';
+import { findAdopters, grantSearchMatchAccess, mergeAdoptersFromHint, type DuplicateMatch } from '@/app/actions';
 import { useLanguage } from '@/context/LanguageContext';
+import { useShowToast } from '@/components/ui/Toast';
+import { extractErrorId } from '@/lib/errorUtils';
 import type { ContactEntryType } from '@/lib/contactEntries';
+import DuplicateMergeModal from '@/components/DuplicateMergeModal';
 
 interface Props {
     /** Strong identifier type the user just typed. Address/alias/other are no-op. */
@@ -39,6 +43,8 @@ interface Props {
     value: string;
     /** Adopter to exclude from results (the user's own profile when editing). */
     excludeAdopterId?: string;
+    /** Current adopter's display name — needed to populate the merge modal. */
+    currentAdopterName?: string;
     /** Optional callback fired after grant write succeeds, before navigation. */
     onMatch?: (adopterId: string) => void;
     className?: string;
@@ -79,12 +85,14 @@ function initials(name: string): string {
         .join(' ');
 }
 
-export default function DuplicateHint({ type, value, excludeAdopterId, onMatch, className }: Props) {
+export default function DuplicateHint({ type, value, excludeAdopterId, currentAdopterName, onMatch, className }: Props) {
     const { t } = useLanguage();
-    const router = useRouter();
+    const toast = useShowToast();
     const [matches, setMatches] = useState<DuplicateMatch[]>([]);
     const [loading, setLoading] = useState(false);
     const [viewing, setViewing] = useState<string | null>(null);
+    const [mergeTarget, setMergeTarget] = useState<DuplicateMatch | null>(null);
+    const [merging, setMerging] = useState(false);
     const abortRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
@@ -150,12 +158,41 @@ export default function DuplicateHint({ type, value, excludeAdopterId, onMatch, 
         try {
             const res = await grantSearchMatchAccess({ adopterId, query: value.trim() });
             if (res.ok) onMatch?.(adopterId);
-            // Navigate whether or not the grant write succeeded — the destination
-            // page will mask appropriately if it didn't, and the user can retry
-            // via the on-profile verify-known-info input.
-            router.push(`/adopter/${adopterId}`);
+            // Open the destination in a NEW TAB so the user's in-progress
+            // composer state on the current adopter is preserved. The grant
+            // write above is awaited so the new tab loads unmasked.
+            window.open(`/adopter/${adopterId}`, '_blank', 'noopener,noreferrer');
         } finally {
             setViewing(null);
+        }
+    };
+
+    const handleMerge = async (primaryId: string, secondaryId: string) => {
+        setMerging(true);
+        try {
+            const result = await mergeAdoptersFromHint(primaryId, secondaryId);
+            if (result.success) {
+                toast.success('✓', t('adopter.dup_hint_merge_success') || 'Perfiles fusionados');
+                setMergeTarget(null);
+                // If the current adopter (excludeAdopterId) is the secondary
+                // that was just merged away, the page is now stale — send the
+                // user to the surviving primary. Otherwise (current was the
+                // primary) just refresh to pick up the merged data.
+                if (secondaryId === excludeAdopterId && primaryId !== excludeAdopterId) {
+                    window.location.href = `/adopter/${primaryId}`;
+                } else {
+                    window.location.reload();
+                }
+            } else {
+                toast.error(
+                    t('errors.generic') || 'Error',
+                    result.error || (t('adopter.dup_hint_merge_failed') || 'No se pudo fusionar'),
+                );
+            }
+        } catch (e) {
+            toast.error(t('errors.generic') || 'Error', undefined, extractErrorId(e));
+        } finally {
+            setMerging(false);
         }
     };
 
@@ -166,36 +203,61 @@ export default function DuplicateHint({ type, value, excludeAdopterId, onMatch, 
     const headerText = (t(headerKey) || headerFallback).replace('{n}', String(matches.length));
 
     return (
-        <div
-            className={`mt-2 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3 ${className ?? ''}`}
-            role="note"
-        >
-            <span className="text-amber-700 shrink-0 mt-0.5" aria-hidden>⚠</span>
-            <div className="min-w-0 flex-1">
-                <p className="text-xs font-medium text-amber-900">{headerText}</p>
-                <ul className="mt-1.5 space-y-1">
-                    {matches.map(m => {
-                        const isViewing = viewing === m.adopterId;
-                        return (
-                            <li key={m.adopterId} className="flex items-center gap-2 text-xs">
-                                <span className="font-medium text-stone-800 truncate">
-                                    {initials(m.adopterName) || '—'}
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={() => handleView(m.adopterId)}
-                                    disabled={isViewing || viewing !== null}
-                                    className="ml-auto px-2 py-0.5 rounded-md text-[11px] font-semibold text-amber-900 bg-amber-100 hover:bg-amber-200 disabled:opacity-50 border border-amber-200"
-                                >
-                                    {isViewing
-                                        ? (t('adopter.dup_hint_navigating') || 'Abriendo...')
-                                        : (t('adopter.dup_hint_view') || 'Ver perfil')}
-                                </button>
-                            </li>
-                        );
-                    })}
-                </ul>
+        <>
+            <div
+                className={`mt-2 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3 ${className ?? ''}`}
+                role="note"
+            >
+                <span className="text-amber-700 shrink-0 mt-0.5" aria-hidden>⚠</span>
+                <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-amber-800">{headerText}</p>
+                    <ul className="mt-1.5 space-y-1.5">
+                        {matches.map(m => {
+                            const isViewing = viewing === m.adopterId;
+                            const busy = isViewing || merging;
+                            return (
+                                <li key={m.adopterId} className="flex flex-wrap items-center gap-2 text-xs">
+                                    <span className="font-medium text-stone-800 truncate">
+                                        {initials(m.adopterName) || '—'}
+                                    </span>
+                                    <div className="ml-auto flex items-center gap-1.5">
+                                        <button
+                                            type="button"
+                                            onClick={() => handleView(m.adopterId)}
+                                            disabled={busy}
+                                            className="px-2 py-0.5 rounded-md text-[11px] font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 disabled:opacity-50 border border-amber-200"
+                                        >
+                                            {isViewing
+                                                ? (t('adopter.dup_hint_navigating') || 'Abriendo...')
+                                                : (t('adopter.dup_hint_view') || 'Ver perfil')}
+                                        </button>
+                                        {excludeAdopterId && currentAdopterName && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setMergeTarget(m)}
+                                                disabled={busy}
+                                                className="px-2 py-0.5 rounded-md text-[11px] font-semibold text-white bg-teal-700 hover:bg-teal-600 disabled:opacity-50"
+                                            >
+                                                {t('adopter.dup_hint_merge') || 'Fusionar'}
+                                            </button>
+                                        )}
+                                    </div>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                </div>
             </div>
-        </div>
+
+            {mergeTarget && excludeAdopterId && currentAdopterName && (
+                <DuplicateMergeModal
+                    adopter1={{ id: excludeAdopterId, name: currentAdopterName }}
+                    adopter2={{ id: mergeTarget.adopterId, name: mergeTarget.adopterName }}
+                    matchTypes={mergeTarget.matchTypes}
+                    onMerge={handleMerge}
+                    onClose={() => { if (!merging) setMergeTarget(null); }}
+                />
+            )}
+        </>
     );
 }

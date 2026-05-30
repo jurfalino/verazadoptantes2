@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-25] - 2026-05-30
+
+### Fixed
+- **DuplicateHint header + button text was near-black on the dark-theme amber tint.** Used `text-amber-900` which has no `[data-theme="dark"]` remap (same v2.14.9-4 contrast bug RecordTypeGuidance fixed). Swapped to `text-amber-800` — themed and readable on both light and dark.
+
+### Changed
+- **"Ver perfil" in the duplicate hint now opens the matched profile in a new tab.** Preserves the user's in-progress composer state on the current adopter. Still awaits `grantSearchMatchAccess` before opening so the new tab loads unmasked.
+
+### Added
+- **"Fusionar" (Merge) button alongside "Ver perfil" in DuplicateHint.** Opens the existing `DuplicateMergeModal` pre-populated with the current adopter and the matched adopter; user picks which side stays as primary. On confirm, calls a new owner-or-admin-gated server action `mergeAdoptersFromHint` (wraps the permission-agnostic `mergeAdopters`). On success: navigates to the surviving primary when the current adopter was merged away, otherwise reloads to pick up the merged data.
+- New i18n keys: `adopter.dup_hint_merge`, `dup_hint_merge_success`, `dup_hint_merge_failed` in both locales.
+
 ## [2.16.0-24] - 2026-05-30
 
 ### Added
