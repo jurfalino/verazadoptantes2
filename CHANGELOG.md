@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-22] - 2026-05-30
+
+### Removed
+- Homepage results "ℹ️ ¿Qué significan estas insignias?" toggle and the expandable legend below it. The badges (verified ✓, warning ⚠, duplicate 📄) are self-explanatory enough in context; the extra explainer was noise on the search results screen. Drops `flags.legend_title`, `flags.legend_warning`, and `flags.legend_duplicate` from both locales (`legend_verified` stays — still used by `AdopterFlagging.tsx`).
+
 ## [2.16.0-21] - 2026-05-30
 
 ### Fixed

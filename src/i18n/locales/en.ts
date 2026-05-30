@@ -146,11 +146,6 @@ export const en = {
         requests_warning_p2: ' adoption requests in the last ',
         requests_warning_p3: ' days.',
         
-        // Legend descriptions
-        legend_title: 'What do these badges mean?',
-
-        legend_warning: 'Other rescuers reported problems (lack of follow-up, abandonment, etc.).',
-        legend_duplicate: 'This profile might be a duplicate of another adopter.',
         possible_duplicate: 'Possible duplicate',
     },
     duplicates: {

@@ -145,11 +145,6 @@ export const es = {
         requests_warning_p1: 'Registró ',
         requests_warning_p2: ' solicitudes en ',
         requests_warning_p3: ' días',
-        // Legend descriptions
-        legend_title: '¿Qué significan estas insignias?',
-
-        legend_warning: 'Otros rescatistas reportaron problemas (falta de seguimiento, abandono, etc.).',
-        legend_duplicate: 'Este perfil podría ser un duplicado de otro adoptante.',
         possible_duplicate: 'Posible duplicado',
     },
     duplicates: {
