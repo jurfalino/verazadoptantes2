@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-30] - 2026-05-30
+
+### Fixed
+- **DuplicateHint now shows the full matched-adopter name, not initials.** The earlier "show initials, reveal name on Ver-perfil click" design was inconsistent: the discovery-mode search-match auto-grant pattern (findAdopters.ts:760-770) already treats typing a strong identifier as proof of knowledge — a homepage search by phone reveals the full name. Hiding it in the hint while revealing it elsewhere added a useless click + new-tab roundtrip just to confirm identity before flagging. Grant rows still only get written on the explicit "Ver perfil" click — display ≠ navigation intent. Removed the now-unused `initials()` helper.
+
 ## [2.16.0-29] - 2026-05-30
 
 ### Fixed

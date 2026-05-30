@@ -21,12 +21,15 @@
  * destroy someone else's record. Flagging surfaces the candidate without
  * the destructive action — admin decides.
  *
- * Why initials and not full name: `findAdopters` mode='duplicate' returns
- * `adopterName` raw (the response shape predates PII gating; admin scans
- * and the unauthenticated contract route are its only other callers).
- * Rendering initials here keeps the hint from leaking name PII before the
- * user explicitly clicks "Ver perfil" — which IS proof they know the
- * identifier and earns them a search-match grant.
+ * Why the full name is shown: the hint only fires for strong identifier
+ * matches (phone/email/social/id). The discovery-mode auto-grant pattern
+ * in `findAdopters` treats typing such an identifier as proof of
+ * knowledge — anchor-grade matches unlock the name tokens alongside
+ * the entry hash (findAdopters.ts:760-770). So a homepage search by phone
+ * already shows the full name; hiding it here while showing it there
+ * was inconsistent AND forced an extra click + new-tab load just to
+ * confirm identity before flagging. Grant rows are still only written on
+ * the explicit "Ver perfil" click — display ≠ navigation intent.
  *
  * Theming: text-amber-800 (NOT 900) on the dark-tinted background. amber-900
  * has no [data-theme="dark"] remap and renders as near-black on the amber
@@ -76,16 +79,6 @@ function buildInput(type: ContactEntryType, value: string, excludeAdopterId?: st
         default:
             return null;
     }
-}
-
-function initials(name: string): string {
-    return name
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean)
-        .slice(0, 2)
-        .map(w => (w[0] || '').toUpperCase() + '.')
-        .join(' ');
 }
 
 export default function DuplicateHint({ type, value, excludeAdopterId, onMatch, className }: Props) {
@@ -225,8 +218,8 @@ export default function DuplicateHint({ type, value, excludeAdopterId, onMatch, 
                         const busy = isViewing || isFlagging;
                         return (
                             <li key={m.adopterId} className="flex flex-wrap items-center gap-2 text-xs">
-                                <span className="font-medium text-stone-800 truncate">
-                                    {initials(m.adopterName) || '—'}
+                                <span className="font-medium text-stone-800 truncate" title={m.adopterName}>
+                                    {m.adopterName || '—'}
                                 </span>
                                 <div className="ml-auto flex items-center gap-1.5">
                                     <button
