@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-24] - 2026-05-30
+
+### Added
+- **Preemptive cross-record duplicate warning when typing a contact identifier on an existing profile.** Previously, adding a phone/email/social/id to Adopter A that *also* belonged to Adopter B was silent — the collision only surfaced during the admin's manual duplicate-scan job. Now the per-entry composer in `ContactEntriesSection` debounces 500ms and renders `<DuplicateHint>` under the input when the typed value matches another adopter at relevance ≥40. The hint shows initials (full name stays gated) plus a "Ver perfil" button that awaits the search-match grant write before navigating, so the destination renders unmasked.
+- New thin server action `grantSearchMatchAccess(adopterId, query)` (`src/app/actions/grantSearchMatchAccess.ts`) delegates to the existing `replaySearchMatchGrants` with `source:'duplicate_hint'`. Extended `replaySearchMatchGrants` with an optional `source` parameter (default `'signin_replay'`) to distinguish the audit log entry — same grant-write logic, different telemetry.
+
+### UX rationale
+- **Per-keystroke vs. on-click:** chose 500ms idle debounce — server load stays low (one user, one query, token-index lookup is sub-ms), but the hint appears while the user is still deciding instead of after they've committed via `+ Add`.
+- **PII model:** hint shows initials only. Click "Ver perfil" → mirror the existing search-match grant pattern (typing an identifier IS proof you know it → grant entry hash + name tokens). No leakage before the explicit click; full reveal after.
+- **Address-only suppressed via `minRelevance: 40`** — addresses are noisy (households, apartments). Phone/email/social/id only.
+- **Local mode (new-adopter form) untouched** — the existing `DuplicatePeek` + `StrongMatchStrip` already cover that flow well, and discovery mode already writes grants + masks the result in the same pass (`findAdopters.ts:743-797`). Adding a per-composer hint there would be redundant.
+
+### Not changed
+- `DuplicatePeek` left as-is. The "PII bypass" the design phase flagged was a misread — discovery mode auto-writes grants AND applies `maskAdopterContact` + `renderName` to `result.adopter` before returning, so the component renders post-grant, masked-where-applicable data already.
+- `addContactEntry` server action unchanged. The warning is pre-submit client UX; the existing within-record `unlocked_existing` flow continues to handle the same-value-same-adopter case.
+- No schema change, no feature flag, no migration.
+
 ## [2.16.0-23] - 2026-05-30
 
 ### Added

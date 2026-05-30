@@ -20,6 +20,7 @@ export { getAdopter, saveAdopter, appendToExistingAdopter, getAdopterStats, logP
 export { addContactEntry } from './addContactEntry';
 export { updateContactEntry } from './updateContactEntry';
 export { removeContactEntry } from './removeContactEntry';
+export { grantSearchMatchAccess } from './grantSearchMatchAccess';
 
 // Images
 export { saveImage, getImages, setProfilePicture, getAdoptionImages, deleteImage } from './images';
