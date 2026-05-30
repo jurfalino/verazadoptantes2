@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-26] - 2026-05-30
+
+### Fixed
+- **Post-merge RSC render error.** After confirming the merge in `DuplicateHint`, the code called `window.location.reload()` when the current adopter was the surviving primary — but ANY reload of a page where merge state was in-flight (and the secondary, sometimes the current adopter, had just been soft-deleted) raced with React/Next trying to commit final state, producing the generic "An error occurred in the Server Components render…" toast. Twice, because `ClientErrorReporter` also catches the unhandled rejection on top of our own catch.
+- Fix: ALWAYS navigate to the surviving primary's URL via `window.location.href = /adopter/{primaryId}` — primary is guaranteed to exist post-merge, hard navigation reliably tears down the React tree before the next page mounts. Drop the `setMergeTarget(null)` call before navigation — unmounting the modal mid-navigation is the race we want to avoid.
+
+### Changed
+- `mergeAdoptersFromHint` switched from runtime `await import('./_db')` to top-level imports of `getUser` / `isAdminAsync`. Matches `PendingDedup` and the other server-action call sites in the file; trims a small amount of edge-runtime weirdness surface.
+- Added `console.error` in `DuplicateHint`'s merge catch so the actual rejection is visible in DevTools next time (the generic "Algo salió mal" toast from `ClientErrorReporter` doesn't help diagnose).
+
 ## [2.16.0-25] - 2026-05-30
 
 ### Fixed

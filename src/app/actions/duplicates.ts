@@ -3,7 +3,8 @@
 import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, adopterStats, duplicateTokens, duplicateCandidates, auditLog } from '@/db/schema';
 import { eq, or, and, inArray } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
-import { getDb } from './_db';
+import { getDb, getUser } from './_db';
+import { isAdminAsync } from '@/config/admins';
 import { extractTokens, computeTokenHash, normalizeText, extractPhones, extractEmails, extractSocials, type Token } from '@/lib/tokenizer';
 import { normalizeConfidence, confidenceBand, fuzzyNameScore, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 import { deserializeContactEntries } from '@/lib/contactEntries';
@@ -256,8 +257,6 @@ export async function mergeAdoptersFromHint(
     secondaryId: string,
 ): Promise<MergeAdoptersResult> {
     try {
-        const { getUser } = await import('./_db');
-        const { isAdminAsync } = await import('@/config/admins');
         const actorEmail = await getUser();
         if (!actorEmail) return { success: false, error: 'Not authenticated' };
 

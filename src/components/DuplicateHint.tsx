@@ -172,17 +172,17 @@ export default function DuplicateHint({ type, value, excludeAdopterId, currentAd
         try {
             const result = await mergeAdoptersFromHint(primaryId, secondaryId);
             if (result.success) {
+                // ALWAYS navigate to the surviving primary, regardless of
+                // which side the current page was. Reloading the current
+                // page when the current adopter was just soft-deleted
+                // produced an RSC-render error (the page's server component
+                // tried to fetch a deletedAt-set row). Hard-navigating to
+                // the primary's URL avoids that entirely — primary always
+                // exists post-merge. Do NOT setMergeTarget(null) first;
+                // unmounting the modal mid-navigation can race with the
+                // browser teardown.
                 toast.success('✓', t('adopter.dup_hint_merge_success') || 'Perfiles fusionados');
-                setMergeTarget(null);
-                // If the current adopter (excludeAdopterId) is the secondary
-                // that was just merged away, the page is now stale — send the
-                // user to the surviving primary. Otherwise (current was the
-                // primary) just refresh to pick up the merged data.
-                if (secondaryId === excludeAdopterId && primaryId !== excludeAdopterId) {
-                    window.location.href = `/adopter/${primaryId}`;
-                } else {
-                    window.location.reload();
-                }
+                window.location.href = `/adopter/${primaryId}`;
             } else {
                 toast.error(
                     t('errors.generic') || 'Error',
@@ -190,6 +190,9 @@ export default function DuplicateHint({ type, value, excludeAdopterId, currentAd
                 );
             }
         } catch (e) {
+            // Surface the actual rejection so future bugs are diagnosable —
+            // ClientErrorReporter would only show a generic "Algo salió mal".
+            console.error('[DuplicateHint] mergeAdoptersFromHint threw:', e);
             toast.error(t('errors.generic') || 'Error', undefined, extractErrorId(e));
         } finally {
             setMerging(false);
