@@ -996,10 +996,14 @@ export const es = {
                 too_many_adoptions: {
                     adoption_request: 'Atención: {name} ya tiene {count} adopciones registradas en los últimos {days} días. Te lo dijo en la entrevista?\nAlgunas veces, cuando una persona adopta demasiados animales en un corto periodo de tiempo, no es con buenas intenciones.',
                     adoption: 'Tené en cuenta: {name} acumuló {count} adopciones en los últimos {days} días. Te lo dijo en la entrevista?\nAlgunas veces, cuando una persona adopta demasiados animales en un corto periodo de tiempo, no es con buenas intenciones.',
+                    foster: 'Por cierto, {name} tiene {count} adopciones registradas en los últimos {days} días. Algunas veces, cuando una persona toma demasiados animales en un corto periodo de tiempo, no es con buenas intenciones. Hacé un seguimiento cercano del tránsito y del bienestar del animal.',
+                    follow_up: 'Por cierto, {name} tiene {count} adopciones registradas en los últimos {days} días. Algunas veces, cuando una persona adopta demasiados animales en un corto periodo de tiempo, no es con buenas intenciones. Asegurate de hacer un seguimiento adecuado para verificar el bienestar del animal que le entregaste.',
                 },
                 too_many_requests: {
                     adoption_request: '{name} tiene {count} pedidos de adopción activos en los últimos {days} días. Confirmá que sigue interesado y no está pidiendo a varios rescatistas a la vez.',
                     adoption: '{name} tiene {count} pedidos de adopción activos en los últimos {days} días.\nAlgunas veces, cuando una persona adopta demasiados animales en un corto periodo de tiempo, no es con buenas intenciones.',
+                    foster: '{name} tiene {count} pedidos de adopción activos en los últimos {days} días. Confirmá que no esté pidiendo animales a varios rescatistas a la vez antes de coordinar el tránsito.',
+                    follow_up: '{name} tiene {count} pedidos de adopción activos en los últimos {days} días. Si durante el seguimiento detectás que está solicitando animales a otros rescatistas en paralelo, dejalo registrado en los comentarios.',
                 },
             },
         },

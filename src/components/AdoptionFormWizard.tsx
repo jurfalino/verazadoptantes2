@@ -605,7 +605,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                 (FAB on the profile, no intent declared) keep the full chip grid. */}
                             {(initialRecordType || newAdoptionParam) ? (
                                 <RecordTypeGuidance
-                                    recordType={formData.recordType as 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet'}
+                                    recordType={formData.recordType as 'adoption' | 'adoption_request' | 'foster' | 'observation' | 'follow_up' | 'returned_pet'}
                                     adopterName={adopterName}
                                     avgRating={avgRating}
                                     tooManyAdoptions={tooManyAdoptions}

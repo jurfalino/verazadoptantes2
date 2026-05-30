@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-23] - 2026-05-30
+
+### Added
+- **Density alerts (`tooManyAdoptions` / `tooManyRequests`) now fire on the `foster` and `follow_up` wizards too**, not just `adoption` / `adoption_request`. A profile flagged as "too many recent adoptions" was previously silent in the tránsito and seguimiento flows — exactly the contexts where the warning is most actionable. Drops the `buildAlerts` early-return in `RecordTypeGuidance.tsx` and adds four new i18n strings per locale under `wizard.guidance.alerts.{too_many_adoptions,too_many_requests}.{foster,follow_up}` with copy tailored to each activity (the `follow_up` text was supplied by the user verbatim). `observation` and `returned_pet` deliberately stay silent — they're retrospective records where the alert would be noise.
+
 ## [2.16.0-22] - 2026-05-30
 
 ### Removed

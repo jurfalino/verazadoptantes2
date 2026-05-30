@@ -997,10 +997,14 @@ export const en = {
                 too_many_adoptions: {
                     adoption_request: 'Heads up: {name} already has {count} adoptions on record in the last {days} days. Did they mention this during the interview?\nSometimes, when a person adopts too many animals in a short period, the intent is not good.',
                     adoption: 'Worth noting: {name} accumulated {count} adoptions in the last {days} days. Did they mention this during the interview?\nSometimes, when a person adopts too many animals in a short period, the intent is not good.',
+                    foster: 'By the way, {name} has {count} adoptions on record in the last {days} days. Sometimes, when a person takes too many animals in a short period, the intent is not good. Follow up closely on the foster and the animal\'s well-being.',
+                    follow_up: 'By the way, {name} has {count} adoptions on record in the last {days} days. Sometimes, when a person adopts too many animals in a short period, the intent is not good. Make sure to follow up properly to verify the well-being of the animal you gave them.',
                 },
                 too_many_requests: {
                     adoption_request: '{name} has {count} active adoption requests in the last {days} days. Confirm they are still interested and not asking multiple rescuers at once.',
                     adoption: '{name} has {count} active adoption requests in the last {days} days.\nSometimes, when a person adopts too many animals in a short period, the intent is not good.',
+                    foster: '{name} has {count} active adoption requests in the last {days} days. Confirm they aren\'t requesting animals from multiple rescuers at once before coordinating the foster.',
+                    follow_up: '{name} has {count} active adoption requests in the last {days} days. If during follow-up you notice they\'re requesting animals from other rescuers in parallel, note it in the comments.',
                 },
             },
         },

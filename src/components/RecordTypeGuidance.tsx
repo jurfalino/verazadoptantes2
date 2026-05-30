@@ -79,7 +79,7 @@ function buildAlerts(
     tooManyAdoptions: DensityFlag | null | undefined,
     tooManyRequests: DensityFlag | null | undefined,
 ): AlertSpec[] {
-    if (recordType !== 'adoption' && recordType !== 'adoption_request') return [];
+    if (recordType !== 'adoption' && recordType !== 'adoption_request' && recordType !== 'foster' && recordType !== 'follow_up') return [];
     const alerts: AlertSpec[] = [];
     // Order: adoptions first, then requests (per Q4 sign-off).
     if (tooManyAdoptions) {
