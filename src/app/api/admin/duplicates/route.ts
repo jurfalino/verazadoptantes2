@@ -5,7 +5,7 @@ import { getDb } from '@/lib/db';
 import { adopters, adoptions, duplicateTokens, duplicateCandidates, adopterFlags, appConfig } from '@/db/schema';
 import { eq, sql, isNull, or } from 'drizzle-orm';
 import { auth } from '@/auth';
-import { isAdmin } from '@/config/admins';
+import { isAdminAsync } from '@/config/admins';
 import { logger } from '@/lib/logger';
 import { extractTokens, computeTokenHash } from '@/lib/tokenizer';
 import { deserializeContactEntries } from '@/lib/contactEntries';
@@ -32,7 +32,7 @@ async function avgRatingFor(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, 
  */
 export async function GET(request: Request) {
     const session = await auth();
-    if (!session?.user?.email || !isAdmin(session.user.email)) {
+    if (!session?.user?.email || !await isAdminAsync(session.user.email)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -155,7 +155,7 @@ export async function GET(request: Request) {
  */
 export async function POST(_request: Request) {
     const session = await auth();
-    if (!session?.user?.email || !isAdmin(session.user.email)) {
+    if (!session?.user?.email || !await isAdminAsync(session.user.email)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

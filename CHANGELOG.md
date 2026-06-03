@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-32] - 2026-06-03
+
+### Fixed
+- **Admin `/admin/duplicates` and `/admin/orphan-submissions` were 401-ing for any admin not on the bootstrap list.** Five route files (`api/admin/duplicates/route.ts` GET + POST, `api/admin/duplicates/merge`, `api/admin/duplicates/dismiss`, `api/admin/orphan-submissions/route.ts`, `api/admin/orphan-submissions/[id]/retry`) used the sync `isAdmin()` check, which only honors `BOOTSTRAP_ADMIN_EMAILS` (just `gatitosolivos@gmail.com`) and ignores DB-grant admins (`user_profiles.role = 'admin'`). Swapped all five to `isAdminAsync()` to match the pattern in every other admin route. This was the actual cause of the `/admin/duplicates` "shows nothing" symptom we shipped `-31` to diagnose.
+
 ## [2.16.0-31] - 2026-05-30
 
 ### Diagnostic

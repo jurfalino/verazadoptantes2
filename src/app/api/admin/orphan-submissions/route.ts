@@ -17,12 +17,12 @@ import { getDb } from '@/lib/db';
 import { formSubmissions, adoptions } from '@/db/schema';
 import { eq, isNull, desc } from 'drizzle-orm';
 import { auth } from '@/auth';
-import { isAdmin } from '@/config/admins';
+import { isAdminAsync } from '@/config/admins';
 import { logger } from '@/lib/logger';
 
 export async function GET() {
     const session = await auth();
-    if (!session?.user?.email || !isAdmin(session.user.email)) {
+    if (!session?.user?.email || !await isAdminAsync(session.user.email)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

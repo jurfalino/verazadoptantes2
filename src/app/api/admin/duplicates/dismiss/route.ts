@@ -5,7 +5,7 @@ import { getDb } from '@/lib/db';
 import { duplicateCandidates, adopterFlags } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { auth } from '@/auth';
-import { isAdmin } from '@/config/admins';
+import { isAdminAsync } from '@/config/admins';
 import { logger } from '@/lib/logger';
 
 /**
@@ -14,7 +14,7 @@ import { logger } from '@/lib/logger';
  */
 export async function POST(request: Request) {
     const session = await auth();
-    if (!session?.user?.email || !isAdmin(session.user.email)) {
+    if (!session?.user?.email || !await isAdminAsync(session.user.email)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
