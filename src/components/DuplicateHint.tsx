@@ -56,13 +56,20 @@ interface Props {
     className?: string;
 }
 
-// Strong identifiers that trigger the hint. Address-only matches are noisy
-// (households, apartments) — suppressed by the minRelevance floor below.
+// Strong identifiers that trigger the hint. Address-only suppression is
+// already enforced by `buildInput` (returns null for type='address'); name
+// fuzzy matches can't fire because we never pass a `name` input — so the
+// minRelevance floor exists only to drop true-zero hits.
 const STRONG_TYPES: ReadonlySet<ContactEntryType> = new Set(['phone', 'email', 'social', 'id']);
 
 const MAX_RESULTS = 3;
-// Floor relevance to suppress address-word-only and weak fuzzy-name hits.
-const MIN_RELEVANCE = 40;
+// Low floor: a phone_suffix exact match alone scores ~17%, which the original
+// 40% floor was silently dropping (v2.16.0-34). On a vetting tool, "you typed
+// a phone whose last 8 digits match an existing adopter" is a high-signal
+// duplicate worth surfacing — the user can dismiss it as "different person"
+// if it's a coincidence. We keep 5% as a sanity floor so a 0-score artefact
+// can't surface.
+const MIN_RELEVANCE = 5;
 
 function buildInput(type: ContactEntryType, value: string, excludeAdopterId?: string) {
     const v = value.trim();

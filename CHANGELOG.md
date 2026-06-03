@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-34] - 2026-06-03
+
+### Fixed
+- **DuplicateHint missed same-suffix phone matches.** With an existing adopter at `11-8909-7865`, typing `8909-7865` (no area code) into a contact composer didn't surface the hint, even though the tokenizer already indexes both the full phone and an 8-digit `phone_suffix` for exactly this case. The lookup matched (suffix `89097865` = `89097865`) but `weights.phone_suffix=2 / PRACTICAL_MAX_DUPLICATE=12 → 17%` fell below the hint's `MIN_RELEVANCE=40` floor and got filtered. The 40% floor was originally meant to drop address-only and fuzzy-name noise, but `buildInput` already rejects address inputs and the hint never passes a `name`, so the floor was suppressing only legitimate identifier-overlap hits. Lowered to `5` — still a sanity floor for true-zero artefacts, but lets phone-suffix matches through.
+
 ## [2.16.0-33] - 2026-06-03
 
 ### Added
