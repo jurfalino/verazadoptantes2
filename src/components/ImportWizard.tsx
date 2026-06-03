@@ -18,6 +18,8 @@ import { confidenceBand } from '@/lib/scoring';
 import type { ExtractedAdopterData } from '@/lib/gemini';
 import ContactEntriesInput from '@/components/ContactEntriesInput';
 import { buildContactEntries, contactEntriesToBlob, type ContactEntry } from '@/lib/contactEntries';
+import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
+import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
 
 interface PersonMatch {
     id: string;
@@ -114,6 +116,11 @@ export default function ImportWizard() {
     });
     const [manualImages, setManualImages] = useState<Array<{ data: string; mimeType: string; preview: string; file?: File; thumbnail?: string }>>([]);
     const [sharedFrom, setSharedFrom] = useState<string | null>(null);
+    // Contact-import (v2.16.0-33): true when this wizard run was hydrated from
+    // a device contact (homepage CTA picker or PWA share-target vCard) instead
+    // of the social-media post flow. Drives the Step 3 breadcrumb so the user
+    // knows why animal fields are empty.
+    const [fromContacts, setFromContacts] = useState(false);
 
     // Extracted/fetched state
     const [_fetchedText, setFetchedText] = useState('');
@@ -229,12 +236,124 @@ export default function ImportWizard() {
         }
     };
 
+    /**
+     * Synthesize the wizard's Step 3 state from a parsed vCard contact. Used
+     * by both the homepage CTA path (sessionStorage handoff) and the PWA
+     * share-target path (SW cache handoff). Bypasses Steps 1–2 entirely —
+     * we already have structured fields and don't need AI extraction.
+     */
+    const hydrateFromContact = (c: ParsedVcardContact) => {
+        const addressEntries: ContactEntry[] = [];
+        for (const addr of c.addresses) {
+            const joined = [addr.streetAndNumber, addr.locality].filter(Boolean).join(', ').trim();
+            const value = (joined || addr.raw || '').trim();
+            if (!value) continue;
+            addressEntries.push({
+                type: 'address',
+                value,
+                ...(addr.streetAndNumber ? { streetAndNumber: addr.streetAndNumber } : {}),
+                ...(addr.locality ? { locality: addr.locality } : {}),
+                ...(addr.raw && !addr.streetAndNumber && !addr.locality ? { raw: addr.raw } : {}),
+            });
+        }
+        setContactEntries([
+            ...buildContactEntries({ phones: c.phones, emails: c.emails }),
+            ...addressEntries,
+        ]);
+        // Confidence is 'low' because the OS picker / vCard gives us identity
+        // data but the wizard's Step 3 panel grades that signal alongside the
+        // (intentionally empty) adoption details.
+        setExtractedData({
+            name: c.name || '',
+            phones: c.phones,
+            emails: c.emails,
+            addresses: c.addresses.map(a => a.raw || [a.streetAndNumber, a.locality].filter(Boolean).join(', ')).filter(Boolean) as string[],
+            socialProfiles: [],
+            notes: '',
+            confidence: 'low',
+            adoptionDetected: false,
+        });
+        setUnknownAnimal(true);
+        setFromContacts(true);
+        setStep(3);
+    };
+
+    /**
+     * Read the contact stash written by `ContactPickerLauncher` and hydrate
+     * Step 3 from it. Idempotent — the stash is consumed on read so a refresh
+     * doesn't loop the wizard back into the contact-import path.
+     */
+    const loadStashedContact = (): boolean => {
+        try {
+            const raw = sessionStorage.getItem(CONTACT_IMPORT_STASH_KEY);
+            if (!raw) return false;
+            sessionStorage.removeItem(CONTACT_IMPORT_STASH_KEY);
+            const parsed = JSON.parse(raw) as ParsedVcardContact;
+            hydrateFromContact(parsed);
+            return true;
+        } catch {
+            return false;
+        }
+    };
+
+    /**
+     * Read a vCard from the service-worker share-target cache (the file the
+     * user shared from their phone's Contacts app), parse it, and hydrate
+     * Step 3. Mirrors `loadSharedImages` for the image-share path.
+     */
+    const loadSharedVcard = async (): Promise<boolean> => {
+        try {
+            const cache = await caches.open('share-target-media');
+            const response = await cache.match('/share-target-vcard');
+            if (!response) return false;
+            const text = await response.text();
+            await cache.delete('/share-target-vcard');
+            const parsed = parseVcard(text);
+            if (!parsed) return false;
+            hydrateFromContact(parsed);
+            return true;
+        } catch (e) {
+            console.warn('[ImportWizard] Failed to load shared vCard from cache:', e);
+            return false;
+        }
+    };
+
     // Pre-fill from URL params (for Share Intent / Web Share Target)
     useEffect(() => {
         const sharedUrl = searchParams.get('shared_url') || searchParams.get('url');
         const sharedText = searchParams.get('shared_text') || searchParams.get('text');
         const hasSharedImages = searchParams.get('shared_images') === 'true';
         const imagesLost = searchParams.get('shared_images_lost') === 'true';
+        const isContactImport = searchParams.get('contact_import') === '1';
+        const isSharedVcard = searchParams.get('shared_vcard') === 'true';
+        const sharedVcardLost = searchParams.get('shared_vcard_lost') === 'true';
+
+        // Contact-import fast path (v2.16.0-33): the user picked a contact
+        // on the homepage (or shared one from their phone's Contacts app)
+        // and we already have structured fields. Skip Steps 1–2 entirely
+        // — no URL to fetch, no AI extraction needed. Run BEFORE the other
+        // share-intent branches so a query that carries both wins fast.
+        if (isContactImport && loadStashedContact()) {
+            return;
+        }
+        if (sharedVcardLost) {
+            // SW was inactive when the share arrived — file body never made it
+            // to the cache. Show a soft hint, leave the user on Step 1.
+            setError(t('import.vcard_parse_failed') || (locale === 'es'
+                ? 'No se pudo cargar el contacto compartido. Probá nuevamente.'
+                : 'Could not load the shared contact. Please try again.'));
+            return;
+        }
+        if (isSharedVcard) {
+            loadSharedVcard().then(loaded => {
+                if (!loaded) {
+                    setError(t('import.vcard_parse_failed') || (locale === 'es'
+                        ? 'No se pudo cargar el contacto compartido. Probá nuevamente.'
+                        : 'Could not load the shared contact. Please try again.'));
+                }
+            });
+            return;
+        }
 
         // Load cached images from SW (if any)
         if (hasSharedImages) {
@@ -1158,11 +1277,27 @@ export default function ImportWizard() {
                         </span>
                     </div>
 
-                    {/* Validation warning */}
-                    <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-                        <span className="mt-0.5">⚠️</span>
-                        <span>{t('import.aiValidationWarning') || 'AI-extracted data may contain errors. Please verify all fields before saving.'}</span>
-                    </div>
+                    {/* Contact-import breadcrumb — only shown when the wizard
+                        was hydrated from a device contact (no AI extraction
+                        ran), so the user knows why animal fields are empty. */}
+                    {fromContacts && (
+                        <div className="flex items-start gap-2 px-3 py-2.5 bg-teal-50 border border-teal-200 rounded-lg text-xs text-teal-800">
+                            <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                            <span>{t('import.from_contacts_breadcrumb')}</span>
+                        </div>
+                    )}
+
+                    {/* Validation warning — only when AI extraction ran. The
+                        contact-import path has no AI in the loop, so the
+                        warning would be inaccurate. */}
+                    {!fromContacts && (
+                        <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                            <span className="mt-0.5">⚠️</span>
+                            <span>{t('import.aiValidationWarning') || 'AI-extracted data may contain errors. Please verify all fields before saving.'}</span>
+                        </div>
+                    )}
 
                     {/* Name */}
                     <div>

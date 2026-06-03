@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-33] - 2026-06-03
+
+### Added
+- **Import an adopter profile from the device address book.** Two entry points feed the existing `ImportWizard`'s Step 3 review screen, skipping the URL/AI extraction loop entirely:
+  - **Homepage CTA "Desde contactos"** — opens the native OS contact picker on Chrome Android (Contact Picker API), falls back transparently to a `.vcf` file upload on iOS Safari / Firefox / desktop. New `ContactPickerLauncher` component handles the routing + sessionStorage handoff.
+  - **PWA share intent** — the `share_target` manifest now accepts `text/vcard` files in addition to images, so the OS share sheet (Android Contacts app → Share → BuenAdoptante) lands the user inside the wizard with name/phones/emails/addresses prefilled. SW `CACHE_NAME` bumped to v3 to force already-installed PWAs to pick up the new branch.
+  - vCard parser at `src/lib/vcard.ts` is hand-written (~200 LOC), edge-runtime safe, no npm dep. Handles line unfolding, quoted-printable Spanish names (`Jos=C3=A9` → `José`), vCard 2.1/3.0/4.0 structured ADR, mobile-tagged TEL preference, and multi-contact `.vcf` (picks first, surfaces a toast). 6 vitest cases cover the realistic Android/iOS export shapes.
+  - Gated by new `ENABLE_CONTACT_IMPORT` flag (default `false`). The flag controls the homepage CTA only — the PWA manifest is static and the wizard always handles arriving vCards (benign: user can abandon Step 3).
+  - The 3-card homepage grid stays 3-col: the third card is now titled "Importar perfil" and hosts two stacked source buttons ("Desde un post" + "Desde contactos"). Clean-homepage mode renders the two as paired pills with a "·" divider below the search.
+
 ## [2.16.0-32] - 2026-06-03
 
 ### Fixed

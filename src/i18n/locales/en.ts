@@ -96,6 +96,8 @@ export const en = {
         flag_desc_public_profiles: 'When on, contact entries imported from public social posts render unmasked to any authenticated viewer (they were public to begin with). Admins can also mark a whole profile public from /admin/adopters (🌐/🔒 toggle) to expose contributor-added entries too. Requires PII gating to be enabled. Default OFF.',
         flag_label_clean_homepage: 'Minimal homepage',
         flag_desc_clean_homepage: 'When on, hides the two activity cards on the homepage ("Register an adoption" and "Leave an observation"). Search becomes the sole primary action; the import-from-social affordance stays accessible as a secondary link below the search. Useful to focus the homepage on adopter lookup. Default OFF.',
+        flag_label_contact_import: 'Import from contacts',
+        flag_desc_contact_import: 'Show the "From contacts" button on the homepage to create a profile by picking a contact from the device address book (Chrome on Android) or uploading a .vcf file (other browsers). Default OFF.',
         flag_label_showcase_global: 'Public global catalog URL',
         flag_desc_showcase_global: 'On /my-animals, show the public link to the global catalog of all available animals (root "/"). Off by default while the flow is validated.',
         flag_label_showcase_org: 'Public per-org URLs',
@@ -386,13 +388,21 @@ export const en = {
         how_step2_desc: 'Record adoptions and experiences.',
         how_step3_title: 'Rate & Share',
         how_step3_desc: 'Share your experience with the community.',
-        // Import action card
-        action_import_title: 'Import from a post',
-        action_import_desc: 'Paste a link or screenshot from social media and we extract the info automatically.',
+        // Import action card — unified parent card with two sub-buttons
+        // ("From a post" + "From contacts"). The title is generic; the two
+        // buttons name the specific source.
+        action_import_title: 'Import a profile',
+        action_import_desc: 'Build a profile from a social media post or from your contact list.',
         action_import_btn: 'Import Now',
-        // Compact label used in clean-homepage mode where import lives below
-        // the search as a single secondary link (no card chrome).
-        action_import_secondary: 'Import a profile from social media',
+        action_import_post_btn: 'From a post',
+        action_import_contacts_btn: 'From contacts',
+        // Compact labels used in clean-homepage mode where the two import
+        // modes render as paired pills below the search (no card chrome).
+        action_import_post_secondary: 'Import from a post',
+        action_import_contacts_secondary: 'Import from contacts',
+        // Legacy key — still read in case any older entry-point references
+        // it. Mirrors the post-only label so existing surfaces keep working.
+        action_import_secondary: 'Import from a post',
         // Sample record
         sample_record: 'See an example profile',
         process_guide: 'Adoption Process Guide',
@@ -1400,6 +1410,10 @@ export const en = {
     import: {
         // Post-import toasts
         record_added_to_profile: 'Record added to profile',
+        // Contact-import (v2.16.0-33) — homepage CTA + PWA share-target flow.
+        from_contacts_breadcrumb: 'Imported from your contacts',
+        vcard_multiple_picked_first: 'Imported the first contact from the file',
+        vcard_parse_failed: 'Could not read the contact file',
         go_to_profile_link: '→ View profile',
         // Home page button
         button: 'Import Content',

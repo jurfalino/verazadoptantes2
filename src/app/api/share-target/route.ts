@@ -44,6 +44,15 @@ export async function POST(request: NextRequest) {
             params.set('shared_images_lost', 'true');
         }
 
+        // Check for shared vCard (v2.16.0-33). The SW caches the file and the
+        // wizard reads it from there; if we're here, the SW is inactive and
+        // the file body can't survive a 303 redirect — flag it as lost so the
+        // wizard renders a soft hint instead of silently staying on Step 1.
+        const vcardFiles = formData.getAll('vcard');
+        if (vcardFiles && vcardFiles.length > 0 && vcardFiles[0] instanceof File && (vcardFiles[0] as File).size > 0) {
+            params.set('shared_vcard_lost', 'true');
+        }
+
         return NextResponse.redirect(
             new URL(`/import?${params.toString()}`, request.url),
             303

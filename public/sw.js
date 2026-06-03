@@ -1,7 +1,11 @@
 // BuenAdoptante Service Worker
 // Strategy: Cache-first for static assets, Network-first for pages/API with offline fallback
 
-const CACHE_VERSION = 'buenaadoptante-v2';
+// Bumped to v3 in v2.16.0-33 to force installed PWAs to pick up the
+// vCard branch of handleShareTarget below — otherwise the SW intercepts the
+// /api/share-target POST with the old code path and the new manifest's vcard
+// files entry has no client-side handler.
+const CACHE_VERSION = 'buenaadoptante-v3';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const SHARE_CACHE = 'share-target-media';
@@ -107,9 +111,15 @@ async function handleShareTarget(request) {
         const imageFiles = formData.getAll('images');
         let hasImages = false;
 
-        if (imageFiles && imageFiles.length > 0) {
+        // Extract shared vCard file (v2.16.0-33). Manifest declares a single
+        // `vcard` files entry; we cache the first non-empty file so the wizard
+        // can pick it up via `/share-target-vcard` and parse client-side.
+        const vcardFiles = formData.getAll('vcard');
+        let hasSharedVcard = false;
+
+        if ((imageFiles && imageFiles.length > 0) || (vcardFiles && vcardFiles.length > 0)) {
             const cache = await caches.open(SHARE_CACHE);
-            // Clear any previous shared images
+            // Clear any previous shared media (images AND vcard from prior shares).
             const existingKeys = await cache.keys();
             for (const key of existingKeys) {
                 await cache.delete(key);
@@ -129,6 +139,23 @@ async function handleShareTarget(request) {
                     hasImages = true;
                 }
             }
+
+            // Cache the first non-empty vCard. Multi-contact .vcf is allowed —
+            // the wizard's parseVcard picks the first VCARD block and surfaces
+            // a toast.
+            for (const file of vcardFiles) {
+                if (file && file.size > 0) {
+                    const response = new Response(file, {
+                        headers: {
+                            'Content-Type': file.type || 'text/vcard',
+                            'X-Filename': file.name || 'shared-contact.vcf',
+                        },
+                    });
+                    await cache.put('/share-target-vcard', response);
+                    hasSharedVcard = true;
+                    break;
+                }
+            }
         }
 
         // Build redirect URL
@@ -138,6 +165,7 @@ async function handleShareTarget(request) {
         if (sharedText) params.set('shared_text', sharedText);
         if (sharedTitle) params.set('shared_title', sharedTitle);
         if (hasImages) params.set('shared_images', 'true');
+        if (hasSharedVcard) params.set('shared_vcard', 'true');
 
         // Redirect to import page
         return Response.redirect(`/import?${params.toString()}`, 303);
