@@ -24,6 +24,39 @@ export default function ClientErrorReporter() {
             if (existingId) return; // server action already logged this
 
             const stack = event.error instanceof Error ? event.error.stack : undefined;
+
+            // Deploy-churn recovery (v2.16.0-45). webpack's lazy-load
+            // runtime references content-hashed chunk filenames. If the
+            // user loaded the page on an older deploy and we've since
+            // shipped a new build (chunks rewritten with new hashes,
+            // old ones GC'd from the Pages CDN), the next dynamic
+            // import inside the running SPA 404s and webpack throws
+            // ChunkLoadError. The standard fix: detect and force-
+            // reload — fresh HTML has fresh chunk references.
+            // Reload at most once per session (sessionStorage guard)
+            // to avoid loops if the new deploy is also broken.
+            const errName = event.error?.name || '';
+            const isChunkLoadError = errName === 'ChunkLoadError'
+                || /Loading (CSS )?chunk \d+ failed/.test(message);
+            if (isChunkLoadError) {
+                const RELOAD_GUARD = 'buenadoptante.chunk_reload_attempted';
+                if (!sessionStorage.getItem(RELOAD_GUARD)) {
+                    sessionStorage.setItem(RELOAD_GUARD, '1');
+                    console.warn('[ClientErrorReporter] ChunkLoadError — forcing reload to pick up fresh chunk hashes:', message);
+                    window.location.reload();
+                    return;
+                }
+                // Already reloaded once in this session and the same
+                // error fires again — surface a clear hint instead of
+                // the generic toast so the user knows what to try.
+                console.error('[ClientErrorReporter] ChunkLoadError persists after reload:', message);
+                toast.error(
+                    'Recargá la app',
+                    'Hubo una actualización mientras usabas la app. Cerrá y volvé a abrir.',
+                );
+                return;
+            }
+
             const errorId = crypto.randomUUID().slice(0, 8);
             // Show the toast immediately with the id the user can report; the
             // POST writes Axiom under that exact id.
@@ -48,6 +81,29 @@ export default function ClientErrorReporter() {
             if (existingId) return;
 
             const stack = reason instanceof Error ? reason.stack : undefined;
+
+            // Same ChunkLoadError auto-reload path as the window-error
+            // handler above (v2.16.0-45). Next.js's dynamic import can
+            // surface chunk failures as a rejected promise rather than
+            // an error event, so we need the recovery here too.
+            const errName = reason instanceof Error ? reason.name : '';
+            const isChunkLoadError = errName === 'ChunkLoadError'
+                || /Loading (CSS )?chunk \d+ failed/.test(message);
+            if (isChunkLoadError) {
+                const RELOAD_GUARD = 'buenadoptante.chunk_reload_attempted';
+                if (!sessionStorage.getItem(RELOAD_GUARD)) {
+                    sessionStorage.setItem(RELOAD_GUARD, '1');
+                    console.warn('[ClientErrorReporter] ChunkLoadError (rejection) — forcing reload:', message);
+                    window.location.reload();
+                    return;
+                }
+                console.error('[ClientErrorReporter] ChunkLoadError (rejection) persists after reload:', message);
+                toast.error(
+                    'Recargá la app',
+                    'Hubo una actualización mientras usabas la app. Cerrá y volvé a abrir.',
+                );
+                return;
+            }
 
             // Suppress noisy background browser-platform rejections that
             // aren't actionable for the user. Observed in the wild:

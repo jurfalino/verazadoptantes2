@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-45] - 2026-06-04
+
+### Fixed
+- **`ChunkLoadError` after rapid back-to-back deploys was surfacing to users as an opaque webpack stack trace, leaving the SPA non-functional until manual hard-reload.** webpack's lazy-load runtime references content-hashed chunk filenames. When a user has an in-flight SPA session from an older deploy and a new build replaces those chunks on the CDN (each deploy GCs the previous content hashes), the next dynamic import 404s and throws `ChunkLoadError`. The standard recovery is a one-shot reload to pick up fresh HTML pointing at the current chunks — that's now wired into `ClientErrorReporter` for both the `error` event path (synchronous throws) and the `unhandledrejection` path (Next.js's dynamic import rejection). A `sessionStorage` guard prevents reload loops if the new deploy is also broken; if the chunk error persists after one reload, the user gets a clear "Recargá la app — hubo una actualización mientras usabas la app" toast instead of being stuck in an auto-reload loop. This was visible in this session because v2.16.0-33 through -44 shipped within a few hours, so any user with a long-running session would have been on a stale chunk graph at least once.
+
 ## [2.16.0-44] - 2026-06-04
 
 ### Fixed
