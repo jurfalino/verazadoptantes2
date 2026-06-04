@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.17.1] - 2026-06-04
+
+### Fixed
+- **Legit users intermittently landed on `/auth-error` after signing out and back in.** The adopter-login gate (designed to block flagged adopters from signing in and discovering the registry) had two bugs that misfired for real users. The `/auth-error` page is intentionally vague, so the misfire looked like a generic "the app is broken."
+
+  - **DB-grant admins fell through the admin bypass.** `auth.config.ts:58` called `isAdmin(email)` — the *sync* check that only honors `BOOTSTRAP_ADMIN_EMAILS` (a one-entry list). Any admin granted via `user_profiles.role='admin'` was evaluated by the full gate; if their email happened to be in any adopter's contactInfo with `avgRating < 4` or a density flag, they got blocked. Sixth instance of the exact `isAdmin` vs `isAdminAsync` bug we fixed for admin API routes in v2.16.0-32; the auth callback was missed in that sweep. Swapped to `await isAdminAsync(email)`.
+  - **Rescuers were blocked by data they themselves added.** A rescuer's own email can legitimately land in adopter `contactInfo` (test profile, tracking their own data, contributor edit, etc.). If that adopter then accrued `avgRating < 4` or a density flag, the gate matched and blocked. Fixed in `adopterLoginGate.ts` — when iterating matched adopters, if `adopterRow.addedBy === email`, triggers are not computed for that match (it can still appear in the diagnostic `matches` array, but can't push the gate into `blocked: true`). Other-added profiles still fire if they match — the gate's primary purpose is preserved.
+
+  The intermittency came from D1 multi-region read-replica lag: `duplicate_tokens` writes have been frequent (every adopter mutation re-tokenizes via the v2.16.0-37/-38 await sweep), so the replica a worker reads from may or may not have the relevant email-token row yet — same email, same data, different replicas.
+
 ## [2.17.0] - 2026-06-04
 
 Cumulative release rolling up the v2.16.0-24..-45 staging batch. Per-version entries below are kept verbatim as the audit trail; this section is the prod-facing summary.

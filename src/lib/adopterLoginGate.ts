@@ -129,10 +129,27 @@ export async function checkAdopterLoginGate(rawEmail: string): Promise<GateResul
             const tooManyAdoptions = adoptionsDensity.count >= adoptionConfig.threshold;
             const tooManyRequests = requestsDensity.count >= adoptionConfig.requestsThreshold;
 
+            // Self-added skip (v2.17.1): a rescuer's own email landing in
+            // their own contactInfo (test profile, tracking their own data,
+            // a contributor edit, etc.) shouldn't block them from signing in
+            // — the data IS theirs. The match still goes into `matches` for
+            // diagnostics; we just don't populate triggers so it can't push
+            // the gate into blocked=true.
+            //
+            // Trade-off: if a rescuer's email is ALSO in another profile
+            // someone else added that triggers a block, the other-added
+            // profile still fires — correct, the gate's primary purpose is
+            // preserved. If two real people genuinely share an email AND
+            // the rescuer happens to have added a profile for the other
+            // person, we'd false-negative; acceptable for that edge case.
+            const isSelfAdded = !!adopterRow.addedBy
+                && adopterRow.addedBy.toLowerCase().trim() === email;
             const triggers: string[] = [];
-            if (avgRating !== null && avgRating < 4) triggers.push('low_rating');
-            if (tooManyAdoptions) triggers.push('too_many_adoptions');
-            if (tooManyRequests) triggers.push('too_many_requests');
+            if (!isSelfAdded) {
+                if (avgRating !== null && avgRating < 4) triggers.push('low_rating');
+                if (tooManyAdoptions) triggers.push('too_many_adoptions');
+                if (tooManyRequests) triggers.push('too_many_requests');
+            }
 
             // Most recent 2 editors from history.
             const historyRows = await db.select({ changedBy: adopterHistory.changedBy })
