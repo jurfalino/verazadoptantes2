@@ -746,16 +746,24 @@ export default function ImportWizard() {
             }
         }
 
-        // Check for person match via token index
+        // Check for person match via token index.
+        //
+        // Pass ONLY `name` + the freshly-rebuilt contactInfo blob. We used to
+        // also forward `phones`/`emails`/`socials` from `extractedData`, but
+        // those fields are populated once (AI extraction or the contact-import
+        // hydrator) and never updated when the user edits a chip in
+        // ContactEntriesInput — the chip editor only mutates `contactEntries`.
+        // findAdopters' input contract preferred the structured arrays over
+        // the contactInfo blob (`input.phones?.length ? input.phones : extractPhones(blob)`),
+        // so the stale fields silently overrode the user's edits and the
+        // duplicate check ran against the original values. Dropping them
+        // makes contactEntries the single source of truth (v2.16.0-44).
         if (extractedData) {
             try {
                 const response = await findAdopters(
                     {
                         name: extractedData.name,
                         contactInfo: contactEntriesToBlob(contactEntries),
-                        phones: extractedData.phones,
-                        emails: extractedData.emails,
-                        socials: extractedData.socialProfiles,
                     },
                     { mode: 'duplicate' },
                 );

@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-44] - 2026-06-04
+
+### Fixed
+- **Pre-save duplicate check used stale phones/emails after the user edited them.** `handlePreSave` in the import wizard was passing `extractedData.phones` / `.emails` / `.socials` alongside the contactInfo blob. Those fields are populated once (AI extraction in the post path, vCard hydration in the contact-import path) and **never updated** when the user edits a chip in `ContactEntriesInput` — the chip editor only mutates `contactEntries`. Worse, `findAdopters` preferred the structured arrays over the blob (`input.phones?.length ? input.phones : extractPhones(blob)`), so the stale arrays silently overrode the user's edits. The visible symptom: user picks a contact, edits the phone in Step 3 to a different number, taps Save, and is STILL told it's a duplicate of the original — because the duplicate check ran against the original phone, not the edited one. The Step 4 confirm modal then surfaced the bogus "match." Dropped the three stale fields from the pre-save call so `contactEntries` is now the single source of truth (and the Step-3 debounced overlap check at `:629` was already doing the right thing — same `{name, contactInfo}`-only shape).
+
 ## [2.16.0-43] - 2026-06-04
 
 ### Changed
