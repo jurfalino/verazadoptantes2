@@ -161,13 +161,23 @@ export default async function RootLayout({
             </ThemeProvider>
           </LanguageProvider>
         </SessionProvider>
-        {/* Service Worker Registration */}
+        {/* Service Worker Registration.
+            The .catch is load-bearing: register() can reject for reasons we
+            don't control (browser denies, extension-shimmed wrapper, PWA
+            permission gate, transient install race). Without it, the
+            rejection becomes an unhandled-rejection caught by
+            ClientErrorReporter and surfaces as a generic "Algo salió mal"
+            toast to the user (v2.16.0-35) — SW is an offline-cache nicety
+            and should never user-visibly fail. Console.warn keeps the
+            signal for debugging without polluting the UX. */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js');
+                  navigator.serviceWorker.register('/sw.js').catch(function(err) {
+                    console.warn('[sw] registration failed:', err);
+                  });
                 });
               }
             `,

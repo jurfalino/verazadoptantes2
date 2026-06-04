@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-35] - 2026-06-03
+
+### Fixed
+- **Service-Worker registration failures surfaced as generic "Algo salió mal" toasts to the user.** The inline SW registration script in `layout.tsx` was `navigator.serviceWorker.register('/sw.js')` with no `.catch()`. When `register()` rejected for any reason outside our control (browser-denied, extension-shimmed wrapper, PWA permission gate, transient install race), the bare promise rejection bubbled up to `ClientErrorReporter`'s `unhandledrejection` listener, which fired a "Se registró el error" toast with an errorId — alarming the user about a background offline-cache nicety they don't need to know about. Added a `.catch` that logs to `console.warn` so the signal stays available for debugging without polluting the UX.
+
 ## [2.16.0-34] - 2026-06-03
 
 ### Fixed
