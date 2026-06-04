@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-40] - 2026-06-04
+
+### Fixed
+- **ImportWizard rendered a blank Step 1 when a prior session was abandoned mid-Step-3.** The wizard persists `{ step, inputContent, editableText, sourceUrl }` to sessionStorage but NOT `extractedData` / `contactEntries`. Pre-existing weakness, but the contact-import fast path in v2.16.0-33 was the first realistic path to leave storage with `step=3` and empty `inputContent`/`editableText`: a user picks a contact, lands on Step 3 prefilled, then leaves without saving. Next visit to `/import` for a regular post import: `step` initializer reads `3`, Step 1 doesn't render (gated on `step === 1`), Step 3 doesn't render (gated on `extractedData`) → user sees only the step indicator with nothing below. Fixed in the `step` state initializer — when the persisted step is past 1 but neither `inputContent` nor `editableText` is populated, clear the stale storage and start at Step 1.
+
 ## [2.16.0-39] - 2026-06-04
 
 ### Fixed

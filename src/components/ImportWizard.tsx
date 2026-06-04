@@ -78,10 +78,25 @@ export default function ImportWizard() {
     const [step, setStep] = useState(() => {
         if (typeof window === 'undefined') return 1;
         const saved = sessionStorage.getItem('import_wizard_state');
-        if (saved) {
-            try { return JSON.parse(saved).step || 1; } catch { return 1; }
-        }
-        return 1;
+        if (!saved) return 1;
+        try {
+            const parsed = JSON.parse(saved);
+            const persistedStep = parsed.step || 1;
+            // Sanity: only `step` + `inputContent` + `editableText` + `sourceUrl`
+            // are persisted. `extractedData` / `contactEntries` are not — so a
+            // session abandoned mid-Step-3 leaves storage with step=3 but no
+            // data to render Step 3 (and not step=1 either, so Step 1 doesn't
+            // render either → blank screen). The contact-import fast path
+            // (v2.16.0-33) is the realistic source of this state: it sets
+            // step=3 without seeding inputContent / editableText, so the
+            // post-import flow only hit this if abandoned mid-fetch. Reset
+            // to Step 1 when the persisted step needs data we don't have.
+            if (persistedStep > 1 && !(parsed.inputContent?.trim() || parsed.editableText?.trim())) {
+                sessionStorage.removeItem('import_wizard_state');
+                return 1;
+            }
+            return persistedStep;
+        } catch { return 1; }
     });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
