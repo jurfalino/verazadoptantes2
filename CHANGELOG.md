@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-41] - 2026-06-04
+
+### Fixed
+- **Post-import wizard's AI extraction step returned `[404] this model is no longer available`** when called with text-only input (no images / no URL fetch path). Google retired `gemini-2.0-flash` and our hardcoded default in `lib/gemini.ts:128` still pointed at it. Updated the baked-in default to `gemini-2.5-flash`, and updated the route's fallback-list in `/api/ai/models` to current model names so the offline-dev path doesn't surface dead models in the dropdown either.
+
+### Added
+- **Admin can now change the Gemini default model without a redeploy.** New `GEMINI_DEFAULT_MODEL` setting in `/admin/config` (rendered as a dropdown whose options come from the live Gemini API via `/api/ai/models`). Precedence in the extraction route: per-call `body.model` override → admin-set DB value → baked-in default in `lib/gemini.ts`. Next time Google retires a model, the admin flips the dropdown instead of waiting for a deploy. The current value sticks even when the live API drops it from its list (the dropdown preserves the persisted name as a one-off option so admin doesn't accidentally clear it).
+
 ## [2.16.0-40] - 2026-06-04
 
 ### Fixed

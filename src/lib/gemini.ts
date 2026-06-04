@@ -125,7 +125,13 @@ If you cannot extract any relevant information, return:
 export async function extractAdopterData(
     text?: string,
     images?: Array<{ data: string; mimeType: string }>, // base64 data and mime type
-    modelName: string = "gemini-2.0-flash",
+    // gemini-2.0-flash was retired in 2026 and now 404s. Default updated to
+    // gemini-2.5-flash (v2.16.0-41). The /api/ai/extract-from-post route
+    // looks up the `GEMINI_DEFAULT_MODEL` admin setting first; this baked-in
+    // default only fires if (a) no body.model passed AND (b) no admin
+    // override is set. Admins can override via /admin/config without a
+    // deploy when the next model is retired.
+    modelName: string = "gemini-2.5-flash",
     language: string = "es"
 ): Promise<ExtractedAdopterData> {
     const apiKey = getGeminiApiKey();

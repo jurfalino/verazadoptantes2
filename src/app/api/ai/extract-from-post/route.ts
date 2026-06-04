@@ -5,6 +5,29 @@ import { auth } from '@/auth';
 import { extractAdopterData } from '@/lib/gemini';
 import { getFeatureFlag } from '@/config/features';
 import { logger } from '@/lib/logger';
+import { getDb } from '@/lib/db';
+import { appConfig } from '@/db/schema';
+import { eq } from 'drizzle-orm';
+
+/**
+ * Read the admin-configured default Gemini model from app_config. Returns
+ * `undefined` when not set (or on D1 read failure) so extractAdopterData's
+ * baked-in default kicks in. Added v2.16.0-41 so the next Google retires
+ * a model isn't a deploy — admins flip it in /admin/config.
+ */
+async function getDefaultModelFromConfig(): Promise<string | undefined> {
+    try {
+        const db = await getDb();
+        if (!db) return undefined;
+        const row = await db.select().from(appConfig)
+            .where(eq(appConfig.key, 'GEMINI_DEFAULT_MODEL'))
+            .get();
+        const v = row?.value?.trim();
+        return v ? v : undefined;
+    } catch {
+        return undefined;
+    }
+}
 
 export async function POST(request: NextRequest) {
     let session: any = null;
@@ -82,11 +105,15 @@ export async function POST(request: NextRequest) {
             imageCount: allImages.length,
         });
 
+        // Precedence: explicit body.model (per-call override) → admin-set
+        // default (DB) → baked-in default in extractAdopterData.
+        const modelName = body.model || await getDefaultModelFromConfig();
+
         // Call Gemini API
         const extracted = await extractAdopterData(
             text,
             allImages.length > 0 ? allImages : undefined,
-            body.model || undefined,
+            modelName,
             body.language || 'es'
         );
 

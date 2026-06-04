@@ -38,6 +38,7 @@ interface ConfigData {
         ENABLE_PUBLIC_PROFILES?: string;
         ENABLE_CLEAN_HOMEPAGE?: string;
         ENABLE_CONTACT_IMPORT?: string;
+        GEMINI_DEFAULT_MODEL?: string;
         SHOWCASE_GLOBAL_VISIBLE?: string;
         SHOWCASE_ORG_VISIBLE?: string;
         SHOWCASE_USER_VISIBLE?: string;
@@ -102,6 +103,13 @@ export default function AdminConfigPage() {
     });
     const [instagramUrl, setInstagramUrl] = useState('');
     const [savingInstagram, setSavingInstagram] = useState(false);
+    // Gemini model default — admin-overridable so a Google retirement doesn't
+    // need a redeploy (v2.16.0-41). Live model list comes from /api/ai/models
+    // (which calls the Google API); empty selection means "use baked-in
+    // default in lib/gemini.ts".
+    const [geminiDefaultModel, setGeminiDefaultModel] = useState('');
+    const [geminiAvailableModels, setGeminiAvailableModels] = useState<Array<{ name: string; displayName: string }>>([]);
+    const [savingGeminiModel, setSavingGeminiModel] = useState(false);
     const [telegramAdminChatId, setTelegramAdminChatId] = useState('');
     const [telegramBotToken, setTelegramBotToken] = useState('');
     const [telegramWebhookSecret, setTelegramWebhookSecret] = useState('');
@@ -151,6 +159,7 @@ export default function AdminConfigPage() {
                         SHOWCASE_USER_VISIBLE: data.config?.SHOWCASE_USER_VISIBLE === 'true',
                     });
                     setInstagramUrl(data.config?.INSTAGRAM_URL || '');
+                    setGeminiDefaultModel(data.config?.GEMINI_DEFAULT_MODEL || '');
                     setTelegramAdminChatId(data.config?.TELEGRAM_ADMIN_CHAT_ID || '');
                     setTelegramBotTokenSet(data.config?.TELEGRAM_BOT_TOKEN_SET === 'true');
                     setTelegramWebhookSecretSet(data.config?.TELEGRAM_WEBHOOK_SECRET_SET === 'true');
@@ -171,6 +180,45 @@ export default function AdminConfigPage() {
         }
         fetchData();
     }, []);
+
+    // Fetch the live Gemini model list so the admin dropdown reflects what's
+    // actually available right now. Falls back to the route's hardcoded list
+    // when the API call fails (offline dev, missing key, etc.) — that fallback
+    // already excludes the retired gemini-2.0-flash.
+    useEffect(() => {
+        async function fetchModels() {
+            try {
+                const res = await fetch('/api/ai/models');
+                if (!res.ok) return;
+                const data = await res.json() as { models?: Array<{ name: string; displayName: string }> };
+                setGeminiAvailableModels(data.models || []);
+            } catch (e) {
+                console.warn('Failed to fetch Gemini models', e);
+            }
+        }
+        fetchModels();
+    }, []);
+
+    const handleSaveGeminiModel = async () => {
+        setSavingGeminiModel(true);
+        try {
+            const res = await fetch('/api/admin/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ GEMINI_DEFAULT_MODEL: geminiDefaultModel.trim() })
+            });
+            if (res.ok) {
+                toast.success(t('toast.saved_title'), t('toast.saved_message'));
+            } else {
+                const body = await readErrorBody(res);
+                toast.error(t('errors.generic'), body.error || t('errors.save_config_failed'), body.errorId);
+            }
+        } catch (e) {
+            toast.error(t('errors.generic'), t('errors.unexpected'), extractErrorId(e));
+        } finally {
+            setSavingGeminiModel(false);
+        }
+    };
 
     const handleSaveConfig = async () => {
         setSaving(true);
@@ -538,6 +586,48 @@ export default function AdminConfigPage() {
                         className="px-4 py-2 rounded-lg bg-stone-900 text-white text-sm font-semibold hover:bg-stone-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                         {savingInstagram ? '…' : t('common.save')}
+                    </button>
+                </div>
+            </div>
+
+            {/* Gemini default model — admin-overridable so a Google
+                retirement (e.g. gemini-2.0-flash → 404 in 2026) doesn't
+                require a redeploy. The dropdown lists models the live Gemini
+                API reports as available right now. Empty value falls back to
+                the baked-in default in lib/gemini.ts. */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200">
+                <h3 className="text-lg font-semibold text-stone-900 mb-4 flex items-center gap-2">
+                    <span className="text-xl">🤖</span>
+                    {t('admin.gemini_model_section_title') || 'Default Gemini model'}
+                </h3>
+                <p className="text-sm text-stone-500 mb-4">
+                    {t('admin.gemini_model_section_desc') || 'Model used by the AI extraction step in the post-import wizard. Leave empty to use the baked-in default.'}
+                </p>
+                <div className="flex gap-2">
+                    <select
+                        value={geminiDefaultModel}
+                        onChange={(e) => setGeminiDefaultModel(e.target.value)}
+                        className="flex-1 px-3 py-2 rounded-lg border border-stone-200 text-sm focus:border-teal-400 focus:ring-2 focus:ring-teal-100 outline-none transition-all bg-white"
+                    >
+                        <option value="">{t('admin.gemini_model_default_option') || '— Use baked-in default —'}</option>
+                        {/* Include the current value first if it isn't in the
+                            live list (e.g. an admin typed a custom name that
+                            the API later stopped reporting) so the selection
+                            survives a re-render. */}
+                        {geminiDefaultModel && !geminiAvailableModels.some(m => m.name === geminiDefaultModel) && (
+                            <option value={geminiDefaultModel}>{geminiDefaultModel}</option>
+                        )}
+                        {geminiAvailableModels.map(m => (
+                            <option key={m.name} value={m.name}>{m.displayName} ({m.name})</option>
+                        ))}
+                    </select>
+                    <button
+                        type="button"
+                        onClick={handleSaveGeminiModel}
+                        disabled={savingGeminiModel}
+                        className="px-4 py-2 rounded-lg bg-stone-900 text-white text-sm font-semibold hover:bg-stone-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                        {savingGeminiModel ? '…' : t('common.save')}
                     </button>
                 </div>
             </div>
