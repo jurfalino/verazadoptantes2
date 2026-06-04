@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-43] - 2026-06-04
+
+### Changed
+- **Import wizard duplicate-detection UI — cleaner language, single source of truth.** Three improvements landed together based on a UX audit of the contact-import flow:
+  - **Tier 1 (i18n bug fix).** The `getMatchLabel` function in `ImportWizard.tsx` was a hardcoded English Record (`'📞 Phone', '✉️ Email', '📛 Full Name', …`) that bypassed the i18n layer entirely. Spanish users saw English labels for years on this surface. Moved every label into proper `import.match_label_*` keys (both locales), collapsed synonym token types into one user-facing noun (`phone` + `phone_suffix` → "teléfono"; `name_full` + `name_word` → "nombre"; `source_url` → "publicación origen", not "Source URL").
+  - **Tier 2 (readability).** Replaced the chip-list-of-types pattern (`📞 Phone, ✉️ Email matches Jose García (73%)`) with a natural sentence (`Comparte teléfono y email`) + a confidence-band pill instead of a raw percentage. Band copy: "Coincidencia muy probable" / "Coincidencia parcial" / "Posible coincidencia" with themed colours (rose / amber / stone — all theme-safe).
+  - **Tier 3 Option B (structural).** Step 3 used to render full per-row hint chips (mirroring Step 4's confirm modal) and made users read the same dedup data twice in different visual languages before deciding. Step 3 now shows a single count-summary line (`⚠ Encontramos N posibles duplicados — los verás al guardar`); the decision UI stays on Step 4. Removed the now-unused `ImportLowConfidenceHints` accordion and the legacy `getMatchLabel` function.
+
+  Net effect: the same information, half as many surfaces, no token-type jargon leaking into user-facing text, and the labels actually translate.
+
 ## [2.16.0-42] - 2026-06-04
 
 ### Fixed

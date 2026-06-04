@@ -1418,6 +1418,31 @@ export const es = {
         vcard_multiple_picked_first: 'Importé el primer contacto del archivo',
         vcard_parse_failed: 'No se pudo leer el archivo de contacto',
         contact_picker_fallback: 'No pude abrir el selector de contactos. Probá subiendo un .vcf en su lugar.',
+        // Duplicate-detection UI in the wizard (v2.16.0-43). Replaces the
+        // hardcoded English match-type chips that leaked tokenizer field
+        // names ("Phone suffix", "Full Name") into the user-facing copy.
+        match_label_phone: 'teléfono',
+        match_label_email: 'email',
+        match_label_social: 'red social',
+        match_label_name: 'nombre',
+        match_label_address: 'dirección',
+        match_label_source_url: 'publicación origen',
+        match_label_id_number: 'documento',
+        // Sentence fragments — fed by the label keys above. `{x}`, `{y}` are
+        // simple placeholders the renderer fills in. Used wherever the
+        // matched-adopter name is rendered separately (Step 4 cards put name
+        // above and reason below) so we don't say the name twice.
+        shares_one: 'Comparte {x}',
+        shares_two: 'Comparte {x} y {y}',
+        shares_many: 'Comparte {x}, {y} y otros',
+        // Confidence-band pill copy (replaces the percentage display).
+        match_band_high: 'Coincidencia muy probable',
+        match_band_medium: 'Coincidencia parcial',
+        match_band_low: 'Posible coincidencia',
+        // Step-3 count summary — collapses the previous per-row chip list
+        // into a single line. The decision UI lives on Step 4.
+        duplicates_found_count_one: 'Encontramos 1 posible duplicado — lo verás al guardar',
+        duplicates_found_count_other: 'Encontramos {count} posibles duplicados — los verás al guardar',
         // Botón en página principal
         button: 'Importar Contenido',
         // Encabezado de página
