@@ -82,16 +82,27 @@ export default function ImportWizard() {
         try {
             const parsed = JSON.parse(saved);
             const persistedStep = parsed.step || 1;
-            // Sanity: only `step` + `inputContent` + `editableText` + `sourceUrl`
-            // are persisted. `extractedData` / `contactEntries` are not — so a
-            // session abandoned mid-Step-3 leaves storage with step=3 but no
-            // data to render Step 3 (and not step=1 either, so Step 1 doesn't
-            // render either → blank screen). The contact-import fast path
-            // (v2.16.0-33) is the realistic source of this state: it sets
-            // step=3 without seeding inputContent / editableText, so the
-            // post-import flow only hit this if abandoned mid-fetch. Reset
-            // to Step 1 when the persisted step needs data we don't have.
-            if (persistedStep > 1 && !(parsed.inputContent?.trim() || parsed.editableText?.trim())) {
+            // Only Steps 1 and 2 can be resumed from storage.
+            // - Step 3 needs `extractedData` and `contactEntries`, neither
+            //   of which is persisted (we'd have to serialize the entire
+            //   AI extraction result + chip state). Returning 3 from cold
+            //   start renders nothing — Step 3 is gated on extractedData,
+            //   Step 1 is gated on step === 1, hence the blank screen below
+            //   the step indicator users reported in v2.16.0-40/-41.
+            // - Step 4 is the confirm modal; the persistence effect already
+            //   wipes storage when step hits 4, but defend against a stale
+            //   state anyway.
+            // - The v2.16.0-40 check (allowing step 3 if inputContent or
+            //   editableText was present) was too lenient: those fields
+            //   carry over from prior Step-1 typing across the contact-
+            //   import flow, so a user who had ever typed in Step 1 then
+            //   used contact-import would always pass the check and land
+            //   on a blank Step 3.
+            if (persistedStep > 2) {
+                sessionStorage.removeItem('import_wizard_state');
+                return 1;
+            }
+            if (persistedStep === 2 && !(parsed.inputContent?.trim() || parsed.editableText?.trim())) {
                 sessionStorage.removeItem('import_wizard_state');
                 return 1;
             }
@@ -163,11 +174,21 @@ export default function ImportWizard() {
     const [_videoLoading, _setVideoLoading] = useState(false);
     const [retryCountdown, setRetryCountdown] = useState(0);
 
-    // Persist wizard state to sessionStorage (survives page refresh)
+    // Persist wizard state to sessionStorage (survives page refresh).
+    // Only the four fields below are persisted — extractedData /
+    // contactEntries are not, which is why the step initializer above
+    // rejects any persisted step > 2 (Step 3 can't render without them).
     useEffect(() => {
         if (step === 4) {
             // Clear on completion
             sessionStorage.removeItem('import_wizard_state');
+            return;
+        }
+        // Steps higher than 2 are unresumable from cold start (see the step
+        // initializer comment). The contact-import fast path (v2.16.0-33)
+        // sets step=3 in memory but writing that to storage just creates
+        // the blank-screen state on the next visit. Don't persist > 2.
+        if (step > 2) {
             return;
         }
         sessionStorage.setItem('import_wizard_state', JSON.stringify({

@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-42] - 2026-06-04
+
+### Fixed
+- **ImportWizard blank Step 1 — tighter fix.** The `-40` initializer check (`persistedStep > 1 && !(inputContent || editableText)`) was too lenient: a user who had ever typed in Step 1 then later used the contact-import path would land on a blank Step 3 on their next visit, because the stale `inputContent` from the typed session satisfied the check, the initializer returned `step=3`, but Step 3 couldn't render without `extractedData` (not persisted). Tightened to: **only Steps 1 and 2 are resumable from storage**. Steps 3+ need `extractedData` which the persistence effect doesn't carry, so any persisted step > 2 resets to 1 unconditionally. Also added a guard in the persistence effect so the contact-import fast path stops writing `step=3` to storage in the first place — the storage state can never grow into the bad shape again from a fresh session.
+
 ## [2.16.0-41] - 2026-06-04
 
 ### Fixed
