@@ -464,8 +464,19 @@ export async function POST(request: Request) {
             user: session.user.email
         });
 
-        // Fire-and-forget: generate duplicate detection tokens
-        tokenizeAdopter(newId).catch(e => { logger.warn('Tokenize adopter failed (fire-and-forget)', { adopterId: newId, error: e instanceof Error ? e.message : String(e) }); });
+        // Generate duplicate-detection tokens BEFORE returning. Fire-and-forget
+        // gets killed on the Cloudflare Workers edge runtime when the response
+        // returns (the same reason audit + logger use ctx.waitUntil), which
+        // left newly-created adopters un-tokenized. That broke the wizard's
+        // pre-save duplicate check: a user could create two identical contacts
+        // in a row and the second creation's findAdopters lookup found nothing
+        // because the first one's tokens were never written. Mirrors the
+        // `await tokenizeAdopter` pattern already used in actions/adopters.ts
+        // (lines 286, 337) and documented as the canonical race-safe
+        // approach in actions/_adopterFactory.ts:20-24 (~200-500ms cost is
+        // acceptable on submit). Tokenize is idempotent and try/catches
+        // internally — await is safe.
+        await tokenizeAdopter(newId);
 
         return NextResponse.json({ success: true, id: newId });
 

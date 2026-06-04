@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-37] - 2026-06-03
+
+### Fixed
+- **Newly-created adopters were silently un-tokenized, defeating the wizard's pre-save duplicate check.** `POST /api/adopters` called `tokenizeAdopter(newId).catch(...)` as fire-and-forget, but on Cloudflare Workers fire-and-forget gets killed when the response returns (same reason `audit.ts` and `logger.ts` route through `ctx.waitUntil`). The DELETE/INSERT/UPDATE in `tokenizeAdopter` never reached D1, so the new adopter had no `phone` / `phone_suffix` / `email` rows in `duplicate_tokens`. Result: a user could create two **identical** contacts via the wizard and the second creation's `findAdopters({mode:'duplicate'})` lookup found zero matches because the first one's tokens were never written. Switched to `await tokenizeAdopter(newId)` — the same pattern documented in `actions/_adopterFactory.ts:20-24` and used in `actions/adopters.ts:286,337` ("~200-500ms cost is acceptable on submit"). Tokenize is idempotent and internally try/catches, so awaiting is safe.
+
+### Known follow-ups (out of scope for this hotfix)
+- `addContactEntry.ts:161`, `updateContactEntry.ts:128`, `removeContactEntry.ts:102`, `adoptions.ts:65/148`, `adopters.ts:160` use the same `tokenizeAdopter(...).catch()` fire-and-forget pattern. Each will be re-tokenized eventually when an admin runs `/admin/duplicates` scan, but per-edit duplicate detection is silently stale in the meantime. Worth a follow-up sweep — same `await`-or-`waitUntil` choice each.
+
 ## [2.16.0-36] - 2026-06-03
 
 ### Fixed
