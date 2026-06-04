@@ -48,6 +48,30 @@ export default function ClientErrorReporter() {
             if (existingId) return;
 
             const stack = reason instanceof Error ? reason.stack : undefined;
+
+            // Suppress noisy background browser-platform rejections that
+            // aren't actionable for the user. Observed in the wild:
+            //  - Service-Worker registration races (ours: layout.tsx inline
+            //    script; browser-internal: Chrome's Contact Picker API on
+            //    Android triggers an internal serviceWorker.register call
+            //    while the user types in the picker's search box, and that
+            //    rejection bubbles to our unhandledrejection handler).
+            //  - Aborted fetches (AbortController in our search debounce
+            //    paths) — already silent in the originating code but a
+            //    racy unmount sometimes leaks them here.
+            // The console.warn keeps the signal for devtools without
+            // toasting the user about something they can't act on.
+            const suppressPatterns = [
+                'serviceWorker.register',
+                'ServiceWorker',
+                'AbortError',
+            ];
+            const haystack = `${message}\n${stack ?? ''}`;
+            if (suppressPatterns.some(p => haystack.includes(p))) {
+                console.warn('[ClientErrorReporter] suppressed background rejection:', reason);
+                return;
+            }
+
             const errorId = crypto.randomUUID().slice(0, 8);
             toast.error('Algo salió mal', 'Se registró el error.', errorId);
             void reportClientError({

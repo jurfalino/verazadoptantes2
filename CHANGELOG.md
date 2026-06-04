@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-36] - 2026-06-03
+
+### Fixed
+- **ClientErrorReporter now suppresses non-actionable background rejections.** `-35` caught our own `serviceWorker.register('/sw.js')` rejections, but on Android Chrome the native Contact Picker UI's search box triggers an *internal* `serviceWorker.register` call inside Chromium that can reject and bubble up to our page's `unhandledrejection` handler. Added a stack-pattern filter for `serviceWorker.register` / `ServiceWorker` / `AbortError` (e.g. our debounce-cancel `AbortController` paths) so those don't user-toast — they get a `console.warn` for devtools debugging instead.
+
 ## [2.16.0-35] - 2026-06-03
 
 ### Fixed
