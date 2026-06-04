@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-38] - 2026-06-03
+
+### Fixed
+- **Fire-and-forget `tokenizeAdopter` sweep — the rest of the surface.** `-37` fixed the wizard's create path. This pass converts the remaining six call sites to `await tokenizeAdopter(...).catch(...)` so duplicate detection stays accurate on every contact-data mutation, not just adopter creation. Sites fixed:
+  - `addContactEntry.ts:161` — adding a new contact entry to an existing adopter.
+  - `updateContactEntry.ts:128` — editing an existing contact entry.
+  - `removeContactEntry.ts:102` — removing a contact entry.
+  - `adoptions.ts:65,148` — creating / updating an adoption record with `onBehalfOf` (which feeds the adopter's name tokens).
+  - `adopters.ts:160` — appending fields to an existing adopter from the create flow (the "merge into existing" path).
+  
+  All six retain the inline `.catch()` so a tokenize failure still won't reject the caller — same semantics as before, just with the response held back until the DB write actually lands (~200-500ms cost, same as `_adopterFactory.ts:20-24`). After this sweep, `tokenizeAdopter` is awaited at every call site in the codebase.
+
 ## [2.16.0-37] - 2026-06-03
 
 ### Fixed

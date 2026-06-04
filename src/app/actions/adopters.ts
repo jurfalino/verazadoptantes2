@@ -157,8 +157,10 @@ export async function appendToExistingAdopter(
         logAudit({ userEmail: actorEmail, action: 'adopter_appended', target: targetId, details: { appendedFields: Object.keys(appendedFields) } });
 
         // Re-index tokens so the newly appended contact data is searchable.
-        tokenizeAdopter(targetId).catch(e => {
-            logger.warn('Tokenize after append failed (fire-and-forget)', { adopterId: targetId, error: e instanceof Error ? e.message : String(e) });
+        // Awaited so the next duplicate check sees the appended fields
+        // (Workers kill fire-and-forget).
+        await tokenizeAdopter(targetId).catch(e => {
+            logger.warn('Tokenize after append failed', { adopterId: targetId, error: e instanceof Error ? e.message : String(e) });
         });
 
         return { success: true, adopterId: targetId };

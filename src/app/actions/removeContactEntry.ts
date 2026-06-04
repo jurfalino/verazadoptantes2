@@ -99,7 +99,7 @@ export async function removeContactEntry(
                 ));
         }
 
-        tokenizeAdopter(adopterId).catch(e => {
+        await tokenizeAdopter(adopterId).catch(e => {
             logger.warn('removeContactEntry: tokenize after remove failed', {
                 adopterId, error: e instanceof Error ? e.message : String(e),
             });

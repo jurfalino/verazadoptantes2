@@ -125,7 +125,7 @@ export async function updateContactEntry(
             changedAt: new Date(),
         });
 
-        tokenizeAdopter(adopterId).catch(e => {
+        await tokenizeAdopter(adopterId).catch(e => {
             logger.warn('updateContactEntry: tokenize after edit failed', {
                 adopterId, error: e instanceof Error ? e.message : String(e),
             });

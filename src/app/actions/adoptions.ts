@@ -59,10 +59,12 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
             logger.info('Adoption updated', { adoptionId: data.id, adopterId: data.adopterId, changedBy });
             logAudit({ userEmail: changedBy, action: 'adoption_updated', target: data.id as string, details: { adopterId: data.adopterId } });
 
-            // Re-tokenize adopter if onBehalfOf changed (cross-field name tokens)
+            // Re-tokenize adopter if onBehalfOf changed (cross-field name tokens).
+            // Awaited so duplicate detection sees the new name tokens before the
+            // response returns (Workers kill fire-and-forget).
             const targetAdopterId2 = data.adopterId || existing.adopterId;
             if (targetAdopterId2 && data.onBehalfOf !== undefined) {
-                tokenizeAdopter(targetAdopterId2).catch(e => { logger.warn('Tokenize adopter failed (fire-and-forget)', { adopterId: targetAdopterId2, error: e instanceof Error ? e.message : String(e) }); });
+                await tokenizeAdopter(targetAdopterId2).catch(e => { logger.warn('Tokenize adopter failed', { adopterId: targetAdopterId2, error: e instanceof Error ? e.message : String(e) }); });
             }
 
             return { success: true, id: data.id };
@@ -143,9 +145,10 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
             logger.info('Adoption created', { adoptionId: id, adopterId: data.adopterId, species: data.species, changedBy });
             logAudit({ userEmail: changedBy, action: 'adoption_created', target: id, details: { adopterId: data.adopterId, species: data.species, animalName: data.animalName } });
 
-            // Re-tokenize adopter if onBehalfOf is set (cross-field name tokens)
+            // Re-tokenize adopter if onBehalfOf is set (cross-field name tokens).
+            // Awaited — see comment on the update branch above.
             if (data.adopterId && data.onBehalfOf) {
-                tokenizeAdopter(data.adopterId).catch(e => { logger.warn('Tokenize adopter failed (fire-and-forget)', { adopterId: data.adopterId, error: e instanceof Error ? e.message : String(e) }); });
+                await tokenizeAdopter(data.adopterId).catch(e => { logger.warn('Tokenize adopter failed', { adopterId: data.adopterId, error: e instanceof Error ? e.message : String(e) }); });
             }
 
             return { success: true, id };
