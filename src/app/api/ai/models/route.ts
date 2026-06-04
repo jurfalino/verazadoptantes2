@@ -13,12 +13,16 @@ export async function GET() {
     const models = await getAvailableModels();
 
     if (models.length === 0) {
-        // Fallback list if API fails
+        // Fallback list if the live API call fails. Kept minimal — the
+        // models we've actually verified work as of v2.16.0-41. Anything
+        // listed here can still be retired by Google between deploys; the
+        // admin can always type a model name manually in /admin/config
+        // when that happens.
         return NextResponse.json({
             models: [
-                { name: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash (Default)' },
-                { name: 'gemini-2.5-pro-preview-05-06', displayName: 'Gemini 2.5 Pro' },
-                { name: 'gemini-2.0-flash-lite', displayName: 'Gemini 2.0 Flash Lite' }
+                { name: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash (Default)' },
+                { name: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro' },
+                { name: 'gemini-2.5-flash-lite', displayName: 'Gemini 2.5 Flash Lite' }
             ]
         });
     }

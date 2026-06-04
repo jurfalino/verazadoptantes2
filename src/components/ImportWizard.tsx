@@ -18,6 +18,8 @@ import { confidenceBand } from '@/lib/scoring';
 import type { ExtractedAdopterData } from '@/lib/gemini';
 import ContactEntriesInput from '@/components/ContactEntriesInput';
 import { buildContactEntries, contactEntriesToBlob, type ContactEntry } from '@/lib/contactEntries';
+import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
+import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
 
 interface PersonMatch {
     id: string;
@@ -26,39 +28,82 @@ interface PersonMatch {
     sourceUrl?: string | null;
     thumbnail?: string | null;
     confidence: 'high' | 'medium' | 'low';
-    matchReasons: string[];
+    /**
+     * Raw token-type signals from the duplicate-detection backend (e.g.
+     * 'phone_suffix', 'name_word', 'source_url'). The wizard converts these
+     * to a user-facing sentence at render time via humanMatchSentence — we
+     * don't pre-translate here so the same data can be rendered in either
+     * locale or used to drive non-text affordances later.
+     */
+    matchTypes: string[];
 }
 
-/** Collapsible expander for < 15% confidence field-overlap hints in Step 3. */
-function ImportLowConfidenceHints({ suppressed, getMatchLabel, overlapLabel }: {
-    suppressed: DuplicateMatch[];
-    getMatchLabel: (mt: string) => string;
-    overlapLabel: string;
-}) {
-    const [expanded, setExpanded] = useState(false);
+/**
+ * Map a duplicate-detection token type (from the tokenizer / findAdopters)
+ * to its user-facing label key (v2.16.0-43). Synonym token types collapse
+ * to one user-visible noun so the sentence builder never produces
+ * "Comparte teléfono y teléfono" or "Shares name and name."
+ *
+ * Returns null for token types we deliberately don't surface (`like_fallback`
+ * is noise; `name_word_fuzzy` is the fuzzy-match flag added by findAdopters
+ * alongside a name_word and shouldn't render as a separate signal).
+ */
+function matchTypeToLabelKey(type: string): string | null {
+    switch (type) {
+        case 'phone': case 'phone_suffix': return 'import.match_label_phone';
+        case 'email': return 'import.match_label_email';
+        case 'social': return 'import.match_label_social';
+        case 'name_full': case 'name_word': return 'import.match_label_name';
+        case 'address_word': return 'import.match_label_address';
+        case 'source_url': return 'import.match_label_source_url';
+        case 'id_number': return 'import.match_label_id_number';
+        default: return null;
+    }
+}
+
+/**
+ * Build a natural-language sentence describing what the proposed duplicate
+ * shares with the user's input. Returns a string — the name is expected to
+ * render separately (Step 4 cards stack name above the sentence), so we
+ * don't include it here. Falls back to the low-band preamble if every
+ * match type is filtered out by matchTypeToLabelKey.
+ */
+function humanMatchSentence(
+    matchTypes: string[],
+    t: (key: string) => string,
+): string {
+    const labelKeys = Array.from(new Set(
+        matchTypes.map(matchTypeToLabelKey).filter((k): k is string => !!k)
+    ));
+    const labels = labelKeys.map(k => t(k));
+    if (labels.length === 0) {
+        return t('import.match_band_low');
+    }
+    if (labels.length === 1) {
+        return t('import.shares_one').replace('{x}', labels[0]);
+    }
+    if (labels.length === 2) {
+        return t('import.shares_two').replace('{x}', labels[0]).replace('{y}', labels[1]);
+    }
+    return t('import.shares_many').replace('{x}', labels[0]).replace('{y}', labels[1]);
+}
+
+/** Render the confidence-band pill — themed colours only (theme-safe). */
+function MatchBandPill({ band, t }: { band: 'high' | 'medium' | 'low'; t: (key: string) => string }) {
+    const styles = band === 'high'
+        ? 'bg-rose-100 text-rose-900 border-rose-200'
+        : band === 'medium'
+            ? 'bg-amber-100 text-amber-900 border-amber-200'
+            : 'bg-stone-100 text-stone-700 border-stone-200';
+    const label = band === 'high'
+        ? t('import.match_band_high')
+        : band === 'medium'
+            ? t('import.match_band_medium')
+            : t('import.match_band_low');
     return (
-        <div>
-            <button
-                type="button"
-                onClick={() => setExpanded(e => !e)}
-                className="text-xs text-stone-400 hover:text-stone-600 flex items-center gap-1 mt-0.5 transition-colors"
-            >
-                <svg className={`w-3 h-3 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-                {expanded ? 'Ocultar' : 'Ver'} {suppressed.length} coincidencia{suppressed.length !== 1 ? 's' : ''} de baja confianza
-            </button>
-            {expanded && suppressed.map(hint => (
-                <p key={hint.adopterId} className="text-xs text-stone-400 flex items-center gap-1 mt-0.5">
-                    <span>·</span>
-                    <span>
-                        {hint.matchTypes.map(mt => getMatchLabel(mt)).join(', ')} {overlapLabel}{' '}
-                        <a href={`/adopter/${hint.adopterId}`} target="_blank" className="underline">{hint.adopterName}</a>
-                        <span className="ml-1">({hint.relevancePercent}%)</span>
-                    </span>
-                </p>
-            ))}
-        </div>
+        <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${styles}`}>
+            {label}
+        </span>
     );
 }
 
@@ -76,10 +121,36 @@ export default function ImportWizard() {
     const [step, setStep] = useState(() => {
         if (typeof window === 'undefined') return 1;
         const saved = sessionStorage.getItem('import_wizard_state');
-        if (saved) {
-            try { return JSON.parse(saved).step || 1; } catch { return 1; }
-        }
-        return 1;
+        if (!saved) return 1;
+        try {
+            const parsed = JSON.parse(saved);
+            const persistedStep = parsed.step || 1;
+            // Only Steps 1 and 2 can be resumed from storage.
+            // - Step 3 needs `extractedData` and `contactEntries`, neither
+            //   of which is persisted (we'd have to serialize the entire
+            //   AI extraction result + chip state). Returning 3 from cold
+            //   start renders nothing — Step 3 is gated on extractedData,
+            //   Step 1 is gated on step === 1, hence the blank screen below
+            //   the step indicator users reported in v2.16.0-40/-41.
+            // - Step 4 is the confirm modal; the persistence effect already
+            //   wipes storage when step hits 4, but defend against a stale
+            //   state anyway.
+            // - The v2.16.0-40 check (allowing step 3 if inputContent or
+            //   editableText was present) was too lenient: those fields
+            //   carry over from prior Step-1 typing across the contact-
+            //   import flow, so a user who had ever typed in Step 1 then
+            //   used contact-import would always pass the check and land
+            //   on a blank Step 3.
+            if (persistedStep > 2) {
+                sessionStorage.removeItem('import_wizard_state');
+                return 1;
+            }
+            if (persistedStep === 2 && !(parsed.inputContent?.trim() || parsed.editableText?.trim())) {
+                sessionStorage.removeItem('import_wizard_state');
+                return 1;
+            }
+            return persistedStep;
+        } catch { return 1; }
     });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -114,6 +185,11 @@ export default function ImportWizard() {
     });
     const [manualImages, setManualImages] = useState<Array<{ data: string; mimeType: string; preview: string; file?: File; thumbnail?: string }>>([]);
     const [sharedFrom, setSharedFrom] = useState<string | null>(null);
+    // Contact-import (v2.16.0-33): true when this wizard run was hydrated from
+    // a device contact (homepage CTA picker or PWA share-target vCard) instead
+    // of the social-media post flow. Drives the Step 3 breadcrumb so the user
+    // knows why animal fields are empty.
+    const [fromContacts, setFromContacts] = useState(false);
 
     // Extracted/fetched state
     const [_fetchedText, setFetchedText] = useState('');
@@ -141,11 +217,21 @@ export default function ImportWizard() {
     const [_videoLoading, _setVideoLoading] = useState(false);
     const [retryCountdown, setRetryCountdown] = useState(0);
 
-    // Persist wizard state to sessionStorage (survives page refresh)
+    // Persist wizard state to sessionStorage (survives page refresh).
+    // Only the four fields below are persisted — extractedData /
+    // contactEntries are not, which is why the step initializer above
+    // rejects any persisted step > 2 (Step 3 can't render without them).
     useEffect(() => {
         if (step === 4) {
             // Clear on completion
             sessionStorage.removeItem('import_wizard_state');
+            return;
+        }
+        // Steps higher than 2 are unresumable from cold start (see the step
+        // initializer comment). The contact-import fast path (v2.16.0-33)
+        // sets step=3 in memory but writing that to storage just creates
+        // the blank-screen state on the next visit. Don't persist > 2.
+        if (step > 2) {
             return;
         }
         sessionStorage.setItem('import_wizard_state', JSON.stringify({
@@ -229,12 +315,124 @@ export default function ImportWizard() {
         }
     };
 
+    /**
+     * Synthesize the wizard's Step 3 state from a parsed vCard contact. Used
+     * by both the homepage CTA path (sessionStorage handoff) and the PWA
+     * share-target path (SW cache handoff). Bypasses Steps 1–2 entirely —
+     * we already have structured fields and don't need AI extraction.
+     */
+    const hydrateFromContact = (c: ParsedVcardContact) => {
+        const addressEntries: ContactEntry[] = [];
+        for (const addr of c.addresses) {
+            const joined = [addr.streetAndNumber, addr.locality].filter(Boolean).join(', ').trim();
+            const value = (joined || addr.raw || '').trim();
+            if (!value) continue;
+            addressEntries.push({
+                type: 'address',
+                value,
+                ...(addr.streetAndNumber ? { streetAndNumber: addr.streetAndNumber } : {}),
+                ...(addr.locality ? { locality: addr.locality } : {}),
+                ...(addr.raw && !addr.streetAndNumber && !addr.locality ? { raw: addr.raw } : {}),
+            });
+        }
+        setContactEntries([
+            ...buildContactEntries({ phones: c.phones, emails: c.emails }),
+            ...addressEntries,
+        ]);
+        // Confidence is 'low' because the OS picker / vCard gives us identity
+        // data but the wizard's Step 3 panel grades that signal alongside the
+        // (intentionally empty) adoption details.
+        setExtractedData({
+            name: c.name || '',
+            phones: c.phones,
+            emails: c.emails,
+            addresses: c.addresses.map(a => a.raw || [a.streetAndNumber, a.locality].filter(Boolean).join(', ')).filter(Boolean) as string[],
+            socialProfiles: [],
+            notes: '',
+            confidence: 'low',
+            adoptionDetected: false,
+        });
+        setUnknownAnimal(true);
+        setFromContacts(true);
+        setStep(3);
+    };
+
+    /**
+     * Read the contact stash written by `ContactPickerLauncher` and hydrate
+     * Step 3 from it. Idempotent — the stash is consumed on read so a refresh
+     * doesn't loop the wizard back into the contact-import path.
+     */
+    const loadStashedContact = (): boolean => {
+        try {
+            const raw = sessionStorage.getItem(CONTACT_IMPORT_STASH_KEY);
+            if (!raw) return false;
+            sessionStorage.removeItem(CONTACT_IMPORT_STASH_KEY);
+            const parsed = JSON.parse(raw) as ParsedVcardContact;
+            hydrateFromContact(parsed);
+            return true;
+        } catch {
+            return false;
+        }
+    };
+
+    /**
+     * Read a vCard from the service-worker share-target cache (the file the
+     * user shared from their phone's Contacts app), parse it, and hydrate
+     * Step 3. Mirrors `loadSharedImages` for the image-share path.
+     */
+    const loadSharedVcard = async (): Promise<boolean> => {
+        try {
+            const cache = await caches.open('share-target-media');
+            const response = await cache.match('/share-target-vcard');
+            if (!response) return false;
+            const text = await response.text();
+            await cache.delete('/share-target-vcard');
+            const parsed = parseVcard(text);
+            if (!parsed) return false;
+            hydrateFromContact(parsed);
+            return true;
+        } catch (e) {
+            console.warn('[ImportWizard] Failed to load shared vCard from cache:', e);
+            return false;
+        }
+    };
+
     // Pre-fill from URL params (for Share Intent / Web Share Target)
     useEffect(() => {
         const sharedUrl = searchParams.get('shared_url') || searchParams.get('url');
         const sharedText = searchParams.get('shared_text') || searchParams.get('text');
         const hasSharedImages = searchParams.get('shared_images') === 'true';
         const imagesLost = searchParams.get('shared_images_lost') === 'true';
+        const isContactImport = searchParams.get('contact_import') === '1';
+        const isSharedVcard = searchParams.get('shared_vcard') === 'true';
+        const sharedVcardLost = searchParams.get('shared_vcard_lost') === 'true';
+
+        // Contact-import fast path (v2.16.0-33): the user picked a contact
+        // on the homepage (or shared one from their phone's Contacts app)
+        // and we already have structured fields. Skip Steps 1–2 entirely
+        // — no URL to fetch, no AI extraction needed. Run BEFORE the other
+        // share-intent branches so a query that carries both wins fast.
+        if (isContactImport && loadStashedContact()) {
+            return;
+        }
+        if (sharedVcardLost) {
+            // SW was inactive when the share arrived — file body never made it
+            // to the cache. Show a soft hint, leave the user on Step 1.
+            setError(t('import.vcard_parse_failed') || (locale === 'es'
+                ? 'No se pudo cargar el contacto compartido. Probá nuevamente.'
+                : 'Could not load the shared contact. Please try again.'));
+            return;
+        }
+        if (isSharedVcard) {
+            loadSharedVcard().then(loaded => {
+                if (!loaded) {
+                    setError(t('import.vcard_parse_failed') || (locale === 'es'
+                        ? 'No se pudo cargar el contacto compartido. Probá nuevamente.'
+                        : 'Could not load the shared contact. Please try again.'));
+                }
+            });
+            return;
+        }
 
         // Load cached images from SW (if any)
         if (hasSharedImages) {
@@ -548,16 +746,24 @@ export default function ImportWizard() {
             }
         }
 
-        // Check for person match via token index
+        // Check for person match via token index.
+        //
+        // Pass ONLY `name` + the freshly-rebuilt contactInfo blob. We used to
+        // also forward `phones`/`emails`/`socials` from `extractedData`, but
+        // those fields are populated once (AI extraction or the contact-import
+        // hydrator) and never updated when the user edits a chip in
+        // ContactEntriesInput — the chip editor only mutates `contactEntries`.
+        // findAdopters' input contract preferred the structured arrays over
+        // the contactInfo blob (`input.phones?.length ? input.phones : extractPhones(blob)`),
+        // so the stale fields silently overrode the user's edits and the
+        // duplicate check ran against the original values. Dropping them
+        // makes contactEntries the single source of truth (v2.16.0-44).
         if (extractedData) {
             try {
                 const response = await findAdopters(
                     {
                         name: extractedData.name,
                         contactInfo: contactEntriesToBlob(contactEntries),
-                        phones: extractedData.phones,
-                        emails: extractedData.emails,
-                        socials: extractedData.socialProfiles,
                     },
                     { mode: 'duplicate' },
                 );
@@ -567,7 +773,7 @@ export default function ImportWizard() {
                         id: r.adopterId,
                         name: r.adopterName,
                         confidence: confidenceBand(r.relevancePercent) as 'high' | 'medium' | 'low',
-                        matchReasons: r.matchTypes.map(mt => getMatchLabel(mt)),
+                        matchTypes: r.matchTypes,
                     }));
                     setPersonMatches(matches);
                     setSelectedMatch(matches[0]);
@@ -744,8 +950,8 @@ export default function ImportWizard() {
                 await fetch('/api/upload-media', { method: 'POST', body: fd });
             }
 
-            toast.success('Record added to profile', adopterName, {
-                label: '→ Ver Perfil',
+            toast.success(t('import.record_added_to_profile') || 'Registro agregado al perfil', adopterName, {
+                label: t('import.go_to_profile_link') || '→ Ver perfil',
                 href: `/adopter/${adopterId}`,
             });
 
@@ -1158,11 +1364,27 @@ export default function ImportWizard() {
                         </span>
                     </div>
 
-                    {/* Validation warning */}
-                    <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-                        <span className="mt-0.5">⚠️</span>
-                        <span>{t('import.aiValidationWarning') || 'AI-extracted data may contain errors. Please verify all fields before saving.'}</span>
-                    </div>
+                    {/* Contact-import breadcrumb — only shown when the wizard
+                        was hydrated from a device contact (no AI extraction
+                        ran), so the user knows why animal fields are empty. */}
+                    {fromContacts && (
+                        <div className="flex items-start gap-2 px-3 py-2.5 bg-teal-50 border border-teal-200 rounded-lg text-xs text-teal-800">
+                            <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                            <span>{t('import.from_contacts_breadcrumb')}</span>
+                        </div>
+                    )}
+
+                    {/* Validation warning — only when AI extraction ran. The
+                        contact-import path has no AI in the loop, so the
+                        warning would be inaccurate. */}
+                    {!fromContacts && (
+                        <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                            <span className="mt-0.5">⚠️</span>
+                            <span>{t('import.aiValidationWarning') || 'AI-extracted data may contain errors. Please verify all fields before saving.'}</span>
+                        </div>
+                    )}
 
                     {/* Name */}
                     <div>
@@ -1178,31 +1400,30 @@ export default function ImportWizard() {
                     <div>
                         <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.contactInfo') || 'Contact Info'}</label>
                         <ContactEntriesInput entries={contactEntries} onChange={setContactEntries} />
-                        {/* Field overlap hints — bucketed by confidence */}
-                        {fieldOverlapHints.length > 0 && (() => {
-                            const LOW_THRESHOLD = 15;
-                            const visible = fieldOverlapHints.filter(h => h.relevancePercent >= LOW_THRESHOLD).slice(0, 2);
-                            const suppressed = fieldOverlapHints.filter(h => h.relevancePercent < LOW_THRESHOLD);
-                            if (visible.length === 0 && suppressed.length === 0) return null;
+                        {/* Field-overlap preview (v2.16.0-43 — Option B).
+                            Step 3 previously surfaced every duplicate as its
+                            own chip with type-list labels and a percentage,
+                            duplicating the dedup decision UI on Step 4. Now
+                            it shows a single count line — the user knows
+                            something will surface at save-time, the decision
+                            still happens on Step 4. We only count hits above
+                            the 15% noise floor (same threshold the old
+                            "visible" bucket used). */}
+                        {(() => {
+                            const visibleCount = fieldOverlapHints.filter(h => h.relevancePercent >= 15).length;
+                            if (visibleCount === 0) return null;
+                            const template = visibleCount === 1
+                                ? t('import.duplicates_found_count_one')
+                                : t('import.duplicates_found_count_other').replace('{count}', String(visibleCount));
                             return (
-                                <div className="mt-1.5 space-y-1">
-                                    {visible.map(hint => (
-                                        <p key={hint.adopterId} className="text-xs text-amber-700 flex items-center gap-1">
-                                            <span>⚠️</span>
-                                            <span>
-                                                {hint.matchTypes.map(mt => getMatchLabel(mt)).join(', ')} {t('import.overlap_match') || 'matches'}{' '}
-                                                <a href={`/adopter/${hint.adopterId}`} target="_blank" className="underline font-medium">{hint.adopterName}</a>
-                                                <span className="ml-1 text-amber-500">({hint.relevancePercent}%)</span>
-                                            </span>
-                                        </p>
-                                    ))}
-                                    {suppressed.length > 0 && (
-                                        <ImportLowConfidenceHints suppressed={suppressed} getMatchLabel={getMatchLabel} overlapLabel={t('import.overlap_match') || 'matches'} />
-                                    )}
-                                </div>
+                                <p className="mt-1.5 text-xs text-amber-700 flex items-start gap-1.5">
+                                    <svg className="w-3.5 h-3.5 flex-shrink-0 mt-px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                    </svg>
+                                    <span>{template}</span>
+                                </p>
                             );
                         })()}
-
                     </div>
 
                     {/* Initial observation — saved as a separate observation record on import */}
@@ -1454,18 +1675,16 @@ export default function ImportWizard() {
                                                     </div>
                                                     <div className="min-w-0 flex-1">
                                                         <p className="font-semibold text-stone-900 line-clamp-2 break-words" title={match.name}>{match.name}</p>
-                                                        <div className="flex flex-wrap gap-1 mt-1">
-                                                            {match.matchReasons?.map((reason, i) => (
-                                                                <span key={i} className="text-xs px-1.5 py-0.5 rounded bg-stone-200 text-stone-600">{reason}</span>
-                                                            ))}
-                                                        </div>
+                                                        {/* Natural-sentence dedup reason (v2.16.0-43). Replaced
+                                                            the chip list of raw token-type labels with one line
+                                                            that names what's shared in user-language. */}
+                                                        <p className="text-xs text-stone-600 mt-1">
+                                                            {humanMatchSentence(match.matchTypes || [], t)}
+                                                        </p>
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-2">
-                                                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${match.confidence === 'high' ? 'bg-green-100 text-green-700' :
-                                                        match.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                                                            'bg-stone-100 text-stone-600'
-                                                        }`}>{match.confidence}</span>
+                                                    <MatchBandPill band={match.confidence} t={t} />
                                                     <a
                                                         href={`/adopter/${match.id}`}
                                                         target="_blank"
@@ -1557,12 +1776,3 @@ export default function ImportWizard() {
     );
 }
 
-function getMatchLabel(type: string): string {
-    const labels: Record<string, string> = {
-        phone: '📞 Phone', phone_suffix: '📞 Phone',
-        email: '✉️ Email', social: '🌐 Social',
-        name_full: '📛 Full Name', name_word: '📝 Name',
-        address_word: '🏠 Address', source_url: '🔗 Source URL',
-    };
-    return labels[type] || type;
-}

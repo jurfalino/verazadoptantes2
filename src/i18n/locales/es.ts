@@ -96,6 +96,8 @@ export const es = {
         flag_desc_public_profiles: 'Cuando está activa, los datos de contacto importados desde redes sociales se muestran sin máscara a cualquier viewer autenticado (porque venían de una fuente pública). Además, el admin puede marcar un perfil entero como público desde /admin/adopters (toggle 🌐/🔒) para exponer también los datos agregados por contribuyentes. Requiere que la protección PII esté activada. Por defecto desactivada.',
         flag_label_clean_homepage: 'Homepage minimalista',
         flag_desc_clean_homepage: 'Cuando está activa, oculta las dos tarjetas de actividad de la homepage ("Registrar una adopción" y "Dejar una observación"). Solo queda la búsqueda como acción principal; el botón de importar desde redes sociales sigue accesible como link secundario debajo de la búsqueda. Útil para enfocar la homepage en consulta de adoptantes. Por defecto desactivada.',
+        flag_label_contact_import: 'Importar desde contactos',
+        flag_desc_contact_import: 'Mostrar el botón "Desde contactos" en la portada para crear un perfil eligiendo un contacto de la agenda del dispositivo (en Chrome Android) o subiendo un archivo .vcf (en otros navegadores). Por defecto desactivado.',
         flag_label_showcase_global: 'URL pública de catálogo global',
         flag_desc_showcase_global: 'Mostrar en /my-animals el link al catálogo público de todos los animales en adopción (raíz "/"). Por defecto apagado mientras se valida el flujo.',
         flag_label_showcase_org: 'URLs públicas por organización',
@@ -104,8 +106,32 @@ export const es = {
         flag_desc_showcase_user: 'Mostrar en /my-animals el link público /user/[handle] del usuario para compartir su catálogo personal. Por defecto apagado.',
         instagram_section_title: 'URL de Instagram (público)',
         instagram_section_desc: 'Link al perfil de Instagram que se muestra en el estado vacío del catálogo público y en el detalle de cada animal. Dejar vacío para no mostrar.',
+        gemini_model_section_title: 'Modelo de Gemini por defecto',
+        gemini_model_section_desc: 'Modelo que usa el paso de extracción con IA en el wizard de importar desde un post. Dejar vacío para usar el default del código (útil cuando Google retira el modelo activo y querés cambiar sin redeploy).',
+        gemini_model_default_option: '— Usar default del código —',
         instagram_saved: 'URL de Instagram actualizada.',
         instagram_save_failed: 'No se pudo guardar la URL de Instagram.',
+        dmm_title: 'Fusionar perfiles de adoptante',
+        dmm_subtitle: 'Elegí cuál perfil mantener como primario. Todos los registros del secundario se moverán al primario.',
+        dmm_match_label: 'Coincidencia:',
+        dmm_what_happens: '⚠️ Qué va a pasar:',
+        dmm_bullet_kept: '"{name}" se mantiene (primario)',
+        dmm_bullet_deleted: '"{name}" se marca como eliminado',
+        dmm_bullet_records_move: 'Todas las adopciones, imágenes, reportes y el historial se mueven al primario',
+        dmm_bullet_contact_merged: 'Información de contacto y notas se fusionan',
+        dmm_cancel: 'Cancelar',
+        dmm_merging: 'Fusionando…',
+        dmm_merge_button: 'Fusionar perfiles',
+        dmm_role_keep: '✓ Mantener',
+        dmm_role_delete: 'Eliminar',
+        dmm_no_activity: 'Sin actividad calificada',
+        dmm_match_phone: '📞 Teléfono',
+        dmm_match_email: '✉️ Email',
+        dmm_match_social: '🌐 Red social',
+        dmm_match_name_full: '📛 Nombre completo',
+        dmm_match_name_word: '📝 Palabras del nombre',
+        dmm_match_address_word: '🏠 Dirección',
+        dmm_match_source_url: '🔗 URL de origen',
     },
     demo: {
         not_real: 'esta no es una persona real',
@@ -364,13 +390,21 @@ export const es = {
         how_step2_desc: 'Registrá adopciones y experiencias.',
         how_step3_title: 'Calificá y Compartí',
         how_step3_desc: 'Compartí tu experiencia con la comunidad.',
-        // Import action card
-        action_import_title: 'Importar desde un post',
-        action_import_desc: 'Pegá un link o captura de redes sociales y extraemos la info automáticamente.',
+        // Import action card — unified parent card with two sub-buttons
+        // ("Desde un post" + "Desde contactos"). The card title is generic;
+        // the two buttons name the specific source.
+        action_import_title: 'Importar perfil',
+        action_import_desc: 'Creá un perfil desde un post de redes sociales o desde tu agenda de contactos.',
         action_import_btn: 'Importar Ahora',
-        // Compact label used in clean-homepage mode where import lives below
-        // the search as a single secondary link (no card chrome).
-        action_import_secondary: 'Importar perfil desde redes sociales',
+        action_import_post_btn: 'Desde un post',
+        action_import_contacts_btn: 'Desde contactos',
+        // Compact labels used in clean-homepage mode where the two import
+        // modes render as paired pills below the search (no card chrome).
+        action_import_post_secondary: 'Importar desde un post',
+        action_import_contacts_secondary: 'Importar desde contactos',
+        // Legacy key — still read in case any older entry-point references
+        // it. Mirrors the post-only label so existing surfaces keep working.
+        action_import_secondary: 'Importar desde un post',
         // Sample record
         sample_record: 'Ver un perfil de ejemplo',
         process_guide: 'Guía del Proceso de Adopción',
@@ -500,6 +534,16 @@ export const es = {
         ce_add_error: 'No se pudo agregar el dato.',
         ce_add_toast_added: 'Dato agregado',
         ce_add_toast_unlocked: 'Reconociste un dato existente — ahora aparece desbloqueado',
+        dup_hint_checking: 'Buscando coincidencias…',
+        dup_hint_one: 'Este dato ya está en otro perfil',
+        dup_hint_many: 'Este dato coincide con {n} perfiles',
+        dup_hint_view: 'Ver perfil',
+        dup_hint_navigating: 'Abriendo…',
+        dup_hint_flag: 'Marcar como duplicados',
+        dup_hint_flagging: 'Marcando…',
+        dup_hint_flagged: 'Marcado',
+        dup_hint_flag_success: 'Marcado para revisión por administradores',
+        dup_hint_flag_failed: 'No se pudo marcar',
         ce_undo: 'Deshacer',
         ce_type_phone: 'Teléfono',
         ce_type_email: 'Email',
@@ -1366,6 +1410,39 @@ export const es = {
         section_matches: 'Perfiles coincidentes',
     },
     import: {
+        // Toasts post-import
+        record_added_to_profile: 'Registro agregado al perfil',
+        go_to_profile_link: '→ Ver perfil',
+        // Contact-import (v2.16.0-33) — homepage CTA + PWA share-target flow.
+        from_contacts_breadcrumb: 'Importado desde tu agenda',
+        vcard_multiple_picked_first: 'Importé el primer contacto del archivo',
+        vcard_parse_failed: 'No se pudo leer el archivo de contacto',
+        contact_picker_fallback: 'No pude abrir el selector de contactos. Probá subiendo un .vcf en su lugar.',
+        // Duplicate-detection UI in the wizard (v2.16.0-43). Replaces the
+        // hardcoded English match-type chips that leaked tokenizer field
+        // names ("Phone suffix", "Full Name") into the user-facing copy.
+        match_label_phone: 'teléfono',
+        match_label_email: 'email',
+        match_label_social: 'red social',
+        match_label_name: 'nombre',
+        match_label_address: 'dirección',
+        match_label_source_url: 'publicación origen',
+        match_label_id_number: 'documento',
+        // Sentence fragments — fed by the label keys above. `{x}`, `{y}` are
+        // simple placeholders the renderer fills in. Used wherever the
+        // matched-adopter name is rendered separately (Step 4 cards put name
+        // above and reason below) so we don't say the name twice.
+        shares_one: 'Comparte {x}',
+        shares_two: 'Comparte {x} y {y}',
+        shares_many: 'Comparte {x}, {y} y otros',
+        // Confidence-band pill copy (replaces the percentage display).
+        match_band_high: 'Coincidencia muy probable',
+        match_band_medium: 'Coincidencia parcial',
+        match_band_low: 'Posible coincidencia',
+        // Step-3 count summary — collapses the previous per-row chip list
+        // into a single line. The decision UI lives on Step 4.
+        duplicates_found_count_one: 'Encontramos 1 posible duplicado — lo verás al guardar',
+        duplicates_found_count_other: 'Encontramos {count} posibles duplicados — los verás al guardar',
         // Botón en página principal
         button: 'Importar Contenido',
         // Encabezado de página

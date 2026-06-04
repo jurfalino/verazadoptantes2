@@ -96,6 +96,8 @@ export const en = {
         flag_desc_public_profiles: 'When on, contact entries imported from public social posts render unmasked to any authenticated viewer (they were public to begin with). Admins can also mark a whole profile public from /admin/adopters (🌐/🔒 toggle) to expose contributor-added entries too. Requires PII gating to be enabled. Default OFF.',
         flag_label_clean_homepage: 'Minimal homepage',
         flag_desc_clean_homepage: 'When on, hides the two activity cards on the homepage ("Register an adoption" and "Leave an observation"). Search becomes the sole primary action; the import-from-social affordance stays accessible as a secondary link below the search. Useful to focus the homepage on adopter lookup. Default OFF.',
+        flag_label_contact_import: 'Import from contacts',
+        flag_desc_contact_import: 'Show the "From contacts" button on the homepage to create a profile by picking a contact from the device address book (Chrome on Android) or uploading a .vcf file (other browsers). Default OFF.',
         flag_label_showcase_global: 'Public global catalog URL',
         flag_desc_showcase_global: 'On /my-animals, show the public link to the global catalog of all available animals (root "/"). Off by default while the flow is validated.',
         flag_label_showcase_org: 'Public per-org URLs',
@@ -104,8 +106,32 @@ export const en = {
         flag_desc_showcase_user: 'On /my-animals, show the public /user/[handle] link for the user to share their personal catalog. Off by default.',
         instagram_section_title: 'Instagram URL (public)',
         instagram_section_desc: 'Link to the Instagram profile shown in the empty-state of the public catalog and the animal detail page. Leave blank to hide.',
+        gemini_model_section_title: 'Default Gemini model',
+        gemini_model_section_desc: 'Model used by the AI extraction step in the post-import wizard. Leave blank to use the baked-in default (useful when Google retires the active model and you want to switch without a redeploy).',
+        gemini_model_default_option: '— Use baked-in default —',
         instagram_saved: 'Instagram URL updated.',
         instagram_save_failed: 'Could not save Instagram URL.',
+        dmm_title: 'Merge Adopter Profiles',
+        dmm_subtitle: 'Select which profile to keep as the primary. All records from the secondary will be moved to the primary.',
+        dmm_match_label: 'Match:',
+        dmm_what_happens: '⚠️ What will happen:',
+        dmm_bullet_kept: '"{name}" will be kept (primary)',
+        dmm_bullet_deleted: '"{name}" will be soft-deleted',
+        dmm_bullet_records_move: 'All adoptions, images, flags, and history will move to the primary',
+        dmm_bullet_contact_merged: 'Contact info and notes will be merged',
+        dmm_cancel: 'Cancel',
+        dmm_merging: 'Merging…',
+        dmm_merge_button: 'Merge Profiles',
+        dmm_role_keep: '✓ Keep',
+        dmm_role_delete: 'Delete',
+        dmm_no_activity: 'No rated activity',
+        dmm_match_phone: '📞 Phone',
+        dmm_match_email: '✉️ Email',
+        dmm_match_social: '🌐 Social',
+        dmm_match_name_full: '📛 Full Name',
+        dmm_match_name_word: '📝 Name Words',
+        dmm_match_address_word: '🏠 Address',
+        dmm_match_source_url: '🔗 Source URL',
     },
     demo: {
         not_real: 'this is not a real person',
@@ -365,13 +391,21 @@ export const en = {
         how_step2_desc: 'Record adoptions and experiences.',
         how_step3_title: 'Rate & Share',
         how_step3_desc: 'Share your experience with the community.',
-        // Import action card
-        action_import_title: 'Import from a post',
-        action_import_desc: 'Paste a link or screenshot from social media and we extract the info automatically.',
+        // Import action card — unified parent card with two sub-buttons
+        // ("From a post" + "From contacts"). The title is generic; the two
+        // buttons name the specific source.
+        action_import_title: 'Import a profile',
+        action_import_desc: 'Build a profile from a social media post or from your contact list.',
         action_import_btn: 'Import Now',
-        // Compact label used in clean-homepage mode where import lives below
-        // the search as a single secondary link (no card chrome).
-        action_import_secondary: 'Import a profile from social media',
+        action_import_post_btn: 'From a post',
+        action_import_contacts_btn: 'From contacts',
+        // Compact labels used in clean-homepage mode where the two import
+        // modes render as paired pills below the search (no card chrome).
+        action_import_post_secondary: 'Import from a post',
+        action_import_contacts_secondary: 'Import from contacts',
+        // Legacy key — still read in case any older entry-point references
+        // it. Mirrors the post-only label so existing surfaces keep working.
+        action_import_secondary: 'Import from a post',
         // Sample record
         sample_record: 'See an example profile',
         process_guide: 'Adoption Process Guide',
@@ -499,6 +533,16 @@ export const en = {
         ce_add_error: 'Could not add the entry.',
         ce_add_toast_added: 'Entry added',
         ce_add_toast_unlocked: 'You confirmed an existing entry — it’s now unlocked',
+        dup_hint_checking: 'Checking for matches…',
+        dup_hint_one: 'This value already exists on another profile',
+        dup_hint_many: 'This value matches {n} profiles',
+        dup_hint_view: 'View profile',
+        dup_hint_navigating: 'Opening…',
+        dup_hint_flag: 'Flag as duplicates',
+        dup_hint_flagging: 'Flagging…',
+        dup_hint_flagged: 'Flagged',
+        dup_hint_flag_success: 'Flagged for admin review',
+        dup_hint_flag_failed: 'Could not flag',
         ce_undo: 'Undo',
         ce_type_phone: 'Phone',
         ce_type_email: 'Email',
@@ -1367,6 +1411,39 @@ export const en = {
         section_matches: 'Matching profiles',
     },
     import: {
+        // Post-import toasts
+        record_added_to_profile: 'Record added to profile',
+        // Contact-import (v2.16.0-33) — homepage CTA + PWA share-target flow.
+        from_contacts_breadcrumb: 'Imported from your contacts',
+        vcard_multiple_picked_first: 'Imported the first contact from the file',
+        vcard_parse_failed: 'Could not read the contact file',
+        contact_picker_fallback: 'Could not open the contact picker. Try uploading a .vcf instead.',
+        // Duplicate-detection UI in the wizard (v2.16.0-43). Replaces the
+        // hardcoded English match-type chips that leaked tokenizer field
+        // names ("Phone suffix", "Full Name") into the user-facing copy.
+        match_label_phone: 'phone',
+        match_label_email: 'email',
+        match_label_social: 'social handle',
+        match_label_name: 'name',
+        match_label_address: 'address',
+        match_label_source_url: 'source post',
+        match_label_id_number: 'ID',
+        // Sentence fragments — fed by the label keys above. `{x}`, `{y}` are
+        // simple placeholders the renderer fills in. Used wherever the
+        // matched-adopter name is rendered separately (Step 4 cards put name
+        // above and reason below) so we don't say the name twice.
+        shares_one: 'Shares {x}',
+        shares_two: 'Shares {x} and {y}',
+        shares_many: 'Shares {x}, {y}, and others',
+        // Confidence-band pill copy (replaces the percentage display).
+        match_band_high: 'Very likely duplicate',
+        match_band_medium: 'Partial match',
+        match_band_low: 'Possible match',
+        // Step-3 count summary — collapses the previous per-row chip list
+        // into a single line. The decision UI lives on Step 4.
+        duplicates_found_count_one: 'Found 1 possible duplicate — you\'ll see it when you save',
+        duplicates_found_count_other: 'Found {count} possible duplicates — you\'ll see them when you save',
+        go_to_profile_link: '→ View profile',
         // Home page button
         button: 'Import Content',
         // Page header

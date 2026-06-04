@@ -20,6 +20,7 @@ export { getAdopter, saveAdopter, appendToExistingAdopter, getAdopterStats, logP
 export { addContactEntry } from './addContactEntry';
 export { updateContactEntry } from './updateContactEntry';
 export { removeContactEntry } from './removeContactEntry';
+export { grantSearchMatchAccess } from './grantSearchMatchAccess';
 
 // Images
 export { saveImage, getImages, setProfilePicture, getAdoptionImages, deleteImage } from './images';
@@ -39,6 +40,7 @@ export { runAdminQuery, deleteAdopter, purgeAllData, backfillLegacyContactEntrie
 // Duplicates
 export { getDuplicateCandidates, checkTokenDuplicates } from './duplicates';
 export type { DuplicateCandidate, TokenMatchResult } from './duplicates';
+export { flagAdopterAsDuplicate } from './flagAdopterAsDuplicate';
 
 // Enrichment
 export { enrichAdopters } from './enrichAdopters';

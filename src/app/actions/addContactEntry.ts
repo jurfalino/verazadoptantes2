@@ -157,8 +157,9 @@ export async function addContactEntry(
         }
 
         if (appended) {
-            // Fire-and-forget side effects.
-            tokenizeAdopter(adopterId).catch(e => {
+            // Tokenize awaited so duplicate detection sees the new entry
+            // before the response returns (Workers kill fire-and-forget).
+            await tokenizeAdopter(adopterId).catch(e => {
                 logger.warn('addContactEntry: tokenize after add failed', {
                     adopterId, error: e instanceof Error ? e.message : String(e),
                 });

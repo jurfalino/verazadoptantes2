@@ -14,6 +14,7 @@ import { updateContactEntry } from '@/app/actions/updateContactEntry';
 import { removeContactEntry } from '@/app/actions/removeContactEntry';
 import { extractErrorId } from '@/lib/errorUtils';
 import { renderTextWithLinks } from '@/lib/textUtils';
+import DuplicateHint from '@/components/DuplicateHint';
 
 const TYPE_ICON: Record<ContactEntryType, LucideIcon> = {
     phone: Phone,
@@ -98,6 +99,16 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
     const [composerStreet, setComposerStreet] = useState('');
     const [composerLocality, setComposerLocality] = useState('');
     const [composerBusy, setComposerBusy] = useState(false);
+    // Debounced value handed to <DuplicateHint>. 500ms idle keeps server load
+    // low and avoids flashing while typing. Local mode skips this entirely:
+    // the new-adopter flow already has DuplicatePeek + StrongMatchStrip
+    // hanging off the parent form, so a per-composer hint would be redundant.
+    const [hintValue, setHintValue] = useState('');
+    useEffect(() => {
+        if (isLocalMode) { setHintValue(''); return; }
+        const id = setTimeout(() => setHintValue(composerValue), 500);
+        return () => clearTimeout(id);
+    }, [composerValue, isLocalMode]);
 
     // Edit state — the id of the entry currently being edited (one at a time).
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -607,6 +618,18 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 }}
                                 className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm"
                                 autoFocus
+                            />
+                        )}
+                        {/* Cross-record duplicate warning. Renders nothing for
+                            local mode, non-strong types, empty values, or
+                            when no high-confidence match exists on another
+                            adopter. excludeAdopterId={adopterId} ensures the
+                            user's own profile never appears as a match. */}
+                        {!isLocalMode && adopterId && composerType !== 'address' && (
+                            <DuplicateHint
+                                type={composerType}
+                                value={hintValue}
+                                excludeAdopterId={adopterId}
                             />
                         )}
                         {/* Bottom action row — kept structurally identical to

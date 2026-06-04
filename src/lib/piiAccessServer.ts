@@ -198,8 +198,16 @@ export async function replaySearchMatchGrants(opts: {
     adopterId: string;
     query: string | null | undefined;
     viewerEmail: string | null | undefined;
+    /**
+     * Where the grant request came from. Default 'signin_replay' (post-auth
+     * page-load replay of a search done before signin). 'duplicate_hint' is
+     * used when a user clicks "view match" in DuplicateHint after typing an
+     * identifier that matched another adopter. Affects only the audit/log
+     * metadata; the grant-write logic is identical.
+     */
+    source?: 'signin_replay' | 'duplicate_hint';
 }): Promise<{ written: number }> {
-    const { adopterId, query, viewerEmail } = opts;
+    const { adopterId, query, viewerEmail, source = 'signin_replay' } = opts;
     if (!query || !isRealActorEmail(viewerEmail)) return { written: 0 };
     const q = query.trim().slice(0, REPLAY_QUERY_MAX_LEN);
     if (!q) return { written: 0 };
@@ -271,13 +279,13 @@ export async function replaySearchMatchGrants(opts: {
         })));
 
         logger.info('replaySearchMatchGrants: wrote grants', {
-            adopterId, viewerEmail, written: toInsert.length, source: 'signin_replay',
+            adopterId, viewerEmail, written: toInsert.length, source,
         });
         logAudit({
             userEmail: viewerEmail,
-            action: 'pii_search_match_grant_replay',
+            action: source === 'duplicate_hint' ? 'pii_search_match_grant_dup_hint' : 'pii_search_match_grant_replay',
             target: adopterId,
-            details: { count: toInsert.length },
+            details: { count: toInsert.length, source },
         });
 
         return { written: toInsert.length };

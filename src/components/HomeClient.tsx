@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import HomepageActionCard from '@/components/HomepageActionCard';
+import ContactPickerLauncher from '@/components/ContactPickerLauncher';
 import { useEffect } from 'react';
 import InstallCTA from '@/components/InstallCTA';
 import SocialProofBanner from '@/components/SocialProofBanner';
@@ -38,6 +39,10 @@ export default function HomeClient({ initialConfig }: { initialConfig: Record<st
     // `useEffect(fetch)` pattern. Derived flags read directly off the prop.
     const appConfig = initialConfig;
     const contentImportEnabled = appConfig.ENABLE_CONTENT_IMPORT === 'true';
+    const contactImportEnabled = appConfig.ENABLE_CONTACT_IMPORT === 'true';
+    // True when EITHER import path is on — drives whether the parent "Importar
+    // perfil" card renders at all and whether the 3-card grid stays 3-col.
+    const anyImportEnabled = contentImportEnabled || contactImportEnabled;
 
     // Auto-open LoginModal when redirected (session expired or auth required)
     useEffect(() => {
@@ -105,31 +110,53 @@ export default function HomeClient({ initialConfig }: { initialConfig: Record<st
                 {session?.user && appConfig.ENABLE_MILESTONE_BADGE !== 'false' && <MilestoneBadge />}
 
                 {/* Action cards. Two modes:
-                    – Default: 3-card peer-equal grid (or 2-col when import is off).
-                      Order: Adoption · Report · Import.
-                    – ENABLE_CLEAN_HOMEPAGE: the two activity cards are hidden; the
-                      surviving import affordance demotes to a centered link-pill
-                      below the search so search remains visually primary and import
-                      reads as a secondary tool, not a competing CTA (v2.16.0-16). */}
+                    – Default: 3-card peer-equal grid (or 2-col when no import path
+                      is enabled). Order: Adoption · Report · Import-perfil.
+                      The Import card hosts two sub-buttons ("Desde un post" +
+                      "Desde contactos") so the 3-col grid stays intact and the
+                      two import modalities sit under one mental model.
+                    – ENABLE_CLEAN_HOMEPAGE: the two activity cards are hidden;
+                      the surviving import affordance demotes to paired link-pills
+                      below the search so search remains visually primary
+                      (v2.16.0-16, two-pill variant in v2.16.0-33). */}
                 {appConfig.ENABLE_CLEAN_HOMEPAGE === 'true' ? (
-                    contentImportEnabled && (
-                        <div id="action-cards" className="mt-6 flex justify-center">
-                            <button
-                                type="button"
-                                data-testid="import-content-btn"
-                                onClick={() => handleAuthNavigation('/import')}
-                                className="inline-flex items-center gap-2 text-sm text-stone-600 hover:text-teal-800 hover:underline underline-offset-4 decoration-teal-400 transition-colors px-3 py-1.5 rounded-full"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                                </svg>
-                                <span>{t('home.action_import_secondary') || t('home.action_import_title')}</span>
-                                <span aria-hidden="true">→</span>
-                            </button>
+                    anyImportEnabled && (
+                        <div id="action-cards" className="mt-6 flex flex-wrap items-center justify-center gap-x-2 gap-y-2">
+                            {contentImportEnabled && (
+                                <button
+                                    type="button"
+                                    data-testid="import-content-btn"
+                                    onClick={() => handleAuthNavigation('/import')}
+                                    className="inline-flex items-center gap-2 text-sm text-stone-600 hover:text-teal-800 hover:underline underline-offset-4 decoration-teal-400 transition-colors px-3 py-1.5 rounded-full"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                    </svg>
+                                    <span>{t('home.action_import_post_secondary') || t('home.action_import_secondary') || t('home.action_import_title')}</span>
+                                    <span aria-hidden="true">→</span>
+                                </button>
+                            )}
+                            {/* Divider between the two pills — only when both are on. */}
+                            {contentImportEnabled && contactImportEnabled && (
+                                <span aria-hidden="true" className="text-stone-300 hidden sm:inline">·</span>
+                            )}
+                            {contactImportEnabled && (
+                                <ContactPickerLauncher
+                                    testId="import-contacts-btn"
+                                    onPicked={() => handleAuthNavigation('/import?contact_import=1')}
+                                    className="inline-flex items-center gap-2 text-sm text-stone-600 hover:text-teal-800 hover:underline underline-offset-4 decoration-teal-400 transition-colors px-3 py-1.5 rounded-full"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                    </svg>
+                                    <span>{t('home.action_import_contacts_secondary')}</span>
+                                    <span aria-hidden="true">→</span>
+                                </ContactPickerLauncher>
+                            )}
                         </div>
                     )
                 ) : (
-                    <div id="action-cards" className={`grid gap-6 mt-6 ${contentImportEnabled ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+                    <div id="action-cards" className={`grid gap-6 mt-6 ${anyImportEnabled ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
                         {/* Register Adoption — typed entry-point. Picks adopter, then hands off to
                             AdoptionFormWizard via /adopter/<id>?newAdoption=adoption (or
                             /adopter/create?continueToAdoption=true&newAdoption=adoption). */}
@@ -154,21 +181,48 @@ export default function HomeClient({ initialConfig }: { initialConfig: Record<st
                             icon="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
                         />
 
-                        {/* Import from post — last position; CTA matches the soft-pill style of the other action cards */}
-                        {contentImportEnabled && (
+                        {/* Import-perfil — last position; one parent card hosts
+                            up to two source buttons ("Desde un post" + "Desde
+                            contactos"). Card renders if EITHER source is on. */}
+                        {anyImportEnabled && (
                             <div
-                                data-testid="import-content-btn"
-                                className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200 hover:shadow-md hover:border-teal-200 transition-all text-center group h-full flex flex-col items-center justify-center cursor-pointer"
-                                onClick={() => handleAuthNavigation('/import')}
+                                data-testid="import-card"
+                                className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200 hover:shadow-md hover:border-teal-200 transition-all text-center h-full flex flex-col items-center justify-center"
                             >
-                                <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4 text-teal-700 group-hover:scale-110 transition-transform">
+                                <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4 text-teal-700">
                                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                                     </svg>
                                 </div>
                                 <h2 className="text-lg font-semibold text-stone-900 mb-1">{t('home.action_import_title')}</h2>
                                 <p className="text-stone-500 text-sm mb-3">{t('home.action_import_desc')}</p>
-                                <span className="inline-block px-6 py-2.5 bg-teal-200 text-teal-900 font-semibold rounded-xl hover:bg-teal-300 transition-colors shadow-sm">{t('home.action_import_btn')}</span>
+                                <div className="flex flex-col gap-2 w-full max-w-[220px]">
+                                    {contentImportEnabled && (
+                                        <button
+                                            type="button"
+                                            data-testid="import-content-btn"
+                                            onClick={() => handleAuthNavigation('/import')}
+                                            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-teal-200 text-teal-900 font-semibold rounded-xl hover:bg-teal-300 transition-colors shadow-sm text-sm"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                            </svg>
+                                            <span>{t('home.action_import_post_btn')}</span>
+                                        </button>
+                                    )}
+                                    {contactImportEnabled && (
+                                        <ContactPickerLauncher
+                                            testId="import-contacts-btn"
+                                            onPicked={() => handleAuthNavigation('/import?contact_import=1')}
+                                            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-teal-50 text-teal-800 font-semibold rounded-xl hover:bg-teal-100 transition-colors border border-teal-200 text-sm"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                            </svg>
+                                            <span>{t('home.action_import_contacts_btn')}</span>
+                                        </ContactPickerLauncher>
+                                    )}
+                                </div>
                             </div>
                         )}
                     </div>

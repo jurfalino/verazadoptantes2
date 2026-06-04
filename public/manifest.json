@@ -41,6 +41,15 @@
                     "accept": [
                         "image/*"
                     ]
+                },
+                {
+                    "name": "vcard",
+                    "accept": [
+                        "text/vcard",
+                        "text/x-vcard",
+                        "text/directory",
+                        ".vcf"
+                    ]
                 }
             ]
         }

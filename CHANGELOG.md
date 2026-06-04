@@ -2,6 +2,199 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.17.0] - 2026-06-04
+
+Cumulative release rolling up the v2.16.0-24..-45 staging batch. Per-version entries below are kept verbatim as the audit trail; this section is the prod-facing summary.
+
+### Added — new features
+- **Cross-record duplicate hint on per-entry contact composer.** When a contributor types a strong identifier (phone / email / social / id) on an existing adopter's profile, an inline amber hint surfaces any other adopter that already carries the same value, with a Ver-perfil link (new tab, search-match grant written for the destination) and a "Marcar como duplicados" action that flags the pair for admin review. Full-name shown (not initials) since the search-match grant pattern already reveals identifiers on match. *(v2.16.0-24, -25, -26, -27, -28, -30, -34.)*
+- **Import an adopter profile from the device address book.** Two entry points feed the existing `ImportWizard`'s review step with prefilled name + phones + emails (+ addresses on the file-upload path): (a) a homepage "Desde contactos" CTA that opens the OS Contact Picker on Android Chrome and falls back to a `.vcf` file upload on iOS / desktop, and (b) a PWA `share_target` that accepts `text/vcard` files so a contact shared from the phone's Contacts app lands the user directly in the wizard. Hand-written vCard parser (`src/lib/vcard.ts`), edge-runtime safe, handles line unfolding + quoted-printable Spanish names + multi-contact files. Gated by new `ENABLE_CONTACT_IMPORT` flag (default off). *(v2.16.0-33, -39, -40, -42, -44.)*
+- **Import wizard duplicate-detection UI redesign.** Replaces the hardcoded English match-type chips (`📞 Phone, ✉️ Email matches X (73%)`) with translatable natural-sentence reasons (`Comparte teléfono y email`), confidence-band pills (`Coincidencia muy probable` / `Coincidencia parcial` / `Posible coincidencia`) with themed colours, and a single count-summary line on Step 3 instead of the per-row chip list — the dedup decision UI lives on Step 4. *(v2.16.0-43.)*
+- **Admin-overridable Gemini default model.** `/admin/config` now has a dropdown that lists the live models reported by the Gemini API, so when Google retires a model (as they did with `gemini-2.0-flash`) an admin can switch without a redeploy. The wizard-extraction route reads `body.model → admin DB value → baked-in default` in that order. *(v2.16.0-41.)*
+
+### Fixed
+- **Admin `/admin/duplicates` (and `/admin/orphan-submissions`) routes 401-locked DB-grant admins.** Five admin routes used the sync `isAdmin()` check, which only honors the bootstrap email list and ignores `user_profiles.role = 'admin'`. Swapped to `isAdminAsync()` to match every other admin route. *(v2.16.0-31 diagnostic surface, -32 the real fix.)*
+- **Newly-modified adopters silently un-tokenized, breaking duplicate detection on the next save.** `tokenizeAdopter(...).catch(...)` was fire-and-forget at seven mutation paths (`POST /api/adopters`, `addContactEntry`, `updateContactEntry`, `removeContactEntry`, `adoptions.ts` create/update, `adopters.ts:160`), but on Cloudflare Workers fire-and-forget is killed the moment the response returns. Switched every call site to `await tokenizeAdopter(...).catch(...)` so duplicate-token rows actually land before the response. ~200-500ms cost per save is acceptable on submit (same tradeoff documented in `_adopterFactory.ts`). *(v2.16.0-37, -38.)*
+- **DuplicateHint missed same-suffix phone matches.** The hint's `MIN_RELEVANCE=40` floor was filtering legitimate identifier-overlap hits (a `phone_suffix` exact match scores 17%). Lowered to 5 since the hint already rejects address-only and fuzzy-name inputs at the buildInput layer. *(v2.16.0-34.)*
+- **Pre-save duplicate check used stale phones/emails after the user edited them.** `handlePreSave` passed `extractedData.phones/.emails/.socials` to `findAdopters` alongside the contactInfo blob — but the chip editor only mutates `contactEntries`, so the structured fields stayed at their original (vCard or AI-extraction) values and `findAdopters` preferred them over the blob. Dropped the three stale fields from the call; `contactEntries` is now the single source of truth. *(v2.16.0-44.)*
+
+### Reliability
+- **`ChunkLoadError` from deploy churn now auto-recovers.** webpack's lazy-load runtime references content-hashed chunk filenames; when a new build replaces those, in-flight SPA sessions 404 on the next dynamic import and the SPA dies until manual hard-reload. `ClientErrorReporter` now detects `ChunkLoadError` on both `error` and `unhandledrejection` paths and force-reloads once (sessionStorage-guarded to prevent loops). If the chunk error persists after one reload, the user gets a clear "Recargá la app" toast instead of a webpack stack trace. *(v2.16.0-45.)*
+- **Background browser-platform rejections no longer surface as user-facing error toasts.** The inline SW registration in `layout.tsx` had no `.catch()`, so any `register('/sw.js')` rejection (browser-internal SW lifecycle, extension-shimmed wrappers, PWA permission gates) bubbled to `ClientErrorReporter`'s `unhandledrejection` listener and toasted "Algo salió mal" to the user. Added the `.catch()`; also added a stack-pattern filter in `ClientErrorReporter` for `serviceWorker.register` / `ServiceWorker` / `AbortError` so browser-internal SW operations (notably Chromium's Contact Picker UI triggering an internal `register` when the user types in its search box) get a `console.warn` instead of a toast. *(v2.16.0-35, -36.)*
+- **Android Contact Picker crash on search-box typing.** Chromium's Contact Picker's address-property parser is a recurring crash site across Android versions. Dropped `address` from the `navigator.contacts.select(...)` request — only `name`, `tel`, `email` are now requested. Addresses still come through on the `.vcf` upload path and the wizard's Step 3 lets the user type one manually. Net effect: stable picker. *(v2.16.0-39.)*
+
+### Polish
+- **Segregation of duties: contributors flag duplicates, admins act.** The duplicate-hint's "Marcar como duplicados" action calls a new server action that creates a `adopterFlags` row with `reason=duplicate`; admins triage the result via `/admin/duplicates` instead of contributors merging records they don't own. The `DuplicateMergeModal` reachable from admin paths got full Spanish translation. *(v2.16.0-28.)*
+- **ImportWizard post-merge toast and miscellaneous string copy.** *(v2.16.0-29.)*
+
+## [2.16.0-45] - 2026-06-04
+
+### Fixed
+- **`ChunkLoadError` after rapid back-to-back deploys was surfacing to users as an opaque webpack stack trace, leaving the SPA non-functional until manual hard-reload.** webpack's lazy-load runtime references content-hashed chunk filenames. When a user has an in-flight SPA session from an older deploy and a new build replaces those chunks on the CDN (each deploy GCs the previous content hashes), the next dynamic import 404s and throws `ChunkLoadError`. The standard recovery is a one-shot reload to pick up fresh HTML pointing at the current chunks — that's now wired into `ClientErrorReporter` for both the `error` event path (synchronous throws) and the `unhandledrejection` path (Next.js's dynamic import rejection). A `sessionStorage` guard prevents reload loops if the new deploy is also broken; if the chunk error persists after one reload, the user gets a clear "Recargá la app — hubo una actualización mientras usabas la app" toast instead of being stuck in an auto-reload loop. This was visible in this session because v2.16.0-33 through -44 shipped within a few hours, so any user with a long-running session would have been on a stale chunk graph at least once.
+
+## [2.16.0-44] - 2026-06-04
+
+### Fixed
+- **Pre-save duplicate check used stale phones/emails after the user edited them.** `handlePreSave` in the import wizard was passing `extractedData.phones` / `.emails` / `.socials` alongside the contactInfo blob. Those fields are populated once (AI extraction in the post path, vCard hydration in the contact-import path) and **never updated** when the user edits a chip in `ContactEntriesInput` — the chip editor only mutates `contactEntries`. Worse, `findAdopters` preferred the structured arrays over the blob (`input.phones?.length ? input.phones : extractPhones(blob)`), so the stale arrays silently overrode the user's edits. The visible symptom: user picks a contact, edits the phone in Step 3 to a different number, taps Save, and is STILL told it's a duplicate of the original — because the duplicate check ran against the original phone, not the edited one. The Step 4 confirm modal then surfaced the bogus "match." Dropped the three stale fields from the pre-save call so `contactEntries` is now the single source of truth (and the Step-3 debounced overlap check at `:629` was already doing the right thing — same `{name, contactInfo}`-only shape).
+
+## [2.16.0-43] - 2026-06-04
+
+### Changed
+- **Import wizard duplicate-detection UI — cleaner language, single source of truth.** Three improvements landed together based on a UX audit of the contact-import flow:
+  - **Tier 1 (i18n bug fix).** The `getMatchLabel` function in `ImportWizard.tsx` was a hardcoded English Record (`'📞 Phone', '✉️ Email', '📛 Full Name', …`) that bypassed the i18n layer entirely. Spanish users saw English labels for years on this surface. Moved every label into proper `import.match_label_*` keys (both locales), collapsed synonym token types into one user-facing noun (`phone` + `phone_suffix` → "teléfono"; `name_full` + `name_word` → "nombre"; `source_url` → "publicación origen", not "Source URL").
+  - **Tier 2 (readability).** Replaced the chip-list-of-types pattern (`📞 Phone, ✉️ Email matches Jose García (73%)`) with a natural sentence (`Comparte teléfono y email`) + a confidence-band pill instead of a raw percentage. Band copy: "Coincidencia muy probable" / "Coincidencia parcial" / "Posible coincidencia" with themed colours (rose / amber / stone — all theme-safe).
+  - **Tier 3 Option B (structural).** Step 3 used to render full per-row hint chips (mirroring Step 4's confirm modal) and made users read the same dedup data twice in different visual languages before deciding. Step 3 now shows a single count-summary line (`⚠ Encontramos N posibles duplicados — los verás al guardar`); the decision UI stays on Step 4. Removed the now-unused `ImportLowConfidenceHints` accordion and the legacy `getMatchLabel` function.
+
+  Net effect: the same information, half as many surfaces, no token-type jargon leaking into user-facing text, and the labels actually translate.
+
+## [2.16.0-42] - 2026-06-04
+
+### Fixed
+- **ImportWizard blank Step 1 — tighter fix.** The `-40` initializer check (`persistedStep > 1 && !(inputContent || editableText)`) was too lenient: a user who had ever typed in Step 1 then later used the contact-import path would land on a blank Step 3 on their next visit, because the stale `inputContent` from the typed session satisfied the check, the initializer returned `step=3`, but Step 3 couldn't render without `extractedData` (not persisted). Tightened to: **only Steps 1 and 2 are resumable from storage**. Steps 3+ need `extractedData` which the persistence effect doesn't carry, so any persisted step > 2 resets to 1 unconditionally. Also added a guard in the persistence effect so the contact-import fast path stops writing `step=3` to storage in the first place — the storage state can never grow into the bad shape again from a fresh session.
+
+## [2.16.0-41] - 2026-06-04
+
+### Fixed
+- **Post-import wizard's AI extraction step returned `[404] this model is no longer available`** when called with text-only input (no images / no URL fetch path). Google retired `gemini-2.0-flash` and our hardcoded default in `lib/gemini.ts:128` still pointed at it. Updated the baked-in default to `gemini-2.5-flash`, and updated the route's fallback-list in `/api/ai/models` to current model names so the offline-dev path doesn't surface dead models in the dropdown either.
+
+### Added
+- **Admin can now change the Gemini default model without a redeploy.** New `GEMINI_DEFAULT_MODEL` setting in `/admin/config` (rendered as a dropdown whose options come from the live Gemini API via `/api/ai/models`). Precedence in the extraction route: per-call `body.model` override → admin-set DB value → baked-in default in `lib/gemini.ts`. Next time Google retires a model, the admin flips the dropdown instead of waiting for a deploy. The current value sticks even when the live API drops it from its list (the dropdown preserves the persisted name as a one-off option so admin doesn't accidentally clear it).
+
+## [2.16.0-40] - 2026-06-04
+
+### Fixed
+- **ImportWizard rendered a blank Step 1 when a prior session was abandoned mid-Step-3.** The wizard persists `{ step, inputContent, editableText, sourceUrl }` to sessionStorage but NOT `extractedData` / `contactEntries`. Pre-existing weakness, but the contact-import fast path in v2.16.0-33 was the first realistic path to leave storage with `step=3` and empty `inputContent`/`editableText`: a user picks a contact, lands on Step 3 prefilled, then leaves without saving. Next visit to `/import` for a regular post import: `step` initializer reads `3`, Step 1 doesn't render (gated on `step === 1`), Step 3 doesn't render (gated on `extractedData`) → user sees only the step indicator with nothing below. Fixed in the `step` state initializer — when the persisted step is past 1 but neither `inputContent` nor `editableText` is populated, clear the stale storage and start at Step 1.
+
+## [2.16.0-39] - 2026-06-04
+
+### Fixed
+- **Android Contact Picker crashed when the user typed in its search box.** Reproduces on the user's Android Chrome device: tap "Desde contactos" → fullscreen native picker opens → type any character in the search field → picker dies. The address-property parser inside Chromium's Contact Picker has been a recurring crash site across Android versions. Dropped `address` from the `navigator.contacts.select(...)` request — only `name`, `tel`, `email` are requested now. Addresses are still parsed on the `.vcf` upload fallback path (which is what most contacts on Android export through anyway) and the wizard's Step 3 lets the user type an address manually. Net effect: stable picker.
+- **Surfaced a hint when the picker fails so the file-picker fallback doesn't feel like a non-sequitur.** Added `import.contact_picker_fallback` toast ("No pude abrir el selector de contactos. Probá subiendo un .vcf en su lugar."), shown in the `catch` block of the Picker API call before the file input opens.
+
+## [2.16.0-38] - 2026-06-03
+
+### Fixed
+- **Fire-and-forget `tokenizeAdopter` sweep — the rest of the surface.** `-37` fixed the wizard's create path. This pass converts the remaining six call sites to `await tokenizeAdopter(...).catch(...)` so duplicate detection stays accurate on every contact-data mutation, not just adopter creation. Sites fixed:
+  - `addContactEntry.ts:161` — adding a new contact entry to an existing adopter.
+  - `updateContactEntry.ts:128` — editing an existing contact entry.
+  - `removeContactEntry.ts:102` — removing a contact entry.
+  - `adoptions.ts:65,148` — creating / updating an adoption record with `onBehalfOf` (which feeds the adopter's name tokens).
+  - `adopters.ts:160` — appending fields to an existing adopter from the create flow (the "merge into existing" path).
+  
+  All six retain the inline `.catch()` so a tokenize failure still won't reject the caller — same semantics as before, just with the response held back until the DB write actually lands (~200-500ms cost, same as `_adopterFactory.ts:20-24`). After this sweep, `tokenizeAdopter` is awaited at every call site in the codebase.
+
+## [2.16.0-37] - 2026-06-03
+
+### Fixed
+- **Newly-created adopters were silently un-tokenized, defeating the wizard's pre-save duplicate check.** `POST /api/adopters` called `tokenizeAdopter(newId).catch(...)` as fire-and-forget, but on Cloudflare Workers fire-and-forget gets killed when the response returns (same reason `audit.ts` and `logger.ts` route through `ctx.waitUntil`). The DELETE/INSERT/UPDATE in `tokenizeAdopter` never reached D1, so the new adopter had no `phone` / `phone_suffix` / `email` rows in `duplicate_tokens`. Result: a user could create two **identical** contacts via the wizard and the second creation's `findAdopters({mode:'duplicate'})` lookup found zero matches because the first one's tokens were never written. Switched to `await tokenizeAdopter(newId)` — the same pattern documented in `actions/_adopterFactory.ts:20-24` and used in `actions/adopters.ts:286,337` ("~200-500ms cost is acceptable on submit"). Tokenize is idempotent and internally try/catches, so awaiting is safe.
+
+### Known follow-ups (out of scope for this hotfix)
+- `addContactEntry.ts:161`, `updateContactEntry.ts:128`, `removeContactEntry.ts:102`, `adoptions.ts:65/148`, `adopters.ts:160` use the same `tokenizeAdopter(...).catch()` fire-and-forget pattern. Each will be re-tokenized eventually when an admin runs `/admin/duplicates` scan, but per-edit duplicate detection is silently stale in the meantime. Worth a follow-up sweep — same `await`-or-`waitUntil` choice each.
+
+## [2.16.0-36] - 2026-06-03
+
+### Fixed
+- **ClientErrorReporter now suppresses non-actionable background rejections.** `-35` caught our own `serviceWorker.register('/sw.js')` rejections, but on Android Chrome the native Contact Picker UI's search box triggers an *internal* `serviceWorker.register` call inside Chromium that can reject and bubble up to our page's `unhandledrejection` handler. Added a stack-pattern filter for `serviceWorker.register` / `ServiceWorker` / `AbortError` (e.g. our debounce-cancel `AbortController` paths) so those don't user-toast — they get a `console.warn` for devtools debugging instead.
+
+## [2.16.0-35] - 2026-06-03
+
+### Fixed
+- **Service-Worker registration failures surfaced as generic "Algo salió mal" toasts to the user.** The inline SW registration script in `layout.tsx` was `navigator.serviceWorker.register('/sw.js')` with no `.catch()`. When `register()` rejected for any reason outside our control (browser-denied, extension-shimmed wrapper, PWA permission gate, transient install race), the bare promise rejection bubbled up to `ClientErrorReporter`'s `unhandledrejection` listener, which fired a "Se registró el error" toast with an errorId — alarming the user about a background offline-cache nicety they don't need to know about. Added a `.catch` that logs to `console.warn` so the signal stays available for debugging without polluting the UX.
+
+## [2.16.0-34] - 2026-06-03
+
+### Fixed
+- **DuplicateHint missed same-suffix phone matches.** With an existing adopter at `11-8909-7865`, typing `8909-7865` (no area code) into a contact composer didn't surface the hint, even though the tokenizer already indexes both the full phone and an 8-digit `phone_suffix` for exactly this case. The lookup matched (suffix `89097865` = `89097865`) but `weights.phone_suffix=2 / PRACTICAL_MAX_DUPLICATE=12 → 17%` fell below the hint's `MIN_RELEVANCE=40` floor and got filtered. The 40% floor was originally meant to drop address-only and fuzzy-name noise, but `buildInput` already rejects address inputs and the hint never passes a `name`, so the floor was suppressing only legitimate identifier-overlap hits. Lowered to `5` — still a sanity floor for true-zero artefacts, but lets phone-suffix matches through.
+
+## [2.16.0-33] - 2026-06-03
+
+### Added
+- **Import an adopter profile from the device address book.** Two entry points feed the existing `ImportWizard`'s Step 3 review screen, skipping the URL/AI extraction loop entirely:
+  - **Homepage CTA "Desde contactos"** — opens the native OS contact picker on Chrome Android (Contact Picker API), falls back transparently to a `.vcf` file upload on iOS Safari / Firefox / desktop. New `ContactPickerLauncher` component handles the routing + sessionStorage handoff.
+  - **PWA share intent** — the `share_target` manifest now accepts `text/vcard` files in addition to images, so the OS share sheet (Android Contacts app → Share → BuenAdoptante) lands the user inside the wizard with name/phones/emails/addresses prefilled. SW `CACHE_NAME` bumped to v3 to force already-installed PWAs to pick up the new branch.
+  - vCard parser at `src/lib/vcard.ts` is hand-written (~200 LOC), edge-runtime safe, no npm dep. Handles line unfolding, quoted-printable Spanish names (`Jos=C3=A9` → `José`), vCard 2.1/3.0/4.0 structured ADR, mobile-tagged TEL preference, and multi-contact `.vcf` (picks first, surfaces a toast). 6 vitest cases cover the realistic Android/iOS export shapes.
+  - Gated by new `ENABLE_CONTACT_IMPORT` flag (default `false`). The flag controls the homepage CTA only — the PWA manifest is static and the wizard always handles arriving vCards (benign: user can abandon Step 3).
+  - The 3-card homepage grid stays 3-col: the third card is now titled "Importar perfil" and hosts two stacked source buttons ("Desde un post" + "Desde contactos"). Clean-homepage mode renders the two as paired pills with a "·" divider below the search.
+
+## [2.16.0-32] - 2026-06-03
+
+### Fixed
+- **Admin `/admin/duplicates` and `/admin/orphan-submissions` were 401-ing for any admin not on the bootstrap list.** Five route files (`api/admin/duplicates/route.ts` GET + POST, `api/admin/duplicates/merge`, `api/admin/duplicates/dismiss`, `api/admin/orphan-submissions/route.ts`, `api/admin/orphan-submissions/[id]/retry`) used the sync `isAdmin()` check, which only honors `BOOTSTRAP_ADMIN_EMAILS` (just `gatitosolivos@gmail.com`) and ignores DB-grant admins (`user_profiles.role = 'admin'`). Swapped all five to `isAdminAsync()` to match the pattern in every other admin route. This was the actual cause of the `/admin/duplicates` "shows nothing" symptom we shipped `-31` to diagnose.
+
+## [2.16.0-31] - 2026-05-30
+
+### Diagnostic
+- **`/api/admin/duplicates` GET 500 now returns the actual error message + errorId in the response body** so failures on the admin dedup page are debuggable. Investigating a reported "page shows nothing, 4xx/5xx" state on `/admin/duplicates` — couldn't reproduce from local inspection (staging D1 data integrity OK: 3 dup flags + 2 pending candidates, all referenced adopter IDs exist). Generic 500 was swallowing the cause; expose it for the admin endpoint (leaking the message is fine on an admin-only surface).
+
+## [2.16.0-30] - 2026-05-30
+
+### Fixed
+- **DuplicateHint now shows the full matched-adopter name, not initials.** The earlier "show initials, reveal name on Ver-perfil click" design was inconsistent: the discovery-mode search-match auto-grant pattern (findAdopters.ts:760-770) already treats typing a strong identifier as proof of knowledge — a homepage search by phone reveals the full name. Hiding it in the hint while revealing it elsewhere added a useless click + new-tab roundtrip just to confirm identity before flagging. Grant rows still only get written on the explicit "Ver perfil" click — display ≠ navigation intent. Removed the now-unused `initials()` helper.
+
+## [2.16.0-29] - 2026-05-30
+
+### Fixed
+- **ImportWizard post-merge toast was hardcoded English.** After importing a record onto an existing profile, the success toast displayed "Record added to profile" with a "→ Ver Perfil" CTA (mixed English title + Spanish CTA). Spanish rescuers using the import flow saw the English title every time. Wired through `t('import.record_added_to_profile')` + `t('import.go_to_profile_link')` with both locale files updated.
+
+### Translation audit notes
+- Other apparent English-string findings in the broader audit are non-issues for Spanish users in practice:
+  - Hardcoded `'Error'` literals in several `toast.error(...)` calls — "Error" reads identically in ES and EN.
+  - `CountryConfirmBanner` and `ImportWizard:971` use `locale === 'es' ? 'X' : 'Y'` ternaries instead of `t()`; functionally translated, just not following the standard pattern.
+  - Admin-only surfaces (`AdminDangerZone`, `AdminContactEntriesBackfill`, `AdminAdopterList` toasts, `/admin/config` save buttons, `/admin/page.tsx` greeting) intentionally left untranslated for now — admin sessions tolerate English.
+
+## [2.16.0-28] - 2026-05-30
+
+### Changed
+- **Segregation of duties on the DuplicateHint: `Fusionar` → `Marcar como duplicados`.** Letting any contributor merge two profiles was a destructive-action mismatch — merging soft-deletes the secondary record, possibly owned by another rescuer, without their consent. The pivot: clicking the new button calls `flagAdopterAsDuplicate` which inserts an `adopter_flags` row with `reason='duplicate'` and `targetAdopterId={matched}`. That lands in `/admin/duplicates` under the existing `userFlagged` feed (the infrastructure was already built — `FLAG_REASONS.DUPLICATE`, the admin page's user-flag display, and the merge modal it opens). Admin then weighs context and dismisses or merges. Per-match state shows "Marcado" after a successful flag (prevents duplicate flag rows from rapid clicks).
+- Removed the now-unused `mergeAdoptersFromHint` server action wrapper. The underlying `mergeAdopters` stays untouched (admin route + contract-attach continue to call it directly with their own gates).
+
+### Fixed
+- **DuplicateMergeModal fully translated to Spanish.** Previously the modal hardcoded English strings throughout (title, subtitle, role badges, bullets, buttons, match-type chip labels) — even though "Sin actividad calificada" had snuck in as the only translated line. All strings now flow through `t('admin.dmm_*')` with both `es.ts` and `en.ts` keys. The bold-name bullets ("X will be kept") use a small `withBoldName` helper that splits on `{name}` to avoid `dangerouslySetInnerHTML` against a user-controlled adopter name field.
+
+## [2.16.0-27] - 2026-05-30
+
+### Fixed
+- **`DuplicateMergeModal` buttons missing `type="button"` were submitting the parent `AdopterForm`** when opened from `DuplicateHint`. AdopterForm wraps everything in `<form onSubmit={handleSave}>` (line 544); inside a form, a `<button>` without an explicit `type` defaults to `type="submit"`. So clicking Keep/Delete (the ProfileCard), Cancel, or Merge in the modal submitted the surrounding adopter form to `/adopter/{id}?q=...`, producing the 500 + "An error occurred in the Server Components render…" double toast. Fix is one-line per button: `type="button"` on all four `<button>` elements in the modal (both ProfileCards + Cancel + Merge). The existing admin dedup page didn't hit this because its DuplicateMergeModal isn't rendered inside a parent form.
+
+## [2.16.0-26] - 2026-05-30
+
+### Fixed
+- **Post-merge RSC render error.** After confirming the merge in `DuplicateHint`, the code called `window.location.reload()` when the current adopter was the surviving primary — but ANY reload of a page where merge state was in-flight (and the secondary, sometimes the current adopter, had just been soft-deleted) raced with React/Next trying to commit final state, producing the generic "An error occurred in the Server Components render…" toast. Twice, because `ClientErrorReporter` also catches the unhandled rejection on top of our own catch.
+- Fix: ALWAYS navigate to the surviving primary's URL via `window.location.href = /adopter/{primaryId}` — primary is guaranteed to exist post-merge, hard navigation reliably tears down the React tree before the next page mounts. Drop the `setMergeTarget(null)` call before navigation — unmounting the modal mid-navigation is the race we want to avoid.
+
+### Changed
+- `mergeAdoptersFromHint` switched from runtime `await import('./_db')` to top-level imports of `getUser` / `isAdminAsync`. Matches `PendingDedup` and the other server-action call sites in the file; trims a small amount of edge-runtime weirdness surface.
+- Added `console.error` in `DuplicateHint`'s merge catch so the actual rejection is visible in DevTools next time (the generic "Algo salió mal" toast from `ClientErrorReporter` doesn't help diagnose).
+
+## [2.16.0-25] - 2026-05-30
+
+### Fixed
+- **DuplicateHint header + button text was near-black on the dark-theme amber tint.** Used `text-amber-900` which has no `[data-theme="dark"]` remap (same v2.14.9-4 contrast bug RecordTypeGuidance fixed). Swapped to `text-amber-800` — themed and readable on both light and dark.
+
+### Changed
+- **"Ver perfil" in the duplicate hint now opens the matched profile in a new tab.** Preserves the user's in-progress composer state on the current adopter. Still awaits `grantSearchMatchAccess` before opening so the new tab loads unmasked.
+
+### Added
+- **"Fusionar" (Merge) button alongside "Ver perfil" in DuplicateHint.** Opens the existing `DuplicateMergeModal` pre-populated with the current adopter and the matched adopter; user picks which side stays as primary. On confirm, calls a new owner-or-admin-gated server action `mergeAdoptersFromHint` (wraps the permission-agnostic `mergeAdopters`). On success: navigates to the surviving primary when the current adopter was merged away, otherwise reloads to pick up the merged data.
+- New i18n keys: `adopter.dup_hint_merge`, `dup_hint_merge_success`, `dup_hint_merge_failed` in both locales.
+
+## [2.16.0-24] - 2026-05-30
+
+### Added
+- **Preemptive cross-record duplicate warning when typing a contact identifier on an existing profile.** Previously, adding a phone/email/social/id to Adopter A that *also* belonged to Adopter B was silent — the collision only surfaced during the admin's manual duplicate-scan job. Now the per-entry composer in `ContactEntriesSection` debounces 500ms and renders `<DuplicateHint>` under the input when the typed value matches another adopter at relevance ≥40. The hint shows initials (full name stays gated) plus a "Ver perfil" button that awaits the search-match grant write before navigating, so the destination renders unmasked.
+- New thin server action `grantSearchMatchAccess(adopterId, query)` (`src/app/actions/grantSearchMatchAccess.ts`) delegates to the existing `replaySearchMatchGrants` with `source:'duplicate_hint'`. Extended `replaySearchMatchGrants` with an optional `source` parameter (default `'signin_replay'`) to distinguish the audit log entry — same grant-write logic, different telemetry.
+
+### UX rationale
+- **Per-keystroke vs. on-click:** chose 500ms idle debounce — server load stays low (one user, one query, token-index lookup is sub-ms), but the hint appears while the user is still deciding instead of after they've committed via `+ Add`.
+- **PII model:** hint shows initials only. Click "Ver perfil" → mirror the existing search-match grant pattern (typing an identifier IS proof you know it → grant entry hash + name tokens). No leakage before the explicit click; full reveal after.
+- **Address-only suppressed via `minRelevance: 40`** — addresses are noisy (households, apartments). Phone/email/social/id only.
+- **Local mode (new-adopter form) untouched** — the existing `DuplicatePeek` + `StrongMatchStrip` already cover that flow well, and discovery mode already writes grants + masks the result in the same pass (`findAdopters.ts:743-797`). Adding a per-composer hint there would be redundant.
+
+### Not changed
+- `DuplicatePeek` left as-is. The "PII bypass" the design phase flagged was a misread — discovery mode auto-writes grants AND applies `maskAdopterContact` + `renderName` to `result.adopter` before returning, so the component renders post-grant, masked-where-applicable data already.
+- `addContactEntry` server action unchanged. The warning is pre-submit client UX; the existing within-record `unlocked_existing` flow continues to handle the same-value-same-adopter case.
+- No schema change, no feature flag, no migration.
+
 ## [2.16.0-23] - 2026-05-30
 
 ### Added
