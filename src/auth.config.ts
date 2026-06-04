@@ -3,7 +3,7 @@ import Google from "next-auth/providers/google"
 import Credentials from "next-auth/providers/credentials"
 import { logger } from "@/lib/logger"
 import { logAudit, ensureUserProfile } from "@/lib/audit"
-import { isAdmin } from "@/config/admins"
+import { isAdminAsync } from "@/config/admins"
 import { checkAdopterLoginGate } from "@/lib/adopterLoginGate"
 import { recordBlockedLogin } from "@/lib/blockedLoginRecorder"
 
@@ -55,7 +55,14 @@ export const authConfig = {
             // gate fails open on DB errors. See src/lib/adopterLoginGate.ts
             // for the full contract.
             const email = user.email || '';
-            if (email && !isAdmin(email)) {
+            // Bypass admins so the gate never blocks them. Uses the async
+            // check so DB-grant admins (user_profiles.role='admin') are
+            // honored, not just BOOTSTRAP_ADMIN_EMAILS — sync isAdmin missed
+            // every admin granted via /admin/users, causing intermittent
+            // /auth-error redirects when their email also lived in some
+            // adopter's contactInfo (v2.17.1). Mirrors the v2.16.0-32 sweep
+            // that fixed the same bug on every admin API route.
+            if (email && !await isAdminAsync(email)) {
                 try {
                     const gate = await checkAdopterLoginGate(email);
                     if (gate.blocked) {
