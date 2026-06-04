@@ -1414,6 +1414,7 @@ export const en = {
         from_contacts_breadcrumb: 'Imported from your contacts',
         vcard_multiple_picked_first: 'Imported the first contact from the file',
         vcard_parse_failed: 'Could not read the contact file',
+        contact_picker_fallback: 'Could not open the contact picker. Try uploading a .vcf instead.',
         go_to_profile_link: '→ View profile',
         // Home page button
         button: 'Import Content',

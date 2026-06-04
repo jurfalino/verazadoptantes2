@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.16.0-39] - 2026-06-04
+
+### Fixed
+- **Android Contact Picker crashed when the user typed in its search box.** Reproduces on the user's Android Chrome device: tap "Desde contactos" → fullscreen native picker opens → type any character in the search field → picker dies. The address-property parser inside Chromium's Contact Picker has been a recurring crash site across Android versions. Dropped `address` from the `navigator.contacts.select(...)` request — only `name`, `tel`, `email` are requested now. Addresses are still parsed on the `.vcf` upload fallback path (which is what most contacts on Android export through anyway) and the wizard's Step 3 lets the user type an address manually. Net effect: stable picker.
+- **Surfaced a hint when the picker fails so the file-picker fallback doesn't feel like a non-sequitur.** Added `import.contact_picker_fallback` toast ("No pude abrir el selector de contactos. Probá subiendo un .vcf en su lugar."), shown in the `catch` block of the Picker API call before the file input opens.
+
 ## [2.16.0-38] - 2026-06-03
 
 ### Fixed

@@ -134,7 +134,16 @@ export default function ContactPickerLauncher({ onPicked, children, className, t
         setPending(true);
         try {
             const picker = (navigator as unknown as { contacts: PickerContactsManager }).contacts;
-            const result = await picker.select(['name', 'tel', 'email', 'address'], { multiple: false });
+            // Request only name + tel + email — NOT address. Reports from the
+            // wild (v2.16.0-39): typing in the picker's search box crashes
+            // the picker when `address` is included in the properties array.
+            // The address-property parser inside Chromium's picker has been
+            // a recurring crash site across Android versions; dropping it
+            // sidesteps the bug. Address parsing still works on the .vcf
+            // upload fallback path (most contacts on Android export with
+            // an ADR field), and the wizard's Step 3 lets the user type
+            // an address manually. Worth the tradeoff: a stable picker.
+            const result = await picker.select(['name', 'tel', 'email'], { multiple: false });
             const parsed = pickerResultToParsed(result);
             if (parsed) {
                 stash(parsed);
@@ -143,7 +152,9 @@ export default function ContactPickerLauncher({ onPicked, children, className, t
         } catch {
             // The Picker API can throw on permission denial or unsupported
             // contexts. Fall back to the file input so the user always has
-            // a way forward.
+            // a way forward — and tell them why so the new sheet that
+            // appears doesn't feel like a non-sequitur.
+            toast.info(t('import.contact_picker_fallback'));
             openFilePicker();
         } finally {
             setPending(false);

@@ -1414,6 +1414,7 @@ export const es = {
         from_contacts_breadcrumb: 'Importado desde tu agenda',
         vcard_multiple_picked_first: 'Importé el primer contacto del archivo',
         vcard_parse_failed: 'No se pudo leer el archivo de contacto',
+        contact_picker_fallback: 'No pude abrir el selector de contactos. Probá subiendo un .vcf en su lugar.',
         // Botón en página principal
         button: 'Importar Contenido',
         // Encabezado de página
