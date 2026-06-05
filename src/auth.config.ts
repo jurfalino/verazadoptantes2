@@ -17,7 +17,21 @@ export const REQUIRED_SESSION_VERSION = 3;
 
 export const authConfig = {
     providers: [
-        Google,
+        // `prompt: 'select_account'` forces Google's account-chooser to render
+        // on every sign-in (v2.17.3) — without it, if the browser already has
+        // an active Google session, OAuth silently picks that account and the
+        // user can't switch accounts or sign in as a different one. The user
+        // experience after sign-out becomes "sign back in with the same
+        // account, no choice." Adding `select_account` makes the standard
+        // chooser appear: pick one of the currently-signed-in Google accounts,
+        // or click "Use another account" to add a new one.
+        Google({
+            authorization: {
+                params: {
+                    prompt: 'select_account',
+                },
+            },
+        }),
         // Dev-only credentials login — accepts any email, never ships to production
         ...(process.env.NODE_ENV !== 'production' ? [
             Credentials({

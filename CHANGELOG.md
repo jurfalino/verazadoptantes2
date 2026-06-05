@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.17.3] - 2026-06-05
+
+### Fixed
+- **Sign-out → "Continue with Google" silently signed back in with the same account.** Without explicit OAuth params, Google uses whatever account is the active session in the browser, so users couldn't switch accounts or sign in as a different one after signing out. Added `prompt: 'select_account'` to the Google provider's `authorization.params` so the account chooser always renders — users see all currently-signed-in Google accounts and a "Use another account" option to add a new one.
+
 ## [2.17.2] - 2026-06-04
 
 ### Fixed
