@@ -127,9 +127,49 @@ function buildSnippet(field: MatchSnippet['field'], text: string | null | undefi
 
 interface DeepMatch { adopterId: string; matchedText: string; }
 
+/**
+ * Search adopter_history for matches against the query tokens (v2.17.2).
+ *
+ * Previously this ran `LIKE %query% ON adopterHistory.changes` — a substring
+ * match against the entire JSON blob of every history row. That blob carries
+ * a lot of metadata that has nothing to do with adopter content:
+ *
+ *   {"contributed_entry":{"type":"phone"}}          // from addContactEntry
+ *   {"appended_from_create_flow":{"appendedFields":[...]}} // from appendToExistingAdopter
+ *   {"adoption_updated":{...}}                      // from adoptions.ts
+ *   {"name":{"from":"...","to":"..."}}              // from saveAdopter
+ *
+ * A search for "Mariela" would match against keys like `appendedFields` or
+ * historic JSON fragments that happen to include the substring without
+ * Mariela ever being part of an adopter's actual data. The bug report:
+ * adopter profiles surfaced as matches when the only "Mariela" in the audit
+ * log was metadata, not adopter content.
+ *
+ * Fix: restrict to specific JSON paths within `changes` that we KNOW carry
+ * name-bearing adopter values:
+ *
+ *   - `$.name.from` / `$.name.to`                    (saveAdopter name change)
+ *   - `$.familyMembers.from` / `$.familyMembers.to`  (saveAdopter family change)
+ *
+ * `status` from/to is also a name field path but holds 1-5 rating strings,
+ * never a person name. `contributed_entry.type` is a fixed enum
+ * ('phone'/'email'/'social'/...) and shouldn't be searchable. Adoption-update
+ * rows aren't surfaced from here at all (searchAdoptionMatches handles
+ * adoption content via the canonical `adoptions` table). D1's SQLite build
+ * supports `json_extract` natively; rows whose JSON shape doesn't include
+ * the requested path return NULL and silently don't match — exactly what we
+ * want for the legacy shapes above.
+ */
 async function searchHistoryMatches(db: any, tokens: string[]): Promise<DeepMatch[]> {
     try {
-        const conditions = tokens.map(t => like(adopterHistory.changes, `%${escapeLike(t)}%`));
+        const NAME_PATHS = ['$.name.from', '$.name.to', '$.familyMembers.from', '$.familyMembers.to'];
+        const conditions = tokens.flatMap(t => {
+            const pattern = `%${escapeLike(t)}%`;
+            return NAME_PATHS.map(p =>
+                sql`json_extract(${adopterHistory.changes}, ${p}) LIKE ${pattern}`
+            );
+        });
+        if (conditions.length === 0) return [];
         const logs = await db.select({ adopterId: adopterHistory.adopterId, changes: adopterHistory.changes })
             .from(adopterHistory)
             .where(conditions.length === 1 ? conditions[0] : or(...conditions))
