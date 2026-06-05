@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.17.3] - 2026-06-05
+
+### Fixed
+- **Sign-out → "Continue with Google" silently signed back in with the same account.** Without explicit OAuth params, Google uses whatever account is the active session in the browser, so users couldn't switch accounts or sign in as a different one after signing out. Added `prompt: 'select_account'` to the Google provider's `authorization.params` so the account chooser always renders — users see all currently-signed-in Google accounts and a "Use another account" option to add a new one.
+
+## [2.17.2] - 2026-06-04
+
+### Fixed
+- **Discovery search surfaced adopter profiles whose only "match" was metadata in the audit log.** `searchHistoryMatches` in `findAdopters.ts` ran a broad `LIKE %query% ON adopterHistory.changes` against the entire JSON blob of every history row. That blob holds a lot of non-content metadata — `{contributed_entry: {type}}`, `{appended_from_create_flow: {appendedFields}}`, etc. — so a search like "Mariela" could match against JSON keys or fragments that have nothing to do with adopter data. Users reported: profile returned as a hit, audit log showed the only "Mariela" was the editor identity / contribution metadata, not anything in the adopter's name, contact info, or family members. Tightened the query to use `json_extract` on the specific paths that carry name-bearing adopter values — `$.name.from/to` and `$.familyMembers.from/to`. Legacy JSON shapes that don't have those paths return NULL and silently don't match.
+
 ## [2.17.1] - 2026-06-04
 
 ### Fixed
