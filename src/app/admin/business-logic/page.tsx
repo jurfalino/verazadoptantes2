@@ -268,43 +268,28 @@ export default async function BusinessLogicPage() {
                 </div>
             </section>
 
-            {/* ── Notificaciones ─────────────────────────────────────────── */}
+            {/* ── Awareness para el dueño ──────────────────────────────── */}
             <section className="space-y-3">
-                <h2 className="text-lg font-bold text-stone-800">Notificaciones al dueño</h2>
+                <h2 className="text-lg font-bold text-stone-800">Awareness de cambios para el dueño</h2>
                 <div className="bg-white rounded-2xl border border-stone-200 p-5 space-y-3 text-sm text-stone-700">
                     <p>
-                        Tipo <code className="text-xs bg-stone-100 px-1 rounded">profile_edited_by_orgmate</code>. Se dispara cuando alguien
-                        que no es el dueño modifica un perfil propiedad del dueño.
+                        Cuando un compañero de org. edita un perfil ajeno, el dueño se entera por dos canales pasivos
+                        (no hay notificación al bell — sería duplicado y ruidoso):
                     </p>
-                    <div className="grid sm:grid-cols-2 gap-3">
-                        <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-3">
-                            <div className="font-semibold text-emerald-800 text-xs uppercase tracking-wider mb-2">Dispara</div>
-                            <ul className="space-y-1 list-disc pl-4 text-xs">
-                                <li><code className="bg-stone-100 px-1 rounded">saveAdopter</code> (edición de campos)</li>
-                                <li><code className="bg-stone-100 px-1 rounded">updateContactEntry</code></li>
-                                <li><code className="bg-stone-100 px-1 rounded">removeContactEntry</code></li>
-                                <li><code className="bg-stone-100 px-1 rounded">saveAdoption</code> (alta de actividad)</li>
-                                <li><code className="bg-stone-100 px-1 rounded">saveImage</code> (alta de foto)</li>
-                                <li><code className="bg-stone-100 px-1 rounded">setProfilePicture</code></li>
-                            </ul>
-                        </div>
-                        <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
-                            <div className="font-semibold text-stone-700 text-xs uppercase tracking-wider mb-2">No dispara</div>
-                            <ul className="space-y-1 list-disc pl-4 text-xs">
-                                <li><code className="bg-stone-100 px-1 rounded">addContactEntry</code> — contribución abierta, sería ruido</li>
-                                <li>El propio dueño editando lo suyo</li>
-                                <li>Editor con email "anonymous"</li>
-                                <li>Perfil sin dueño addressable</li>
-                            </ul>
-                        </div>
-                    </div>
-                    <p>
-                        Dedup determinístico por ventana de 30 min: la misma tupla
-                        <code className="text-xs bg-stone-100 px-1 rounded mx-1">(dueño, adopterId, editor, bucket)</code>
-                        genera UNA fila. Edits subsiguientes UPSERT-ean el body con el último resumen y bumpean
-                        <code className="text-xs bg-stone-100 px-1 rounded mx-1">createdAt</code> para que la campana
-                        re-suba el item al tope. El body NUNCA contiene PII — sólo nombres de campos.
-                    </p>
+                    <ul className="space-y-2 list-disc pl-5">
+                        <li>
+                            <strong>OrgActivityFeed</strong> en <code className="text-xs bg-stone-100 px-1 rounded">/organizations</code>.
+                            Lee <code className="text-xs bg-stone-100 px-1 rounded">audit_log</code> filtrado por emails de miembros de la org,
+                            últimas 30 acciones (<code className="text-xs bg-stone-100 px-1 rounded">adopter_created</code> /
+                            <code className="text-xs bg-stone-100 px-1 rounded">adopter_updated</code> /
+                            <code className="text-xs bg-stone-100 px-1 rounded">adoption_added</code> /
+                            <code className="text-xs bg-stone-100 px-1 rounded">image_uploaded</code> / etc.).
+                        </li>
+                        <li>
+                            <strong>Historial de auditoría en el perfil</strong> (<code className="text-xs bg-stone-100 px-1 rounded">/adopter/[id]</code> → sección "Historial"),
+                            visible a admin / moderador / org-mate. Muestra el timeline completo por registro con quién y qué cambió.
+                        </li>
+                    </ul>
                 </div>
             </section>
 

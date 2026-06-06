@@ -110,22 +110,6 @@ export async function removeContactEntry(
 
         logAudit({ userEmail: actor, action: 'contact_entry_removed', target: adopterId, details: { entryId, type: removed.type } });
 
-        // v2.18.11: owner awareness on non-self contact removals.
-        if (target.addedBy && target.addedBy !== actor) {
-            import('@/app/actions/notifications').then(({ notifyOwnerOfOrgMateChange }) =>
-                notifyOwnerOfOrgMateChange({
-                    adopterId,
-                    adopterName: target.name || '',
-                    ownerEmail: target.addedBy,
-                    editorEmail: actor,
-                    changeKind: 'contact_remove',
-                    summary: `Removió un contacto (${removed.type}).`,
-                })
-            ).catch((e) => logger.warn('notifyOwnerOfOrgMateChange dispatch failed', {
-                adopterId, error: e instanceof Error ? e.message : String(e),
-            }));
-        }
-
         return { ok: true, adopterId, entryId };
     } catch (error) {
         const errorId = logger.error('removeContactEntry failed', error, { adopterId, actor });

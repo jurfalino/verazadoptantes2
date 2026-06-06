@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.18.13] - 2026-06-06
+
+### Removed
+- **Rolled back the `profile_edited_by_orgmate` notification added in v2.18.11.** It duplicated the existing `OrgActivityFeed` on `/organizations`, which already shows recent activity by org members (queries `audit_log` for `adopter_updated` / `adoption_added` / `image_uploaded` / etc.). Two surfaces for the same signal is one too many — the feed is the better fit because it scales to "what's the team up to" rather than per-edit pings during a vetting session. Removed `notifyOwnerOfOrgMateChange` from `src/app/actions/notifications.ts` and dropped the 6 dispatch call sites (saveAdopter, updateContactEntry, removeContactEntry, saveAdoption, saveImage, setProfilePicture). Business-logic reference page updated to describe awareness as "pull from feed + per-adopter audit log" instead of the removed push notification.
+- The rest of v2.18.11 stays — org-mate privileged tier, edit gates, audit-log visibility, creator attribution chip, `isOrgMate` / `pickAttributionOrg` helpers. Those are real net-new and aren't covered by anything else.
+
 ## [2.18.12] - 2026-06-06
 
 ### Added

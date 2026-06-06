@@ -288,25 +288,6 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
                 logger.info('Adopter updated', { adopterId: data.id, changedBy });
                 logAudit({ userEmail: changedBy, action: 'adopter_updated', target: data.id as string, details: changes });
 
-                // v2.18.11: notify the owner when a non-self editor saves
-                // their profile. Helper short-circuits on self-edit and
-                // dedups within a 30-min bucket.
-                const changedFields = Object.keys(changes);
-                if (changedFields.length > 0 && existing.addedBy && existing.addedBy !== changedBy) {
-                    import('@/app/actions/notifications').then(({ notifyOwnerOfOrgMateChange }) =>
-                        notifyOwnerOfOrgMateChange({
-                            adopterId: data.id as string,
-                            adopterName: (data.name as string) || existing.name || '',
-                            ownerEmail: existing.addedBy,
-                            editorEmail: changedBy,
-                            changeKind: 'profile_edit',
-                            summary: `Editó: ${changedFields.join(', ')}`,
-                        })
-                    ).catch((e) => logger.warn('notifyOwnerOfOrgMateChange dispatch failed', {
-                        adopterId: data.id, error: e instanceof Error ? e.message : String(e),
-                    }));
-                }
-
                 // Synchronous (v30): edge-runtime workers can reap a fire-and-forget
                 // tokenize before the per-token INSERTs finish, leaving rows with a
                 // valid tokenHash but an empty token set — invisible to the dedup
