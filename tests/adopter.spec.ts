@@ -231,22 +231,34 @@ test.describe('Adopter Profile', () => {
         // could (and did) ship undetected.
         const animalId = `test-available-bug-${Date.now()}`;
         const animalName = `BugFixture ${Date.now()}`;
+        // Owner MUST match the project's authenticated test user so the
+        // wizard's getAvailableAnimals() query (filtered by
+        // session.user.email) surfaces this row in the picker. Project
+        // `user` runs as testuser@example.com (see playwright.config.ts).
+        const FIXTURE_OWNER = 'testuser@example.com';
 
-        // 1. Seed an available animal owned by the admin user (same one
-        //    auth.setup.ts signs in as for the authed project).
+        // The wrangler D1 CLI returns NULL columns as the literal string
+        // "null" in its JSON output (not actual JSON null). Normalize so
+        // assertions are clear about what they're checking.
+        const isNullish = (v: unknown): boolean =>
+            v === null || v === undefined || v === 'null' || v === '';
+
+        // 1. Seed an available animal owned by the test user. INSERT OR REPLACE
+        //    so a prior run that didn't clean up doesn't break this run.
         execD1(
-            `INSERT INTO adoptions (id, adopter_id, animal_name, species, details, status, record_type, date, added_by) ` +
-            `VALUES ('${animalId}', NULL, '${animalName}', 'dog', 'E2E available→adopted fixture', NULL, 'available', strftime('%s','now'), 'gatitosolivos@gmail.com')`,
+            `INSERT OR REPLACE INTO adoptions (id, adopter_id, animal_name, species, details, status, record_type, date, added_by) ` +
+            `VALUES ('${animalId}', NULL, '${animalName}', 'dog', 'E2E available→adopted fixture', NULL, 'available', strftime('%s','now'), '${FIXTURE_OWNER}')`,
         );
 
         try {
             // 2. Confirm the seed row is what we expect.
             const seededRows = parseD1Rows(execD1(
-                `SELECT id, adopter_id, record_type FROM adoptions WHERE id = '${animalId}'`,
+                `SELECT id, adopter_id, record_type, added_by FROM adoptions WHERE id = '${animalId}'`,
             ));
             expect(seededRows).toHaveLength(1);
-            expect(seededRows[0].adopter_id).toBeNull();
+            expect(isNullish(seededRows[0].adopter_id)).toBe(true);
             expect(seededRows[0].record_type).toBe('available');
+            expect(seededRows[0].added_by).toBe(FIXTURE_OWNER);
 
             // 3. Open the adopter profile (using NUEVA so we don't pollute the
             //    other-spec assertions on María's record set).
@@ -286,7 +298,7 @@ test.describe('Adopter Profile', () => {
             // 9. Belt-and-braces — also assert the row is gone from the
             //    /my-animals "available" filter via the same SQL the API uses.
             const stillAvailableRows = parseD1Rows(execD1(
-                `SELECT id FROM adoptions WHERE id = '${animalId}' AND adopter_id IS NULL AND record_type = 'available'`,
+                `SELECT id FROM adoptions WHERE id = '${animalId}' AND adopter_id IS NULL AND record_type = 'available' AND added_by = '${FIXTURE_OWNER}'`,
             ));
             expect(stillAvailableRows).toHaveLength(0);
         } finally {
