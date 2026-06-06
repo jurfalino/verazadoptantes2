@@ -234,26 +234,9 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     </>
                 )}
 
-                {/* Creator attribution (v2.18.11). For anyone who can see the
-                    profile at all: privileged viewers (owner / admin /
-                    moderator / editor / org-mate) see name + org context;
-                    non-privileged viewers see name only, no org membership
-                    leakage. Suppressed when attribution data is unavailable
-                    (anonymous-created records, DB resolution error). */}
-                {!isNew && adopter && attribution && attribution.creatorName && (
-                    <div className="text-xs text-stone-500 flex flex-wrap items-center gap-x-2 gap-y-1 px-1">
-                        <span className="font-medium text-stone-600">{t('attribution.created_by') || 'Creada por'}</span>
-                        <span className="text-stone-700 font-medium break-all">{attribution.creatorName}</span>
-                        {piiContext?.privileged && attribution.orgName && (
-                            <>
-                                <span aria-hidden className="text-stone-300">·</span>
-                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${isOrgMateOfOwner ? 'bg-teal-50 text-teal-700' : 'bg-stone-100 text-stone-600'}`}>
-                                    {attribution.orgName}
-                                </span>
-                            </>
-                        )}
-                    </div>
-                )}
+                {/* Creator attribution moved into AdopterForm's metadata row
+                    in v2.18.15 — see <AdopterForm attribution> below. Lives
+                    next to the H1 instead of floating mid-page. */}
 
                 {/* Profile Form — owns the contact section internally (via
                     ContactEntriesSection) so the page reads top-down as
@@ -274,6 +257,9 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     isAdmin={isAdmin}
                     formPrefill={formPrefill}
                     hasDuplicateBanner={false}
+                    attribution={attribution}
+                    isOrgMateOfOwner={isOrgMateOfOwner}
+                    isPrivileged={!!piiContext?.privileged}
                     canEdit={!piiContext?.gatingOn || piiContext.privileged}
                     onMaskedContactClick={
                         piiContext?.masked

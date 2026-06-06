@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.18.15] - 2026-06-06
+
+### Changed
+- **Creator attribution chip moved into the profile header's metadata row.** v2.18.11 dropped it as a floating text line between the PII gating panels and the AdopterForm — orphaned mid-page, disconnected from the H1 it described, visually weak. Now it sits as the first item in the existing metadata row inside `AdopterForm`, directly below the H1 alongside country / view count / rating badge. That row is where every record-meta signal already lives; "who created this" is the most identifying meta and earns the first slot. Plumbed via three new optional props on `AdopterForm`: `attribution`, `isOrgMateOfOwner`, `isPrivileged`. The orphaned `<div>` in `AdopterProfileV2` is gone; the chip's privilege gate (privileged sees name + org, strangers see name only) and shared-org accent (teal when viewer & creator share that org) are preserved exactly. Tightened to a person-icon + name + small org pill so it reads as metadata, not prose.
+
 ## [2.18.14] - 2026-06-06
 
 ### Changed
