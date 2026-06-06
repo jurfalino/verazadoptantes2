@@ -10,7 +10,7 @@ import { adopterHistory, adopters as adoptersTable, piiAccessGrants } from '@/db
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { getFeatureFlag } from '@/config/features';
-import { isAdminAsync } from '@/config/admins';
+import { isAdminAsync, isModeratorOrAdminAsync } from '@/config/admins';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { deserializeContactEntries } from '@/lib/contactEntries';
@@ -77,8 +77,13 @@ export async function resolveAdopterVisibility(
     try {
         const db = await getDb();
         if (!db) return NO_ACCESS_VISIBILITY;
-        const [isAdmin, editorRows, grantRows] = await Promise.all([
+        const [isAdmin, isModeratorOrAdmin, editorRows, grantRows] = await Promise.all([
             isAdminAsync(viewerEmail),
+            // v2.18.10: moderators get full privileged PII visibility too.
+            // The helper returns true for admins as well — we derive isModerator
+            // from (isModeratorOrAdmin && !isAdmin) below, but functionally
+            // either flag is sufficient for the resolver's privileged check.
+            isModeratorOrAdminAsync(viewerEmail),
             // Editor status: only kind='edit' rows count. kind='contribution'
             // rows (additive writes via addContactEntry) must NOT promote the
             // writer to editor — that would silently grant full PII visibility.
@@ -100,6 +105,7 @@ export async function resolveAdopterVisibility(
             viewerEmail,
             ownerEmail: adopter.addedBy,
             isAdmin,
+            isModerator: isModeratorOrAdmin && !isAdmin,
             isEditor: editorRows.length > 0,
             grants: grantRows,
         });
@@ -131,8 +137,9 @@ export async function resolveAdoptersVisibility(
     try {
         const db = await getDb();
         if (!db) throw new Error('No database');
-        const [isAdmin, editorRows, grantRows] = await Promise.all([
+        const [isAdmin, isModeratorOrAdmin, editorRows, grantRows] = await Promise.all([
             isAdminAsync(viewerEmail),
+            isModeratorOrAdminAsync(viewerEmail),
             // Same kind='edit' filter as the per-adopter resolver above.
             db.selectDistinct({ id: adopterHistory.adopterId }).from(adopterHistory)
                 .where(and(
@@ -158,6 +165,7 @@ export async function resolveAdoptersVisibility(
                 viewerEmail,
                 ownerEmail: a.addedBy,
                 isAdmin,
+                isModerator: isModeratorOrAdmin && !isAdmin,
                 isEditor: editorSet.has(a.id),
                 grants: grantsByAdopter.get(a.id) ?? [],
             }));

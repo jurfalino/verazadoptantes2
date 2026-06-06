@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.18.10] - 2026-06-06
+
+### Changed
+- **Moderators now get full privileged PII visibility on every adopter profile.** Extended `resolveVisibility` (`src/lib/piiAccess.ts`) to accept an `isModerator` flag and added it to the `privileged` disjunction alongside `isAdmin`, `isEditor`, and owner. Both server resolvers (`resolveAdopterVisibility` + the batch `resolveAdoptersVisibility` in `piiAccessServer.ts`) now fetch `isModeratorOrAdminAsync` in parallel with the existing admin check and pass the derived `isModerator` (we subtract `isAdmin` to keep the two flags disjoint, though either is sufficient for the resolver). Net effect: a moderator sees the "Who has access" disclosure, sees all contact info unmasked, can approve pending PII access requests, and can revoke approved grants — identical read+approve+revoke surface to admins, on every profile in the registry. Admin-only mutations (`setAdopterPublic`, `deleteAdopter`, ownership transfer) remain admin-only.
+
+### Documented
+- **"My Adopters" is org-scoped, not owner-scoped.** Surfaced via a debug session: `getMyAdopters` (`src/app/actions/dashboard.ts:27-31`) returns every adopter owned by any member of any org the viewer belongs to, NOT just records the viewer personally owns. A teammate-owned profile appearing in My Adopters with no "Who has access" section is expected behavior — only the actual `addedBy` (or admin / moderator / editor) gets `privileged`. The other branch that hides the disclosure even for a true owner is `PiiAccessGrantsDisclosure.tsx:22`: zero grants on the record → null render. Not a code change; flagged here so the next pair of eyes doesn't dig the same trench.
+
 ## [2.18.9] - 2026-06-06
 
 ### Added

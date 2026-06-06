@@ -399,6 +399,11 @@ export interface ResolveVisibilityInput {
     /** `adopters.addedBy` of the record. */
     ownerEmail: string | null | undefined;
     isAdmin: boolean;
+    /** Moderator role in user_profiles (v2.18.10). Treated identically to admin
+     *  for PII visibility — full unmasked view, can approve and revoke grants,
+     *  sees the "who has access" disclosure. Same trust level as admin for
+     *  read; admin still owns write actions like `setAdopterPublic`. */
+    isModerator: boolean;
     /** Whether the viewer appears in this adopter's `adopter_history.changedBy`. */
     isEditor: boolean;
     /** The viewer's grants for THIS adopter (any scope; revoked ones are filtered here). */
@@ -423,9 +428,9 @@ export interface Visibility {
  * fetches `isAdmin` / `isEditor` / `grants` (see piiAccessServer.ts).
  */
 export function resolveVisibility(input: ResolveVisibilityInput): Visibility {
-    const { viewerEmail, ownerEmail, isAdmin, isEditor, grants } = input;
+    const { viewerEmail, ownerEmail, isAdmin, isModerator, isEditor, grants } = input;
     const privileged = !!viewerEmail && (
-        isAdmin || isEditor || (!!ownerEmail && viewerEmail === ownerEmail)
+        isAdmin || isModerator || isEditor || (!!ownerEmail && viewerEmail === ownerEmail)
     );
     const live = grants.filter(g => !g.revokedAt);
     const hasAllContactGrant = live.some(g => g.scope === 'all_contact');
