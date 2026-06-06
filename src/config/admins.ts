@@ -47,3 +47,42 @@ export async function isAdminAsync(email: string | null | undefined): Promise<bo
         return false;
     }
 }
+
+/**
+ * Async check: returns true if the email is a bootstrap admin OR has
+ * role='admin' OR role='moderator' in the user_profiles table (v2.18.8).
+ *
+ * Moderator is a narrower privilege than admin: today it grants visibility
+ * into per-adopter audit logs (the History timeline on `/adopter/[id]`),
+ * which the adopter-profile UI hides from regular users to keep the
+ * vetting-tool surface focused. The intent is to add more moderator-scoped
+ * surfaces over time (audit-log read access, flag triage, etc.) without
+ * giving away admin-level write privileges.
+ *
+ * To grant moderator access:
+ *   UPDATE user_profiles SET role = 'moderator' WHERE user_id = (SELECT id FROM user WHERE email = 'user@example.com');
+ * or use the role dropdown in `/admin/users`.
+ *
+ * Falls back to the bootstrap list on DB error (same posture as
+ * `isAdminAsync`).
+ */
+export async function isModeratorOrAdminAsync(email: string | null | undefined): Promise<boolean> {
+    if (!email) return false;
+
+    if (BOOTSTRAP_ADMIN_EMAILS.includes(email)) return true;
+
+    try {
+        const { env } = getRequestContext();
+        if (!env?.DB) return false;
+
+        const result = await env.DB.prepare(
+            `SELECT up.role FROM user_profiles up
+             INNER JOIN user u ON u.id = up.user_id
+             WHERE u.email = ? LIMIT 1`
+        ).bind(email).first<{ role: string }>();
+
+        return result?.role === 'admin' || result?.role === 'moderator';
+    } catch {
+        return false;
+    }
+}

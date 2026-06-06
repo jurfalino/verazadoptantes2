@@ -8,6 +8,7 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import HomepageActionCard from '@/components/HomepageActionCard';
 import ContactPickerLauncher from '@/components/ContactPickerLauncher';
+import GoogleContactsPickerLauncher from '@/components/GoogleContactsPickerLauncher';
 import { useEffect } from 'react';
 import InstallCTA from '@/components/InstallCTA';
 import SocialProofBanner from '@/components/SocialProofBanner';
@@ -40,9 +41,10 @@ export default function HomeClient({ initialConfig }: { initialConfig: Record<st
     const appConfig = initialConfig;
     const contentImportEnabled = appConfig.ENABLE_CONTENT_IMPORT === 'true';
     const contactImportEnabled = appConfig.ENABLE_CONTACT_IMPORT === 'true';
-    // True when EITHER import path is on — drives whether the parent "Importar
+    const googleContactsImportEnabled = appConfig.ENABLE_GOOGLE_CONTACTS_IMPORT === 'true';
+    // True when ANY import path is on — drives whether the parent "Importar
     // perfil" card renders at all and whether the 3-card grid stays 3-col.
-    const anyImportEnabled = contentImportEnabled || contactImportEnabled;
+    const anyImportEnabled = contentImportEnabled || contactImportEnabled || googleContactsImportEnabled;
 
     // Auto-open LoginModal when redirected (session expired or auth required)
     useEffect(() => {
@@ -136,8 +138,8 @@ export default function HomeClient({ initialConfig }: { initialConfig: Record<st
                                     <span aria-hidden="true">→</span>
                                 </button>
                             )}
-                            {/* Divider between the two pills — only when both are on. */}
-                            {contentImportEnabled && contactImportEnabled && (
+                            {/* Divider — render between any two adjacent enabled pills. */}
+                            {contentImportEnabled && (contactImportEnabled || googleContactsImportEnabled) && (
                                 <span aria-hidden="true" className="text-stone-300 hidden sm:inline">·</span>
                             )}
                             {contactImportEnabled && (
@@ -152,6 +154,22 @@ export default function HomeClient({ initialConfig }: { initialConfig: Record<st
                                     <span>{t('home.action_import_contacts_secondary')}</span>
                                     <span aria-hidden="true">→</span>
                                 </ContactPickerLauncher>
+                            )}
+                            {contactImportEnabled && googleContactsImportEnabled && (
+                                <span aria-hidden="true" className="text-stone-300 hidden sm:inline">·</span>
+                            )}
+                            {googleContactsImportEnabled && (
+                                <GoogleContactsPickerLauncher
+                                    testId="import-google-contacts-btn"
+                                    onPicked={() => handleAuthNavigation('/import?contact_import=1')}
+                                    className="inline-flex items-center gap-2 text-sm text-stone-600 hover:text-teal-800 hover:underline underline-offset-4 decoration-teal-400 transition-colors px-3 py-1.5 rounded-full"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5zm9 4a3 3 0 100 6 3 3 0 000-6zm-4.5 9.5h9a4.5 4.5 0 00-9 0z" />
+                                    </svg>
+                                    <span>{t('home.action_import_google_contacts_secondary')}</span>
+                                    <span aria-hidden="true">→</span>
+                                </GoogleContactsPickerLauncher>
                             )}
                         </div>
                     )
@@ -221,6 +239,18 @@ export default function HomeClient({ initialConfig }: { initialConfig: Record<st
                                             </svg>
                                             <span>{t('home.action_import_contacts_btn')}</span>
                                         </ContactPickerLauncher>
+                                    )}
+                                    {googleContactsImportEnabled && (
+                                        <GoogleContactsPickerLauncher
+                                            testId="import-google-contacts-btn"
+                                            onPicked={() => handleAuthNavigation('/import?contact_import=1')}
+                                            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-teal-50 text-teal-800 font-semibold rounded-xl hover:bg-teal-100 transition-colors border border-teal-200 text-sm"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5zm9 4a3 3 0 100 6 3 3 0 000-6zm-4.5 9.5h9a4.5 4.5 0 00-9 0z" />
+                                            </svg>
+                                            <span>{t('home.action_import_google_contacts_btn')}</span>
+                                        </GoogleContactsPickerLauncher>
                                     )}
                                 </div>
                             </div>

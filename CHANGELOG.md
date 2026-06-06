@@ -2,6 +2,84 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.18.8] - 2026-06-06
+
+### Fixed
+- **Adopter history rendered "Metadata update" for every flag add / verification removal.** Both writes in `src/app/actions/flags.ts` populated `changeType / fieldName / newValue / oldValue` — none of which are columns on `adopter_history` (the real shape is `{ id, adopterId, changedBy, changes, changedAt, kind }`). Drizzle silently dropped those keys, so every flag-added and verification-removed row landed with an empty `changes` blob and the renderer rendered the misleading "Metadata update" placeholder forever. Switched both call sites to the canonical `changes: JSON.stringify({ flag_added: { reason, details } })` / `{ flag_removed: { reason, originalFlaggedBy } }` shape every other writer in the codebase uses. Pre-existing rows with the broken shape continue to render as "Metadata update" — only new events are correct.
+- **Audit-log renderer in `AdopterProfileV2` only knew four event shapes.** `adoption_updated`, `adoption_added`, `adoption_deleted`, and `image_deleted` had dedicated render blocks; every other event type (`contributed_entry`, `updated_entry`, `removed_entry`, `appended_from_create_flow`, `contract_signed_via_invitation`, `flag_added`, `flag_removed`) fell into the catch-all `changes = parsed` branch and showed as a generic key/value diff or — for value-less shapes — as nothing at all. Added parser cases + chips + render blocks for all seven, with new i18n keys (`audit.event_*` / `audit.desc_*`) in both `es.ts` and `en.ts`.
+
+### Changed
+- **Per-adopter audit log is now admin + moderator only.** The history timeline at the bottom of `/adopter/[id]` is operational metadata — useful for triage, not for the typical contributor's vetting workflow. Hid the `CollapsibleSection` behind a new `canViewAudit` prop fed from `getIsModeratorOrAdmin()`, a new server helper that bypasses `BOOTSTRAP_ADMIN_EMAILS` and accepts `user_profiles.role IN ('admin','moderator')`.
+- **New `moderator` role.** Today it only unlocks the per-adopter audit log on `/adopter/[id]`; the intent is to add more moderator-scoped surfaces over time (audit-log read access, flag triage) without granting admin-level write privileges. Added to the role select in `/admin/users` with a teal chip color (admin = purple, moderator = teal, contributor = blue, viewer/none = stone). Grant via the role dropdown in the admin UI, or:
+  ```sql
+  UPDATE user_profiles SET role = 'moderator' WHERE user_id = (SELECT id FROM user WHERE email = '…');
+  ```
+
+### Known gaps (deferred follow-up)
+- Several mutations still aren't audit-logged: image upload (`saveImage`), profile-picture set (`setProfilePicture`), public toggle (`setAdopterIsPublic`), and the address / country / source / sourceUrl fields in `saveAdopter` (only `name`, `status`, `familyMembers` make it into the diff today). Not in scope for this release; the renderer + role plumbing land first so a future pass can backfill writers without touching the read side.
+
+## [2.18.7] - 2026-06-06
+
+### Fixed
+- **`/my-animals` listing did not refresh after an available animal was claimed by an adoption.** Prod report: "I added an adoption for [adopter] but the animal is still listed as 'for adoption'." Investigation: when the user picks an animal from the wizard's dropdown, `saveAdoption` runs the correct UPDATE on the row (`recordType: 'available' → 'adoption'`, `adopterId: NULL → <adopter>`). But the success path only called `revalidatePath(\`/adopter/\${targetAdopterId}\`)` — the `/my-animals` route's Next.js cache was untouched, so the user navigating back to that page saw stale data. Added `revalidatePath('/my-animals')` to both the UPDATE branch (when an available row gets claimed) and the INSERT branch (symmetric coverage). Whether this fully resolves the user's specific report depends on prod DB state — the regression test below pins the backend behavior so we'll know.
+
+### Added
+- **E2E regression test for "available animal becomes adopted after wizard save."** The user-reported flow had no functional test guarding it. New test in `tests/adopter.spec.ts`:
+  1. Seeds an available animal owned by the admin test user.
+  2. Opens the wizard from a test adopter's profile via VisitIntentCard.
+  3. Picks the seeded animal in the dropdown via `data-testid="animal-option-<id>"`.
+  4. Walks through the 3-step wizard and saves.
+  5. Asserts via direct D1 query that `adopter_id` is set and `record_type='adoption'` — and that the row no longer matches the `/my-animals` "available" filter.
+  
+  Added `data-testid` attributes to `VisitIntentCard` (intent buttons), `AnimalSelectPicker` (trigger + each option), and the wizard's next/submit buttons to make this and future flows testable without brittle role/text selectors.
+
+## [2.18.6] - 2026-06-06
+
+### Added
+- **Admin users list shows both display name and Google account name when they differ.** v2.18.5 stopped overwriting `user.name` with Google's OAuth-provided value on every sign-in (correct UX), but that also meant the admin oversight surface lost visibility into what Google currently reports. Added a `google_name` column on the `user` table that's refreshed on every sign-in via `COALESCE(?, google_name)` while `name` stays sticky. The `/admin/users` table row (and mobile card) now surfaces a secondary `Google: <value>` line directly under the display name when the two differ; identical-value case is suppressed to avoid noise. Migration `0047_user_google_name.sql` adds the column and seeds it from the current `name` for existing rows — best-effort initial value that self-heals on each user's next sign-in. Schema (`schema.ts:users`) + admin API SELECT + admin page type + render all wired.
+
+## [2.18.5] - 2026-06-06
+
+### Fixed
+- **Display name was reset to Google's value on every sign-in.** `ensureUserProfile` in `lib/audit.ts:138-140` ran `UPDATE user SET name = COALESCE(?, name) WHERE id = ?` with the first argument being whatever Google's OAuth profile reported. Since Google always sends a name, COALESCE picked that value and overwrote any custom name the user had saved via `/settings`. Same file at lines 162-170 already uses the correct "respect override, only fill empty" pattern for geo fields (`COALESCE(existing, ?)`) — the user-name line just had the arguments swapped. Flipped to `name = COALESCE(name, ?)` so a user-saved name sticks and Google's value is only used when we don't have one yet. The `image` column intentionally keeps the original pattern — refreshing the avatar from Google on each sign-in is the standard expectation and we have no UI to override it.
+
+## [2.18.4] - 2026-06-06
+
+### Changed
+- **Contact-entry composer redesigned to mirror the in-row edit UX.** The previous one-stage panel mixed type pills and an input together, which read like a multi-field form to users — leading to the data-loss bug v2.18.1 patched defensively. Replaced with a three-stage flow:
+  - **closed** — just the "+ Agregar contacto" trigger (unchanged).
+  - **pick-type** — clicking the trigger opens a small panel with the prompt "¿Qué dato querés agregar?" and the type pills only. No input field. The first pill (phone) is auto-focused so keyboard users can press Enter to advance.
+  - **editing** — clicking a pill advances to a panel with the input(s) and Cancel + Save buttons styled **identically** to the in-row edit-existing-entry form. A small "↺ cambiar" link in the header returns to pick-type and discards the in-progress input (explicit user action, no auto-commit surprise).
+
+  The v2.18.1 auto-commit-on-pill-switch toast is no longer reachable (pills only appear in pick-type stage when no input exists, so there's nothing to lose). The `ce_autocommit_saved` i18n key is kept as legacy in case any cached client still references it.
+
+  Updated e2e test in `tests/adopter.spec.ts` to exercise the new three-stage flow and the discard-on-cambiar behavior.
+
+## [2.18.3] - 2026-06-06
+
+### Fixed
+- **The X (close) button in the activity-add wizard was reported as unresponsive in prod.** Code-reading the close path didn't surface a deterministic bug — `close()` calls `setIsOpen(false)` and `onClose?.()`, which `VisitIntentCard` handles by clearing `openedRecordType`, and `if (!isOpen) return null` at the top of the wizard should unmount the dialog. Most plausible suspects: (a) the new `AnimalSelectPicker` popover (v2.18.2) using `z-20` could occlude the X's `z-10` in some viewport positions; (b) some bubbled click in a parent re-rendering before the close commits. Shipped a defensive belt-and-braces patch: `e.stopPropagation()` on the X click and bumped its z-index to `z-50`. Added `data-testid="wizard-close"` so future regressions can be guarded by an e2e test.
+
+## [2.18.2] - 2026-06-06
+
+### Fixed
+- **Add-activity wizard's existing-animal picker only showed the animal's name, not its photo.** Used a native HTML `<select>` element — `<option>` can only render text, so rescuers managing many animals had to recognize each one by name alone. Replaced with a custom `AnimalSelectPicker` component that renders a thumbnail (best image per animal, prioritizing the marked-as-profile-picture one and falling back to the most recently uploaded) next to the name and species. Server-side: `getAdoptions` and `getAvailableAnimals` both attach a `thumbnailUrl` per row via a single fan-out query against `adopter_images` (D1-safe, no `inArray`); animals without an uploaded image get a neutral paw-print placeholder so the row height stays consistent.
+
+## [2.18.1] - 2026-06-06
+
+### Fixed
+- **Contact-entry composer silently lost the in-progress value when the user clicked a different type pill.** Reproduced from prod: user opens "Agregar contacto" on a profile, types a phone, then clicks the "Dirección" pill (intending to add an address too), enters address, clicks Save — only the address gets saved. The phone is silently discarded. Root cause: the composer's inputs are scoped to the active type (`composerValue` for non-address, `composerStreet/Locality` for address), but `submitComposer()` only reads the *current* type's fields — the previously-typed phone stayed in React state but was unreachable. Fix (the prod-reported bug): when a pill click would change the active type AND the composer has unsaved content, the current entry is auto-committed first via the existing `addContactEntry` path, then the type switches. A success toast confirms the implicit save (`✓ Guardado · Teléfono → Dirección`). If the commit fails (validation / server error), we stay on the current type so the user can fix it — data is never silently lost. The longer-term fix (Option A — multi-row inline form) is tracked separately.
+
+## [2.18.0] - 2026-06-06
+
+### Added
+- **Import an adopter profile from Google Contacts.** Third option on the homepage import card alongside "Desde un post" + "Desde contactos". Click → Google Identity Services popup → user consents to the `contacts.readonly` scope (incremental authorization — does NOT change the existing sign-in consent dialog) → server-side People API fetch trims the payload to `name + phones + emails + addresses` → modal picker UI with client-side search → chosen contact is stashed via the same `CONTACT_IMPORT_STASH_KEY` the device-contact flow uses, so the wizard's `loadStashedContact` reads it unchanged. No new wizard branches.
+  - Token is fetched per pick session, kept in component state only, discarded on close. No refresh token, no DB row, no persistent identity surface.
+  - Server route `/api/google-contacts/list` is feature-flagged and trims the response shape (drops birthdays/orgs/photos) before it crosses the wire.
+  - Gated by new `ENABLE_GOOGLE_CONTACTS_IMPORT` flag (separate from `ENABLE_CONTACT_IMPORT` because Google's verification process is a long pole — independent rollout cadence). Default off.
+  - While the app's verification for the `contacts.readonly` scope is pending Google review, the flow only works for emails listed as "test users" in Google Cloud Console. Once verified, the flag can be flipped on for all users.
+  - Cleanest UX on Mac / iOS Safari (replaces the Finder-friction `.vcf` upload fallback the device-contacts flow gives those platforms). Also a more reliable source of truth on Android than the local address book (Google Contacts is canonical).
+
 ## [2.17.3] - 2026-06-05
 
 ### Fixed

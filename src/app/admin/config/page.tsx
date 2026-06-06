@@ -38,6 +38,7 @@ interface ConfigData {
         ENABLE_PUBLIC_PROFILES?: string;
         ENABLE_CLEAN_HOMEPAGE?: string;
         ENABLE_CONTACT_IMPORT?: string;
+        ENABLE_GOOGLE_CONTACTS_IMPORT?: string;
         GEMINI_DEFAULT_MODEL?: string;
         SHOWCASE_GLOBAL_VISIBLE?: string;
         SHOWCASE_ORG_VISIBLE?: string;
@@ -71,6 +72,7 @@ const FEATURE_FLAGS = [
     { key: 'ENABLE_PUBLIC_PROFILES', labelKey: 'flag_label_public_profiles', descKey: 'flag_desc_public_profiles' },
     { key: 'ENABLE_CLEAN_HOMEPAGE', labelKey: 'flag_label_clean_homepage', descKey: 'flag_desc_clean_homepage' },
     { key: 'ENABLE_CONTACT_IMPORT', labelKey: 'flag_label_contact_import', descKey: 'flag_desc_contact_import' },
+    { key: 'ENABLE_GOOGLE_CONTACTS_IMPORT', labelKey: 'flag_label_google_contacts_import', descKey: 'flag_desc_google_contacts_import' },
     { key: 'SHOWCASE_GLOBAL_VISIBLE', labelKey: 'flag_label_showcase_global', descKey: 'flag_desc_showcase_global' },
     { key: 'SHOWCASE_ORG_VISIBLE', labelKey: 'flag_label_showcase_org', descKey: 'flag_desc_showcase_org' },
     { key: 'SHOWCASE_USER_VISIBLE', labelKey: 'flag_label_showcase_user', descKey: 'flag_desc_showcase_user' },
@@ -97,6 +99,7 @@ export default function AdminConfigPage() {
         ENABLE_PUBLIC_PROFILES: false,
         ENABLE_CLEAN_HOMEPAGE: false,
         ENABLE_CONTACT_IMPORT: false,
+        ENABLE_GOOGLE_CONTACTS_IMPORT: false,
         SHOWCASE_GLOBAL_VISIBLE: false,
         SHOWCASE_ORG_VISIBLE: false,
         SHOWCASE_USER_VISIBLE: false,
@@ -154,6 +157,7 @@ export default function AdminConfigPage() {
                         ENABLE_PUBLIC_PROFILES: data.config?.ENABLE_PUBLIC_PROFILES === 'true',
                         ENABLE_CLEAN_HOMEPAGE: data.config?.ENABLE_CLEAN_HOMEPAGE === 'true',
                         ENABLE_CONTACT_IMPORT: data.config?.ENABLE_CONTACT_IMPORT === 'true',
+                        ENABLE_GOOGLE_CONTACTS_IMPORT: data.config?.ENABLE_GOOGLE_CONTACTS_IMPORT === 'true',
                         SHOWCASE_GLOBAL_VISIBLE: data.config?.SHOWCASE_GLOBAL_VISIBLE === 'true',
                         SHOWCASE_ORG_VISIBLE: data.config?.SHOWCASE_ORG_VISIBLE === 'true',
                         SHOWCASE_USER_VISIBLE: data.config?.SHOWCASE_USER_VISIBLE === 'true',

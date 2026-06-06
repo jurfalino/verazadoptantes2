@@ -236,6 +236,12 @@ export const users = sqliteTable("user", {
     email: text("email").notNull(),
     emailVerified: integer("emailVerified", { mode: "timestamp_ms" }),
     image: text("image"),
+    // The Google OAuth-provided display name, kept in sync on every sign-in
+    // (v2.18.6). Separate from `name` so the admin oversight UI can show
+    // both "display name" (customizable via /settings) AND "Google account
+    // name" when they differ. See lib/audit.ts:ensureUserProfile and
+    // migration 0047.
+    googleName: text("google_name"),
 });
 
 export const accounts = sqliteTable(

@@ -92,8 +92,22 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
     const canEditEntry = (entry: ContactEntry): boolean =>
         canEditAll || (!!currentUser && !!entry.addedBy && entry.addedBy === currentUser);
 
-    // Add composer state.
-    const [composerOpen, setComposerOpen] = useState(false);
+    // Three-state composer (v2.18.4):
+    //   - 'closed'    → only the "+ Agregar contacto" trigger is visible.
+    //   - 'pick-type' → trigger replaced by a small panel asking "¿Qué dato
+    //                   querés agregar?" with the type pills. No input field.
+    //   - 'editing'   → panel shows the input(s) for the chosen type plus
+    //                   Cancel + Save buttons, styled identically to the
+    //                   in-row edit form (so add and edit feel symmetric).
+    // The previous two-state model (closed + open with pills-and-input
+    // simultaneously) had a UX hazard: the type pill row in the open state
+    // looked like a multi-field form, so users typed a phone, clicked the
+    // address pill expecting "add address too", and silently lost the
+    // phone (patched defensively in v2.18.1 with auto-commit-on-pill-switch
+    // toast — a bandaid). The three-state split eliminates the ambiguity
+    // entirely: pills only fire when no input exists yet, so there's
+    // nothing to lose.
+    const [composerStage, setComposerStage] = useState<'closed' | 'pick-type' | 'editing'>('closed');
     const [composerType, setComposerType] = useState<ContactEntryType>('phone');
     const [composerValue, setComposerValue] = useState('');
     const [composerStreet, setComposerStreet] = useState('');
@@ -131,11 +145,12 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
     const triggerRef = useRef<HTMLButtonElement>(null);
     const wasComposerOpenRef = useRef(false);
     useEffect(() => {
-        if (wasComposerOpenRef.current && !composerOpen) {
+        const isOpenNow = composerStage !== 'closed';
+        if (wasComposerOpenRef.current && !isOpenNow) {
             triggerRef.current?.focus();
         }
-        wasComposerOpenRef.current = composerOpen;
-    }, [composerOpen]);
+        wasComposerOpenRef.current = isOpenNow;
+    }, [composerStage]);
 
     const visibleEntries = entries.filter(e => e.id !== pendingDeleteId);
     const sorted = [...visibleEntries].sort(
@@ -149,10 +164,17 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
 
     function resetComposer() {
         setComposerType('phone');
-        setComposerValue('');
-        setComposerStreet('');
-        setComposerLocality('');
-        setComposerOpen(false);
+        clearComposerInputs();
+        setComposerStage('closed');
+    }
+
+    /** Discard in-progress input + return to the pick-type stage so the
+     *  user can choose a different type. Triggered by the "↺ cambiar"
+     *  link in the editing stage. Per v2.18.4 design, this is a
+     *  deliberate user-action discard — no auto-commit fallback. */
+    function returnToPickType() {
+        clearComposerInputs();
+        setComposerStage('pick-type');
     }
 
     function buildNewEntry(): ContactEntry {
@@ -168,11 +190,33 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         return { id: crypto.randomUUID(), type: composerType, value: composerValue.trim() };
     }
 
-    async function handleAdd() {
-        const hasContent = composerType === 'address'
+    function composerHasContent(): boolean {
+        return composerType === 'address'
             ? (composerStreet.trim().length > 0 || composerLocality.trim().length > 0)
             : composerValue.trim().length > 0;
-        if (!hasContent || composerBusy) return;
+    }
+
+    /** Clear input fields but leave the composer panel open + the current
+     *  active type. Used by the auto-commit path (handlePillClick) which
+     *  needs to keep editing the composer with a different active type. */
+    function clearComposerInputs() {
+        setComposerValue('');
+        setComposerStreet('');
+        setComposerLocality('');
+    }
+
+    /**
+     * Commit the composer's current contents as a new entry. Shared by:
+     *  - handleAdd (Save button): full reset + close composer on success.
+     *  - handlePillClick (auto-commit on type switch, v2.18.1): keep composer
+     *    open and just clear inputs so the user can continue with the new type.
+     *
+     * `silent` suppresses the per-commit success toast so handlePillClick can
+     * show its own transition toast ("✓ Guardado · Teléfono → Dirección")
+     * without doubling up.
+     */
+    async function commitComposer({ silent = false } = {}): Promise<{ ok: boolean }> {
+        if (!composerHasContent() || composerBusy) return { ok: false };
 
         // Local mode (new-adopter creation): mutate in place, emit via onChange.
         // No server action; the parent batches everything through saveAdopter
@@ -180,8 +224,8 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         if (isLocalMode) {
             const newEntry = buildNewEntry();
             onChange!([...entries, newEntry]);
-            resetComposer();
-            return;
+            clearComposerInputs();
+            return { ok: true };
         }
 
         // Server mode (existing adopter): the original addContactEntry path.
@@ -198,31 +242,55 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                 : { adopterId: adopterId!, type: composerType, value: composerValue.trim() };
             const res = await addContactEntry(payload);
             if (res.ok) {
-                resetComposer();
+                clearComposerInputs();
                 router.refresh();
-                // Contextual feedback. The server returns 'appended' for a
-                // brand-new entry, 'unlocked_existing' when the typed value
-                // matched an existing (probably masked) entry and earned the
-                // viewer a fresh entry-scope grant ("you proved you know it,
-                // here it is"), and 'no_change' when the value was already
-                // visible to the viewer. The unlocked-existing toast is the
-                // load-bearing one — without it the user thinks the add
-                // silently did nothing when actually a masked chip is about
-                // to reveal itself in the refreshed list.
-                if (res.status === 'appended') {
-                    toast.success('✓', t('adopter.ce_add_toast_added'));
-                } else if (res.status === 'unlocked_existing') {
-                    toast.success('🔓', t('adopter.ce_add_toast_unlocked'));
+                if (!silent) {
+                    // Contextual feedback. The server returns 'appended' for
+                    // a brand-new entry, 'unlocked_existing' when the typed
+                    // value matched an existing (probably masked) entry and
+                    // earned the viewer a fresh entry-scope grant ("you
+                    // proved you know it, here it is"), and 'no_change' when
+                    // the value was already visible to the viewer. The
+                    // unlocked-existing toast is load-bearing — without it
+                    // the user thinks the add silently did nothing when
+                    // actually a masked chip is about to reveal itself in
+                    // the refreshed list.
+                    if (res.status === 'appended') {
+                        toast.success('✓', t('adopter.ce_add_toast_added'));
+                    } else if (res.status === 'unlocked_existing') {
+                        toast.success('🔓', t('adopter.ce_add_toast_unlocked'));
+                    }
+                    // status === 'no_change' → silent (it would be noise).
                 }
-                // status === 'no_change' → silent (it would be noise).
+                return { ok: true };
             } else {
                 toast.error(t('errors.generic'), res.error || t('adopter.ce_add_error'));
+                return { ok: false };
             }
         } catch (e) {
             toast.error(t('errors.generic'), t('adopter.ce_add_error'), extractErrorId(e));
+            return { ok: false };
         } finally {
             setComposerBusy(false);
         }
+    }
+
+    /** Save button entry-point — commit and close composer on success. */
+    async function handleAdd() {
+        const result = await commitComposer();
+        if (result.ok) resetComposer();
+    }
+
+    /**
+     * Type-pill click handler. With the v2.18.4 three-state composer the
+     * pills only render in the `pick-type` stage when no input value yet
+     * exists — so this handler doesn't need the auto-commit safety net
+     * from v2.18.1: there's nothing to lose. Set the type, advance to the
+     * editing stage, focus the input.
+     */
+    function handlePillClick(newType: ContactEntryType) {
+        setComposerType(newType);
+        setComposerStage('editing');
     }
 
     function startEdit(entry: ContactEntry) {
@@ -540,20 +608,23 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                 primary affordance instead of a faint link tucked at the
                 bottom. Suppressed when an undo bar is up (the deleted entry's
                 temporary absence isn't an empty state). */}
-            {sorted.length === 0 && !pendingDeleteId && !composerOpen && (
+            {sorted.length === 0 && !pendingDeleteId && composerStage === 'closed' && (
                 <p className="text-sm text-stone-500 italic">{t('adopter.ce_empty')}</p>
             )}
 
-            {/* Inline add composer. Collapsed: just the "+ Agregar dato" trigger.
-                Styled as a faint link when entries exist (secondary action) and
-                as a button when the list is empty (primary action — see above).
-                Expanded: type chip row + value input + cancel/add buttons. */}
+            {/* Inline three-stage composer (v2.18.4 — see composerStage docs above):
+                  - closed    → just the "+ Agregar dato" trigger.
+                  - pick-type → prompt + type pills + Cancel. NO input.
+                  - editing   → "Agregando: <type> ↺ cambiar" header + input(s)
+                                + DuplicateHint + Cancel + Save buttons, laid
+                                out identically to the in-row edit form so add
+                                and edit feel symmetric. */}
             <div className="pt-1">
-                {!composerOpen ? (
+                {composerStage === 'closed' && (
                     <button
                         type="button"
                         ref={triggerRef}
-                        onClick={() => setComposerOpen(true)}
+                        onClick={() => setComposerStage('pick-type')}
                         data-testid="ce-add-trigger"
                         className={
                             sorted.length === 0
@@ -564,22 +635,29 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                         <Plus className="w-4 h-4" />
                         {t('adopter.contrib_cta')}
                     </button>
-                ) : (
-                    <div className="space-y-2 border border-stone-200 rounded-md p-3 bg-stone-50">
+                )}
+
+                {composerStage === 'pick-type' && (
+                    <div className="space-y-3 border border-stone-200 rounded-md p-3 bg-stone-50">
+                        <p className="text-sm font-medium text-stone-700">
+                            {t('adopter.ce_compose_prompt')}
+                        </p>
                         <div className="flex flex-wrap gap-1.5">
-                            {COMPOSABLE_TYPES.map(typ => {
+                            {COMPOSABLE_TYPES.map((typ, idx) => {
                                 const Icon = TYPE_ICON[typ];
-                                const active = composerType === typ;
                                 return (
                                     <button
                                         key={typ}
                                         type="button"
-                                        onClick={() => setComposerType(typ)}
-                                        className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition-colors ${
-                                            active
-                                                ? 'bg-teal-600 text-white'
-                                                : 'bg-white border border-stone-300 text-stone-700 hover:bg-stone-100'
-                                        }`}
+                                        onClick={() => handlePillClick(typ)}
+                                        // autoFocus on the first (phone) pill so
+                                        // keyboard users can Enter to advance to
+                                        // the editing stage with phone selected —
+                                        // the common path. Mouse users see no
+                                        // difference. Per user pick on the
+                                        // v2.18.4 plan.
+                                        autoFocus={idx === 0}
+                                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-white border border-stone-300 text-stone-700 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-800 focus:bg-teal-50 focus:border-teal-300 focus:text-teal-800 focus:outline-none transition-colors"
                                         data-testid={`ce-type-${typ}`}
                                     >
                                         <Icon className="w-3 h-3" />
@@ -587,6 +665,41 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                     </button>
                                 );
                             })}
+                        </div>
+                        <div className="flex items-center justify-end">
+                            <button
+                                type="button"
+                                onClick={resetComposer}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-stone-700 bg-stone-100 hover:bg-stone-200 rounded transition-colors"
+                                data-testid="ce-pick-type-cancel"
+                            >
+                                <X className="w-3.5 h-3.5" /> {t('adopter.ce_edit_cancel')}
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {composerStage === 'editing' && (
+                    <div className="space-y-2 border border-stone-200 rounded-md p-3 bg-stone-50">
+                        {/* Header — names the type the user picked and offers
+                            an explicit "↺ cambiar" link to return to the
+                            pick-type stage (discards any in-progress input;
+                            this is a user-initiated action so the discard is
+                            never a surprise). */}
+                        <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs text-stone-600">
+                                <span className="font-medium">{t('adopter.ce_compose_adding_label')}:</span>{' '}
+                                <span className="text-stone-900">{t(`adopter.ce_type_${composerType}`)}</span>
+                            </p>
+                            <button
+                                type="button"
+                                onClick={returnToPickType}
+                                disabled={composerBusy}
+                                className="text-xs text-teal-700 hover:text-teal-900 hover:underline transition-colors disabled:opacity-50"
+                                data-testid="ce-compose-change-type"
+                            >
+                                ↺ {t('adopter.ce_compose_change_type')}
+                            </button>
                         </div>
                         {composerType === 'address' ? (
                             <div className="space-y-2">
@@ -632,10 +745,10 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 excludeAdopterId={adopterId}
                             />
                         )}
-                        {/* Bottom action row — kept structurally identical to
-                            the inline-edit row above (right-aligned, same
-                            sizing, same icons, same Cancel + Save order) so
-                            adding a new entry feels the same as editing one. */}
+                        {/* Action row — structurally identical to the
+                            inline-edit row above (right-aligned, same sizing,
+                            same icons, same Cancel + Save order) so adding
+                            a new entry feels the same as editing one. */}
                         <div className="flex items-center gap-2 justify-end">
                             <button
                                 type="button"

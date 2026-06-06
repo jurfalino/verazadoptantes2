@@ -21,6 +21,7 @@ import { logger } from '@/lib/logger';
 export const PUBLIC_FLAG_KEYS = [
     'ENABLE_CONTENT_IMPORT',
     'ENABLE_CONTACT_IMPORT',
+    'ENABLE_GOOGLE_CONTACTS_IMPORT',
     'ENABLE_ANIMALS_FOR_ADOPTION',
     'ENABLE_SEARCH_CARD_METADATA',
     'ENABLE_MILESTONE_BADGE',
@@ -44,6 +45,7 @@ export const PUBLIC_FLAG_KEYS = [
 export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
     ENABLE_CONTENT_IMPORT: 'false',
     ENABLE_CONTACT_IMPORT: 'false',
+    ENABLE_GOOGLE_CONTACTS_IMPORT: 'false',
     ENABLE_ANIMALS_FOR_ADOPTION: 'false',
     ENABLE_SEARCH_CARD_METADATA: 'true',
     ENABLE_MILESTONE_BADGE: 'true',

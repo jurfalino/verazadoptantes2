@@ -31,14 +31,16 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
             createdAt: new Date()
         });
 
-        // Log to audit history
+        // Log to audit history. Drizzle silently drops unknown column keys,
+        // so the prior `changeType / fieldName / newValue` shape produced rows
+        // with empty `changes` and the renderer rendered them as the
+        // misleading "Metadata update" placeholder. The canonical shape across
+        // every other writer is `changes: JSON.stringify({<event_key>: {...}})`.
         await db.insert(adopterHistory).values({
             id: crypto.randomUUID(),
             adopterId,
             changedBy: flaggedBy,
-            changeType: 'flag_added',
-            fieldName: reason,
-            newValue: details || null,
+            changes: JSON.stringify({ flag_added: { reason, details: details || null } }),
             changedAt: new Date()
         });
 
@@ -141,14 +143,15 @@ export async function removeVerification(adopterId: string, type: 'verified_iden
 
         await db.delete(adopterFlags).where(eq(adopterFlags.id, flag.id));
 
-        // Log to audit history
+        // Same canonical-shape fix as flagAdopter above — the old
+        // changeType/fieldName/oldValue keys aren't columns and Drizzle
+        // dropped them, so verification-removal events rendered as the
+        // "Metadata update" placeholder forever.
         await db.insert(adopterHistory).values({
             id: crypto.randomUUID(),
             adopterId,
             changedBy: currentUser,
-            changeType: 'flag_removed',
-            fieldName: type,
-            oldValue: flag.flaggedBy || null,
+            changes: JSON.stringify({ flag_removed: { reason: type, originalFlaggedBy: flag.flaggedBy || null } }),
             changedAt: new Date()
         });
 

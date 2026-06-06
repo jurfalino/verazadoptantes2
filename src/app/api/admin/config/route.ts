@@ -54,6 +54,7 @@ export async function GET() {
             ENABLE_CONTACT_PASTE: config['ENABLE_CONTACT_PASTE'] || 'true',
             ENABLE_PII_ACCESS_GATING: config['ENABLE_PII_ACCESS_GATING'] || 'false',
             ENABLE_CONTACT_IMPORT: config['ENABLE_CONTACT_IMPORT'] || 'false',
+            ENABLE_GOOGLE_CONTACTS_IMPORT: config['ENABLE_GOOGLE_CONTACTS_IMPORT'] || 'false',
             // v2.16.0-41: admin-overridable Gemini model. Empty string means
             // "use the baked-in default in lib/gemini.ts", which keeps the
             // admin UI's empty-input state meaningful.

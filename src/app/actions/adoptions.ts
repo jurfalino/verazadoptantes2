@@ -1,6 +1,6 @@
 'use server';
 
-import { adopters, adoptions, adopterHistory, adopterFlags } from '@/db/schema';
+import { adopters, adoptions, adopterHistory, adopterFlags, adopterImages } from '@/db/schema';
 import { eq, sql, and } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { logger } from '@/lib/logger';
@@ -55,6 +55,16 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
                     });
                     revalidatePath(`/adopter/${targetAdopterId}`);
                 }
+                // Also revalidate /my-animals whenever an UPDATE touched a row
+                // (v2.18.7). The /my-animals "available" tab filters on
+                // `adopterId IS NULL AND recordType='available'`; linking an
+                // available animal to an adopter (the prod-reported bug —
+                // "the animal is still listed as 'for adoption'") flips both
+                // those conditions, so the row must drop off the page. The
+                // previous code only revalidated the adopter page, leaving
+                // /my-animals serving stale Next.js cache until the user
+                // hard-reloaded.
+                revalidatePath('/my-animals');
             }
             logger.info('Adoption updated', { adoptionId: data.id, adopterId: data.adopterId, changedBy });
             logAudit({ userEmail: changedBy, action: 'adoption_updated', target: data.id as string, details: { adopterId: data.adopterId } });
@@ -141,6 +151,11 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
 
                 revalidatePath(`/adopter/${data.adopterId}`);
             }
+            // Revalidate /my-animals for INSERTs too (v2.18.7) — covers the
+            // "user uploaded a new available animal" path and the
+            // "user added an adoption that should claim that inventory"
+            // path symmetrically. Cheap; no downside to over-revalidating.
+            revalidatePath('/my-animals');
 
             logger.info('Adoption created', { adoptionId: id, adopterId: data.adopterId, species: data.species, changedBy });
             logAudit({ userEmail: changedBy, action: 'adoption_created', target: id, details: { adopterId: data.adopterId, species: data.species, animalName: data.animalName } });
@@ -191,6 +206,45 @@ export async function deleteAdoption(adoptionId: string, adopterId: string) {
     }
 }
 
+/**
+ * Pick the best thumbnail URL for each adoption row and attach it as
+ * `thumbnailUrl` (v2.18.2). Used by the AdoptionFormWizard's existing-animal
+ * picker so the user sees the animal's photo next to the name when choosing —
+ * the previous native `<select>` could only render text. Profile-picture-
+ * marked images win over other images; tiebreak by most-recent upload. We
+ * fan out one query per adoption (D1-safe per CLAUDE.md, no `inArray`).
+ *
+ * The added cost is one extra DB round-trip per animal in the lists, which
+ * runs in parallel — on a typical inventory of ~10 animals that adds well
+ * under 100ms to the load and the visual-recognition win on the picker is
+ * worth it.
+ */
+async function attachAdoptionThumbnails<T extends { id: string }>(
+    db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+    rows: T[],
+): Promise<Array<T & { thumbnailUrl: string | null }>> {
+    if (rows.length === 0) return rows.map(r => ({ ...r, thumbnailUrl: null }));
+    const thumbs = await Promise.all(rows.map(async (r) => {
+        try {
+            const img = await db.select({ url: adopterImages.url })
+                .from(adopterImages)
+                .where(eq(adopterImages.adoptionId, r.id))
+                .orderBy(
+                    sql`${adopterImages.isProfilePicture} DESC`,
+                    sql`${adopterImages.uploadedAt} DESC`,
+                )
+                .limit(1)
+                .get();
+            return { id: r.id, url: img?.url ?? null };
+        } catch {
+            return { id: r.id, url: null };
+        }
+    }));
+    const byId = new Map<string, string | null>();
+    for (const t of thumbs) byId.set(t.id, t.url);
+    return rows.map(r => ({ ...r, thumbnailUrl: byId.get(r.id) ?? null }));
+}
+
 export async function getAdoptions(adopterId: string) {
     try {
         const db = await getDb();
@@ -201,11 +255,12 @@ export async function getAdoptions(adopterId: string) {
             .all();
         // Defensive dedup — protect against SQLite index corruption returning same row twice
         const seen = new Set<string>();
-        return results.filter((r: { id: string }) => {
+        const deduped = results.filter((r: { id: string }) => {
             if (seen.has(r.id)) return false;
             seen.add(r.id);
             return true;
         });
+        return await attachAdoptionThumbnails(db, deduped);
     } catch (error) {
         logger.error('Get adoptions failed', error, { adopterId });
         return [];
@@ -220,10 +275,10 @@ export async function getAvailableAnimals() {
         const session = await auth();
         if (!session?.user?.email) return [];
 
-        return await db.select().from(adoptions)
+        const rows = await db.select().from(adoptions)
             .where(sql`${adoptions.addedBy} = ${session.user.email} AND ${adoptions.adopterId} IS NULL`);
         // We could add status check, but usually available animals are just unlinked.
-
+        return await attachAdoptionThumbnails(db, rows);
     } catch (error) {
         logger.error('getAvailableAnimals failed', error);
         return [];

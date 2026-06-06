@@ -24,7 +24,7 @@ export async function GET(_request: Request) {
         // thousand rows, switch to LEFT JOIN + GROUP BY or precompute the counts.
         const users = await env.DB.prepare(`
             SELECT
-                u.id, u.name, u.email, u.image,
+                u.id, u.name, u.email, u.image, u.google_name AS google_name,
                 p.role, p.notes, p.comms_opt_in,
                 p.last_active_at, p.created_at as first_sign_in,
                 p.country, p.province, p.city, p.timezone,

@@ -98,6 +98,8 @@ export const en = {
         flag_desc_clean_homepage: 'When on, hides the two activity cards on the homepage ("Register an adoption" and "Leave an observation"). Search becomes the sole primary action; the import-from-social affordance stays accessible as a secondary link below the search. Useful to focus the homepage on adopter lookup. Default OFF.',
         flag_label_contact_import: 'Import from contacts',
         flag_desc_contact_import: 'Show the "From contacts" button on the homepage to create a profile by picking a contact from the device address book (Chrome on Android) or uploading a .vcf file (other browsers). Default OFF.',
+        flag_label_google_contacts_import: 'Import from Google Contacts',
+        flag_desc_google_contacts_import: 'Show the "From Google Contacts" button on the homepage to create a profile by picking a contact from the user\'s Google address book. Requires the app to be verified by Google for the `contacts.readonly` scope (while in verification, only works for test users listed in Google Cloud Console). Default OFF.',
         flag_label_showcase_global: 'Public global catalog URL',
         flag_desc_showcase_global: 'On /my-animals, show the public link to the global catalog of all available animals (root "/"). Off by default while the flow is validated.',
         flag_label_showcase_org: 'Public per-org URLs',
@@ -399,10 +401,12 @@ export const en = {
         action_import_btn: 'Import Now',
         action_import_post_btn: 'From a post',
         action_import_contacts_btn: 'From contacts',
+        action_import_google_contacts_btn: 'From Google Contacts',
         // Compact labels used in clean-homepage mode where the two import
         // modes render as paired pills below the search (no card chrome).
         action_import_post_secondary: 'Import from a post',
         action_import_contacts_secondary: 'Import from contacts',
+        action_import_google_contacts_secondary: 'Import from Google Contacts',
         // Legacy key — still read in case any older entry-point references
         // it. Mirrors the post-only label so existing surfaces keep working.
         action_import_secondary: 'Import from a post',
@@ -533,6 +537,15 @@ export const en = {
         ce_add_error: 'Could not add the entry.',
         ce_add_toast_added: 'Entry added',
         ce_add_toast_unlocked: 'You confirmed an existing entry — it’s now unlocked',
+        // Auto-commit toast title for v2.18.1 — see Spanish comment.
+        // Made redundant by the v2.18.4 three-state composer redesign.
+        // Key kept to avoid breaking any cached client that still
+        // references it.
+        ce_autocommit_saved: 'Saved',
+        // Three-state composer (v2.18.4).
+        ce_compose_prompt: 'What do you want to add?',
+        ce_compose_adding_label: 'Adding',
+        ce_compose_change_type: 'Change type',
         dup_hint_checking: 'Checking for matches…',
         dup_hint_one: 'This value already exists on another profile',
         dup_hint_many: 'This value matches {n} profiles',
@@ -821,9 +834,23 @@ export const en = {
         event_adoption_added: 'New Adoption',
         event_adoption_deleted: 'Adoption Deleted',
         event_image_deleted: 'Photo Deleted',
+        event_contributed_entry: 'Contact Added',
+        event_updated_entry: 'Contact Edited',
+        event_removed_entry: 'Contact Removed',
+        event_appended: 'Data Appended',
+        event_contract_signed: 'Contract Signed',
+        event_flag_added: 'Report Added',
+        event_flag_removed: 'Report Removed',
         desc_adoption_added: 'Added record for',
         desc_adoption_deleted: 'Deleted adoption record:',
-        desc_image_deleted: 'Deleted photo'
+        desc_image_deleted: 'Deleted photo',
+        desc_contributed_entry: 'Added contact:',
+        desc_updated_entry: 'Edited contact:',
+        desc_removed_entry: 'Removed contact:',
+        desc_appended: 'Fields appended to profile:',
+        desc_contract_signed: 'Contract signed via invitation for',
+        desc_flag_added: 'Report reason',
+        desc_flag_removed: 'Verification removed'
     },
     ratings: {
         '5': '⭐⭐⭐⭐⭐',
@@ -1418,6 +1445,13 @@ export const en = {
         vcard_multiple_picked_first: 'Imported the first contact from the file',
         vcard_parse_failed: 'Could not read the contact file',
         contact_picker_fallback: 'Could not open the contact picker. Try uploading a .vcf instead.',
+        // Google Contacts picker (v2.18.0)
+        google_contacts_picker_title: 'Pick a contact',
+        google_contacts_search_placeholder: 'Search by name, phone, or email',
+        google_contacts_no_match: 'No contact matches your search.',
+        google_contacts_empty: 'No contacts found in your Google account.',
+        google_contacts_unnamed: '(unnamed)',
+        google_contacts_error: 'Could not connect to Google Contacts. Please try again.',
         // Duplicate-detection UI in the wizard (v2.16.0-43). Replaces the
         // hardcoded English match-type chips that leaked tokenizer field
         // names ("Phone suffix", "Full Name") into the user-facing copy.

@@ -98,6 +98,8 @@ export const es = {
         flag_desc_clean_homepage: 'Cuando está activa, oculta las dos tarjetas de actividad de la homepage ("Registrar una adopción" y "Dejar una observación"). Solo queda la búsqueda como acción principal; el botón de importar desde redes sociales sigue accesible como link secundario debajo de la búsqueda. Útil para enfocar la homepage en consulta de adoptantes. Por defecto desactivada.',
         flag_label_contact_import: 'Importar desde contactos',
         flag_desc_contact_import: 'Mostrar el botón "Desde contactos" en la portada para crear un perfil eligiendo un contacto de la agenda del dispositivo (en Chrome Android) o subiendo un archivo .vcf (en otros navegadores). Por defecto desactivado.',
+        flag_label_google_contacts_import: 'Importar desde Google Contacts',
+        flag_desc_google_contacts_import: 'Mostrar el botón "Desde Google Contacts" en la portada para crear un perfil eligiendo un contacto de la agenda de Google del usuario. Requiere que la app esté verificada por Google para el scope `contacts.readonly` (mientras esté en verificación, solo funciona para usuarios de prueba listados en Google Cloud Console). Por defecto desactivado.',
         flag_label_showcase_global: 'URL pública de catálogo global',
         flag_desc_showcase_global: 'Mostrar en /my-animals el link al catálogo público de todos los animales en adopción (raíz "/"). Por defecto apagado mientras se valida el flujo.',
         flag_label_showcase_org: 'URLs públicas por organización',
@@ -398,10 +400,12 @@ export const es = {
         action_import_btn: 'Importar Ahora',
         action_import_post_btn: 'Desde un post',
         action_import_contacts_btn: 'Desde contactos',
+        action_import_google_contacts_btn: 'Desde Google Contacts',
         // Compact labels used in clean-homepage mode where the two import
         // modes render as paired pills below the search (no card chrome).
         action_import_post_secondary: 'Importar desde un post',
         action_import_contacts_secondary: 'Importar desde contactos',
+        action_import_google_contacts_secondary: 'Importar desde Google Contacts',
         // Legacy key — still read in case any older entry-point references
         // it. Mirrors the post-only label so existing surfaces keep working.
         action_import_secondary: 'Importar desde un post',
@@ -534,6 +538,21 @@ export const es = {
         ce_add_error: 'No se pudo agregar el dato.',
         ce_add_toast_added: 'Dato agregado',
         ce_add_toast_unlocked: 'Reconociste un dato existente — ahora aparece desbloqueado',
+        // Auto-commit toast title for v2.18.1 — when the user has unsaved
+        // content in the composer and clicks a different type pill, the
+        // current entry is saved before switching. The toast body is built
+        // client-side as "<previous-type-label> → <new-type-label>".
+        // Made redundant by the v2.18.4 three-state composer redesign
+        // (type pick and value edit are separate stages, no pill-switch
+        // during edit). Key kept to avoid breaking any cached client that
+        // still references it.
+        ce_autocommit_saved: 'Guardado',
+        // Three-state composer (v2.18.4). Stage 1 ("pick-type") shows
+        // only the type pills; the value input appears in stage 2
+        // ("editing") which mirrors the edit-existing-entry layout.
+        ce_compose_prompt: '¿Qué dato querés agregar?',
+        ce_compose_adding_label: 'Agregando',
+        ce_compose_change_type: 'Cambiar tipo',
         dup_hint_checking: 'Buscando coincidencias…',
         dup_hint_one: 'Este dato ya está en otro perfil',
         dup_hint_many: 'Este dato coincide con {n} perfiles',
@@ -820,9 +839,23 @@ export const es = {
         event_adoption_added: 'Nueva Adopción',
         event_adoption_deleted: 'Adopción Eliminada',
         event_image_deleted: 'Foto Eliminada',
+        event_contributed_entry: 'Contacto Añadido',
+        event_updated_entry: 'Contacto Editado',
+        event_removed_entry: 'Contacto Eliminado',
+        event_appended: 'Datos Añadidos',
+        event_contract_signed: 'Contrato Firmado',
+        event_flag_added: 'Reporte Añadido',
+        event_flag_removed: 'Reporte Removido',
         desc_adoption_added: 'Registro añadido para',
         desc_adoption_deleted: 'Registro de adopción eliminado:',
-        desc_image_deleted: 'Foto eliminada'
+        desc_image_deleted: 'Foto eliminada',
+        desc_contributed_entry: 'Contacto añadido:',
+        desc_updated_entry: 'Contacto editado:',
+        desc_removed_entry: 'Contacto eliminado:',
+        desc_appended: 'Campos agregados al perfil:',
+        desc_contract_signed: 'Contrato firmado por invitación para',
+        desc_flag_added: 'Motivo del reporte',
+        desc_flag_removed: 'Verificación removida'
     },
     ratings: {
         '5': '⭐⭐⭐⭐⭐',
@@ -1418,6 +1451,13 @@ export const es = {
         vcard_multiple_picked_first: 'Importé el primer contacto del archivo',
         vcard_parse_failed: 'No se pudo leer el archivo de contacto',
         contact_picker_fallback: 'No pude abrir el selector de contactos. Probá subiendo un .vcf en su lugar.',
+        // Google Contacts picker (v2.18.0)
+        google_contacts_picker_title: 'Elegí un contacto',
+        google_contacts_search_placeholder: 'Buscar por nombre, teléfono o email',
+        google_contacts_no_match: 'Ningún contacto coincide con tu búsqueda.',
+        google_contacts_empty: 'No encontramos contactos en tu cuenta de Google.',
+        google_contacts_unnamed: '(sin nombre)',
+        google_contacts_error: 'No pude conectarme con Google Contacts. Probá nuevamente.',
         // Duplicate-detection UI in the wizard (v2.16.0-43). Replaces the
         // hardcoded English match-type chips that leaked tokenizer field
         // names ("Phone suffix", "Full Name") into the user-facing copy.
