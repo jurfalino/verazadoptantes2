@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.18.7] - 2026-06-06
+
+### Fixed
+- **`/my-animals` listing did not refresh after an available animal was claimed by an adoption.** Prod report: "I added an adoption for [adopter] but the animal is still listed as 'for adoption'." Investigation: when the user picks an animal from the wizard's dropdown, `saveAdoption` runs the correct UPDATE on the row (`recordType: 'available' → 'adoption'`, `adopterId: NULL → <adopter>`). But the success path only called `revalidatePath(\`/adopter/\${targetAdopterId}\`)` — the `/my-animals` route's Next.js cache was untouched, so the user navigating back to that page saw stale data. Added `revalidatePath('/my-animals')` to both the UPDATE branch (when an available row gets claimed) and the INSERT branch (symmetric coverage). Whether this fully resolves the user's specific report depends on prod DB state — the regression test below pins the backend behavior so we'll know.
+
+### Added
+- **E2E regression test for "available animal becomes adopted after wizard save."** The user-reported flow had no functional test guarding it. New test in `tests/adopter.spec.ts`:
+  1. Seeds an available animal owned by the admin test user.
+  2. Opens the wizard from a test adopter's profile via VisitIntentCard.
+  3. Picks the seeded animal in the dropdown via `data-testid="animal-option-<id>"`.
+  4. Walks through the 3-step wizard and saves.
+  5. Asserts via direct D1 query that `adopter_id` is set and `record_type='adoption'` — and that the row no longer matches the `/my-animals` "available" filter.
+  
+  Added `data-testid` attributes to `VisitIntentCard` (intent buttons), `AnimalSelectPicker` (trigger + each option), and the wizard's next/submit buttons to make this and future flows testable without brittle role/text selectors.
+
 ## [2.18.6] - 2026-06-06
 
 ### Added

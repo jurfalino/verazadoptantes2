@@ -242,6 +242,7 @@ export default function VisitIntentCard({ adopterId, adopterName, avgRating = nu
                         type="button"
                         title={t(`visitIntent.${btn.titleKey}` as never)}
                         aria-label={t(`visitIntent.${btn.labelKey}` as never)}
+                        data-testid={`visit-intent-${btn.intent}`}
                         onClick={() => handleButtonClick(btn.intent)}
                         className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 hover:-translate-y-0.5 active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 flex-1 min-w-0"
                         style={{

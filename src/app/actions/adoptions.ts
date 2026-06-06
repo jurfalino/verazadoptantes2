@@ -55,6 +55,16 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
                     });
                     revalidatePath(`/adopter/${targetAdopterId}`);
                 }
+                // Also revalidate /my-animals whenever an UPDATE touched a row
+                // (v2.18.7). The /my-animals "available" tab filters on
+                // `adopterId IS NULL AND recordType='available'`; linking an
+                // available animal to an adopter (the prod-reported bug —
+                // "the animal is still listed as 'for adoption'") flips both
+                // those conditions, so the row must drop off the page. The
+                // previous code only revalidated the adopter page, leaving
+                // /my-animals serving stale Next.js cache until the user
+                // hard-reloaded.
+                revalidatePath('/my-animals');
             }
             logger.info('Adoption updated', { adoptionId: data.id, adopterId: data.adopterId, changedBy });
             logAudit({ userEmail: changedBy, action: 'adoption_updated', target: data.id as string, details: { adopterId: data.adopterId } });
@@ -141,6 +151,11 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
 
                 revalidatePath(`/adopter/${data.adopterId}`);
             }
+            // Revalidate /my-animals for INSERTs too (v2.18.7) — covers the
+            // "user uploaded a new available animal" path and the
+            // "user added an adoption that should claim that inventory"
+            // path symmetrically. Cheap; no downside to over-revalidating.
+            revalidatePath('/my-animals');
 
             logger.info('Adoption created', { adoptionId: id, adopterId: data.adopterId, species: data.species, changedBy });
             logAudit({ userEmail: changedBy, action: 'adoption_created', target: id, details: { adopterId: data.adopterId, species: data.species, animalName: data.animalName } });

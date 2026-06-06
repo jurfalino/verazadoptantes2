@@ -721,7 +721,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
 
                             <div className="flex justify-between items-center pt-4 border-t border-teal-100/50">
                                 <button type="button" onClick={() => { setIsOpen(false); onClose?.(); }} className="px-4 py-2 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors">{t('common.cancel')}</button>
-                                <button type="button" onClick={handleNextStep1} className="px-6 py-2 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 shadow-md shadow-teal-700/20 transition-all">{t('wizard.next')} →</button>
+                                <button type="button" onClick={handleNextStep1} data-testid="wizard-next-step1" className="px-6 py-2 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 shadow-md shadow-teal-700/20 transition-all">{t('wizard.next')} →</button>
                             </div>
                         </div>
                     )}
@@ -800,7 +800,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
 
                             <div className="flex justify-between items-center pt-4 border-t border-teal-100/50">
                                 <button type="button" onClick={goBack} className="px-4 py-2 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors">← {t('wizard.back')}</button>
-                                <button type="button" onClick={goNext} className="px-6 py-2 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 shadow-md shadow-teal-700/20 transition-all">{t('wizard.next')} →</button>
+                                <button type="button" onClick={goNext} data-testid="wizard-next-step2" className="px-6 py-2 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 shadow-md shadow-teal-700/20 transition-all">{t('wizard.next')} →</button>
                             </div>
                         </div>
                     )}
@@ -880,7 +880,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
 
                             <div className="flex justify-between items-center pt-4 border-t border-teal-100/50">
                                 <button type="button" onClick={goBack} className="px-4 py-2 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors">← {t('wizard.back')}</button>
-                                <button type="button" disabled={loading} onClick={handleSubmit} className="px-6 py-2 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 shadow-md shadow-teal-700/20 disabled:opacity-50 transition-all flex items-center gap-2">
+                                <button type="button" disabled={loading} onClick={handleSubmit} data-testid="wizard-submit" className="px-6 py-2 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 shadow-md shadow-teal-700/20 disabled:opacity-50 transition-all flex items-center gap-2">
                                     {loading ? t('adoption.saving') : (
                                         <>💾 {t('wizard.save_record')}</>
                                     )}

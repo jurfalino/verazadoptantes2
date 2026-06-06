@@ -81,6 +81,7 @@ export default function AnimalSelectPicker({
                 onClick={() => setOpen(o => !o)}
                 aria-haspopup="listbox"
                 aria-expanded={open}
+                data-testid="animal-picker-trigger"
                 className="w-full min-h-[2.5rem] pl-2 pr-10 py-1.5 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none flex items-center gap-2 text-left"
             >
                 {selected ? (
@@ -123,6 +124,7 @@ export default function AnimalSelectPicker({
                                             role="option"
                                             aria-selected={isActive}
                                             onClick={() => handlePick(a.id)}
+                                            data-testid={`animal-option-${a.id}`}
                                             className={`w-full text-left px-2 py-2 flex items-center gap-2 hover:bg-stone-50 focus:bg-stone-50 focus:outline-none transition-colors ${isActive ? 'bg-teal-50' : ''}`}
                                         >
                                             <AnimalThumb url={a.thumbnailUrl} />
