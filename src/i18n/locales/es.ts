@@ -98,6 +98,8 @@ export const es = {
         flag_desc_clean_homepage: 'Cuando está activa, oculta las dos tarjetas de actividad de la homepage ("Registrar una adopción" y "Dejar una observación"). Solo queda la búsqueda como acción principal; el botón de importar desde redes sociales sigue accesible como link secundario debajo de la búsqueda. Útil para enfocar la homepage en consulta de adoptantes. Por defecto desactivada.',
         flag_label_contact_import: 'Importar desde contactos',
         flag_desc_contact_import: 'Mostrar el botón "Desde contactos" en la portada para crear un perfil eligiendo un contacto de la agenda del dispositivo (en Chrome Android) o subiendo un archivo .vcf (en otros navegadores). Por defecto desactivado.',
+        flag_label_google_contacts_import: 'Importar desde Google Contacts',
+        flag_desc_google_contacts_import: 'Mostrar el botón "Desde Google Contacts" en la portada para crear un perfil eligiendo un contacto de la agenda de Google del usuario. Requiere que la app esté verificada por Google para el scope `contacts.readonly` (mientras esté en verificación, solo funciona para usuarios de prueba listados en Google Cloud Console). Por defecto desactivado.',
         flag_label_showcase_global: 'URL pública de catálogo global',
         flag_desc_showcase_global: 'Mostrar en /my-animals el link al catálogo público de todos los animales en adopción (raíz "/"). Por defecto apagado mientras se valida el flujo.',
         flag_label_showcase_org: 'URLs públicas por organización',
@@ -398,10 +400,12 @@ export const es = {
         action_import_btn: 'Importar Ahora',
         action_import_post_btn: 'Desde un post',
         action_import_contacts_btn: 'Desde contactos',
+        action_import_google_contacts_btn: 'Desde Google Contacts',
         // Compact labels used in clean-homepage mode where the two import
         // modes render as paired pills below the search (no card chrome).
         action_import_post_secondary: 'Importar desde un post',
         action_import_contacts_secondary: 'Importar desde contactos',
+        action_import_google_contacts_secondary: 'Importar desde Google Contacts',
         // Legacy key — still read in case any older entry-point references
         // it. Mirrors the post-only label so existing surfaces keep working.
         action_import_secondary: 'Importar desde un post',
@@ -1418,6 +1422,13 @@ export const es = {
         vcard_multiple_picked_first: 'Importé el primer contacto del archivo',
         vcard_parse_failed: 'No se pudo leer el archivo de contacto',
         contact_picker_fallback: 'No pude abrir el selector de contactos. Probá subiendo un .vcf en su lugar.',
+        // Google Contacts picker (v2.18.0)
+        google_contacts_picker_title: 'Elegí un contacto',
+        google_contacts_search_placeholder: 'Buscar por nombre, teléfono o email',
+        google_contacts_no_match: 'Ningún contacto coincide con tu búsqueda.',
+        google_contacts_empty: 'No encontramos contactos en tu cuenta de Google.',
+        google_contacts_unnamed: '(sin nombre)',
+        google_contacts_error: 'No pude conectarme con Google Contacts. Probá nuevamente.',
         // Duplicate-detection UI in the wizard (v2.16.0-43). Replaces the
         // hardcoded English match-type chips that leaked tokenizer field
         // names ("Phone suffix", "Full Name") into the user-facing copy.

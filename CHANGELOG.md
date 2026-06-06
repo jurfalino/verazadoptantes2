@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.18.0] - 2026-06-06
+
+### Added
+- **Import an adopter profile from Google Contacts.** Third option on the homepage import card alongside "Desde un post" + "Desde contactos". Click → Google Identity Services popup → user consents to the `contacts.readonly` scope (incremental authorization — does NOT change the existing sign-in consent dialog) → server-side People API fetch trims the payload to `name + phones + emails + addresses` → modal picker UI with client-side search → chosen contact is stashed via the same `CONTACT_IMPORT_STASH_KEY` the device-contact flow uses, so the wizard's `loadStashedContact` reads it unchanged. No new wizard branches.
+  - Token is fetched per pick session, kept in component state only, discarded on close. No refresh token, no DB row, no persistent identity surface.
+  - Server route `/api/google-contacts/list` is feature-flagged and trims the response shape (drops birthdays/orgs/photos) before it crosses the wire.
+  - Gated by new `ENABLE_GOOGLE_CONTACTS_IMPORT` flag (separate from `ENABLE_CONTACT_IMPORT` because Google's verification process is a long pole — independent rollout cadence). Default off.
+  - While the app's verification for the `contacts.readonly` scope is pending Google review, the flow only works for emails listed as "test users" in Google Cloud Console. Once verified, the flag can be flipped on for all users.
+  - Cleanest UX on Mac / iOS Safari (replaces the Finder-friction `.vcf` upload fallback the device-contacts flow gives those platforms). Also a more reliable source of truth on Android than the local address book (Google Contacts is canonical).
+
 ## [2.17.3] - 2026-06-05
 
 ### Fixed
