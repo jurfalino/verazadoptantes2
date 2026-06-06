@@ -68,13 +68,16 @@ test.describe('Adopter Profile', () => {
 
         await page.getByPlaceholder(/name|nombre/i).fill(uniqueName);
 
-        // Open the composer (its trigger has a stable data-testid). Phone is
-        // the default selected type, so we can type the value straight in.
+        // Open the composer. v2.18.4 redesign: clicking the trigger lands
+        // in the "pick-type" stage (no input visible yet); the user must
+        // explicitly choose a type before the input panel appears. So each
+        // add now requires `ce-add-trigger` → `ce-type-<type>` → fill.
         await page.getByTestId('ce-add-trigger').click();
+        await page.getByTestId('ce-type-phone').click();
         await page.locator('input[placeholder*="2345-6789"], input[placeholder*="+54"]').first().fill('11 2345-6789');
         await page.getByTestId('ce-composer-submit').click();
 
-        // Open the composer again for an email entry, switch type, submit.
+        // Open the composer again for an email entry.
         await page.getByTestId('ce-add-trigger').click();
         await page.getByTestId('ce-type-email').click();
         await page.locator('input[placeholder*="@example.com"], input[placeholder*="name@"]').first().fill('juan.contacto@example.com');
@@ -98,43 +101,42 @@ test.describe('Adopter Profile', () => {
         await expect(page.getByText('juan.contacto@example.com')).toBeVisible({ timeout: 30000 });
     });
 
-    test('Composer auto-commits previous entry when switching types via pill click (v2.18.1)', async ({ page }) => {
-        // Prod-reported bug: user opens composer, types a phone, then clicks
-        // the address pill (intending to add address too), types address,
-        // clicks Save — only the address gets saved; the phone is silently
-        // dropped. Fix B auto-commits the in-progress entry before
-        // switching types so neither value is lost.
-        const uniqueName = `Contacto Switch ${Date.now()}`;
+    test('Composer three-stage flow — change-type discards in-progress input (v2.18.4)', async ({ page }) => {
+        // v2.18.4 redesign: clicking the trigger lands in the "pick-type"
+        // stage with no input visible. Picking a pill advances to the
+        // "editing" stage with input(s) + Save/Cancel laid out identically
+        // to the in-row edit form. The "↺ cambiar" link returns to
+        // pick-type and DISCARDS any in-progress input — explicit user
+        // action, no auto-commit hack from v2.18.1 since pills no longer
+        // appear during editing so there's no silent-discard scenario.
+        const uniqueName = `Contacto Compose ${Date.now()}`;
 
         await page.goto('/adopter/create');
         await dismissCountryBanner(page);
 
         await page.getByPlaceholder(/name|nombre/i).fill(uniqueName);
 
-        // Open the composer. Default active type is `phone`.
         await page.getByTestId('ce-add-trigger').click();
+        // Pick-type stage: no input visible yet. The Save submit button
+        // shouldn't render either — guard against it for regression sake.
+        await expect(page.getByTestId('ce-composer-submit')).toHaveCount(0);
 
-        // Step 1: type a phone value while the composer is on `phone`.
-        await page.locator('input[placeholder*="2345-6789"], input[placeholder*="+54"]').first().fill('11 5555-1234');
-
-        // Step 2: click the `address` pill WITHOUT clicking Save first. This
-        // is the exact prod-reported sequence. Pre-fix, the typed phone is
-        // silently discarded; post-fix, it auto-commits before the pill
-        // switch resolves.
+        // Pick address, type something, then "↺ cambiar" → input is wiped,
+        // pills are visible again. Switch to phone and save successfully.
         await page.getByTestId('ce-type-address').click();
+        await page.locator('input[placeholder*="Calle"], input[placeholder*="Street"]').first().fill('THROWAWAY ADDRESS');
+        await page.getByTestId('ce-compose-change-type').click();
 
-        // Step 3: now type an address and click Save.
-        await page.locator('input[placeholder*="Calle"], input[placeholder*="Street"]').first().fill('Avenida Test 123');
+        // Back in pick-type. Pick phone and submit a real value.
+        await page.getByTestId('ce-type-phone').click();
+        await page.locator('input[placeholder*="2345-6789"], input[placeholder*="+54"]').first().fill('11 5555-1234');
         await page.getByTestId('ce-composer-submit').click();
 
-        // BOTH chips should now exist in the section. Pre-fix only the
-        // address would be present (count=1) — this assertion is what
-        // makes the regression visible if the fix ever regresses.
+        // Exactly ONE chip — the address draft was discarded by "cambiar".
         const chips = page.getByTestId('ce-chip');
-        await expect(chips).toHaveCount(2, { timeout: 10000 });
+        await expect(chips).toHaveCount(1, { timeout: 10000 });
 
-        // Save the adopter to confirm the entries persist through the
-        // create flow (local-mode auto-commit landed in `entries`).
+        // Save the adopter end-to-end to confirm the entry persists.
         await page.getByRole('button', { name: /save|guardar|create|crear/i }).click();
         const createAnywayBtn = page.getByRole('button', { name: /Create new profile anyway|Crear perfil nuevo/i });
         try {
@@ -144,10 +146,10 @@ test.describe('Adopter Profile', () => {
             // No duplicates — fine.
         }
 
-        // The saved profile shows both the phone and the address.
+        // The saved profile has the phone but NOT the throwaway address.
         await expect(page.getByRole('heading', { name: uniqueName })).toBeVisible({ timeout: 30000 });
         await expect(page.getByText('11 5555-1234')).toBeVisible({ timeout: 30000 });
-        await expect(page.getByText('Avenida Test 123')).toBeVisible({ timeout: 30000 });
+        await expect(page.getByText('THROWAWAY ADDRESS')).toHaveCount(0);
     });
 
     test('Edit adopter name', async ({ page }) => {

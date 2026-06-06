@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.18.4] - 2026-06-06
+
+### Changed
+- **Contact-entry composer redesigned to mirror the in-row edit UX.** The previous one-stage panel mixed type pills and an input together, which read like a multi-field form to users — leading to the data-loss bug v2.18.1 patched defensively. Replaced with a three-stage flow:
+  - **closed** — just the "+ Agregar contacto" trigger (unchanged).
+  - **pick-type** — clicking the trigger opens a small panel with the prompt "¿Qué dato querés agregar?" and the type pills only. No input field. The first pill (phone) is auto-focused so keyboard users can press Enter to advance.
+  - **editing** — clicking a pill advances to a panel with the input(s) and Cancel + Save buttons styled **identically** to the in-row edit-existing-entry form. A small "↺ cambiar" link in the header returns to pick-type and discards the in-progress input (explicit user action, no auto-commit surprise).
+
+  The v2.18.1 auto-commit-on-pill-switch toast is no longer reachable (pills only appear in pick-type stage when no input exists, so there's nothing to lose). The `ce_autocommit_saved` i18n key is kept as legacy in case any cached client still references it.
+
+  Updated e2e test in `tests/adopter.spec.ts` to exercise the new three-stage flow and the discard-on-cambiar behavior.
+
 ## [2.18.3] - 2026-06-06
 
 ### Fixed

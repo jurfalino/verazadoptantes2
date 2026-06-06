@@ -542,7 +542,17 @@ export const es = {
         // content in the composer and clicks a different type pill, the
         // current entry is saved before switching. The toast body is built
         // client-side as "<previous-type-label> → <new-type-label>".
+        // Made redundant by the v2.18.4 three-state composer redesign
+        // (type pick and value edit are separate stages, no pill-switch
+        // during edit). Key kept to avoid breaking any cached client that
+        // still references it.
         ce_autocommit_saved: 'Guardado',
+        // Three-state composer (v2.18.4). Stage 1 ("pick-type") shows
+        // only the type pills; the value input appears in stage 2
+        // ("editing") which mirrors the edit-existing-entry layout.
+        ce_compose_prompt: '¿Qué dato querés agregar?',
+        ce_compose_adding_label: 'Agregando',
+        ce_compose_change_type: 'Cambiar tipo',
         dup_hint_checking: 'Buscando coincidencias…',
         dup_hint_one: 'Este dato ya está en otro perfil',
         dup_hint_many: 'Este dato coincide con {n} perfiles',

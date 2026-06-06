@@ -537,11 +537,15 @@ export const en = {
         ce_add_error: 'Could not add the entry.',
         ce_add_toast_added: 'Entry added',
         ce_add_toast_unlocked: 'You confirmed an existing entry — it’s now unlocked',
-        // Auto-commit toast title for v2.18.1 — when the user has unsaved
-        // content in the composer and clicks a different type pill, the
-        // current entry is saved before switching. The toast body is built
-        // client-side as "<previous-type-label> → <new-type-label>".
+        // Auto-commit toast title for v2.18.1 — see Spanish comment.
+        // Made redundant by the v2.18.4 three-state composer redesign.
+        // Key kept to avoid breaking any cached client that still
+        // references it.
         ce_autocommit_saved: 'Saved',
+        // Three-state composer (v2.18.4).
+        ce_compose_prompt: 'What do you want to add?',
+        ce_compose_adding_label: 'Adding',
+        ce_compose_change_type: 'Change type',
         dup_hint_checking: 'Checking for matches…',
         dup_hint_one: 'This value already exists on another profile',
         dup_hint_many: 'This value matches {n} profiles',
