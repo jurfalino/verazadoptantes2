@@ -2,6 +2,33 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.18.11] - 2026-06-06
+
+### Added — Org collaboration
+- **Org-mates now have full peer access to teammate profiles.** People who share an organization are treated as co-owners for read + write across every gate that today says "owner or admin":
+  - **PII read** — `resolveVisibility` (`src/lib/piiAccess.ts`) gains an `isOrgMate` input that joins the `privileged` disjunction. Server resolvers (`piiAccessServer.ts`) fetch it in parallel — the single-adopter path does a per-record `isOrgMate(viewer, owner)` query, the batch path resolves the viewer's full org-member email set once and does a `Set.has(ownerEmail)` check per adopter. Net effect: org-mates see unmasked contact, the "Who has access" disclosure, can approve PII requests, and can revoke grants on teammate profiles — same surface admins/moderators got.
+  - **Edit gates** — `canEditAdopterRecord` (used by `saveAdopter`), `appendToExistingAdopter`, `updateContactEntry`, and `removeContactEntry` all gain an `actorIsOrgMate` disjunct. Org-mates can save core record edits, update existing contact entries, and remove entries — symmetric with the owner.
+  - **Audit log** — the per-adopter timeline (admin/moderator-gated since v2.18.8) now also unlocks for org-mates. `canViewAudit` on the profile page is `isModerator || isOrgMateOfOwner`.
+  - **Delete record stays owner-only.** This is the one carve-out. Soft-delete is destructive; the audit log + notification system doesn't help recover from "teammate clicked the wrong button at 11pm". Admin override remains.
+- **Creator attribution chip below the adopter name.** A small `Creada por Juan Gómez · Rescate Buenos Aires` line surfaces who built the profile and from which org. Two visibility tiers:
+  - **Privileged viewers** (owner / admin / moderator / editor / org-mate) see name + org. When the viewer and creator share that org, the chip is teal-accented to read as "this is one of my teammates".
+  - **Non-privileged viewers** (public profile holders, search-match grant holders) see the creator name only; the org is suppressed — organization membership shouldn't leak to anonymous searchers.
+  - Org is picked via `pickAttributionOrg`: prefer a shared org with the viewer, fall back to the creator's earliest-joined org. `src/lib/orgMembership.ts` is the new home for these helpers (also exports `isOrgMate` and `getOrgsForEmail`).
+- **Owner awareness on non-self edits.** When a non-owner editor touches the profile, the owner gets a single bell notification linking to `/adopter/<id>#history`. New type `profile_edited_by_orgmate`, fired from `saveAdopter`, `updateContactEntry`, `removeContactEntry`, `saveAdoption`, `saveImage`, and `setProfilePicture`. **Quiet on `addContactEntry`** — that's the open-contribution path and would generate spam during vetting sessions; owners see those in the audit log if they look.
+  - **30-minute deterministic-id dedup.** Within a bucket, the same `(owner, adopter, editor)` tuple UPSERTs the existing notification — body updates to the latest summary, `createdAt` bumps so the bell re-surfaces it. A teammate editing for 10 minutes produces ONE bell row, not eight.
+  - **No PII in the bell body.** Summary lines say *what* changed ("Editó: name, familyMembers") not the values themselves. The audit log behind the link has the diff.
+  - Trade-off: per-bucket dedup, not sliding window. An edit at 11:59 + 12:01 falls in different buckets and produces two rows. Acceptable for v1; a true sliding-window dedup is more code for marginal gain. Flagged as a follow-up if the bell gets noisy.
+
+### Engineering
+- New `src/lib/orgMembership.ts` — `isOrgMate`, `getOrgsForEmail`, `pickAttributionOrg`. Each fails closed-or-empty on DB errors so a transient D1 hiccup doesn't lock collaborators out of teammate profiles.
+- `notifyOwnerOfOrgMateChange` lives at the bottom of `src/app/actions/notifications.ts` and is the single fan-in for the awareness layer. It's safe to call unconditionally — the helper short-circuits on self-edit / anonymous editor / anonymous owner.
+- New i18n keys `attribution.created_by` in `es.ts` + `en.ts`.
+- Unit test in `piiAccess.test.ts` adds `isOrgMate` coverage to the "all privileged paths" check; 104 tests pass.
+
+### Known carve-outs
+- **Delete record stays owner-only.** See above; intentional.
+- **No "X new edits since your last visit" sticky banner.** `logProfileView` already records the data we'd need for it; surface deferred to a follow-up because the bell-notification flow covers the immediate awareness need.
+
 ## [2.18.10] - 2026-06-06
 
 ### Changed

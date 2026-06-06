@@ -67,10 +67,13 @@ export async function updateContactEntry(
         // Entries with no `addedBy` (legacy / blob-migrated / pre-2.16.0-9)
         // stay owner+admin-only by virtue of failing the third check.
         const isOwner = target.addedBy === actor;
-        const actorIsAdmin = await isAdminAsync(actor);
+        const [actorIsAdmin, actorIsOrgMate] = await Promise.all([
+            isAdminAsync(actor),
+            (await import('@/lib/orgMembership')).isOrgMate(actor, target.addedBy),
+        ]);
         const isOwnContribution = !!original.addedBy && original.addedBy === actor;
-        if (!isOwner && !actorIsAdmin && !isOwnContribution) {
-            logger.warn('updateContactEntry: not owner/admin/contributor', { adopterId, actor, entryId });
+        if (!isOwner && !actorIsAdmin && !actorIsOrgMate && !isOwnContribution) {
+            logger.warn('updateContactEntry: not owner/admin/org-mate/contributor', { adopterId, actor, entryId });
             return { ok: false, error: 'Not authorized to edit this entry.' };
         }
 
@@ -132,6 +135,22 @@ export async function updateContactEntry(
         });
 
         logAudit({ userEmail: actor, action: 'contact_entry_updated', target: adopterId, details: { entryId, type: updated.type } });
+
+        // v2.18.11: owner awareness on non-self contact edits.
+        if (target.addedBy && target.addedBy !== actor) {
+            import('@/app/actions/notifications').then(({ notifyOwnerOfOrgMateChange }) =>
+                notifyOwnerOfOrgMateChange({
+                    adopterId,
+                    adopterName: target.name || '',
+                    ownerEmail: target.addedBy,
+                    editorEmail: actor,
+                    changeKind: 'contact_update',
+                    summary: `Editó un contacto (${updated.type}).`,
+                })
+            ).catch((e) => logger.warn('notifyOwnerOfOrgMateChange dispatch failed', {
+                adopterId, error: e instanceof Error ? e.message : String(e),
+            }));
+        }
 
         return { ok: true, adopterId, entryId };
     } catch (error) {

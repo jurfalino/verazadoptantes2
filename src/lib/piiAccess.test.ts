@@ -125,7 +125,7 @@ describe('hashEntryValue', () => {
 });
 
 describe('resolveVisibility', () => {
-    const base = { isAdmin: false, isModerator: false, isEditor: false, grants: [] as PiiGrantRow[] };
+    const base = { isAdmin: false, isModerator: false, isOrgMate: false, isEditor: false, grants: [] as PiiGrantRow[] };
 
     it('owner gets full visibility, nothing masked', () => {
         const v = resolveVisibility({ ...base, viewerEmail: 'o@x.com', ownerEmail: 'o@x.com' });
@@ -134,9 +134,11 @@ describe('resolveVisibility', () => {
         expect(v.nothingMasked).toBe(true);
     });
 
-    it('admin, moderator, and editor all get full visibility', () => {
+    it('admin, moderator, org-mate, and editor all get full visibility', () => {
         expect(resolveVisibility({ ...base, viewerEmail: 'a@x.com', ownerEmail: 'o@x.com', isAdmin: true }).nothingMasked).toBe(true);
         expect(resolveVisibility({ ...base, viewerEmail: 'm@x.com', ownerEmail: 'o@x.com', isModerator: true }).privileged).toBe(true);
+        expect(resolveVisibility({ ...base, viewerEmail: 'team@x.com', ownerEmail: 'o@x.com', isOrgMate: true }).privileged).toBe(true);
+        expect(resolveVisibility({ ...base, viewerEmail: 'team@x.com', ownerEmail: 'o@x.com', isOrgMate: true }).nothingMasked).toBe(true);
         expect(resolveVisibility({ ...base, viewerEmail: 'e@x.com', ownerEmail: 'o@x.com', isEditor: true }).nothingMasked).toBe(true);
     });
 
@@ -332,7 +334,7 @@ describe('renderName', () => {
 });
 
 describe('resolveVisibility — name_token grants', () => {
-    const base = { isAdmin: false, isModerator: false, isEditor: false, grants: [] as PiiGrantRow[] };
+    const base = { isAdmin: false, isModerator: false, isOrgMate: false, isEditor: false, grants: [] as PiiGrantRow[] };
 
     it('populates unlockedNameTokenHashes from scope=name_token grants', () => {
         const h = hashNameToken('Maria');

@@ -40,9 +40,22 @@ interface AdopterProfileV2Props {
     stats?: AdopterStats | null;
     avgRating?: number | null;
     isAdmin?: boolean;
-    /** True when the viewer is an admin OR moderator (v2.18.8). Gates the
-     *  per-adopter history timeline — regular contributors don't see it. */
+    /** True when the viewer is an admin / moderator / org-mate of the owner
+     *  (v2.18.8 + extended in v2.18.11). Gates the per-adopter history
+     *  timeline — regular non-collaborating contributors don't see it. */
     canViewAudit?: boolean;
+    /** v2.18.11: true when the viewer shares an org with the adopter's owner.
+     *  Drives the "you can edit this" affordances + the attribution chip's
+     *  shared-org accent. */
+    isOrgMateOfOwner?: boolean;
+    /** v2.18.11: pre-resolved creator name + org for the attribution chip
+     *  below the adopter name. null means the chip is suppressed (creation
+     *  context unknown, e.g. anonymous-created or DB error). */
+    attribution?: {
+        creatorName: string;
+        orgName: string | null;
+        orgSlug: string | null;
+    } | null;
     adoptionConfig?: AdoptionConfig;
     duplicateCandidates?: DuplicateCandidateInfo[];
     formPrefill?: FormSubmissionPrefill | null;
@@ -50,7 +63,7 @@ interface AdopterProfileV2Props {
     piiContext?: AdopterPiiContext | null;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null }: AdopterProfileV2Props) {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const toast = useShowToast();
@@ -219,6 +232,27 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             <PiiAccessGrantsDisclosure grants={piiContext.accessGrants} />
                         )}
                     </>
+                )}
+
+                {/* Creator attribution (v2.18.11). For anyone who can see the
+                    profile at all: privileged viewers (owner / admin /
+                    moderator / editor / org-mate) see name + org context;
+                    non-privileged viewers see name only, no org membership
+                    leakage. Suppressed when attribution data is unavailable
+                    (anonymous-created records, DB resolution error). */}
+                {!isNew && adopter && attribution && attribution.creatorName && (
+                    <div className="text-xs text-stone-500 flex flex-wrap items-center gap-x-2 gap-y-1 px-1">
+                        <span className="font-medium text-stone-600">{t('attribution.created_by') || 'Creada por'}</span>
+                        <span className="text-stone-700 font-medium break-all">{attribution.creatorName}</span>
+                        {piiContext?.privileged && attribution.orgName && (
+                            <>
+                                <span aria-hidden className="text-stone-300">·</span>
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${isOrgMateOfOwner ? 'bg-teal-50 text-teal-700' : 'bg-stone-100 text-stone-600'}`}>
+                                    {attribution.orgName}
+                                </span>
+                            </>
+                        )}
+                    </div>
                 )}
 
                 {/* Profile Form — owns the contact section internally (via

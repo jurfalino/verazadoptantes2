@@ -23,14 +23,9 @@ export default async function AdopterPage({
     // Batch 1a: Auth (mandatory — failure means redirect to login)
     let currentUser = '';
     let isAdmin = false;
-    let canViewAudit = false;
+    let isModeratorOrAdmin = false;
     try {
-        // canViewAudit (v2.18.8) is the "admin OR moderator" gate that hides
-        // the per-adopter history timeline from regular contributors —
-        // adopter-profile UX stays focused on rating + activity, not who
-        // edited what when. Computed in parallel with the isAdmin check so
-        // the page-load adds no extra latency.
-        [currentUser, isAdmin, canViewAudit] = await Promise.all([
+        [currentUser, isAdmin, isModeratorOrAdmin] = await Promise.all([
             getUser(),
             getIsAdmin(),
             getIsModeratorOrAdmin(),
@@ -123,6 +118,38 @@ export default async function AdopterPage({
     for (const img of images) { if (img.addedBy) editorEmails.push(img.addedBy); }
     const userNameMap = await resolveUserNames(editorEmails);
 
+    // v2.18.11: org-mate awareness — extends audit-log visibility from
+    // admin/moderator (v2.18.8) to also include org-mates of the owner.
+    // And computes the creator-attribution chip's payload (name + org)
+    // for any privileged viewer.
+    let isOrgMateOfOwner = false;
+    let attribution: { creatorName: string; orgName: string | null; orgSlug: string | null } | null = null;
+    if (!isNew && adopter?.addedBy) {
+        try {
+            const { isOrgMate, pickAttributionOrg } = await import('@/lib/orgMembership');
+            const [mate, org, creatorName] = await Promise.all([
+                isOrgMate(currentUser, adopter.addedBy),
+                pickAttributionOrg(adopter.addedBy, currentUser),
+                (async () => {
+                    const map = await resolveUserNames([adopter.addedBy as string]);
+                    return map[adopter.addedBy as string] ?? (adopter.addedBy as string).split('@')[0];
+                })(),
+            ]);
+            isOrgMateOfOwner = mate;
+            attribution = {
+                creatorName,
+                orgName: org?.name ?? null,
+                orgSlug: org?.slug ?? null,
+            };
+        } catch (e) {
+            logger.warn('adopter page: org-mate/attribution resolution failed', {
+                adopterId: id, viewer: currentUser,
+                error: e instanceof Error ? e.message : String(e),
+            });
+        }
+    }
+    const canViewAudit = isModeratorOrAdmin || isOrgMateOfOwner;
+
     return (
         <AdopterProfileV2
             id={id}
@@ -138,6 +165,8 @@ export default async function AdopterPage({
             avgRating={avgRating}
             isAdmin={isAdmin}
             canViewAudit={canViewAudit}
+            isOrgMateOfOwner={isOrgMateOfOwner}
+            attribution={attribution}
             adoptionConfig={adoptionConfig}
             duplicateCandidates={dupCandidates}
             formPrefill={formPrefill}

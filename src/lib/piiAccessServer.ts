@@ -11,6 +11,8 @@ import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { getFeatureFlag } from '@/config/features';
 import { isAdminAsync, isModeratorOrAdminAsync } from '@/config/admins';
+import { isOrgMate } from '@/lib/orgMembership';
+import { getOrgMemberEmailsFor } from '@/app/actions/organizations';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { deserializeContactEntries } from '@/lib/contactEntries';
@@ -77,13 +79,12 @@ export async function resolveAdopterVisibility(
     try {
         const db = await getDb();
         if (!db) return NO_ACCESS_VISIBILITY;
-        const [isAdmin, isModeratorOrAdmin, editorRows, grantRows] = await Promise.all([
+        const [isAdmin, isModeratorOrAdmin, isOrgMateOfOwner, editorRows, grantRows] = await Promise.all([
             isAdminAsync(viewerEmail),
             // v2.18.10: moderators get full privileged PII visibility too.
-            // The helper returns true for admins as well — we derive isModerator
-            // from (isModeratorOrAdmin && !isAdmin) below, but functionally
-            // either flag is sufficient for the resolver's privileged check.
             isModeratorOrAdminAsync(viewerEmail),
+            // v2.18.11: org-mates of the owner get full privileged tier too.
+            isOrgMate(viewerEmail, adopter.addedBy),
             // Editor status: only kind='edit' rows count. kind='contribution'
             // rows (additive writes via addContactEntry) must NOT promote the
             // writer to editor — that would silently grant full PII visibility.
@@ -106,6 +107,7 @@ export async function resolveAdopterVisibility(
             ownerEmail: adopter.addedBy,
             isAdmin,
             isModerator: isModeratorOrAdmin && !isAdmin,
+            isOrgMate: isOrgMateOfOwner,
             isEditor: editorRows.length > 0,
             grants: grantRows,
         });
@@ -137,9 +139,12 @@ export async function resolveAdoptersVisibility(
     try {
         const db = await getDb();
         if (!db) throw new Error('No database');
-        const [isAdmin, isModeratorOrAdmin, editorRows, grantRows] = await Promise.all([
+        const [isAdmin, isModeratorOrAdmin, viewerOrgMateEmails, editorRows, grantRows] = await Promise.all([
             isAdminAsync(viewerEmail),
             isModeratorOrAdminAsync(viewerEmail),
+            // v2.18.11: one query for the viewer's full org-member set; per-
+            // adopter org-mate check is then a Set.has() lookup below.
+            getOrgMemberEmailsFor(viewerEmail),
             // Same kind='edit' filter as the per-adopter resolver above.
             db.selectDistinct({ id: adopterHistory.adopterId }).from(adopterHistory)
                 .where(and(
@@ -154,6 +159,10 @@ export async function resolveAdoptersVisibility(
             }).from(piiAccessGrants).where(eq(piiAccessGrants.granteeEmail, viewerEmail)),
         ]);
         const editorSet = new Set<string>(editorRows.map((r: { id: string }) => r.id));
+        const orgMateEmailSet = new Set<string>(
+            (viewerOrgMateEmails ?? []).map(e => (e ?? '').toLowerCase().trim()),
+        );
+        const viewerNorm = (viewerEmail ?? '').toLowerCase().trim();
         const grantsByAdopter = new Map<string, PiiGrantRow[]>();
         for (const g of grantRows) {
             const list = grantsByAdopter.get(g.adopterId);
@@ -161,11 +170,18 @@ export async function resolveAdoptersVisibility(
             else grantsByAdopter.set(g.adopterId, [g]);
         }
         for (const a of adopters) {
+            const ownerNorm = (a.addedBy ?? '').toLowerCase().trim();
+            // Org-mate iff owner is in our org-member set AND isn't us
+            // (owner==self is `isOwner`, captured by resolveVisibility itself).
+            const isOrgMateOfOwner = !!ownerNorm
+                && ownerNorm !== viewerNorm
+                && orgMateEmailSet.has(ownerNorm);
             out.set(a.id, resolveVisibility({
                 viewerEmail,
                 ownerEmail: a.addedBy,
                 isAdmin,
                 isModerator: isModeratorOrAdmin && !isAdmin,
+                isOrgMate: isOrgMateOfOwner,
                 isEditor: editorSet.has(a.id),
                 grants: grantsByAdopter.get(a.id) ?? [],
             }));

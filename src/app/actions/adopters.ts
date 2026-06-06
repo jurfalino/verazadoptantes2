@@ -87,10 +87,15 @@ export async function appendToExistingAdopter(
         if (!target) return { success: false, error: 'Target adopter not found' };
         if (target.deletedAt) return { success: false, error: 'Cannot append to a deleted adopter' };
 
-        // Auth: actor must own the target (addedBy) or be an admin. isAdminAsync
-        // so DB-role admins pass too — same admin check as saveAdopter's edit gate.
+        // Auth: actor must own the target (addedBy), be an admin, or share an
+        // org with the owner (v2.18.11). isAdminAsync so DB-role admins pass.
         const { isAdminAsync } = await import('@/config/admins');
-        if (target.addedBy !== actorEmail && !(await isAdminAsync(actorEmail))) {
+        const { isOrgMate } = await import('@/lib/orgMembership');
+        const [actorIsAdmin, actorIsOrgMate] = await Promise.all([
+            isAdminAsync(actorEmail),
+            isOrgMate(actorEmail, target.addedBy),
+        ]);
+        if (target.addedBy !== actorEmail && !actorIsAdmin && !actorIsOrgMate) {
             return { success: false, error: 'Not authorized to modify this adopter' };
         }
 
@@ -220,9 +225,13 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
             // apply the same gate, so a contributor who can append a phone via
             // addContactEntry still can't rewrite or delete one through saveAdopter.
             const { isAdminAsync } = await import('@/config/admins');
-            const actorIsAdmin = await isAdminAsync(changedBy);
-            if (!canEditAdopterRecord({ gatingEnabled: true, actorEmail: changedBy, ownerEmail: existing.addedBy, actorIsAdmin })) {
-                logger.warn('saveAdopter: edit blocked — not owner/admin', { adopterId: data.id, actorEmail: changedBy });
+            const { isOrgMate } = await import('@/lib/orgMembership');
+            const [actorIsAdmin, actorIsOrgMate] = await Promise.all([
+                isAdminAsync(changedBy),
+                isOrgMate(changedBy, existing.addedBy),
+            ]);
+            if (!canEditAdopterRecord({ gatingEnabled: true, actorEmail: changedBy, ownerEmail: existing.addedBy, actorIsAdmin, actorIsOrgMate })) {
+                logger.warn('saveAdopter: edit blocked — not owner/admin/org-mate', { adopterId: data.id, actorEmail: changedBy });
                 throw new Error('Not authorized to edit this adopter record.');
             }
 
@@ -278,6 +287,25 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
 
                 logger.info('Adopter updated', { adopterId: data.id, changedBy });
                 logAudit({ userEmail: changedBy, action: 'adopter_updated', target: data.id as string, details: changes });
+
+                // v2.18.11: notify the owner when a non-self editor saves
+                // their profile. Helper short-circuits on self-edit and
+                // dedups within a 30-min bucket.
+                const changedFields = Object.keys(changes);
+                if (changedFields.length > 0 && existing.addedBy && existing.addedBy !== changedBy) {
+                    import('@/app/actions/notifications').then(({ notifyOwnerOfOrgMateChange }) =>
+                        notifyOwnerOfOrgMateChange({
+                            adopterId: data.id as string,
+                            adopterName: (data.name as string) || existing.name || '',
+                            ownerEmail: existing.addedBy,
+                            editorEmail: changedBy,
+                            changeKind: 'profile_edit',
+                            summary: `Editó: ${changedFields.join(', ')}`,
+                        })
+                    ).catch((e) => logger.warn('notifyOwnerOfOrgMateChange dispatch failed', {
+                        adopterId: data.id, error: e instanceof Error ? e.message : String(e),
+                    }));
+                }
 
                 // Synchronous (v30): edge-runtime workers can reap a fire-and-forget
                 // tokenize before the per-token INSERTs finish, leaving rows with a

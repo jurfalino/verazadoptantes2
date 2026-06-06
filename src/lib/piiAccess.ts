@@ -42,6 +42,10 @@ export interface AdopterEditAuth {
     ownerEmail: string | null | undefined;
     /** Whether the actor is an admin (bootstrap list or DB `role='admin'`). */
     actorIsAdmin: boolean;
+    /** Whether the actor shares an org with the owner (v2.18.11). Treated
+     *  identically to ownership for edit purposes — the audit log + owner
+     *  notification system is the backstop. */
+    actorIsOrgMate?: boolean;
 }
 
 /**
@@ -58,9 +62,11 @@ export function canEditAdopterRecord({
     actorEmail,
     ownerEmail,
     actorIsAdmin,
+    actorIsOrgMate,
 }: AdopterEditAuth): boolean {
     if (!gatingEnabled) return true;
     if (actorIsAdmin) return true;
+    if (actorIsOrgMate) return true;
     return !!actorEmail && actorEmail === ownerEmail;
 }
 
@@ -404,6 +410,12 @@ export interface ResolveVisibilityInput {
      *  sees the "who has access" disclosure. Same trust level as admin for
      *  read; admin still owns write actions like `setAdopterPublic`. */
     isModerator: boolean;
+    /** Viewer shares at least one org with the adopter's owner (v2.18.11).
+     *  Org-mates get the same `privileged` tier as admin/moderator/editor —
+     *  unmask all contact, see "who has access", approve PII requests on
+     *  teammate profiles. The audit log + owner notifications are the
+     *  trust-but-verify backstop. */
+    isOrgMate: boolean;
     /** Whether the viewer appears in this adopter's `adopter_history.changedBy`. */
     isEditor: boolean;
     /** The viewer's grants for THIS adopter (any scope; revoked ones are filtered here). */
@@ -428,9 +440,9 @@ export interface Visibility {
  * fetches `isAdmin` / `isEditor` / `grants` (see piiAccessServer.ts).
  */
 export function resolveVisibility(input: ResolveVisibilityInput): Visibility {
-    const { viewerEmail, ownerEmail, isAdmin, isModerator, isEditor, grants } = input;
+    const { viewerEmail, ownerEmail, isAdmin, isModerator, isOrgMate, isEditor, grants } = input;
     const privileged = !!viewerEmail && (
-        isAdmin || isModerator || isEditor || (!!ownerEmail && viewerEmail === ownerEmail)
+        isAdmin || isModerator || isOrgMate || isEditor || (!!ownerEmail && viewerEmail === ownerEmail)
     );
     const live = grants.filter(g => !g.revokedAt);
     const hasAllContactGrant = live.some(g => g.scope === 'all_contact');

@@ -1,4 +1,7 @@
 export const en = {
+    attribution: {
+        created_by: 'Created by',
+    },
     common: {
         save: 'Save',
         cancel: 'Cancel',

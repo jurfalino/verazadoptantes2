@@ -1,6 +1,6 @@
 'use server';
 
-import { adopterImages, adopterHistory } from '@/db/schema';
+import { adopterImages, adopterHistory, adopters } from '@/db/schema';
 import { eq, sql, and, isNull } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { logger } from '@/lib/logger';
@@ -44,6 +44,29 @@ export async function saveImage(adopterId: string, url: string, caption?: string
         if (isProfilePicture) {
             revalidatePath(`/adopter/${adopterId}`);
         }
+
+        // v2.18.11: owner awareness on non-self image uploads.
+        (async () => {
+            try {
+                const a = await db.select({ addedBy: adopters.addedBy, name: adopters.name })
+                    .from(adopters).where(eq(adopters.id, adopterId)).get();
+                if (a?.addedBy && a.addedBy !== addedBy) {
+                    const { notifyOwnerOfOrgMateChange } = await import('@/app/actions/notifications');
+                    await notifyOwnerOfOrgMateChange({
+                        adopterId,
+                        adopterName: a.name || '',
+                        ownerEmail: a.addedBy,
+                        editorEmail: addedBy,
+                        changeKind: isProfilePicture ? 'profile_picture_set' : 'image_added',
+                        summary: isProfilePicture ? 'Cambió la foto de perfil.' : 'Subió una foto.',
+                    });
+                }
+            } catch (e) {
+                logger.warn('saveImage: owner notify dispatch failed', {
+                    adopterId, error: e instanceof Error ? e.message : String(e),
+                });
+            }
+        })();
 
         return { success: true, id };
     } catch (error) {
@@ -90,6 +113,31 @@ export async function setProfilePicture(adopterId: string, imageId: string) {
             .where(eq(adopterImages.id, imageId));
 
         revalidatePath(`/adopter/${adopterId}`);
+
+        // v2.18.11: owner awareness when a non-self picks the profile picture.
+        (async () => {
+            try {
+                const actor = await getUser();
+                const a = await db.select({ addedBy: adopters.addedBy, name: adopters.name })
+                    .from(adopters).where(eq(adopters.id, adopterId)).get();
+                if (a?.addedBy && a.addedBy !== actor) {
+                    const { notifyOwnerOfOrgMateChange } = await import('@/app/actions/notifications');
+                    await notifyOwnerOfOrgMateChange({
+                        adopterId,
+                        adopterName: a.name || '',
+                        ownerEmail: a.addedBy,
+                        editorEmail: actor,
+                        changeKind: 'profile_picture_set',
+                        summary: 'Cambió la foto de perfil.',
+                    });
+                }
+            } catch (e) {
+                logger.warn('setProfilePicture: owner notify dispatch failed', {
+                    adopterId, error: e instanceof Error ? e.message : String(e),
+                });
+            }
+        })();
+
         return { success: true };
     } catch (error) {
         const errorId = logger.error('Set profile picture failed', error, { adopterId, imageId });

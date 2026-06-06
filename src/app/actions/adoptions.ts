@@ -160,6 +160,31 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
             logger.info('Adoption created', { adoptionId: id, adopterId: data.adopterId, species: data.species, changedBy });
             logAudit({ userEmail: changedBy, action: 'adoption_created', target: id, details: { adopterId: data.adopterId, species: data.species, animalName: data.animalName } });
 
+            // v2.18.11: owner awareness on non-self activity adds.
+            if (data.adopterId) {
+                (async () => {
+                    try {
+                        const a = await db.select({ addedBy: adopters.addedBy, name: adopters.name })
+                            .from(adopters).where(eq(adopters.id, data.adopterId as string)).get();
+                        if (a?.addedBy && a.addedBy !== changedBy) {
+                            const { notifyOwnerOfOrgMateChange } = await import('@/app/actions/notifications');
+                            await notifyOwnerOfOrgMateChange({
+                                adopterId: data.adopterId as string,
+                                adopterName: a.name || '',
+                                ownerEmail: a.addedBy,
+                                editorEmail: changedBy,
+                                changeKind: 'activity_added',
+                                summary: `Agregó una actividad${data.animalName ? ` (${data.animalName})` : ''}.`,
+                            });
+                        }
+                    } catch (e) {
+                        logger.warn('saveAdoption: owner notify dispatch failed', {
+                            adopterId: data.adopterId, error: e instanceof Error ? e.message : String(e),
+                        });
+                    }
+                })();
+            }
+
             // Re-tokenize adopter if onBehalfOf is set (cross-field name tokens).
             // Awaited — see comment on the update branch above.
             if (data.adopterId && data.onBehalfOf) {
