@@ -98,6 +98,58 @@ test.describe('Adopter Profile', () => {
         await expect(page.getByText('juan.contacto@example.com')).toBeVisible({ timeout: 30000 });
     });
 
+    test('Composer auto-commits previous entry when switching types via pill click (v2.18.1)', async ({ page }) => {
+        // Prod-reported bug: user opens composer, types a phone, then clicks
+        // the address pill (intending to add address too), types address,
+        // clicks Save — only the address gets saved; the phone is silently
+        // dropped. Fix B auto-commits the in-progress entry before
+        // switching types so neither value is lost.
+        const uniqueName = `Contacto Switch ${Date.now()}`;
+
+        await page.goto('/adopter/create');
+        await dismissCountryBanner(page);
+
+        await page.getByPlaceholder(/name|nombre/i).fill(uniqueName);
+
+        // Open the composer. Default active type is `phone`.
+        await page.getByTestId('ce-add-trigger').click();
+
+        // Step 1: type a phone value while the composer is on `phone`.
+        await page.locator('input[placeholder*="2345-6789"], input[placeholder*="+54"]').first().fill('11 5555-1234');
+
+        // Step 2: click the `address` pill WITHOUT clicking Save first. This
+        // is the exact prod-reported sequence. Pre-fix, the typed phone is
+        // silently discarded; post-fix, it auto-commits before the pill
+        // switch resolves.
+        await page.getByTestId('ce-type-address').click();
+
+        // Step 3: now type an address and click Save.
+        await page.locator('input[placeholder*="Calle"], input[placeholder*="Street"]').first().fill('Avenida Test 123');
+        await page.getByTestId('ce-composer-submit').click();
+
+        // BOTH chips should now exist in the section. Pre-fix only the
+        // address would be present (count=1) — this assertion is what
+        // makes the regression visible if the fix ever regresses.
+        const chips = page.getByTestId('ce-chip');
+        await expect(chips).toHaveCount(2, { timeout: 10000 });
+
+        // Save the adopter to confirm the entries persist through the
+        // create flow (local-mode auto-commit landed in `entries`).
+        await page.getByRole('button', { name: /save|guardar|create|crear/i }).click();
+        const createAnywayBtn = page.getByRole('button', { name: /Create new profile anyway|Crear perfil nuevo/i });
+        try {
+            await createAnywayBtn.waitFor({ state: 'visible', timeout: 3000 });
+            await createAnywayBtn.click();
+        } catch {
+            // No duplicates — fine.
+        }
+
+        // The saved profile shows both the phone and the address.
+        await expect(page.getByRole('heading', { name: uniqueName })).toBeVisible({ timeout: 30000 });
+        await expect(page.getByText('11 5555-1234')).toBeVisible({ timeout: 30000 });
+        await expect(page.getByText('Avenida Test 123')).toBeVisible({ timeout: 30000 });
+    });
+
     test('Edit adopter name', async ({ page }) => {
         const newName = `Persona Editada ${Date.now()}`;
 

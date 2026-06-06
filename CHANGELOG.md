@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.18.1] - 2026-06-06
+
+### Fixed
+- **Contact-entry composer silently lost the in-progress value when the user clicked a different type pill.** Reproduced from prod: user opens "Agregar contacto" on a profile, types a phone, then clicks the "Dirección" pill (intending to add an address too), enters address, clicks Save — only the address gets saved. The phone is silently discarded. Root cause: the composer's inputs are scoped to the active type (`composerValue` for non-address, `composerStreet/Locality` for address), but `submitComposer()` only reads the *current* type's fields — the previously-typed phone stayed in React state but was unreachable. Fix (the prod-reported bug): when a pill click would change the active type AND the composer has unsaved content, the current entry is auto-committed first via the existing `addContactEntry` path, then the type switches. A success toast confirms the implicit save (`✓ Guardado · Teléfono → Dirección`). If the commit fails (validation / server error), we stay on the current type so the user can fix it — data is never silently lost. The longer-term fix (Option A — multi-row inline form) is tracked separately.
+
 ## [2.18.0] - 2026-06-06
 
 ### Added

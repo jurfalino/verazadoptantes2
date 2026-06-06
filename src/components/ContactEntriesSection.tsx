@@ -168,11 +168,33 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         return { id: crypto.randomUUID(), type: composerType, value: composerValue.trim() };
     }
 
-    async function handleAdd() {
-        const hasContent = composerType === 'address'
+    function composerHasContent(): boolean {
+        return composerType === 'address'
             ? (composerStreet.trim().length > 0 || composerLocality.trim().length > 0)
             : composerValue.trim().length > 0;
-        if (!hasContent || composerBusy) return;
+    }
+
+    /** Clear input fields but leave the composer panel open + the current
+     *  active type. Used by the auto-commit path (handlePillClick) which
+     *  needs to keep editing the composer with a different active type. */
+    function clearComposerInputs() {
+        setComposerValue('');
+        setComposerStreet('');
+        setComposerLocality('');
+    }
+
+    /**
+     * Commit the composer's current contents as a new entry. Shared by:
+     *  - handleAdd (Save button): full reset + close composer on success.
+     *  - handlePillClick (auto-commit on type switch, v2.18.1): keep composer
+     *    open and just clear inputs so the user can continue with the new type.
+     *
+     * `silent` suppresses the per-commit success toast so handlePillClick can
+     * show its own transition toast ("✓ Guardado · Teléfono → Dirección")
+     * without doubling up.
+     */
+    async function commitComposer({ silent = false } = {}): Promise<{ ok: boolean }> {
+        if (!composerHasContent() || composerBusy) return { ok: false };
 
         // Local mode (new-adopter creation): mutate in place, emit via onChange.
         // No server action; the parent batches everything through saveAdopter
@@ -180,8 +202,8 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         if (isLocalMode) {
             const newEntry = buildNewEntry();
             onChange!([...entries, newEntry]);
-            resetComposer();
-            return;
+            clearComposerInputs();
+            return { ok: true };
         }
 
         // Server mode (existing adopter): the original addContactEntry path.
@@ -198,31 +220,78 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                 : { adopterId: adopterId!, type: composerType, value: composerValue.trim() };
             const res = await addContactEntry(payload);
             if (res.ok) {
-                resetComposer();
+                clearComposerInputs();
                 router.refresh();
-                // Contextual feedback. The server returns 'appended' for a
-                // brand-new entry, 'unlocked_existing' when the typed value
-                // matched an existing (probably masked) entry and earned the
-                // viewer a fresh entry-scope grant ("you proved you know it,
-                // here it is"), and 'no_change' when the value was already
-                // visible to the viewer. The unlocked-existing toast is the
-                // load-bearing one — without it the user thinks the add
-                // silently did nothing when actually a masked chip is about
-                // to reveal itself in the refreshed list.
-                if (res.status === 'appended') {
-                    toast.success('✓', t('adopter.ce_add_toast_added'));
-                } else if (res.status === 'unlocked_existing') {
-                    toast.success('🔓', t('adopter.ce_add_toast_unlocked'));
+                if (!silent) {
+                    // Contextual feedback. The server returns 'appended' for
+                    // a brand-new entry, 'unlocked_existing' when the typed
+                    // value matched an existing (probably masked) entry and
+                    // earned the viewer a fresh entry-scope grant ("you
+                    // proved you know it, here it is"), and 'no_change' when
+                    // the value was already visible to the viewer. The
+                    // unlocked-existing toast is load-bearing — without it
+                    // the user thinks the add silently did nothing when
+                    // actually a masked chip is about to reveal itself in
+                    // the refreshed list.
+                    if (res.status === 'appended') {
+                        toast.success('✓', t('adopter.ce_add_toast_added'));
+                    } else if (res.status === 'unlocked_existing') {
+                        toast.success('🔓', t('adopter.ce_add_toast_unlocked'));
+                    }
+                    // status === 'no_change' → silent (it would be noise).
                 }
-                // status === 'no_change' → silent (it would be noise).
+                return { ok: true };
             } else {
                 toast.error(t('errors.generic'), res.error || t('adopter.ce_add_error'));
+                return { ok: false };
             }
         } catch (e) {
             toast.error(t('errors.generic'), t('adopter.ce_add_error'), extractErrorId(e));
+            return { ok: false };
         } finally {
             setComposerBusy(false);
         }
+    }
+
+    /** Save button entry-point — commit and close composer on success. */
+    async function handleAdd() {
+        const result = await commitComposer();
+        if (result.ok) resetComposer();
+    }
+
+    /**
+     * Pill-click handler (v2.18.1). The original behavior silently dropped
+     * any in-progress value when the user clicked a different type pill,
+     * because the composer's inputs are scoped to the active type — the
+     * previously-typed value stayed in React state but was never read by
+     * `submitComposer`, which only looks at the current type's fields.
+     *
+     * Reported prod symptom: user types a phone, clicks "Dirección" pill
+     * (expecting "add address too"), enters address, clicks Save — only
+     * the address is saved. The phone is silently lost.
+     *
+     * Fix: when the user clicks a different pill AND the composer has
+     * unsaved content, auto-commit the current entry first, then switch
+     * type. Toast confirms the transition so the user understands the
+     * implicit save. If the commit fails (validation / server error), we
+     * stay on the current type so the user can fix it — never lose data
+     * silently.
+     */
+    async function handlePillClick(newType: ContactEntryType) {
+        if (newType === composerType) return;
+        if (composerHasContent()) {
+            const previousType = composerType;
+            const result = await commitComposer({ silent: true });
+            if (!result.ok) return; // commit failed — stay on current type
+            // Transition toast: type-label arrow type-label keeps the copy
+            // grammar-free across Spanish (avoids gendered "guardado/a")
+            // and English equally.
+            toast.success(
+                '✓ ' + t('adopter.ce_autocommit_saved'),
+                `${t(`adopter.ce_type_${previousType}`)} → ${t(`adopter.ce_type_${newType}`)}`,
+            );
+        }
+        setComposerType(newType);
     }
 
     function startEdit(entry: ContactEntry) {
@@ -574,8 +643,9 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                     <button
                                         key={typ}
                                         type="button"
-                                        onClick={() => setComposerType(typ)}
-                                        className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition-colors ${
+                                        onClick={() => handlePillClick(typ)}
+                                        disabled={composerBusy}
+                                        className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                                             active
                                                 ? 'bg-teal-600 text-white'
                                                 : 'bg-white border border-stone-300 text-stone-700 hover:bg-stone-100'

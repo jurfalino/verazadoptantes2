@@ -538,6 +538,11 @@ export const es = {
         ce_add_error: 'No se pudo agregar el dato.',
         ce_add_toast_added: 'Dato agregado',
         ce_add_toast_unlocked: 'Reconociste un dato existente — ahora aparece desbloqueado',
+        // Auto-commit toast title for v2.18.1 — when the user has unsaved
+        // content in the composer and clicks a different type pill, the
+        // current entry is saved before switching. The toast body is built
+        // client-side as "<previous-type-label> → <new-type-label>".
+        ce_autocommit_saved: 'Guardado',
         dup_hint_checking: 'Buscando coincidencias…',
         dup_hint_one: 'Este dato ya está en otro perfil',
         dup_hint_many: 'Este dato coincide con {n} perfiles',
