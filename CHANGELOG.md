@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.18.14] - 2026-06-06
+
+### Changed
+- **Team activity feed rows are now actually informative.** Before: `✏️ alice@email.com actualizó perfil [Ver perfil] · hace 2h` — same row for a typo fix and a status downgrade from 5 to 1. After: every row is a glanceable sentence with actor display name + (when relevant) org chip, action verb, **adopter name linked**, inline field-level diff for edits, and a coloured left border encoding severity.
+  - **Row anatomy** — header (actor name · org chip · time), verb line with action-specific copy (`creó el perfil de María Pérez`, `editó **status, familyMembers** en María Pérez`, `🚩 reportó a María Pérez — inaccuracy_information`, etc.), optional detail line with the diff (`status: 3 → 5 · +1 campo más`), and the existing "Ver perfil →" link suppressed when the adopter is hard-deleted.
+  - **Severity tint on the left border** — rose for flag/delete/status-downgrade-to-1-or-2, amber for deletion-request/status-3, emerald for verification/status-up, stone for cosmetic. Lets a vetting-relevant event jump out of a scrolling feed.
+  - **Soft-delete handling** — when `target` resolves to a deleted adopter, the row renders "(eliminado) <name>" as plain text and skips the link. Hard-delete falls back to a generic noun so the row still reads.
+- Enrichment happens server-side in `getOrgActivity` (`src/app/actions/activity.ts`) — three parallel batches: actor names (loop over distinct emails → `user.name`), adopter names (loop over distinct `target` ids → `adopters.name + deleted_at`), and shared-org context (`pickAttributionOrg` per actor, reusing the v2.18.11 helper). All D1-safe (per-id loops, no `inArray`). The renderer (`src/components/OrgActivityFeed.tsx`) stays dumb — it just maps server-computed fields into the sentence template.
+- Severity is derived in `deriveSeverity` from `(action, details.changes)` — handles both flat-`details` and nested-`details.changes` shapes since past `logAudit` calls have drifted between conventions.
+
+### Known carve-outs (deferred)
+- No filter chips, no actor picker, no "Cargar más" yet — v1.1 follow-up. Row enrichment alone is the highest-leverage UX win; layering filters on top of opaque rows would have been solving the wrong problem first.
+- No real-time updates / "new since you opened the page" banner. Feed still refreshes on mount.
+
 ## [2.18.13] - 2026-06-06
 
 ### Removed
