@@ -38,6 +38,18 @@ export const en = {
         video_thumbnail_alt: 'Video thumbnail',
     },
     admin: {
+        transfer_section_title: 'Ownership (admin)',
+        transfer_owned_by: 'Owned by',
+        transfer_button: 'Transfer ownership →',
+        transfer_title: 'Transfer ownership',
+        transfer_body: 'Move "{name}" from {from} to a new owner.',
+        transfer_search_label: 'New owner',
+        transfer_search_ph: 'email or name…',
+        transfer_no_matches: 'No matches.',
+        transfer_current_owner: 'current owner',
+        transfer_confirm: 'Transfer',
+        transfer_success: 'Ownership transferred',
+        transfer_error: 'Transfer failed',
         console: 'Admin Console',
         back_to_app: '← Back to App',
         open_menu: 'Open menu',
@@ -841,6 +853,7 @@ export const en = {
         event_contract_signed: 'Contract Signed',
         event_flag_added: 'Report Added',
         event_flag_removed: 'Report Removed',
+        event_ownership_transferred: 'Ownership Transferred',
         desc_adoption_added: 'Added record for',
         desc_adoption_deleted: 'Deleted adoption record:',
         desc_image_deleted: 'Deleted photo',
@@ -850,7 +863,8 @@ export const en = {
         desc_appended: 'Fields appended to profile:',
         desc_contract_signed: 'Contract signed via invitation for',
         desc_flag_added: 'Report reason',
-        desc_flag_removed: 'Verification removed'
+        desc_flag_removed: 'Verification removed',
+        desc_ownership_transferred: 'Owner transferred:'
     },
     ratings: {
         '5': '⭐⭐⭐⭐⭐',

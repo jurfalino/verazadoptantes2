@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.18.9] - 2026-06-06
+
+### Added
+- **Admin-initiated adopter ownership transfer.** Until now there was no way to change `adopters.addedBy` after creation — if a user left the org or an import script mis-attributed the record, the only path was raw SQL via `/admin/query`, which is intentionally SELECT-only. New admin-only section on `/adopter/[id]` shows "Owned by: `<email>`" plus a `Transfer ownership →` button that opens a modal with an email/name autosuggest. Confirming calls the new `transferAdopterOwnership(adopterId, toEmail)` server action in `src/app/actions/admin.ts`.
+  - **Scope is intentionally narrow.** Only `adopters.addedBy` gets rewritten. Child-row `addedBy` fields on `adoptions`, `adopter_images`, and per-entry `contactEntries[]` are NOT touched — those are *contributor credits* (who created that child row), not ownership signals, and the duplicate-merge flow already uses the same convention. The entire permission model (edit gate, delete gate, `isOwner`, PII visibility, adopter-login gate) derives from the one column, so updating it propagates correctly on the next read.
+  - **Audit-first ordering** since D1 has no transactions. The action writes to `adopter_history` (canonical v2.18.8 shape `{ ownership_transferred: { from, to } }`) and to the global `audit_log` BEFORE flipping `adopters.addedBy`. If the UPDATE fails we still have a paper trail of "we tried"; the reverse order would leave a silent transfer with no record.
+  - **Audit-log renderer.** The per-adopter history timeline (admin/moderator-gated since v2.18.8) gets a new chip + render block showing `from ➜ to`. New i18n keys `audit.event_ownership_transferred` and `audit.desc_ownership_transferred` in both `es.ts` and `en.ts`.
+  - **Notifications.** Old and new owner each receive a `createNotification` row pointing at the adopter URL. Wrapped in fire-and-forget with `.catch(logger.warn)` per project convention so a notification miss never blocks the transfer itself.
+- **`GET /api/admin/users/search?q=<prefix>`.** Admin-only autosuggest endpoint backing the transfer modal. LIKE-substring match on `email` or `name`, capped at 20 results, falls back to the 20 most-recent users when `q` is empty so the modal isn't blank on open. Authed via `isAdminAsync`; the query string is parameterized, never interpolated. There was no reusable user-picker component (`UserFilterSelect` is a closed-set dropdown from `/admin/adopters` aggregation), so the modal pairs a debounced fetch with a clickable result list.
+
+### Known gaps (deferred follow-up)
+- No bulk "transfer everything owned by user X to user Y" surface on `/admin/users` yet. v1 is intentionally per-adopter; bulk reassign has different failure modes (partial success, rollback semantics) and is worth its own design pass.
+- No undo. The action is reversible by running it again with the original owner; an explicit undo flow would need to also reverse the audit row, which conflicts with the "audit is the immutable trail" posture. Not adding for now.
+
 ## [2.18.8] - 2026-06-06
 
 ### Fixed

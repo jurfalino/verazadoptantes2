@@ -1,7 +1,7 @@
 'use server';
 
 import { getRequestContext } from '@cloudflare/next-on-pages';
-import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, adopterStats, searches } from '@/db/schema';
+import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, adopterStats, searches, users } from '@/db/schema';
 import { eq, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
@@ -306,6 +306,126 @@ export async function setAdopterPublic(adopterId: string, isPublic: boolean):
         return { ok: true, adopterId, isPublic };
     } catch (error) {
         const errorId = logger.error('setAdopterPublic failed', error, { adopterId, actor });
+        return { ok: false, error: `Failed (Error ID: ${errorId})` };
+    }
+}
+
+/**
+ * Admin-only: rewrite `adopters.addedBy` from the current owner to a target
+ * user. Ownership is the single pointer the entire permission model derives
+ * from (edit gate, delete gate, isOwner in the profile, PII visibility,
+ * adopter-login gate) — updating this one column propagates correctly
+ * everywhere on the next read.
+ *
+ * Scope is intentionally narrow: child-row `addedBy` fields on `adoptions`,
+ * `adopterImages`, and per-entry `contactEntries[]` are NOT rewritten —
+ * those are contributor credits (who created this child row), not ownership
+ * signals, and the duplicate-merge flow (src/app/actions/duplicates.ts)
+ * uses the same convention. If we ever want a "scrub original contributor"
+ * variant that's a separate action.
+ *
+ * Audit-first ordering: D1 has no transactions, so we write the history +
+ * global audit row BEFORE flipping the column. If the UPDATE fails we still
+ * have a paper trail of "we tried"; the reverse order would leave a silent
+ * transfer with no record.
+ */
+export async function transferAdopterOwnership(adopterId: string, toEmail: string):
+    Promise<{ ok: true; adopterId: string; from: string; to: string } | { ok: false; error: string }> {
+    const session = await auth();
+    const actor = session?.user?.email ?? '';
+    if (!actor || !(await checkIsAdminAsync(actor))) {
+        return { ok: false, error: 'Unauthorized' };
+    }
+    if (!adopterId || typeof adopterId !== 'string') {
+        return { ok: false, error: 'Missing adopter id' };
+    }
+    const normalizedTo = (toEmail || '').toLowerCase().trim();
+    if (!normalizedTo || !normalizedTo.includes('@')) {
+        return { ok: false, error: 'Invalid target email' };
+    }
+
+    try {
+        const db = await getDb();
+        if (!db) return { ok: false, error: 'No database' };
+
+        // Validate target user exists. If we don't enforce this we could
+        // point ownership at a stranger no one can ever sign in as.
+        const target = await db.select({ email: users.email }).from(users)
+            .where(eq(users.email, normalizedTo)).get();
+        if (!target) {
+            return { ok: false, error: 'Target user not found' };
+        }
+
+        // Fetch current owner + soft-delete check.
+        const current = await db.select({
+            id: adopters.id,
+            addedBy: adopters.addedBy,
+            deletedAt: adopters.deletedAt,
+        }).from(adopters).where(eq(adopters.id, adopterId)).get();
+        if (!current) return { ok: false, error: 'Adopter not found' };
+        if (current.deletedAt) return { ok: false, error: 'Adopter is deleted' };
+
+        const from = current.addedBy ?? '';
+        if (from.toLowerCase().trim() === normalizedTo) {
+            return { ok: false, error: 'Adopter is already owned by that user' };
+        }
+
+        // 1. adopter_history — canonical v2.18.8 shape so the per-adopter
+        //    audit log (admin+moderator-gated) renders the transfer.
+        await db.insert(adopterHistory).values({
+            id: crypto.randomUUID(),
+            adopterId,
+            changedBy: actor,
+            kind: 'edit',
+            changes: JSON.stringify({ ownership_transferred: { from, to: normalizedTo } }),
+            changedAt: new Date(),
+        });
+
+        // 2. Global audit log.
+        logAudit({
+            userEmail: actor,
+            action: 'adopter_ownership_transferred',
+            target: adopterId,
+            details: { from, to: normalizedTo },
+        });
+
+        // 3. Flip the column. Update updatedAt so the adopter shows up in
+        //    "recently updated" surfaces.
+        await db.update(adopters)
+            .set({ addedBy: normalizedTo, updatedAt: new Date() })
+            .where(eq(adopters.id, adopterId));
+
+        // 4. Fire-and-forget notifications to both parties. Wrap each
+        //    .catch(logger.warn) per project convention — never swallow.
+        import('@/app/actions/notifications').then(async ({ createNotification }) => {
+            const url = `/adopter/${adopterId}`;
+            const targets = [from, normalizedTo].filter(e => e && e.includes('@') && e !== 'anonymous');
+            await Promise.all(targets.map(email => createNotification({
+                userId: email,
+                type: 'ownership_transferred',
+                title: 'Cambio de propietario',
+                body: email === normalizedTo
+                    ? `Ahora sos el propietario de un adoptante (transferido por ${actor}).`
+                    : `Un administrador transfirió un adoptante que poseías a ${normalizedTo}.`,
+                url,
+            }).catch((e: unknown) => {
+                logger.warn('transferAdopterOwnership: createNotification failed', {
+                    adopterId, recipient: email, actor,
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            })));
+        }).catch((e: unknown) => {
+            logger.warn('transferAdopterOwnership: notifications module load failed', {
+                adopterId, actor, error: e instanceof Error ? e.message : String(e),
+            });
+        });
+
+        logger.info('Adopter ownership transferred', { adopterId, from, to: normalizedTo, actor });
+        revalidatePath(`/adopter/${adopterId}`);
+        revalidatePath('/admin/adopters');
+        return { ok: true, adopterId, from, to: normalizedTo };
+    } catch (error) {
+        const errorId = logger.error('transferAdopterOwnership failed', error, { adopterId, toEmail: normalizedTo, actor });
         return { ok: false, error: `Failed (Error ID: ${errorId})` };
     }
 }
