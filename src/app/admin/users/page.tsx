@@ -322,10 +322,12 @@ export default function AdminUsersPage() {
                                         >
                                             <option value="viewer">Viewer</option>
                                             <option value="contributor">Contributor</option>
+                                            <option value="moderator">Moderator</option>
                                             <option value="admin">Admin</option>
                                         </select>
                                     ) : (
                                         <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${user.role === 'admin' ? 'bg-purple-100 text-purple-700' :
+                                            user.role === 'moderator' ? 'bg-teal-100 text-teal-700' :
                                             user.role === 'contributor' ? 'bg-blue-100 text-blue-700' :
                                                 'bg-stone-100 text-stone-600'
                                             }`}>

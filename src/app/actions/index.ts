@@ -6,7 +6,7 @@ export type { AdopterFlags } from '@/types/adopter';
 export type { SearchResult, SearchResponse, SnippetField, MatchSnippet } from './types';
 
 // DB helpers
-export { getDb, getUser, getIsAdmin } from './_db';
+export { getDb, getUser, getIsAdmin, getIsModeratorOrAdmin } from './_db';
 
 // Config
 export { getAdoptionConfig } from './config';

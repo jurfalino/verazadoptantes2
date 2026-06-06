@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.18.8] - 2026-06-06
+
+### Fixed
+- **Adopter history rendered "Metadata update" for every flag add / verification removal.** Both writes in `src/app/actions/flags.ts` populated `changeType / fieldName / newValue / oldValue` — none of which are columns on `adopter_history` (the real shape is `{ id, adopterId, changedBy, changes, changedAt, kind }`). Drizzle silently dropped those keys, so every flag-added and verification-removed row landed with an empty `changes` blob and the renderer rendered the misleading "Metadata update" placeholder forever. Switched both call sites to the canonical `changes: JSON.stringify({ flag_added: { reason, details } })` / `{ flag_removed: { reason, originalFlaggedBy } }` shape every other writer in the codebase uses. Pre-existing rows with the broken shape continue to render as "Metadata update" — only new events are correct.
+- **Audit-log renderer in `AdopterProfileV2` only knew four event shapes.** `adoption_updated`, `adoption_added`, `adoption_deleted`, and `image_deleted` had dedicated render blocks; every other event type (`contributed_entry`, `updated_entry`, `removed_entry`, `appended_from_create_flow`, `contract_signed_via_invitation`, `flag_added`, `flag_removed`) fell into the catch-all `changes = parsed` branch and showed as a generic key/value diff or — for value-less shapes — as nothing at all. Added parser cases + chips + render blocks for all seven, with new i18n keys (`audit.event_*` / `audit.desc_*`) in both `es.ts` and `en.ts`.
+
+### Changed
+- **Per-adopter audit log is now admin + moderator only.** The history timeline at the bottom of `/adopter/[id]` is operational metadata — useful for triage, not for the typical contributor's vetting workflow. Hid the `CollapsibleSection` behind a new `canViewAudit` prop fed from `getIsModeratorOrAdmin()`, a new server helper that bypasses `BOOTSTRAP_ADMIN_EMAILS` and accepts `user_profiles.role IN ('admin','moderator')`.
+- **New `moderator` role.** Today it only unlocks the per-adopter audit log on `/adopter/[id]`; the intent is to add more moderator-scoped surfaces over time (audit-log read access, flag triage) without granting admin-level write privileges. Added to the role select in `/admin/users` with a teal chip color (admin = purple, moderator = teal, contributor = blue, viewer/none = stone). Grant via the role dropdown in the admin UI, or:
+  ```sql
+  UPDATE user_profiles SET role = 'moderator' WHERE user_id = (SELECT id FROM user WHERE email = '…');
+  ```
+
+### Known gaps (deferred follow-up)
+- Several mutations still aren't audit-logged: image upload (`saveImage`), profile-picture set (`setProfilePicture`), public toggle (`setAdopterIsPublic`), and the address / country / source / sourceUrl fields in `saveAdopter` (only `name`, `status`, `familyMembers` make it into the diff today). Not in scope for this release; the renderer + role plumbing land first so a future pass can backfill writers without touching the read side.
+
 ## [2.18.7] - 2026-06-06
 
 ### Fixed

@@ -39,6 +39,9 @@ interface AdopterProfileV2Props {
     stats?: AdopterStats | null;
     avgRating?: number | null;
     isAdmin?: boolean;
+    /** True when the viewer is an admin OR moderator (v2.18.8). Gates the
+     *  per-adopter history timeline — regular contributors don't see it. */
+    canViewAudit?: boolean;
     adoptionConfig?: AdoptionConfig;
     duplicateCandidates?: DuplicateCandidateInfo[];
     formPrefill?: FormSubmissionPrefill | null;
@@ -46,7 +49,7 @@ interface AdopterProfileV2Props {
     piiContext?: AdopterPiiContext | null;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null }: AdopterProfileV2Props) {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const toast = useShowToast();
@@ -315,8 +318,11 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     </CollapsibleSection>
                 )}
 
-                {/* History */}
-                {!isNew && adopter && (
+                {/* History — admins + moderators only (v2.18.8). Regular
+                    contributors don't need the "who edited what when" timeline
+                    on the adopter profile; vetting decisions are made from the
+                    rating + activity sections above. */}
+                {!isNew && adopter && canViewAudit && (
                     <CollapsibleSection title={t('audit.log_title') || 'History'} count={history.length} defaultOpen={false}>
                         <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-5">
                             <h3 className="text-sm font-semibold text-teal-800 mb-4 uppercase tracking-wider flex items-center gap-2">
@@ -334,6 +340,13 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                             else if (parsed.adoption_added) { eventType = 'adoption_added'; changes = parsed.adoption_added; }
                                             else if (parsed.adoption_deleted) { eventType = 'adoption_deleted'; changes = parsed.adoption_deleted; }
                                             else if (parsed.image_deleted) { eventType = 'image_deleted'; changes = parsed.image_deleted; }
+                                            else if (parsed.contributed_entry) { eventType = 'contributed_entry'; changes = parsed.contributed_entry; }
+                                            else if (parsed.updated_entry) { eventType = 'updated_entry'; changes = parsed.updated_entry; }
+                                            else if (parsed.removed_entry) { eventType = 'removed_entry'; changes = parsed.removed_entry; }
+                                            else if (parsed.appended_from_create_flow) { eventType = 'appended_from_create_flow'; changes = parsed.appended_from_create_flow; }
+                                            else if (parsed.contract_signed_via_invitation) { eventType = 'contract_signed_via_invitation'; changes = parsed.contract_signed_via_invitation; }
+                                            else if (parsed.flag_added) { eventType = 'flag_added'; changes = parsed.flag_added; }
+                                            else if (parsed.flag_removed) { eventType = 'flag_removed'; changes = parsed.flag_removed; }
                                             else { changes = parsed; }
                                         } catch { /* ignore */ }
 
@@ -347,6 +360,13 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                         {eventType === 'adoption_added' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_adoption_added')}</span>}
                                                         {eventType === 'adoption_deleted' && <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_adoption_deleted')}</span>}
                                                         {eventType === 'image_deleted' && <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_image_deleted')}</span>}
+                                                        {eventType === 'contributed_entry' && <span className="bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_contributed_entry')}</span>}
+                                                        {eventType === 'updated_entry' && <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_updated_entry')}</span>}
+                                                        {eventType === 'removed_entry' && <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_removed_entry')}</span>}
+                                                        {eventType === 'appended_from_create_flow' && <span className="bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_appended')}</span>}
+                                                        {eventType === 'contract_signed_via_invitation' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_contract_signed')}</span>}
+                                                        {eventType === 'flag_added' && <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_flag_added')}</span>}
+                                                        {eventType === 'flag_removed' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_flag_removed')}</span>}
                                                     </div>
                                                     <span className="text-xs px-2.5 py-0.5 bg-white border border-teal-100 rounded-full text-teal-700 font-medium shadow-sm">
                                                         {t('audit.by')} {(h.changedBy && userNameMap?.[h.changedBy]) || (h.changedBy ? maskEmail(h.changedBy) : t('common.anonymous'))}
@@ -383,6 +403,42 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                             {eventType === 'image_deleted' && (
                                                                 <div className="text-teal-800 break-words">
                                                                     {t('audit.desc_image_deleted')} <span className="italic opacity-75 break-all">"{changes.caption || t('common.untitled')}"</span> ({t('audit.by')} {formatShortDate(new Date(changes.uploadedAt))})
+                                                                </div>
+                                                            )}
+                                                            {eventType === 'contributed_entry' && (
+                                                                <div className="text-teal-800 break-words">
+                                                                    {t('audit.desc_contributed_entry')} <span className="font-semibold">{t(`contact.type_${changes.type}`) || changes.type}</span>
+                                                                </div>
+                                                            )}
+                                                            {eventType === 'updated_entry' && (
+                                                                <div className="text-teal-800 break-words">
+                                                                    {t('audit.desc_updated_entry')} <span className="font-semibold">{t(`contact.type_${changes.type}`) || changes.type}</span>
+                                                                </div>
+                                                            )}
+                                                            {eventType === 'removed_entry' && (
+                                                                <div className="text-teal-800 break-words">
+                                                                    {t('audit.desc_removed_entry')} <span className="font-semibold">{t(`contact.type_${changes.type}`) || changes.type}</span>
+                                                                </div>
+                                                            )}
+                                                            {eventType === 'appended_from_create_flow' && (
+                                                                <div className="text-teal-800 break-words">
+                                                                    {t('audit.desc_appended')} <span className="font-medium break-all">{changes.appendedFields ? Object.keys(changes.appendedFields).join(', ') : ''}</span>
+                                                                </div>
+                                                            )}
+                                                            {eventType === 'contract_signed_via_invitation' && (
+                                                                <div className="text-teal-800 break-words">
+                                                                    {t('audit.desc_contract_signed')} <span className="font-semibold break-all">{changes.animalName}</span>
+                                                                </div>
+                                                            )}
+                                                            {eventType === 'flag_added' && (
+                                                                <div className="text-teal-800 break-words space-y-1">
+                                                                    <div><span className="font-semibold">{t('audit.desc_flag_added')}:</span> <span className="break-all">{changes.reason}</span></div>
+                                                                    {changes.details && <div className="text-xs italic line-clamp-3 break-words" title={changes.details}>"{changes.details}"</div>}
+                                                                </div>
+                                                            )}
+                                                            {eventType === 'flag_removed' && (
+                                                                <div className="text-teal-800 break-words">
+                                                                    {t('audit.desc_flag_removed')}: <span className="break-all">{changes.reason}</span>
                                                                 </div>
                                                             )}
                                                         </>

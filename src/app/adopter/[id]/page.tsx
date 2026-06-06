@@ -1,6 +1,6 @@
 export const runtime = 'edge';
 import { redirect } from 'next/navigation';
-import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getAdoptionConfig, getDuplicateCandidates } from '@/app/actions';
+import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getIsModeratorOrAdmin, getAdoptionConfig, getDuplicateCandidates } from '@/app/actions';
 import { resolveUserNames } from '@/app/actions/userNames';
 import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
 import { getAdopterPiiContext } from '@/app/actions/piiAccess';
@@ -23,8 +23,18 @@ export default async function AdopterPage({
     // Batch 1a: Auth (mandatory — failure means redirect to login)
     let currentUser = '';
     let isAdmin = false;
+    let canViewAudit = false;
     try {
-        [currentUser, isAdmin] = await Promise.all([getUser(), getIsAdmin()]);
+        // canViewAudit (v2.18.8) is the "admin OR moderator" gate that hides
+        // the per-adopter history timeline from regular contributors —
+        // adopter-profile UX stays focused on rating + activity, not who
+        // edited what when. Computed in parallel with the isAdmin check so
+        // the page-load adds no extra latency.
+        [currentUser, isAdmin, canViewAudit] = await Promise.all([
+            getUser(),
+            getIsAdmin(),
+            getIsModeratorOrAdmin(),
+        ]);
     } catch (e: any) {
         if (e?.digest?.startsWith('NEXT_REDIRECT')) throw e;
         redirect(`/?authRequired=1&callbackUrl=${encodeURIComponent(`/adopter/${id}`)}`);
@@ -127,6 +137,7 @@ export default async function AdopterPage({
             stats={stats}
             avgRating={avgRating}
             isAdmin={isAdmin}
+            canViewAudit={canViewAudit}
             adoptionConfig={adoptionConfig}
             duplicateCandidates={dupCandidates}
             formPrefill={formPrefill}
