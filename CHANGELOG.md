@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.18.16] - 2026-06-06
+
+### Added — Team activity feed v1.1
+The deferred row-on-top features from v2.18.14 ship now that the enriched rows have stabilised on staging:
+
+- **Filter chips** — `Todos / Perfiles / Adopciones / Reportes / Fotos / Eliminados`. Server-side `CATEGORY_ACTIONS` map in `src/app/actions/activity.ts` narrows the `IN (...)` list per category. Active chip is teal-filled; resets to "Todos" on actor-picker change in the natural way (no special wiring; React re-runs the effect).
+- **Actor picker** — `<select>` listing every distinct member email in the viewer's orgs with their resolved display name (sorted alphabetically by name). Returned on the first page only (no cursor) so adding members mid-session naturally surfaces them on next refresh. Server-side validates the filter against the viewer's actual org-member set — a forged email silently drops through to "no filter" rather than leaking data from another org.
+- **"Cargar más" pagination** — cursor-based on `(created_at DESC, id DESC)` to handle ties on the same second without skipping or repeating rows at the page boundary. `getOrgActivity` returns `nextCursor: null` when exhausted; button hides. Per-call limit clamped to `[1, 100]`.
+- **"N nuevas — Actualizar" advisory banner** — new `getNewActivityCount(sinceTimestamp)` action polls every 60 s while the feed is mounted and uncollapsed. When > 0 events have landed since the highest `createdAt` we've seen, the banner appears with a teal pulse dot. **Click to refetch** — we never auto-mutate the list out from under the user mid-scroll. Banner clears on refetch.
+- **Empty-state for filtered-to-zero** — "Sin coincidencias para este filtro" instead of hiding the whole component, so a user who narrowed to zero rows can clear the filter without going elsewhere.
+
+### Engineering
+- `getOrgActivity` signature changed from `(limit)` to `(filters: ActivityFilters)` and now returns `ActivityPage { entries, nextCursor, actors }`. The only caller (`OrgActivityFeed`) was updated in lockstep — no other call sites.
+- Cursor pagination uses the composite predicate `created_at < ? OR (created_at = ? AND id < ?)` to disambiguate same-second inserts. Without the tie-breaker branch, two rows inserted in the same second would have skipped or repeated at the page boundary.
+- The poll lives in a `useEffect` keyed on `collapsed` so it stops cleanly when the user collapses the feed. Newest-seen timestamp is kept in a `useRef` to avoid re-running the poll loop on every render.
+
 ## [2.18.15] - 2026-06-06
 
 ### Changed

@@ -64,6 +64,42 @@ const ACTIVITY_ACTIONS = [
     'verification_added',
 ];
 
+/**
+ * v1.1 filter categories surfaced as chips above the feed. Each maps to a
+ * subset of ACTIVITY_ACTIONS; 'all' means no action filter at all. Kept in
+ * sync with the chip set in OrgActivityFeed.tsx.
+ */
+export type ActivityCategory = 'all' | 'profiles' | 'adoptions' | 'flags' | 'photos' | 'deletions';
+
+const CATEGORY_ACTIONS: Record<ActivityCategory, string[]> = {
+    all: ACTIVITY_ACTIONS,
+    profiles: ['adopter_created', 'adopter_updated', 'verification_added'],
+    adoptions: ['adoption_added', 'adoption_updated'],
+    flags: ['flag_created'],
+    photos: ['image_uploaded'],
+    deletions: ['adopter_deleted', 'adopter_deletion_requested'],
+};
+
+export interface ActivityCursor {
+    createdAt: number;
+    id: string;
+}
+
+export interface ActivityFilters {
+    category?: ActivityCategory;
+    actorEmail?: string;
+    cursor?: ActivityCursor | null;
+    limit?: number;
+}
+
+export interface ActivityPage {
+    entries: OrgActivityEntry[];
+    nextCursor: ActivityCursor | null;
+    /** Distinct actor emails in the unfiltered org population — drives the
+     *  actor-picker dropdown. Returned only on the first page (no cursor). */
+    actors: Array<{ email: string; name: string }> | null;
+}
+
 /** Field keys whose value is a 1–5 rating; status delta drives severity. */
 const STATUS_FIELDS = new Set(['status', 'rating', 'avgRating']);
 
@@ -133,58 +169,99 @@ function deriveExtra(action: string, details: Record<string, unknown>): OrgActiv
  * Get recent activity from org members by querying the audit_log table.
  * Filters by org member emails and relevant action types.
  *
+ * v1.1: accepts category + actor filters and a cursor for "Cargar más"
+ * pagination. Cursor is `(createdAt, id)` so concurrent inserts don't drift
+ * the page boundary. First page (no cursor) also returns the distinct actor
+ * list for the picker dropdown.
+ *
  * Enriches each row with display name (resolveDisplayName), adopter name
  * (joined from adopters.id = audit_log.target), shared-org context, severity
  * tint, and a field-summary for adopter_updated. Three D1 batches per call —
  * actor names, adopter rows, viewer orgs — all loop-based to stay D1-safe.
  */
-export async function getOrgActivity(limit: number = 30): Promise<OrgActivityEntry[]> {
+export async function getOrgActivity(filters: ActivityFilters = {}): Promise<ActivityPage> {
+    const empty: ActivityPage = { entries: [], nextCursor: null, actors: null };
     try {
         const viewer = await getUser();
         const { getOrgMemberEmails } = await import('@/app/actions/organizations');
         const emails = await getOrgMemberEmails();
 
         // If user has no org or is the only member, no team activity to show
-        if (emails.length <= 1) return [];
+        if (emails.length <= 1) return empty;
 
         const { getRequestContext } = await import('@cloudflare/next-on-pages');
         const { env } = getRequestContext();
-        if (!env?.DB) return [];
+        if (!env?.DB) return empty;
 
-        // Build parameterized query — D1 doesn't support array binding, so we build placeholders
-        const placeholders = emails.map(() => '?').join(',');
-        const actionPlaceholders = ACTIVITY_ACTIONS.map(() => '?').join(',');
+        const limit = Math.max(1, Math.min(filters.limit ?? 30, 100));
+        const category = filters.category ?? 'all';
+        const allowedActions = CATEGORY_ACTIONS[category] ?? ACTIVITY_ACTIONS;
 
-        const result = await env.DB.prepare(
+        // Build parameterized query — D1 doesn't support array binding, so
+        // we build placeholders. Actor filter narrows `IN (emails)` to one
+        // email if it's a member of the viewer's orgs (silently drops it
+        // otherwise so a forged filter can't leak data).
+        const actorFilter = filters.actorEmail && emails.includes(filters.actorEmail) ? filters.actorEmail : null;
+        const emailList = actorFilter ? [actorFilter] : emails;
+
+        const emailPh = emailList.map(() => '?').join(',');
+        const actionPh = allowedActions.map(() => '?').join(',');
+
+        // Fetch limit+1 to determine hasMore without a second query.
+        const fetchLimit = limit + 1;
+        const cursor = filters.cursor ?? null;
+
+        // Cursor predicate: (created_at, id) is a composite key descending.
+        // The "OR (created_at = ? AND id < ?)" branch handles ties on the
+        // same second — without it, multiple rows inserted in the same
+        // second would skip or repeat at the page boundary.
+        const cursorSql = cursor
+            ? 'AND (created_at < ? OR (created_at = ? AND id < ?)) '
+            : '';
+        const cursorBinds: unknown[] = cursor
+            ? [cursor.createdAt, cursor.createdAt, cursor.id]
+            : [];
+
+        const sql =
             `SELECT id, user_email, action, target, details, created_at
              FROM audit_log
-             WHERE user_email IN (${placeholders})
-             AND action IN (${actionPlaceholders})
-             ORDER BY created_at DESC
-             LIMIT ?`
-        ).bind(...emails, ...ACTIVITY_ACTIONS, limit).all<{
-            id: string;
-            user_email: string;
-            action: string;
-            target: string | null;
-            details: string | null;
-            created_at: number;
-        }>();
+             WHERE user_email IN (${emailPh})
+             AND action IN (${actionPh})
+             ${cursorSql}ORDER BY created_at DESC, id DESC
+             LIMIT ?`;
 
-        const rows = result.results || [];
-        if (rows.length === 0) return [];
+        const result = await env.DB.prepare(sql)
+            .bind(...emailList, ...allowedActions, ...cursorBinds, fetchLimit)
+            .all<{
+                id: string;
+                user_email: string;
+                action: string;
+                target: string | null;
+                details: string | null;
+                created_at: number;
+            }>();
+
+        const raw = result.results || [];
+        const hasMore = raw.length > limit;
+        const rows = hasMore ? raw.slice(0, limit) : raw;
 
         // ── Enrichment: three independent batches in parallel ──
         const distinctActors = Array.from(new Set(rows.map(r => r.user_email).filter(Boolean)));
         const distinctTargets = Array.from(new Set(rows.map(r => r.target).filter((t): t is string => !!t)));
 
-        const [actorNames, adopterMap, attributionMap] = await Promise.all([
+        // On the first page, also resolve the full actor list across the org
+        // (not just this page's actors) so the picker dropdown is complete.
+        const wantActors = !cursor;
+        const fullActorEmails = wantActors ? emails : [];
+
+        const [actorNames, adopterMap, attributionMap, allActorNames] = await Promise.all([
             resolveActorNames(distinctActors, env.DB),
             resolveAdopters(distinctTargets, env.DB),
             resolveAttribution(distinctActors, viewer),
+            wantActors ? resolveActorNames(fullActorEmails, env.DB) : Promise.resolve(new Map<string, string>()),
         ]);
 
-        return rows.map(row => {
+        const entries: OrgActivityEntry[] = rows.map(row => {
             const details = parseDetails(row.details);
             const adopter = row.target ? adopterMap.get(row.target) : null;
             const orgInfo = attributionMap.get(row.user_email) ?? null;
@@ -204,9 +281,53 @@ export async function getOrgActivity(limit: number = 30): Promise<OrgActivityEnt
                 extra: deriveExtra(row.action, details),
             };
         });
+
+        const last = rows[rows.length - 1];
+        const nextCursor = hasMore && last ? { createdAt: last.created_at, id: last.id } : null;
+
+        const actors = wantActors
+            ? emails
+                .filter(e => e !== viewer)
+                .map(email => ({ email, name: allActorNames.get(email) || (email.split('@')[0] || email) }))
+                .sort((a, b) => a.name.localeCompare(b.name))
+            : null;
+
+        return { entries, nextCursor, actors };
     } catch (error) {
         logger.warn('getOrgActivity failed', { error: error instanceof Error ? error.message : String(error) });
-        return [];
+        return empty;
+    }
+}
+
+/**
+ * Lightweight count of activity rows newer than `sinceTimestamp`. Polled by
+ * the client every 60s to drive the "N nuevas — actualizar" banner above
+ * the feed. Same email + action filter as the main feed but no enrichment.
+ */
+export async function getNewActivityCount(sinceTimestamp: number): Promise<number> {
+    if (!Number.isFinite(sinceTimestamp) || sinceTimestamp <= 0) return 0;
+    try {
+        const { getOrgMemberEmails } = await import('@/app/actions/organizations');
+        const emails = await getOrgMemberEmails();
+        if (emails.length <= 1) return 0;
+
+        const { getRequestContext } = await import('@cloudflare/next-on-pages');
+        const { env } = getRequestContext();
+        if (!env?.DB) return 0;
+
+        const emailPh = emails.map(() => '?').join(',');
+        const actionPh = ACTIVITY_ACTIONS.map(() => '?').join(',');
+        const result = await env.DB.prepare(
+            `SELECT COUNT(*) AS n
+             FROM audit_log
+             WHERE user_email IN (${emailPh})
+             AND action IN (${actionPh})
+             AND created_at > ?`
+        ).bind(...emails, ...ACTIVITY_ACTIONS, sinceTimestamp).first<{ n: number }>();
+        return result?.n ?? 0;
+    } catch (error) {
+        logger.warn('getNewActivityCount failed', { error: error instanceof Error ? error.message : String(error) });
+        return 0;
     }
 }
 
