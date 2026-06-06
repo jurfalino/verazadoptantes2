@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.18.6] - 2026-06-06
+
+### Added
+- **Admin users list shows both display name and Google account name when they differ.** v2.18.5 stopped overwriting `user.name` with Google's OAuth-provided value on every sign-in (correct UX), but that also meant the admin oversight surface lost visibility into what Google currently reports. Added a `google_name` column on the `user` table that's refreshed on every sign-in via `COALESCE(?, google_name)` while `name` stays sticky. The `/admin/users` table row (and mobile card) now surfaces a secondary `Google: <value>` line directly under the display name when the two differ; identical-value case is suppressed to avoid noise. Migration `0047_user_google_name.sql` adds the column and seeds it from the current `name` for existing rows — best-effort initial value that self-heals on each user's next sign-in. Schema (`schema.ts:users`) + admin API SELECT + admin page type + render all wired.
+
 ## [2.18.5] - 2026-06-06
 
 ### Fixed

@@ -134,38 +134,44 @@ export async function ensureUserProfile(userId: string, email?: string, name?: s
 
                 if (existing) {
                     // User exists — reuse their original id, refresh avatar
-                    // and conditionally backfill name. The two fields use
-                    // DIFFERENT update policies on purpose (v2.18.5 fix):
-                    //   - image: COALESCE(?, image) — use Google's if it sent
-                    //     one, else keep current. Avatars are expected to
-                    //     refresh as the user's Google profile picture
-                    //     changes; we have no user-facing override UI.
-                    //   - name: COALESCE(name, ?) — keep the current value if
-                    //     non-NULL, only fall back to Google's if we don't
-                    //     have one yet. This respects the user's custom
-                    //     display name saved via /settings (updateUserName at
-                    //     actions/settings.ts:273). Pre-fix, every sign-in
-                    //     clobbered the custom name back to whatever Google
-                    //     reports — the prod-reported "WTF my display name
-                    //     is reset every single time I sign in" bug.
+                    // and Google-side name, conditionally backfill display
+                    // name. Three columns, three different update policies:
+                    //   - name (display): COALESCE(name, ?) — keep the
+                    //     current value if non-NULL, only fall back to
+                    //     Google's if we don't have one yet. Respects the
+                    //     user's custom display name saved via /settings
+                    //     (updateUserName at actions/settings.ts:273).
+                    //     Pre-v2.18.5, every sign-in clobbered the custom
+                    //     name back to whatever Google reported.
+                    //   - image: COALESCE(?, image) — use Google's if it
+                    //     sent one, else keep current. Avatars are expected
+                    //     to refresh as the user's Google picture changes;
+                    //     no user-facing override UI exists.
+                    //   - google_name: COALESCE(?, google_name) — same as
+                    //     image. Always refresh from Google's current
+                    //     value so the admin oversight UI can compare
+                    //     display name against current Google account
+                    //     name. v2.18.6.
                     // Same "respect override, only fill empty" pattern is
                     // already in use below for geo fields (province / city /
                     // timezone) at the user_profiles UPDATE.
                     resolvedId = existing.id;
                     await env.DB.prepare(
-                        `UPDATE user SET name = COALESCE(name, ?), image = COALESCE(?, image) WHERE id = ?`
-                    ).bind(name || null, image || null, resolvedId).run();
+                        `UPDATE user SET name = COALESCE(name, ?), image = COALESCE(?, image), google_name = COALESCE(?, google_name) WHERE id = ?`
+                    ).bind(name || null, image || null, name || null, resolvedId).run();
                 } else {
-                    // First time — insert new row
+                    // First time — insert new row. Both `name` (display) and
+                    // `google_name` (oauth) start equal to Google's value;
+                    // they diverge later if the user customizes via /settings.
                     await env.DB.prepare(
-                        `INSERT INTO user (id, email, name, image) VALUES (?, ?, ?, ?)`
-                    ).bind(resolvedId, email, name || null, image || null).run();
+                        `INSERT INTO user (id, email, name, image, google_name) VALUES (?, ?, ?, ?, ?)`
+                    ).bind(resolvedId, email, name || null, image || null, name || null).run();
                 }
             } else {
                 // No email (shouldn't happen with Google) — fallback to INSERT OR IGNORE by id
                 await env.DB.prepare(
-                    `INSERT OR IGNORE INTO user (id, email, name, image) VALUES (?, ?, ?, ?)`
-                ).bind(resolvedId, email || null, name || null, image || null).run();
+                    `INSERT OR IGNORE INTO user (id, email, name, image, google_name) VALUES (?, ?, ?, ?, ?)`
+                ).bind(resolvedId, email || null, name || null, image || null, name || null).run();
             }
 
             // 2. Ensure user_profiles row (INSERT OR IGNORE keeps original created_at)

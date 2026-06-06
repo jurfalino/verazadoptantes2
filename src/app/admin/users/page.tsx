@@ -45,6 +45,13 @@ interface OrgMembership {
 interface UserProfile {
     id: string;
     name: string;
+    /**
+     * Google OAuth-provided display name, kept in sync on every sign-in
+     * (v2.18.6). Rendered as a secondary line on the user row when it
+     * differs from `name` so admins can see the discrepancy between a
+     * customized display name and the underlying Google account.
+     */
+    google_name: string | null;
     email: string;
     image: string | null;
     role: string | null;
@@ -266,6 +273,19 @@ export default function AdminUsersPage() {
                                         )}
                                         <div className="min-w-0 flex-1">
                                             <div className="font-medium text-stone-900 truncate" title={user.name || 'Unknown'}>{user.name || 'Unknown'}</div>
+                                            {/* Google OAuth name — surfaced only when it differs from the
+                                                display name (v2.18.6). User customizes display name via
+                                                /settings; google_name is refreshed from Google on every
+                                                sign-in. Identical-value case is suppressed to avoid noise. */}
+                                            {user.google_name && user.google_name !== user.name && (
+                                                <div
+                                                    className="text-xs text-stone-500 truncate flex items-center gap-1"
+                                                    title={`Google account name: ${user.google_name}`}
+                                                >
+                                                    <span className="text-stone-400">Google:</span>
+                                                    <span className="truncate">{user.google_name}</span>
+                                                </div>
+                                            )}
                                             <a href={`mailto:${user.email}`} className="text-xs text-blue-600 hover:underline break-all">
                                                 {user.email}
                                             </a>
@@ -409,6 +429,13 @@ export default function AdminUsersPage() {
                             )}
                             <div className="min-w-0 flex-1">
                                 <div className="font-medium text-stone-900 truncate">{user.name || 'Unknown'}</div>
+                                {/* Mobile equivalent of the table-row Google-name reveal (v2.18.6). */}
+                                {user.google_name && user.google_name !== user.name && (
+                                    <div className="text-xs text-stone-500 truncate flex items-center gap-1" title={`Google account name: ${user.google_name}`}>
+                                        <span className="text-stone-400">Google:</span>
+                                        <span className="truncate">{user.google_name}</span>
+                                    </div>
+                                )}
                                 <a href={`mailto:${user.email}`} className="text-xs text-blue-600 hover:underline truncate block">
                                     {user.email}
                                 </a>
