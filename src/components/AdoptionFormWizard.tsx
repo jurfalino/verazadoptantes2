@@ -553,11 +553,23 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                     className="relative w-full max-w-2xl bg-white rounded-2xl border border-stone-200 shadow-2xl my-8 outline-none overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300"
                 >
                     <h2 id="wizard-title" className="sr-only">{t('wizard.title') || 'Registrar actividad'}</h2>
+                    {/* Defensive close-button wiring (v2.18.3): the X was
+                        reported as unresponsive in prod. Two paranoid changes
+                        vs. the previous version of this element:
+                          1. `stopPropagation()` on click — prevents the
+                             event bubbling further if any parent later
+                             grows an onClick that would mis-handle it.
+                          2. z-50 instead of z-10 — guarantees the X sits
+                             above the AnimalSelectPicker popover (z-20)
+                             shipped in v2.18.2 in case the picker is open
+                             at the same time and its popover happens to
+                             occlude the corner. */}
                     <button
                         type="button"
-                        onClick={close}
+                        onClick={(e) => { e.stopPropagation(); close(); }}
                         aria-label={t('common.close') || 'Close'}
-                        className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full flex items-center justify-center text-stone-500 hover:bg-stone-100"
+                        className="absolute top-3 right-3 z-50 w-8 h-8 rounded-full flex items-center justify-center text-stone-500 hover:bg-stone-100"
+                        data-testid="wizard-close"
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>

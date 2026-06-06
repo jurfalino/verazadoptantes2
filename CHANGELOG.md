@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.18.3] - 2026-06-06
+
+### Fixed
+- **The X (close) button in the activity-add wizard was reported as unresponsive in prod.** Code-reading the close path didn't surface a deterministic bug — `close()` calls `setIsOpen(false)` and `onClose?.()`, which `VisitIntentCard` handles by clearing `openedRecordType`, and `if (!isOpen) return null` at the top of the wizard should unmount the dialog. Most plausible suspects: (a) the new `AnimalSelectPicker` popover (v2.18.2) using `z-20` could occlude the X's `z-10` in some viewport positions; (b) some bubbled click in a parent re-rendering before the close commits. Shipped a defensive belt-and-braces patch: `e.stopPropagation()` on the X click and bumped its z-index to `z-50`. Added `data-testid="wizard-close"` so future regressions can be guarded by an e2e test.
+
 ## [2.18.2] - 2026-06-06
 
 ### Fixed
