@@ -72,6 +72,7 @@ export const en = {
         nav_blocked_logins: 'Blocked Logins',
         nav_system_health: 'System Health',
         nav_data_migration: 'Data Migration',
+        nav_business_logic: 'Business logic',
         nav_cms: 'CMS Editor',
         nav_back_app_short: '← App',
         system_config: 'System Configuration',

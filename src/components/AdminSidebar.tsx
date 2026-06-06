@@ -21,6 +21,7 @@ const NAV_ITEMS: Array<{ href: string; labelKey: string; icon: string; special?:
     { href: '/admin/blocked-logins', labelKey: 'nav_blocked_logins', icon: '🚫' },
     { href: '/admin/health', labelKey: 'nav_system_health', icon: '🩺' },
     { href: '/admin/data', labelKey: 'nav_data_migration', icon: '📦' },
+    { href: '/admin/business-logic', labelKey: 'nav_business_logic', icon: '📖' },
 ];
 
 export default function AdminSidebar() {

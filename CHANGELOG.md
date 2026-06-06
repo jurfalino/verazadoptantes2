@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.18.12] - 2026-06-06
+
+### Added
+- **Admin-only business-logic reference page** at `/admin/business-logic`. Static server component documenting roles, the full permission matrix (8 roles × 16 actions), PII masking tiers, org collaboration semantics, the owner-notification policy, the adopter-login gate, and the admin-only operational surface. Lives under `/admin/*` so the layout's `isAdminAsync` covers auth. Added to the sidebar with a 📖 icon at the end of the nav (reference doc, not daily-use). New i18n keys `admin.nav_business_logic` in both `es.ts` + `en.ts`. Update this page whenever a permission gate moves; the code stays the source of truth but a human-readable map shortens onboarding from "grep for hours" to "open the doc".
+
 ## [2.18.11] - 2026-06-06
 
 ### Added — Org collaboration
