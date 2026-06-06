@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.18.5] - 2026-06-06
+
+### Fixed
+- **Display name was reset to Google's value on every sign-in.** `ensureUserProfile` in `lib/audit.ts:138-140` ran `UPDATE user SET name = COALESCE(?, name) WHERE id = ?` with the first argument being whatever Google's OAuth profile reported. Since Google always sends a name, COALESCE picked that value and overwrote any custom name the user had saved via `/settings`. Same file at lines 162-170 already uses the correct "respect override, only fill empty" pattern for geo fields (`COALESCE(existing, ?)`) — the user-name line just had the arguments swapped. Flipped to `name = COALESCE(name, ?)` so a user-saved name sticks and Google's value is only used when we don't have one yet. The `image` column intentionally keeps the original pattern — refreshing the avatar from Google on each sign-in is the standard expectation and we have no UI to override it.
+
 ## [2.18.4] - 2026-06-06
 
 ### Changed

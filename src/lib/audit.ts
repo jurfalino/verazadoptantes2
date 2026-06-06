@@ -133,10 +133,27 @@ export async function ensureUserProfile(userId: string, email?: string, name?: s
                 ).bind(email).first<{ id: string }>();
 
                 if (existing) {
-                    // User exists — reuse their original id, update name/image
+                    // User exists — reuse their original id, refresh avatar
+                    // and conditionally backfill name. The two fields use
+                    // DIFFERENT update policies on purpose (v2.18.5 fix):
+                    //   - image: COALESCE(?, image) — use Google's if it sent
+                    //     one, else keep current. Avatars are expected to
+                    //     refresh as the user's Google profile picture
+                    //     changes; we have no user-facing override UI.
+                    //   - name: COALESCE(name, ?) — keep the current value if
+                    //     non-NULL, only fall back to Google's if we don't
+                    //     have one yet. This respects the user's custom
+                    //     display name saved via /settings (updateUserName at
+                    //     actions/settings.ts:273). Pre-fix, every sign-in
+                    //     clobbered the custom name back to whatever Google
+                    //     reports — the prod-reported "WTF my display name
+                    //     is reset every single time I sign in" bug.
+                    // Same "respect override, only fill empty" pattern is
+                    // already in use below for geo fields (province / city /
+                    // timezone) at the user_profiles UPDATE.
                     resolvedId = existing.id;
                     await env.DB.prepare(
-                        `UPDATE user SET name = COALESCE(?, name), image = COALESCE(?, image) WHERE id = ?`
+                        `UPDATE user SET name = COALESCE(name, ?), image = COALESCE(?, image) WHERE id = ?`
                     ).bind(name || null, image || null, resolvedId).run();
                 } else {
                     // First time — insert new row
