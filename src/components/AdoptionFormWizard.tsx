@@ -15,6 +15,7 @@ import { extractErrorId } from '@/lib/errorUtils';
 import { MediaLightbox } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 import { formatShortDate } from '@/lib/dates';
+import AnimalSelectPicker from '@/components/AnimalSelectPicker';
 import DatePicker from '@/components/ui/DatePicker';
 import { extractVideoThumbnail } from '@/lib/videoThumbnail';
 import { zarazTrack } from '@/lib/zaraz';
@@ -651,15 +652,18 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                     <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
                                         {isFollowUpOrReturn ? t('adoption.previous_adoption_picker_label') : t('adoption.select_animal')}
                                     </label>
-                                    <select className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-base md:text-sm" onChange={(e) => handleSelectExisting(e.target.value)} value={formData.animalId || ''}>
-                                        <option value="">{t('adoption.choose_animal')}</option>
-                                        {effectiveAnimalsList.map(a => {
-                                            const dateLabel = isFollowUpOrReturn && a.date ? ` — ${formatShortDate(a.date)}` : '';
-                                            return (
-                                                <option key={a.id} value={a.id}>{a.animalName} ({a.species}){dateLabel}</option>
-                                            );
-                                        })}
-                                    </select>
+                                    {/* Replaced native <select> with thumbnail-aware
+                                        picker (v2.18.2). Native options can't render
+                                        images and rescuers regularly need to recognize
+                                        animals by photo, not just name. */}
+                                    <AnimalSelectPicker
+                                        animals={effectiveAnimalsList}
+                                        selectedId={formData.animalId || ''}
+                                        onSelect={handleSelectExisting}
+                                        placeholder={t('adoption.choose_animal')}
+                                        showDate={isFollowUpOrReturn}
+                                        formatDate={(d) => formatShortDate(d)}
+                                    />
                                 </div>
                             )}
 

@@ -1,6 +1,6 @@
 'use server';
 
-import { adopters, adoptions, adopterHistory, adopterFlags } from '@/db/schema';
+import { adopters, adoptions, adopterHistory, adopterFlags, adopterImages } from '@/db/schema';
 import { eq, sql, and } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { logger } from '@/lib/logger';
@@ -191,6 +191,45 @@ export async function deleteAdoption(adoptionId: string, adopterId: string) {
     }
 }
 
+/**
+ * Pick the best thumbnail URL for each adoption row and attach it as
+ * `thumbnailUrl` (v2.18.2). Used by the AdoptionFormWizard's existing-animal
+ * picker so the user sees the animal's photo next to the name when choosing —
+ * the previous native `<select>` could only render text. Profile-picture-
+ * marked images win over other images; tiebreak by most-recent upload. We
+ * fan out one query per adoption (D1-safe per CLAUDE.md, no `inArray`).
+ *
+ * The added cost is one extra DB round-trip per animal in the lists, which
+ * runs in parallel — on a typical inventory of ~10 animals that adds well
+ * under 100ms to the load and the visual-recognition win on the picker is
+ * worth it.
+ */
+async function attachAdoptionThumbnails<T extends { id: string }>(
+    db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+    rows: T[],
+): Promise<Array<T & { thumbnailUrl: string | null }>> {
+    if (rows.length === 0) return rows.map(r => ({ ...r, thumbnailUrl: null }));
+    const thumbs = await Promise.all(rows.map(async (r) => {
+        try {
+            const img = await db.select({ url: adopterImages.url })
+                .from(adopterImages)
+                .where(eq(adopterImages.adoptionId, r.id))
+                .orderBy(
+                    sql`${adopterImages.isProfilePicture} DESC`,
+                    sql`${adopterImages.uploadedAt} DESC`,
+                )
+                .limit(1)
+                .get();
+            return { id: r.id, url: img?.url ?? null };
+        } catch {
+            return { id: r.id, url: null };
+        }
+    }));
+    const byId = new Map<string, string | null>();
+    for (const t of thumbs) byId.set(t.id, t.url);
+    return rows.map(r => ({ ...r, thumbnailUrl: byId.get(r.id) ?? null }));
+}
+
 export async function getAdoptions(adopterId: string) {
     try {
         const db = await getDb();
@@ -201,11 +240,12 @@ export async function getAdoptions(adopterId: string) {
             .all();
         // Defensive dedup — protect against SQLite index corruption returning same row twice
         const seen = new Set<string>();
-        return results.filter((r: { id: string }) => {
+        const deduped = results.filter((r: { id: string }) => {
             if (seen.has(r.id)) return false;
             seen.add(r.id);
             return true;
         });
+        return await attachAdoptionThumbnails(db, deduped);
     } catch (error) {
         logger.error('Get adoptions failed', error, { adopterId });
         return [];
@@ -220,10 +260,10 @@ export async function getAvailableAnimals() {
         const session = await auth();
         if (!session?.user?.email) return [];
 
-        return await db.select().from(adoptions)
+        const rows = await db.select().from(adoptions)
             .where(sql`${adoptions.addedBy} = ${session.user.email} AND ${adoptions.adopterId} IS NULL`);
         // We could add status check, but usually available animals are just unlinked.
-
+        return await attachAdoptionThumbnails(db, rows);
     } catch (error) {
         logger.error('getAvailableAnimals failed', error);
         return [];

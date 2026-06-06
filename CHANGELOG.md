@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.18.2] - 2026-06-06
+
+### Fixed
+- **Add-activity wizard's existing-animal picker only showed the animal's name, not its photo.** Used a native HTML `<select>` element — `<option>` can only render text, so rescuers managing many animals had to recognize each one by name alone. Replaced with a custom `AnimalSelectPicker` component that renders a thumbnail (best image per animal, prioritizing the marked-as-profile-picture one and falling back to the most recently uploaded) next to the name and species. Server-side: `getAdoptions` and `getAvailableAnimals` both attach a `thumbnailUrl` per row via a single fan-out query against `adopter_images` (D1-safe, no `inArray`); animals without an uploaded image get a neutral paw-print placeholder so the row height stays consistent.
+
 ## [2.18.1] - 2026-06-06
 
 ### Fixed
