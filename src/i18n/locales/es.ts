@@ -1,4 +1,7 @@
 export const es = {
+    attribution: {
+        created_by: 'Creada por',
+    },
     common: {
         save: 'Guardar',
         cancel: 'Cancelar',
@@ -38,6 +41,18 @@ export const es = {
         video_thumbnail_alt: 'Miniatura de video',
     },
     admin: {
+        transfer_section_title: 'Propiedad (admin)',
+        transfer_owned_by: 'Propietario actual',
+        transfer_button: 'Transferir propiedad →',
+        transfer_title: 'Transferir propiedad',
+        transfer_body: 'Mover "{name}" de {from} a un nuevo propietario.',
+        transfer_search_label: 'Nuevo propietario',
+        transfer_search_ph: 'email o nombre…',
+        transfer_no_matches: 'Sin coincidencias.',
+        transfer_current_owner: 'propietario actual',
+        transfer_confirm: 'Transferir',
+        transfer_success: 'Propiedad transferida',
+        transfer_error: 'No se pudo transferir',
         console: 'Panel admin',
         back_to_app: '← Volver a la app',
         open_menu: 'Abrir menú',
@@ -57,6 +72,7 @@ export const es = {
         nav_blocked_logins: 'Logins bloqueados',
         nav_system_health: 'Salud del sistema',
         nav_data_migration: 'Migración de datos',
+        nav_business_logic: 'Lógica de negocio',
         nav_cms: 'Editor CMS',
         nav_back_app_short: '← App',
         system_config: 'Configuración del sistema',
@@ -846,6 +862,7 @@ export const es = {
         event_contract_signed: 'Contrato Firmado',
         event_flag_added: 'Reporte Añadido',
         event_flag_removed: 'Reporte Removido',
+        event_ownership_transferred: 'Cambio de Propietario',
         desc_adoption_added: 'Registro añadido para',
         desc_adoption_deleted: 'Registro de adopción eliminado:',
         desc_image_deleted: 'Foto eliminada',
@@ -855,7 +872,8 @@ export const es = {
         desc_appended: 'Campos agregados al perfil:',
         desc_contract_signed: 'Contrato firmado por invitación para',
         desc_flag_added: 'Motivo del reporte',
-        desc_flag_removed: 'Verificación removida'
+        desc_flag_removed: 'Verificación removida',
+        desc_ownership_transferred: 'Propietario transferido:'
     },
     ratings: {
         '5': '⭐⭐⭐⭐⭐',

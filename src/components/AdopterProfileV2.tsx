@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import TransferOwnershipModal from '@/components/TransferOwnershipModal';
 import { AdopterForm } from '@/components/AdopterForm';
 import RequestPiiAccessModal from '@/components/RequestPiiAccessModal';
 import PiiAccessRequestPanel from '@/components/PiiAccessRequestPanel';
@@ -39,9 +40,22 @@ interface AdopterProfileV2Props {
     stats?: AdopterStats | null;
     avgRating?: number | null;
     isAdmin?: boolean;
-    /** True when the viewer is an admin OR moderator (v2.18.8). Gates the
-     *  per-adopter history timeline — regular contributors don't see it. */
+    /** True when the viewer is an admin / moderator / org-mate of the owner
+     *  (v2.18.8 + extended in v2.18.11). Gates the per-adopter history
+     *  timeline — regular non-collaborating contributors don't see it. */
     canViewAudit?: boolean;
+    /** v2.18.11: true when the viewer shares an org with the adopter's owner.
+     *  Drives the "you can edit this" affordances + the attribution chip's
+     *  shared-org accent. */
+    isOrgMateOfOwner?: boolean;
+    /** v2.18.11: pre-resolved creator name + org for the attribution chip
+     *  below the adopter name. null means the chip is suppressed (creation
+     *  context unknown, e.g. anonymous-created or DB error). */
+    attribution?: {
+        creatorName: string;
+        orgName: string | null;
+        orgSlug: string | null;
+    } | null;
     adoptionConfig?: AdoptionConfig;
     duplicateCandidates?: DuplicateCandidateInfo[];
     formPrefill?: FormSubmissionPrefill | null;
@@ -49,7 +63,7 @@ interface AdopterProfileV2Props {
     piiContext?: AdopterPiiContext | null;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null }: AdopterProfileV2Props) {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const toast = useShowToast();
@@ -77,6 +91,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     // (Contribution-modal state removed in v2.16.0-2; ContactEntriesSection
     // in Phase B will host the unified add path inline next to the chip list.)
     const [deleteCheck, setDeleteCheck] = useState<{ canDelete: boolean; collaborators: { adoptions: number; images: number; edits: number; flags: number; forms: number } } | null>(null);
+    const [showTransferModal, setShowTransferModal] = useState(false);
+    const router = useRouter();
 
     const isOwner = adopter?.addedBy === currentUser;
 
@@ -218,6 +234,10 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     </>
                 )}
 
+                {/* Creator attribution moved into AdopterForm's metadata row
+                    in v2.18.15 — see <AdopterForm attribution> below. Lives
+                    next to the H1 instead of floating mid-page. */}
+
                 {/* Profile Form — owns the contact section internally (via
                     ContactEntriesSection) so the page reads top-down as
                     "header → contact → family". The masked-chip click handler
@@ -237,6 +257,9 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     isAdmin={isAdmin}
                     formPrefill={formPrefill}
                     hasDuplicateBanner={false}
+                    attribution={attribution}
+                    isOrgMateOfOwner={isOrgMateOfOwner}
+                    isPrivileged={!!piiContext?.privileged}
                     canEdit={!piiContext?.gatingOn || piiContext.privileged}
                     onMaskedContactClick={
                         piiContext?.masked
@@ -347,6 +370,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                             else if (parsed.contract_signed_via_invitation) { eventType = 'contract_signed_via_invitation'; changes = parsed.contract_signed_via_invitation; }
                                             else if (parsed.flag_added) { eventType = 'flag_added'; changes = parsed.flag_added; }
                                             else if (parsed.flag_removed) { eventType = 'flag_removed'; changes = parsed.flag_removed; }
+                                            else if (parsed.ownership_transferred) { eventType = 'ownership_transferred'; changes = parsed.ownership_transferred; }
                                             else { changes = parsed; }
                                         } catch { /* ignore */ }
 
@@ -367,6 +391,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                         {eventType === 'contract_signed_via_invitation' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_contract_signed')}</span>}
                                                         {eventType === 'flag_added' && <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_flag_added')}</span>}
                                                         {eventType === 'flag_removed' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_flag_removed')}</span>}
+                                                        {eventType === 'ownership_transferred' && <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_ownership_transferred')}</span>}
                                                     </div>
                                                     <span className="text-xs px-2.5 py-0.5 bg-white border border-teal-100 rounded-full text-teal-700 font-medium shadow-sm">
                                                         {t('audit.by')} {(h.changedBy && userNameMap?.[h.changedBy]) || (h.changedBy ? maskEmail(h.changedBy) : t('common.anonymous'))}
@@ -441,6 +466,14 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                                     {t('audit.desc_flag_removed')}: <span className="break-all">{changes.reason}</span>
                                                                 </div>
                                                             )}
+                                                            {eventType === 'ownership_transferred' && (
+                                                                <div className="text-teal-800 break-words">
+                                                                    {t('audit.desc_ownership_transferred')}{' '}
+                                                                    <span className="line-through text-rose-400 text-xs mr-2 opacity-70 break-all" title={changes.from}>{changes.from || t('audit.empty_val')}</span>
+                                                                    <span className="text-teal-700 mr-2">➜</span>
+                                                                    <span className="text-teal-900 bg-teal-100 px-1.5 rounded break-all" title={changes.to}>{changes.to || t('audit.empty_val')}</span>
+                                                                </div>
+                                                            )}
                                                         </>
                                                     ) : (
                                                         <span className="text-teal-700 italic text-xs">{t('audit.metadata_update')}</span>
@@ -455,6 +488,41 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             )}
                         </div>
                     </CollapsibleSection>
+                )}
+
+                {/* Admin: ownership transfer + current owner display (v2.18.9).
+                    Strictly admin-gated (NOT canViewAudit) since this is a
+                    mutation, not a read. The current owner email is
+                    intentionally surfaced here for the first time on the
+                    profile — admins need to see who they're transferring from. */}
+                {!isNew && adopter && isAdmin && (
+                    <div className="pt-6 border-t border-stone-200 mt-6 space-y-2">
+                        <div className="text-xs uppercase tracking-wider text-stone-500 font-semibold">
+                            {t('admin.transfer_section_title') || 'Ownership (admin)'}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3 text-sm">
+                            <span className="text-stone-600">{t('admin.transfer_owned_by') || 'Owned by'}:</span>
+                            <span className="font-medium text-stone-800 break-all">{adopter.addedBy || '—'}</span>
+                            <button
+                                type="button"
+                                onClick={() => setShowTransferModal(true)}
+                                className="ml-auto px-3 py-1.5 text-xs font-semibold rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 transition-colors"
+                            >
+                                {t('admin.transfer_button') || 'Transfer ownership →'}
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {showTransferModal && adopter && (
+                    <TransferOwnershipModal
+                        adopterId={id}
+                        adopterName={adopter.name || ''}
+                        currentOwnerEmail={adopter.addedBy || ''}
+                        open={showTransferModal}
+                        onClose={() => setShowTransferModal(false)}
+                        onTransferred={() => router.refresh()}
+                    />
                 )}
 
                 {/* Delete record — owner only */}

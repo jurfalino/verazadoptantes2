@@ -2,6 +2,101 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.18.16] - 2026-06-06
+
+### Added — Team activity feed v1.1
+The deferred row-on-top features from v2.18.14 ship now that the enriched rows have stabilised on staging:
+
+- **Filter chips** — `Todos / Perfiles / Adopciones / Reportes / Fotos / Eliminados`. Server-side `CATEGORY_ACTIONS` map in `src/app/actions/activity.ts` narrows the `IN (...)` list per category. Active chip is teal-filled; resets to "Todos" on actor-picker change in the natural way (no special wiring; React re-runs the effect).
+- **Actor picker** — `<select>` listing every distinct member email in the viewer's orgs with their resolved display name (sorted alphabetically by name). Returned on the first page only (no cursor) so adding members mid-session naturally surfaces them on next refresh. Server-side validates the filter against the viewer's actual org-member set — a forged email silently drops through to "no filter" rather than leaking data from another org.
+- **"Cargar más" pagination** — cursor-based on `(created_at DESC, id DESC)` to handle ties on the same second without skipping or repeating rows at the page boundary. `getOrgActivity` returns `nextCursor: null` when exhausted; button hides. Per-call limit clamped to `[1, 100]`.
+- **"N nuevas — Actualizar" advisory banner** — new `getNewActivityCount(sinceTimestamp)` action polls every 60 s while the feed is mounted and uncollapsed. When > 0 events have landed since the highest `createdAt` we've seen, the banner appears with a teal pulse dot. **Click to refetch** — we never auto-mutate the list out from under the user mid-scroll. Banner clears on refetch.
+- **Empty-state for filtered-to-zero** — "Sin coincidencias para este filtro" instead of hiding the whole component, so a user who narrowed to zero rows can clear the filter without going elsewhere.
+
+### Engineering
+- `getOrgActivity` signature changed from `(limit)` to `(filters: ActivityFilters)` and now returns `ActivityPage { entries, nextCursor, actors }`. The only caller (`OrgActivityFeed`) was updated in lockstep — no other call sites.
+- Cursor pagination uses the composite predicate `created_at < ? OR (created_at = ? AND id < ?)` to disambiguate same-second inserts. Without the tie-breaker branch, two rows inserted in the same second would have skipped or repeated at the page boundary.
+- The poll lives in a `useEffect` keyed on `collapsed` so it stops cleanly when the user collapses the feed. Newest-seen timestamp is kept in a `useRef` to avoid re-running the poll loop on every render.
+
+## [2.18.15] - 2026-06-06
+
+### Changed
+- **Creator attribution chip moved into the profile header's metadata row.** v2.18.11 dropped it as a floating text line between the PII gating panels and the AdopterForm — orphaned mid-page, disconnected from the H1 it described, visually weak. Now it sits as the first item in the existing metadata row inside `AdopterForm`, directly below the H1 alongside country / view count / rating badge. That row is where every record-meta signal already lives; "who created this" is the most identifying meta and earns the first slot. Plumbed via three new optional props on `AdopterForm`: `attribution`, `isOrgMateOfOwner`, `isPrivileged`. The orphaned `<div>` in `AdopterProfileV2` is gone; the chip's privilege gate (privileged sees name + org, strangers see name only) and shared-org accent (teal when viewer & creator share that org) are preserved exactly. Tightened to a person-icon + name + small org pill so it reads as metadata, not prose.
+
+## [2.18.14] - 2026-06-06
+
+### Changed
+- **Team activity feed rows are now actually informative.** Before: `✏️ alice@email.com actualizó perfil [Ver perfil] · hace 2h` — same row for a typo fix and a status downgrade from 5 to 1. After: every row is a glanceable sentence with actor display name + (when relevant) org chip, action verb, **adopter name linked**, inline field-level diff for edits, and a coloured left border encoding severity.
+  - **Row anatomy** — header (actor name · org chip · time), verb line with action-specific copy (`creó el perfil de María Pérez`, `editó **status, familyMembers** en María Pérez`, `🚩 reportó a María Pérez — inaccuracy_information`, etc.), optional detail line with the diff (`status: 3 → 5 · +1 campo más`), and the existing "Ver perfil →" link suppressed when the adopter is hard-deleted.
+  - **Severity tint on the left border** — rose for flag/delete/status-downgrade-to-1-or-2, amber for deletion-request/status-3, emerald for verification/status-up, stone for cosmetic. Lets a vetting-relevant event jump out of a scrolling feed.
+  - **Soft-delete handling** — when `target` resolves to a deleted adopter, the row renders "(eliminado) <name>" as plain text and skips the link. Hard-delete falls back to a generic noun so the row still reads.
+- Enrichment happens server-side in `getOrgActivity` (`src/app/actions/activity.ts`) — three parallel batches: actor names (loop over distinct emails → `user.name`), adopter names (loop over distinct `target` ids → `adopters.name + deleted_at`), and shared-org context (`pickAttributionOrg` per actor, reusing the v2.18.11 helper). All D1-safe (per-id loops, no `inArray`). The renderer (`src/components/OrgActivityFeed.tsx`) stays dumb — it just maps server-computed fields into the sentence template.
+- Severity is derived in `deriveSeverity` from `(action, details.changes)` — handles both flat-`details` and nested-`details.changes` shapes since past `logAudit` calls have drifted between conventions.
+
+### Known carve-outs (deferred)
+- No filter chips, no actor picker, no "Cargar más" yet — v1.1 follow-up. Row enrichment alone is the highest-leverage UX win; layering filters on top of opaque rows would have been solving the wrong problem first.
+- No real-time updates / "new since you opened the page" banner. Feed still refreshes on mount.
+
+## [2.18.13] - 2026-06-06
+
+### Removed
+- **Rolled back the `profile_edited_by_orgmate` notification added in v2.18.11.** It duplicated the existing `OrgActivityFeed` on `/organizations`, which already shows recent activity by org members (queries `audit_log` for `adopter_updated` / `adoption_added` / `image_uploaded` / etc.). Two surfaces for the same signal is one too many — the feed is the better fit because it scales to "what's the team up to" rather than per-edit pings during a vetting session. Removed `notifyOwnerOfOrgMateChange` from `src/app/actions/notifications.ts` and dropped the 6 dispatch call sites (saveAdopter, updateContactEntry, removeContactEntry, saveAdoption, saveImage, setProfilePicture). Business-logic reference page updated to describe awareness as "pull from feed + per-adopter audit log" instead of the removed push notification.
+- The rest of v2.18.11 stays — org-mate privileged tier, edit gates, audit-log visibility, creator attribution chip, `isOrgMate` / `pickAttributionOrg` helpers. Those are real net-new and aren't covered by anything else.
+
+## [2.18.12] - 2026-06-06
+
+### Added
+- **Admin-only business-logic reference page** at `/admin/business-logic`. Static server component documenting roles, the full permission matrix (8 roles × 16 actions), PII masking tiers, org collaboration semantics, the owner-notification policy, the adopter-login gate, and the admin-only operational surface. Lives under `/admin/*` so the layout's `isAdminAsync` covers auth. Added to the sidebar with a 📖 icon at the end of the nav (reference doc, not daily-use). New i18n keys `admin.nav_business_logic` in both `es.ts` + `en.ts`. Update this page whenever a permission gate moves; the code stays the source of truth but a human-readable map shortens onboarding from "grep for hours" to "open the doc".
+
+## [2.18.11] - 2026-06-06
+
+### Added — Org collaboration
+- **Org-mates now have full peer access to teammate profiles.** People who share an organization are treated as co-owners for read + write across every gate that today says "owner or admin":
+  - **PII read** — `resolveVisibility` (`src/lib/piiAccess.ts`) gains an `isOrgMate` input that joins the `privileged` disjunction. Server resolvers (`piiAccessServer.ts`) fetch it in parallel — the single-adopter path does a per-record `isOrgMate(viewer, owner)` query, the batch path resolves the viewer's full org-member email set once and does a `Set.has(ownerEmail)` check per adopter. Net effect: org-mates see unmasked contact, the "Who has access" disclosure, can approve PII requests, and can revoke grants on teammate profiles — same surface admins/moderators got.
+  - **Edit gates** — `canEditAdopterRecord` (used by `saveAdopter`), `appendToExistingAdopter`, `updateContactEntry`, and `removeContactEntry` all gain an `actorIsOrgMate` disjunct. Org-mates can save core record edits, update existing contact entries, and remove entries — symmetric with the owner.
+  - **Audit log** — the per-adopter timeline (admin/moderator-gated since v2.18.8) now also unlocks for org-mates. `canViewAudit` on the profile page is `isModerator || isOrgMateOfOwner`.
+  - **Delete record stays owner-only.** This is the one carve-out. Soft-delete is destructive; the audit log + notification system doesn't help recover from "teammate clicked the wrong button at 11pm". Admin override remains.
+- **Creator attribution chip below the adopter name.** A small `Creada por Juan Gómez · Rescate Buenos Aires` line surfaces who built the profile and from which org. Two visibility tiers:
+  - **Privileged viewers** (owner / admin / moderator / editor / org-mate) see name + org. When the viewer and creator share that org, the chip is teal-accented to read as "this is one of my teammates".
+  - **Non-privileged viewers** (public profile holders, search-match grant holders) see the creator name only; the org is suppressed — organization membership shouldn't leak to anonymous searchers.
+  - Org is picked via `pickAttributionOrg`: prefer a shared org with the viewer, fall back to the creator's earliest-joined org. `src/lib/orgMembership.ts` is the new home for these helpers (also exports `isOrgMate` and `getOrgsForEmail`).
+- **Owner awareness on non-self edits.** When a non-owner editor touches the profile, the owner gets a single bell notification linking to `/adopter/<id>#history`. New type `profile_edited_by_orgmate`, fired from `saveAdopter`, `updateContactEntry`, `removeContactEntry`, `saveAdoption`, `saveImage`, and `setProfilePicture`. **Quiet on `addContactEntry`** — that's the open-contribution path and would generate spam during vetting sessions; owners see those in the audit log if they look.
+  - **30-minute deterministic-id dedup.** Within a bucket, the same `(owner, adopter, editor)` tuple UPSERTs the existing notification — body updates to the latest summary, `createdAt` bumps so the bell re-surfaces it. A teammate editing for 10 minutes produces ONE bell row, not eight.
+  - **No PII in the bell body.** Summary lines say *what* changed ("Editó: name, familyMembers") not the values themselves. The audit log behind the link has the diff.
+  - Trade-off: per-bucket dedup, not sliding window. An edit at 11:59 + 12:01 falls in different buckets and produces two rows. Acceptable for v1; a true sliding-window dedup is more code for marginal gain. Flagged as a follow-up if the bell gets noisy.
+
+### Engineering
+- New `src/lib/orgMembership.ts` — `isOrgMate`, `getOrgsForEmail`, `pickAttributionOrg`. Each fails closed-or-empty on DB errors so a transient D1 hiccup doesn't lock collaborators out of teammate profiles.
+- `notifyOwnerOfOrgMateChange` lives at the bottom of `src/app/actions/notifications.ts` and is the single fan-in for the awareness layer. It's safe to call unconditionally — the helper short-circuits on self-edit / anonymous editor / anonymous owner.
+- New i18n keys `attribution.created_by` in `es.ts` + `en.ts`.
+- Unit test in `piiAccess.test.ts` adds `isOrgMate` coverage to the "all privileged paths" check; 104 tests pass.
+
+### Known carve-outs
+- **Delete record stays owner-only.** See above; intentional.
+- **No "X new edits since your last visit" sticky banner.** `logProfileView` already records the data we'd need for it; surface deferred to a follow-up because the bell-notification flow covers the immediate awareness need.
+
+## [2.18.10] - 2026-06-06
+
+### Changed
+- **Moderators now get full privileged PII visibility on every adopter profile.** Extended `resolveVisibility` (`src/lib/piiAccess.ts`) to accept an `isModerator` flag and added it to the `privileged` disjunction alongside `isAdmin`, `isEditor`, and owner. Both server resolvers (`resolveAdopterVisibility` + the batch `resolveAdoptersVisibility` in `piiAccessServer.ts`) now fetch `isModeratorOrAdminAsync` in parallel with the existing admin check and pass the derived `isModerator` (we subtract `isAdmin` to keep the two flags disjoint, though either is sufficient for the resolver). Net effect: a moderator sees the "Who has access" disclosure, sees all contact info unmasked, can approve pending PII access requests, and can revoke approved grants — identical read+approve+revoke surface to admins, on every profile in the registry. Admin-only mutations (`setAdopterPublic`, `deleteAdopter`, ownership transfer) remain admin-only.
+
+### Documented
+- **"My Adopters" is org-scoped, not owner-scoped.** Surfaced via a debug session: `getMyAdopters` (`src/app/actions/dashboard.ts:27-31`) returns every adopter owned by any member of any org the viewer belongs to, NOT just records the viewer personally owns. A teammate-owned profile appearing in My Adopters with no "Who has access" section is expected behavior — only the actual `addedBy` (or admin / moderator / editor) gets `privileged`. The other branch that hides the disclosure even for a true owner is `PiiAccessGrantsDisclosure.tsx:22`: zero grants on the record → null render. Not a code change; flagged here so the next pair of eyes doesn't dig the same trench.
+
+## [2.18.9] - 2026-06-06
+
+### Added
+- **Admin-initiated adopter ownership transfer.** Until now there was no way to change `adopters.addedBy` after creation — if a user left the org or an import script mis-attributed the record, the only path was raw SQL via `/admin/query`, which is intentionally SELECT-only. New admin-only section on `/adopter/[id]` shows "Owned by: `<email>`" plus a `Transfer ownership →` button that opens a modal with an email/name autosuggest. Confirming calls the new `transferAdopterOwnership(adopterId, toEmail)` server action in `src/app/actions/admin.ts`.
+  - **Scope is intentionally narrow.** Only `adopters.addedBy` gets rewritten. Child-row `addedBy` fields on `adoptions`, `adopter_images`, and per-entry `contactEntries[]` are NOT touched — those are *contributor credits* (who created that child row), not ownership signals, and the duplicate-merge flow already uses the same convention. The entire permission model (edit gate, delete gate, `isOwner`, PII visibility, adopter-login gate) derives from the one column, so updating it propagates correctly on the next read.
+  - **Audit-first ordering** since D1 has no transactions. The action writes to `adopter_history` (canonical v2.18.8 shape `{ ownership_transferred: { from, to } }`) and to the global `audit_log` BEFORE flipping `adopters.addedBy`. If the UPDATE fails we still have a paper trail of "we tried"; the reverse order would leave a silent transfer with no record.
+  - **Audit-log renderer.** The per-adopter history timeline (admin/moderator-gated since v2.18.8) gets a new chip + render block showing `from ➜ to`. New i18n keys `audit.event_ownership_transferred` and `audit.desc_ownership_transferred` in both `es.ts` and `en.ts`.
+  - **Notifications.** Old and new owner each receive a `createNotification` row pointing at the adopter URL. Wrapped in fire-and-forget with `.catch(logger.warn)` per project convention so a notification miss never blocks the transfer itself.
+- **`GET /api/admin/users/search?q=<prefix>`.** Admin-only autosuggest endpoint backing the transfer modal. LIKE-substring match on `email` or `name`, capped at 20 results, falls back to the 20 most-recent users when `q` is empty so the modal isn't blank on open. Authed via `isAdminAsync`; the query string is parameterized, never interpolated. There was no reusable user-picker component (`UserFilterSelect` is a closed-set dropdown from `/admin/adopters` aggregation), so the modal pairs a debounced fetch with a clickable result list.
+
+### Known gaps (deferred follow-up)
+- No bulk "transfer everything owned by user X to user Y" surface on `/admin/users` yet. v1 is intentionally per-adopter; bulk reassign has different failure modes (partial success, rollback semantics) and is worth its own design pass.
+- No undo. The action is reversible by running it again with the original owner; an explicit undo flow would need to also reverse the audit row, which conflicts with the "audit is the immutable trail" posture. Not adding for now.
+
 ## [2.18.8] - 2026-06-06
 
 ### Fixed

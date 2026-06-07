@@ -87,10 +87,15 @@ export async function appendToExistingAdopter(
         if (!target) return { success: false, error: 'Target adopter not found' };
         if (target.deletedAt) return { success: false, error: 'Cannot append to a deleted adopter' };
 
-        // Auth: actor must own the target (addedBy) or be an admin. isAdminAsync
-        // so DB-role admins pass too — same admin check as saveAdopter's edit gate.
+        // Auth: actor must own the target (addedBy), be an admin, or share an
+        // org with the owner (v2.18.11). isAdminAsync so DB-role admins pass.
         const { isAdminAsync } = await import('@/config/admins');
-        if (target.addedBy !== actorEmail && !(await isAdminAsync(actorEmail))) {
+        const { isOrgMate } = await import('@/lib/orgMembership');
+        const [actorIsAdmin, actorIsOrgMate] = await Promise.all([
+            isAdminAsync(actorEmail),
+            isOrgMate(actorEmail, target.addedBy),
+        ]);
+        if (target.addedBy !== actorEmail && !actorIsAdmin && !actorIsOrgMate) {
             return { success: false, error: 'Not authorized to modify this adopter' };
         }
 
@@ -220,9 +225,13 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
             // apply the same gate, so a contributor who can append a phone via
             // addContactEntry still can't rewrite or delete one through saveAdopter.
             const { isAdminAsync } = await import('@/config/admins');
-            const actorIsAdmin = await isAdminAsync(changedBy);
-            if (!canEditAdopterRecord({ gatingEnabled: true, actorEmail: changedBy, ownerEmail: existing.addedBy, actorIsAdmin })) {
-                logger.warn('saveAdopter: edit blocked — not owner/admin', { adopterId: data.id, actorEmail: changedBy });
+            const { isOrgMate } = await import('@/lib/orgMembership');
+            const [actorIsAdmin, actorIsOrgMate] = await Promise.all([
+                isAdminAsync(changedBy),
+                isOrgMate(changedBy, existing.addedBy),
+            ]);
+            if (!canEditAdopterRecord({ gatingEnabled: true, actorEmail: changedBy, ownerEmail: existing.addedBy, actorIsAdmin, actorIsOrgMate })) {
+                logger.warn('saveAdopter: edit blocked — not owner/admin/org-mate', { adopterId: data.id, actorEmail: changedBy });
                 throw new Error('Not authorized to edit this adopter record.');
             }
 

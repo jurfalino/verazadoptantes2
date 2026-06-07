@@ -59,10 +59,13 @@ export async function removeContactEntry(
         // of this entry (matching updateContactEntry's relaxation). Entries
         // with no `addedBy` (legacy / blob-migrated) stay owner+admin-only.
         const isOwner = target.addedBy === actor;
-        const actorIsAdmin = await isAdminAsync(actor);
+        const [actorIsAdmin, actorIsOrgMate] = await Promise.all([
+            isAdminAsync(actor),
+            (await import('@/lib/orgMembership')).isOrgMate(actor, target.addedBy),
+        ]);
         const isOwnContribution = !!removed.addedBy && removed.addedBy === actor;
-        if (!isOwner && !actorIsAdmin && !isOwnContribution) {
-            logger.warn('removeContactEntry: not owner/admin/contributor', { adopterId, actor, entryId });
+        if (!isOwner && !actorIsAdmin && !actorIsOrgMate && !isOwnContribution) {
+            logger.warn('removeContactEntry: not owner/admin/org-mate/contributor', { adopterId, actor, entryId });
             return { ok: false, error: 'Not authorized to remove this entry.' };
         }
 

@@ -42,6 +42,16 @@ interface AdopterFormProps {
     isAdmin?: boolean;
     formPrefill?: FormSubmissionPrefill | null;
     hasDuplicateBanner?: boolean;
+    /** v2.18.15: creator + org attribution shown as a byline in the metadata
+     *  row below the H1, alongside country / views / rating. Replaces the
+     *  orphaned mid-page chip that lived in AdopterProfileV2. */
+    attribution?: { creatorName: string; orgName: string | null; orgSlug: string | null } | null;
+    /** Whether the viewer shares an org with the creator — drives the chip
+     *  accent color (teal "this is my teammate" vs neutral grey). */
+    isOrgMateOfOwner?: boolean;
+    /** Whether the viewer is "privileged" per piiAccess — gates whether the
+     *  org part of the byline is shown (strangers see name only). */
+    isPrivileged?: boolean;
     /**
      * Mirrors the server-side `canEditAdopterRecord` decision. When false, the
      * form blocks entry into edit mode (no pencil, no click-to-edit hover
@@ -87,7 +97,7 @@ function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
     );
 }
 
-export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, canEdit = true, onMaskedContactClick, onMaskedNameClick }: AdopterFormProps) {
+export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -815,6 +825,22 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                             {/* Metadata row */}
                             {!isNew && (
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-xs">
+                                    {/* Creator byline (v2.18.15). First item in the meta
+                                        row because "who created this" is the most
+                                        identifying piece of record metadata. Privileged
+                                        viewers see name + org chip; strangers see name
+                                        only (no org membership leak). */}
+                                    {attribution && attribution.creatorName && (
+                                        <span className="inline-flex items-center gap-1.5 text-stone-500">
+                                            <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                            <span className="truncate max-w-[10rem]" title={attribution.creatorName}>{attribution.creatorName}</span>
+                                            {isPrivileged && attribution.orgName && (
+                                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${isOrgMateOfOwner ? 'bg-teal-50 text-teal-700' : 'bg-stone-100 text-stone-600'}`}>
+                                                    {attribution.orgName}
+                                                </span>
+                                            )}
+                                        </span>
+                                    )}
                                     {initialData?.country && (() => {
                                         const c = getCountryByCode(initialData.country!);
                                         if (!c) return null;
