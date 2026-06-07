@@ -4,6 +4,7 @@ import { adopterImages, adopterHistory } from '@/db/schema';
 import { eq, sql, and, isNull } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { logger } from '@/lib/logger';
+import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { processImageForStorage } from '@/lib/r2';
 
@@ -44,6 +45,21 @@ export async function saveImage(adopterId: string, url: string, caption?: string
         if (isProfilePicture) {
             revalidatePath(`/adopter/${adopterId}`);
         }
+
+        // v2.19.5: audit row so /admin/audit surfaces image uploads alongside
+        // every other "what the user did" event. Previously this was a
+        // coverage gap — adopter pages logged adopter_updated for the
+        // record edit but image uploads went unrecorded in audit_log.
+        logAudit({
+            userEmail: addedBy,
+            action: 'image_uploaded',
+            target: adopterId,
+            details: {
+                adopterId,
+                mediaType: mediaType || 'image',
+                isProfilePicture: !!isProfilePicture,
+            },
+        });
 
         return { success: true, id };
     } catch (error) {
@@ -90,6 +106,24 @@ export async function setProfilePicture(adopterId: string, imageId: string) {
             .where(eq(adopterImages.id, imageId));
 
         revalidatePath(`/adopter/${adopterId}`);
+
+        // v2.19.5: audit row — companion to image_uploaded so the timeline
+        // shows "X set Y as profile picture" separately from initial upload.
+        try {
+            const actor = await getUser();
+            logAudit({
+                userEmail: actor,
+                action: 'profile_picture_set',
+                target: adopterId,
+                details: { imageId },
+            });
+        } catch (e) {
+            logger.warn('setProfilePicture: audit log failed', {
+                adopterId, imageId,
+                error: e instanceof Error ? e.message : String(e),
+            });
+        }
+
         return { success: true };
     } catch (error) {
         const errorId = logger.error('Set profile picture failed', error, { adopterId, imageId });

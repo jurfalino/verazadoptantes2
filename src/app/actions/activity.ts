@@ -2,10 +2,20 @@
 
 import { getUser } from './_db';
 import { logger } from '@/lib/logger';
+// v2.19.5: derivations moved to src/lib/auditRow.ts as the shared source of
+// truth between this feed and /admin/audit. ActivitySeverity / FieldSummary
+// kept as re-exports so existing consumers don't break.
+import {
+    parseDetails as parseDetailsShared,
+    deriveSeverity as deriveSeverityShared,
+    deriveFieldSummary as deriveFieldSummaryShared,
+    type AuditSeverity,
+    type AuditFieldSummary,
+} from '@/lib/auditRow';
 
-export type ActivitySeverity = 'rose' | 'amber' | 'emerald' | 'stone';
+export type ActivitySeverity = AuditSeverity;
 
-export interface ActivityFieldSummary {
+export interface ActivityFieldSummary extends AuditFieldSummary {
     /** First 1–2 changed field names (camelCase keys, rendered via i18n). */
     primary: string[];
     /** Number of additional changed fields beyond the primary list. */
@@ -100,58 +110,13 @@ export interface ActivityPage {
     actors: Array<{ email: string; name: string }> | null;
 }
 
-/** Field keys whose value is a 1–5 rating; status delta drives severity. */
-const STATUS_FIELDS = new Set(['status', 'rating', 'avgRating']);
-
-function parseDetails(raw: string | null): Record<string, unknown> {
-    if (!raw) return {};
-    try {
-        const parsed = JSON.parse(raw);
-        return typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : {};
-    } catch {
-        return {};
-    }
-}
-
-function deriveSeverity(action: string, details: Record<string, unknown>): ActivitySeverity {
-    if (action === 'flag_created' || action === 'adopter_deleted') return 'rose';
-    if (action === 'adopter_deletion_requested') return 'amber';
-    if (action === 'verification_added') return 'emerald';
-
-    if (action === 'adopter_updated') {
-        // details payload may be the changes blob directly OR nested under
-        // a `changes` key — handle both since logAudit shapes have drifted.
-        const changes = (details.changes as Record<string, unknown>) ?? details;
-        for (const field of STATUS_FIELDS) {
-            const delta = changes?.[field] as { from?: unknown; to?: unknown } | undefined;
-            if (delta && typeof delta === 'object' && 'to' in delta) {
-                const to = Number(delta.to);
-                if (!Number.isFinite(to)) continue;
-                if (to <= 2) return 'rose';
-                if (to === 3) return 'amber';
-                if (to >= 4) return 'emerald';
-            }
-        }
-    }
-    return 'stone';
-}
-
-function deriveFieldSummary(action: string, details: Record<string, unknown>): ActivityFieldSummary | null {
-    if (action !== 'adopter_updated') return null;
-    const changes = (details.changes as Record<string, unknown>) ?? details;
-    if (!changes || typeof changes !== 'object') return null;
-    const keys = Object.keys(changes).filter(k => {
-        // Filter to plain "{from, to}" shape; ignore array/string entries
-        // that happen to land in the details blob for one-off audit rows.
-        const v = (changes as Record<string, unknown>)[k];
-        return v && typeof v === 'object' && ('from' in (v as object) || 'to' in (v as object));
-    });
-    if (keys.length === 0) return null;
-    return {
-        primary: keys.slice(0, 2),
-        extraCount: Math.max(0, keys.length - 2),
-    };
-}
+// parseDetails / deriveSeverity / deriveFieldSummary now live in
+// src/lib/auditRow.ts (v2.19.5). Local wrappers preserve the existing call
+// sites without forcing every consumer to chase the new import path.
+const parseDetails = parseDetailsShared;
+const deriveSeverity = deriveSeverityShared;
+const deriveFieldSummary = (action: string, details: Record<string, unknown>): ActivityFieldSummary | null =>
+    deriveFieldSummaryShared(action, details);
 
 function deriveExtra(action: string, details: Record<string, unknown>): OrgActivityEntry['extra'] {
     const out: OrgActivityEntry['extra'] = {};

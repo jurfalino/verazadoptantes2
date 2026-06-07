@@ -397,6 +397,7 @@ export async function logProfileView(adopterId: string, userId?: string) {
         const db = await getDb();
         if (!db) return;
 
+        // adopterStats row — every visit, analytics counts care about volume.
         await db.insert(adopterStats).values({
             id: crypto.randomUUID(),
             adopterId,
@@ -404,6 +405,37 @@ export async function logProfileView(adopterId: string, userId?: string) {
             userId: userId || null,
             createdAt: new Date()
         });
+
+        // v2.19.5: also write to audit_log so /admin/audit can answer
+        // "which records did user X open" without diving into adopterStats.
+        // Deduped by (viewer, adopter, hour-bucket) deterministic id —
+        // a tab-switching session that hits the page 30 times within an
+        // hour writes one audit row, not thirty.
+        const viewer = (userId || '').trim();
+        if (viewer && viewer !== 'anonymous') {
+            try {
+                const bucketHour = Math.floor(Date.now() / (60 * 60 * 1000));
+                const auditId = `view__${viewer}__${adopterId}__${bucketHour}`;
+                // INSERT OR IGNORE on the deterministic id collapses repeats
+                // within the bucket. The audit_log id is the PK so duplicate
+                // inserts fail; the catch eats the conflict silently.
+                const { auditLog } = await import('@/db/schema');
+                await db.insert(auditLog).values({
+                    id: auditId,
+                    userId: null,
+                    userEmail: viewer,
+                    action: 'profile_viewed',
+                    target: adopterId,
+                    details: null,
+                    createdAt: new Date(),
+                }).onConflictDoNothing();
+            } catch (e) {
+                logger.warn('logProfileView: audit row failed (continuing)', {
+                    adopterId, viewer,
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            }
+        }
     } catch (error) {
         logger.warn('Log profile view failed', { adopterId, error: error instanceof Error ? error.message : String(error) });
     }
