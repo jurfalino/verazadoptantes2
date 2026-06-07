@@ -181,16 +181,29 @@ export async function ensureUserProfile(userId: string, email?: string, name?: s
             ).bind(resolvedId, detectedCountry, detectedProvince, detectedProvinceCode, detectedCity, detectedTimezone).run();
 
             // Always update last_active_at, and backfill geo columns if still NULL
-            // (respects user overrides — only fills empty slots)
+            // (respects user overrides — only fills empty slots).
+            //
+            // v2.19.4: `country` joined the COALESCE backfill set. Before this
+            // fix it was set ONCE on the INSERT above and never re-attempted,
+            // so any user whose first sign-in landed without a CF-IPCountry
+            // header (some edges, VPN, headless test envs) had country=NULL
+            // permanently — which then cascaded into every adopter they
+            // subsequently created being filtered out of the discovery search.
+            // Symmetric with the other geo fields; COALESCE protects user
+            // overrides set via /settings (no UI today but the column is
+            // ready). One real-world repro: mirella.hualde@gmail.com in
+            // prod, signed in once Feb 9 2026 with no CF header, stuck null
+            // through six subsequent sign-ins.
             await env.DB.prepare(
                 `UPDATE user_profiles SET
                     last_active_at = strftime('%s','now'),
+                    country = COALESCE(country, ?),
                     province = COALESCE(province, ?),
                     province_code = COALESCE(province_code, ?),
                     city = COALESCE(city, ?),
                     timezone = COALESCE(timezone, ?)
                  WHERE user_id = ?`
-            ).bind(detectedProvince, detectedProvinceCode, detectedCity, detectedTimezone, resolvedId).run();
+            ).bind(detectedCountry, detectedProvince, detectedProvinceCode, detectedCity, detectedTimezone, resolvedId).run();
 
             // 3. v2.14.10: assign a shareable handle for the public showcase URL
             //    (`/user/[handle]`). Only set if currently NULL — stable thereafter

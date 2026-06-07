@@ -289,7 +289,14 @@ export async function POST(request: Request) {
 
         const newId = crypto.randomUUID();
 
-        // Look up the user's country to stamp on the adopter
+        // Look up the user's country to stamp on the adopter. Two-tier
+        // fallback identical to saveAdopter's at adopters.ts:307-332 —
+        // user_profiles.country (set on first sign-in), then live
+        // CF-IPCountry header. Before v2.19.4 this route only checked
+        // user_profiles, so an import / contact-picker create by a user
+        // whose profile country was still null (header missing on their
+        // first sign-in) silently landed with country=null and got hidden
+        // from the discovery search forever after.
         let userCountry: string | null = null;
         try {
             const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
@@ -300,6 +307,10 @@ export async function POST(request: Request) {
                 userCountry = row?.country || null;
             }
         } catch { /* best-effort */ }
+        if (!userCountry) {
+            const hdr = request.headers.get('cf-ipcountry');
+            if (hdr) userCountry = hdr;
+        }
 
         // Insert adopter record
         // notes deprecated v2.12.1-28 — handled below as a dedicated observation record.

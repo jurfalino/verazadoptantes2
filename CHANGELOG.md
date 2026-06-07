@@ -2,6 +2,59 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.4] - 2026-06-07
+
+### Fixed
+Closed three independent leaks that all silently produced `country = NULL` records — the same leaks v2.19.3's backfill cleans up after the fact:
+
+- **`/api/adopters` POST was missing the CF-IPCountry header fallback** that `saveAdopter` has had for ages. The route only looked up `user_profiles.country`; when that returned NULL (header missing on the rescuer's first-ever sign-in) the adopter inserted with `country = NULL`. Concrete repro: prod adopter `candela bodeman galdo` (a2f9fa74-…), imported via the Facebook ImportWizard on Feb 22 2026 when `gatitosolivos@gmail.com`'s `user_profiles.country` was still NULL. Patched to mirror `saveAdopter`'s 2-tier fallback (`user_profiles → CF-IPCountry header`).
+- **`_adopterFactory.createAdopterFromSubmission` set no country at all** — silent bypass used by 3 routes: form-submission auto-create, contract-submit, and the orphan-submission retry. Adopters created via any of those paths landed with `country = NULL` unconditionally. Same 2-tier lookup added; the column now goes into the insert.
+- **`ensureUserProfile` was one-shot for country** — it set country on the INSERT OR IGNORE row creation but the subsequent UPDATE only COALESCE-backfilled `province / province_code / city / timezone`, **never country**. Once a user's first sign-in landed without a CF-IPCountry header (some Cloudflare edges, VPN, headless CI), their `user_profiles.country` stayed NULL across every subsequent sign-in. Repro: prod user `mirella.hualde@gmail.com` (signed in once Feb 9 2026, never re-stamped). NULL on the user profile then cascaded into every adopter they created via either leaky path above. Added `country = COALESCE(country, ?)` to the backfill UPDATE — symmetric with the other geo fields, COALESCE protects future user-set overrides.
+
+Net effect: future creates by these paths get a country whenever the request carries one; future sign-ins self-heal a NULL country on `user_profiles` when the header is present. The v2.19.3 backfill button still handles the existing residual rows.
+
+## [2.19.3] - 2026-06-07
+
+### Added
+- **Admin "Complete country in records" backfill** (`/admin` → mounted next to the existing "Migrar datos de contacto antiguos" task). `saveAdopter` has stamped country on create from `user_profiles.country` → CF-IPCountry header for ages, but a handful of records (1 in prod, 4 on staging at time of writing) landed without it — either predating that logic or created via bypass paths (`_adopterFactory`, form-submission auto-create, contract-app create). Those records were being silently filtered out of the discovery search until v2.19.1/.2 owner-relaxed the geo gate; the relaxation rescues the owner-view case but org-mates and admins still lost visibility of them.
+  - New server action `backfillAdopterCountries()` in `src/app/actions/admin.ts`. For each null/empty-country adopter, looks up `addedBy → user_profiles.country` (same shape `saveAdopter` runs at create) and sets it. Logs `adopter_country_backfilled` per row to `audit_log`. Idempotent.
+  - Residuals (creator has no country either, or `addedBy = 'anonymous'`) stay null and surface in the result panel with a direct link to `/admin/adopters?country=_none` for manual triage. That filter has existed for a while; the backfill just shrinks what lands on it.
+  - Same UI pattern as `AdminContactEntriesBackfill` — single button, run-and-done, result count, toast.
+
+## [2.19.2] - 2026-06-07
+
+### Fixed
+- **Owner-relax was missing from a second geo-filter site in `findAdopters`.** v2.19.1 fixed the geo gate on the `directResults` query (the LIKE search across `adopters.name / contactInfo / addressInfo / familyMembers`) but missed the *second* call site at `findAdopters.ts:615` — the loop that fetches adopter profiles for IDs surfaced by `searchPhoneTokenMatches`, `searchHistoryMatches`, and `searchAdoptionMatches`. The phone-token lookup correctly found the target adopter ID by its tokenized phone, but the geo filter then re-excluded the profile when `country` didn't match the viewer's `user_profiles.country`. That left the user seeing other adopters whose contactInfo happened to contain a substring of the phone, but not the one whose tokens actually matched it — the exact symptom reported as "I get other records not the one with that phone." Verified against staging adopter `84da04dc-…` (country=null, addedBy=jurfalino@gmail.com, phone tokens present). Applied the same `country = X OR addedBy = viewerEmail` relaxation here so phone-token / history / adoption-derived IDs honor ownership the same way the direct LIKE path does.
+
+## [2.19.1] - 2026-06-07
+
+### Fixed
+- **AdopterPicker search race — "results change without me touching anything"**. `handleSearch` fired `findAdopters` on every keystroke with no debounce and no request sequencing. Typing "Maria" dispatched 5 concurrent searches; whichever resolved *last* won, not the most recent one *dispatched*. A slow "M" response could overwrite the correct "Maria" results half a second after the user stopped typing — visually identical to "the list mutated on its own." Added 250 ms debounce + monotonic `requestSeqRef` counter so stale responses are dropped before they commit. New "Buscando..." indicator gives the user feedback during the in-flight window. Affects every consumer of `AdopterPicker` (homepage entry cards, the new v2.19.0 record-adoption modal).
+- **Own records hidden by the global geo-filter**. `findAdopters` discovery mode at `findAdopters.ts:567` had `eq(adopters.country, userCountry)` as a hard filter — any record whose `country` didn't match the viewer's `user_profiles.country` was excluded, including the viewer's own creations. A rescuer who built an adopter without setting country (or whose own profile country differs from the adopter's) would search by name and silently get nothing. The geo gate is correct as a cross-org relevance filter but never made sense for the viewer's own records. Relaxed to `country = X OR addedBy = viewerEmail` so owned records always pass through. Plausibly also fixes the "phone search returns other records, not the one with that phone" symptom — same record being filtered out by the same gate.
+- **"Tuyo" / "Yours" badge on owned results**. Same picker: if the viewer happens to be the creator of a search result, a small teal pill makes it visible. Helps the rescuer triage their own records in a mixed list, and is the user-facing confirmation that the geo-filter relaxation above is doing what it should.
+
+## [2.19.0] - 2026-06-06
+
+### Added — "Record adoption" from the animal side
+- **Primary action on `/my-animals` cards**: a teal-filled "🏠 Registrar adopción" button on every available animal kicks off the inverse flow — pick the animal first, find the adopter mid-flow. Until today the only path was the wrong-direction "go to the adopter profile, open VisitIntentCard, re-find the animal in the inventory dropdown", three context switches for the most common rescuer workflow.
+- **`PickAdopterForAnimalModal`** (new) wraps the existing `AdopterPicker` in a focused modal with header "Registrar adopción · Para {animalName}". Two branches, both close the modal before navigating so the overlay doesn't briefly stack on the destination:
+  - **Existing adopter picked** → routes to `/adopter/<id>?newAdoption=adoption&animalId=<animal.id>`. The wizard auto-opens with adopter + animal both pre-selected. User fills date / rating / details / verified-address and saves; `saveAdoption`'s existing `revalidatePath('/my-animals')` then drops the animal off the available list on next visit.
+  - **"+ Crear nuevo adoptante"** → routes to `/adopter/create?continueToAdoption=true&newAdoption=adoption&animalId=<id>&name=<typed-text>`. The existing `AdopterForm` post-create redirect (extended to forward `animalId` alongside the legacy `linkAnimalId`) lands the user on `/adopter/<newId>?newAdoption=adoption&animalId=<id>` where the wizard fires the same way.
+
+### Changed
+- **`AdoptionFormWizard` honors a new `animalId` URL param** for inventory pre-selection. Falls back gracefully when the id doesn't match anything in `availableAnimals` (e.g. concurrent save claimed it) — wizard opens in 'existing' mode with empty animalId and the dropdown is functional, same as today. The initial-mode resolver now prefers `'existing'` when an animalId arrived, beating the legacy "URL-driven open = mode 'new'" default that was built for the unknown-animal AdoptionWizard path.
+- **`AdopterForm` post-create redirect** forwards `animalId` along with the existing `linkAnimalId` / `animalName` / `species` / `date` set when `continueToAdoption=true`. Backward compatible: legacy callers using `linkAnimalId` still work; the new modal uses `animalId`.
+
+### Engineering
+- New: `src/components/PickAdopterForAnimalModal.tsx`. Stateless on its own — defers the search UI to `AdopterPicker` and the actual adoption form to the existing wizard on the adopter profile. ~100 lines.
+- Modified: `src/app/my-animals/page.tsx` (button + modal mount), `src/components/AdopterForm.tsx` (animalId forwarding in the post-create redirect), `src/components/AdoptionFormWizard.tsx` (animalId URL prefill + mode selection).
+- `saveAdoption`, `findAdopters`, `AdopterPicker`: untouched.
+- New i18n keys `myAnimals.record_adoption`, `myAnimals.pick_adopter_title`, `myAnimals.pick_adopter_for` in both `es.ts` and `en.ts`.
+
+### Known carve-outs (intentional)
+- **Single record type ('adoption' only)** from this entry point. The page is literally titled "for adoption" — the intent is unambiguous here. Other record types (request, observation, follow-up, returned) remain on the VisitIntentCard path from the adopter profile, where context warrants the picker.
+- **Two-page hop on the new-adopter path** (My Animals → /adopter/create → /adopter/[newId] with wizard). One more redirect than the existing-adopter path. Acceptable: embedding the create form inside the picker modal would mean maintaining a second create surface forever.
+
 ## [2.18.16] - 2026-06-06
 
 ### Added — Team activity feed v1.1

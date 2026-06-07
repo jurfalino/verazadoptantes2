@@ -1,11 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { useLanguage } from '@/context/LanguageContext';
 import { findAdopters } from '@/app/actions';
 import type { DiscoveryMatch, SnippetField } from '@/app/actions';
 import { RatingBadge } from '@/components/RatingBadge';
 import { RatingExplainer } from '@/components/RatingExplainer';
+
+const SEARCH_DEBOUNCE_MS = 250;
 
 const SNIPPET_ICONS: Record<SnippetField, string> = {
     name: '👤', contact: '📞', address: '📍',
@@ -39,27 +42,73 @@ export default function AdopterPicker({
     accent?: Accent;
 }) {
     const { t } = useLanguage();
+    const { data: session } = useSession();
+    const viewerEmail = session?.user?.email ?? null;
     const accentClasses = ACCENT[accent];
 
     const [search, setSearch] = useState('');
     const [results, setResults] = useState<DiscoveryMatch[]>([]);
     const [searchPerformed, setSearchPerformed] = useState(false);
+    const [searching, setSearching] = useState(false);
     const [preview, setPreview] = useState<DiscoveryMatch | null>(null);
 
-    const handleSearch = async (term: string) => {
-        setSearch(term);
-        setPreview(null);
-        if (term.length > 2) {
-            const response = await findAdopters(
-                { raw: term },
-                { mode: 'discovery', enrich: true },
-            );
-            setResults(response.results as DiscoveryMatch[]);
-            setSearchPerformed(true);
-        } else {
+    // v2.19.1 race fix. Two independent leaks pre-fix:
+    //   1. No debounce ⇒ every keystroke fired a request. Typing "Maria"
+    //      dispatched 5 concurrent searches.
+    //   2. No request sequencing ⇒ whichever response *resolved* last won,
+    //      not the most recent one *dispatched*. So a slow "M" response could
+    //      overwrite the correct "Maria" results half a second after the user
+    //      stopped typing — exactly the "results change without me touching
+    //      anything" symptom reported.
+    // Fix: debounce input + monotonic seq counter; drop stale responses by
+    // comparing each fulfilled response's seq against the current request seq.
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const requestSeqRef = useRef(0);
+
+    useEffect(() => {
+        return () => {
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+        };
+    }, []);
+
+    const runSearch = (term: string) => {
+        const trimmed = term.trim();
+        if (trimmed.length <= 2) {
+            // Below the LIKE-min-length threshold the existing UI showed
+            // "Start typing…"; preserve that behavior.
+            requestSeqRef.current++;  // invalidate any in-flight response
             setResults([]);
             setSearchPerformed(false);
+            setSearching(false);
+            return;
         }
+        const mySeq = ++requestSeqRef.current;
+        setSearching(true);
+        findAdopters({ raw: trimmed }, { mode: 'discovery', enrich: true })
+            .then(response => {
+                // Stale-response guard: only commit if this is still the
+                // latest request. A request fired later will have bumped
+                // requestSeqRef past mySeq.
+                if (mySeq !== requestSeqRef.current) return;
+                setResults(response.results as DiscoveryMatch[]);
+                setSearchPerformed(true);
+            })
+            .catch(() => {
+                if (mySeq !== requestSeqRef.current) return;
+                setResults([]);
+                setSearchPerformed(true);
+            })
+            .finally(() => {
+                if (mySeq !== requestSeqRef.current) return;
+                setSearching(false);
+            });
+    };
+
+    const handleSearch = (term: string) => {
+        setSearch(term);
+        setPreview(null);
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(() => runSearch(term), SEARCH_DEBOUNCE_MS);
     };
 
     if (preview) {
@@ -143,19 +192,27 @@ export default function AdopterPicker({
                 />
             </div>
 
-            {!searchPerformed && (
+            {!searchPerformed && !searching && (
                 <div className="text-center py-6 text-stone-500 text-sm">
                     <svg className="w-8 h-8 mx-auto mb-2 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                     {t('wizard.type_to_search') || 'Start typing to search existing adopters'}
                 </div>
             )}
 
+            {searching && (
+                <div className="text-center py-3 text-stone-500 text-xs italic">
+                    {t('common.searching') || 'Buscando...'}
+                </div>
+            )}
+
             {searchPerformed && results.length > 0 && (
                 <div className="max-h-72 overflow-y-auto border border-stone-200 rounded-xl divide-y">
-                    {results.map(res => (
+                    {results.map(res => {
+                        const isMine = !!viewerEmail && res.adopter.addedBy === viewerEmail;
+                        return (
                         <div
                             key={res.adopter.id}
-                            className="flex items-center gap-3 p-3 hover:bg-teal-50 transition-colors"
+                            className={`flex items-center gap-3 p-3 hover:bg-teal-50 transition-colors ${isMine ? 'bg-teal-50/50' : ''}`}
                         >
                             {res.thumbnail ? (
                                 <img src={res.thumbnail} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
@@ -169,7 +226,16 @@ export default function AdopterPicker({
                                 onClick={() => onSelect(res)}
                                 className="flex-1 text-left min-w-0"
                             >
-                                <div className="font-semibold text-sm text-stone-800 truncate">{res.adopter.name}</div>
+                                <div className="flex items-center gap-2">
+                                    <div className="font-semibold text-sm text-stone-800 truncate">{res.adopter.name}</div>
+                                    {/* v2.19.1: visible "yours" cue so the rescuer
+                                        can spot their own records in a mixed list. */}
+                                    {isMine && (
+                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-teal-100 text-teal-700 flex-shrink-0">
+                                            {t('wizard.your_record') || 'Tuyo'}
+                                        </span>
+                                    )}
+                                </div>
                                 <div className="flex items-center gap-2 text-xs text-stone-500">
                                     {res.avgRating != null && (
                                         <RatingBadge rating={res.avgRating} variant="inline" size="sm" label="short" />
@@ -189,7 +255,8 @@ export default function AdopterPicker({
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                             </button>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
 

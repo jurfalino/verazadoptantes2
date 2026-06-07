@@ -1034,6 +1034,7 @@ export const en = {
         preview: 'Preview',
         select_this: 'Select this person',
         adoptions_label: 'adoptions',
+        your_record: 'Yours',
         back_to_results: '← Back to results',
         type_to_search: 'Start typing to search existing adopters',
         match_family: 'Matches family members',
@@ -1209,6 +1210,9 @@ export const en = {
         profile_pending_dup_other_tooltip: 'The system detected another similar record. Only the responsible rescuer can review.',
     },
     myAnimals: {
+        record_adoption: 'Record adoption',
+        pick_adopter_title: 'Record adoption',
+        pick_adopter_for: 'For {name}',
         showcase_section_title: 'Your public catalog',
         showcase_section_desc: 'Share these links so people can browse your animals available for adoption.',
         showcase_menu_label: 'Share catalog',

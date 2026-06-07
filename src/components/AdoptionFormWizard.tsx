@@ -171,6 +171,16 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     const shouldOpenFromWizard = !!newAdoptionParam || continueToAdoption;
     const prefillAnimalName = searchParams.get('animalName') || '';
     const prefillSpecies = searchParams.get('species') || 'cat';
+    // v2.19.0: animalId param pre-selects an inventory animal. Used by the
+    // "Registrar adopción" flow that starts on /my-animals — the animal is
+    // already known, only the adopter is found mid-flow. Falls back to the
+    // existing dropdown picker when the id doesn't match anything in
+    // availableAnimals (e.g. the animal was claimed by a concurrent save).
+    const prefillAnimalIdRaw = searchParams.get('animalId') || '';
+    const matchedInventory = prefillAnimalIdRaw
+        ? availableAnimals.find((a: { id: string }) => a?.id === prefillAnimalIdRaw)
+        : null;
+    const prefillAnimalId = matchedInventory ? prefillAnimalIdRaw : '';
     const prefillRecordType = initialRecordType
         || (newAdoptionParam === 'observation' ? 'observation' : 'adoption');
     const prefillRating = searchParams.get('rating');
@@ -207,7 +217,14 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
     const [unknownAnimal, setUnknownAnimal] = useState(() => initialDraft?.unknownAnimal ?? false);
     const [customSpecies, setCustomSpecies] = useState(() => initialDraft?.customSpecies ?? false);
-    const [mode, setMode] = useState<'existing' | 'new'>(() => initialDraft?.mode ?? (shouldOpenFromWizard ? 'new' : 'existing'));
+    // v2.19.0: when an animalId arrived via URL AND matched our inventory,
+    // force mode='existing' so the wizard starts on the dropdown branch with
+    // that animal pre-selected. Beats the legacy default of forcing 'new'
+    // for URL-driven opens (that path was built when only animalName arrived).
+    const [mode, setMode] = useState<'existing' | 'new'>(() => {
+        if (prefillAnimalId) return 'existing';
+        return initialDraft?.mode ?? (shouldOpenFromWizard ? 'new' : 'existing');
+    });
 
     // The event date always defaults to today on open. We deliberately do NOT
     // restore it from a draft — a draft can be days old, and "today" is the
@@ -215,27 +232,43 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     // still edit it via the DatePicker on step 2 if they need a back-date.
     const todayISO = new Date().toISOString().split('T')[0];
 
-    const [formData, setFormData] = useState(() => initialDraft?.formData
-        ? { ...initialDraft.formData, date: prefillDate || todayISO }
-        : {
-        animalName: prefillAnimalName,
-        details: prefillDetails,
-        status: 'completed',
-        rating: prefillRating ? Number(prefillRating) : 5,
-        comments: '',
-        species: prefillSpecies,
-        adopterId: adopterId,
-        recordType: prefillRecordType,
-        date: prefillDate || todayISO,
-        // Companion date used only for the dual-record follow_up/returned_pet
-        // flow — when the user is logging an event for a brand-new animal that
-        // wasn't previously in the system, we ask for both the original
-        // adoption date and the event date so two records can be created.
-        adoptionDate: '',
-        deliveredToHome: false,
-        verifiedAddress: '',
-        identityVerified: false,
-        animalId: '',
+    const [formData, setFormData] = useState(() => {
+        // Draft trumps prefill, but a fresh animalId URL param should still
+        // overwrite a stale draft's animalId — the user just explicitly picked
+        // this animal from /my-animals seconds ago.
+        if (initialDraft?.formData) {
+            return {
+                ...initialDraft.formData,
+                date: prefillDate || todayISO,
+                ...(prefillAnimalId && matchedInventory
+                    ? {
+                        animalId: prefillAnimalId,
+                        animalName: matchedInventory.animalName || initialDraft.formData.animalName,
+                        species: matchedInventory.species || initialDraft.formData.species,
+                    }
+                    : {}),
+            };
+        }
+        return {
+            animalName: matchedInventory?.animalName || prefillAnimalName,
+            details: prefillDetails,
+            status: 'completed',
+            rating: prefillRating ? Number(prefillRating) : 5,
+            comments: '',
+            species: matchedInventory?.species || prefillSpecies,
+            adopterId: adopterId,
+            recordType: prefillRecordType,
+            date: prefillDate || todayISO,
+            // Companion date used only for the dual-record follow_up/returned_pet
+            // flow — when the user is logging an event for a brand-new animal that
+            // wasn't previously in the system, we ask for both the original
+            // adoption date and the event date so two records can be created.
+            adoptionDate: '',
+            deliveredToHome: false,
+            verifiedAddress: '',
+            identityVerified: false,
+            animalId: prefillAnimalId,
+        };
     });
 
     const stepContainerRef = useRef<HTMLDivElement>(null);

@@ -1039,6 +1039,7 @@ export const es = {
         preview: 'Vista previa',
         select_this: 'Seleccionar esta persona',
         adoptions_label: 'adopciones',
+        your_record: 'Tuyo',
         back_to_results: '← Volver a resultados',
         type_to_search: 'Empezá a escribir para buscar adoptantes existentes',
         match_family: 'Coincide con miembros de la familia',
@@ -1214,6 +1215,9 @@ export const es = {
         profile_pending_dup_other_tooltip: 'El sistema detectó otro registro similar. Solo el responsable del registro puede revisarlo.',
     },
     myAnimals: {
+        record_adoption: 'Registrar adopción',
+        pick_adopter_title: 'Registrar adopción',
+        pick_adopter_for: 'Para {name}',
         showcase_section_title: 'Tu catálogo público',
         showcase_section_desc: 'Compartí estos links para que las personas vean tus animales en adopción.',
         showcase_menu_label: 'Compartir catálogo',

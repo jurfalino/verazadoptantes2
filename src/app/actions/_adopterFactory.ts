@@ -104,6 +104,39 @@ export async function createAdopterFromSubmission(
     const contactInfo = contactEntriesToBlob(contactEntries);
     const now = new Date();
 
+    // v2.19.4: stamp country the same way saveAdopter / /api/adopters do.
+    // Before this fix the factory was a silent bypass — form-submission and
+    // contract-submit auto-creates landed with country=null, then got
+    // filtered out of the discovery search. Two-tier lookup: rescuer's
+    // user_profiles.country, then CF-IPCountry header on the inbound
+    // submission request. Best-effort; null is still tolerated and falls
+    // out to the residual the admin backfill can sweep later.
+    let country: string | null = null;
+    try {
+        const { getRequestContext } = await import('@cloudflare/next-on-pages');
+        const { env } = getRequestContext();
+        const owner = (input.addedBy || '').trim();
+        if (env?.DB && owner && owner !== 'anonymous') {
+            const row = await env.DB.prepare(
+                `SELECT up.country FROM user_profiles up
+                 JOIN user u ON u.id = up.user_id
+                 WHERE u.email = ? LIMIT 1`
+            ).bind(owner).first<{ country: string | null }>();
+            country = row?.country?.trim() || null;
+        }
+    } catch (e) {
+        logger.warn('createAdopterFromSubmission: country lookup failed (continuing)', {
+            error: e instanceof Error ? e.message : String(e),
+        });
+    }
+    if (!country) {
+        try {
+            const { headers } = await import('next/headers');
+            const h = await headers();
+            country = h?.get?.('cf-ipcountry') || null;
+        } catch { /* headers() not always available — fine, leave null */ }
+    }
+
     // 1. Insert adopter
     await db.insert(adopters).values({
         id: adopterId,
@@ -114,6 +147,7 @@ export async function createAdopterFromSubmission(
         addedBy: input.addedBy || 'anonymous',
         source: input.source,
         status: '5',
+        country,
         createdAt: now,
         updatedAt: now,
     });

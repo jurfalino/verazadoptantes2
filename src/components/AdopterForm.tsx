@@ -409,6 +409,11 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                     const animalName = searchParams.get('animalName') || '';
                     const species = searchParams.get('species') || '';
                     const linkAnimalId = searchParams.get('linkAnimalId') || '';
+                    // v2.19.0: animalId is the new canonical name that the
+                    // AdoptionFormWizard reads to pre-select an inventory
+                    // animal. linkAnimalId stays as a legacy alias for the
+                    // older AdoptionWizard call sites.
+                    const animalId = searchParams.get('animalId') || '';
 
                     let redirectUrl = `/adopter/${res.id}`;
                     if (continueToAdoption === 'true') {
@@ -416,6 +421,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                         const params = new URLSearchParams();
                         // Forward animal-related params (AdoptionWizard)
                         if (linkAnimalId) params.set('linkAnimalId', linkAnimalId);
+                        if (animalId) params.set('animalId', animalId);
                         if (animalName) params.set('animalName', animalName);
                         if (species) params.set('species', species);
                         const date = searchParams.get('date');

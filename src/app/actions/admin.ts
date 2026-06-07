@@ -266,6 +266,104 @@ export async function backfillLegacyContactEntries(): Promise<
 }
 
 /**
+ * Backfill `adopters.country` for records that landed without it
+ * (v2.19.3). saveAdopter has stamped country on create since v40-ish via
+ * user_profiles.country → CF-IPCountry header, but a handful of records
+ * predate that or were created through bypass paths (the API factory,
+ * form-submission auto-create, contract-app create) that don't run the
+ * stamping logic.
+ *
+ * The fix is mechanical: for each null-country adopter, fill from the
+ * creator's user_profiles.country if available. Anything that can't be
+ * resolved that way (creator also has no country, or addedBy is null /
+ * 'anonymous') is left alone and shows up in the admin's residual count
+ * for manual triage via `/admin/adopters?country=_none`.
+ *
+ * Idempotent. Safe to re-run.
+ */
+export async function backfillAdopterCountries(): Promise<
+    | { ok: true; migrated: number; residual: number; noCreatorCountry: number; errors: { adopterId: string; error: string }[] }
+    | { ok: false; error: string }
+> {
+    const session = await auth();
+    const actor = session?.user?.email ?? '';
+    if (!actor || !(await checkIsAdminAsync(actor))) {
+        return { ok: false, error: 'Unauthorized' };
+    }
+
+    try {
+        const db = await getDb();
+        if (!db) return { ok: false, error: 'No database' };
+
+        // Use raw D1 for the user_profiles join (auth tables aren't in Drizzle
+        // schema). Same shape as the country lookup in saveAdopter at create.
+        const { env } = getRequestContext();
+        if (!env?.DB) return { ok: false, error: 'D1 binding unavailable' };
+
+        const candidates = await db.select({
+            id: adopters.id,
+            addedBy: adopters.addedBy,
+            country: adopters.country,
+        }).from(adopters);
+
+        const nullCountry = candidates.filter((r: { country: string | null }) =>
+            r.country === null || (typeof r.country === 'string' && r.country.trim() === ''));
+
+        let migrated = 0;
+        let noCreatorCountry = 0;
+        const errors: { adopterId: string; error: string }[] = [];
+
+        for (const row of nullCountry) {
+            const creator = row.addedBy?.toLowerCase().trim() ?? '';
+            if (!creator || creator === 'anonymous') {
+                noCreatorCountry++;
+                continue;
+            }
+            try {
+                const profile = await env.DB.prepare(
+                    `SELECT up.country FROM user_profiles up
+                     JOIN user u ON u.id = up.user_id
+                     WHERE u.email = ? LIMIT 1`
+                ).bind(creator).first<{ country: string | null }>();
+                const country = profile?.country?.trim() || null;
+                if (!country) {
+                    noCreatorCountry++;
+                    continue;
+                }
+                await db.update(adopters)
+                    .set({ country, updatedAt: new Date() })
+                    .where(eq(adopters.id, row.id));
+
+                logAudit({
+                    userEmail: actor,
+                    action: 'adopter_country_backfilled',
+                    target: row.id,
+                    details: { country, source: 'creator_user_profile', creator },
+                });
+                migrated++;
+            } catch (e) {
+                errors.push({
+                    adopterId: row.id,
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            }
+        }
+
+        const residual = noCreatorCountry + errors.length;
+        logger.info('backfillAdopterCountries: complete', {
+            actor, migrated, residual, noCreatorCountry, errorCount: errors.length,
+        });
+
+        revalidatePath('/admin');
+        revalidatePath('/admin/adopters');
+        return { ok: true, migrated, residual, noCreatorCountry, errors };
+    } catch (error) {
+        const errorId = logger.error('backfillAdopterCountries failed', error, { actor });
+        return { ok: false, error: `Failed (Error ID: ${errorId})` };
+    }
+}
+
+/**
  * Admin override: flag (or unflag) a whole adopter row as public. When the
  * `ENABLE_PUBLIC_PROFILES` feature flag is on AND this column is 1, the
  * visibility resolver short-circuits to "nothingMasked" for any
