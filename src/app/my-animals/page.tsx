@@ -9,6 +9,7 @@ import { formatShortDate } from '@/lib/dates';
 import { formatAge } from '@/lib/ageUtils';
 import ShareMenu from '@/components/ShareMenu';
 import ShareFormMenu from '@/components/ShareFormMenu';
+import PickAdopterForAnimalModal from '@/components/PickAdopterForAnimalModal';
 import AnimalApplicants from '@/components/AnimalApplicants';
 import ShowcaseUrlChips from '@/components/ShowcaseUrlChips';
 import { useShowToast } from '@/components/ui/Toast';
@@ -54,6 +55,10 @@ export default function MyAnimalsPage() {
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [speciesFilter, setSpeciesFilter] = useState<string>('all');
+    // v2.19.0: which animal (if any) is currently in the "find adopter"
+    // modal. Null = closed. Holding the whole animal so the modal can show
+    // the name in its header without an extra prop dance.
+    const [adoptingAnimal, setAdoptingAnimal] = useState<Animal | null>(null);
 
     useEffect(() => {
         async function fetchAnimals() {
@@ -402,28 +407,46 @@ export default function MyAnimalsPage() {
                                     )}
 
                                     {/* Actions */}
-                                    <div className="flex items-center justify-between gap-2 pt-3 border-t border-stone-100">
-                                        <div className="text-xs text-stone-500 flex-shrink-0">
-                                            {animal.date && (
-                                                <span>📅 {formatShortDate(animal.date)}</span>
-                                            )}
-                                        </div>
-                                        {!animal.adopterId && (
-                                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                                                {userId && (
-                                                    <ShareFormMenu
-                                                        userId={userId}
-                                                        animalId={animal.id}
+                                    <div className="pt-3 border-t border-stone-100 space-y-2">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <div className="text-xs text-stone-500 flex-shrink-0">
+                                                {animal.date && (
+                                                    <span>📅 {formatShortDate(animal.date)}</span>
+                                                )}
+                                            </div>
+                                            {!animal.adopterId && (
+                                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                                    {userId && (
+                                                        <ShareFormMenu
+                                                            userId={userId}
+                                                            animalId={animal.id}
+                                                            animalName={animal.animalName || 'Animal'}
+                                                            compact
+                                                        />
+                                                    )}
+                                                    <ShareMenu
+                                                        contractUrl={`/contract/${animal.id}`}
                                                         animalName={animal.animalName || 'Animal'}
                                                         compact
                                                     />
-                                                )}
-                                                <ShareMenu
-                                                    contractUrl={`/contract/${animal.id}`}
-                                                    animalName={animal.animalName || 'Animal'}
-                                                    compact
-                                                />
-                                            </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                        {/* v2.19.0: primary action for an
+                                            available animal — find the adopter
+                                            and record the adoption. The share
+                                            actions above are precursors; this
+                                            is the destination. */}
+                                        {!animal.adopterId && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setAdoptingAnimal(animal)}
+                                                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 active:scale-[0.98] shadow-sm transition-all"
+                                                data-testid={`record-adoption-${animal.id}`}
+                                            >
+                                                <span aria-hidden>🏠</span>
+                                                {t('myAnimals.record_adoption') || 'Registrar adopción'}
+                                            </button>
                                         )}
                                     </div>
                                 </div>
@@ -432,6 +455,19 @@ export default function MyAnimalsPage() {
                     </div>
                 )}
             </div>
+
+            {/* v2.19.0: pick-adopter modal for the "Registrar adopción" flow.
+                Rendered once at the page level so opening/closing doesn't
+                re-mount it per animal. Closes itself before routing so the
+                overlay doesn't briefly stack on the destination page. */}
+            {adoptingAnimal && (
+                <PickAdopterForAnimalModal
+                    animalId={adoptingAnimal.id}
+                    animalName={adoptingAnimal.animalName || ''}
+                    open={!!adoptingAnimal}
+                    onClose={() => setAdoptingAnimal(null)}
+                />
+            )}
         </div>
     );
 }

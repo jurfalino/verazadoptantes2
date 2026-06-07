@@ -1214,6 +1214,9 @@ export const es = {
         profile_pending_dup_other_tooltip: 'El sistema detectó otro registro similar. Solo el responsable del registro puede revisarlo.',
     },
     myAnimals: {
+        record_adoption: 'Registrar adopción',
+        pick_adopter_title: 'Registrar adopción',
+        pick_adopter_for: 'Para {name}',
         showcase_section_title: 'Tu catálogo público',
         showcase_section_desc: 'Compartí estos links para que las personas vean tus animales en adopción.',
         showcase_menu_label: 'Compartir catálogo',

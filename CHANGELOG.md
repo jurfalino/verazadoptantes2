@@ -2,6 +2,28 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.0] - 2026-06-06
+
+### Added — "Record adoption" from the animal side
+- **Primary action on `/my-animals` cards**: a teal-filled "🏠 Registrar adopción" button on every available animal kicks off the inverse flow — pick the animal first, find the adopter mid-flow. Until today the only path was the wrong-direction "go to the adopter profile, open VisitIntentCard, re-find the animal in the inventory dropdown", three context switches for the most common rescuer workflow.
+- **`PickAdopterForAnimalModal`** (new) wraps the existing `AdopterPicker` in a focused modal with header "Registrar adopción · Para {animalName}". Two branches, both close the modal before navigating so the overlay doesn't briefly stack on the destination:
+  - **Existing adopter picked** → routes to `/adopter/<id>?newAdoption=adoption&animalId=<animal.id>`. The wizard auto-opens with adopter + animal both pre-selected. User fills date / rating / details / verified-address and saves; `saveAdoption`'s existing `revalidatePath('/my-animals')` then drops the animal off the available list on next visit.
+  - **"+ Crear nuevo adoptante"** → routes to `/adopter/create?continueToAdoption=true&newAdoption=adoption&animalId=<id>&name=<typed-text>`. The existing `AdopterForm` post-create redirect (extended to forward `animalId` alongside the legacy `linkAnimalId`) lands the user on `/adopter/<newId>?newAdoption=adoption&animalId=<id>` where the wizard fires the same way.
+
+### Changed
+- **`AdoptionFormWizard` honors a new `animalId` URL param** for inventory pre-selection. Falls back gracefully when the id doesn't match anything in `availableAnimals` (e.g. concurrent save claimed it) — wizard opens in 'existing' mode with empty animalId and the dropdown is functional, same as today. The initial-mode resolver now prefers `'existing'` when an animalId arrived, beating the legacy "URL-driven open = mode 'new'" default that was built for the unknown-animal AdoptionWizard path.
+- **`AdopterForm` post-create redirect** forwards `animalId` along with the existing `linkAnimalId` / `animalName` / `species` / `date` set when `continueToAdoption=true`. Backward compatible: legacy callers using `linkAnimalId` still work; the new modal uses `animalId`.
+
+### Engineering
+- New: `src/components/PickAdopterForAnimalModal.tsx`. Stateless on its own — defers the search UI to `AdopterPicker` and the actual adoption form to the existing wizard on the adopter profile. ~100 lines.
+- Modified: `src/app/my-animals/page.tsx` (button + modal mount), `src/components/AdopterForm.tsx` (animalId forwarding in the post-create redirect), `src/components/AdoptionFormWizard.tsx` (animalId URL prefill + mode selection).
+- `saveAdoption`, `findAdopters`, `AdopterPicker`: untouched.
+- New i18n keys `myAnimals.record_adoption`, `myAnimals.pick_adopter_title`, `myAnimals.pick_adopter_for` in both `es.ts` and `en.ts`.
+
+### Known carve-outs (intentional)
+- **Single record type ('adoption' only)** from this entry point. The page is literally titled "for adoption" — the intent is unambiguous here. Other record types (request, observation, follow-up, returned) remain on the VisitIntentCard path from the adopter profile, where context warrants the picker.
+- **Two-page hop on the new-adopter path** (My Animals → /adopter/create → /adopter/[newId] with wizard). One more redirect than the existing-adopter path. Acceptable: embedding the create form inside the picker modal would mean maintaining a second create surface forever.
+
 ## [2.18.16] - 2026-06-06
 
 ### Added — Team activity feed v1.1
