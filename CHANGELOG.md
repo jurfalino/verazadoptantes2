@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.3] - 2026-06-07
+
+### Added
+- **Admin "Complete country in records" backfill** (`/admin` → mounted next to the existing "Migrar datos de contacto antiguos" task). `saveAdopter` has stamped country on create from `user_profiles.country` → CF-IPCountry header for ages, but a handful of records (1 in prod, 4 on staging at time of writing) landed without it — either predating that logic or created via bypass paths (`_adopterFactory`, form-submission auto-create, contract-app create). Those records were being silently filtered out of the discovery search until v2.19.1/.2 owner-relaxed the geo gate; the relaxation rescues the owner-view case but org-mates and admins still lost visibility of them.
+  - New server action `backfillAdopterCountries()` in `src/app/actions/admin.ts`. For each null/empty-country adopter, looks up `addedBy → user_profiles.country` (same shape `saveAdopter` runs at create) and sets it. Logs `adopter_country_backfilled` per row to `audit_log`. Idempotent.
+  - Residuals (creator has no country either, or `addedBy = 'anonymous'`) stay null and surface in the result panel with a direct link to `/admin/adopters?country=_none` for manual triage. That filter has existed for a while; the backfill just shrinks what lands on it.
+  - Same UI pattern as `AdminContactEntriesBackfill` — single button, run-and-done, result count, toast.
+
 ## [2.19.2] - 2026-06-07
 
 ### Fixed
