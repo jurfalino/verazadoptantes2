@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.2] - 2026-06-07
+
+### Fixed
+- **Owner-relax was missing from a second geo-filter site in `findAdopters`.** v2.19.1 fixed the geo gate on the `directResults` query (the LIKE search across `adopters.name / contactInfo / addressInfo / familyMembers`) but missed the *second* call site at `findAdopters.ts:615` — the loop that fetches adopter profiles for IDs surfaced by `searchPhoneTokenMatches`, `searchHistoryMatches`, and `searchAdoptionMatches`. The phone-token lookup correctly found the target adopter ID by its tokenized phone, but the geo filter then re-excluded the profile when `country` didn't match the viewer's `user_profiles.country`. That left the user seeing other adopters whose contactInfo happened to contain a substring of the phone, but not the one whose tokens actually matched it — the exact symptom reported as "I get other records not the one with that phone." Verified against staging adopter `84da04dc-…` (country=null, addedBy=jurfalino@gmail.com, phone tokens present). Applied the same `country = X OR addedBy = viewerEmail` relaxation here so phone-token / history / adoption-derived IDs honor ownership the same way the direct LIKE path does.
+
 ## [2.19.1] - 2026-06-07
 
 ### Fixed

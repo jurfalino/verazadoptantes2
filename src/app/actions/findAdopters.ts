@@ -609,10 +609,24 @@ async function runDiscoveryMode(
     // D1-compatible: fan out with eq() per ID instead of inArray() which silently breaks on D1
     let extraProfiles: typeof adopters.$inferSelect[] = [];
     if (extraIds.size > 0) {
+        // v2.19.2: same owner-relax as the directResults gate at line ~567.
+        // Phone-token / history / adoption-match paths correctly find the
+        // adopter ID, but the geo filter here would then re-exclude any
+        // record whose country doesn't match the viewer's profile country —
+        // including the viewer's OWN records (e.g. adopter 84da04dc-… with
+        // country=null + addedBy=viewer). That's the second half of the
+        // "phone search returns other records, not the one with that phone"
+        // bug from v2.19.1.
+        const ownerEmail = user && user !== 'unknown' ? user : null;
         const extraProfileResults = await Promise.all(
             Array.from(extraIds).map(id => {
                 const conds: any[] = [eq(adopters.id, id)];
-                if (userCountry) conds.push(eq(adopters.country, userCountry));
+                if (userCountry) {
+                    conds.push(ownerEmail
+                        ? or(eq(adopters.country, userCountry), eq(adopters.addedBy, ownerEmail))
+                        : eq(adopters.country, userCountry)
+                    );
+                }
                 return db.select().from(adopters).where(and(...conds)).catch((e: unknown) => {
                     logger.warn('findAdopters: D1 fallback hit (extra adopter profile lookup)', {
                         adopterId: id,
