@@ -1034,6 +1034,7 @@ export const en = {
         preview: 'Preview',
         select_this: 'Select this person',
         adoptions_label: 'adoptions',
+        your_record: 'Yours',
         back_to_results: '← Back to results',
         type_to_search: 'Start typing to search existing adopters',
         match_family: 'Matches family members',

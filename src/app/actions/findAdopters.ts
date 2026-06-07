@@ -564,7 +564,20 @@ async function runDiscoveryMode(
 
     // Parallel: profile LIKE + deep search
     const profileConds: any[] = [isNull(adopters.deletedAt), buildProfileSearchConditions(tokens)];
-    if (userCountry) profileConds.push(eq(adopters.country, userCountry));
+    if (userCountry) {
+        // v2.19.1: owned records bypass the geo filter. The country gate exists
+        // for cross-org relevance — a rescuer searching the global registry
+        // doesn't need adopters from other countries cluttering results — but
+        // it shouldn't ever hide YOUR OWN records. Before this fix, a rescuer
+        // who created an adopter without setting country (or whose adopter sits
+        // in a different country than their user_profile) would search by name
+        // and watch the record fail to appear, with no signal as to why.
+        const ownerEmail = user && user !== 'unknown' ? user : null;
+        profileConds.push(ownerEmail
+            ? or(eq(adopters.country, userCountry), eq(adopters.addedBy, ownerEmail))
+            : eq(adopters.country, userCountry)
+        );
+    }
 
     const [directResults, historyMatches, adoptionMatches, phoneTokenIds] = await Promise.all([
         db.select().from(adopters).where(and(...profileConds)).limit(SEARCH_ENRICHMENT_LIMIT),

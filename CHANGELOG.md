@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.1] - 2026-06-07
+
+### Fixed
+- **AdopterPicker search race — "results change without me touching anything"**. `handleSearch` fired `findAdopters` on every keystroke with no debounce and no request sequencing. Typing "Maria" dispatched 5 concurrent searches; whichever resolved *last* won, not the most recent one *dispatched*. A slow "M" response could overwrite the correct "Maria" results half a second after the user stopped typing — visually identical to "the list mutated on its own." Added 250 ms debounce + monotonic `requestSeqRef` counter so stale responses are dropped before they commit. New "Buscando..." indicator gives the user feedback during the in-flight window. Affects every consumer of `AdopterPicker` (homepage entry cards, the new v2.19.0 record-adoption modal).
+- **Own records hidden by the global geo-filter**. `findAdopters` discovery mode at `findAdopters.ts:567` had `eq(adopters.country, userCountry)` as a hard filter — any record whose `country` didn't match the viewer's `user_profiles.country` was excluded, including the viewer's own creations. A rescuer who built an adopter without setting country (or whose own profile country differs from the adopter's) would search by name and silently get nothing. The geo gate is correct as a cross-org relevance filter but never made sense for the viewer's own records. Relaxed to `country = X OR addedBy = viewerEmail` so owned records always pass through. Plausibly also fixes the "phone search returns other records, not the one with that phone" symptom — same record being filtered out by the same gate.
+- **"Tuyo" / "Yours" badge on owned results**. Same picker: if the viewer happens to be the creator of a search result, a small teal pill makes it visible. Helps the rescuer triage their own records in a mixed list, and is the user-facing confirmation that the geo-filter relaxation above is doing what it should.
+
 ## [2.19.0] - 2026-06-06
 
 ### Added — "Record adoption" from the animal side
