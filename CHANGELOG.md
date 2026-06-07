@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.4] - 2026-06-07
+
+### Fixed
+Closed three independent leaks that all silently produced `country = NULL` records — the same leaks v2.19.3's backfill cleans up after the fact:
+
+- **`/api/adopters` POST was missing the CF-IPCountry header fallback** that `saveAdopter` has had for ages. The route only looked up `user_profiles.country`; when that returned NULL (header missing on the rescuer's first-ever sign-in) the adopter inserted with `country = NULL`. Concrete repro: prod adopter `candela bodeman galdo` (a2f9fa74-…), imported via the Facebook ImportWizard on Feb 22 2026 when `gatitosolivos@gmail.com`'s `user_profiles.country` was still NULL. Patched to mirror `saveAdopter`'s 2-tier fallback (`user_profiles → CF-IPCountry header`).
+- **`_adopterFactory.createAdopterFromSubmission` set no country at all** — silent bypass used by 3 routes: form-submission auto-create, contract-submit, and the orphan-submission retry. Adopters created via any of those paths landed with `country = NULL` unconditionally. Same 2-tier lookup added; the column now goes into the insert.
+- **`ensureUserProfile` was one-shot for country** — it set country on the INSERT OR IGNORE row creation but the subsequent UPDATE only COALESCE-backfilled `province / province_code / city / timezone`, **never country**. Once a user's first sign-in landed without a CF-IPCountry header (some Cloudflare edges, VPN, headless CI), their `user_profiles.country` stayed NULL across every subsequent sign-in. Repro: prod user `mirella.hualde@gmail.com` (signed in once Feb 9 2026, never re-stamped). NULL on the user profile then cascaded into every adopter they created via either leaky path above. Added `country = COALESCE(country, ?)` to the backfill UPDATE — symmetric with the other geo fields, COALESCE protects future user-set overrides.
+
+Net effect: future creates by these paths get a country whenever the request carries one; future sign-ins self-heal a NULL country on `user_profiles` when the header is present. The v2.19.3 backfill button still handles the existing residual rows.
+
 ## [2.19.3] - 2026-06-07
 
 ### Added
