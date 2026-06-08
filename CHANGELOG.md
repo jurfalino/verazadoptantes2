@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.15] - 2026-06-08
+
+### Added — landing-pages smoke spec
+- **New Playwright spec covering every landing page** at load. Before this, the e2e suite's `page.goto` calls only hit three routes (`/adopter/create`, a known-404 adopter id, `/import`). Every other landing surface — `/`, `/my-adopters`, `/my-adoptions`, `/my-animals`, `/organizations`, `/admin/audit`, `/admin/business-logic`, `/admin/adopters` — had **zero load-and-render coverage**. v2.19.13 shipped a `TypeError: e.getTime is not a function` crash on every `/my-adopters` load and reached production unblocked because the suite never noticed.
+- **Per route**, the spec asserts: (1) HTTP < 400, (2) an expected DOM anchor is visible after `networkidle`, (3) zero `console.error` events fired during render. Soft assertions so all three report at end of run instead of bailing on the first miss. The console-error check is the one that would have caught v2.19.13 in seconds.
+- **Two spec files** to fit the existing Playwright project config:
+  - `tests/landing-pages-smoke.spec.ts` runs in the `[user]` project (non-admin session) over the 5 non-admin routes.
+  - `tests/landing-pages-authed.spec.ts` runs in the `[authed]` project (admin session) over the same 5 routes (different code branch through `resolveVisibility`) PLUS the 3 admin-only routes.
+  - Shared assertion logic lives in `tests/landing-pages-smoke-shared.ts` (no `.spec.ts` suffix so neither project picks it up as runnable).
+- Runtime budget: <15 s per project, <30 s total. No external network, no DB writes. Allow-list filters favicon 404s + browser-extension chatter + occasional SW-registration noise so the assertion stays signal-only.
+
+### Fixed
+- **`/my-adopters` provenance cell no longer shows "Editado por form-submission" on imported rows.** The v2.19.14 hotfix landed the correct date-arithmetic for the "skip Editado line for brand-new rows" guard, which surfaced a separate latent issue: `_adopterFactory` writes `adopter_history` rows with `kind='edit'` (the schema default) and `changedBy` set to system sentinels like `'form-submission'`, `'contract-submission'`, `'contract-signed-via-invitation'`. The v2.19.13 last-editor enrichment in `getMyAdopters` accepted any non-`'anonymous'` value, so imported adopters whose only history row is the factory-written one showed the sentinel string verbatim as the editor name. The filter now requires the editor email to contain `'@'`; anything without is treated as a system row and skipped. An adopter whose latest edit is a sentinel but whose previous edit was by a real user picks up the real user (rows are still ordered DESC; the skip-set logic just keeps walking).
+
 ## [2.19.14] - 2026-06-08
 
 ### Fixed
