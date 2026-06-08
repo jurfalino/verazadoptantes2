@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.8] - 2026-06-08
+
+### Fixed
+- **`addedBy = 'anonymous'` no longer renders as `👤 anonymous` in the Created-by column.** The schema default at `src/db/schema.ts:21` is `text("added_by").default("anonymous")`, a sentinel for "no real creator" written by older inserts and the defensive fallback in `_adopterFactory.createAdopterFromSubmission` (`input.addedBy || 'anonymous'`). v2.19.6/.7 treated it as a regular email — passed it through `resolveDisplayName`, surfaced the literal string `anonymous` as the rendered name. Now treated alongside null/empty: the row falls through to the unknown-creator dash + `Sin creador identificado` tooltip. Repro: prod adopter `82ae7dbc-…` (Ignacio Lando), created Feb 1 2026 via a path that didn't set a real creator. Fix is server-side in `getMyAdopters`'s enrichment (skip 'anonymous' from `distinctCreators` so no lookup burns on a sentinel) plus a defensive comment on the client renderer.
+
 ## [2.19.7] - 2026-06-08
 
 ### Fixed

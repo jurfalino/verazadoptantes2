@@ -180,7 +180,15 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         // ~30 rows × ~5 distinct creators is the realistic upper bound here.
         const creatorEmailSet = new Set<string>();
         for (const a of adoptersList as typeof adopters.$inferSelect[]) {
-            if (a.addedBy && a.addedBy !== userEmail) creatorEmailSet.add(a.addedBy);
+            // v2.19.8: skip the 'anonymous' schema-default sentinel
+            // (src/db/schema.ts:21 — `text("added_by").default("anonymous")`).
+            // It's a "no real creator" marker, not an email; resolving it
+            // would surface "👤 anonymous" in the column, which reads as
+            // a bug. Treated the same as null/empty so the renderer falls
+            // through to the unknown-creator dash + tooltip.
+            if (a.addedBy && a.addedBy !== userEmail && a.addedBy !== 'anonymous') {
+                creatorEmailSet.add(a.addedBy);
+            }
         }
         const distinctCreators: string[] = Array.from(creatorEmailSet);
         const creatorNameMap = new Map<string, string>();

@@ -321,6 +321,10 @@ export default function MyAdoptersPage() {
                                                     {t('myAdopters.created_by_self') || 'Vos'}
                                                 </span>
                                             ) : (
+                                                // v2.19.8: anonymous-sentinel rows ('anonymous'
+                                                // schema default) and null/empty addedBy both
+                                                // land here — neither is an email we can
+                                                // resolve, so the dash + tooltip is correct.
                                                 <span className="text-stone-300" title={t('myAdopters.created_by_unknown_hint') || 'Sin creador identificado'}>—</span>
                                             )}
                                         </div>
