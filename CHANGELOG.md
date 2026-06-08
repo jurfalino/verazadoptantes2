@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.14] - 2026-06-08
+
+### Fixed
+- **Prod hotfix: `/my-adopters` crashed with `TypeError: e.getTime is not a function`** on every load that included a row with `createdAt` or `updatedAt`. Root cause: Drizzle columns with `mode: 'timestamp'` return `Date` objects server-side, but `NextResponse.json()` serialises Dates to **ISO strings**, so the client receives `createdAt` / `updatedAt` as strings — not numbers, not Dates. The v2.19.13 `Adopter` interface typed them as `number | null` which was the lie; the new `timeAgo()` helper called `.getTime()` on a string and the `absoluteTooltip` line did `date * 1000` which NaN'd out and crashed `new Date(NaN).toISOString()`. Two-part fix:
+  - **`timeAgoSeconds()` normalising helper** — handles `number`, `Date`, ISO string (`Date.parse`), and epoch-as-string fallback. Returns 0 for anything unparseable.
+  - Widened the `Adopter` interface + `ProvenanceLine` prop type to honestly say `number | string | Date | null`. The two arithmetic guard sites (`lastEditedAt - createdAt > 60` for the new-row-suppress-edit-line check) now route through `timeAgoSeconds` to normalise the right-hand side.
+- Pure client-side patch — no migration, no server change. Rolls in cleanly on top of v2.19.13.
+
 ## [2.19.13] - 2026-06-08
 
 ### Changed
