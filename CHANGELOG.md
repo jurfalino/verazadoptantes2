@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.11] - 2026-06-08
+
+### Fixed
+- **Google Contacts imports no longer auto-stamp `isPublic: true` on contact entries.** `/api/adopters` route was treating *any* `source === 'imported'` adopter as if it came from a public channel and stamping every contact entry public, which then short-circuited the PII visibility resolver at `piiAccess.ts:684` and exposed the data to every viewer regardless of role, org membership, or grants. The right intent — "social posts the adopter already published" — only applies to imports with a `sourceUrl` (Facebook share URLs etc.). Google Contacts imports arrive with `sourceUrl=null` because they're from a private address book; those should remain gated by normal PII rules. Fix: `stampPublic` now requires `source === 'imported' && !!sourceUrl?.trim()` so social imports stay public-by-default and Contacts imports stay private-by-default. The rescuer can still flip individual chips to public after the fact via the per-entry isPublic affordance.
+- **Repro**: staging adopter `c1b06628-…` (`abruu Potadop 2024 Nube`) was contacts-imported with `source='imported' AND source_url IS NULL`. Its phone entry had `isPublic: true` so a non-admin non-org-mate non-editor viewer (`michistrendelacosta@gmail.com`) saw the unmasked number despite owning zero privilege paths. Going-forward only — see notes on cleanup below.
+
+### Notes
+- **Existing leaky rows**: 4 on staging, 0 on prod (verified via `SELECT COUNT(*) FROM adopters WHERE source='imported' AND (source_url IS NULL OR source_url='') AND deleted_at IS NULL AND contact_entries LIKE '%isPublic":true%'`). Code fix is going-forward only; the 4 staging rows still leak until cleanup. Optional follow-up: server action that walks affected rows and strips `isPublic` from their entries' JSON. Skipped here pending sign-off.
+
 ## [2.19.10] - 2026-06-08
 
 ### Added

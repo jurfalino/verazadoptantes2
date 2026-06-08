@@ -276,7 +276,20 @@ export async function POST(request: Request) {
         if (contactEntries) {
             const entries = deserializeContactEntries(contactEntries);
             if (entries.length) {
-                const stampPublic = source === 'imported' && await isPublicProfilesEnabled();
+                // v2.19.11: stampPublic only fires for SOCIAL imports
+                // (ImportWizard with a sourceUrl — Facebook, Instagram, etc.),
+                // not Google Contacts imports which arrive with sourceUrl=null.
+                // Pre-fix, ANY source='imported' adopter had its entries
+                // auto-stamped isPublic=true, which then short-circuited the
+                // PII visibility resolver for every viewer (piiAccess.ts:684).
+                // For someone's private Google address book that's wrong —
+                // those contacts aren't on a public channel. The sourceUrl
+                // presence is the existing structural signal: social imports
+                // carry a public URL, address-book imports don't. The
+                // rescuer can still flip individual chips public later
+                // via the per-entry isPublic affordance.
+                const isSocialImport = source === 'imported' && !!sourceUrl?.trim();
+                const stampPublic = isSocialImport && await isPublicProfilesEnabled();
                 const persisted = stampPublic
                     ? entries.map(e => ({ ...e, isPublic: true }))
                     : entries;
