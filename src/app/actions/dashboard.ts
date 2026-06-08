@@ -218,7 +218,17 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         for (const row of allEditRows as { adopterId: string; changedBy: string | null; changedAt: number | Date | null }[]) {
             if (!row.adopterId || lastEditMap.has(row.adopterId)) continue;
             const editorEmail = (row.changedBy ?? '').trim();
-            if (!editorEmail || editorEmail === 'anonymous') continue;
+            // v2.19.15: skip system-sentinel changedBy values so the new
+            // provenance "Editado por …" line doesn't surface internals.
+            // Known sentinels: 'anonymous' (schema-default), 'form-submission'
+            // and 'contract-submission' (_adopterFactory at creation time —
+            // these are kind='edit' by default so they'd otherwise count as
+            // the most-recent edit on imported adopters that have never been
+            // touched by a human), 'contract-signed-via-invitation' (the
+            // modern contract path). General rule: a real editor email
+            // contains '@'; everything else is a system identifier we don't
+            // want to render.
+            if (!editorEmail || !editorEmail.includes('@')) continue;
             const editedAt = typeof row.changedAt === 'number'
                 ? row.changedAt
                 : row.changedAt instanceof Date ? Math.floor(row.changedAt.getTime() / 1000) : 0;
