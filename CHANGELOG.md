@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.5] - 2026-06-07
+
+### Changed
+- **`/admin/audit` redesigned for scannability.** Before: a wide table with action chip + raw target UUID + device + IP, with the actual "what happened" sitting behind a per-row "▼ Details" expand that printed raw JSON. Admins literally couldn't tell what people searched without one click per row. After: sentence rows. Each row reads as one line — `Maria Pérez · 22:43 · 🔍 buscó "juan gonzález" · 3 resultados` — with adopter targets rendered by name (linked), edit diffs surfaced inline, and search queries visible at-a-glance. Severity tint on the left border (rose / amber / emerald / stone), same colour grammar v2.18.14 introduced on `OrgActivityFeed`.
+- **Server-side enrichment in `/api/admin/audit`.** The route now joins actor display names from `user.name`, joins adopter names + `deleted_at` from `adopters` when target is a UUID, and pre-derives a per-locale `AuditSummary` so the client renderer stays dumb. Three D1-safe per-id loops; same shape as `getOrgActivity`.
+- **Filters expanded.** Added quick-category chips (`Todos / Edits / Búsquedas / Vistas / Reportes / Eliminados / PII / Auth / Admin`) above the table, and `from / to` date inputs that bound on the existing `created_at` index. The existing action dropdown + user-id filter stayed. `profile_viewed` is hidden by default — high volume — and only shows when the admin picks the "Vistas" chip or that action explicitly.
+- **`OrgActivityFeed` shares its derivations with `/admin/audit`** via the new `src/lib/auditRow.ts` module. `deriveSeverity`, `deriveFieldSummary`, `fieldLabel`, `parseDetails` moved out of `src/app/actions/activity.ts` and into the shared module; the feed's local helpers became thin re-exports. Single source of truth; future event types are added in one place.
+
+### Added
+- **`profile_viewed` audit entries** in `logProfileView` (`src/app/actions/adopters.ts`). Sits alongside the existing `adopterStats` write — analytics counts care about volume, audit log cares about "what users did". Deduped by deterministic id `view__${viewerEmail}__${adopterId}__${hourBucket}` so a tab-switching session hitting one adopter 30 times in an hour writes ONE audit row, not thirty. `INSERT ... ON CONFLICT DO NOTHING` enforces the dedup at the PK level. Skipped entirely when the viewer is anonymous (unauth profile views still hit `adopterStats` for global analytics, but they don't fit "what users did").
+- **`image_uploaded` audit entries** in `saveImage` (`src/app/actions/images.ts`). Pure coverage gap before — adopter pages logged `adopter_updated` for record edits but image uploads went unrecorded. Details payload carries `{ adopterId, mediaType, isProfilePicture }`.
+- **`profile_picture_set` audit entries** in `setProfilePicture`. Companion to `image_uploaded` so the timeline distinguishes "X uploaded a photo" from "X picked the profile picture" — the two events sometimes happen together, often don't.
+
+### Engineering
+- New `src/lib/auditRow.ts` — `parseDetails`, `deriveSeverity`, `deriveFieldSummary`, `deriveSummary`, `fieldLabel`, `targetIsAdopter`, `CATEGORY_ACTIONS`, types. Pure functions, no React, no DB — both server and client surfaces import freely.
+- `deriveSummary` handles 30+ action types (everything currently in audit_log plus the 3 new writes). Unknown actions fall through to rendering the raw action name so a new write site doesn't silently produce blank rows.
+- 122 lint warnings (2 fewer than pre-change — the rewrite trimmed unused code paths).
+
 ## [2.19.4] - 2026-06-07
 
 ### Fixed
