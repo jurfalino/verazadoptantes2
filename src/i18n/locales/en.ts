@@ -946,6 +946,8 @@ export const en = {
         table_requests: 'Requests',
         forms_linked: 'Forms filled',
         form_count: 'forms',
+        signed_contract_count: 'signed contracts',
+        signed_contract_count_one: 'signed contract',
         form_count_one: 'form',
         unlinked_forms_title: 'Forms not linked to a profile',
         unlinked_forms_empty: 'All form responses are linked to adopter profiles.',

@@ -29,6 +29,8 @@ interface Adopter {
     searchHits: number;
     profileViews: number;
     formCount?: number;
+    /** v2.19.10: signed contract_invitations.used_at IS NOT NULL count per adopter. */
+    signedContractCount?: number;
     addedBy?: string | null;
     /** v2.19.6: resolved creator display name (user.name → email-prefix fallback).
      *  Null when the viewer is the creator — no need for a "by you" label. */
@@ -288,6 +290,11 @@ export default function MyAdoptersPage() {
                                                     📄 {adopter.formCount} {(adopter.formCount ?? 0) === 1 ? (t('dashboard.form_count_one') || 'formulario') : (t('dashboard.form_count') || 'formularios')}
                                                 </div>
                                             )}
+                                            {(adopter.signedContractCount ?? 0) > 0 && (
+                                                <div className="text-amber-700 font-medium">
+                                                    ✍️ {adopter.signedContractCount} {(adopter.signedContractCount ?? 0) === 1 ? (t('dashboard.signed_contract_count_one') || 'contrato firmado') : (t('dashboard.signed_contract_count') || 'contratos firmados')}
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* Creado por — v2.19.6 + v2.19.7 self-row UX:
@@ -419,6 +426,11 @@ export default function MyAdoptersPage() {
                                         {(adopter.formCount ?? 0) > 0 && (
                                             <span className="text-teal-600 font-medium">
                                                 📄 {adopter.formCount} {(adopter.formCount ?? 0) === 1 ? (t('dashboard.form_count_one') || 'form') : (t('dashboard.form_count') || 'forms')}
+                                            </span>
+                                        )}
+                                        {(adopter.signedContractCount ?? 0) > 0 && (
+                                            <span className="text-amber-700 font-medium">
+                                                ✍️ {adopter.signedContractCount} {(adopter.signedContractCount ?? 0) === 1 ? (t('dashboard.signed_contract_count_one') || 'contract') : (t('dashboard.signed_contract_count') || 'contracts')}
                                             </span>
                                         )}
                                         {/* Flags on mobile */}

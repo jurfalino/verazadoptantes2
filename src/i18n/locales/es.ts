@@ -951,6 +951,8 @@ export const es = {
         table_requests: 'Solicitudes',
         forms_linked: 'Formularios completados',
         form_count: 'formularios',
+        signed_contract_count: 'contratos firmados',
+        signed_contract_count_one: 'contrato firmado',
         form_count_one: 'formulario',
         unlinked_forms_title: 'Formularios sin perfil de adoptante',
         unlinked_forms_empty: 'Todas las respuestas están vinculadas a un perfil.',

@@ -1,7 +1,7 @@
 'use server';
 
-import { adopters, adoptions, adopterImages, adopterFlags, adopterStats, formSubmissions, duplicateCandidates } from '@/db/schema';
-import { eq, sql, and, inArray, isNull, or } from 'drizzle-orm';
+import { adopters, adoptions, adopterImages, adopterFlags, adopterStats, formSubmissions, duplicateCandidates, contractInvitations } from '@/db/schema';
+import { eq, sql, and, inArray, isNull, isNotNull, or } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { getDb } from './_db';
@@ -106,6 +106,23 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             .where(inArray(formSubmissions.linkedAdopterId, adopterIds))
             .groupBy(formSubmissions.linkedAdopterId)
             .all();
+        // v2.19.10: count of signed contracts per adopter. Modern token-
+        // invitation flow stamps contract_invitations.used_at on a successful
+        // sign; the legacy open path that creates a new adopter via
+        // _adopterFactory already shows up via `source='contract'` in the
+        // Origin column, but doesn't get counted here either (no invitation
+        // row). Net effect: this counter reflects "contracts signed against
+        // this profile via the modern flow" — same shape as formCount.
+        const allContractCounts = await db.select({
+            adopterId: contractInvitations.adopterId,
+            count: sql<number>`COUNT(*)`
+        }).from(contractInvitations)
+            .where(and(
+                inArray(contractInvitations.adopterId, adopterIds),
+                isNotNull(contractInvitations.usedAt),
+            ))
+            .groupBy(contractInvitations.adopterId)
+            .all();
         // v38: per-row "Posible duplicado" indicator. One query gets every
         // pending dedup pair where either side is in the user's adopter list;
         // the Set is consulted at render time below.
@@ -171,6 +188,10 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         const formCountMap = new Map<string, number>();
         for (const row of allFormCounts as { linkedAdopterId: string; count: number }[]) {
             if (row.linkedAdopterId) formCountMap.set(row.linkedAdopterId, row.count);
+        }
+        const signedContractCountMap = new Map<string, number>();
+        for (const row of allContractCounts as { adopterId: string; count: number }[]) {
+            if (row.adopterId) signedContractCountMap.set(row.adopterId, row.count);
         }
 
         // v2.19.6: resolve creator name + org for each row whose addedBy
@@ -265,6 +286,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                 searchHits: stats.searchHits,
                 profileViews: stats.profileViews,
                 formCount: formCountMap.get(adopter.id) ?? 0,
+                signedContractCount: signedContractCountMap.get(adopter.id) ?? 0,
                 hasPendingDuplicate: adoptersWithPendingDup.has(adopter.id),
                 creatorName,
                 creatorOrgName,

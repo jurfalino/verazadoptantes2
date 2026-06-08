@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.10] - 2026-06-08
+
+### Added
+- **Signed-contract count on `/my-adopters`.** Surfaces as `✍️ N contratos firmados` (amber) in the Activity column, parallel to the existing `📄 N formularios` (teal) form-count line. Backed by a new batch in `getMyAdopters` over `contract_invitations.used_at IS NOT NULL` — one D1 read per dashboard load. Closes the asymmetry where the Origin column already had a `✍️ Contract` source pill but signed contracts were otherwise invisible on the list view.
+- Counter reflects modern token-invitation flow (the path that updates an existing adopter row + stamps `used_at`). The legacy open-contract path that creates a brand-new adopter via `_adopterFactory` with `source='contract'` is *not* counted here — that one already shows up via the Origin column, and has no `contract_invitations` row to count.
+
+### Engineering
+- `getMyAdopters` (`src/app/actions/dashboard.ts`): new `allContractCounts` D1 query alongside the existing `allFormCounts` batch. `inArray(adopterIds) + isNotNull(usedAt)` filter. Same map-merge shape as the other counters.
+- New `signedContractCount: number` field on the dashboard row shape; ignored when 0 by the renderer so unsigned profiles don't show an empty line.
+- New i18n keys `dashboard.signed_contract_count` / `dashboard.signed_contract_count_one` in both `es.ts` and `en.ts`.
+
 ## [2.19.9] - 2026-06-08
 
 ### Changed
