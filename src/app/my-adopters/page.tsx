@@ -297,15 +297,14 @@ export default function MyAdoptersPage() {
                                             )}
                                         </div>
 
-                                        {/* Creado por — v2.19.6 + v2.19.7 self-row UX:
-                                            - Teammate-created: name + (optional) shared-org chip
-                                            - Self-created: subtle "Vos" / "You" label (distinguishes
-                                              "you made this" from a missing-data dash, which the
-                                              first cut read as confusingly when most of a user's
-                                              feed is their own records)
-                                            - Anonymous / unknown creator: actual dash
-                                            FlagBadges took over the old Flags col by moving under
-                                            the rating badge in v2.19.6. */}
+                                        {/* Creado por — v2.19.6 / v2.19.12:
+                                            - Any real email (yours or a teammate's) → resolved
+                                              display name + (optional) org chip. Same shape for
+                                              everyone; reads symmetrically across rows.
+                                            - Anonymous-sentinel or null addedBy → dash with
+                                              "Sin creador identificado" tooltip.
+                                            FlagBadges moved under the rating badge in v2.19.6 to
+                                            free up this column slot. */}
                                         <div className="col-span-2 text-xs text-stone-600 min-w-0">
                                             {adopter.creatorName ? (
                                                 <>
@@ -323,10 +322,6 @@ export default function MyAdoptersPage() {
                                                         </div>
                                                     )}
                                                 </>
-                                            ) : adopter.addedBy && adopter.addedBy === currentEmail ? (
-                                                <span className="text-stone-500 italic">
-                                                    {t('myAdopters.created_by_self') || 'Vos'}
-                                                </span>
                                             ) : (
                                                 // v2.19.8: anonymous-sentinel rows ('anonymous'
                                                 // schema default) and null/empty addedBy both
@@ -392,9 +387,10 @@ export default function MyAdoptersPage() {
                                                 )}
                                             </div>
                                             <div className="text-xs text-stone-500 truncate">{adopter.contactInfo || t('dashboard.no_contact')}</div>
-                                            {/* v2.19.6: enriched creator attribution (display name + org chip)
-                                                replaces the old raw-email line. Only renders for org-mate
-                                                creators — your own records don't need a "by you" label. */}
+                                            {/* v2.19.6 + v2.19.12: enriched creator attribution
+                                                (display name + org chip). Renders for any real-email
+                                                creator — yours included, since the symmetric label
+                                                reads cleaner than the old "Vos" / no-label split. */}
                                             {adopter.creatorName && (
                                                 <div className="flex items-center gap-1.5 mt-1 text-[11px] min-w-0">
                                                     <span aria-hidden className="text-stone-400">👤</span>

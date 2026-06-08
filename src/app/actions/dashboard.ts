@@ -194,11 +194,17 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             if (row.adopterId) signedContractCountMap.set(row.adopterId, row.count);
         }
 
-        // v2.19.6: resolve creator name + org for each row whose addedBy
-        // isn't the viewer themselves. Two batches over the distinct creator
-        // emails — display name from `user.name` and shared-org via
-        // pickAttributionOrg. Same enrichment pattern getOrgActivity uses;
-        // ~30 rows × ~5 distinct creators is the realistic upper bound here.
+        // v2.19.6: resolve creator name + org for each row. Two batches over
+        // the distinct creator emails — display name from `user.name` and
+        // shared-org via pickAttributionOrg. Same enrichment pattern
+        // getOrgActivity uses; ~30 rows × ~5 distinct creators is realistic.
+        //
+        // v2.19.12: self-rows are NOT excluded anymore — the viewer's own
+        // records get the same name + org treatment as teammate rows. The
+        // earlier "Vos / You" label distinguished self from unknown but read
+        // as inconsistent next to fully-resolved teammate rows. Showing the
+        // viewer's own display name makes the column symmetric and harder
+        // to misread.
         const creatorEmailSet = new Set<string>();
         for (const a of adoptersList as typeof adopters.$inferSelect[]) {
             // v2.19.8: skip the 'anonymous' schema-default sentinel
@@ -207,7 +213,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             // would surface "👤 anonymous" in the column, which reads as
             // a bug. Treated the same as null/empty so the renderer falls
             // through to the unknown-creator dash + tooltip.
-            if (a.addedBy && a.addedBy !== userEmail && a.addedBy !== 'anonymous') {
+            if (a.addedBy && a.addedBy !== 'anonymous') {
                 creatorEmailSet.add(a.addedBy);
             }
         }
@@ -270,9 +276,11 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                   }
                 : null;
 
-            // v2.19.6: enriched creator info. Empty for self-created rows
-            // (viewer doesn't need a "by you" label on their own records).
-            const creatorEmail = adopter.addedBy && adopter.addedBy !== userEmail ? adopter.addedBy : null;
+            // v2.19.12: enriched creator info for every row, viewer's own
+            // included. The Created-by column is symmetric — your name + org
+            // for self-rows, teammate's name + org for teammate-rows. Only
+            // 'anonymous' sentinel + null/empty fall through to the dash.
+            const creatorEmail = adopter.addedBy && adopter.addedBy !== 'anonymous' ? adopter.addedBy : null;
             const creatorName = creatorEmail ? (creatorNameMap.get(creatorEmail) ?? creatorEmail.split('@')[0]) : null;
             const creatorOrgName = creatorEmail ? (creatorOrgMap.get(creatorEmail) ?? null) : null;
 

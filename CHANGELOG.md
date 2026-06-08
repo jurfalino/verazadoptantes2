@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.12] - 2026-06-08
+
+### Changed
+- **Created-by column on `/my-adopters` now shows the viewer's resolved display name on self-rows** instead of the italic "Vos" / "You" label v2.19.7 introduced. The column reads symmetrically across every row — teammate rows already showed the resolved name + org chip, and now self-rows do the same. The asymmetric special-case ("you made this — italic label", "they made this — name + chip") made the column visually choppy when scanning a mostly-self feed; surfacing the actual display name for self too removes the inconsistency. Anonymous-sentinel and null `addedBy` rows still fall through to the dash + `Sin creador identificado` tooltip from v2.19.8.
+
+### Engineering
+- `getMyAdopters` (`src/app/actions/dashboard.ts`): the distinct-creators set no longer excludes the viewer, and the per-row `creatorEmail` computation no longer null-skips self. `resolveDisplayName` + `pickAttributionOrg` get called for the viewer's own email too. The extra lookup is the same single-row cost as a teammate row; no measurable hit on the dashboard.
+- `/my-adopters` desktop + mobile renderers: the self-case branch (italic "Vos") is removed. `adopter.creatorName ? <name + chip> : <dash>` is now the entire decision tree.
+- i18n keys `myAdopters.created_by_self` / `myAdopters.created_by_unknown_hint` stay (unused for self after this change, still used by the unknown-creator tooltip). Kept rather than removed to avoid breaking any future surface that wants the explicit "you" label back.
+
 ## [2.19.11] - 2026-06-08
 
 ### Fixed
