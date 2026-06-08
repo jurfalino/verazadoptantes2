@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.9] - 2026-06-08
+
+### Changed
+- **`adopters.added_by` is now NOT NULL at the DB layer** (migration `0048_adopters_added_by_not_null.sql`). The column has always had `DEFAULT 'anonymous'` but was structurally nullable — anyone with raw D1 write access (wrangler against prod, a future Drizzle update that explicitly passes `null`) could land a NULL row that then renders as an unresolvable creator on the v2.19.6 Created-by column. v2.19.8 added a client-side guard for that; v2.19.9 removes the foot-gun at the source so the guard never needs to fire.
+- SQLite doesn't support `ALTER TABLE … ALTER COLUMN`, so the migration uses the standard temp-table + copy + drop + rename rebuild (same pattern as migration `0003_greedy_frog_thor`). Pre-flight `UPDATE … SET added_by = 'anonymous' WHERE added_by IS NULL` is idempotent on a clean DB; verified 0 NULL rows on both prod (52 adopters) and staging (51) before this change. `COALESCE(added_by, 'anonymous')` in the SELECT is belt-and-suspenders.
+- Schema: `src/db/schema.ts:21` gains `.notNull()` on the column. TS types now require a non-null `addedBy` on inserts, catching the same class of bug at compile time before it can reach the DB.
+
+### Notes on the migration
+- Migration intentionally preserves the `status` default of `'good'` rather than the `'5'` declared in `src/db/schema.ts`. Verified via `PRAGMA table_info(adopters)`: prod + staging both have `'good'` (historical drift from the schema TS file). Unwinding that drift is out of scope for this change; this migration only touches `added_by`.
+- Wrangler picks the file up automatically via `migrations_dir = "drizzle"` in `wrangler.toml`. CI's `migrate-staging` / `migrate-production` jobs apply it before deploy; if the migration fails the deploy is skipped and the previous build keeps serving.
+
 ## [2.19.8] - 2026-06-08
 
 ### Fixed

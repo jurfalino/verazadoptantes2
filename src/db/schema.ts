@@ -18,7 +18,15 @@ export const adopters = sqliteTable("adopters", {
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     updatedAt: integer("updated_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     status: text("status").default("5"), // Rating: 1-5 (1=Dangerous, 5=Excellent)
-    addedBy: text("added_by").default("anonymous"),
+    // v2.19.9 + migration 0048: column is NOT NULL with the existing
+    // 'anonymous' default sentinel. The structural guarantee replaces the
+    // v2.19.8 client-side defensive check on the Created-by column. Before
+    // the constraint, anyone with raw D1 write access (wrangler, a future
+    // Drizzle update that passes explicit `null`) could land a NULL row;
+    // the schema now enforces. The other two `added_by` columns (adoptions,
+    // adopterImages) are intentionally NOT touched in this migration —
+    // narrower blast radius; can be tightened in a follow-up if needed.
+    addedBy: text("added_by").notNull().default("anonymous"),
     sourceUrl: text("source_url"), // Link to original post/source
     country: text("country"), // ISO 3166-1 alpha-2 country code (e.g. AR, US, MX)
 
