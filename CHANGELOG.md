@@ -2,6 +2,95 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.13] - 2026-06-08
+
+### Changed
+Three coordinated UX cleanups on `/my-adopters`:
+
+- **Origen + Creado-por + Fechas collapsed into one "Procedencia" column** that renders the two lifecycle events (creation + most-recent edit) as sentence rows. Per row:
+  ```
+  Creado por Juan Pérez · Tres Patitas · 📝 Formulario   hace 3 meses
+  Editado por Maria Lago · Rescate BA                    hace 2 días
+  ```
+  - **Source pill (📝 Formulario / ✍️ Contrato / 📥 Importado)** moves inline on the "Creado" line where it semantically belongs — it's a property of the creation event, not a standalone facet. Suppressed for `source='manual'` (default = no callout).
+  - **Brand-new rows render only the "Creado" line** — the "Editado" line is suppressed when the most-recent edit timestamp is within 60 s of creation (saveAdopter's redundant initial history row).
+  - **Anonymous-sentinel + null `addedBy` rows** fall through to the v2.19.8 dash + "Sin creador identificado" tooltip, unchanged.
+  - **Relative timestamps** (`hace 3 meses`, `hace 2 días`) replace absolute dates; tooltip on hover shows the precise ISO. Tighter, more scannable.
+- **Self vs teammate org chip color differs**. Your own org chip renders stone-100/stone-600 (factual, neutral); a teammate's org chip renders the previous teal-50/teal-700 ("this is a collaborator"). A feed dominated by self-rows no longer reads as a wall of teal — the "this one's a teammate" semantic is restored.
+- **Pending-duplicate rows now get an amber left-border** (`border-l-4 border-amber-400`) at row / card level. Matches the severity-tint pattern `OrgActivityFeed` (v2.18.14) and `/admin/audit` (v2.19.5) already use. The actionable row jumps out without sacrificing any name-cell space; the existing inline "🔍 Posible duplicado" pill on the desktop name cell + mobile card stays in place as the action affordance.
+
+### Engineering
+- New batch in `getMyAdopters` (`src/app/actions/dashboard.ts`) over `adopter_history` filtered to `kind='edit'`, ordered DESC by `changedAt`, first-per-adopter wins. Distinct last-editor emails are added to the existing creator-name + creator-org enrichment Set so we don't burn a second pass of `resolveDisplayName` / `pickAttributionOrg` lookups. `'anonymous'` editor sentinel is skipped (same posture as creator handling).
+- Row shape gains `creatorIsSelf`, `lastEditorName`, `lastEditorOrgName`, `lastEditedAt`, `lastEditorIsSelf`.
+- New `<ProvenanceLine>` component renders one event with verb + name + org chip + optional source pill + relative time. Used on both desktop rows and mobile cards.
+- New local `timeAgo()` helper — granular thresholds (min → h → d → sem → mes → año). Could move to `src/lib/dates.ts` if another surface needs it; kept local for now.
+- New i18n keys `dashboard.table_provenance` / `dashboard.provenance_created_by` / `dashboard.provenance_edited_by` in both `es.ts` and `en.ts`.
+- Grid restructured: `Name 4 / Rating+Flags 2 / Activity 2 / Provenance 4`. Was `Name 3 / Origin 1 / Rating+Flags 2 / Activity 2 / Created-by 2 / Dates 2`.
+- Mobile card: bottom dates row removed; SourcePill no longer inline next to the name (it lives inside the provenance line). Card mirrors desktop's amber left-border for pending-dup.
+- `formatShortDate` import dropped — no longer used on this page; absolute timestamps moved into provenance-line `title` tooltips.
+
+## [2.19.12] - 2026-06-08
+
+### Changed
+- **Created-by column on `/my-adopters` now shows the viewer's resolved display name on self-rows** instead of the italic "Vos" / "You" label v2.19.7 introduced. The column reads symmetrically across every row — teammate rows already showed the resolved name + org chip, and now self-rows do the same. The asymmetric special-case ("you made this — italic label", "they made this — name + chip") made the column visually choppy when scanning a mostly-self feed; surfacing the actual display name for self too removes the inconsistency. Anonymous-sentinel and null `addedBy` rows still fall through to the dash + `Sin creador identificado` tooltip from v2.19.8.
+
+### Engineering
+- `getMyAdopters` (`src/app/actions/dashboard.ts`): the distinct-creators set no longer excludes the viewer, and the per-row `creatorEmail` computation no longer null-skips self. `resolveDisplayName` + `pickAttributionOrg` get called for the viewer's own email too. The extra lookup is the same single-row cost as a teammate row; no measurable hit on the dashboard.
+- `/my-adopters` desktop + mobile renderers: the self-case branch (italic "Vos") is removed. `adopter.creatorName ? <name + chip> : <dash>` is now the entire decision tree.
+- i18n keys `myAdopters.created_by_self` / `myAdopters.created_by_unknown_hint` stay (unused for self after this change, still used by the unknown-creator tooltip). Kept rather than removed to avoid breaking any future surface that wants the explicit "you" label back.
+
+## [2.19.11] - 2026-06-08
+
+### Fixed
+- **Google Contacts imports no longer auto-stamp `isPublic: true` on contact entries.** `/api/adopters` route was treating *any* `source === 'imported'` adopter as if it came from a public channel and stamping every contact entry public, which then short-circuited the PII visibility resolver at `piiAccess.ts:684` and exposed the data to every viewer regardless of role, org membership, or grants. The right intent — "social posts the adopter already published" — only applies to imports with a `sourceUrl` (Facebook share URLs etc.). Google Contacts imports arrive with `sourceUrl=null` because they're from a private address book; those should remain gated by normal PII rules. Fix: `stampPublic` now requires `source === 'imported' && !!sourceUrl?.trim()` so social imports stay public-by-default and Contacts imports stay private-by-default. The rescuer can still flip individual chips to public after the fact via the per-entry isPublic affordance.
+- **Repro**: staging adopter `c1b06628-…` (`abruu Potadop 2024 Nube`) was contacts-imported with `source='imported' AND source_url IS NULL`. Its phone entry had `isPublic: true` so a non-admin non-org-mate non-editor viewer (`michistrendelacosta@gmail.com`) saw the unmasked number despite owning zero privilege paths. Going-forward only — see notes on cleanup below.
+
+### Notes
+- **Existing leaky rows**: 4 on staging, 0 on prod (verified via `SELECT COUNT(*) FROM adopters WHERE source='imported' AND (source_url IS NULL OR source_url='') AND deleted_at IS NULL AND contact_entries LIKE '%isPublic":true%'`). Code fix is going-forward only; the 4 staging rows still leak until cleanup. Optional follow-up: server action that walks affected rows and strips `isPublic` from their entries' JSON. Skipped here pending sign-off.
+
+## [2.19.10] - 2026-06-08
+
+### Added
+- **Signed-contract count on `/my-adopters`.** Surfaces as `✍️ N contratos firmados` (amber) in the Activity column, parallel to the existing `📄 N formularios` (teal) form-count line. Backed by a new batch in `getMyAdopters` over `contract_invitations.used_at IS NOT NULL` — one D1 read per dashboard load. Closes the asymmetry where the Origin column already had a `✍️ Contract` source pill but signed contracts were otherwise invisible on the list view.
+- Counter reflects modern token-invitation flow (the path that updates an existing adopter row + stamps `used_at`). The legacy open-contract path that creates a brand-new adopter via `_adopterFactory` with `source='contract'` is *not* counted here — that one already shows up via the Origin column, and has no `contract_invitations` row to count.
+
+### Engineering
+- `getMyAdopters` (`src/app/actions/dashboard.ts`): new `allContractCounts` D1 query alongside the existing `allFormCounts` batch. `inArray(adopterIds) + isNotNull(usedAt)` filter. Same map-merge shape as the other counters.
+- New `signedContractCount: number` field on the dashboard row shape; ignored when 0 by the renderer so unsigned profiles don't show an empty line.
+- New i18n keys `dashboard.signed_contract_count` / `dashboard.signed_contract_count_one` in both `es.ts` and `en.ts`.
+
+## [2.19.9] - 2026-06-08
+
+### Changed
+- **`adopters.added_by` is now NOT NULL at the DB layer** (migration `0048_adopters_added_by_not_null.sql`). The column has always had `DEFAULT 'anonymous'` but was structurally nullable — anyone with raw D1 write access (wrangler against prod, a future Drizzle update that explicitly passes `null`) could land a NULL row that then renders as an unresolvable creator on the v2.19.6 Created-by column. v2.19.8 added a client-side guard for that; v2.19.9 removes the foot-gun at the source so the guard never needs to fire.
+- SQLite doesn't support `ALTER TABLE … ALTER COLUMN`, so the migration uses the standard temp-table + copy + drop + rename rebuild (same pattern as migration `0003_greedy_frog_thor`). Pre-flight `UPDATE … SET added_by = 'anonymous' WHERE added_by IS NULL` is idempotent on a clean DB; verified 0 NULL rows on both prod (52 adopters) and staging (51) before this change. `COALESCE(added_by, 'anonymous')` in the SELECT is belt-and-suspenders.
+- Schema: `src/db/schema.ts:21` gains `.notNull()` on the column. TS types now require a non-null `addedBy` on inserts, catching the same class of bug at compile time before it can reach the DB.
+
+### Notes on the migration
+- Migration intentionally preserves the `status` default of `'good'` rather than the `'5'` declared in `src/db/schema.ts`. Verified via `PRAGMA table_info(adopters)`: prod + staging both have `'good'` (historical drift from the schema TS file). Unwinding that drift is out of scope for this change; this migration only touches `added_by`.
+- Wrangler picks the file up automatically via `migrations_dir = "drizzle"` in `wrangler.toml`. CI's `migrate-staging` / `migrate-production` jobs apply it before deploy; if the migration fails the deploy is skipped and the previous build keeps serving.
+
+## [2.19.8] - 2026-06-08
+
+### Fixed
+- **`addedBy = 'anonymous'` no longer renders as `👤 anonymous` in the Created-by column.** The schema default at `src/db/schema.ts:21` is `text("added_by").default("anonymous")`, a sentinel for "no real creator" written by older inserts and the defensive fallback in `_adopterFactory.createAdopterFromSubmission` (`input.addedBy || 'anonymous'`). v2.19.6/.7 treated it as a regular email — passed it through `resolveDisplayName`, surfaced the literal string `anonymous` as the rendered name. Now treated alongside null/empty: the row falls through to the unknown-creator dash + `Sin creador identificado` tooltip. Repro: prod adopter `82ae7dbc-…` (Ignacio Lando), created Feb 1 2026 via a path that didn't set a real creator. Fix is server-side in `getMyAdopters`'s enrichment (skip 'anonymous' from `distinctCreators` so no lookup burns on a sentinel) plus a defensive comment on the client renderer.
+
+## [2.19.7] - 2026-06-08
+
+### Fixed
+- **Created-by column showed a confusing dash on self-created rows.** v2.19.6 rendered `—` whenever `creatorName` was null, which collapsed two unrelated cases — "you made this" (skipped on purpose) and "creator is anonymous / unresolvable" (genuine missing data) — into the same visual treatment. A viewer whose feed is mostly their own records (e.g. the prod `gatitosolivos` admin with 35/44 self-owned) saw a column of dashes and read it as broken. Now self-rows render a subtle `Vos` / `You` label (italic, stone-500); truly unknown creators keep the dash with a `Sin creador identificado` tooltip. New i18n keys `myAdopters.created_by_self` and `myAdopters.created_by_unknown_hint` in `es.ts` + `en.ts`.
+
+## [2.19.6] - 2026-06-08
+
+### Changed
+- **`/my-adopters` now shows who created each profile** (display name + shared-org chip) in a dedicated column, replacing the small indigo `addedBy` line that was tucked under the contact info as a raw email string. Visible only for org-mate creators — your own records don't carry a "by you" label. When the viewer and creator share an org, the org chip renders teal as a "this is one of my teammates" cue; otherwise neutral grey.
+- **Flag badges moved from their own column into the Rating cell**, stacked underneath the rating badge. Severity signal and rating now read in one glance instead of the eye jumping across two columns. The freed Flags column slot is now the new "Creado por" column. Mobile cards picked up the same enrichment in their existing top-row attribution line.
+
+### Engineering
+- Server-side enrichment in `getMyAdopters` (`src/app/actions/dashboard.ts`): two parallel batches over distinct creator emails — `resolveDisplayName` for the name, `pickAttributionOrg(creator, viewer)` for the shared-or-primary org. Same pattern `getOrgActivity` and the `/admin/audit` route already use. `~30 rows × ~5 distinct creators` is the realistic upper bound; lookup failures fall back to the email-prefix at render time without blocking the dashboard.
+- New `creatorName` + `creatorOrgName` fields on the row shape. Null for self-created rows so the column renders `—`.
+- New i18n key `dashboard.table_created_by` in both `es.ts` and `en.ts`.
+
 ## [2.19.5] - 2026-06-07
 
 ### Changed

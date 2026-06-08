@@ -7,7 +7,8 @@ import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { RatingBadge } from '@/components/RatingBadge';
 import { RatingExplainer } from '@/components/RatingExplainer';
-import { formatShortDate } from '@/lib/dates';
+// formatShortDate dropped in v2.19.13 — the provenance cell uses relative
+// time (timeAgo helper below) so absolute dates moved to tooltips.
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import PendingDedup from '@/components/PendingDedup';
@@ -29,7 +30,25 @@ interface Adopter {
     searchHits: number;
     profileViews: number;
     formCount?: number;
+    /** v2.19.10: signed contract_invitations.used_at IS NOT NULL count per adopter. */
+    signedContractCount?: number;
     addedBy?: string | null;
+    /** v2.19.6: resolved creator display name (user.name → email-prefix fallback).
+     *  Null when the viewer is the creator — no need for a "by you" label. */
+    creatorName?: string | null;
+    /** v2.19.6: shared-org name with the viewer when possible, else creator's
+     *  primary org, else null. Drives the "from {org}" subline. */
+    creatorOrgName?: string | null;
+    /** v2.19.13: true when the creator IS the viewing user. Drives self-vs-
+     *  teammate chip color so a feed dominated by self-created rows doesn't
+     *  read as a wall of teal pills. */
+    creatorIsSelf?: boolean;
+    /** v2.19.13: last-editor fields for the provenance cell. Null when the
+     *  record has never been edited (saveAdopter not called post-create). */
+    lastEditorName?: string | null;
+    lastEditorOrgName?: string | null;
+    lastEditedAt?: number | null;
+    lastEditorIsSelf?: boolean;
     /** v2.14.10-20: enum-via-text — 'manual' | 'form' | 'contract' | 'imported'. */
     source?: string;
     /** v38: true when this adopter appears in a pending duplicate_candidates pair. */
@@ -60,6 +79,98 @@ function SourcePill({ source, t }: { source?: string; t: (key: string) => string
         </span>
     );
     return null;
+}
+
+/**
+ * v2.19.13 provenance line — renders one lifecycle event ("Creado por X..."
+ * or "Editado por Y...") as a single text row. Source pill renders inline
+ * for `kind='created'` only (last-edit events don't change provenance).
+ * Self-rows get a neutral stone chip; teammate-rows keep the teal chip so
+ * the "this one's a teammate" semantic isn't washed out on a self-heavy
+ * feed.
+ */
+function ProvenanceLine({
+    kind, name, org, isSelf, sourceKind, date, addedByEmail, t,
+}: {
+    kind: 'created' | 'edited';
+    name: string | null | undefined;
+    org: string | null | undefined;
+    isSelf: boolean;
+    sourceKind?: string;
+    date: number | null | undefined;
+    addedByEmail: string | null | undefined;
+    t: (key: string) => string;
+}) {
+    const isEs = true; // page already biases ES; tied to LanguageContext upstream if we ever surface EN here
+    if (!name) {
+        // Anonymous-sentinel or null fallthrough (kept consistent with
+        // v2.19.8 unknown-creator UX — dash plus tooltip).
+        if (kind === 'created') {
+            return (
+                <div className="flex items-center gap-1.5">
+                    <span aria-hidden className="text-stone-400 flex-shrink-0">👤</span>
+                    <span className="text-stone-300" title={t('myAdopters.created_by_unknown_hint') || 'Sin creador identificado'}>—</span>
+                </div>
+            );
+        }
+        return null;
+    }
+    const verb = kind === 'created'
+        ? (t('dashboard.provenance_created_by') || 'Creado por')
+        : (t('dashboard.provenance_edited_by') || 'Editado por');
+    const chipClass = isSelf
+        ? 'bg-stone-100 text-stone-600'    // your own org — factual, not a callout
+        : 'bg-teal-50 text-teal-700';      // teammate's org — "this is a collaborator"
+    const formatted = date ? timeAgo(date, isEs) : '';
+    const absoluteTooltip = date ? new Date(date * 1000).toISOString() : undefined;
+    return (
+        <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 min-w-0">
+            <span className="text-stone-500 flex-shrink-0">{verb}</span>
+            <span className="font-medium text-stone-700 truncate max-w-[12rem]" title={addedByEmail || undefined}>
+                {name}
+            </span>
+            {org && (
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${chipClass} truncate max-w-[10rem]`} title={org}>
+                    {org}
+                </span>
+            )}
+            {kind === 'created' && sourceKind && sourceKind !== 'manual' && (
+                <SourcePill source={sourceKind} t={t} />
+            )}
+            {formatted && (
+                <span className="text-stone-400 flex-shrink-0 ml-auto" title={absoluteTooltip}>
+                    {formatted}
+                </span>
+            )}
+        </div>
+    );
+}
+
+/**
+ * v2.19.13 relative-time helper for the provenance cell. Compact strings —
+ * "ahora", "hace 12 min", "hace 3 h", "hace 5 d", "hace 2 sem", "hace 4 mes",
+ * "hace 1 año" — keep the cell at a glance and the tooltip carries the
+ * absolute timestamp for precision. Accepts seconds-epoch (the dashboard
+ * row shape) or Date.
+ */
+function timeAgo(input: number | Date | null | undefined, isEs: boolean): string {
+    if (!input) return '';
+    const sec = typeof input === 'number' ? input : Math.floor(input.getTime() / 1000);
+    const now = Math.floor(Date.now() / 1000);
+    const diff = Math.max(0, now - sec);
+    const mins = Math.floor(diff / 60);
+    const hrs = Math.floor(mins / 60);
+    const days = Math.floor(hrs / 24);
+    const weeks = Math.floor(days / 7);
+    const months = Math.floor(days / 30);
+    const years = Math.floor(days / 365);
+    if (mins < 1) return isEs ? 'ahora' : 'just now';
+    if (mins < 60) return isEs ? `hace ${mins} min` : `${mins}m ago`;
+    if (hrs < 24) return isEs ? `hace ${hrs} h` : `${hrs}h ago`;
+    if (days < 7) return isEs ? `hace ${days} d` : `${days}d ago`;
+    if (weeks < 5) return isEs ? `hace ${weeks} sem` : `${weeks}w ago`;
+    if (months < 12) return isEs ? `hace ${months} mes` : `${months}mo ago`;
+    return isEs ? `hace ${years} año${years === 1 ? '' : 's'}` : `${years}y ago`;
 }
 
 // Alert badges: warnings only. v39+: verified_identity / verified_address
@@ -193,14 +304,18 @@ export default function MyAdoptersPage() {
                     <>
                         {/* Desktop Table - Hidden on mobile */}
                         <div className="hidden md:block bg-white rounded-2xl overflow-hidden shadow-sm border border-stone-200">
-                            {/* Table Header */}
+                            {/* Table Header. v2.19.13: Origin / Created-by /
+                                Dates collapsed into one "Provenance" column that
+                                renders the two lifecycle events (creation + last
+                                edit) as sentence rows with the source pill inline
+                                and relative timestamps. Name widens 3→4 cols to
+                                fit the breathing room the previous layout owed it.
+                                Rating cell keeps the v2.19.6 flag-badge stack. */}
                             <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-stone-50 border-b border-stone-200 text-xs font-semibold text-stone-500 uppercase tracking-wide">
-                                <div className="col-span-3">{t('dashboard.table_adopter_name')}</div>
-                                <div className="col-span-1">{t('dashboard.table_source') || 'Origen'}</div>
+                                <div className="col-span-4">{t('dashboard.table_adopter_name')}</div>
                                 <div className="col-span-2 text-center">{t('dashboard.table_rating') || 'Calificación'}</div>
                                 <div className="col-span-2">{t('dashboard.table_activity') || 'Actividad'}</div>
-                                <div className="col-span-2">{t('dashboard.table_flags')}</div>
-                                <div className="col-span-2 text-right">{t('dashboard.table_dates') || 'Dates'}</div>
+                                <div className="col-span-4">{t('dashboard.table_provenance') || 'Procedencia'}</div>
                             </div>
 
                             {/* Table Rows */}
@@ -210,10 +325,15 @@ export default function MyAdoptersPage() {
                                         key={`adopter-${adopter.id}-${i}`}
                                         href={`/adopter/${adopter.id}?ref=my-adopters`}
                                         prefetch={false}
-                                        className="grid grid-cols-12 gap-2 px-4 py-3 hover:bg-stone-50 transition-colors group items-center"
+                                        // v2.19.13: pending-duplicate rows get an amber left-border
+                                        // so the actionable row jumps out without sacrificing
+                                        // any name-cell space. Matches the severity-tint pattern
+                                        // OrgActivityFeed (v2.18.14) and /admin/audit (v2.19.5)
+                                        // already use across the app.
+                                        className={`grid grid-cols-12 gap-2 px-4 py-3 hover:bg-stone-50 transition-colors group items-center ${adopter.hasPendingDuplicate ? 'border-l-4 border-amber-400' : ''}`}
                                     >
                                         {/* Name + Thumbnail */}
-                                        <div className="col-span-3 flex items-center gap-3 min-w-0">
+                                        <div className="col-span-4 flex items-center gap-3 min-w-0">
                                             <div className="w-9 h-9 rounded-full bg-stone-100 flex-shrink-0 overflow-hidden ring-2 ring-white shadow-sm">
                                                 {adopter.thumbnail ? (
                                                     <img src={adopter.thumbnail} alt={`${adopter.name} profile photo`} className="w-full h-full object-cover" />
@@ -238,24 +358,18 @@ export default function MyAdoptersPage() {
                                                     )}
                                                 </div>
                                                 <div className="text-xs text-stone-500 truncate">{adopter.contactInfo || t('dashboard.no_contact')}</div>
-                                                {adopter.addedBy && adopter.addedBy !== currentEmail && (
-                                                    <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', adopter.addedBy)}</div>
-                                                )}
+                                                {/* Inline addedBy was moved to its own column in v2.19.6 —
+                                                    keeps the Name cell focused on identity, lets the
+                                                    Creado-por col carry the resolved name + org chip. */}
                                             </div>
                                         </div>
 
-                                        {/* Origen — source attribution column (col-1, just enough for the pill) */}
-                                        <div className="col-span-1 flex items-center min-w-0">
-                                            {adopter.source && adopter.source !== 'manual'
-                                                ? <SourcePill source={adopter.source} t={t} />
-                                                : <span className="text-[11px] text-stone-400">{t('myAdopters.source_manual') || 'Manual'}</span>
-                                            }
-                                        </div>
-
                                         {/* Calificación — avgRating from activity history (legacy `status` is deprecated).
-                                            Min-height pins both states (badge / "—") to the same row height so adjacent
-                                            rows stay vertically aligned. */}
-                                        <div className="col-span-2 flex justify-center items-center min-h-[2rem]">
+                                            Flag badges stack underneath the rating badge in v2.19.6 so the
+                                            severity signal and rating live together (a 5-star adopter with a
+                                            density flag now reads in one glance instead of jumping to a
+                                            separate column). Min-height pins both states to row height. */}
+                                        <div className="col-span-2 flex flex-col items-center gap-1 min-h-[2rem]">
                                             {adopter.avgRating !== null ? (
                                                 <RatingExplainer rating={adopter.avgRating}>
                                                     <RatingBadge rating={adopter.avgRating} size="sm" label="short" />
@@ -263,6 +377,7 @@ export default function MyAdoptersPage() {
                                             ) : (
                                                 <span className="text-xs text-stone-300" title={t('myAdopters.rating_empty_hint') || 'Sin actividad calificada'}>—</span>
                                             )}
+                                            <FlagBadges flags={adopter.flags} t={t} />
                                         </div>
 
                                         {/* Actividad — stacked stats with labels (v38). Each line has its own word
@@ -276,27 +391,43 @@ export default function MyAdoptersPage() {
                                                     📄 {adopter.formCount} {(adopter.formCount ?? 0) === 1 ? (t('dashboard.form_count_one') || 'formulario') : (t('dashboard.form_count') || 'formularios')}
                                                 </div>
                                             )}
+                                            {(adopter.signedContractCount ?? 0) > 0 && (
+                                                <div className="text-amber-700 font-medium">
+                                                    ✍️ {adopter.signedContractCount} {(adopter.signedContractCount ?? 0) === 1 ? (t('dashboard.signed_contract_count_one') || 'contrato firmado') : (t('dashboard.signed_contract_count') || 'contratos firmados')}
+                                                </div>
+                                            )}
                                         </div>
 
-                                        {/* Flags */}
-                                        <div className="col-span-2">
-                                            <FlagBadges flags={adopter.flags} t={t} />
-                                        </div>
-
-                                        {/* Dates - Both Created & Modified */}
-                                        <div className="col-span-2 text-right text-xs text-stone-500">
-                                            <div className="flex flex-col items-end gap-0.5">
-                                                {adopter.updatedAt && (
-                                                    <span title={t('dashboard.table_last_modified') || 'Modified'}>
-                                                        ✏️ {formatShortDate(adopter.updatedAt)}
-                                                    </span>
-                                                )}
-                                                {adopter.createdAt && (
-                                                    <span className="text-stone-500" title={t('dashboard.table_date_added') || 'Created'}>
-                                                        📅 {formatShortDate(adopter.createdAt)}
-                                                    </span>
-                                                )}
-                                            </div>
+                                        {/* Procedencia — v2.19.13. Two-event provenance cell:
+                                            "Creado por X · Org · 📝 Pill · hace 3 meses" on top,
+                                            "Editado por Y · Org · hace 2 días" below if ever edited.
+                                            Replaces three separate columns (Origen, Creado-por,
+                                            Dates). Self vs teammate chip color differs so a feed
+                                            dominated by self-rows doesn't wall of teal: stone for
+                                            "your org", teal for "teammate's org". */}
+                                        <div className="col-span-4 text-xs text-stone-600 min-w-0 space-y-0.5">
+                                            <ProvenanceLine
+                                                kind="created"
+                                                name={adopter.creatorName}
+                                                org={adopter.creatorOrgName}
+                                                isSelf={!!adopter.creatorIsSelf}
+                                                sourceKind={adopter.source}
+                                                date={adopter.createdAt}
+                                                addedByEmail={adopter.addedBy}
+                                                t={t}
+                                            />
+                                            {adopter.lastEditedAt && adopter.lastEditorName
+                                                && (adopter.lastEditedAt - (adopter.createdAt ?? 0)) > 60 && (
+                                                <ProvenanceLine
+                                                    kind="edited"
+                                                    name={adopter.lastEditorName}
+                                                    org={adopter.lastEditorOrgName ?? null}
+                                                    isSelf={!!adopter.lastEditorIsSelf}
+                                                    date={adopter.lastEditedAt}
+                                                    addedByEmail={null}
+                                                    t={t}
+                                                />
+                                            )}
                                         </div>
                                     </Link>
                                 ))}
@@ -310,7 +441,9 @@ export default function MyAdoptersPage() {
                                     key={`adopter-${adopter.id}-${i}`}
                                     href={`/adopter/${adopter.id}?ref=my-adopters`}
                                     prefetch={false}
-                                    className="block bg-white rounded-xl p-4 shadow-sm border border-stone-200 hover:border-teal-300 hover:shadow-md transition-all"
+                                    // v2.19.13: amber left-border for pending-dup cards,
+                                    // mirrors the desktop row treatment.
+                                    className={`block bg-white rounded-xl p-4 shadow-sm border border-stone-200 hover:border-teal-300 hover:shadow-md transition-all ${adopter.hasPendingDuplicate ? 'border-l-4 border-l-amber-400' : ''}`}
                                 >
                                     {/* Top Row: Avatar + Name + Rating */}
                                     <div className="flex items-center gap-3 mb-3">
@@ -326,7 +459,6 @@ export default function MyAdoptersPage() {
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 min-w-0 flex-wrap">
                                                 <div className="font-semibold text-stone-900 truncate">{adopter.name}</div>
-                                                <SourcePill source={adopter.source} t={t} />
                                                 {adopter.hasPendingDuplicate && (
                                                     <a
                                                         href="#pending-dedup"
@@ -339,9 +471,11 @@ export default function MyAdoptersPage() {
                                                 )}
                                             </div>
                                             <div className="text-xs text-stone-500 truncate">{adopter.contactInfo || t('dashboard.no_contact')}</div>
-                                            {adopter.addedBy && adopter.addedBy !== currentEmail && (
-                                                <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', adopter.addedBy)}</div>
-                                            )}
+                                            {/* v2.19.13: inline addedBy + bottom dates row from
+                                                the mobile card are folded into the provenance lines
+                                                at the bottom of the card. SourcePill no longer
+                                                inline next to the name — it renders inside the
+                                                "Creado por" provenance line where it belongs. */}
                                         </div>
                                         {adopter.avgRating !== null ? (
                                             <RatingExplainer rating={adopter.avgRating}>
@@ -362,19 +496,40 @@ export default function MyAdoptersPage() {
                                                 📄 {adopter.formCount} {(adopter.formCount ?? 0) === 1 ? (t('dashboard.form_count_one') || 'form') : (t('dashboard.form_count') || 'forms')}
                                             </span>
                                         )}
+                                        {(adopter.signedContractCount ?? 0) > 0 && (
+                                            <span className="text-amber-700 font-medium">
+                                                ✍️ {adopter.signedContractCount} {(adopter.signedContractCount ?? 0) === 1 ? (t('dashboard.signed_contract_count_one') || 'contract') : (t('dashboard.signed_contract_count') || 'contracts')}
+                                            </span>
+                                        )}
                                         {/* Flags on mobile */}
                                         <div className="flex gap-1 ml-auto">
                                             <FlagBadges flags={adopter.flags} t={t} />
                                         </div>
                                     </div>
 
-                                    {/* Dates Row - bottom right */}
-                                    <div className="flex justify-end gap-3 mt-2 pt-2 border-t border-stone-100 text-xs text-stone-500">
-                                        {adopter.createdAt && (
-                                            <span>📅 {formatShortDate(adopter.createdAt)}</span>
-                                        )}
-                                        {adopter.updatedAt && (
-                                            <span>✏️ {formatShortDate(adopter.updatedAt)}</span>
+                                    {/* Provenance lines — same component as desktop. */}
+                                    <div className="mt-2 pt-2 border-t border-stone-100 text-xs text-stone-600 space-y-0.5">
+                                        <ProvenanceLine
+                                            kind="created"
+                                            name={adopter.creatorName}
+                                            org={adopter.creatorOrgName}
+                                            isSelf={!!adopter.creatorIsSelf}
+                                            sourceKind={adopter.source}
+                                            date={adopter.createdAt}
+                                            addedByEmail={adopter.addedBy}
+                                            t={t}
+                                        />
+                                        {adopter.lastEditedAt && adopter.lastEditorName
+                                            && (adopter.lastEditedAt - (adopter.createdAt ?? 0)) > 60 && (
+                                            <ProvenanceLine
+                                                kind="edited"
+                                                name={adopter.lastEditorName}
+                                                org={adopter.lastEditorOrgName ?? null}
+                                                isSelf={!!adopter.lastEditorIsSelf}
+                                                date={adopter.lastEditedAt}
+                                                addedByEmail={null}
+                                                t={t}
+                                            />
                                         )}
                                     </div>
                                 </Link>

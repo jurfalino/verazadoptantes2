@@ -925,6 +925,10 @@ export const en = {
         modified: 'Modified',
         table_rating: 'Rating',
         table_source: 'Source',
+        table_created_by: 'Created by',
+        table_provenance: 'Provenance',
+        provenance_created_by: 'Created by',
+        provenance_edited_by: 'Edited by',
         table_activity: 'Activity',
         table_actions: 'Actions',
         view_profile: 'View Profile',
@@ -945,6 +949,8 @@ export const en = {
         table_requests: 'Requests',
         forms_linked: 'Forms filled',
         form_count: 'forms',
+        signed_contract_count: 'signed contracts',
+        signed_contract_count_one: 'signed contract',
         form_count_one: 'form',
         unlinked_forms_title: 'Forms not linked to a profile',
         unlinked_forms_empty: 'All form responses are linked to adopter profiles.',
@@ -1183,6 +1189,8 @@ export const en = {
         duplicateUrl: 'This Facebook post was already imported. Existing Profile:',
     },
     myAdopters: {
+        created_by_self: 'You',
+        created_by_unknown_hint: 'No identified creator',
         // v2.14.10-20: pending-dedup section on /my-adopters
         pending_dedup_title: 'Pending review',
         pending_dedup_subtitle: 'We found profiles that might be the same person. Choose whether to merge them.',
