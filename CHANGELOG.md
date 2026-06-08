@@ -2,6 +2,33 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.13] - 2026-06-08
+
+### Changed
+Three coordinated UX cleanups on `/my-adopters`:
+
+- **Origen + Creado-por + Fechas collapsed into one "Procedencia" column** that renders the two lifecycle events (creation + most-recent edit) as sentence rows. Per row:
+  ```
+  Creado por Juan Pérez · Tres Patitas · 📝 Formulario   hace 3 meses
+  Editado por Maria Lago · Rescate BA                    hace 2 días
+  ```
+  - **Source pill (📝 Formulario / ✍️ Contrato / 📥 Importado)** moves inline on the "Creado" line where it semantically belongs — it's a property of the creation event, not a standalone facet. Suppressed for `source='manual'` (default = no callout).
+  - **Brand-new rows render only the "Creado" line** — the "Editado" line is suppressed when the most-recent edit timestamp is within 60 s of creation (saveAdopter's redundant initial history row).
+  - **Anonymous-sentinel + null `addedBy` rows** fall through to the v2.19.8 dash + "Sin creador identificado" tooltip, unchanged.
+  - **Relative timestamps** (`hace 3 meses`, `hace 2 días`) replace absolute dates; tooltip on hover shows the precise ISO. Tighter, more scannable.
+- **Self vs teammate org chip color differs**. Your own org chip renders stone-100/stone-600 (factual, neutral); a teammate's org chip renders the previous teal-50/teal-700 ("this is a collaborator"). A feed dominated by self-rows no longer reads as a wall of teal — the "this one's a teammate" semantic is restored.
+- **Pending-duplicate rows now get an amber left-border** (`border-l-4 border-amber-400`) at row / card level. Matches the severity-tint pattern `OrgActivityFeed` (v2.18.14) and `/admin/audit` (v2.19.5) already use. The actionable row jumps out without sacrificing any name-cell space; the existing inline "🔍 Posible duplicado" pill on the desktop name cell + mobile card stays in place as the action affordance.
+
+### Engineering
+- New batch in `getMyAdopters` (`src/app/actions/dashboard.ts`) over `adopter_history` filtered to `kind='edit'`, ordered DESC by `changedAt`, first-per-adopter wins. Distinct last-editor emails are added to the existing creator-name + creator-org enrichment Set so we don't burn a second pass of `resolveDisplayName` / `pickAttributionOrg` lookups. `'anonymous'` editor sentinel is skipped (same posture as creator handling).
+- Row shape gains `creatorIsSelf`, `lastEditorName`, `lastEditorOrgName`, `lastEditedAt`, `lastEditorIsSelf`.
+- New `<ProvenanceLine>` component renders one event with verb + name + org chip + optional source pill + relative time. Used on both desktop rows and mobile cards.
+- New local `timeAgo()` helper — granular thresholds (min → h → d → sem → mes → año). Could move to `src/lib/dates.ts` if another surface needs it; kept local for now.
+- New i18n keys `dashboard.table_provenance` / `dashboard.provenance_created_by` / `dashboard.provenance_edited_by` in both `es.ts` and `en.ts`.
+- Grid restructured: `Name 4 / Rating+Flags 2 / Activity 2 / Provenance 4`. Was `Name 3 / Origin 1 / Rating+Flags 2 / Activity 2 / Created-by 2 / Dates 2`.
+- Mobile card: bottom dates row removed; SourcePill no longer inline next to the name (it lives inside the provenance line). Card mirrors desktop's amber left-border for pending-dup.
+- `formatShortDate` import dropped — no longer used on this page; absolute timestamps moved into provenance-line `title` tooltips.
+
 ## [2.19.12] - 2026-06-08
 
 ### Changed

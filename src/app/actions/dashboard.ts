@@ -1,6 +1,6 @@
 'use server';
 
-import { adopters, adoptions, adopterImages, adopterFlags, adopterStats, formSubmissions, duplicateCandidates, contractInvitations } from '@/db/schema';
+import { adopters, adoptions, adopterImages, adopterFlags, adopterStats, formSubmissions, duplicateCandidates, contractInvitations, adopterHistory } from '@/db/schema';
 import { eq, sql, and, inArray, isNull, isNotNull, or } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
@@ -123,6 +123,22 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             ))
             .groupBy(contractInvitations.adopterId)
             .all();
+        // v2.19.13: last editor per adopter for the new provenance cell.
+        // Fetch all kind='edit' history rows in adopterIds, ordered DESC by
+        // changedAt; pick the first one per adopter in JS. kind='contribution'
+        // rows (open-add path) are excluded — those don't count as editing
+        // the record. Bounded cost: ~30 adopters × handful of edits each.
+        const allEditRows = await db.select({
+            adopterId: adopterHistory.adopterId,
+            changedBy: adopterHistory.changedBy,
+            changedAt: adopterHistory.changedAt,
+        }).from(adopterHistory)
+            .where(and(
+                inArray(adopterHistory.adopterId, adopterIds),
+                eq(adopterHistory.kind, 'edit'),
+            ))
+            .orderBy(sql`${adopterHistory.changedAt} DESC`)
+            .all();
         // v38: per-row "Posible duplicado" indicator. One query gets every
         // pending dedup pair where either side is in the user's adopter list;
         // the Set is consulted at render time below.
@@ -193,6 +209,21 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         for (const row of allContractCounts as { adopterId: string; count: number }[]) {
             if (row.adopterId) signedContractCountMap.set(row.adopterId, row.count);
         }
+        // First seen wins per adopter — rows came back ORDER BY changedAt DESC.
+        // Date is preserved as the canonical "last edit" timestamp (which the
+        // existing updatedAt mirrors today but is a different concept once
+        // we add edit-only filtering).
+        interface LastEdit { editorEmail: string; editedAt: number }
+        const lastEditMap = new Map<string, LastEdit>();
+        for (const row of allEditRows as { adopterId: string; changedBy: string | null; changedAt: number | Date | null }[]) {
+            if (!row.adopterId || lastEditMap.has(row.adopterId)) continue;
+            const editorEmail = (row.changedBy ?? '').trim();
+            if (!editorEmail || editorEmail === 'anonymous') continue;
+            const editedAt = typeof row.changedAt === 'number'
+                ? row.changedAt
+                : row.changedAt instanceof Date ? Math.floor(row.changedAt.getTime() / 1000) : 0;
+            lastEditMap.set(row.adopterId, { editorEmail, editedAt });
+        }
 
         // v2.19.6: resolve creator name + org for each row. Two batches over
         // the distinct creator emails — display name from `user.name` and
@@ -216,6 +247,11 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             if (a.addedBy && a.addedBy !== 'anonymous') {
                 creatorEmailSet.add(a.addedBy);
             }
+        }
+        // v2.19.13: also enrich every distinct LAST-EDITOR for the new
+        // provenance cell so we don't burn a 2nd pass of lookups.
+        for (const { editorEmail } of lastEditMap.values()) {
+            creatorEmailSet.add(editorEmail);
         }
         const distinctCreators: string[] = Array.from(creatorEmailSet);
         const creatorNameMap = new Map<string, string>();
@@ -283,6 +319,17 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             const creatorEmail = adopter.addedBy && adopter.addedBy !== 'anonymous' ? adopter.addedBy : null;
             const creatorName = creatorEmail ? (creatorNameMap.get(creatorEmail) ?? creatorEmail.split('@')[0]) : null;
             const creatorOrgName = creatorEmail ? (creatorOrgMap.get(creatorEmail) ?? null) : null;
+            const creatorIsSelf = creatorEmail === userEmail;
+
+            // v2.19.13: last-editor enrichment for the new provenance cell.
+            // Suppressed when the most-recent edit is by the creator at
+            // creation time (same author + same timestamp): brand-new rows
+            // shouldn't render "Editado por X" as a separate line just
+            // because saveAdopter wrote a redundant history row.
+            const lastEdit = lastEditMap.get(adopter.id);
+            const lastEditorName = lastEdit ? (creatorNameMap.get(lastEdit.editorEmail) ?? lastEdit.editorEmail.split('@')[0]) : null;
+            const lastEditorOrgName = lastEdit ? (creatorOrgMap.get(lastEdit.editorEmail) ?? null) : null;
+            const lastEditorIsSelf = lastEdit ? lastEdit.editorEmail === userEmail : false;
 
             return {
                 ...adopter,
@@ -298,6 +345,15 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                 hasPendingDuplicate: adoptersWithPendingDup.has(adopter.id),
                 creatorName,
                 creatorOrgName,
+                creatorIsSelf,
+                // v2.19.13: last-editor fields. lastEditedBy/lastEditedAt are
+                // null when the record has never been edited (saveAdopter not
+                // called after creation) or when the only editor is the
+                // 'anonymous' sentinel.
+                lastEditorName,
+                lastEditorOrgName,
+                lastEditedAt: lastEdit?.editedAt ?? null,
+                lastEditorIsSelf,
             };
         });
 
