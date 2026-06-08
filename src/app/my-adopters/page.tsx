@@ -20,8 +20,12 @@ interface Adopter {
     name: string;
     contactInfo: string | null;
     status: string | null;
-    createdAt: number | null;
-    updatedAt: number | null;
+    /** v2.19.14: Drizzle's `mode: 'timestamp'` columns return Date objects on
+     *  the server but JSON-serialise to ISO strings on the wire, so the
+     *  client receives strings. Earlier `number | null` typing was a lie
+     *  that crashed prod via `date * 1000` / `.getTime()` on a string. */
+    createdAt: number | string | null;
+    updatedAt: number | string | null;
     avgRating: number | null;
     thumbnail: string | null;
     flags: AdopterFlags;
@@ -97,7 +101,9 @@ function ProvenanceLine({
     org: string | null | undefined;
     isSelf: boolean;
     sourceKind?: string;
-    date: number | null | undefined;
+    /** v2.19.14: accept string too — Drizzle Date columns serialise to ISO
+     *  through NextResponse.json. `timeAgoSeconds` normalises all three. */
+    date: number | Date | string | null | undefined;
     addedByEmail: string | null | undefined;
     t: (key: string) => string;
 }) {
@@ -122,7 +128,12 @@ function ProvenanceLine({
         ? 'bg-stone-100 text-stone-600'    // your own org — factual, not a callout
         : 'bg-teal-50 text-teal-700';      // teammate's org — "this is a collaborator"
     const formatted = date ? timeAgo(date, isEs) : '';
-    const absoluteTooltip = date ? new Date(date * 1000).toISOString() : undefined;
+    // v2.19.14 hotfix: same normalisation as timeAgo — date arrives as
+    // string (ISO) for createdAt/updatedAt because Drizzle Date columns
+    // round-trip through JSON.stringify. Avoid `date * 1000` which would
+    // NaN out on a string and crash toISOString().
+    const tooltipSec = timeAgoSeconds(date);
+    const absoluteTooltip = tooltipSec ? new Date(tooltipSec * 1000).toISOString() : undefined;
     return (
         <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 min-w-0">
             <span className="text-stone-500 flex-shrink-0">{verb}</span>
@@ -150,12 +161,30 @@ function ProvenanceLine({
  * v2.19.13 relative-time helper for the provenance cell. Compact strings —
  * "ahora", "hace 12 min", "hace 3 h", "hace 5 d", "hace 2 sem", "hace 4 mes",
  * "hace 1 año" — keep the cell at a glance and the tooltip carries the
- * absolute timestamp for precision. Accepts seconds-epoch (the dashboard
- * row shape) or Date.
+ * absolute timestamp for precision.
+ *
+ * v2.19.14 PROD HOTFIX: input can also be a string. Drizzle columns with
+ * `mode: 'timestamp'` return Date objects server-side, but
+ * `NextResponse.json()` serialises Dates to ISO strings, so the client
+ * receives `createdAt` / `updatedAt` as strings — not numbers, not Dates.
+ * The Adopter interface previously typed these as `number | null` which
+ * was the lie that crashed prod with "getTime is not a function". Now
+ * we accept all three input shapes and normalise to seconds-epoch.
  */
-function timeAgo(input: number | Date | null | undefined, isEs: boolean): string {
-    if (!input) return '';
-    const sec = typeof input === 'number' ? input : Math.floor(input.getTime() / 1000);
+function timeAgoSeconds(input: number | Date | string | null | undefined): number {
+    if (input === null || input === undefined || input === '') return 0;
+    if (typeof input === 'number') return input;
+    if (input instanceof Date) return Math.floor(input.getTime() / 1000);
+    // string: try ISO first, then epoch-as-string
+    const isoMs = Date.parse(input);
+    if (Number.isFinite(isoMs)) return Math.floor(isoMs / 1000);
+    const asNum = Number(input);
+    return Number.isFinite(asNum) ? asNum : 0;
+}
+
+function timeAgo(input: number | Date | string | null | undefined, isEs: boolean): string {
+    const sec = timeAgoSeconds(input);
+    if (!sec) return '';
     const now = Math.floor(Date.now() / 1000);
     const diff = Math.max(0, now - sec);
     const mins = Math.floor(diff / 60);
@@ -417,7 +446,7 @@ export default function MyAdoptersPage() {
                                                 t={t}
                                             />
                                             {adopter.lastEditedAt && adopter.lastEditorName
-                                                && (adopter.lastEditedAt - (adopter.createdAt ?? 0)) > 60 && (
+                                                && (adopter.lastEditedAt - timeAgoSeconds(adopter.createdAt)) > 60 && (
                                                 <ProvenanceLine
                                                     kind="edited"
                                                     name={adopter.lastEditorName}
@@ -520,7 +549,7 @@ export default function MyAdoptersPage() {
                                             t={t}
                                         />
                                         {adopter.lastEditedAt && adopter.lastEditorName
-                                            && (adopter.lastEditedAt - (adopter.createdAt ?? 0)) > 60 && (
+                                            && (adopter.lastEditedAt - timeAgoSeconds(adopter.createdAt)) > 60 && (
                                             <ProvenanceLine
                                                 kind="edited"
                                                 name={adopter.lastEditorName}
