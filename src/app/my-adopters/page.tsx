@@ -30,6 +30,12 @@ interface Adopter {
     profileViews: number;
     formCount?: number;
     addedBy?: string | null;
+    /** v2.19.6: resolved creator display name (user.name → email-prefix fallback).
+     *  Null when the viewer is the creator — no need for a "by you" label. */
+    creatorName?: string | null;
+    /** v2.19.6: shared-org name with the viewer when possible, else creator's
+     *  primary org, else null. Drives the "from {org}" subline. */
+    creatorOrgName?: string | null;
     /** v2.14.10-20: enum-via-text — 'manual' | 'form' | 'contract' | 'imported'. */
     source?: string;
     /** v38: true when this adopter appears in a pending duplicate_candidates pair. */
@@ -193,13 +199,16 @@ export default function MyAdoptersPage() {
                     <>
                         {/* Desktop Table - Hidden on mobile */}
                         <div className="hidden md:block bg-white rounded-2xl overflow-hidden shadow-sm border border-stone-200">
-                            {/* Table Header */}
+                            {/* Table Header. v2.19.6: Flags column folded into
+                                the Rating cell (flag badges stack under the
+                                rating badge); freed slot now holds the
+                                resolved Created-by attribution. */}
                             <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-stone-50 border-b border-stone-200 text-xs font-semibold text-stone-500 uppercase tracking-wide">
                                 <div className="col-span-3">{t('dashboard.table_adopter_name')}</div>
                                 <div className="col-span-1">{t('dashboard.table_source') || 'Origen'}</div>
                                 <div className="col-span-2 text-center">{t('dashboard.table_rating') || 'Calificación'}</div>
                                 <div className="col-span-2">{t('dashboard.table_activity') || 'Actividad'}</div>
-                                <div className="col-span-2">{t('dashboard.table_flags')}</div>
+                                <div className="col-span-2">{t('dashboard.table_created_by') || 'Creado por'}</div>
                                 <div className="col-span-2 text-right">{t('dashboard.table_dates') || 'Dates'}</div>
                             </div>
 
@@ -238,9 +247,9 @@ export default function MyAdoptersPage() {
                                                     )}
                                                 </div>
                                                 <div className="text-xs text-stone-500 truncate">{adopter.contactInfo || t('dashboard.no_contact')}</div>
-                                                {adopter.addedBy && adopter.addedBy !== currentEmail && (
-                                                    <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', adopter.addedBy)}</div>
-                                                )}
+                                                {/* Inline addedBy was moved to its own column in v2.19.6 —
+                                                    keeps the Name cell focused on identity, lets the
+                                                    Creado-por col carry the resolved name + org chip. */}
                                             </div>
                                         </div>
 
@@ -253,9 +262,11 @@ export default function MyAdoptersPage() {
                                         </div>
 
                                         {/* Calificación — avgRating from activity history (legacy `status` is deprecated).
-                                            Min-height pins both states (badge / "—") to the same row height so adjacent
-                                            rows stay vertically aligned. */}
-                                        <div className="col-span-2 flex justify-center items-center min-h-[2rem]">
+                                            Flag badges stack underneath the rating badge in v2.19.6 so the
+                                            severity signal and rating live together (a 5-star adopter with a
+                                            density flag now reads in one glance instead of jumping to a
+                                            separate column). Min-height pins both states to row height. */}
+                                        <div className="col-span-2 flex flex-col items-center gap-1 min-h-[2rem]">
                                             {adopter.avgRating !== null ? (
                                                 <RatingExplainer rating={adopter.avgRating}>
                                                     <RatingBadge rating={adopter.avgRating} size="sm" label="short" />
@@ -263,6 +274,7 @@ export default function MyAdoptersPage() {
                                             ) : (
                                                 <span className="text-xs text-stone-300" title={t('myAdopters.rating_empty_hint') || 'Sin actividad calificada'}>—</span>
                                             )}
+                                            <FlagBadges flags={adopter.flags} t={t} />
                                         </div>
 
                                         {/* Actividad — stacked stats with labels (v38). Each line has its own word
@@ -278,9 +290,30 @@ export default function MyAdoptersPage() {
                                             )}
                                         </div>
 
-                                        {/* Flags */}
-                                        <div className="col-span-2">
-                                            <FlagBadges flags={adopter.flags} t={t} />
+                                        {/* Creado por — v2.19.6. Resolved display name (server-side from
+                                            user.name) + shared-org chip when the viewer shares an org with
+                                            the creator. Empty for self-created rows; FlagBadges took over
+                                            the old Flags col by moving under the rating badge. */}
+                                        <div className="col-span-2 text-xs text-stone-600 min-w-0">
+                                            {adopter.creatorName ? (
+                                                <>
+                                                    <div className="flex items-center gap-1.5 min-w-0">
+                                                        <span aria-hidden className="flex-shrink-0">👤</span>
+                                                        <span className="font-medium text-stone-700 truncate" title={adopter.addedBy || undefined}>
+                                                            {adopter.creatorName}
+                                                        </span>
+                                                    </div>
+                                                    {adopter.creatorOrgName && (
+                                                        <div className="mt-0.5 truncate" title={adopter.creatorOrgName}>
+                                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-teal-50 text-teal-700">
+                                                                {adopter.creatorOrgName}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                </>
+                                            ) : (
+                                                <span className="text-stone-300">—</span>
+                                            )}
                                         </div>
 
                                         {/* Dates - Both Created & Modified */}
@@ -339,8 +372,21 @@ export default function MyAdoptersPage() {
                                                 )}
                                             </div>
                                             <div className="text-xs text-stone-500 truncate">{adopter.contactInfo || t('dashboard.no_contact')}</div>
-                                            {adopter.addedBy && adopter.addedBy !== currentEmail && (
-                                                <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', adopter.addedBy)}</div>
+                                            {/* v2.19.6: enriched creator attribution (display name + org chip)
+                                                replaces the old raw-email line. Only renders for org-mate
+                                                creators — your own records don't need a "by you" label. */}
+                                            {adopter.creatorName && (
+                                                <div className="flex items-center gap-1.5 mt-1 text-[11px] min-w-0">
+                                                    <span aria-hidden className="text-stone-400">👤</span>
+                                                    <span className="font-medium text-stone-700 truncate" title={adopter.addedBy || undefined}>
+                                                        {adopter.creatorName}
+                                                    </span>
+                                                    {adopter.creatorOrgName && (
+                                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-teal-50 text-teal-700 truncate" title={adopter.creatorOrgName}>
+                                                            {adopter.creatorOrgName}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             )}
                                         </div>
                                         {adopter.avgRating !== null ? (

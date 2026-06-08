@@ -922,6 +922,7 @@ export const es = {
         table_species: 'Especie',
         table_status: 'Estado',
         table_source: 'Origen',
+        table_created_by: 'Creado por',
         table_activity: 'Actividad',
         table_adoption_status: 'Estado de Adopción',
         table_date: 'Fecha',

@@ -925,6 +925,7 @@ export const en = {
         modified: 'Modified',
         table_rating: 'Rating',
         table_source: 'Source',
+        table_created_by: 'Created by',
         table_activity: 'Activity',
         table_actions: 'Actions',
         view_profile: 'View Profile',

@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.6] - 2026-06-08
+
+### Changed
+- **`/my-adopters` now shows who created each profile** (display name + shared-org chip) in a dedicated column, replacing the small indigo `addedBy` line that was tucked under the contact info as a raw email string. Visible only for org-mate creators — your own records don't carry a "by you" label. When the viewer and creator share an org, the org chip renders teal as a "this is one of my teammates" cue; otherwise neutral grey.
+- **Flag badges moved from their own column into the Rating cell**, stacked underneath the rating badge. Severity signal and rating now read in one glance instead of the eye jumping across two columns. The freed Flags column slot is now the new "Creado por" column. Mobile cards picked up the same enrichment in their existing top-row attribution line.
+
+### Engineering
+- Server-side enrichment in `getMyAdopters` (`src/app/actions/dashboard.ts`): two parallel batches over distinct creator emails — `resolveDisplayName` for the name, `pickAttributionOrg(creator, viewer)` for the shared-or-primary org. Same pattern `getOrgActivity` and the `/admin/audit` route already use. `~30 rows × ~5 distinct creators` is the realistic upper bound; lookup failures fall back to the email-prefix at render time without blocking the dashboard.
+- New `creatorName` + `creatorOrgName` fields on the row shape. Null for self-created rows so the column renders `—`.
+- New i18n key `dashboard.table_created_by` in both `es.ts` and `en.ts`.
+
 ## [2.19.5] - 2026-06-07
 
 ### Changed

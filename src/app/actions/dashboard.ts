@@ -173,6 +173,40 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             if (row.linkedAdopterId) formCountMap.set(row.linkedAdopterId, row.count);
         }
 
+        // v2.19.6: resolve creator name + org for each row whose addedBy
+        // isn't the viewer themselves. Two batches over the distinct creator
+        // emails — display name from `user.name` and shared-org via
+        // pickAttributionOrg. Same enrichment pattern getOrgActivity uses;
+        // ~30 rows × ~5 distinct creators is the realistic upper bound here.
+        const creatorEmailSet = new Set<string>();
+        for (const a of adoptersList as typeof adopters.$inferSelect[]) {
+            if (a.addedBy && a.addedBy !== userEmail) creatorEmailSet.add(a.addedBy);
+        }
+        const distinctCreators: string[] = Array.from(creatorEmailSet);
+        const creatorNameMap = new Map<string, string>();
+        const creatorOrgMap = new Map<string, string | null>();
+        if (distinctCreators.length > 0) {
+            const { resolveDisplayName } = await import('./notifications');
+            const { pickAttributionOrg } = await import('@/lib/orgMembership');
+            await Promise.all(distinctCreators.map(async (email) => {
+                try {
+                    const [name, org] = await Promise.all([
+                        resolveDisplayName(email),
+                        pickAttributionOrg(email, userEmail!),
+                    ]);
+                    creatorNameMap.set(email, name);
+                    creatorOrgMap.set(email, org?.name ?? null);
+                } catch (e) {
+                    // Falls back to email-prefix at render time; never block
+                    // the dashboard on a creator lookup hiccup.
+                    logger.warn('getMyAdopters: creator enrichment failed', {
+                        creator: email, viewer: userEmail,
+                        error: e instanceof Error ? e.message : String(e),
+                    });
+                }
+            }));
+        }
+
         // Assemble results in memory (no more DB calls)
         const enrichedAdopters = adoptersList.map((adopter: typeof adopters.$inferSelect) => {
             const flags = flagsMap.get(adopter.id) || [];
@@ -207,6 +241,12 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                   }
                 : null;
 
+            // v2.19.6: enriched creator info. Empty for self-created rows
+            // (viewer doesn't need a "by you" label on their own records).
+            const creatorEmail = adopter.addedBy && adopter.addedBy !== userEmail ? adopter.addedBy : null;
+            const creatorName = creatorEmail ? (creatorNameMap.get(creatorEmail) ?? creatorEmail.split('@')[0]) : null;
+            const creatorOrgName = creatorEmail ? (creatorOrgMap.get(creatorEmail) ?? null) : null;
+
             return {
                 ...adopter,
                 avgRating: ratingsMap.get(adopter.id) ?? null,
@@ -218,6 +258,8 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                 profileViews: stats.profileViews,
                 formCount: formCountMap.get(adopter.id) ?? 0,
                 hasPendingDuplicate: adoptersWithPendingDup.has(adopter.id),
+                creatorName,
+                creatorOrgName,
             };
         });
 
