@@ -2,6 +2,11 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.7] - 2026-06-08
+
+### Fixed
+- **Created-by column showed a confusing dash on self-created rows.** v2.19.6 rendered `—` whenever `creatorName` was null, which collapsed two unrelated cases — "you made this" (skipped on purpose) and "creator is anonymous / unresolvable" (genuine missing data) — into the same visual treatment. A viewer whose feed is mostly their own records (e.g. the prod `gatitosolivos` admin with 35/44 self-owned) saw a column of dashes and read it as broken. Now self-rows render a subtle `Vos` / `You` label (italic, stone-500); truly unknown creators keep the dash with a `Sin creador identificado` tooltip. New i18n keys `myAdopters.created_by_self` and `myAdopters.created_by_unknown_hint` in `es.ts` + `en.ts`.
+
 ## [2.19.6] - 2026-06-08
 
 ### Changed

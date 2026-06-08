@@ -1189,6 +1189,8 @@ export const es = {
         duplicateUrl: 'Este post de Facebook ya fue importado. Perfil existente:',
     },
     myAdopters: {
+        created_by_self: 'Vos',
+        created_by_unknown_hint: 'Sin creador identificado',
         // v2.14.10-20: pending-dedup section on /my-adopters
         pending_dedup_title: 'Pendientes de revisar',
         pending_dedup_subtitle: 'Encontramos perfiles que podrían ser la misma persona. Decidí si combinarlos.',

@@ -1184,6 +1184,8 @@ export const en = {
         duplicateUrl: 'This Facebook post was already imported. Existing Profile:',
     },
     myAdopters: {
+        created_by_self: 'You',
+        created_by_unknown_hint: 'No identified creator',
         // v2.14.10-20: pending-dedup section on /my-adopters
         pending_dedup_title: 'Pending review',
         pending_dedup_subtitle: 'We found profiles that might be the same person. Choose whether to merge them.',

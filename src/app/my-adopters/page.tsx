@@ -290,10 +290,15 @@ export default function MyAdoptersPage() {
                                             )}
                                         </div>
 
-                                        {/* Creado por — v2.19.6. Resolved display name (server-side from
-                                            user.name) + shared-org chip when the viewer shares an org with
-                                            the creator. Empty for self-created rows; FlagBadges took over
-                                            the old Flags col by moving under the rating badge. */}
+                                        {/* Creado por — v2.19.6 + v2.19.7 self-row UX:
+                                            - Teammate-created: name + (optional) shared-org chip
+                                            - Self-created: subtle "Vos" / "You" label (distinguishes
+                                              "you made this" from a missing-data dash, which the
+                                              first cut read as confusingly when most of a user's
+                                              feed is their own records)
+                                            - Anonymous / unknown creator: actual dash
+                                            FlagBadges took over the old Flags col by moving under
+                                            the rating badge in v2.19.6. */}
                                         <div className="col-span-2 text-xs text-stone-600 min-w-0">
                                             {adopter.creatorName ? (
                                                 <>
@@ -311,8 +316,12 @@ export default function MyAdoptersPage() {
                                                         </div>
                                                     )}
                                                 </>
+                                            ) : adopter.addedBy && adopter.addedBy === currentEmail ? (
+                                                <span className="text-stone-500 italic">
+                                                    {t('myAdopters.created_by_self') || 'Vos'}
+                                                </span>
                                             ) : (
-                                                <span className="text-stone-300">—</span>
+                                                <span className="text-stone-300" title={t('myAdopters.created_by_unknown_hint') || 'Sin creador identificado'}>—</span>
                                             )}
                                         </div>
 
