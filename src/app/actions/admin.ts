@@ -457,6 +457,7 @@ export async function transferAdopterOwnership(adopterId: string, toEmail: strin
         // Fetch current owner + soft-delete check.
         const current = await db.select({
             id: adopters.id,
+            name: adopters.name,
             addedBy: adopters.addedBy,
             deletedAt: adopters.deletedAt,
         }).from(adopters).where(eq(adopters.id, adopterId)).get();
@@ -498,13 +499,19 @@ export async function transferAdopterOwnership(adopterId: string, toEmail: strin
         import('@/app/actions/notifications').then(async ({ createNotification }) => {
             const url = `/adopter/${adopterId}`;
             const targets = [from, normalizedTo].filter(e => e && e.includes('@') && e !== 'anonymous');
+            // v2.19.23: include the adopter name in both notification bodies
+            // so the recipient knows *which* record changed hands without
+            // having to click through. "an adopter" was useless when an
+            // admin transferred several in a sweep — the notifications all
+            // looked identical.
+            const adopterLabel = current.name?.trim() || 'un adoptante';
             await Promise.all(targets.map(email => createNotification({
                 userId: email,
                 type: 'ownership_transferred',
                 title: 'Cambio de propietario',
                 body: email === normalizedTo
-                    ? `Ahora sos el propietario de un adoptante (transferido por ${actor}).`
-                    : `Un administrador transfirió un adoptante que poseías a ${normalizedTo}.`,
+                    ? `Ahora sos el propietario de "${adopterLabel}" (transferido por ${actor}).`
+                    : `Un administrador transfirió "${adopterLabel}" a ${normalizedTo}.`,
                 url,
             }).catch((e: unknown) => {
                 logger.warn('transferAdopterOwnership: createNotification failed', {

@@ -2,6 +2,27 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.23] - 2026-06-09
+
+### Added — per-item dismiss X on notification bell rows
+- Each notification row in the bell dropdown now has a small X in the top-right that removes it from the list (calls the existing `PATCH /api/notifications {dismiss}` action which was already in place — the back-end was ready, the UI just hadn't surfaced the affordance per-item; only the "Mark all read" header CTA existed). Optimistic update: the row disappears instantly, the badge count decrements if the item was unread, the PATCH fires fire-and-forget.
+- Row structure changed from a single `<button>` to a `relative` wrapper div with the row click target as one button (`pl-4 pr-10` so the right edge of the click area doesn't overlap the X) and the dismiss X as a sibling button — no nested buttons (which is invalid HTML and breaks the keyboard/screen-reader story). The dismiss button is 28×28px, semi-transparent until hovered, theme-safe via `--text-muted` / `--surface-muted`.
+
+### Changed — ownership-transfer notification now names the adopter
+- Body strings on both the prior and new owner's notifications were generic — *"Ahora sos el propietario de un adoptante (transferido por ${actor})"* — useless when an admin sweeps multiple transfers and the recipient sees a stack of identical-looking rows. Now: *"Ahora sos el propietario de \"{name}\" (transferido por {actor})"* / *"Un administrador transfirió \"{name}\" a {newOwner}"*. The `name` is read off the adopter row that the action already had to fetch (added `name: adopters.name` to the existing `select` so the read cost is unchanged). Falls back to `'un adoptante'` if the name column is empty (defensive — schema guarantees it isn't, but better than a stray `""`).
+
+### Engineering
+- `src/components/NotificationBell.tsx`: new `handleDismiss(item)` handler. Row markup split into wrapper div + content button + dismiss X button.
+- `src/app/actions/admin.ts`: `transferAdopterOwnership` selects `name` alongside `id/addedBy/deletedAt`. Notification body interpolates `current.name`.
+
+## [2.19.22] - 2026-06-09
+
+### Fixed — `AnimalSelectPicker` dropdown unreachable on both mobile and desktop
+- The `AdoptionFormWizard` container is `overflow-hidden` (line 586) so the activity-section, animal photos, and step-2 lightbox can be visually contained. `AnimalSelectPicker` rendered its open list with `absolute z-20`, which meant the list was clipped at the wizard's bottom edge — rescuers whose picker landed near the bottom of the modal saw only the top few rows and physically could not scroll to reach the rest. Reported on mobile first, then confirmed on desktop with the same root cause.
+- (Mobile-specific aggravation: iOS occasionally bubbled the inner popover's touch-scroll up to the outer `<div className="fixed inset-0 ... overflow-y-auto">` dialog, scrolling the whole wizard instead of the list.)
+- Fix: drop `absolute z-20` from the open-list container — the list now renders **inline** below the trigger, becoming part of the wizard's own scroll flow. No more `overflow-hidden` clipping anywhere. `overscroll-contain` prevents the inner `max-h-72` scroll region from chaining to the outer dialog scroll when the user does hit the list's own boundaries.
+- Trade-off: the form below the picker shifts down while the list is open. That's a transient state (the user is on this screen specifically to pick one animal), and the wizard's outer `overflow-y-auto` accommodates the extra height. Net UX win — the list is always reachable.
+
 ## [2.19.21] - 2026-06-09
 
 ### Added — full-modal loading takeover during the import save → redirect lag
