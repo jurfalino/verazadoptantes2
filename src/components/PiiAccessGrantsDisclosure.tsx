@@ -20,11 +20,12 @@ export default function PiiAccessGrantsDisclosure({ grants }: { grants: AdopterP
     const [busyId, setBusyId] = useState<string | null>(null);
 
     const orgMates = grants.orgMates ?? [];
+    const searchMatch = grants.searchMatch ?? [];
     // v2.19.25: count chip + render gate include org-mates too — they're
     // listed alongside the explicit `allContact` grants as another category
     // of "people who can see this record's PII".
     const totalCount = allContact.length + orgMates.length;
-    if (totalCount === 0 && grants.searchMatchCount === 0) return null;
+    if (totalCount === 0 && searchMatch.length === 0) return null;
 
     async function revoke(grantId: string) {
         setBusyId(grantId);
@@ -109,10 +110,33 @@ export default function PiiAccessGrantsDisclosure({ grants }: { grants: AdopterP
                     {allContact.length === 0 && orgMates.length === 0 && (
                         <p className="text-sm text-stone-400 italic">{t('adopter.pii_grants_none_full')}</p>
                     )}
-                    {grants.searchMatchCount > 0 && (
-                        <p className="text-xs text-stone-500 border-t border-stone-100 pt-2">
-                            {t('adopter.pii_grants_search_count').replace('{n}', String(grants.searchMatchCount))}
-                        </p>
+                    {/* v2.19.26: search-match grants per grantee. The
+                        aggregate "1 dato desbloqueado" line was useless when
+                        the owner wanted to know WHO matched something — the
+                        whole point of the disclosure is accountability. Each
+                        row names the grantee and (if >1) how many entries
+                        they've matched. Still not revocable: a grantee can
+                        re-earn the grant simply by searching again
+                        (Resolution #2), so a per-row revoke would be
+                        theatre. */}
+                    {searchMatch.length > 0 && (
+                        <div className={(allContact.length > 0 || orgMates.length > 0) ? 'pt-2 border-t border-stone-100' : ''}>
+                            <p className="text-xs font-semibold text-stone-500 mb-1.5">
+                                {t('adopter.pii_grants_search_title')}
+                            </p>
+                            <ul className="space-y-1.5">
+                                {searchMatch.map(m => (
+                                    <li key={m.granteeEmail} className="flex items-center justify-between gap-3 text-sm">
+                                        <span className="text-stone-700 truncate">{m.granteeName}</span>
+                                        <span className="shrink-0 text-xs text-stone-500" title={t('adopter.pii_grants_search_count_tooltip').replace('{n}', String(m.count))}>
+                                            {m.count > 1
+                                                ? t('adopter.pii_grants_search_count_n').replace('{n}', String(m.count))
+                                                : t('adopter.pii_grants_search_count_1')}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
                     )}
                 </div>
             )}

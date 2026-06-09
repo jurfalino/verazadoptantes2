@@ -405,7 +405,7 @@ export async function getAdopterPiiContext(adopterId: string): Promise<AdopterPi
         gatingOn: false, privileged: false, masked: false, maskedFieldCount: 0,
         requestState: { pending: false, cooldownUntil: null, lastResolutionNote: null },
         pendingRequests: [],
-        accessGrants: { allContact: [], orgMates: [], searchMatchCount: 0 },
+        accessGrants: { allContact: [], orgMates: [], searchMatch: [] },
     };
     try {
         if (!(await isPiiGatingEnabled())) return empty;
@@ -446,7 +446,7 @@ export async function getAdopterPiiContext(adopterId: string): Promise<AdopterPi
         // Privileged viewers: the pending requests they can act on + the live
         // grants for the "who has access" disclosure.
         let pendingRequests: PiiAccessRequestView[] = [];
-        let accessGrants: AdopterPiiContext['accessGrants'] = { allContact: [], orgMates: [], searchMatchCount: 0 };
+        let accessGrants: AdopterPiiContext['accessGrants'] = { allContact: [], orgMates: [], searchMatch: [] };
         if (privileged) {
             const [reqRows, grantRows]: [PiiRequest[], PiiGrant[]] = await Promise.all([
                 db.select().from(piiAccessRequests)
@@ -457,9 +457,14 @@ export async function getAdopterPiiContext(adopterId: string): Promise<AdopterPi
             ]);
 
             // Resolve every grantee + requester display name in one batch.
+            // v2.19.26: include search-match grantees in the name-resolution
+            // pre-warm so we can show WHO holds each search-match grant in
+            // the "who has access" disclosure (not just an aggregate count).
             const emails = new Set<string>([
                 ...reqRows.map(r => r.requesterEmail),
-                ...grantRows.filter(g => g.scope === 'all_contact').map(g => g.granteeEmail),
+                ...grantRows.filter(g =>
+                    g.scope === 'all_contact' || g.scope === 'entry' || g.scope === 'name_token',
+                ).map(g => g.granteeEmail),
             ]);
             const names = new Map<string, string>();
             await Promise.all([...emails].map(async e => { names.set(e, await resolveDisplayName(e)); }));
@@ -507,14 +512,25 @@ export async function getAdopterPiiContext(adopterId: string): Promise<AdopterPi
                 }
             }
 
+            // v2.19.26: search-match grants grouped by grantee. Bundle entry +
+            // name_token grants — both are "things this viewer demonstrated
+            // knowing" and a single grantee may hold a mix. Empty list when
+            // no search-match grants exist.
+            const searchMatchByEmail = new Map<string, number>();
+            for (const g of grantRows) {
+                if (g.scope !== 'entry' && g.scope !== 'name_token') continue;
+                searchMatchByEmail.set(g.granteeEmail, (searchMatchByEmail.get(g.granteeEmail) ?? 0) + 1);
+            }
+            const searchMatch = [...searchMatchByEmail.entries()].map(([email, count]) => ({
+                granteeEmail: email,
+                granteeName: nameOf(email),
+                count,
+            }));
+
             accessGrants = {
                 allContact,
                 orgMates,
-                // Search-match count bundles both contact-entry grants and
-                // name-token grants — both are "things this viewer demonstrated
-                // knowing." The owner's "who has access" disclosure shows it as
-                // a single aggregate count.
-                searchMatchCount: grantRows.filter(g => g.scope === 'entry' || g.scope === 'name_token').length,
+                searchMatch,
             };
         }
 

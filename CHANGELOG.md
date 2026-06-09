@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.26] - 2026-06-09
+
+### Changed — name the people behind search-match grants in "Who has access"
+- The aggregate line *"1 dato(s) de contacto desbloqueado(s) por coincidencia de búsqueda"* told the owner SOMETHING happened but not WHO did it. The whole point of the disclosure is accountability — knowing a number without a name doesn't help an owner decide whether to be okay with that access. Replaced the aggregate count with a named per-grantee list: each row shows the grantee's display name and, when they hold more than one search-match grant, how many entries they've matched (`"3 coincidencias"`).
+- The schema field `accessGrants.searchMatchCount: number` becomes `accessGrants.searchMatch: { granteeEmail; granteeName; count }[]`. v2.19.25 just shipped to staging and isn't in prod yet, so this is a straight rename rather than a deprecation pair — no downstream consumers exist.
+- Search-match grants are still **not revocable** (Resolution #2: the grantee can re-earn the grant simply by searching again, so a per-row revoke would be theatre). But naming the grantee was the user-visible gap; the no-revoke posture wasn't.
+- Required including the search-match grantees in the existing `names` batch-resolve pre-warm in `getAdopterPiiContext` — one resolveDisplayName per unique grantee, irrespective of how many entries they unlocked.
+
+### Engineering
+- `src/lib/piiAccess.ts:AdopterPiiContext.accessGrants` — replaced `searchMatchCount: number` with `searchMatch: Array<{ granteeEmail; granteeName; count }>`.
+- `src/app/actions/piiAccess.ts:getAdopterPiiContext` — name-resolution pre-warm now includes `scope='entry' | 'name_token'` grantees; new groupBy loop assembles the per-grantee list.
+- `src/components/PiiAccessGrantsDisclosure.tsx` — rendered the new sub-section ("Desbloqueado por coincidencia de búsqueda") with the same separator pattern as the orgMates section. Empty-state and total-count gates updated to use the new field.
+- New i18n keys: `adopter.pii_grants_search_title`, `pii_grants_search_count_1`, `pii_grants_search_count_n`, `pii_grants_search_count_tooltip` in both locales. The old `pii_grants_search_count` key is retained but unused — kept to avoid breaking any other surface that might still hold a reference (none found in the codebase but the key is cheap to leave behind).
+
 ## [2.19.25] - 2026-06-09
 
 ### Added — org-mates listed in "Who has access" disclosure

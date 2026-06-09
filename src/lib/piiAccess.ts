@@ -897,6 +897,13 @@ export interface AdopterPiiContext {
          *  access via shared org membership. Listed alongside (but
          *  visually distinct from) explicit `allContact` grants. */
         orgMates: PiiOrgMateAccess[];
-        searchMatchCount: number;
+        /** v2.19.26: search-match grants grouped by grantee. Replaces the old
+         *  aggregate `searchMatchCount` — "1 dato desbloqueado" without a
+         *  name was useless when the owner wanted to know WHO got the
+         *  partial reveal. Each row counts the entry + name_token grants
+         *  that grantee holds on this adopter. Still not revocable
+         *  (Resolution #2: the grantee can simply re-search to re-earn
+         *  them), but the owner can see who and how many. */
+        searchMatch: Array<{ granteeEmail: string; granteeName: string; count: number }>;
     };
 }
