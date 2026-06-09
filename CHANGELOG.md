@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.24] - 2026-06-09
+
+### Fixed — duplicate detection surfacing first-name-only false positives
+- Reported: adding a profile with only a first name + phone (e.g. *Susana* + a phone) returned a list of possible duplicates that shared only the first name. Susana with phone X was matching every other Susana in the registry regardless of phone, email, or any other identifier.
+- Root cause in `runDuplicateMode` (`src/app/actions/findAdopters.ts`):
+  - `name_word` and `name_full` tokens use **prefix-LIKE** lookup (`susa%`) so minor typos still hit, but that also means a single token `'susana'` matches every adopter whose name starts with "susa" — `Susana Pérez`, `Susanita`, `Susan García`, etc.
+  - For a candidate whose `name_full` also starts with "susa", both `name_word` (weight 1) and `name_full` (weight 2) fire → score 3 → normalised to 25% relevance → passes the 15% `minRelevance` gate as a "low" band match.
+  - The rescuer's phone digits were used to *seed* the token search but never used to *filter out* candidates whose phone didn't match. The semantic was wrong: providing a phone is an assertion ("this is THE person with this phone"), but the engine treated it as one of many optional signals.
+- Fix: **false-positive suppression rule** — when the input had at least one strong identity signal (phone / email / social handle / id_number) AND the candidate didn't match any of those, AND every matched type on the candidate is a name signal (`name_full`, `name_word`, `name_phonetic`, `name_word_fuzzy`, or the new `like_fallback_name`), the candidate is dropped before scoring. "Susana + phone X" no longer surfaces "Susana with phone Y" as a possible duplicate.
+- Required splitting the old single-bucket `like_fallback` into two: `like_fallback_name` (name-column LIKE hit) and `like_fallback_contact` (contactInfo-column LIKE hit). Without the split the suppression rule couldn't tell whether a fallback-only candidate had matching contact data or just a name collision. Weights: contact fallback is a strong signal (1.5, was 0.5), name fallback stays weak (0.5).
+- Trade-off: a candidate with no strong-signal storage at all (no stored phones/emails/socials) AND only a name match is now dropped from duplicate detection when the input had a phone. The rescuer can still find that adopter via the search surface — they just won't get a coincidental name-collision suggestion when they're explicitly providing different contact info. Net UX win.
+
+### Engineering
+- `findAdopters.ts:runDuplicateMode` — split the LIKE-fallback strategy into name-only and contact-only queries; introduced `STRONG_SIGNAL_TYPES` / `NAME_SIGNAL_TYPES` classification sets and `hasStrongInputSignal`; added the per-candidate suppression `continue`. Extracted the LIKE-fallback runner into a small helper to avoid two `let likeWhere: any` blocks (net -1 lint warning).
+- `contract-results/[notificationId]/page.tsx` — chip rendering map gained `like_fallback_name` and `like_fallback_contact` entries (kept the legacy `like_fallback` key for any stored `duplicate_candidates.matchTypes` rows that still hold the pre-split value; those keep rendering as "Coincidencia general").
+
 ## [2.19.23] - 2026-06-09
 
 ### Added — per-item dismiss X on notification bell rows
