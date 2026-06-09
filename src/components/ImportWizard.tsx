@@ -868,14 +868,23 @@ export default function ImportWizard() {
                 await fetch('/api/upload-media', { method: 'POST', body: fd });
             }
 
-            const successMessage = extractedData.adoptionDetected && extractedData.adoptionConfidence !== 'low'
-                ? 'Profile + adoption record created'
-                : (extractedData.name || 'New Profile');
+            // v2.19.18: contacts-import suppresses the success toast because
+            // we redirect straight to the new profile with the prompted
+            // VisitIntentCard — the redirect IS the success signal, and a
+            // "→ Ver Perfil" CTA pointing to the same destination the
+            // browser is already loading is just visual noise. Facebook /
+            // share-URL imports keep the toast since their redirect goes
+            // back to `/`.
+            if (!fromContacts) {
+                const successMessage = extractedData.adoptionDetected && extractedData.adoptionConfidence !== 'low'
+                    ? 'Profile + adoption record created'
+                    : (extractedData.name || 'New Profile');
 
-            toast.success('¡Adoptante Creado!', successMessage, {
-                label: '→ Ver Perfil',
-                href: `/adopter/${adopterId}`,
-            });
+                toast.success('¡Adoptante Creado!', successMessage, {
+                    label: '→ Ver Perfil',
+                    href: `/adopter/${adopterId}`,
+                });
+            }
 
             // Track import event in Amplitude via Zaraz
             zarazTrack('import_completed', {
@@ -909,6 +918,36 @@ export default function ImportWizard() {
         setIsSaving(true);
 
         try {
+
+            // v2.19.18: contacts-merge path mirrors the contacts-create path:
+            // no sham activity record is written. The rescuer is enriching an
+            // existing profile with better contact data, and then declaring
+            // the real activity (if any) via the prompted VisitIntentCard on
+            // the destination profile. `/api/adopters/[id]/add-record` requires
+            // an `adoption` block and would create an activity row we
+            // explicitly don't want; the appendToExistingAdopter server action
+            // is the right primitive — it merges contact fields without
+            // touching the activity timeline. Facebook / share-URL merges keep
+            // the existing add-record flow because the AI extraction step
+            // collects a real recordType worth recording.
+            if (fromContacts) {
+                const { appendToExistingAdopter } = await import('@/app/actions');
+                const contactInfoBlob = contactEntriesToBlob(contactEntries) || undefined;
+                const contactEntriesJson = contactEntries.length ? JSON.stringify(contactEntries) : undefined;
+                const result = await appendToExistingAdopter(mergeTarget.id, {
+                    contactInfo: contactInfoBlob,
+                    contactEntries: contactEntriesJson,
+                });
+                if (!result.success) {
+                    throw new Error(result.error || 'Failed to merge contact data');
+                }
+                zarazTrack('import_merged', {
+                    hasImages: 0,
+                    fromContacts: 1,
+                });
+                router.push(`/adopter/${mergeTarget.id}?fromImport=contacts`);
+                return;
+            }
 
             // Generate thumbnails for fetched videos (via proxy for CORS)
             const videoPayloads = await Promise.all(
@@ -1444,16 +1483,20 @@ export default function ImportWizard() {
                         })()}
                     </div>
 
-                    {/* Initial observation — saved as a separate observation record on import */}
-                    <div>
-                        <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.initial_observation') || 'Initial observation'}</label>
-                        <textarea
-                            value={extractedData.notes || ''}
-                            onChange={e => setExtractedData({ ...extractedData, notes: e.target.value })}
-                            className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm min-h-[80px] resize-y focus:ring-2 focus:ring-blue-500"
-                            placeholder={t('import.initial_observation_placeholder') || 'Saved as an observation record on the new profile.'}
-                        />
-                    </div>
+                    {/* Initial observation — for contacts imports we now skip the silent
+                        observation entirely; the rescuer declares the real activity via the
+                        prompted VisitIntentCard on the destination profile (v2.19.18). */}
+                    {!fromContacts && (
+                        <div>
+                            <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.initial_observation') || 'Initial observation'}</label>
+                            <textarea
+                                value={extractedData.notes || ''}
+                                onChange={e => setExtractedData({ ...extractedData, notes: e.target.value })}
+                                className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm min-h-[80px] resize-y focus:ring-2 focus:ring-blue-500"
+                                placeholder={t('import.initial_observation_placeholder') || 'Saved as an observation record on the new profile.'}
+                            />
+                        </div>
+                    )}
 
                     {/* Adoption / Record Detection */}
                     {extractedData.adoptionDetected && (

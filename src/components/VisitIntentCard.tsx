@@ -231,7 +231,7 @@ export default function VisitIntentCard({ adopterId, adopterName, avgRating = nu
                 </span>
             </div>
 
-            <div key={view} className={`flex gap-2 animate-slideDown ${prompted ? 'flex-wrap' : 'flex-col sm:flex-row'}`}>
+            <div key={view} className={`animate-slideDown gap-2 ${prompted ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'flex flex-col sm:flex-row'}`}>
                 {!prompted && view === 'other' && (
                     <button
                         type="button"

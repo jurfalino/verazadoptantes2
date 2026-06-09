@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.18] - 2026-06-09
+
+### Fixed — four follow-ups on the v2.19.17 contacts-import flow
+- **Toast after a contacts-create no longer appears.** v2.19.17 still surfaced a `¡Adoptante Creado!` toast with a `→ Ver Perfil` CTA right as we were redirecting the rescuer to that same profile — two competing affordances pointing at the same place. The success toast is now suppressed when `fromContacts` because the redirect IS the confirmation. The Facebook / share-URL path keeps its toast (no auto-redirect into the profile there).
+- **Contacts-merge now follows the same prompted-intent flow as contacts-create.** Previously clicking "merge" in `ImportWizard` for a Google-Contacts import fell through to the old `POST /api/adopters/[id]/add-record` path, which (a) hardcoded a sham `observation` activity row exactly like the v2.19.17 bug we just fixed for the create path, and (b) required an `adoption` block (returns 400 "Missing adoption data" otherwise) so silently regressed the merge path back into the bug. The contacts-merge handler now calls the `appendToExistingAdopter` server action — which merges contact fields into the existing profile without touching the activity timeline — and redirects to `/adopter/<targetId>?fromImport=contacts` so the prompted `VisitIntentCard` fires on landing. Symmetric with the create path: enrich the profile silently, prompt for the real intent on the destination.
+- **"Initial observation" textarea hidden in the contacts step-1 form.** The field existed to seed the now-deprecated silent observation; with v2.19.17 dropping that record entirely, the textarea was a vestigial input that would have been written nowhere. Now gated on `!fromContacts`. The Facebook / share-URL path still shows it (the AI extraction does still write a `notes` field on the adoption row).
+- **Prompted `VisitIntentCard` is no longer cramped on mobile.** v2.19.17 used `flex-wrap` for the 5-chip layout in prompted mode. Combined with `flex-1 min-w-0` on each chip, that squished the buttons to unreadable widths on a ~390px viewport. Switched to a responsive grid (`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`) so each chip gets a full row on mobile, two columns on tablet, three on desktop. The default (non-prompted) layout is unchanged.
+
+### Engineering
+- `ImportWizard.tsx`: `handleSave` wraps the success toast in `if (!fromContacts)`. `handleMerge` branches at the top — `fromContacts` → dynamic import of `appendToExistingAdopter`, append, redirect; otherwise the existing `add-record` flow unchanged. The "Initial observation" `<textarea>` is gated on `!fromContacts`.
+- `VisitIntentCard.tsx`: prompted chip container changed from `flex flex-wrap` to `grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`. Chip classes are unchanged — `flex-1 min-w-0` is a no-op inside a grid item so no extra cleanup was needed.
+
 ## [2.19.17] - 2026-06-08
 
 ### Changed
