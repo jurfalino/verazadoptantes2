@@ -1411,12 +1411,18 @@ export default function ImportWizard() {
                 <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
                     <div className="flex items-center justify-between">
                         <h3 className="text-lg font-semibold text-stone-900">{t('import.reviewExtracted') || 'Review Extracted Data'}</h3>
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${extractedData.confidence === 'high' ? 'bg-green-100 text-green-700' :
-                            extractedData.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                                'bg-red-100 text-red-700'
-                            }`}>
-                            {extractedData.confidence} {t('import.confidence') || 'confidence'}
-                        </span>
+                        {/* v2.19.20: confidence pill describes the AI extraction.
+                            For contacts imports the hydrate path hardcodes 'low'
+                            because there's no AI signal to grade — the pill is
+                            meaningless there, so we hide it. */}
+                        {!fromContacts && (
+                            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${extractedData.confidence === 'high' ? 'bg-green-100 text-green-700' :
+                                extractedData.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                                    'bg-red-100 text-red-700'
+                                }`}>
+                                {extractedData.confidence} {t('import.confidence') || 'confidence'}
+                            </span>
+                        )}
                     </div>
 
                     {/* Contact-import breadcrumb — only shown when the wizard
@@ -1646,8 +1652,14 @@ export default function ImportWizard() {
                     <LegalConsent />
 
                     <div className="flex gap-3 pt-2">
+                        {/* v2.19.20: contacts imports skip steps 1+2 entirely
+                            (hydrateFromContact jumps straight to step 3), so
+                            "Back" must not drop the rescuer onto step 2's AI
+                            text-paste screen they never saw. Send them home —
+                            the contact picker is one tap away on the home
+                            page. */}
                         <button
-                            onClick={() => setStep(2)}
+                            onClick={() => fromContacts ? router.push('/') : setStep(2)}
                             className="px-4 py-2.5 border border-stone-300 rounded-xl text-sm font-medium text-stone-600 hover:bg-stone-50"
                         >
                             ← {t('import.back') || 'Back'}
@@ -1655,7 +1667,7 @@ export default function ImportWizard() {
                         <button
                             onClick={handlePreSave}
                             disabled={!extractedData.name?.trim() || isSaving}
-                            className="flex-1 py-2.5 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                            className="btn-primary flex-1 py-2.5 rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                         >
                             {isSaving ? (
                                 <><span className="animate-spin">⏳</span> {t('import.checking') || 'Checking...'}</>

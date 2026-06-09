@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.20] - 2026-06-09
+
+### Fixed — three polish issues on the contacts-import step 3
+- **"Baja confianza" pill no longer renders on the contacts review step.** The pill describes the AI extraction's confidence band, but `hydrateFromContact()` hardcodes `confidence: 'low'` because there's no AI signal to grade in the contact-picker path (the vCard gives us identity data, the wizard's Step 3 panel grades that alongside intentionally empty adoption details). Showing a "low confidence" pill on a path where confidence is a meaningless field was just noise the rescuer would (correctly) read as a problem. Gated on `!fromContacts`.
+- **"Guardar Adoptante" CTA now uses the `.btn-primary` token instead of raw `bg-green-600`/`bg-green-700`.** Per the design style guide (and the standing rule on raw Tailwind colors), primary CTAs render `var(--btn-primary-bg)` which is the teal accent under both `claro` and `azul-noche` themes. The raw green was theme-unsafe — it rendered the same on every theme and broke the accent palette on the import surface.
+- **Back button on the contacts step 3 no longer drops the rescuer onto the AI-extraction step they never saw.** The contacts path skips Steps 1+2 entirely (`hydrateFromContact` jumps straight to Step 3), but `setStep(2)` on the Back button sent them to Step 2's text-paste preview UI — confusing, and there's no way to recover the picked contact's data from there. Now `fromContacts` Back routes to `/`, where the contact picker is one tap away. The Facebook / share-URL path keeps the Step 2 back-step because that's where the user actually came from.
+
 ## [2.19.19] - 2026-06-09
 
 ### Changed — drop the `VisitIntentCard` prompted mode, reuse the default
