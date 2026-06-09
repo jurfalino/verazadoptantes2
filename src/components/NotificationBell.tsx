@@ -173,6 +173,24 @@ export default function NotificationBell() {
         }
     };
 
+    // v2.19.23: dismiss a single notification. Optimistically remove it from
+    // the list (and decrement unreadCount if it was unread), then fire the
+    // PATCH. Silent on failure — the user's primary signal is the item
+    // disappearing, and a stale row reappearing on the next fetch is fine
+    // (better than blocking the UI on a network call).
+    const handleDismiss = async (item: NotificationItem) => {
+        setItems(prev => prev.filter(n => n.id !== item.id));
+        if (!item.read) {
+            setUnreadCount(prev => Math.max(0, prev - 1));
+            prevCountRef.current = Math.max(0, prevCountRef.current - 1);
+        }
+        fetch('/api/notifications', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dismiss: item.id }),
+        }).catch(() => { /* silent — optimistic UI already reflects the change */ });
+    };
+
     // Mark all as read
     const handleMarkAllRead = async () => {
         setItems(prev => prev.map(n => ({ ...n, read: 1 })));
@@ -318,37 +336,64 @@ export default function NotificationBell() {
                                     ? new Date(item.createdAt * 1000)
                                     : new Date(item.createdAt);
 
+                                // v2.19.23: row is a relative wrapper so the
+                                // dismiss X can sit as a sibling button at
+                                // top-right without nesting buttons (invalid
+                                // HTML). The main click target (the row
+                                // button) keeps its full width + padding so
+                                // the touch area is still generous; the X
+                                // button has min-w-/h-7 to stay tappable on
+                                // mobile (44px is overkill here — the X is
+                                // secondary and not the path of least
+                                // resistance).
                                 return (
-                                    <button
+                                    <div
                                         key={item.id}
-                                        onClick={() => handleClick(item)}
-                                        className="w-full text-left px-4 py-3 transition-colors"
+                                        className="relative"
                                         style={{
                                             borderBottom: '1px solid var(--border-default)',
                                             borderLeft: !item.read ? '3px solid var(--brand)' : '3px solid transparent',
                                             background: !item.read ? 'var(--accent-subtle-bg)' : 'transparent',
                                         }}
-                                        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-muted)'; }}
-                                        onMouseLeave={(e) => { e.currentTarget.style.background = !item.read ? 'var(--accent-subtle-bg)' : 'transparent'; }}
                                     >
-                                        <div className="flex items-start gap-2.5">
-                                            <span className="text-lg flex-shrink-0 mt-0.5">{item.icon}</span>
-                                            <div className="flex-1 min-w-0">
-                                                <p className={`text-sm leading-snug break-words ${!item.read ? 'font-semibold' : 'font-medium'}`} style={{ color: 'var(--text-primary)' }}>
-                                                    {stripLeadingEmoji(item.title)}
-                                                </p>
-                                                <p className="text-xs leading-relaxed mt-0.5 line-clamp-2 break-words" style={{ color: 'var(--text-muted)' }}>
-                                                    {item.body}
-                                                </p>
-                                                <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>
-                                                    {timeAgo(createdDate, locale)}
-                                                </p>
+                                        <button
+                                            onClick={() => handleClick(item)}
+                                            className="w-full text-left pl-4 pr-10 py-3 transition-colors"
+                                            onMouseEnter={(e) => { e.currentTarget.parentElement!.style.background = 'var(--surface-muted)'; }}
+                                            onMouseLeave={(e) => { e.currentTarget.parentElement!.style.background = !item.read ? 'var(--accent-subtle-bg)' : 'transparent'; }}
+                                        >
+                                            <div className="flex items-start gap-2.5">
+                                                <span className="text-lg flex-shrink-0 mt-0.5">{item.icon}</span>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className={`text-sm leading-snug break-words ${!item.read ? 'font-semibold' : 'font-medium'}`} style={{ color: 'var(--text-primary)' }}>
+                                                        {stripLeadingEmoji(item.title)}
+                                                    </p>
+                                                    <p className="text-xs leading-relaxed mt-0.5 line-clamp-2 break-words" style={{ color: 'var(--text-muted)' }}>
+                                                        {item.body}
+                                                    </p>
+                                                    <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>
+                                                        {timeAgo(createdDate, locale)}
+                                                    </p>
+                                                </div>
+                                                {!item.read && (
+                                                    <span className="w-2 h-2 rounded-full flex-shrink-0 mt-1.5" style={{ background: 'var(--brand)' }} />
+                                                )}
                                             </div>
-                                            {!item.read && (
-                                                <span className="w-2 h-2 rounded-full flex-shrink-0 mt-1.5" style={{ background: 'var(--brand)' }} />
-                                            )}
-                                        </div>
-                                    </button>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => { e.stopPropagation(); handleDismiss(item); }}
+                                            aria-label={isEs ? 'Descartar notificación' : 'Dismiss notification'}
+                                            className="absolute top-2 right-2 w-7 h-7 rounded-md flex items-center justify-center hover:opacity-100 opacity-50 transition-opacity"
+                                            style={{ color: 'var(--text-muted)' }}
+                                            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-muted)'; }}
+                                            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.2} viewBox="0 0 24 24" aria-hidden="true">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        </button>
+                                    </div>
                                 );
                             })
                         )}
