@@ -620,6 +620,7 @@ export const es = {
         pii_grants_title: 'Quién tiene acceso',
         pii_grants_revoke: 'Revocar',
         pii_grants_none_full: 'Nadie tiene acceso completo aprobado.',
+        pii_grants_orgmates_title: 'Compañeros con acceso implícito',
         pii_grants_search_count: '{n} dato(s) de contacto desbloqueado(s) por coincidencia de búsqueda.',
         pii_grants_revoked_toast: 'Acceso revocado',
         pii_whatsnew_label: 'Novedad',

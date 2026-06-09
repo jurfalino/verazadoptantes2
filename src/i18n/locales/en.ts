@@ -613,6 +613,7 @@ export const en = {
         pii_grants_title: 'Who has access',
         pii_grants_revoke: 'Revoke',
         pii_grants_none_full: 'No one has approved full access.',
+        pii_grants_orgmates_title: 'Teammates with implicit access',
         pii_grants_search_count: '{n} contact detail(s) unlocked via a search match.',
         pii_grants_revoked_toast: 'Access revoked',
         pii_whatsnew_label: 'New',

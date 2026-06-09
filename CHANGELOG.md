@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.25] - 2026-06-09
+
+### Added — org-mates listed in "Who has access" disclosure
+- The owner / admin / org-mate "Quién tiene acceso" disclosure on an adopter profile used to list only **explicit** `all_contact` PII grants — the people who had to request access and were approved. Org-mates who got access implicitly (the whole org-collab premise: a teammate from your rescue org can see your records' contact info without filing a request) were invisible to the owner. The user reported the gap: "shouldn't I see other users in my groups (if any) in 'who has access'?"
+- Now the disclosure renders a second sub-section, **"Compañeros con acceso implícito"**, listing every org-mate of the record owner. Each row shows the teammate's display name + a small chip per org through which they're related (handles the multi-org case — same teammate via two different orgs collapses to one row with two chips). The count chip in the disclosure title now sums both categories so an owner can see at a glance how many people total can see the record's PII.
+- No revoke button on org-mate rows. Revocation here means an org-membership change (org-admin removes the teammate or the owner from the org) — it's not a per-adopter action and pretending it is would mislead. The audit log + owner notification system is the trust-but-verify backstop already in place for org-mate views.
+- Visible to anyone the disclosure was already visible to (owner / editor / admin / moderator / org-mate). An org-mate viewing a teammate's profile sees the org-mate list too — transparency between teammates is the right default.
+
+### Engineering
+- `src/lib/orgMembership.ts` — new helper `getOrgMatesOf(email)` returning `Array<{ email; orgs: OrgRef[] }>`. Fans out one query per owner-org to fetch member lists, dedupes mates by email, accumulates orgs per mate. Fails open returning `[]` so a transient D1 hiccup doesn't blank the disclosure.
+- `src/lib/piiAccess.ts` — new type `PiiOrgMateAccess` (`granteeEmail`, `granteeName`, `orgs[]`). Extended `AdopterPiiContext.accessGrants` with the `orgMates` field.
+- `src/app/actions/piiAccess.ts:getAdopterPiiContext` — when `privileged`, after computing the explicit `allContact` grants, also fetch the OWNER's org-mates and batch-resolve display names through the same `names` map used for grant rows (so a mate who's also a grantee resolves with one DB hit).
+- `src/components/PiiAccessGrantsDisclosure.tsx` — new sub-section under the explicit-grant list. Total-count chip now sums both categories; the empty-state "nadie tiene acceso completo aprobado" message only fires when BOTH lists are empty.
+- New i18n key `adopter.pii_grants_orgmates_title` in both locales.
+
 ## [2.19.24] - 2026-06-09
 
 ### Fixed — duplicate detection surfacing first-name-only false positives

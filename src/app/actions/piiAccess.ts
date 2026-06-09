@@ -31,6 +31,7 @@ import {
     type PiiAccessRequestState,
     type AdopterPiiContext,
     type PiiAllContactGrant,
+    type PiiOrgMateAccess,
 } from '@/lib/piiAccess';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { createNotification, resolveDisplayName } from './notifications';
@@ -404,7 +405,7 @@ export async function getAdopterPiiContext(adopterId: string): Promise<AdopterPi
         gatingOn: false, privileged: false, masked: false, maskedFieldCount: 0,
         requestState: { pending: false, cooldownUntil: null, lastResolutionNote: null },
         pendingRequests: [],
-        accessGrants: { allContact: [], searchMatchCount: 0 },
+        accessGrants: { allContact: [], orgMates: [], searchMatchCount: 0 },
     };
     try {
         if (!(await isPiiGatingEnabled())) return empty;
@@ -445,7 +446,7 @@ export async function getAdopterPiiContext(adopterId: string): Promise<AdopterPi
         // Privileged viewers: the pending requests they can act on + the live
         // grants for the "who has access" disclosure.
         let pendingRequests: PiiAccessRequestView[] = [];
-        let accessGrants: AdopterPiiContext['accessGrants'] = { allContact: [], searchMatchCount: 0 };
+        let accessGrants: AdopterPiiContext['accessGrants'] = { allContact: [], orgMates: [], searchMatchCount: 0 };
         if (privileged) {
             const [reqRows, grantRows]: [PiiRequest[], PiiGrant[]] = await Promise.all([
                 db.select().from(piiAccessRequests)
@@ -483,8 +484,32 @@ export async function getAdopterPiiContext(adopterId: string): Promise<AdopterPi
                     granteeName: nameOf(g.granteeEmail),
                     grantedAt: g.createdAt ? new Date(g.createdAt).getTime() : null,
                 }));
+
+            // v2.19.25: implicit org-mate access. The owner / admins always knew
+            // that someone in their rescue org could see their adopters' contact
+            // info (that's the whole point of the org-collab feature), but the
+            // "who has access" disclosure only listed explicit `all_contact`
+            // grants — which made the implicit half invisible. List org-mates
+            // alongside, visually distinct (no revoke button: revoking is an
+            // org-membership change, not a per-adopter action).
+            let orgMates: PiiOrgMateAccess[] = [];
+            if (isRealActorEmail(adopter.addedBy)) {
+                const mates = await (await import('@/lib/orgMembership')).getOrgMatesOf(adopter.addedBy);
+                if (mates.length > 0) {
+                    await Promise.all(mates.map(async m => {
+                        if (!names.has(m.email)) names.set(m.email, await resolveDisplayName(m.email));
+                    }));
+                    orgMates = mates.map(m => ({
+                        granteeEmail: m.email,
+                        granteeName: nameOf(m.email),
+                        orgs: m.orgs.map(o => ({ id: o.id, name: o.name })),
+                    }));
+                }
+            }
+
             accessGrants = {
                 allContact,
+                orgMates,
                 // Search-match count bundles both contact-entry grants and
                 // name-token grants — both are "things this viewer demonstrated
                 // knowing." The owner's "who has access" disclosure shows it as

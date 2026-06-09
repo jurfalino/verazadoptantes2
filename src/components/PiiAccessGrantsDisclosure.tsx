@@ -19,7 +19,12 @@ export default function PiiAccessGrantsDisclosure({ grants }: { grants: AdopterP
     const [open, setOpen] = useState(false);
     const [busyId, setBusyId] = useState<string | null>(null);
 
-    if (allContact.length === 0 && grants.searchMatchCount === 0) return null;
+    const orgMates = grants.orgMates ?? [];
+    // v2.19.25: count chip + render gate include org-mates too — they're
+    // listed alongside the explicit `allContact` grants as another category
+    // of "people who can see this record's PII".
+    const totalCount = allContact.length + orgMates.length;
+    if (totalCount === 0 && grants.searchMatchCount === 0) return null;
 
     async function revoke(grantId: string) {
         setBusyId(grantId);
@@ -48,13 +53,13 @@ export default function PiiAccessGrantsDisclosure({ grants }: { grants: AdopterP
                 <span className="font-semibold text-stone-700 flex items-center gap-2">
                     <span aria-hidden>🔓</span>
                     {t('adopter.pii_grants_title')}
-                    <span className="font-normal text-stone-500">({allContact.length})</span>
+                    <span className="font-normal text-stone-500">({totalCount})</span>
                 </span>
                 <span className="text-stone-400 text-xs" aria-hidden>{open ? '▲' : '▼'}</span>
             </button>
             {open && (
                 <div className="mt-3 space-y-2">
-                    {allContact.length > 0 ? (
+                    {allContact.length > 0 && (
                         <ul className="space-y-1.5">
                             {allContact.map(g => (
                                 <li key={g.grantId} className="flex items-center justify-between gap-3 text-sm">
@@ -70,7 +75,38 @@ export default function PiiAccessGrantsDisclosure({ grants }: { grants: AdopterP
                                 </li>
                             ))}
                         </ul>
-                    ) : (
+                    )}
+                    {/* v2.19.25: org-mates of the record's owner. Implicit
+                        access (no request flow), so no revoke affordance —
+                        managing it is an org-membership change at the org-
+                        admin level, not a per-adopter action. Visually
+                        deemphasised vs. explicit grants. */}
+                    {orgMates.length > 0 && (
+                        <div className={allContact.length > 0 ? 'pt-2 border-t border-stone-100' : ''}>
+                            <p className="text-xs font-semibold text-stone-500 mb-1.5">
+                                {t('adopter.pii_grants_orgmates_title')}
+                            </p>
+                            <ul className="space-y-1.5">
+                                {orgMates.map(m => (
+                                    <li key={m.granteeEmail} className="flex items-center justify-between gap-3 text-sm">
+                                        <span className="text-stone-700 truncate">{m.granteeName}</span>
+                                        <span className="shrink-0 flex flex-wrap items-center justify-end gap-1">
+                                            {m.orgs.map(o => (
+                                                <span
+                                                    key={o.id}
+                                                    className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-teal-50 text-teal-700 border border-teal-100"
+                                                    title={o.name}
+                                                >
+                                                    {o.name}
+                                                </span>
+                                            ))}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                    {allContact.length === 0 && orgMates.length === 0 && (
                         <p className="text-sm text-stone-400 italic">{t('adopter.pii_grants_none_full')}</p>
                     )}
                     {grants.searchMatchCount > 0 && (

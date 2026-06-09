@@ -862,6 +862,19 @@ export interface PiiAllContactGrant {
     grantedAt: number | null;
 }
 
+/**
+ * Implicit-access row in the "who has access" disclosure: a user who sees the
+ * owner's records' contact PII because they share an organization, not because
+ * they requested + were approved (v2.19.25). Not revocable per-adopter — the
+ * org-admin manages membership at the org level.
+ */
+export interface PiiOrgMateAccess {
+    granteeEmail: string;
+    granteeName: string;
+    /** Orgs through which the org-mate is related to the owner (display chips). */
+    orgs: Array<{ id: string; name: string }>;
+}
+
 /** Everything the adopter-profile UI needs to render the PII gating surfaces. */
 export interface AdopterPiiContext {
     gatingOn: boolean;
@@ -880,6 +893,10 @@ export interface AdopterPiiContext {
      */
     accessGrants: {
         allContact: PiiAllContactGrant[];
+        /** v2.19.25: org-mates of the owner who get implicit full-contact
+         *  access via shared org membership. Listed alongside (but
+         *  visually distinct from) explicit `allContact` grants. */
+        orgMates: PiiOrgMateAccess[];
         searchMatchCount: number;
     };
 }
