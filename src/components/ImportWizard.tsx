@@ -824,10 +824,9 @@ export default function ImportWizard() {
                     ...videoPayloads,
                 ],
                 // v2.19.17: contacts-import path no longer auto-stamps an
-                // 'observation' activity record. The rescuer is forced to
-                // declare the real intent via the prompted VisitIntentCard
-                // on the destination profile (see ?fromImport=contacts
-                // redirect below). Pre-fix this block always sent
+                // 'observation' activity record. The rescuer lands on the new
+                // profile where VisitIntentCard already prompts for the real
+                // activity type. Pre-fix this block always sent
                 // recordType: 'observation' because hydrateFromContact()
                 // skips Steps 1-2 and never asks for an intent.
                 ...(fromContacts ? {} : {
@@ -869,12 +868,11 @@ export default function ImportWizard() {
             }
 
             // v2.19.18: contacts-import suppresses the success toast because
-            // we redirect straight to the new profile with the prompted
-            // VisitIntentCard — the redirect IS the success signal, and a
-            // "→ Ver Perfil" CTA pointing to the same destination the
-            // browser is already loading is just visual noise. Facebook /
-            // share-URL imports keep the toast since their redirect goes
-            // back to `/`.
+            // we redirect straight to the new profile — the redirect IS the
+            // success signal, and a "→ Ver Perfil" CTA pointing to the same
+            // destination the browser is already loading is just visual
+            // noise. Facebook / share-URL imports keep the toast since their
+            // redirect goes back to `/`.
             if (!fromContacts) {
                 const successMessage = extractedData.adoptionDetected && extractedData.adoptionConfidence !== 'low'
                     ? 'Profile + adoption record created'
@@ -893,13 +891,13 @@ export default function ImportWizard() {
                 confidence: extractedData.confidence || 'unknown',
             });
 
-            // v2.19.17: contacts-import path lands on the new profile with
-            // the forcing-function URL param so VisitIntentCard renders in
-            // its prompted/expanded mode. The Facebook / share-URL paths
-            // already created an activity at save time, so they keep the
-            // original "back home" redirect.
+            // v2.19.17: contacts-import path lands on the new profile so the
+            // rescuer can declare the real intent via the always-present
+            // VisitIntentCard. The Facebook / share-URL paths already created
+            // an activity at save time, so they keep the original "back home"
+            // redirect.
             if (fromContacts) {
-                router.push(`/adopter/${adopterId}?fromImport=contacts`);
+                router.push(`/adopter/${adopterId}`);
             } else {
                 router.push('/');
             }
@@ -921,15 +919,15 @@ export default function ImportWizard() {
 
             // v2.19.18: contacts-merge path mirrors the contacts-create path:
             // no sham activity record is written. The rescuer is enriching an
-            // existing profile with better contact data, and then declaring
-            // the real activity (if any) via the prompted VisitIntentCard on
-            // the destination profile. `/api/adopters/[id]/add-record` requires
-            // an `adoption` block and would create an activity row we
-            // explicitly don't want; the appendToExistingAdopter server action
-            // is the right primitive — it merges contact fields without
-            // touching the activity timeline. Facebook / share-URL merges keep
-            // the existing add-record flow because the AI extraction step
-            // collects a real recordType worth recording.
+            // existing profile with better contact data; the real activity
+            // (if any) gets declared via the always-present VisitIntentCard
+            // on the destination profile. `/api/adopters/[id]/add-record`
+            // requires an `adoption` block and would create an activity row
+            // we explicitly don't want; the appendToExistingAdopter server
+            // action is the right primitive — it merges contact fields
+            // without touching the activity timeline. Facebook / share-URL
+            // merges keep the existing add-record flow because the AI
+            // extraction step collects a real recordType worth recording.
             if (fromContacts) {
                 const { appendToExistingAdopter } = await import('@/app/actions');
                 const contactInfoBlob = contactEntriesToBlob(contactEntries) || undefined;
@@ -945,7 +943,7 @@ export default function ImportWizard() {
                     hasImages: 0,
                     fromContacts: 1,
                 });
-                router.push(`/adopter/${mergeTarget.id}?fromImport=contacts`);
+                router.push(`/adopter/${mergeTarget.id}`);
                 return;
             }
 

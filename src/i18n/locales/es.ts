@@ -1834,7 +1834,6 @@ export const es = {
         option_observation_hint: 'Compartí lo que sabés con la comunidad rescatista',
         back: 'Volver',
         dismiss: 'Cerrar',
-        skip_for_now: 'Lo hago después',
     },
 };
 

@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.19] - 2026-06-09
+
+### Changed — drop the `VisitIntentCard` prompted mode, reuse the default
+- The "prompted" mode added in v2.19.17 was solving a problem that didn't exist. `VisitIntentCard` is already rendered on every adopter profile and already presents the 6 intents — the rescuer who just landed from a contacts-import sees the prompt without any extra plumbing. The prompted mode flattened pagination, restyled chips, and added a "Lo hago después" skip link; but the skip link's job (let the rescuer defer) was already covered by simply not interacting with the card, and the layout differences were inventing a UX variant for a flow that didn't need one.
+- Rolled back: `prompted` and `onSkip` props on `VisitIntentCard`, the `promptedButtons` flattening logic, the `?fromImport=contacts` URL param plumbing, and the `visitIntent.skip_for_now` i18n key (both locales).
+- `AdopterProfileV2` mounts `VisitIntentCard` with the same props it had pre-v2.19.17; no `searchParams.get('fromImport')` read.
+- `ImportWizard` still redirects contacts-create to `/adopter/<id>` (no query suffix) and contacts-merge to `/adopter/<targetId>` — the redirect itself is the affordance; the always-on `VisitIntentCard` does the prompting once the rescuer lands.
+- The substantive fixes from v2.19.17/v2.19.18 stay: no silent `observation` activity on contacts imports, no duplicate success toast on contacts-create, `appendToExistingAdopter` for contacts-merge, `Initial observation` textarea hidden on the contacts step-1 form.
+
 ## [2.19.18] - 2026-06-09
 
 ### Fixed — four follow-ups on the v2.19.17 contacts-import flow

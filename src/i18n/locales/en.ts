@@ -1829,6 +1829,5 @@ export const en = {
         option_observation_hint: 'Share what you know with the rescue community',
         back: 'Back',
         dismiss: 'Dismiss',
-        skip_for_now: 'I\'ll do this later',
     },
 };
