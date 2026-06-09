@@ -31,6 +31,17 @@ interface Props {
     adopterAddress?: string;
     /** Forwarded to the wizard — offers a "request contact access" opt-in when masked. */
     piiOptInEligible?: boolean;
+    /** v2.19.17: prompted mode — fired when the rescuer just imported the
+     *  adopter from contacts and hasn't declared an activity intent yet.
+     *  Renders all 6 chips inline (no "Otro motivo" sub-view) and shows a
+     *  skip link so the rescuer can pick the right intent at the moment of
+     *  import without being trapped. */
+    prompted?: boolean;
+    /** v2.19.17: invoked when the user clicks the skip link in prompted mode.
+     *  Caller is expected to drop the URL param that triggered prompted
+     *  (e.g. `router.replace('/adopter/<id>')`). No-op when not in prompted
+     *  mode. */
+    onSkip?: () => void;
 }
 
 /**
@@ -48,7 +59,7 @@ interface Props {
  * (v2.14.8 made this the only entry point — the standalone "Registrar
  * Actividad" CTA on AdoptionFormWizard was removed for UX consistency).
  */
-export default function VisitIntentCard({ adopterId, adopterName, avgRating = null, tooManyAdoptions = null, tooManyRequests = null, currentUser, adoptions, availableAnimals, adopterAddress = '', piiOptInEligible = false }: Props) {
+export default function VisitIntentCard({ adopterId, adopterName, avgRating = null, tooManyAdoptions = null, tooManyRequests = null, currentUser, adoptions, availableAnimals, adopterAddress = '', piiOptInEligible = false, prompted = false, onSkip }: Props) {
     const { t } = useLanguage();
     const [openedRecordType, setOpenedRecordType] = useState<IntentType | null>(null);
     const [trackedShown, setTrackedShown] = useState(false);
@@ -171,7 +182,19 @@ export default function VisitIntentCard({ adopterId, adopterName, avgRating = nu
         { intent: 'observation', labelKey: 'option_observation', titleKey: 'option_observation_hint' },
     ];
 
-    const visibleButtons: ButtonDef[] = view === 'main' ? mainButtons : otherButtons;
+    // v2.19.17: in prompted mode (post-contacts-import), flatten the
+    // 2-page pagination into a single row of 5 real intents — "Otro motivo"
+    // is just an in-card navigation glyph that exists to keep the default
+    // surface compact, but the rescuer is here specifically to declare an
+    // intent so we save the click.
+    const promptedButtons: ButtonDef[] = [
+        ...mainButtons.filter(b => b.intent !== 'other'),
+        ...otherButtons,
+    ];
+
+    const visibleButtons: ButtonDef[] = prompted
+        ? promptedButtons
+        : view === 'main' ? mainButtons : otherButtons;
 
     const firstName = (adopterName ?? '').trim().split(/\s+/)[0] || '';
     const subject = firstName || t('visitIntent.title_fallback_subject');
@@ -208,8 +231,8 @@ export default function VisitIntentCard({ adopterId, adopterName, avgRating = nu
                 </span>
             </div>
 
-            <div key={view} className="flex flex-col sm:flex-row gap-2 animate-slideDown">
-                {view === 'other' && (
+            <div key={view} className={`flex gap-2 animate-slideDown ${prompted ? 'flex-wrap' : 'flex-col sm:flex-row'}`}>
+                {!prompted && view === 'other' && (
                     <button
                         type="button"
                         onClick={handleBack}
@@ -267,6 +290,29 @@ export default function VisitIntentCard({ adopterId, adopterName, avgRating = nu
                     </button>
                 ))}
             </div>
+
+            {/* v2.19.17: prompted-mode skip link. The forcing function is
+                social — the visual prominence + flat layout of all chips
+                makes the right action the path of least resistance, but if
+                the rescuer truly needs a beat (looking up animal info,
+                getting back to the requester), they can defer. No record
+                gets created until they pick a chip; the normal
+                VisitIntentCard surface remains available for later. */}
+            {prompted && onSkip && (
+                <div className="flex justify-end">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            zarazTrack('visit_intent_skipped', { adopter_id: adopterId, from: 'contacts_import' });
+                            onSkip();
+                        }}
+                        className="text-xs underline-offset-2 hover:underline transition-colors"
+                        style={{ color: 'var(--text-muted)' }}
+                    >
+                        {t('visitIntent.skip_for_now')}
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

@@ -823,13 +823,22 @@ export default function ImportWizard() {
                     ...(processedImages.length > 0 ? processedImages : manualImages.filter(img => !img.file).map(img => ({ data: img.data, mimeType: img.mimeType }))),
                     ...videoPayloads,
                 ],
-                adoption: {
-                    animalName: unknownAnimal ? '' : (extractedData.animalName || ''),
-                    species: extractedData.animalSpecies,
-                    recordType: extractedData.recordType || 'observation',
-                    rating: extractedData.adoptionRating || 2,
-                    date: extractedData.adoptionDate || new Date().toISOString().split('T')[0],
-                },
+                // v2.19.17: contacts-import path no longer auto-stamps an
+                // 'observation' activity record. The rescuer is forced to
+                // declare the real intent via the prompted VisitIntentCard
+                // on the destination profile (see ?fromImport=contacts
+                // redirect below). Pre-fix this block always sent
+                // recordType: 'observation' because hydrateFromContact()
+                // skips Steps 1-2 and never asks for an intent.
+                ...(fromContacts ? {} : {
+                    adoption: {
+                        animalName: unknownAnimal ? '' : (extractedData.animalName || ''),
+                        species: extractedData.animalSpecies,
+                        recordType: extractedData.recordType || 'observation',
+                        rating: extractedData.adoptionRating || 2,
+                        date: extractedData.adoptionDate || new Date().toISOString().split('T')[0],
+                    },
+                }),
             };
 
             const response = await fetch('/api/adopters', {
@@ -870,12 +879,21 @@ export default function ImportWizard() {
 
             // Track import event in Amplitude via Zaraz
             zarazTrack('import_completed', {
-                source: sourceUrl ? 'url' : 'text',
+                source: sourceUrl ? 'url' : (fromContacts ? 'contacts' : 'text'),
                 hasImages: (processedImages.length + manualImages.length) > 0 ? 1 : 0,
                 confidence: extractedData.confidence || 'unknown',
             });
 
-            router.push('/');
+            // v2.19.17: contacts-import path lands on the new profile with
+            // the forcing-function URL param so VisitIntentCard renders in
+            // its prompted/expanded mode. The Facebook / share-URL paths
+            // already created an activity at save time, so they keep the
+            // original "back home" redirect.
+            if (fromContacts) {
+                router.push(`/adopter/${adopterId}?fromImport=contacts`);
+            } else {
+                router.push('/');
+            }
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to save');
             setShowConfirmModal(false);

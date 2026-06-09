@@ -277,7 +277,12 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                 {!isNew && adopter && (
                     <div id="adoptions-section" data-testid="adoptions-list">
                         {/* Visit-intent prompt sits above the section title — context-setting,
-                            not part of the activity list. Suppressed for recently-acted users. */}
+                            not part of the activity list. Suppressed for recently-acted users.
+                            v2.19.17: when ?fromImport=contacts is in the URL (rescuer just
+                            landed here from a Google-Contacts import that no longer auto-creates
+                            a sham observation), render the card in `prompted` mode: all 6 chips
+                            inline + skip link. The skip handler drops the URL param via
+                            router.replace so a refresh doesn't re-prompt them. */}
                         <VisitIntentCard
                             adopterId={id}
                             adopterName={adopter?.name}
@@ -289,6 +294,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             availableAnimals={availableAnimals}
                             adopterAddress={adopter?.contactInfo || ''}
                             piiOptInEligible={piiOptInEligible}
+                            prompted={searchParams.get('fromImport') === 'contacts'}
+                            onSkip={() => router.replace(`/adopter/${id}`)}
                         />
                         <CollapsibleSection
                             title={t('adoption.title')}

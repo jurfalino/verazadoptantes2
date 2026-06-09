@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.17] - 2026-06-08
+
+### Changed
+- **Google Contacts imports no longer auto-stamp a sham `observation` activity record.** The previous behavior was wrong on two counts: it created an *incorrect* record type (the rescuer didn't observe anything — they just dropped a contact into the registry with an intent) AND it hid the rescuer's actual intent from the timeline. The fix is structural: drop the silent auto-record AND surface the existing intent picker on the destination profile as a *forcing function*, so the rescuer declares the real activity type at the moment of import.
+- **`ImportWizard` no longer sends the `adoption` block in its `POST /api/adopters` payload when `fromContacts=true`.** The block was unconditional and always defaulted `recordType` to `'observation'` because `hydrateFromContact()` skips Steps 1–2 (no AI extraction needed for a vCard) and never asks for an intent. The API route already treats the block as optional and only creates an `adoptions` row when it's present, so omitting it stops the noise at the source. The Facebook / share-URL path is untouched — that one *does* go through AI extraction and *does* collect a real `recordType` from `extractedData`.
+- **Post-save redirect now sends contacts-import users to `/adopter/<newId>?fromImport=contacts`** instead of bouncing them back to `/`. The URL param is the signal `AdopterProfileV2` reads to render `VisitIntentCard` in its new prompted mode.
+
+### Added — `VisitIntentCard` prompted mode
+- Two new props: `prompted?: boolean` and `onSkip?: () => void`. When `prompted=true`:
+  - **All 6 chips render inline** — the default 2-page pagination collapses ("Otro motivo" → "other" sub-view) because the rescuer is here specifically to declare an intent and the extra click is friction with no benefit.
+  - **Skip link** ("Lo hago después" / "I'll do this later") renders below the chips. The forcing function is *social* — the visual prominence + flat layout make the right action the path of least resistance — but a rescuer who genuinely needs a beat (look up animal info, get back to the requester) can defer without being trapped. No record is created until they pick a chip; the normal `VisitIntentCard` surface stays available for later.
+  - Skip handler is provided by `AdopterProfileV2` and calls `router.replace('/adopter/<id>')` to drop the URL param so a refresh doesn't re-prompt them.
+- New i18n keys `visitIntent.skip_for_now` in both `es.ts` ("Lo hago después") and `en.ts` ("I'll do this later").
+- Zaraz event `visit_intent_skipped` (with `from: 'contacts_import'`) so we can watch the skip rate post-deploy — if it's high, the social forcing function isn't doing its job and we'd want to revisit.
+
+### Engineering
+- `ImportWizard.tsx`: conditional spread on the `adoption` payload block (`...(fromContacts ? {} : { adoption: { … } })`), conditional post-save redirect (`fromContacts` → profile + URL param, else → `/`).
+- `VisitIntentCard.tsx`: new `promptedButtons` array flattens the default `mainButtons + otherButtons` 4+3 split into a single inline row of 5 real intents (drops the "Otro motivo" navigation glyph since prompted mode shows all options at once).
+- `AdopterProfileV2.tsx`: reads `searchParams.get('fromImport')`, passes `prompted={fromImport === 'contacts'}` + `onSkip` into the existing `VisitIntentCard` mount. Pre-existing adopters and the Facebook-import path render the card in its default mode unchanged.
+
 ## [2.19.16] - 2026-06-08
 
 ### Fixed
