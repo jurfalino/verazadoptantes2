@@ -1473,6 +1473,12 @@ export const es = {
         section_matches: 'Perfiles coincidentes',
     },
     import: {
+        // v2.19.21 — toma de pantalla "guardando" en el confirm modal
+        saving_creating: 'Creando perfil',
+        saving_merging_prefix: 'Agregando datos a',
+        saving_subline_to_profile: 'Te llevamos a su perfil.',
+        saving_subline_generic: 'Un momento.',
+        thisProfile: 'este perfil',
         // Toasts post-import
         record_added_to_profile: 'Registro agregado al perfil',
         go_to_profile_link: '→ Ver perfil',

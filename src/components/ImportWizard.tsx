@@ -265,6 +265,11 @@ export default function ImportWizard() {
 
     // Save state
     const [isSaving, setIsSaving] = useState(false);
+    // v2.19.21: which CTA fired the save — lets the modal swap to a
+    // mode-aware loading state ("Creando perfil..." vs "Agregando datos a X...").
+    // Cleared in the finally block alongside isSaving.
+    const [savingMode, setSavingMode] = useState<'create' | 'merge' | null>(null);
+    const [savingTargetName, setSavingTargetName] = useState<string>('');
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [duplicateAdopter, setDuplicateAdopter] = useState<any>(null);
     const [personMatches, setPersonMatches] = useState<PersonMatch[]>([]);
@@ -791,6 +796,8 @@ export default function ImportWizard() {
     // Save new adopter
     const handleConfirmSave = async () => {
         if (!extractedData) return;
+        setSavingMode('create');
+        setSavingTargetName(extractedData.name || '');
         setIsSaving(true);
 
         try {
@@ -906,6 +913,7 @@ export default function ImportWizard() {
             setShowConfirmModal(false);
         } finally {
             setIsSaving(false);
+            setSavingMode(null);
         }
     };
 
@@ -913,6 +921,8 @@ export default function ImportWizard() {
     const handleMerge = async (target?: { id: string; name: string }) => {
         const mergeTarget = target || selectedMatch;
         if (!extractedData || !mergeTarget) return;
+        setSavingMode('merge');
+        setSavingTargetName(mergeTarget.name || '');
         setIsSaving(true);
 
         try {
@@ -1021,6 +1031,7 @@ export default function ImportWizard() {
             setShowConfirmModal(false);
         } finally {
             setIsSaving(false);
+            setSavingMode(null);
         }
     };
 
@@ -1680,7 +1691,39 @@ export default function ImportWizard() {
             )}
 
             {/* === Confirm Modal === */}
-            {showConfirmModal && (
+            {showConfirmModal && isSaving && (
+                <div className="bg-white rounded-2xl border border-stone-200 p-6">
+                    {/* v2.19.21: full-modal loading takeover. The original
+                        confirmation body stays hidden so the rescuer gets a
+                        single, calm signal that work is happening + an
+                        expectation that they're being navigated. No buttons
+                        means no accidental double-submit during the lag. */}
+                    <div className="flex flex-col items-center text-center py-10 gap-4">
+                        <div
+                            className="w-12 h-12 rounded-full border-4 border-stone-200 animate-spin"
+                            style={{ borderTopColor: 'var(--accent)' }}
+                            role="status"
+                            aria-live="polite"
+                            aria-label={savingMode === 'merge'
+                                ? (t('import.saving_merging') || 'Agregando datos...')
+                                : (t('import.saving_creating') || 'Creando perfil...')}
+                        />
+                        <div className="space-y-1">
+                            <p className="text-lg font-semibold text-stone-900">
+                                {savingMode === 'merge'
+                                    ? `${t('import.saving_merging_prefix') || 'Agregando datos a'} ${savingTargetName || (t('import.thisProfile') || 'este perfil')}…`
+                                    : `${t('import.saving_creating') || 'Creando perfil'}${savingTargetName ? ` de ${savingTargetName}` : ''}…`}
+                            </p>
+                            <p className="text-sm text-stone-500">
+                                {fromContacts
+                                    ? (t('import.saving_subline_to_profile') || 'Te llevamos a su perfil.')
+                                    : (t('import.saving_subline_generic') || 'Un momento.')}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {showConfirmModal && !isSaving && (
                 <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-6">
                     <div className="flex flex-col items-center text-center">
                         <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${duplicateAdopter ? 'bg-yellow-100 text-yellow-600' :

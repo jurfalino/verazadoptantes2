@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.21] - 2026-06-09
+
+### Added — full-modal loading takeover during the import save → redirect lag
+- Before this release the user clicked "Crear" / "Agregar a..." in the import confirm modal, the CTA swapped its label to "Creando..." with a tiny in-button `⏳` spinner, and the rest of the modal sat there inert for the few seconds it took to POST + upload media + navigate. The user fairly read that as "nothing happened" and would re-click.
+- The confirm modal now takes itself over the moment `isSaving` flips: the body, header chips, and action buttons all hide, and a centered loading panel renders in their place: a large theme-accented spinner (`var(--accent)` so it works under both `claro` and `azul-noche`), a headline that reflects the action (`Creando perfil de {name}…` for create, `Agregando datos a {name}…` for merge), and a subline that sets the navigation expectation (`Te llevamos a su perfil.` when the destination is the profile, `Un momento.` when it's home). Keeps the rescuer calm + eliminates the double-submit footgun, since there are no buttons to click.
+
+### Engineering
+- `ImportWizard.tsx`: two new pieces of state — `savingMode: 'create' | 'merge' | null` and `savingTargetName: string` — set by `handleConfirmSave`/`handleMerge` before they flip `isSaving`. The confirm-modal render block was split into `{showConfirmModal && isSaving && ...}` (loading takeover) and `{showConfirmModal && !isSaving && ...}` (original confirm body). Finally blocks now clear `savingMode` alongside `isSaving` so a re-open after a failed save lands on the confirm body again.
+- The in-button spinner inside the confirm CTAs is now dead code (covered by the takeover), but kept in place as a no-cost fallback in case `savingMode` is ever set without `showConfirmModal` (couldn't construct such a path today, but the redundancy is one line each).
+- New i18n keys `import.saving_creating`, `import.saving_merging_prefix`, `import.saving_subline_to_profile`, `import.saving_subline_generic`, `import.thisProfile` in both locales.
+
 ## [2.19.20] - 2026-06-09
 
 ### Fixed — three polish issues on the contacts-import step 3
