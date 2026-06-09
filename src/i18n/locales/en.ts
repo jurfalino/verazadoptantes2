@@ -1468,6 +1468,12 @@ export const en = {
         section_matches: 'Matching profiles',
     },
     import: {
+        // v2.19.21 — confirm-modal loading takeover
+        saving_creating: 'Creating profile',
+        saving_merging_prefix: 'Adding data to',
+        saving_subline_to_profile: 'Taking you to their profile.',
+        saving_subline_generic: 'One moment.',
+        thisProfile: 'this profile',
         // Post-import toasts
         record_added_to_profile: 'Record added to profile',
         // Contact-import (v2.16.0-33) — homepage CTA + PWA share-target flow.

@@ -265,6 +265,11 @@ export default function ImportWizard() {
 
     // Save state
     const [isSaving, setIsSaving] = useState(false);
+    // v2.19.21: which CTA fired the save — lets the modal swap to a
+    // mode-aware loading state ("Creando perfil..." vs "Agregando datos a X...").
+    // Cleared in the finally block alongside isSaving.
+    const [savingMode, setSavingMode] = useState<'create' | 'merge' | null>(null);
+    const [savingTargetName, setSavingTargetName] = useState<string>('');
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [duplicateAdopter, setDuplicateAdopter] = useState<any>(null);
     const [personMatches, setPersonMatches] = useState<PersonMatch[]>([]);
@@ -791,6 +796,8 @@ export default function ImportWizard() {
     // Save new adopter
     const handleConfirmSave = async () => {
         if (!extractedData) return;
+        setSavingMode('create');
+        setSavingTargetName(extractedData.name || '');
         setIsSaving(true);
 
         try {
@@ -823,13 +830,21 @@ export default function ImportWizard() {
                     ...(processedImages.length > 0 ? processedImages : manualImages.filter(img => !img.file).map(img => ({ data: img.data, mimeType: img.mimeType }))),
                     ...videoPayloads,
                 ],
-                adoption: {
-                    animalName: unknownAnimal ? '' : (extractedData.animalName || ''),
-                    species: extractedData.animalSpecies,
-                    recordType: extractedData.recordType || 'observation',
-                    rating: extractedData.adoptionRating || 2,
-                    date: extractedData.adoptionDate || new Date().toISOString().split('T')[0],
-                },
+                // v2.19.17: contacts-import path no longer auto-stamps an
+                // 'observation' activity record. The rescuer lands on the new
+                // profile where VisitIntentCard already prompts for the real
+                // activity type. Pre-fix this block always sent
+                // recordType: 'observation' because hydrateFromContact()
+                // skips Steps 1-2 and never asks for an intent.
+                ...(fromContacts ? {} : {
+                    adoption: {
+                        animalName: unknownAnimal ? '' : (extractedData.animalName || ''),
+                        species: extractedData.animalSpecies,
+                        recordType: extractedData.recordType || 'observation',
+                        rating: extractedData.adoptionRating || 2,
+                        date: extractedData.adoptionDate || new Date().toISOString().split('T')[0],
+                    },
+                }),
             };
 
             const response = await fetch('/api/adopters', {
@@ -859,28 +874,46 @@ export default function ImportWizard() {
                 await fetch('/api/upload-media', { method: 'POST', body: fd });
             }
 
-            const successMessage = extractedData.adoptionDetected && extractedData.adoptionConfidence !== 'low'
-                ? 'Profile + adoption record created'
-                : (extractedData.name || 'New Profile');
+            // v2.19.18: contacts-import suppresses the success toast because
+            // we redirect straight to the new profile — the redirect IS the
+            // success signal, and a "→ Ver Perfil" CTA pointing to the same
+            // destination the browser is already loading is just visual
+            // noise. Facebook / share-URL imports keep the toast since their
+            // redirect goes back to `/`.
+            if (!fromContacts) {
+                const successMessage = extractedData.adoptionDetected && extractedData.adoptionConfidence !== 'low'
+                    ? 'Profile + adoption record created'
+                    : (extractedData.name || 'New Profile');
 
-            toast.success('¡Adoptante Creado!', successMessage, {
-                label: '→ Ver Perfil',
-                href: `/adopter/${adopterId}`,
-            });
+                toast.success('¡Adoptante Creado!', successMessage, {
+                    label: '→ Ver Perfil',
+                    href: `/adopter/${adopterId}`,
+                });
+            }
 
             // Track import event in Amplitude via Zaraz
             zarazTrack('import_completed', {
-                source: sourceUrl ? 'url' : 'text',
+                source: sourceUrl ? 'url' : (fromContacts ? 'contacts' : 'text'),
                 hasImages: (processedImages.length + manualImages.length) > 0 ? 1 : 0,
                 confidence: extractedData.confidence || 'unknown',
             });
 
-            router.push('/');
+            // v2.19.17: contacts-import path lands on the new profile so the
+            // rescuer can declare the real intent via the always-present
+            // VisitIntentCard. The Facebook / share-URL paths already created
+            // an activity at save time, so they keep the original "back home"
+            // redirect.
+            if (fromContacts) {
+                router.push(`/adopter/${adopterId}`);
+            } else {
+                router.push('/');
+            }
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to save');
             setShowConfirmModal(false);
         } finally {
             setIsSaving(false);
+            setSavingMode(null);
         }
     };
 
@@ -888,9 +921,41 @@ export default function ImportWizard() {
     const handleMerge = async (target?: { id: string; name: string }) => {
         const mergeTarget = target || selectedMatch;
         if (!extractedData || !mergeTarget) return;
+        setSavingMode('merge');
+        setSavingTargetName(mergeTarget.name || '');
         setIsSaving(true);
 
         try {
+
+            // v2.19.18: contacts-merge path mirrors the contacts-create path:
+            // no sham activity record is written. The rescuer is enriching an
+            // existing profile with better contact data; the real activity
+            // (if any) gets declared via the always-present VisitIntentCard
+            // on the destination profile. `/api/adopters/[id]/add-record`
+            // requires an `adoption` block and would create an activity row
+            // we explicitly don't want; the appendToExistingAdopter server
+            // action is the right primitive — it merges contact fields
+            // without touching the activity timeline. Facebook / share-URL
+            // merges keep the existing add-record flow because the AI
+            // extraction step collects a real recordType worth recording.
+            if (fromContacts) {
+                const { appendToExistingAdopter } = await import('@/app/actions');
+                const contactInfoBlob = contactEntriesToBlob(contactEntries) || undefined;
+                const contactEntriesJson = contactEntries.length ? JSON.stringify(contactEntries) : undefined;
+                const result = await appendToExistingAdopter(mergeTarget.id, {
+                    contactInfo: contactInfoBlob,
+                    contactEntries: contactEntriesJson,
+                });
+                if (!result.success) {
+                    throw new Error(result.error || 'Failed to merge contact data');
+                }
+                zarazTrack('import_merged', {
+                    hasImages: 0,
+                    fromContacts: 1,
+                });
+                router.push(`/adopter/${mergeTarget.id}`);
+                return;
+            }
 
             // Generate thumbnails for fetched videos (via proxy for CORS)
             const videoPayloads = await Promise.all(
@@ -966,6 +1031,7 @@ export default function ImportWizard() {
             setShowConfirmModal(false);
         } finally {
             setIsSaving(false);
+            setSavingMode(null);
         }
     };
 
@@ -1356,12 +1422,18 @@ export default function ImportWizard() {
                 <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
                     <div className="flex items-center justify-between">
                         <h3 className="text-lg font-semibold text-stone-900">{t('import.reviewExtracted') || 'Review Extracted Data'}</h3>
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${extractedData.confidence === 'high' ? 'bg-green-100 text-green-700' :
-                            extractedData.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                                'bg-red-100 text-red-700'
-                            }`}>
-                            {extractedData.confidence} {t('import.confidence') || 'confidence'}
-                        </span>
+                        {/* v2.19.20: confidence pill describes the AI extraction.
+                            For contacts imports the hydrate path hardcodes 'low'
+                            because there's no AI signal to grade — the pill is
+                            meaningless there, so we hide it. */}
+                        {!fromContacts && (
+                            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${extractedData.confidence === 'high' ? 'bg-green-100 text-green-700' :
+                                extractedData.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                                    'bg-red-100 text-red-700'
+                                }`}>
+                                {extractedData.confidence} {t('import.confidence') || 'confidence'}
+                            </span>
+                        )}
                     </div>
 
                     {/* Contact-import breadcrumb — only shown when the wizard
@@ -1426,16 +1498,20 @@ export default function ImportWizard() {
                         })()}
                     </div>
 
-                    {/* Initial observation — saved as a separate observation record on import */}
-                    <div>
-                        <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.initial_observation') || 'Initial observation'}</label>
-                        <textarea
-                            value={extractedData.notes || ''}
-                            onChange={e => setExtractedData({ ...extractedData, notes: e.target.value })}
-                            className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm min-h-[80px] resize-y focus:ring-2 focus:ring-blue-500"
-                            placeholder={t('import.initial_observation_placeholder') || 'Saved as an observation record on the new profile.'}
-                        />
-                    </div>
+                    {/* Initial observation — for contacts imports we now skip the silent
+                        observation entirely; the rescuer declares the real activity via the
+                        prompted VisitIntentCard on the destination profile (v2.19.18). */}
+                    {!fromContacts && (
+                        <div>
+                            <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.initial_observation') || 'Initial observation'}</label>
+                            <textarea
+                                value={extractedData.notes || ''}
+                                onChange={e => setExtractedData({ ...extractedData, notes: e.target.value })}
+                                className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm min-h-[80px] resize-y focus:ring-2 focus:ring-blue-500"
+                                placeholder={t('import.initial_observation_placeholder') || 'Saved as an observation record on the new profile.'}
+                            />
+                        </div>
+                    )}
 
                     {/* Adoption / Record Detection */}
                     {extractedData.adoptionDetected && (
@@ -1587,8 +1663,14 @@ export default function ImportWizard() {
                     <LegalConsent />
 
                     <div className="flex gap-3 pt-2">
+                        {/* v2.19.20: contacts imports skip steps 1+2 entirely
+                            (hydrateFromContact jumps straight to step 3), so
+                            "Back" must not drop the rescuer onto step 2's AI
+                            text-paste screen they never saw. Send them home —
+                            the contact picker is one tap away on the home
+                            page. */}
                         <button
-                            onClick={() => setStep(2)}
+                            onClick={() => fromContacts ? router.push('/') : setStep(2)}
                             className="px-4 py-2.5 border border-stone-300 rounded-xl text-sm font-medium text-stone-600 hover:bg-stone-50"
                         >
                             ← {t('import.back') || 'Back'}
@@ -1596,7 +1678,7 @@ export default function ImportWizard() {
                         <button
                             onClick={handlePreSave}
                             disabled={!extractedData.name?.trim() || isSaving}
-                            className="flex-1 py-2.5 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                            className="btn-primary flex-1 py-2.5 rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                         >
                             {isSaving ? (
                                 <><span className="animate-spin">⏳</span> {t('import.checking') || 'Checking...'}</>
@@ -1609,7 +1691,39 @@ export default function ImportWizard() {
             )}
 
             {/* === Confirm Modal === */}
-            {showConfirmModal && (
+            {showConfirmModal && isSaving && (
+                <div className="bg-white rounded-2xl border border-stone-200 p-6">
+                    {/* v2.19.21: full-modal loading takeover. The original
+                        confirmation body stays hidden so the rescuer gets a
+                        single, calm signal that work is happening + an
+                        expectation that they're being navigated. No buttons
+                        means no accidental double-submit during the lag. */}
+                    <div className="flex flex-col items-center text-center py-10 gap-4">
+                        <div
+                            className="w-12 h-12 rounded-full border-4 border-stone-200 animate-spin"
+                            style={{ borderTopColor: 'var(--accent)' }}
+                            role="status"
+                            aria-live="polite"
+                            aria-label={savingMode === 'merge'
+                                ? (t('import.saving_merging') || 'Agregando datos...')
+                                : (t('import.saving_creating') || 'Creando perfil...')}
+                        />
+                        <div className="space-y-1">
+                            <p className="text-lg font-semibold text-stone-900">
+                                {savingMode === 'merge'
+                                    ? `${t('import.saving_merging_prefix') || 'Agregando datos a'} ${savingTargetName || (t('import.thisProfile') || 'este perfil')}…`
+                                    : `${t('import.saving_creating') || 'Creando perfil'}${savingTargetName ? ` de ${savingTargetName}` : ''}…`}
+                            </p>
+                            <p className="text-sm text-stone-500">
+                                {fromContacts
+                                    ? (t('import.saving_subline_to_profile') || 'Te llevamos a su perfil.')
+                                    : (t('import.saving_subline_generic') || 'Un momento.')}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {showConfirmModal && !isSaving && (
                 <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-6">
                     <div className="flex flex-col items-center text-center">
                         <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${duplicateAdopter ? 'bg-yellow-100 text-yellow-600' :

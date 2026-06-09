@@ -277,7 +277,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                 {!isNew && adopter && (
                     <div id="adoptions-section" data-testid="adoptions-list">
                         {/* Visit-intent prompt sits above the section title — context-setting,
-                            not part of the activity list. Suppressed for recently-acted users. */}
+                            not part of the activity list. */}
                         <VisitIntentCard
                             adopterId={id}
                             adopterName={adopter?.name}

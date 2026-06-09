@@ -2,6 +2,65 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.21] - 2026-06-09
+
+### Added — full-modal loading takeover during the import save → redirect lag
+- Before this release the user clicked "Crear" / "Agregar a..." in the import confirm modal, the CTA swapped its label to "Creando..." with a tiny in-button `⏳` spinner, and the rest of the modal sat there inert for the few seconds it took to POST + upload media + navigate. The user fairly read that as "nothing happened" and would re-click.
+- The confirm modal now takes itself over the moment `isSaving` flips: the body, header chips, and action buttons all hide, and a centered loading panel renders in their place: a large theme-accented spinner (`var(--accent)` so it works under both `claro` and `azul-noche`), a headline that reflects the action (`Creando perfil de {name}…` for create, `Agregando datos a {name}…` for merge), and a subline that sets the navigation expectation (`Te llevamos a su perfil.` when the destination is the profile, `Un momento.` when it's home). Keeps the rescuer calm + eliminates the double-submit footgun, since there are no buttons to click.
+
+### Engineering
+- `ImportWizard.tsx`: two new pieces of state — `savingMode: 'create' | 'merge' | null` and `savingTargetName: string` — set by `handleConfirmSave`/`handleMerge` before they flip `isSaving`. The confirm-modal render block was split into `{showConfirmModal && isSaving && ...}` (loading takeover) and `{showConfirmModal && !isSaving && ...}` (original confirm body). Finally blocks now clear `savingMode` alongside `isSaving` so a re-open after a failed save lands on the confirm body again.
+- The in-button spinner inside the confirm CTAs is now dead code (covered by the takeover), but kept in place as a no-cost fallback in case `savingMode` is ever set without `showConfirmModal` (couldn't construct such a path today, but the redundancy is one line each).
+- New i18n keys `import.saving_creating`, `import.saving_merging_prefix`, `import.saving_subline_to_profile`, `import.saving_subline_generic`, `import.thisProfile` in both locales.
+
+## [2.19.20] - 2026-06-09
+
+### Fixed — three polish issues on the contacts-import step 3
+- **"Baja confianza" pill no longer renders on the contacts review step.** The pill describes the AI extraction's confidence band, but `hydrateFromContact()` hardcodes `confidence: 'low'` because there's no AI signal to grade in the contact-picker path (the vCard gives us identity data, the wizard's Step 3 panel grades that alongside intentionally empty adoption details). Showing a "low confidence" pill on a path where confidence is a meaningless field was just noise the rescuer would (correctly) read as a problem. Gated on `!fromContacts`.
+- **"Guardar Adoptante" CTA now uses the `.btn-primary` token instead of raw `bg-green-600`/`bg-green-700`.** Per the design style guide (and the standing rule on raw Tailwind colors), primary CTAs render `var(--btn-primary-bg)` which is the teal accent under both `claro` and `azul-noche` themes. The raw green was theme-unsafe — it rendered the same on every theme and broke the accent palette on the import surface.
+- **Back button on the contacts step 3 no longer drops the rescuer onto the AI-extraction step they never saw.** The contacts path skips Steps 1+2 entirely (`hydrateFromContact` jumps straight to Step 3), but `setStep(2)` on the Back button sent them to Step 2's text-paste preview UI — confusing, and there's no way to recover the picked contact's data from there. Now `fromContacts` Back routes to `/`, where the contact picker is one tap away. The Facebook / share-URL path keeps the Step 2 back-step because that's where the user actually came from.
+
+## [2.19.19] - 2026-06-09
+
+### Changed — drop the `VisitIntentCard` prompted mode, reuse the default
+- The "prompted" mode added in v2.19.17 was solving a problem that didn't exist. `VisitIntentCard` is already rendered on every adopter profile and already presents the 6 intents — the rescuer who just landed from a contacts-import sees the prompt without any extra plumbing. The prompted mode flattened pagination, restyled chips, and added a "Lo hago después" skip link; but the skip link's job (let the rescuer defer) was already covered by simply not interacting with the card, and the layout differences were inventing a UX variant for a flow that didn't need one.
+- Rolled back: `prompted` and `onSkip` props on `VisitIntentCard`, the `promptedButtons` flattening logic, the `?fromImport=contacts` URL param plumbing, and the `visitIntent.skip_for_now` i18n key (both locales).
+- `AdopterProfileV2` mounts `VisitIntentCard` with the same props it had pre-v2.19.17; no `searchParams.get('fromImport')` read.
+- `ImportWizard` still redirects contacts-create to `/adopter/<id>` (no query suffix) and contacts-merge to `/adopter/<targetId>` — the redirect itself is the affordance; the always-on `VisitIntentCard` does the prompting once the rescuer lands.
+- The substantive fixes from v2.19.17/v2.19.18 stay: no silent `observation` activity on contacts imports, no duplicate success toast on contacts-create, `appendToExistingAdopter` for contacts-merge, `Initial observation` textarea hidden on the contacts step-1 form.
+
+## [2.19.18] - 2026-06-09
+
+### Fixed — four follow-ups on the v2.19.17 contacts-import flow
+- **Toast after a contacts-create no longer appears.** v2.19.17 still surfaced a `¡Adoptante Creado!` toast with a `→ Ver Perfil` CTA right as we were redirecting the rescuer to that same profile — two competing affordances pointing at the same place. The success toast is now suppressed when `fromContacts` because the redirect IS the confirmation. The Facebook / share-URL path keeps its toast (no auto-redirect into the profile there).
+- **Contacts-merge now follows the same prompted-intent flow as contacts-create.** Previously clicking "merge" in `ImportWizard` for a Google-Contacts import fell through to the old `POST /api/adopters/[id]/add-record` path, which (a) hardcoded a sham `observation` activity row exactly like the v2.19.17 bug we just fixed for the create path, and (b) required an `adoption` block (returns 400 "Missing adoption data" otherwise) so silently regressed the merge path back into the bug. The contacts-merge handler now calls the `appendToExistingAdopter` server action — which merges contact fields into the existing profile without touching the activity timeline — and redirects to `/adopter/<targetId>?fromImport=contacts` so the prompted `VisitIntentCard` fires on landing. Symmetric with the create path: enrich the profile silently, prompt for the real intent on the destination.
+- **"Initial observation" textarea hidden in the contacts step-1 form.** The field existed to seed the now-deprecated silent observation; with v2.19.17 dropping that record entirely, the textarea was a vestigial input that would have been written nowhere. Now gated on `!fromContacts`. The Facebook / share-URL path still shows it (the AI extraction does still write a `notes` field on the adoption row).
+- **Prompted `VisitIntentCard` is no longer cramped on mobile.** v2.19.17 used `flex-wrap` for the 5-chip layout in prompted mode. Combined with `flex-1 min-w-0` on each chip, that squished the buttons to unreadable widths on a ~390px viewport. Switched to a responsive grid (`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`) so each chip gets a full row on mobile, two columns on tablet, three on desktop. The default (non-prompted) layout is unchanged.
+
+### Engineering
+- `ImportWizard.tsx`: `handleSave` wraps the success toast in `if (!fromContacts)`. `handleMerge` branches at the top — `fromContacts` → dynamic import of `appendToExistingAdopter`, append, redirect; otherwise the existing `add-record` flow unchanged. The "Initial observation" `<textarea>` is gated on `!fromContacts`.
+- `VisitIntentCard.tsx`: prompted chip container changed from `flex flex-wrap` to `grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`. Chip classes are unchanged — `flex-1 min-w-0` is a no-op inside a grid item so no extra cleanup was needed.
+
+## [2.19.17] - 2026-06-08
+
+### Changed
+- **Google Contacts imports no longer auto-stamp a sham `observation` activity record.** The previous behavior was wrong on two counts: it created an *incorrect* record type (the rescuer didn't observe anything — they just dropped a contact into the registry with an intent) AND it hid the rescuer's actual intent from the timeline. The fix is structural: drop the silent auto-record AND surface the existing intent picker on the destination profile as a *forcing function*, so the rescuer declares the real activity type at the moment of import.
+- **`ImportWizard` no longer sends the `adoption` block in its `POST /api/adopters` payload when `fromContacts=true`.** The block was unconditional and always defaulted `recordType` to `'observation'` because `hydrateFromContact()` skips Steps 1–2 (no AI extraction needed for a vCard) and never asks for an intent. The API route already treats the block as optional and only creates an `adoptions` row when it's present, so omitting it stops the noise at the source. The Facebook / share-URL path is untouched — that one *does* go through AI extraction and *does* collect a real `recordType` from `extractedData`.
+- **Post-save redirect now sends contacts-import users to `/adopter/<newId>?fromImport=contacts`** instead of bouncing them back to `/`. The URL param is the signal `AdopterProfileV2` reads to render `VisitIntentCard` in its new prompted mode.
+
+### Added — `VisitIntentCard` prompted mode
+- Two new props: `prompted?: boolean` and `onSkip?: () => void`. When `prompted=true`:
+  - **All 6 chips render inline** — the default 2-page pagination collapses ("Otro motivo" → "other" sub-view) because the rescuer is here specifically to declare an intent and the extra click is friction with no benefit.
+  - **Skip link** ("Lo hago después" / "I'll do this later") renders below the chips. The forcing function is *social* — the visual prominence + flat layout make the right action the path of least resistance — but a rescuer who genuinely needs a beat (look up animal info, get back to the requester) can defer without being trapped. No record is created until they pick a chip; the normal `VisitIntentCard` surface stays available for later.
+  - Skip handler is provided by `AdopterProfileV2` and calls `router.replace('/adopter/<id>')` to drop the URL param so a refresh doesn't re-prompt them.
+- New i18n keys `visitIntent.skip_for_now` in both `es.ts` ("Lo hago después") and `en.ts` ("I'll do this later").
+- Zaraz event `visit_intent_skipped` (with `from: 'contacts_import'`) so we can watch the skip rate post-deploy — if it's high, the social forcing function isn't doing its job and we'd want to revisit.
+
+### Engineering
+- `ImportWizard.tsx`: conditional spread on the `adoption` payload block (`...(fromContacts ? {} : { adoption: { … } })`), conditional post-save redirect (`fromContacts` → profile + URL param, else → `/`).
+- `VisitIntentCard.tsx`: new `promptedButtons` array flattens the default `mainButtons + otherButtons` 4+3 split into a single inline row of 5 real intents (drops the "Otro motivo" navigation glyph since prompted mode shows all options at once).
+- `AdopterProfileV2.tsx`: reads `searchParams.get('fromImport')`, passes `prompted={fromImport === 'contacts'}` + `onSkip` into the existing `VisitIntentCard` mount. Pre-existing adopters and the Facebook-import path render the card in its default mode unchanged.
+
 ## [2.19.16] - 2026-06-08
 
 ### Fixed

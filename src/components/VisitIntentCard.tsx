@@ -5,6 +5,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { zarazTrack } from '@/lib/zaraz';
 import AdoptionFormWizard from './AdoptionFormWizard';
 
+
 type IntentType = 'adoption' | 'adoption_request' | 'foster' | 'observation' | 'follow_up' | 'returned_pet';
 type IconKind = IntentType | 'other';
 type View = 'main' | 'other';
@@ -208,7 +209,7 @@ export default function VisitIntentCard({ adopterId, adopterName, avgRating = nu
                 </span>
             </div>
 
-            <div key={view} className="flex flex-col sm:flex-row gap-2 animate-slideDown">
+            <div key={view} className="flex gap-2 animate-slideDown flex-col sm:flex-row">
                 {view === 'other' && (
                     <button
                         type="button"
@@ -267,6 +268,7 @@ export default function VisitIntentCard({ adopterId, adopterName, avgRating = nu
                     </button>
                 ))}
             </div>
+
         </div>
     );
 }
