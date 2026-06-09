@@ -107,9 +107,23 @@ export default function AnimalSelectPicker({
                 </svg>
             </button>
             {open && (
+                // v2.19.22: the open list renders INLINE (no `absolute`) so the
+                // dropdown isn't clipped by the AdoptionFormWizard's
+                // `overflow-hidden` container on mobile — the previous absolute
+                // layout meant rescuers with the picker near the bottom of the
+                // modal could only see the top few rows and physically couldn't
+                // scroll to reach the rest (touch scroll on the popover also
+                // chained up to the outer dialog scroll instead of scrolling
+                // the inner list). Inline placement makes the list part of the
+                // wizard's own scroll flow; `overscroll-contain` keeps the
+                // inner scroll from chaining when the user does reach the
+                // list's own boundaries. Trade-off: the form below the picker
+                // gets pushed down while the list is open. That's a transient
+                // state (the user is here to pick one animal) and the wizard's
+                // outer scroll handles the extra height gracefully.
                 <div
                     role="listbox"
-                    className="absolute z-20 mt-1 w-full max-h-72 overflow-y-auto rounded-lg border border-stone-200 bg-white shadow-lg"
+                    className="mt-1 w-full max-h-72 overflow-y-auto overscroll-contain rounded-lg border border-stone-200 bg-white shadow-lg"
                 >
                     {animals.length === 0 ? (
                         <p className="px-3 py-3 text-sm text-stone-500">{placeholder}</p>

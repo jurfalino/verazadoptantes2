@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.22] - 2026-06-09
+
+### Fixed — `AnimalSelectPicker` dropdown unreachable on both mobile and desktop
+- The `AdoptionFormWizard` container is `overflow-hidden` (line 586) so the activity-section, animal photos, and step-2 lightbox can be visually contained. `AnimalSelectPicker` rendered its open list with `absolute z-20`, which meant the list was clipped at the wizard's bottom edge — rescuers whose picker landed near the bottom of the modal saw only the top few rows and physically could not scroll to reach the rest. Reported on mobile first, then confirmed on desktop with the same root cause.
+- (Mobile-specific aggravation: iOS occasionally bubbled the inner popover's touch-scroll up to the outer `<div className="fixed inset-0 ... overflow-y-auto">` dialog, scrolling the whole wizard instead of the list.)
+- Fix: drop `absolute z-20` from the open-list container — the list now renders **inline** below the trigger, becoming part of the wizard's own scroll flow. No more `overflow-hidden` clipping anywhere. `overscroll-contain` prevents the inner `max-h-72` scroll region from chaining to the outer dialog scroll when the user does hit the list's own boundaries.
+- Trade-off: the form below the picker shifts down while the list is open. That's a transient state (the user is on this screen specifically to pick one animal), and the wizard's outer `overflow-y-auto` accommodates the extra height. Net UX win — the list is always reachable.
+
 ## [2.19.21] - 2026-06-09
 
 ### Added — full-modal loading takeover during the import save → redirect lag
