@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.30] - 2026-06-10
+
+### Fixed — Clarity replays were showing unstyled DOMs
+- User reported that playing back recorded sessions in Microsoft Clarity rendered "as if styles are missing." Root cause: Next.js auto-emits `<link rel="stylesheet" href="/_next/static/css/abc.css">` tags **without** a `crossorigin` attribute. Without it, Clarity (and most session-replay tools) can't read the stylesheet's `cssRules` from JS at snapshot time, so it can't inline the CSS into the recording. At replay time, the iframe at `clarity.ms` tries to refetch the relative `/_next/static/css/*` URLs against its own origin, gets 404s, and renders the captured DOM with no styles applied.
+- Fix: set `crossOrigin: 'anonymous'` in `next.config.ts`. Next.js then adds `crossorigin="anonymous"` to every emitted `<script>` and `<link>`, which lets Clarity inline the stylesheet contents in its snapshot. Cloudflare Pages already serves `/_next/static/*` with permissive CORS so the cross-origin fetch resolves without a `_headers` file change.
+- Same fix applies to any other RUM / session replay tool with the same architecture (Sentry Replay, LogRocket, PostHog Recordings, etc.) so this isn't Clarity-specific bookkeeping.
+- Will not retroactively fix recordings captured before this release — those were recorded with the URL-only stylesheet reference, and the inlined-CSS pathway is at capture time, not replay time. Re-record after the deploy lands to validate.
+
 ## [2.19.29] - 2026-06-10
 
 ### Fixed — Clarity was already loaded via Zaraz; drop the second loader
