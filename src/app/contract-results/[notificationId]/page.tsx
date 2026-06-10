@@ -56,6 +56,8 @@ const MATCH_TYPE_LABELS: Record<string, { icon: string; es: string; en: string }
     social: { icon: '🌐', es: 'Red social', en: 'Social network' },
     address_word: { icon: '📍', es: 'Dirección', en: 'Address' },
     like_fallback: { icon: '🔍', es: 'Coincidencia general', en: 'General match' },
+    like_fallback_name: { icon: '🔍', es: 'Nombre (coincidencia general)', en: 'Name (general match)' },
+    like_fallback_contact: { icon: '🔍', es: 'Contacto (coincidencia general)', en: 'Contact (general match)' },
 };
 
 export default async function ContractResultsPage({ params }: { params: Promise<{ notificationId: string }> }) {

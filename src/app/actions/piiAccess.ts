@@ -26,13 +26,15 @@ import {
     matchSearchEntries,
     matchSearchNameTokens,
     hashNameToken,
+    hashEntryValue,
     type RequestPiiAccessResult,
     type PiiAccessRequestView,
     type PiiAccessRequestState,
     type AdopterPiiContext,
     type PiiAllContactGrant,
+    type PiiOrgMateAccess,
 } from '@/lib/piiAccess';
-import { deserializeContactEntries } from '@/lib/contactEntries';
+import { deserializeContactEntries, type ContactEntryType } from '@/lib/contactEntries';
 import { createNotification, resolveDisplayName } from './notifications';
 import { requestPiiAccessSchema, resolvePiiRequestSchema, verifyKnownInfoSchema } from './validation';
 
@@ -404,7 +406,7 @@ export async function getAdopterPiiContext(adopterId: string): Promise<AdopterPi
         gatingOn: false, privileged: false, masked: false, maskedFieldCount: 0,
         requestState: { pending: false, cooldownUntil: null, lastResolutionNote: null },
         pendingRequests: [],
-        accessGrants: { allContact: [], searchMatchCount: 0 },
+        accessGrants: { allContact: [], orgMates: [], searchMatch: [] },
     };
     try {
         if (!(await isPiiGatingEnabled())) return empty;
@@ -445,7 +447,7 @@ export async function getAdopterPiiContext(adopterId: string): Promise<AdopterPi
         // Privileged viewers: the pending requests they can act on + the live
         // grants for the "who has access" disclosure.
         let pendingRequests: PiiAccessRequestView[] = [];
-        let accessGrants: AdopterPiiContext['accessGrants'] = { allContact: [], searchMatchCount: 0 };
+        let accessGrants: AdopterPiiContext['accessGrants'] = { allContact: [], orgMates: [], searchMatch: [] };
         if (privileged) {
             const [reqRows, grantRows]: [PiiRequest[], PiiGrant[]] = await Promise.all([
                 db.select().from(piiAccessRequests)
@@ -456,9 +458,14 @@ export async function getAdopterPiiContext(adopterId: string): Promise<AdopterPi
             ]);
 
             // Resolve every grantee + requester display name in one batch.
+            // v2.19.26: include search-match grantees in the name-resolution
+            // pre-warm so we can show WHO holds each search-match grant in
+            // the "who has access" disclosure (not just an aggregate count).
             const emails = new Set<string>([
                 ...reqRows.map(r => r.requesterEmail),
-                ...grantRows.filter(g => g.scope === 'all_contact').map(g => g.granteeEmail),
+                ...grantRows.filter(g =>
+                    g.scope === 'all_contact' || g.scope === 'entry' || g.scope === 'name_token',
+                ).map(g => g.granteeEmail),
             ]);
             const names = new Map<string, string>();
             await Promise.all([...emails].map(async e => { names.set(e, await resolveDisplayName(e)); }));
@@ -483,13 +490,84 @@ export async function getAdopterPiiContext(adopterId: string): Promise<AdopterPi
                     granteeName: nameOf(g.granteeEmail),
                     grantedAt: g.createdAt ? new Date(g.createdAt).getTime() : null,
                 }));
+
+            // v2.19.25: implicit org-mate access. The owner / admins always knew
+            // that someone in their rescue org could see their adopters' contact
+            // info (that's the whole point of the org-collab feature), but the
+            // "who has access" disclosure only listed explicit `all_contact`
+            // grants — which made the implicit half invisible. List org-mates
+            // alongside, visually distinct (no revoke button: revoking is an
+            // org-membership change, not a per-adopter action).
+            let orgMates: PiiOrgMateAccess[] = [];
+            if (isRealActorEmail(adopter.addedBy)) {
+                const mates = await (await import('@/lib/orgMembership')).getOrgMatesOf(adopter.addedBy);
+                if (mates.length > 0) {
+                    await Promise.all(mates.map(async m => {
+                        if (!names.has(m.email)) names.set(m.email, await resolveDisplayName(m.email));
+                    }));
+                    orgMates = mates.map(m => ({
+                        granteeEmail: m.email,
+                        granteeName: nameOf(m.email),
+                        orgs: m.orgs.map(o => ({ id: o.id, name: o.name })),
+                    }));
+                }
+            }
+
+            // v2.19.26: search-match grants grouped by grantee. Bundle entry +
+            // name_token grants — both are "things this viewer demonstrated
+            // knowing" and a single grantee may hold a mix. Empty list when
+            // no search-match grants exist.
+            //
+            // v2.19.27: also resolve each grant's `entryRef` hash back to a
+            // human-readable label so the disclosure can show WHICH fields
+            // were revealed. Build the entry-hash and name-token-hash lookup
+            // maps ONCE per adopter (not per grantee) and reuse across all
+            // search-match grants — a grantee with 3 grants doesn't trigger
+            // 3× the hashing work. A hash that no longer matches the
+            // adopter's current entries / name (entry deleted, name changed)
+            // gets a generic placeholder; the count still includes it.
+            const adopterEntries = deserializeContactEntries(adopter.contactEntries);
+            const entryByHash = new Map<string, { type: ContactEntryType; value: string }>();
+            for (const e of adopterEntries) {
+                entryByHash.set(hashEntryValue(e.type, e.value), { type: e.type, value: e.value });
+            }
+            const nameTokenByHash = new Map<string, string>();
+            for (const token of (adopter.name ?? '').trim().split(/\s+/)) {
+                if (token.length >= 2) nameTokenByHash.set(hashNameToken(token), token);
+            }
+
+            const searchMatchByEmail = new Map<string, {
+                count: number;
+                details: AdopterPiiContext['accessGrants']['searchMatch'][number]['details'];
+            }>();
+            for (const g of grantRows) {
+                if (g.scope !== 'entry' && g.scope !== 'name_token') continue;
+                if (!searchMatchByEmail.has(g.granteeEmail)) {
+                    searchMatchByEmail.set(g.granteeEmail, { count: 0, details: [] });
+                }
+                const bucket = searchMatchByEmail.get(g.granteeEmail)!;
+                bucket.count++;
+                if (g.scope === 'entry') {
+                    const resolved = g.entryRef ? entryByHash.get(g.entryRef) : null;
+                    bucket.details.push(resolved
+                        ? { scope: 'entry', type: resolved.type, label: resolved.value }
+                        : { scope: 'entry', label: '—' });
+                } else {
+                    const token = g.entryRef ? nameTokenByHash.get(g.entryRef) : null;
+                    bucket.details.push({ scope: 'name_token', label: token ?? '—' });
+                }
+            }
+            const searchMatch = [...searchMatchByEmail.entries()].map(([email, b]) => ({
+                granteeEmail: email,
+                granteeName: nameOf(email),
+                count: b.count,
+                details: b.details,
+            }));
+
             accessGrants = {
                 allContact,
-                // Search-match count bundles both contact-entry grants and
-                // name-token grants — both are "things this viewer demonstrated
-                // knowing." The owner's "who has access" disclosure shows it as
-                // a single aggregate count.
-                searchMatchCount: grantRows.filter(g => g.scope === 'entry' || g.scope === 'name_token').length,
+                orgMates,
+                searchMatch,
             };
         }
 

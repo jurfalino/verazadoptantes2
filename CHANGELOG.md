@@ -2,6 +2,64 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.27] - 2026-06-09
+
+### Added — click a search-match grantee to see WHICH fields they unlocked
+- v2.19.26 named the grantees but stopped at `"{Name} — 1 coincidencia"`. The user fairly asked: which field? Each row is now a button — click to expand an inline breakdown that names the type (`Phone`, `Email`, `Address`, `Document`, `Name`, …) and the matched value of every grant the grantee holds on this adopter. A grantee with 3 search-match grants shows 3 lines on expand.
+- Resolution is hash-based against the adopter's current state. `scope='entry'` grants store `hashEntryValue(type, value)` as `entryRef`; the action hashes every entry in the adopter's `contactEntries`, builds a `hash → {type, value}` lookup, and resolves each grant in O(1). `scope='name_token'` grants store `hashNameToken(token)`; resolved against the adopter's whitespace-split name. A hash that no longer resolves — entry deleted, name changed since the search match — renders as a `—` placeholder so the count still includes it but doesn't leak misleading text.
+- The owner / org-mate / admin / moderator is already privileged (they see unmasked contact info on the profile), so showing the full matched value here doesn't add leakage. Type label uses the existing `adopter.ce_type_*` keys so the chip reads "Teléfono" / "Email" / "Documento" / etc.
+
+### Engineering
+- `src/lib/piiAccess.ts:AdopterPiiContext.accessGrants.searchMatch` — each row gained a `details: Array<{ scope, type?, label }>` field. The lib type now requires `ContactEntryType` in scope (already imported at the top).
+- `src/app/actions/piiAccess.ts:getAdopterPiiContext` — builds the hash lookup ONCE per adopter (`entryByHash`, `nameTokenByHash`), then resolves each grant during the same loop that increments the count. `hashEntryValue` newly imported alongside `hashNameToken`.
+- `src/components/PiiAccessGrantsDisclosure.tsx` — search-match rows became expandable buttons (`aria-expanded` honoured). State is per-grantee in a `Set<string>` keyed by email; collapsed is the default. Detail rows use the small uppercase-tracking type chip pattern already used by other compact admin surfaces.
+- New i18n keys `adopter.pii_grants_detail_name_token`, `adopter.pii_grants_detail_entry_generic` in both locales. Type labels reuse the existing `adopter.ce_type_*` namespace.
+
+## [2.19.26] - 2026-06-09
+
+### Changed — name the people behind search-match grants in "Who has access"
+- The aggregate line *"1 dato(s) de contacto desbloqueado(s) por coincidencia de búsqueda"* told the owner SOMETHING happened but not WHO did it. The whole point of the disclosure is accountability — knowing a number without a name doesn't help an owner decide whether to be okay with that access. Replaced the aggregate count with a named per-grantee list: each row shows the grantee's display name and, when they hold more than one search-match grant, how many entries they've matched (`"3 coincidencias"`).
+- The schema field `accessGrants.searchMatchCount: number` becomes `accessGrants.searchMatch: { granteeEmail; granteeName; count }[]`. v2.19.25 just shipped to staging and isn't in prod yet, so this is a straight rename rather than a deprecation pair — no downstream consumers exist.
+- Search-match grants are still **not revocable** (Resolution #2: the grantee can re-earn the grant simply by searching again, so a per-row revoke would be theatre). But naming the grantee was the user-visible gap; the no-revoke posture wasn't.
+- Required including the search-match grantees in the existing `names` batch-resolve pre-warm in `getAdopterPiiContext` — one resolveDisplayName per unique grantee, irrespective of how many entries they unlocked.
+
+### Engineering
+- `src/lib/piiAccess.ts:AdopterPiiContext.accessGrants` — replaced `searchMatchCount: number` with `searchMatch: Array<{ granteeEmail; granteeName; count }>`.
+- `src/app/actions/piiAccess.ts:getAdopterPiiContext` — name-resolution pre-warm now includes `scope='entry' | 'name_token'` grantees; new groupBy loop assembles the per-grantee list.
+- `src/components/PiiAccessGrantsDisclosure.tsx` — rendered the new sub-section ("Desbloqueado por coincidencia de búsqueda") with the same separator pattern as the orgMates section. Empty-state and total-count gates updated to use the new field.
+- New i18n keys: `adopter.pii_grants_search_title`, `pii_grants_search_count_1`, `pii_grants_search_count_n`, `pii_grants_search_count_tooltip` in both locales. The old `pii_grants_search_count` key is retained but unused — kept to avoid breaking any other surface that might still hold a reference (none found in the codebase but the key is cheap to leave behind).
+
+## [2.19.25] - 2026-06-09
+
+### Added — org-mates listed in "Who has access" disclosure
+- The owner / admin / org-mate "Quién tiene acceso" disclosure on an adopter profile used to list only **explicit** `all_contact` PII grants — the people who had to request access and were approved. Org-mates who got access implicitly (the whole org-collab premise: a teammate from your rescue org can see your records' contact info without filing a request) were invisible to the owner. The user reported the gap: "shouldn't I see other users in my groups (if any) in 'who has access'?"
+- Now the disclosure renders a second sub-section, **"Compañeros con acceso implícito"**, listing every org-mate of the record owner. Each row shows the teammate's display name + a small chip per org through which they're related (handles the multi-org case — same teammate via two different orgs collapses to one row with two chips). The count chip in the disclosure title now sums both categories so an owner can see at a glance how many people total can see the record's PII.
+- No revoke button on org-mate rows. Revocation here means an org-membership change (org-admin removes the teammate or the owner from the org) — it's not a per-adopter action and pretending it is would mislead. The audit log + owner notification system is the trust-but-verify backstop already in place for org-mate views.
+- Visible to anyone the disclosure was already visible to (owner / editor / admin / moderator / org-mate). An org-mate viewing a teammate's profile sees the org-mate list too — transparency between teammates is the right default.
+
+### Engineering
+- `src/lib/orgMembership.ts` — new helper `getOrgMatesOf(email)` returning `Array<{ email; orgs: OrgRef[] }>`. Fans out one query per owner-org to fetch member lists, dedupes mates by email, accumulates orgs per mate. Fails open returning `[]` so a transient D1 hiccup doesn't blank the disclosure.
+- `src/lib/piiAccess.ts` — new type `PiiOrgMateAccess` (`granteeEmail`, `granteeName`, `orgs[]`). Extended `AdopterPiiContext.accessGrants` with the `orgMates` field.
+- `src/app/actions/piiAccess.ts:getAdopterPiiContext` — when `privileged`, after computing the explicit `allContact` grants, also fetch the OWNER's org-mates and batch-resolve display names through the same `names` map used for grant rows (so a mate who's also a grantee resolves with one DB hit).
+- `src/components/PiiAccessGrantsDisclosure.tsx` — new sub-section under the explicit-grant list. Total-count chip now sums both categories; the empty-state "nadie tiene acceso completo aprobado" message only fires when BOTH lists are empty.
+- New i18n key `adopter.pii_grants_orgmates_title` in both locales.
+
+## [2.19.24] - 2026-06-09
+
+### Fixed — duplicate detection surfacing first-name-only false positives
+- Reported: adding a profile with only a first name + phone (e.g. *Susana* + a phone) returned a list of possible duplicates that shared only the first name. Susana with phone X was matching every other Susana in the registry regardless of phone, email, or any other identifier.
+- Root cause in `runDuplicateMode` (`src/app/actions/findAdopters.ts`):
+  - `name_word` and `name_full` tokens use **prefix-LIKE** lookup (`susa%`) so minor typos still hit, but that also means a single token `'susana'` matches every adopter whose name starts with "susa" — `Susana Pérez`, `Susanita`, `Susan García`, etc.
+  - For a candidate whose `name_full` also starts with "susa", both `name_word` (weight 1) and `name_full` (weight 2) fire → score 3 → normalised to 25% relevance → passes the 15% `minRelevance` gate as a "low" band match.
+  - The rescuer's phone digits were used to *seed* the token search but never used to *filter out* candidates whose phone didn't match. The semantic was wrong: providing a phone is an assertion ("this is THE person with this phone"), but the engine treated it as one of many optional signals.
+- Fix: **false-positive suppression rule** — when the input had at least one strong identity signal (phone / email / social handle / id_number) AND the candidate didn't match any of those, AND every matched type on the candidate is a name signal (`name_full`, `name_word`, `name_phonetic`, `name_word_fuzzy`, or the new `like_fallback_name`), the candidate is dropped before scoring. "Susana + phone X" no longer surfaces "Susana with phone Y" as a possible duplicate.
+- Required splitting the old single-bucket `like_fallback` into two: `like_fallback_name` (name-column LIKE hit) and `like_fallback_contact` (contactInfo-column LIKE hit). Without the split the suppression rule couldn't tell whether a fallback-only candidate had matching contact data or just a name collision. Weights: contact fallback is a strong signal (1.5, was 0.5), name fallback stays weak (0.5).
+- Trade-off: a candidate with no strong-signal storage at all (no stored phones/emails/socials) AND only a name match is now dropped from duplicate detection when the input had a phone. The rescuer can still find that adopter via the search surface — they just won't get a coincidental name-collision suggestion when they're explicitly providing different contact info. Net UX win.
+
+### Engineering
+- `findAdopters.ts:runDuplicateMode` — split the LIKE-fallback strategy into name-only and contact-only queries; introduced `STRONG_SIGNAL_TYPES` / `NAME_SIGNAL_TYPES` classification sets and `hasStrongInputSignal`; added the per-candidate suppression `continue`. Extracted the LIKE-fallback runner into a small helper to avoid two `let likeWhere: any` blocks (net -1 lint warning).
+- `contract-results/[notificationId]/page.tsx` — chip rendering map gained `like_fallback_name` and `like_fallback_contact` entries (kept the legacy `like_fallback` key for any stored `duplicate_candidates.matchTypes` rows that still hold the pre-split value; those keep rendering as "Coincidencia general").
+
 ## [2.19.23] - 2026-06-09
 
 ### Added — per-item dismiss X on notification bell rows

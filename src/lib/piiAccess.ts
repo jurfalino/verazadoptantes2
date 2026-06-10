@@ -862,6 +862,19 @@ export interface PiiAllContactGrant {
     grantedAt: number | null;
 }
 
+/**
+ * Implicit-access row in the "who has access" disclosure: a user who sees the
+ * owner's records' contact PII because they share an organization, not because
+ * they requested + were approved (v2.19.25). Not revocable per-adopter — the
+ * org-admin manages membership at the org level.
+ */
+export interface PiiOrgMateAccess {
+    granteeEmail: string;
+    granteeName: string;
+    /** Orgs through which the org-mate is related to the owner (display chips). */
+    orgs: Array<{ id: string; name: string }>;
+}
+
 /** Everything the adopter-profile UI needs to render the PII gating surfaces. */
 export interface AdopterPiiContext {
     gatingOn: boolean;
@@ -880,6 +893,40 @@ export interface AdopterPiiContext {
      */
     accessGrants: {
         allContact: PiiAllContactGrant[];
-        searchMatchCount: number;
+        /** v2.19.25: org-mates of the owner who get implicit full-contact
+         *  access via shared org membership. Listed alongside (but
+         *  visually distinct from) explicit `allContact` grants. */
+        orgMates: PiiOrgMateAccess[];
+        /** v2.19.26: search-match grants grouped by grantee. Replaces the old
+         *  aggregate `searchMatchCount` — "1 dato desbloqueado" without a
+         *  name was useless when the owner wanted to know WHO got the
+         *  partial reveal. Each row counts the entry + name_token grants
+         *  that grantee holds on this adopter. Still not revocable
+         *  (Resolution #2: the grantee can simply re-search to re-earn
+         *  them), but the owner can see who and how many.
+         *
+         *  v2.19.27: `details` resolves each grant's `entryRef` hash back to
+         *  the actual entry / name token, so the disclosure can show WHICH
+         *  fields were revealed (clickable expansion under the grantee row).
+         *  `scope='entry'` rows carry the contact-entry `type` + (privileged
+         *  viewer only) the full value; `scope='name_token'` rows carry just
+         *  the matched name word. A grant whose hash no longer resolves
+         *  (entry deleted / renamed since the search match) is rendered
+         *  with a generic placeholder; it still counts. */
+        searchMatch: Array<{
+            granteeEmail: string;
+            granteeName: string;
+            count: number;
+            details: Array<{
+                scope: 'entry' | 'name_token';
+                /** Present for `scope='entry'`. */
+                type?: ContactEntryType;
+                /** Display label — entry value for `scope='entry'`, name token
+                 *  for `scope='name_token'`, generic placeholder when the
+                 *  current contactEntries / name no longer holds a value
+                 *  whose hash matches the grant. */
+                label: string;
+            }>;
+        }>;
     };
 }

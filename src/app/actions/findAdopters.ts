@@ -363,33 +363,44 @@ async function runDuplicateMode(
         }
     }
 
-    // Strategy 2: LIKE fallback on adopters table (catches untokenized profiles)
-    const likeConditions: Array<ReturnType<typeof like>> = [];
+    // Strategy 2: LIKE fallback on adopters table (catches untokenized profiles).
+    // v2.19.24: split into two queries — name-column LIKE recorded as
+    // 'like_fallback_name', contact-info LIKE recorded as 'like_fallback_contact'.
+    // The downstream "strong signal" filter needs to know whether a fallback-only
+    // candidate actually had matching contact data or just a name collision; the
+    // previous single 'like_fallback' bucket made that impossible to disambiguate.
+    const nameLikeConditions: Array<ReturnType<typeof like>> = [];
     if (input.name) {
         const words = normalizeText(input.name).split(/\s+/).filter(w => w.length >= 3);
-        for (const w of words) likeConditions.push(like(adopters.name, `%${escapeLike(w)}%`));
+        for (const w of words) nameLikeConditions.push(like(adopters.name, `%${escapeLike(w)}%`));
     }
+    const contactLikeConditions: Array<ReturnType<typeof like>> = [];
     for (const phone of phones) {
         const d = phone.replace(/\D/g, '');
-        if (d.length >= 6) likeConditions.push(like(adopters.contactInfo, `%${escapeLike(d.slice(-8))}%`));
+        if (d.length >= 6) contactLikeConditions.push(like(adopters.contactInfo, `%${escapeLike(d.slice(-8))}%`));
     }
     for (const email of emails) {
-        if (email.includes('@')) likeConditions.push(like(adopters.contactInfo, `%${escapeLike(email.toLowerCase())}%`));
+        if (email.includes('@')) contactLikeConditions.push(like(adopters.contactInfo, `%${escapeLike(email.toLowerCase())}%`));
     }
     for (const social of socials) {
-        if (social.length >= 4) likeConditions.push(like(adopters.contactInfo, `%${escapeLike(social)}%`));
+        if (social.length >= 4) contactLikeConditions.push(like(adopters.contactInfo, `%${escapeLike(social)}%`));
     }
 
-    if (likeConditions.length > 0) {
-        // Filter soft-deleted on the LIKE strategy directly so we never hand merged duplicates upstream.
-        let likeWhere: any = and(or(...likeConditions), isNull(adopters.deletedAt));
-        if (excludeId) likeWhere = and(likeWhere, ne(adopters.id, excludeId));
-        const likeRows = await db.select({ id: adopters.id }).from(adopters).where(likeWhere).limit(20);
+    const runLikeFallback = async (
+        conditions: Array<ReturnType<typeof like>>,
+        bucket: 'like_fallback_name' | 'like_fallback_contact',
+    ) => {
+        if (conditions.length === 0) return;
+        const base = and(or(...conditions), isNull(adopters.deletedAt));
+        const where = excludeId ? and(base, ne(adopters.id, excludeId)) : base;
+        const likeRows = await db.select({ id: adopters.id }).from(adopters).where(where).limit(20);
         for (const r of likeRows) {
             if (!matchMap.has(r.id)) matchMap.set(r.id, new Set());
-            matchMap.get(r.id)!.add('like_fallback');
+            matchMap.get(r.id)!.add(bucket);
         }
-    }
+    };
+    await runLikeFallback(nameLikeConditions, 'like_fallback_name');
+    await runLikeFallback(contactLikeConditions, 'like_fallback_contact');
 
     if (matchMap.size === 0) return [];
 
@@ -433,9 +444,31 @@ async function runDuplicateMode(
     const weights: Record<string, number> = {
         phone: 3, phone_suffix: 2, email: 3, social: 3,
         name_full: 2, name_phonetic: 1.5, name_word: 1,
-        address_word: 1, source_url: 3, like_fallback: 0.5,
+        address_word: 1, source_url: 3,
+        // v2.19.24: split former 'like_fallback'. Contact-info fallback is a
+        // strong signal (phone/email digits found in the contactInfo blob),
+        // name fallback is a weak coincidence.
+        like_fallback_name: 0.5, like_fallback_contact: 1.5,
         id_number: 3, // unique identity, same tier as phone/email
     };
+
+    // v2.19.24: classification used by the false-positive suppression rule
+    // below. "Strong" identity signals are ones the rescuer explicitly used
+    // to assert "this is THE person" — phone, email, social handle, ID
+    // number, or those same values caught by the contact-info LIKE fallback.
+    // Name signals (full, word, phonetic, fuzzy, name-column LIKE) are
+    // population-level coincidences when isolated.
+    const STRONG_SIGNAL_TYPES = new Set([
+        'phone', 'phone_suffix', 'email', 'social', 'id_number', 'source_url',
+        'like_fallback_contact',
+    ]);
+    const NAME_SIGNAL_TYPES = new Set([
+        'name_full', 'name_word', 'name_phonetic', 'name_word_fuzzy',
+        'like_fallback_name',
+    ]);
+    const hasStrongInputSignal = rawTokens.some(t =>
+        ['phone', 'email', 'social', 'id_number'].includes(t.type),
+    );
 
     // Popularity down-ranking: tokens shared by many records are weak identity signals.
     // Only ambiguous-by-nature types are subject to down-ranking; phone/email/social/source_url
@@ -498,11 +531,31 @@ async function runDuplicateMode(
             if (best > 0) { score += best; if (!types.includes('name_word_fuzzy')) types.push('name_word_fuzzy'); }
         }
 
+        // v2.19.24: false-positive suppression. When the rescuer provided a
+        // strong identity signal (phone / email / social / id) AND none of
+        // those signals matched on this candidate AND the matched types are
+        // name-only, drop the candidate. Rationale: "Susana + phone X"
+        // shouldn't return every "Susana ANYTHING" in the DB just because
+        // the prefix-LIKE name tokens collide — the user explicitly
+        // asserted "this is the person with phone X", and a different
+        // Susana with a different phone is by definition NOT that person.
+        // If the candidate has no strong-signal storage at all (no phones,
+        // emails, socials, ids stored), the name match still gets dropped
+        // here — that's the right call: we can't confirm it's the same
+        // person from name alone, and the user can still find the
+        // candidate via the search surface, just not via duplicate
+        // detection.
+        if (hasStrongInputSignal) {
+            const hitStrong = types.some(t => STRONG_SIGNAL_TYPES.has(t));
+            const onlyNameSignals = types.every(t => NAME_SIGNAL_TYPES.has(t));
+            if (!hitStrong && onlyNameSignals) continue;
+        }
+
         const relevancePercent = normalizeConfidence(score, PRACTICAL_MAX_DUPLICATE);
         if (relevancePercent < minRelevance) continue;
 
-        const hasToken = types.some(t => t !== 'like_fallback');
-        const hasLike = types.includes('like_fallback');
+        const hasToken = types.some(t => !t.startsWith('like_fallback'));
+        const hasLike = types.some(t => t.startsWith('like_fallback'));
         const source: DuplicateMatch['source'] = hasToken && hasLike ? 'both' : hasToken ? 'token' : 'like';
 
         results.push({ adopterId: row.id, adopterName: row.name, relevancePercent, matchTypes: types, matchValues, source });

@@ -111,6 +111,60 @@ export async function getOrgsForEmail(email: string | null | undefined): Promise
 }
 
 /**
+ * Every OTHER user who shares at least one org with `email`, paired with the
+ * orgs through which they're related (so the owner's "who has access" UI can
+ * say "via {orgName}" alongside each name).
+ *
+ * Two queries: the email's orgs, then the member list of each. The owner is
+ * filtered out of the result; remaining members are deduped by email,
+ * accumulating every shared org. Fails open returning `[]` so a transient
+ * D1 hiccup doesn't blank out the org-mate list on the disclosure (the audit
+ * log is the backstop).
+ */
+export async function getOrgMatesOf(
+    email: string | null | undefined,
+): Promise<Array<{ email: string; orgs: OrgRef[] }>> {
+    const e = normEmail(email);
+    if (!e) return [];
+    try {
+        const orgs = await getOrgsForEmail(e);
+        if (orgs.length === 0) return [];
+
+        const db = await getDb();
+        if (!db) return [];
+
+        const orgMemberRows = await Promise.all(orgs.map(o =>
+            db.select({ userEmail: orgMembers.userEmail })
+                .from(orgMembers)
+                .where(eq(orgMembers.orgId, o.id))
+                .all()
+                .then((rows: { userEmail: string }[]) => ({ org: o, rows }))
+        ));
+
+        const byEmail = new Map<string, { email: string; orgs: OrgRef[] }>();
+        for (const { org, rows } of orgMemberRows) {
+            for (const r of rows) {
+                const mateEmail = normEmail(r.userEmail);
+                if (!mateEmail || mateEmail === e) continue;
+                const existing = byEmail.get(mateEmail);
+                if (existing) {
+                    if (!existing.orgs.some(o => o.id === org.id)) existing.orgs.push(org);
+                } else {
+                    byEmail.set(mateEmail, { email: mateEmail, orgs: [org] });
+                }
+            }
+        }
+        return [...byEmail.values()];
+    } catch (e2) {
+        logger.warn('getOrgMatesOf failed', {
+            email: e,
+            error: e2 instanceof Error ? e2.message : String(e2),
+        });
+        return [];
+    }
+}
+
+/**
  * Pick the most informative org to attribute the creator with, given a
  * specific viewer. Preference order:
  *   1. The earliest org the viewer and creator share (most relevant context)
