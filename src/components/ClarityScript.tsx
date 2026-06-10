@@ -55,18 +55,52 @@ export default function ClarityScript() {
         const userId = (session?.user as { id?: string } | undefined)?.id;
         const isAdmin = (session?.user as { isAdmin?: boolean } | undefined)?.isAdmin;
         const email = session?.user?.email;
+        const name = session?.user?.name;
 
         // Avoid re-identifying on every render — only on actual identity change.
         if (userId === lastIdentifiedUserId.current) return;
-        lastIdentifiedUserId.current = userId ?? null;
+        if (!userId) {
+            lastIdentifiedUserId.current = null;
+            return;
+        }
 
-        if (!userId) return;
+        // v2.19.31: poll until `window.clarity` exists. Clarity is loaded by
+        // Zaraz, which runs asynchronously — when this useEffect first fires
+        // (immediately after hydration), the Clarity loader hasn't necessarily
+        // injected `window.clarity` yet. The previous version bailed silently
+        // (`if (!c) return`), which meant identify never fired and admin
+        // sessions stayed anonymous. Poll every 200ms for up to 10s; bail
+        // permanently after. The official Clarity snippet self-defines a
+        // queueing stub immediately, but Zaraz's wrapper may not, hence the
+        // retry instead of relying on the queue.
+        let attempts = 0;
+        const MAX_ATTEMPTS = 50; // 50 × 200ms = 10s
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-        const c = window.clarity;
-        if (!c) return;
-        c('identify', userId, undefined, undefined, email ?? undefined);
-        c('set', 'role', isAdmin ? 'admin' : 'viewer');
-        if (email) c('set', 'email', email);
+        const tryIdentify = () => {
+            const c = window.clarity;
+            if (!c) {
+                if (++attempts < MAX_ATTEMPTS) {
+                    timeoutId = setTimeout(tryIdentify, 200);
+                }
+                return;
+            }
+            lastIdentifiedUserId.current = userId;
+            // friendlyName (5th arg) is what shows up next to the session in
+            // the Clarity dashboard — use the Google display name, fall back
+            // to the email local-part. Email and role go into custom session
+            // dimensions for filtering / segmenting.
+            const friendlyName = name?.trim() || email?.split('@')[0] || userId;
+            c('identify', userId, undefined, undefined, friendlyName);
+            c('set', 'role', isAdmin ? 'admin' : 'viewer');
+            if (email) c('set', 'email', email);
+            if (name) c('set', 'name', name);
+        };
+        tryIdentify();
+
+        return () => {
+            if (timeoutId !== null) clearTimeout(timeoutId);
+        };
     }, [session]);
 
     return null;

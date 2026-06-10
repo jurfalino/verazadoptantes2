@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.31] - 2026-06-10
+
+### Fixed — Clarity sessions weren't being tagged with user identity
+- User reported that sessions in the Clarity dashboard had no name / email — every session looked like an anonymous device hash. Two root causes:
+  1. **Identity sync was firing before Clarity loaded.** Clarity is loaded by Cloudflare Zaraz (see `clarity-via-zaraz` memory), which runs asynchronously. The `useEffect` in `ClarityScript` first fires immediately after hydration, but Zaraz's wrapper may not have injected `window.clarity` by then. The previous version bailed silently (`if (!c) return`) and never retried — so identify ran exactly never.
+  2. **`friendlyName` was the email instead of the display name.** I'd been passing `email` as the 5th arg to `clarity('identify', ...)`, which is what shows up next to the session in the dashboard — but the user expected to see their actual name there.
+- Fix:
+  - **Retry loop**: poll `window.clarity` every 200ms for up to 10s after the session resolves. Cleared on component unmount. The official Clarity snippet self-defines a queueing stub immediately so calls survive pre-load, but Zaraz's wrapper may not — hence the poll instead of relying on the queue.
+  - **`friendlyName` is now the Google display name** (`session.user.name`), falling back to the email local-part, falling back to the user ID. Email and role go into `clarity('set', 'email', ...)` and `clarity('set', 'role', ...)` as custom session dimensions for filtering / segmenting — those don't show on the session list but you can filter recordings by them.
+  - Also `clarity('set', 'name', ...)` so the full name is also queryable as a custom dimension.
+
+### Activation
+- The fix applies to sessions captured AFTER v2.19.31 deploys. Existing recordings stay anonymous (the identity tag is set at capture time, not retroactively).
+- After deploy, sign in fresh on staging/prod, click around for ~30 seconds, then check the Clarity dashboard's Recordings tab — the new session should show your name in the session-list "User" column and have `role` / `email` / `name` in its session dimensions.
+
 ## [2.19.30] - 2026-06-10
 
 ### Fixed — Clarity replays were showing unstyled DOMs
