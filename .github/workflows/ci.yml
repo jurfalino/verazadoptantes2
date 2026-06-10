@@ -191,11 +191,6 @@ jobs:
         run: npx @cloudflare/next-on-pages
         env:
           SKIP_ENV_VALIDATION: 'true'
-          # v2.19.28: NEXT_PUBLIC_* are build-time inlines (see memory:
-          # project_buildtime_envvars), so per-env Clarity project IDs are
-          # threaded here. Optional — if the secret is unset, ClarityScript
-          # renders nothing.
-          NEXT_PUBLIC_CLARITY_PROJECT_ID: ${{ secrets.CLARITY_PROJECT_ID_STAGING }}
 
       - name: Deploy to Cloudflare Pages (Preview)
         run: npx wrangler pages deploy .vercel/output/static --project-name="verazadoptantes2" --branch="staging"
@@ -230,11 +225,6 @@ jobs:
         run: npx @cloudflare/next-on-pages
         env:
           SKIP_ENV_VALIDATION: 'true'
-          # v2.19.28: per-env Clarity project IDs are build-time inlines.
-          # See the staging build for the rationale; using a separate
-          # secret so production traffic doesn't pollute the staging
-          # dashboard.
-          NEXT_PUBLIC_CLARITY_PROJECT_ID: ${{ secrets.CLARITY_PROJECT_ID_PRODUCTION }}
 
       - name: Deploy to Cloudflare Pages (Production)
         run: npx wrangler pages deploy .vercel/output/static --project-name="verazadoptantes2" --branch="master"

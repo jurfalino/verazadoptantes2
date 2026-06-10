@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.29] - 2026-06-10
+
+### Fixed — Clarity was already loaded via Zaraz; drop the second loader
+- After v2.19.28 shipped the user pointed out Clarity recordings were already showing up in the dashboard, including historic ones predating the release. That means Clarity is loaded by Cloudflare Zaraz (the existing tag manager) — and the loader `<Script>` we added in v2.19.28 would have **double-init'd the SDK** the moment anyone set the `NEXT_PUBLIC_CLARITY_PROJECT_ID` build secret. Two loaders racing to install Clarity would have produced duplicate sessions per visit and unpredictable identify ordering.
+- Nothing was actually broken yet because the build secret hadn't been set, so the v2.19.28 component was dormant. Still, leaving the footgun in code where setting an env var silently breaks the analytics dashboard is the kind of trap that bites six months later.
+- Removed the `<Script>` injection from `ClarityScript`. Kept the `useEffect` identity-sync that calls `window.clarity('identify', userId, ..., email)` and sets `role` / `email` custom dimensions. The Clarity snippet pre-defines `window.clarity` as a queueing function before the SDK download finishes, so identify calls survive even if the user lands before Zaraz's loader resolves.
+- Reverted the two `NEXT_PUBLIC_CLARITY_PROJECT_ID` injections added to `deploy-staging` and `deploy-production` in v2.19.28. The `CLARITY_PROJECT_ID_STAGING` / `CLARITY_PROJECT_ID_PRODUCTION` GitHub secrets that v2.19.28's CHANGELOG asked you to create are unnecessary — you don't need to add them. Per-env IDs are configured in Zaraz, not in our code.
+- Net effect: existing Zaraz recordings keep working untouched. Identity sync (admin sessions tagged with email + role) starts working as soon as v2.19.29 deploys. Zero risk of double-init.
+
 ## [2.19.28] - 2026-06-10
 
 ### Added — Microsoft Clarity session replay + heatmaps
