@@ -21,6 +21,16 @@ export default function PiiAccessGrantsDisclosure({ grants }: { grants: AdopterP
 
     const orgMates = grants.orgMates ?? [];
     const searchMatch = grants.searchMatch ?? [];
+    // v2.19.27: which grantee rows have their detail breakdown expanded.
+    // Map keyed by granteeEmail; click the count chip to toggle.
+    const [expandedGrantees, setExpandedGrantees] = useState<Set<string>>(new Set());
+    const toggleGrantee = (email: string) => {
+        setExpandedGrantees(prev => {
+            const next = new Set(prev);
+            if (next.has(email)) next.delete(email); else next.add(email);
+            return next;
+        });
+    };
     // v2.19.25: count chip + render gate include org-mates too — they're
     // listed alongside the explicit `allContact` grants as another category
     // of "people who can see this record's PII".
@@ -125,16 +135,51 @@ export default function PiiAccessGrantsDisclosure({ grants }: { grants: AdopterP
                                 {t('adopter.pii_grants_search_title')}
                             </p>
                             <ul className="space-y-1.5">
-                                {searchMatch.map(m => (
-                                    <li key={m.granteeEmail} className="flex items-center justify-between gap-3 text-sm">
-                                        <span className="text-stone-700 truncate">{m.granteeName}</span>
-                                        <span className="shrink-0 text-xs text-stone-500" title={t('adopter.pii_grants_search_count_tooltip').replace('{n}', String(m.count))}>
-                                            {m.count > 1
-                                                ? t('adopter.pii_grants_search_count_n').replace('{n}', String(m.count))
-                                                : t('adopter.pii_grants_search_count_1')}
-                                        </span>
-                                    </li>
-                                ))}
+                                {searchMatch.map(m => {
+                                    const expanded = expandedGrantees.has(m.granteeEmail);
+                                    const countLabel = m.count > 1
+                                        ? t('adopter.pii_grants_search_count_n').replace('{n}', String(m.count))
+                                        : t('adopter.pii_grants_search_count_1');
+                                    return (
+                                        <li key={m.granteeEmail}>
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleGrantee(m.granteeEmail)}
+                                                aria-expanded={expanded}
+                                                className="w-full flex items-center justify-between gap-3 text-sm hover:bg-stone-50 -mx-1 px-1 py-0.5 rounded transition-colors text-left"
+                                            >
+                                                <span className="text-stone-700 truncate">{m.granteeName}</span>
+                                                <span className="shrink-0 text-xs text-stone-500 flex items-center gap-1">
+                                                    <span>{countLabel}</span>
+                                                    <span className="text-stone-400" aria-hidden>{expanded ? '▴' : '▾'}</span>
+                                                </span>
+                                            </button>
+                                            {/* v2.19.27: expanded detail — each row names the type (phone, email, etc.)
+                                                or 'name token' and renders the matched value. The owner is already
+                                                privileged so showing the full value is fine; a row whose hash no
+                                                longer resolves (entry deleted / renamed) renders as a dash. */}
+                                            {expanded && m.details.length > 0 && (
+                                                <ul className="mt-1 ml-3 pl-2 border-l border-stone-200 space-y-1">
+                                                    {m.details.map((d, i) => {
+                                                        const typeLabel = d.scope === 'name_token'
+                                                            ? t('adopter.pii_grants_detail_name_token')
+                                                            : d.type
+                                                                ? t(`adopter.ce_type_${d.type}` as never) || d.type
+                                                                : t('adopter.pii_grants_detail_entry_generic');
+                                                        return (
+                                                            <li key={`${d.scope}-${i}-${d.label}`} className="flex items-center gap-2 text-xs text-stone-600">
+                                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 font-medium text-[10px] uppercase tracking-wide shrink-0">
+                                                                    {typeLabel}
+                                                                </span>
+                                                                <span className="truncate">{d.label}</span>
+                                                            </li>
+                                                        );
+                                                    })}
+                                                </ul>
+                                            )}
+                                        </li>
+                                    );
+                                })}
                             </ul>
                         </div>
                     )}

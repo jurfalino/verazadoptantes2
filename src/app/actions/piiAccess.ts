@@ -26,6 +26,7 @@ import {
     matchSearchEntries,
     matchSearchNameTokens,
     hashNameToken,
+    hashEntryValue,
     type RequestPiiAccessResult,
     type PiiAccessRequestView,
     type PiiAccessRequestState,
@@ -33,7 +34,7 @@ import {
     type PiiAllContactGrant,
     type PiiOrgMateAccess,
 } from '@/lib/piiAccess';
-import { deserializeContactEntries } from '@/lib/contactEntries';
+import { deserializeContactEntries, type ContactEntryType } from '@/lib/contactEntries';
 import { createNotification, resolveDisplayName } from './notifications';
 import { requestPiiAccessSchema, resolvePiiRequestSchema, verifyKnownInfoSchema } from './validation';
 
@@ -516,15 +517,51 @@ export async function getAdopterPiiContext(adopterId: string): Promise<AdopterPi
             // name_token grants — both are "things this viewer demonstrated
             // knowing" and a single grantee may hold a mix. Empty list when
             // no search-match grants exist.
-            const searchMatchByEmail = new Map<string, number>();
+            //
+            // v2.19.27: also resolve each grant's `entryRef` hash back to a
+            // human-readable label so the disclosure can show WHICH fields
+            // were revealed. Build the entry-hash and name-token-hash lookup
+            // maps ONCE per adopter (not per grantee) and reuse across all
+            // search-match grants — a grantee with 3 grants doesn't trigger
+            // 3× the hashing work. A hash that no longer matches the
+            // adopter's current entries / name (entry deleted, name changed)
+            // gets a generic placeholder; the count still includes it.
+            const adopterEntries = deserializeContactEntries(adopter.contactEntries);
+            const entryByHash = new Map<string, { type: ContactEntryType; value: string }>();
+            for (const e of adopterEntries) {
+                entryByHash.set(hashEntryValue(e.type, e.value), { type: e.type, value: e.value });
+            }
+            const nameTokenByHash = new Map<string, string>();
+            for (const token of (adopter.name ?? '').trim().split(/\s+/)) {
+                if (token.length >= 2) nameTokenByHash.set(hashNameToken(token), token);
+            }
+
+            const searchMatchByEmail = new Map<string, {
+                count: number;
+                details: AdopterPiiContext['accessGrants']['searchMatch'][number]['details'];
+            }>();
             for (const g of grantRows) {
                 if (g.scope !== 'entry' && g.scope !== 'name_token') continue;
-                searchMatchByEmail.set(g.granteeEmail, (searchMatchByEmail.get(g.granteeEmail) ?? 0) + 1);
+                if (!searchMatchByEmail.has(g.granteeEmail)) {
+                    searchMatchByEmail.set(g.granteeEmail, { count: 0, details: [] });
+                }
+                const bucket = searchMatchByEmail.get(g.granteeEmail)!;
+                bucket.count++;
+                if (g.scope === 'entry') {
+                    const resolved = g.entryRef ? entryByHash.get(g.entryRef) : null;
+                    bucket.details.push(resolved
+                        ? { scope: 'entry', type: resolved.type, label: resolved.value }
+                        : { scope: 'entry', label: '—' });
+                } else {
+                    const token = g.entryRef ? nameTokenByHash.get(g.entryRef) : null;
+                    bucket.details.push({ scope: 'name_token', label: token ?? '—' });
+                }
             }
-            const searchMatch = [...searchMatchByEmail.entries()].map(([email, count]) => ({
+            const searchMatch = [...searchMatchByEmail.entries()].map(([email, b]) => ({
                 granteeEmail: email,
                 granteeName: nameOf(email),
-                count,
+                count: b.count,
+                details: b.details,
             }));
 
             accessGrants = {

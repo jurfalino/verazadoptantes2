@@ -626,6 +626,8 @@ export const es = {
         pii_grants_search_count_1: '1 coincidencia',
         pii_grants_search_count_n: '{n} coincidencias',
         pii_grants_search_count_tooltip: '{n} dato(s) de contacto desbloqueado(s) por coincidencia de búsqueda',
+        pii_grants_detail_name_token: 'Nombre',
+        pii_grants_detail_entry_generic: 'Contacto',
         pii_grants_revoked_toast: 'Acceso revocado',
         pii_whatsnew_label: 'Novedad',
         pii_whatsnew_body: 'BuenAdoptante ahora protege los datos de contacto de los adoptantes — ves lo que buscaste y podés solicitar el resto.',

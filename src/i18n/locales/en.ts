@@ -619,6 +619,8 @@ export const en = {
         pii_grants_search_count_1: '1 match',
         pii_grants_search_count_n: '{n} matches',
         pii_grants_search_count_tooltip: '{n} contact detail(s) unlocked via search match',
+        pii_grants_detail_name_token: 'Name',
+        pii_grants_detail_entry_generic: 'Contact',
         pii_grants_revoked_toast: 'Access revoked',
         pii_whatsnew_label: 'New',
         pii_whatsnew_body: 'BuenAdoptante now protects adopter contact details — you see what you searched for, and can request the rest.',

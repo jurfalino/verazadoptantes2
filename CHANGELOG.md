@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.27] - 2026-06-09
+
+### Added — click a search-match grantee to see WHICH fields they unlocked
+- v2.19.26 named the grantees but stopped at `"{Name} — 1 coincidencia"`. The user fairly asked: which field? Each row is now a button — click to expand an inline breakdown that names the type (`Phone`, `Email`, `Address`, `Document`, `Name`, …) and the matched value of every grant the grantee holds on this adopter. A grantee with 3 search-match grants shows 3 lines on expand.
+- Resolution is hash-based against the adopter's current state. `scope='entry'` grants store `hashEntryValue(type, value)` as `entryRef`; the action hashes every entry in the adopter's `contactEntries`, builds a `hash → {type, value}` lookup, and resolves each grant in O(1). `scope='name_token'` grants store `hashNameToken(token)`; resolved against the adopter's whitespace-split name. A hash that no longer resolves — entry deleted, name changed since the search match — renders as a `—` placeholder so the count still includes it but doesn't leak misleading text.
+- The owner / org-mate / admin / moderator is already privileged (they see unmasked contact info on the profile), so showing the full matched value here doesn't add leakage. Type label uses the existing `adopter.ce_type_*` keys so the chip reads "Teléfono" / "Email" / "Documento" / etc.
+
+### Engineering
+- `src/lib/piiAccess.ts:AdopterPiiContext.accessGrants.searchMatch` — each row gained a `details: Array<{ scope, type?, label }>` field. The lib type now requires `ContactEntryType` in scope (already imported at the top).
+- `src/app/actions/piiAccess.ts:getAdopterPiiContext` — builds the hash lookup ONCE per adopter (`entryByHash`, `nameTokenByHash`), then resolves each grant during the same loop that increments the count. `hashEntryValue` newly imported alongside `hashNameToken`.
+- `src/components/PiiAccessGrantsDisclosure.tsx` — search-match rows became expandable buttons (`aria-expanded` honoured). State is per-grantee in a `Set<string>` keyed by email; collapsed is the default. Detail rows use the small uppercase-tracking type chip pattern already used by other compact admin surfaces.
+- New i18n keys `adopter.pii_grants_detail_name_token`, `adopter.pii_grants_detail_entry_generic` in both locales. Type labels reuse the existing `adopter.ce_type_*` namespace.
+
 ## [2.19.26] - 2026-06-09
 
 ### Changed — name the people behind search-match grants in "Who has access"
