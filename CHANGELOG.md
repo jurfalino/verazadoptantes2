@@ -2,6 +2,29 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.28] - 2026-06-10
+
+### Added — Microsoft Clarity session replay + heatmaps
+- User asked about a Datadog-RUM-style session-replay tool alongside the existing Amplitude (event analytics, NOT session replay). After surveying Clarity / PostHog / Sentry Replay / LogRocket, picked **Microsoft Clarity** as the install target — free, unlimited recordings, drops in via a snippet, the price ceiling is "you'll never get billed".
+- New `<ClarityScript />` component (mirrors the `ZarazIdentify` pattern) mounted in `app/layout.tsx`. Renders the official Clarity loader via Next's `<Script strategy="afterInteractive">` so it doesn't block the initial paint. Identity sync via `window.clarity('identify', userId, ..., email)` runs the moment the session resolves so admin sessions land against a real person in the Clarity dashboard, not an anonymous device hash. Also pushes `role` + `email` as Clarity custom dimensions for filtering.
+- Bundled directly rather than via Zaraz so toggling on/off is an env-var change + redeploy, not a Cloudflare dashboard action; we still get Zaraz-driven Amplitude for events.
+- Env-var-driven and **fully optional**: with no `NEXT_PUBLIC_CLARITY_PROJECT_ID` set, the component renders nothing. So dev / preview / any env without the secret is a silent no-op.
+
+### PII posture
+- Skipped DOM-masking config (per user authorization 2026-06-10). The platform is internal-admin / rescuer-facing — the public surface lives on a separate domain — so recording the unmasked DOM as the operator views adopter profiles is fine. The PII access gating in the rest of the app is for cross-user exposure, not for session replay vs the operator of the platform. If we later open the app to less-trusted viewers, revisit: mark `contactEntries`, `contactInfo`, `addressInfo`, and the activity-card body with `data-clarity-mask`, or scope `<ClarityScript />` to non-`/adopter/*` routes.
+
+### Engineering — env-var plumbing
+- Per `project_buildtime_envvars`: `NEXT_PUBLIC_*` are build-time inlines, so Cloudflare runtime env vars don't reach them. The two CI deploy jobs (`deploy-staging`, `deploy-production`) now pass `NEXT_PUBLIC_CLARITY_PROJECT_ID` into the `npx @cloudflare/next-on-pages` build step, sourced from two separate secrets:
+  - `CLARITY_PROJECT_ID_STAGING` → injected for the staging build → staging.buenadoptante.org recordings land in the staging Clarity project.
+  - `CLARITY_PROJECT_ID_PRODUCTION` → injected for the master build → buenadoptante.org recordings land in the production Clarity project.
+- Two IDs (not one shared) so prod traffic doesn't pollute the staging dashboard. Either or both can be left unset to disable replay on that env.
+
+### Activation steps
+1. Create two Clarity projects at https://clarity.microsoft.com (one for staging, one for prod). Grab each project ID from the "Setup" → "Get tracking code" page (8–10 alphanumeric string).
+2. Add the two IDs as GitHub repo secrets: `CLARITY_PROJECT_ID_STAGING` and `CLARITY_PROJECT_ID_PRODUCTION`.
+3. Trigger a redeploy (any push to staging / master). The build inlines the ID; the loader injects on first page load.
+4. Verify in the Clarity dashboard: visit the staging URL signed in as yourself; within ~2 minutes the session should appear in the staging project's Recordings tab with your email as the friendlyName.
+
 ## [2.19.27] - 2026-06-09
 
 ### Added — click a search-match grantee to see WHICH fields they unlocked

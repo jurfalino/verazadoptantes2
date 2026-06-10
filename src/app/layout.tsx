@@ -17,6 +17,7 @@ import Footer from '@/components/Footer';
 import { CountryConfirmBanner } from '@/components/CountryConfirmBanner';
 import NotificationBell from '@/components/NotificationBell';
 import ZarazIdentify from '@/components/ZarazIdentify';
+import ClarityScript from '@/components/ClarityScript';
 import { WebApplicationJsonLd, OrganizationJsonLd } from '@/components/JsonLd';
 import ChatWidget from '@/components/ChatWidget';
 import { getFeatureFlag } from '@/config/features';
@@ -134,6 +135,7 @@ export default async function RootLayout({
       <body className={inter.className}>
         <SessionProvider session={session ?? undefined} refetchOnWindowFocus={true} refetchInterval={5 * 60}>
           <ZarazIdentify />
+          <ClarityScript />
           <LanguageProvider>
             <ThemeProvider>
               <ToastProvider>
