@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.34] - 2026-06-11
+
+### Fixed — second wave of test breakage from v2.19.32's pre-opened composer
+- v2.19.33 fixed the `ce-add-trigger` hang but uncovered a second collision: three other specs in `adopter.spec.ts` use `getByRole('button', { name: /save|guardar|create|crear/i })` to click the form's main submit button. With the composer now pre-opened, there's also a "Guardar" button rendered inside it (`ce-composer-submit`) with the same accessible name — strict-mode violation, every spec that reaches a save fails.
+- Fix: add `data-testid="adopter-form-submit"` to the form's main submit button in `AdopterForm`, switch the three call sites to `getByTestId('adopter-form-submit')`. The testid is stable across locales, doesn't depend on heuristic matching, and won't collide with the composer surface or any future button labeled "Save / Guardar".
+
+### Engineering
+- `src/components/AdopterForm.tsx` — `data-testid="adopter-form-submit"` on the form's `<button type="submit">`.
+- `tests/adopter.spec.ts` — three `getByRole('button', { name: /save|guardar|create|crear/i })` call sites replaced with `getByTestId('adopter-form-submit')`.
+
+### Known (unrelated) failure
+- `tests/mobile.spec.ts:13` (`Homepage search is usable at mobile width`) failed in the same v2.19.33 run, but the locator that failed (`a[href*="/adopter/"]` after searching "María") is on the homepage discovery surface — nothing v2.19.32/33 touched. Likely a pre-existing flake masked by other failures; will investigate if it persists in v2.19.34.
+
 ## [2.19.33] - 2026-06-11
 
 ### Fixed — v2.19.32 staging deploy was skipped because E2E timed out

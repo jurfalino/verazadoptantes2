@@ -59,7 +59,12 @@ test.describe('Adopter Profile', () => {
         await page.getByPlaceholder(/name|nombre/i).fill(uniqueName);
 
         // Submit the form
-        await page.getByRole('button', { name: /save|guardar|create|crear/i }).click();
+        // v2.19.34: target the form's main submit button by testid.
+        // Until v2.19.32 a `name: /save|guardar/i` role match was unique,
+        // but the pre-opened composer now also renders a "Guardar" button
+        // (`ce-composer-submit`) with the same accessible name, so the
+        // role+name match is strict-mode-violating.
+        await page.getByTestId('adopter-form-submit').click();
 
         // Handle duplicate detection modal if it appears
         // Wait up to 3s for it to appear; if it doesn't, assume no duplicates were found.
@@ -111,7 +116,12 @@ test.describe('Adopter Profile', () => {
         const chips = page.getByTestId('ce-chip');
         await expect(chips).toHaveCount(2, { timeout: 10000 });
 
-        await page.getByRole('button', { name: /save|guardar|create|crear/i }).click();
+        // v2.19.34: target the form's main submit button by testid.
+        // Until v2.19.32 a `name: /save|guardar/i` role match was unique,
+        // but the pre-opened composer now also renders a "Guardar" button
+        // (`ce-composer-submit`) with the same accessible name, so the
+        // role+name match is strict-mode-violating.
+        await page.getByTestId('adopter-form-submit').click();
         const createAnywayBtn = page.getByRole('button', { name: /Create new profile anyway|Crear perfil nuevo/i });
         try {
             await createAnywayBtn.waitFor({ state: 'visible', timeout: 3000 });
@@ -168,7 +178,12 @@ test.describe('Adopter Profile', () => {
         await expect(chips).toHaveCount(1, { timeout: 10000 });
 
         // Save the adopter end-to-end to confirm the entry persists.
-        await page.getByRole('button', { name: /save|guardar|create|crear/i }).click();
+        // v2.19.34: target the form's main submit button by testid.
+        // Until v2.19.32 a `name: /save|guardar/i` role match was unique,
+        // but the pre-opened composer now also renders a "Guardar" button
+        // (`ce-composer-submit`) with the same accessible name, so the
+        // role+name match is strict-mode-violating.
+        await page.getByTestId('adopter-form-submit').click();
         const createAnywayBtn = page.getByRole('button', { name: /Create new profile anyway|Crear perfil nuevo/i });
         try {
             await createAnywayBtn.waitFor({ state: 'visible', timeout: 3000 });

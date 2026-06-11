@@ -721,6 +721,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                             <button
                                                 type="submit"
                                                 disabled={loading}
+                                                data-testid="adopter-form-submit"
                                                 className="px-4 py-1.5 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 focus:ring-4 focus:ring-teal-200 disabled:opacity-70 disabled:cursor-not-allowed transition-all shadow-lg shadow-teal-700/30 transform active:scale-95"
                                             >
                                                 {loading ? t('common.loading') : t('common.save')}
