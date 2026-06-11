@@ -17,6 +17,16 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 const nextConfig: NextConfig = {
+  // v2.19.30: add `crossorigin="anonymous"` to Next-emitted <script>/<link>
+  // tags so Microsoft Clarity (loaded by Zaraz — see project memory
+  // `clarity-via-zaraz`) can read the stylesheet `cssRules` at snapshot
+  // time and inline them. Without this, the replay iframe tries to refetch
+  // the relative `/_next/static/css/*` URLs against its own origin
+  // (clarity.ms), gets 404s, and shows an unstyled DOM. Same issue affects
+  // any RUM / session replay tool with the same architecture. Cloudflare
+  // Pages serves `/_next/static/*` with permissive CORS already, so the
+  // crossorigin fetch resolves cleanly — no `_headers` file changes needed.
+  crossOrigin: 'anonymous',
   serverExternalPackages: ["better-sqlite3"],
   // Mitigate Next.js 15.1 dev server memory leak (known regression)
   // DISABLED: causes webpack module factory eviction → TypeError during RSC hydration

@@ -2,6 +2,61 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.31] - 2026-06-10
+
+### Fixed — Clarity sessions weren't being tagged with user identity
+- User reported that sessions in the Clarity dashboard had no name / email — every session looked like an anonymous device hash. Two root causes:
+  1. **Identity sync was firing before Clarity loaded.** Clarity is loaded by Cloudflare Zaraz (see `clarity-via-zaraz` memory), which runs asynchronously. The `useEffect` in `ClarityScript` first fires immediately after hydration, but Zaraz's wrapper may not have injected `window.clarity` by then. The previous version bailed silently (`if (!c) return`) and never retried — so identify ran exactly never.
+  2. **`friendlyName` was the email instead of the display name.** I'd been passing `email` as the 5th arg to `clarity('identify', ...)`, which is what shows up next to the session in the dashboard — but the user expected to see their actual name there.
+- Fix:
+  - **Retry loop**: poll `window.clarity` every 200ms for up to 10s after the session resolves. Cleared on component unmount. The official Clarity snippet self-defines a queueing stub immediately so calls survive pre-load, but Zaraz's wrapper may not — hence the poll instead of relying on the queue.
+  - **`friendlyName` is now the Google display name** (`session.user.name`), falling back to the email local-part, falling back to the user ID. Email and role go into `clarity('set', 'email', ...)` and `clarity('set', 'role', ...)` as custom session dimensions for filtering / segmenting — those don't show on the session list but you can filter recordings by them.
+  - Also `clarity('set', 'name', ...)` so the full name is also queryable as a custom dimension.
+
+### Activation
+- The fix applies to sessions captured AFTER v2.19.31 deploys. Existing recordings stay anonymous (the identity tag is set at capture time, not retroactively).
+- After deploy, sign in fresh on staging/prod, click around for ~30 seconds, then check the Clarity dashboard's Recordings tab — the new session should show your name in the session-list "User" column and have `role` / `email` / `name` in its session dimensions.
+
+## [2.19.30] - 2026-06-10
+
+### Fixed — Clarity replays were showing unstyled DOMs
+- User reported that playing back recorded sessions in Microsoft Clarity rendered "as if styles are missing." Root cause: Next.js auto-emits `<link rel="stylesheet" href="/_next/static/css/abc.css">` tags **without** a `crossorigin` attribute. Without it, Clarity (and most session-replay tools) can't read the stylesheet's `cssRules` from JS at snapshot time, so it can't inline the CSS into the recording. At replay time, the iframe at `clarity.ms` tries to refetch the relative `/_next/static/css/*` URLs against its own origin, gets 404s, and renders the captured DOM with no styles applied.
+- Fix: set `crossOrigin: 'anonymous'` in `next.config.ts`. Next.js then adds `crossorigin="anonymous"` to every emitted `<script>` and `<link>`, which lets Clarity inline the stylesheet contents in its snapshot. Cloudflare Pages already serves `/_next/static/*` with permissive CORS so the cross-origin fetch resolves without a `_headers` file change.
+- Same fix applies to any other RUM / session replay tool with the same architecture (Sentry Replay, LogRocket, PostHog Recordings, etc.) so this isn't Clarity-specific bookkeeping.
+- Will not retroactively fix recordings captured before this release — those were recorded with the URL-only stylesheet reference, and the inlined-CSS pathway is at capture time, not replay time. Re-record after the deploy lands to validate.
+
+## [2.19.29] - 2026-06-10
+
+### Fixed — Clarity was already loaded via Zaraz; drop the second loader
+- After v2.19.28 shipped the user pointed out Clarity recordings were already showing up in the dashboard, including historic ones predating the release. That means Clarity is loaded by Cloudflare Zaraz (the existing tag manager) — and the loader `<Script>` we added in v2.19.28 would have **double-init'd the SDK** the moment anyone set the `NEXT_PUBLIC_CLARITY_PROJECT_ID` build secret. Two loaders racing to install Clarity would have produced duplicate sessions per visit and unpredictable identify ordering.
+- Nothing was actually broken yet because the build secret hadn't been set, so the v2.19.28 component was dormant. Still, leaving the footgun in code where setting an env var silently breaks the analytics dashboard is the kind of trap that bites six months later.
+- Removed the `<Script>` injection from `ClarityScript`. Kept the `useEffect` identity-sync that calls `window.clarity('identify', userId, ..., email)` and sets `role` / `email` custom dimensions. The Clarity snippet pre-defines `window.clarity` as a queueing function before the SDK download finishes, so identify calls survive even if the user lands before Zaraz's loader resolves.
+- Reverted the two `NEXT_PUBLIC_CLARITY_PROJECT_ID` injections added to `deploy-staging` and `deploy-production` in v2.19.28. The `CLARITY_PROJECT_ID_STAGING` / `CLARITY_PROJECT_ID_PRODUCTION` GitHub secrets that v2.19.28's CHANGELOG asked you to create are unnecessary — you don't need to add them. Per-env IDs are configured in Zaraz, not in our code.
+- Net effect: existing Zaraz recordings keep working untouched. Identity sync (admin sessions tagged with email + role) starts working as soon as v2.19.29 deploys. Zero risk of double-init.
+
+## [2.19.28] - 2026-06-10
+
+### Added — Microsoft Clarity session replay + heatmaps
+- User asked about a Datadog-RUM-style session-replay tool alongside the existing Amplitude (event analytics, NOT session replay). After surveying Clarity / PostHog / Sentry Replay / LogRocket, picked **Microsoft Clarity** as the install target — free, unlimited recordings, drops in via a snippet, the price ceiling is "you'll never get billed".
+- New `<ClarityScript />` component (mirrors the `ZarazIdentify` pattern) mounted in `app/layout.tsx`. Renders the official Clarity loader via Next's `<Script strategy="afterInteractive">` so it doesn't block the initial paint. Identity sync via `window.clarity('identify', userId, ..., email)` runs the moment the session resolves so admin sessions land against a real person in the Clarity dashboard, not an anonymous device hash. Also pushes `role` + `email` as Clarity custom dimensions for filtering.
+- Bundled directly rather than via Zaraz so toggling on/off is an env-var change + redeploy, not a Cloudflare dashboard action; we still get Zaraz-driven Amplitude for events.
+- Env-var-driven and **fully optional**: with no `NEXT_PUBLIC_CLARITY_PROJECT_ID` set, the component renders nothing. So dev / preview / any env without the secret is a silent no-op.
+
+### PII posture
+- Skipped DOM-masking config (per user authorization 2026-06-10). The platform is internal-admin / rescuer-facing — the public surface lives on a separate domain — so recording the unmasked DOM as the operator views adopter profiles is fine. The PII access gating in the rest of the app is for cross-user exposure, not for session replay vs the operator of the platform. If we later open the app to less-trusted viewers, revisit: mark `contactEntries`, `contactInfo`, `addressInfo`, and the activity-card body with `data-clarity-mask`, or scope `<ClarityScript />` to non-`/adopter/*` routes.
+
+### Engineering — env-var plumbing
+- Per `project_buildtime_envvars`: `NEXT_PUBLIC_*` are build-time inlines, so Cloudflare runtime env vars don't reach them. The two CI deploy jobs (`deploy-staging`, `deploy-production`) now pass `NEXT_PUBLIC_CLARITY_PROJECT_ID` into the `npx @cloudflare/next-on-pages` build step, sourced from two separate secrets:
+  - `CLARITY_PROJECT_ID_STAGING` → injected for the staging build → staging.buenadoptante.org recordings land in the staging Clarity project.
+  - `CLARITY_PROJECT_ID_PRODUCTION` → injected for the master build → buenadoptante.org recordings land in the production Clarity project.
+- Two IDs (not one shared) so prod traffic doesn't pollute the staging dashboard. Either or both can be left unset to disable replay on that env.
+
+### Activation steps
+1. Create two Clarity projects at https://clarity.microsoft.com (one for staging, one for prod). Grab each project ID from the "Setup" → "Get tracking code" page (8–10 alphanumeric string).
+2. Add the two IDs as GitHub repo secrets: `CLARITY_PROJECT_ID_STAGING` and `CLARITY_PROJECT_ID_PRODUCTION`.
+3. Trigger a redeploy (any push to staging / master). The build inlines the ID; the loader injects on first page load.
+4. Verify in the Clarity dashboard: visit the staging URL signed in as yourself; within ~2 minutes the session should appear in the staging project's Recordings tab with your email as the friendlyName.
+
 ## [2.19.27] - 2026-06-09
 
 ### Added — click a search-match grantee to see WHICH fields they unlocked
