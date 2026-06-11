@@ -107,7 +107,20 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
     // toast — a bandaid). The three-state split eliminates the ambiguity
     // entirely: pills only fire when no input exists yet, so there's
     // nothing to lose.
-    const [composerStage, setComposerStage] = useState<'closed' | 'pick-type' | 'editing'>('closed');
+    // v2.19.32: on a fresh new-adopter form (local mode, no entries yet) we
+    // pre-open the composer in 'editing' stage with type='phone'. Every
+    // record in practice starts with a phone number, so making the rescuer
+    // click "Agregar → Teléfono" before they can type one is friction
+    // without information value. The phone input has autoFocus, so the
+    // cursor lands directly in it on first paint — they just type the
+    // number. After Save or Cancel, the composer collapses back to the
+    // trigger button so adding a SECOND entry still goes through the
+    // type-picker (where the choice actually matters). Existing-record
+    // views and forms that already have entries keep the default 'closed'
+    // start — we don't want to surprise editors with an unsolicited input.
+    const [composerStage, setComposerStage] = useState<'closed' | 'pick-type' | 'editing'>(
+        () => isLocalMode && entries.length === 0 ? 'editing' : 'closed',
+    );
     const [composerType, setComposerType] = useState<ContactEntryType>('phone');
     const [composerValue, setComposerValue] = useState('');
     const [composerStreet, setComposerStreet] = useState('');

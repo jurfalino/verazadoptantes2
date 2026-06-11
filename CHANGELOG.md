@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.32] - 2026-06-11
+
+### Changed — new-adopter form pre-opens the composer with the phone input ready
+- On the manual "load an adopter" form, the contact-entries composer started at `'closed'` — meaning the rescuer had to click "+ Agregar contacto" → pick "Teléfono" → land on the input before they could type the first phone. A three-step ritual to do the one thing they always do first. Now, when the form is in local mode (new-adopter creation) AND no entries exist yet, the composer is pre-opened in `'editing'` stage with `composerType='phone'`. The input already has `autoFocus`, so the cursor lands directly in the phone field on first paint and the rescuer just types the number.
+- Scoped tightly:
+  - Only fires for **local mode** (the new-adopter creation flow, identified by the presence of an `onChange` prop). Existing-record views never pre-open — we don't want to surprise an editor with an unsolicited input on a profile they're just viewing.
+  - Only fires when **`entries.length === 0`** at mount. If the form has any existing entries (e.g., user navigated back to the form after a save), the composer stays closed.
+  - After Save or Cancel the composer collapses back to the trigger button, so adding a **second** entry still goes through the type-picker — where the choice actually matters (phone vs email vs address vs social).
+- The `composerStage` state is initialized via a lazy `useState(() => ...)` initializer so the decision is mount-time only — subsequent renders don't re-evaluate the condition. The empty-state hint text ("Aún no hay datos de contacto") is now suppressed on first paint of the new form (because `composerStage` is `'editing'`, not `'closed'`), which is correct — having both the hint AND an open input is redundant.
+
+### Engineering
+- `src/components/ContactEntriesSection.tsx`: `composerStage` `useState` initializer changed from `'closed'` to `() => isLocalMode && entries.length === 0 ? 'editing' : 'closed'`.
+
 ## [2.19.31] - 2026-06-10
 
 ### Fixed — Clarity sessions weren't being tagged with user identity
