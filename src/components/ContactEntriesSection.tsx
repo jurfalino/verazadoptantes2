@@ -767,6 +767,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 type="button"
                                 onClick={resetComposer}
                                 disabled={composerBusy}
+                                data-testid="ce-composer-cancel"
                                 className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-stone-700 bg-stone-100 hover:bg-stone-200 rounded transition-colors"
                             >
                                 <X className="w-3.5 h-3.5" /> {t('adopter.ce_edit_cancel')}

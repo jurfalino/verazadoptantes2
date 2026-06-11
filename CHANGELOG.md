@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.33] - 2026-06-11
+
+### Fixed — v2.19.32 staging deploy was skipped because E2E timed out
+- The pre-opened composer in v2.19.32 broke two `tests/adopter.spec.ts` specs that begin by clicking `ce-add-trigger`. With the composer pre-opening in `'editing'` stage on a fresh form, the trigger button isn't rendered initially — Playwright hangs forever waiting for it, and the entire `e2e` job hits its 15-min timeout. Since the deploy job is gated on `e2e` passing, staging stayed on v2.19.31.
+- Per the `grep_tests_before_deletion` memory, this is exactly the failure mode that rule was written to prevent. I missed it.
+- Fix:
+  - **First test** (`Contact entries — composer in local mode persists on save`): the first entry now uses the pre-opened path (skip `ce-add-trigger` + `ce-type-phone`, just fill the input and submit). The second entry keeps the original `ce-add-trigger → ce-type-email → fill → submit` flow since after the first save the composer collapses back to `'closed'`.
+  - **Second test** (`Composer three-stage flow — change-type discards`): cancel the pre-opened composer first to put it back in `'closed'`, then proceed with the existing trigger flow that this spec is actually testing.
+  - Added `data-testid="ce-composer-cancel"` to the Cancel button in `ContactEntriesSection`'s `'editing'` stage so the test can target it robustly.
+
+### Engineering
+- `tests/adopter.spec.ts` — two test bodies updated as above.
+- `src/components/ContactEntriesSection.tsx` — added `data-testid="ce-composer-cancel"` to the Cancel button.
+
 ## [2.19.32] - 2026-06-11
 
 ### Changed — new-adopter form pre-opens the composer with the phone input ready
