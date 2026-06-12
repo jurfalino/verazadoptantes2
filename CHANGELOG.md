@@ -2,6 +2,25 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.35] - 2026-06-12
+
+### Changed — homepage "Crear nuevo" auto-extracts a phone from the search query
+- Search for *"Susana 11-2345-6789"*, get no results, click "Crear nuevo adoptante" → the form used to receive the WHOLE raw query as `?name=…`, so `Susana 11-2345-6789` landed in the name field and the rescuer had to manually move the phone digits into a contact-entry. Combined with v2.19.32's pre-opened phone composer, the rescuer was staring at two places to put the same number.
+- Now `SearchSection.handleCreateNew` tokenizes the query before the redirect. A phone-shaped substring (≥6 digits after stripping separators, not a placeholder) is split out into a `?phone=` URL param; the remaining text becomes `?name=`. The form reads `?phone=`, seeds a confirmed phone contact-entry chip on mount, and (because there's now an entry) keeps the composer collapsed. The rescuer sees `[Susana] [📱 11-2345-6789] [+ Agregar contacto]` and one click on Save persists it.
+- **Phone-vs-address disambiguation is free.** The regex `\+?[\d][\d\s\-\.\(\)]{5,}\d` requires ≥6 digits to match; address door numbers like "Av Corrientes 3444" (4 digits) don't trigger. Placeholder filter (`isPlaceholderPhone`) is the same one the search engine already uses to reject `0000000` / `1234567` / etc., so prefill posture stays consistent with what the engine considers a real phone.
+- The phone goes through as the **original formatted substring** (`"11-2345-6789"`), not the digits-only normalized form (`"1123456789"`), so the chip in the form mirrors what the rescuer typed. The tokenizer normalises internally on save.
+
+### Engineering
+- `src/components/SearchSection.tsx` — `handleCreateNew`: regex-extract a phone substring, strip it from the name, build URL with `URLSearchParams` so both keys URI-encode cleanly. New import `isPlaceholderPhone` from `@/lib/tokenizer`.
+- `src/components/AdopterForm.tsx` — `contactEntries` `useState` initializer extended with a fallback branch: `if (isNew && phoneFromUrl) return [{ id, type: 'phone', value: phoneFromUrl }]`. Falls through legacy paths (initial data, formPrefill blob) unchanged. New `phoneFromUrl = searchParams.get('phone')` reader alongside the existing `nameFromUrl`.
+
+### Trade-offs flagged
+- **False-positive edge case**: a query like `"Corrientes 3444 5678"` (no real phone, two short numbers near each other) would capture `"3444 5678"` (8 digits when concatenated) as a phone chip. Rescuer deletes the chip if it was wrong. Live with it; the alternative (requiring a "tel:" keyword) hurts the common case where rescuers just paste a name + phone.
+- **Email / DNI / Instagram handle extraction is out of scope.** Same primitive (`extractEmails`, `extractIds`, `extractSocials`) would let us widen this later — same pattern, more URL params. Not adding now because the user asked specifically about phone.
+
+### Net win
+- Collapses the "search → no results → add them" path from ~6 clicks (search → no results → click create → click into name → click into composer trigger → pick phone → type phone) down to ~2 (search → click create → hit Save). The two pieces — v2.19.32's pre-opened composer and this prefill — reinforce each other on the same flow.
+
 ## [2.19.34] - 2026-06-11
 
 ### Fixed — second wave of test breakage from v2.19.32's pre-opened composer
