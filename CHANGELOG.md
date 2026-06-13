@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.36] - 2026-06-12
+
+### Added — server-side diagnostic logging on the `/auth-error` page
+- User reported intermittent *"Ocurrió un error inesperado"* on the account-switch flow (logout one Google account → login with another) in both staging and prod. The error page is intentionally vague (it doubles as the blocked-adopter wall — see `src/app/auth-error/page.tsx:9-12`), which hides the actual NextAuth error reason from us too. Hypothesis: stale OAuth state cookie or CSRF token mismatch on the second sign-in, but we can't confirm without seeing the error code.
+- Added a server-side `logger.warn('auth-error page hit', …)` on every render. Captures NextAuth's `?error=` query param (`OAuthCallbackError` / `Configuration` / `Verification` / `AccessDenied` / `Default`), the optional `?code=` for sub-classifications, plus `cf-ray`, `user-agent`, and `referer` so a single failed attempt can be cross-referenced with the NextAuth core handler logs that produced it. Doesn't change anything the user sees — the deception for blocked adopters stays intact.
+- `AccessDenied` (blocked-adopter path) is already audited via `recordBlockedLogin`, but we log it here too so a single Axiom query (`auth-error page hit`) covers every landing on this page. Filtering by `error != 'AccessDenied'` then surfaces just the OAuth / config failures we're after.
+- Wrapped in a `try/catch` that swallows any headers/logger failure so the page always renders the same shell even if the diagnostic itself errors.
+
+### Activation
+- Trigger a few sign-out → sign-in-with-different-account flows on staging or prod over the next few days. Each failed attempt that lands on `/auth-error` will emit a single Axiom warn line. Once we have a sample of error codes, we'll know whether the fix is an explicit `signOut` cookie-cleanup wrapper, a NextAuth `cookies.state.maxAge` bump, a CSRF-cookie sweep, or something else.
+
 ## [2.19.35] - 2026-06-12
 
 ### Changed — homepage "Crear nuevo" auto-extracts a phone from the search query
