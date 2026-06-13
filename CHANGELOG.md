@@ -2,6 +2,76 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.36] - 2026-06-12
+
+### Added — server-side diagnostic logging on the `/auth-error` page
+- User reported intermittent *"Ocurrió un error inesperado"* on the account-switch flow (logout one Google account → login with another) in both staging and prod. The error page is intentionally vague (it doubles as the blocked-adopter wall — see `src/app/auth-error/page.tsx:9-12`), which hides the actual NextAuth error reason from us too. Hypothesis: stale OAuth state cookie or CSRF token mismatch on the second sign-in, but we can't confirm without seeing the error code.
+- Added a server-side `logger.warn('auth-error page hit', …)` on every render. Captures NextAuth's `?error=` query param (`OAuthCallbackError` / `Configuration` / `Verification` / `AccessDenied` / `Default`), the optional `?code=` for sub-classifications, plus `cf-ray`, `user-agent`, and `referer` so a single failed attempt can be cross-referenced with the NextAuth core handler logs that produced it. Doesn't change anything the user sees — the deception for blocked adopters stays intact.
+- `AccessDenied` (blocked-adopter path) is already audited via `recordBlockedLogin`, but we log it here too so a single Axiom query (`auth-error page hit`) covers every landing on this page. Filtering by `error != 'AccessDenied'` then surfaces just the OAuth / config failures we're after.
+- Wrapped in a `try/catch` that swallows any headers/logger failure so the page always renders the same shell even if the diagnostic itself errors.
+
+### Activation
+- Trigger a few sign-out → sign-in-with-different-account flows on staging or prod over the next few days. Each failed attempt that lands on `/auth-error` will emit a single Axiom warn line. Once we have a sample of error codes, we'll know whether the fix is an explicit `signOut` cookie-cleanup wrapper, a NextAuth `cookies.state.maxAge` bump, a CSRF-cookie sweep, or something else.
+
+## [2.19.35] - 2026-06-12
+
+### Changed — homepage "Crear nuevo" auto-extracts a phone from the search query
+- Search for *"Susana 11-2345-6789"*, get no results, click "Crear nuevo adoptante" → the form used to receive the WHOLE raw query as `?name=…`, so `Susana 11-2345-6789` landed in the name field and the rescuer had to manually move the phone digits into a contact-entry. Combined with v2.19.32's pre-opened phone composer, the rescuer was staring at two places to put the same number.
+- Now `SearchSection.handleCreateNew` tokenizes the query before the redirect. A phone-shaped substring (≥6 digits after stripping separators, not a placeholder) is split out into a `?phone=` URL param; the remaining text becomes `?name=`. The form reads `?phone=`, seeds a confirmed phone contact-entry chip on mount, and (because there's now an entry) keeps the composer collapsed. The rescuer sees `[Susana] [📱 11-2345-6789] [+ Agregar contacto]` and one click on Save persists it.
+- **Phone-vs-address disambiguation is free.** The regex `\+?[\d][\d\s\-\.\(\)]{5,}\d` requires ≥6 digits to match; address door numbers like "Av Corrientes 3444" (4 digits) don't trigger. Placeholder filter (`isPlaceholderPhone`) is the same one the search engine already uses to reject `0000000` / `1234567` / etc., so prefill posture stays consistent with what the engine considers a real phone.
+- The phone goes through as the **original formatted substring** (`"11-2345-6789"`), not the digits-only normalized form (`"1123456789"`), so the chip in the form mirrors what the rescuer typed. The tokenizer normalises internally on save.
+
+### Engineering
+- `src/components/SearchSection.tsx` — `handleCreateNew`: regex-extract a phone substring, strip it from the name, build URL with `URLSearchParams` so both keys URI-encode cleanly. New import `isPlaceholderPhone` from `@/lib/tokenizer`.
+- `src/components/AdopterForm.tsx` — `contactEntries` `useState` initializer extended with a fallback branch: `if (isNew && phoneFromUrl) return [{ id, type: 'phone', value: phoneFromUrl }]`. Falls through legacy paths (initial data, formPrefill blob) unchanged. New `phoneFromUrl = searchParams.get('phone')` reader alongside the existing `nameFromUrl`.
+
+### Trade-offs flagged
+- **False-positive edge case**: a query like `"Corrientes 3444 5678"` (no real phone, two short numbers near each other) would capture `"3444 5678"` (8 digits when concatenated) as a phone chip. Rescuer deletes the chip if it was wrong. Live with it; the alternative (requiring a "tel:" keyword) hurts the common case where rescuers just paste a name + phone.
+- **Email / DNI / Instagram handle extraction is out of scope.** Same primitive (`extractEmails`, `extractIds`, `extractSocials`) would let us widen this later — same pattern, more URL params. Not adding now because the user asked specifically about phone.
+
+### Net win
+- Collapses the "search → no results → add them" path from ~6 clicks (search → no results → click create → click into name → click into composer trigger → pick phone → type phone) down to ~2 (search → click create → hit Save). The two pieces — v2.19.32's pre-opened composer and this prefill — reinforce each other on the same flow.
+
+## [2.19.34] - 2026-06-11
+
+### Fixed — second wave of test breakage from v2.19.32's pre-opened composer
+- v2.19.33 fixed the `ce-add-trigger` hang but uncovered a second collision: three other specs in `adopter.spec.ts` use `getByRole('button', { name: /save|guardar|create|crear/i })` to click the form's main submit button. With the composer now pre-opened, there's also a "Guardar" button rendered inside it (`ce-composer-submit`) with the same accessible name — strict-mode violation, every spec that reaches a save fails.
+- Fix: add `data-testid="adopter-form-submit"` to the form's main submit button in `AdopterForm`, switch the three call sites to `getByTestId('adopter-form-submit')`. The testid is stable across locales, doesn't depend on heuristic matching, and won't collide with the composer surface or any future button labeled "Save / Guardar".
+
+### Engineering
+- `src/components/AdopterForm.tsx` — `data-testid="adopter-form-submit"` on the form's `<button type="submit">`.
+- `tests/adopter.spec.ts` — three `getByRole('button', { name: /save|guardar|create|crear/i })` call sites replaced with `getByTestId('adopter-form-submit')`.
+
+### Known (unrelated) failure
+- `tests/mobile.spec.ts:13` (`Homepage search is usable at mobile width`) failed in the same v2.19.33 run, but the locator that failed (`a[href*="/adopter/"]` after searching "María") is on the homepage discovery surface — nothing v2.19.32/33 touched. Likely a pre-existing flake masked by other failures; will investigate if it persists in v2.19.34.
+
+## [2.19.33] - 2026-06-11
+
+### Fixed — v2.19.32 staging deploy was skipped because E2E timed out
+- The pre-opened composer in v2.19.32 broke two `tests/adopter.spec.ts` specs that begin by clicking `ce-add-trigger`. With the composer pre-opening in `'editing'` stage on a fresh form, the trigger button isn't rendered initially — Playwright hangs forever waiting for it, and the entire `e2e` job hits its 15-min timeout. Since the deploy job is gated on `e2e` passing, staging stayed on v2.19.31.
+- Per the `grep_tests_before_deletion` memory, this is exactly the failure mode that rule was written to prevent. I missed it.
+- Fix:
+  - **First test** (`Contact entries — composer in local mode persists on save`): the first entry now uses the pre-opened path (skip `ce-add-trigger` + `ce-type-phone`, just fill the input and submit). The second entry keeps the original `ce-add-trigger → ce-type-email → fill → submit` flow since after the first save the composer collapses back to `'closed'`.
+  - **Second test** (`Composer three-stage flow — change-type discards`): cancel the pre-opened composer first to put it back in `'closed'`, then proceed with the existing trigger flow that this spec is actually testing.
+  - Added `data-testid="ce-composer-cancel"` to the Cancel button in `ContactEntriesSection`'s `'editing'` stage so the test can target it robustly.
+
+### Engineering
+- `tests/adopter.spec.ts` — two test bodies updated as above.
+- `src/components/ContactEntriesSection.tsx` — added `data-testid="ce-composer-cancel"` to the Cancel button.
+
+## [2.19.32] - 2026-06-11
+
+### Changed — new-adopter form pre-opens the composer with the phone input ready
+- On the manual "load an adopter" form, the contact-entries composer started at `'closed'` — meaning the rescuer had to click "+ Agregar contacto" → pick "Teléfono" → land on the input before they could type the first phone. A three-step ritual to do the one thing they always do first. Now, when the form is in local mode (new-adopter creation) AND no entries exist yet, the composer is pre-opened in `'editing'` stage with `composerType='phone'`. The input already has `autoFocus`, so the cursor lands directly in the phone field on first paint and the rescuer just types the number.
+- Scoped tightly:
+  - Only fires for **local mode** (the new-adopter creation flow, identified by the presence of an `onChange` prop). Existing-record views never pre-open — we don't want to surprise an editor with an unsolicited input on a profile they're just viewing.
+  - Only fires when **`entries.length === 0`** at mount. If the form has any existing entries (e.g., user navigated back to the form after a save), the composer stays closed.
+  - After Save or Cancel the composer collapses back to the trigger button, so adding a **second** entry still goes through the type-picker — where the choice actually matters (phone vs email vs address vs social).
+- The `composerStage` state is initialized via a lazy `useState(() => ...)` initializer so the decision is mount-time only — subsequent renders don't re-evaluate the condition. The empty-state hint text ("Aún no hay datos de contacto") is now suppressed on first paint of the new form (because `composerStage` is `'editing'`, not `'closed'`), which is correct — having both the hint AND an open input is redundant.
+
+### Engineering
+- `src/components/ContactEntriesSection.tsx`: `composerStage` `useState` initializer changed from `'closed'` to `() => isLocalMode && entries.length === 0 ? 'editing' : 'closed'`.
+
 ## [2.19.31] - 2026-06-10
 
 ### Fixed — Clarity sessions weren't being tagged with user identity

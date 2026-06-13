@@ -240,6 +240,12 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
 
     // Name can come from URL when coming from homepage search or Adoption/Report wizard
     const nameFromUrl = searchParams.get('name')?.trim() || '';
+    // v2.19.35: phone can come from URL when the homepage search tokenized a
+    // mixed query like "Susana 11-2345-6789" — see SearchSection.handleCreateNew.
+    // Captured as a contact-entry chip below, NOT shoved into data.contactInfo
+    // (the form's source of truth for entries is `contactEntries`, and the
+    // contactInfo blob is regenerated from it on every state update).
+    const phoneFromUrl = searchParams.get('phone')?.trim() || '';
     const [data, setData] = useState({
         id: initialData?.id || '',
         name: initialData?.name || formPrefill?.name || nameFromUrl || '',
@@ -253,11 +259,22 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     // back to a best-effort parse of the legacy contactInfo blob so editing an
     // old (un-migrated) record still shows typed chips. data.contactInfo is
     // kept in sync as the derived blob for the existing read sites below.
-    const [contactEntries, setContactEntries] = useState<ContactEntry[]>(() =>
-        initialData?.contactEntries
-            ? deserializeContactEntries(initialData.contactEntries)
-            : parseBlobToContactEntries(initialData?.contactInfo || formPrefill?.contactInfo || ''),
-    );
+    //
+    // v2.19.35: when no `initialData` and no `formPrefill` blob exist but the
+    // URL carries a `phone=` param (from SearchSection's tokenized "create
+    // new" flow), seed a single phone entry. Falls through to the legacy blob
+    // parse otherwise. The `id` is generated here so the chip is stable
+    // across re-renders without relying on deserializeContactEntries to
+    // backfill it.
+    const [contactEntries, setContactEntries] = useState<ContactEntry[]>(() => {
+        if (initialData?.contactEntries) return deserializeContactEntries(initialData.contactEntries);
+        const blob = initialData?.contactInfo || formPrefill?.contactInfo || '';
+        if (blob) return parseBlobToContactEntries(blob);
+        if (isNew && phoneFromUrl) {
+            return [{ id: crypto.randomUUID(), type: 'phone', value: phoneFromUrl }];
+        }
+        return [];
+    });
     // Sync read-mode state from `initialData` when the prop reference changes.
     // The two useState initializers above run ONCE on mount, so without this
     // effect a `router.refresh()` triggered elsewhere — e.g. PiiVerifyPopover
@@ -721,6 +738,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                             <button
                                                 type="submit"
                                                 disabled={loading}
+                                                data-testid="adopter-form-submit"
                                                 className="px-4 py-1.5 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 focus:ring-4 focus:ring-teal-200 disabled:opacity-70 disabled:cursor-not-allowed transition-all shadow-lg shadow-teal-700/30 transform active:scale-95"
                                             >
                                                 {loading ? t('common.loading') : t('common.save')}

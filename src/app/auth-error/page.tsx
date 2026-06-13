@@ -1,5 +1,7 @@
 export const runtime = 'edge';
 import AuthErrorReportForm from '@/components/AuthErrorReportForm';
+import { logger } from '@/lib/logger';
+import { headers } from 'next/headers';
 
 /**
  * Generic auth-error page. NextAuth redirects here whenever the signIn
@@ -15,8 +17,39 @@ import AuthErrorReportForm from '@/components/AuthErrorReportForm';
  * `error_reports` table and surface on /admin/blocked-logins so the
  * operator can see what blocked users said. Adding the form also makes the
  * deception more credible — real apps have error-report flows.
+ *
+ * v2.19.36: server-side diagnostic logging of NextAuth's `?error=` query
+ * param. Doesn't change anything the user sees; surfaces the actual error
+ * code (OAuthCallbackError / Configuration / Verification / AccessDenied /
+ * etc.) in Axiom so we can debug intermittent account-switch failures
+ * without exposing the reason to the user. `AccessDenied` is the
+ * blocked-adopter path and is already audited via `recordBlockedLogin` —
+ * still logged here too so a single Axiom query catches every landing on
+ * this page. Includes the cf-ray header so a single failed attempt can be
+ * cross-referenced with the NextAuth core handler logs that produced it.
  */
-export default function AuthErrorPage() {
+export default async function AuthErrorPage({
+    searchParams,
+}: {
+    searchParams: Promise<{ error?: string; code?: string }>;
+}) {
+    const { error, code } = await searchParams;
+    try {
+        const h = await headers();
+        logger.warn('auth-error page hit', {
+            // The NextAuth v5 error code: 'OAuthCallbackError', 'Configuration',
+            // 'Verification', 'AccessDenied', 'Default', etc. Null when the
+            // user landed here without a NextAuth redirect.
+            error: error ?? null,
+            code: code ?? null,
+            cfRay: h.get('cf-ray') ?? null,
+            userAgent: h.get('user-agent')?.slice(0, 200) ?? null,
+            referer: h.get('referer') ?? null,
+        });
+    } catch {
+        // Headers / logger unavailable — page still renders. Diagnostic only.
+    }
+
     return (
         <main className="min-h-screen bg-stone-50 flex items-center justify-center px-4 py-8">
             <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-stone-200 p-8 text-center">

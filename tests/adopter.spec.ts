@@ -59,7 +59,12 @@ test.describe('Adopter Profile', () => {
         await page.getByPlaceholder(/name|nombre/i).fill(uniqueName);
 
         // Submit the form
-        await page.getByRole('button', { name: /save|guardar|create|crear/i }).click();
+        // v2.19.34: target the form's main submit button by testid.
+        // Until v2.19.32 a `name: /save|guardar/i` role match was unique,
+        // but the pre-opened composer now also renders a "Guardar" button
+        // (`ce-composer-submit`) with the same accessible name, so the
+        // role+name match is strict-mode-violating.
+        await page.getByTestId('adopter-form-submit').click();
 
         // Handle duplicate detection modal if it appears
         // Wait up to 3s for it to appear; if it doesn't, assume no duplicates were found.
@@ -91,16 +96,17 @@ test.describe('Adopter Profile', () => {
 
         await page.getByPlaceholder(/name|nombre/i).fill(uniqueName);
 
-        // Open the composer. v2.18.4 redesign: clicking the trigger lands
-        // in the "pick-type" stage (no input visible yet); the user must
-        // explicitly choose a type before the input panel appears. So each
-        // add now requires `ce-add-trigger` → `ce-type-<type>` → fill.
-        await page.getByTestId('ce-add-trigger').click();
-        await page.getByTestId('ce-type-phone').click();
+        // v2.19.32: on a fresh new-adopter form (local mode, zero entries)
+        // the composer pre-opens directly in the 'editing' stage with
+        // type='phone' — skipping the trigger + pick-type clicks. So the
+        // FIRST entry skips `ce-add-trigger` and `ce-type-phone`; we just
+        // fill the input that already has focus on first paint.
         await page.locator('input[placeholder*="2345-6789"], input[placeholder*="+54"]').first().fill('11 2345-6789');
         await page.getByTestId('ce-composer-submit').click();
 
-        // Open the composer again for an email entry.
+        // After save, the composer collapses to 'closed' — the trigger
+        // reappears, and adding the SECOND entry goes through the full
+        // ce-add-trigger → ce-type-<type> → fill flow as before.
         await page.getByTestId('ce-add-trigger').click();
         await page.getByTestId('ce-type-email').click();
         await page.locator('input[placeholder*="@example.com"], input[placeholder*="name@"]').first().fill('juan.contacto@example.com');
@@ -110,7 +116,12 @@ test.describe('Adopter Profile', () => {
         const chips = page.getByTestId('ce-chip');
         await expect(chips).toHaveCount(2, { timeout: 10000 });
 
-        await page.getByRole('button', { name: /save|guardar|create|crear/i }).click();
+        // v2.19.34: target the form's main submit button by testid.
+        // Until v2.19.32 a `name: /save|guardar/i` role match was unique,
+        // but the pre-opened composer now also renders a "Guardar" button
+        // (`ce-composer-submit`) with the same accessible name, so the
+        // role+name match is strict-mode-violating.
+        await page.getByTestId('adopter-form-submit').click();
         const createAnywayBtn = page.getByRole('button', { name: /Create new profile anyway|Crear perfil nuevo/i });
         try {
             await createAnywayBtn.waitFor({ state: 'visible', timeout: 3000 });
@@ -139,6 +150,13 @@ test.describe('Adopter Profile', () => {
 
         await page.getByPlaceholder(/name|nombre/i).fill(uniqueName);
 
+        // v2.19.32: composer pre-opens in 'editing' stage with phone
+        // type on a fresh form. Cancel it to put the composer back into
+        // the 'closed' state so the test can exercise the original
+        // trigger → pick-type → editing path that's the focus of this
+        // spec (change-type discard behaviour).
+        await page.getByTestId('ce-composer-cancel').click();
+
         await page.getByTestId('ce-add-trigger').click();
         // Pick-type stage: no input visible yet. The Save submit button
         // shouldn't render either — guard against it for regression sake.
@@ -160,7 +178,12 @@ test.describe('Adopter Profile', () => {
         await expect(chips).toHaveCount(1, { timeout: 10000 });
 
         // Save the adopter end-to-end to confirm the entry persists.
-        await page.getByRole('button', { name: /save|guardar|create|crear/i }).click();
+        // v2.19.34: target the form's main submit button by testid.
+        // Until v2.19.32 a `name: /save|guardar/i` role match was unique,
+        // but the pre-opened composer now also renders a "Guardar" button
+        // (`ce-composer-submit`) with the same accessible name, so the
+        // role+name match is strict-mode-violating.
+        await page.getByTestId('adopter-form-submit').click();
         const createAnywayBtn = page.getByRole('button', { name: /Create new profile anyway|Crear perfil nuevo/i });
         try {
             await createAnywayBtn.waitFor({ state: 'visible', timeout: 3000 });
