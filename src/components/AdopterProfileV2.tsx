@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
 import { useRouter, useSearchParams } from 'next/navigation';
 import TransferOwnershipModal from '@/components/TransferOwnershipModal';
@@ -163,6 +163,57 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             setDeleteLoading(false);
         }
     };
+
+    // v2.19.37: when the profile is opened from a search result with a `?q=`
+    // term, scroll the matched activity into view + flash it briefly so the
+    // user lands on the part of the record their query actually matched.
+    // Skipped when the query matches the adopter's NAME (the name renders at
+    // the top — already on-screen); skipped when nothing matches in the
+    // activity list (the user can still read the profile normally).
+    // Field set mirrors what `runDiscoveryMode` indexes for activities so the
+    // scroll-target prediction matches the search engine's own match logic.
+    const q = searchParams.get('q')?.trim() || '';
+    useEffect(() => {
+        if (!q || !adoptions?.length) return;
+        const normalize = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+        const needle = normalize(q);
+        if (!needle) return;
+        // If the adopter name already contains the term, the user sees the
+        // match at the top of the page — no scroll needed (would be jarring).
+        if (adopter?.name && normalize(adopter.name).includes(needle)) return;
+
+        const matched = adoptions.find(a => {
+            const haystack = [
+                a.animalName, a.details, a.comments, a.age, a.color, a.sex,
+                a.microchip, a.verifiedAddress, a.species,
+            ].filter(Boolean).map(v => normalize(String(v))).join(' ');
+            return haystack.includes(needle);
+        });
+        if (!matched) return;
+
+        // Defer a tick so the CollapsibleSection has rendered its open state
+        // and getElementById can find the activity card. The 300ms delay is
+        // generous — image lazy-loading inside the card might still be in
+        // flight, but the outer container's geometry is settled.
+        const t = setTimeout(() => {
+            const el = document.getElementById(`adoption-${matched.id}`);
+            if (!el) return;
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // Brief accent-ring flash so the eye lands on the matched card
+            // even after scroll. Uses --accent so both themes get a tinted
+            // ring, not a raw colour. Cleared 2s in so the card returns to
+            // its normal resting state.
+            el.style.transition = 'box-shadow 0.3s ease-out';
+            el.style.boxShadow = '0 0 0 3px var(--accent)';
+            const fade = setTimeout(() => {
+                el.style.boxShadow = '';
+                const clear = setTimeout(() => { el.style.transition = ''; }, 400);
+                return () => clearTimeout(clear);
+            }, 1800);
+            return () => clearTimeout(fade);
+        }, 300);
+        return () => clearTimeout(t);
+    }, [q, adoptions, adopter?.name]);
 
     const ref = searchParams.get('ref');
     const backHref = ref === 'my-adopters' ? '/my-adopters' : '/';

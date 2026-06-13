@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.37] - 2026-06-13
+
+### Added — open-from-search auto-scrolls to the matched activity
+- Clicking a search result that matched **content inside an activity** (not the adopter name) used to leave the rescuer at the top of the profile with no signal where their term lived. They had to scan or Ctrl+F. The URL already carries the term in `?q=`, so the page knows the needle — just wasn't acting on it.
+- Now, on mount, if `?q=` is present AND the term doesn't already appear in the adopter's name (in which case it's already on-screen at the top), the page searches across each activity's text fields (`animalName`, `details`, `comments`, `age`, `color`, `sex`, `microchip`, `verifiedAddress`, `species`) for the first one containing the term, then `scrollIntoView({behavior:'smooth', block:'center'})` on the activity card and flashes a brief accent-color ring around it for ~2 seconds so the eye lands on the right place even after scroll.
+- Comparison is accent-folded + lowercased (`'NFD'` + combining-mark strip), so "maria" matches "María" and "Maria" alike — same normalisation the search engine uses.
+
+### Engineering
+- `src/components/AdopterProfileV2.tsx`: new `useEffect` reading `searchParams.get('q')`, scanning the adoptions prop, and applying transient inline `box-shadow: 0 0 0 3px var(--accent)` to the matched element. Uses `var(--accent)` not a hardcoded teal so the flash works under both `claro` and `azul-noche` themes (per memory `feedback_themed_colors_only`). All timers are cleaned up in the effect's return.
+- The activity DOM ids `#adoption-${id}` are already rendered by `AdoptionHistory.tsx:230,294` — no UI markup changes needed, just consumes existing anchors.
+
+### Behavior notes
+- Match against the adopter's name → no scroll (the name renders at the top, scrolling away would be jarring).
+- Match against multiple activities → scrolls to the first one (typically the most recent given the timeline ordering).
+- No match in activities → no scroll, no flash (the profile renders normally; the user can still read the page).
+- 300ms delay before scroll so `CollapsibleSection`'s default-open state has settled and `getElementById` resolves.
+
 ## [2.19.36] - 2026-06-12
 
 ### Added — server-side diagnostic logging on the `/auth-error` page
