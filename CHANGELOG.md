@@ -2,6 +2,32 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.50] - 2026-06-19
+
+### Fixed — `/api/notifications` returned 500 to unauthenticated requests (should be 401)
+- A senior-QA smoke pass found the route in `src/app/api/notifications/route.ts` was returning HTTP 500 (`Internal Server Error`, no body) for any request without a valid session — including the 25s `NotificationBell` polls fired the moment a session expires. Should have been 401.
+- **Root cause**: `getUser()` in `src/app/actions/_db.ts:16-26` doesn't return a sentinel for unauthenticated viewers — it **throws** `Error('Authentication required')`. The route was reading the return value (`const user = await getUser()`) and then checking `if (!user || user === 'anonymous')` — but that branch is dead code; `getUser()` never reaches it. The throw escaped the route, Next caught it at the framework level, returned 500 with nothing useful for triage.
+- **Fix**: wrap `getUser()` in `try/catch` inside the route. Catch returns the proper 401. Same fix on both GET and PATCH handlers. Other API routes don't call `getUser()` directly (they go through server actions that have their own catches), so the bug was contained to this one file.
+- **User-facing impact**: bell breakage when a session expired, with no error visible. Now the route correctly returns 401 and the bell's existing silent-on-401 path takes over.
+
+### Cleaned — orphan rows in FK-referencing tables
+- Same QA pass found 4 rows in `adoptions` and 2 rows in `adopter_stats` referencing adopter IDs that no longer exist (likely from an early hard delete that didn't cascade — the schema doesn't enforce FK cascades on these tables, so orphans accumulate silently). Doesn't crash anything but inflates stats counts and confuses debugging.
+- New migration `drizzle/0049_cleanup_orphan_refs.sql` sweeps **all** FK-referencing tables (`adoptions`, `adopter_stats`, `adopter_history`, `duplicate_tokens`, `pii_access_requests`, `pii_access_grants`, `duplicate_candidates`) for rows whose `adopter_id` doesn't resolve. Idempotent — every DELETE gates on `NOT EXISTS`.
+
+### Flagged — not fixed in this release (need policy decision)
+
+A senior-QA finding during the same session: **a one-time contributor becomes a permanent `isEditor` for the record they contributed to, which makes them `privileged` in the PII gate** (`src/lib/piiAccess.ts:444`). They then bypass all contact masking and see the full "Who has access" disclosure including other users' search-match unlock details. Verified live: `jurfalino@gmail.com` had 4 `contribution` rows + 1 `edit` row in `adopter_history` for an unrelated record (`168533dc-…`) and saw everything as if they were the owner.
+
+This is the documented collaborative-vetting model (adds are open, contributing is encouraged) — but the **"contributing forever earns full PII visibility"** semantic is stronger than most contributors realize. Two paths:
+- Keep as-is, surface the implication more clearly in the contribution flow.
+- Drop `isEditor` from the `privileged` OR-chain in `resolveVisibility`. Contributors still get entry-scope grants for the entries they themselves added; they don't get all-contact view or the disclosure.
+
+Deferred until the policy call is made. The QA report tagged this as a discussion item, not a bug.
+
+### Other QA findings still open (not in this release)
+- **Security headers gap**: `Content-Security-Policy`, `Strict-Transport-Security`, `Permissions-Policy` from `next.config.ts` are not applied in production — `next-on-pages` doesn't honor the Next `headers()` config the way Vercel does. Needs a `public/_headers` file. Bigger change, deserves a dedicated PR.
+- 1 pending PII access request awaiting triage in `pii_access_requests`. Admin action only.
+
 ## [2.19.49] - 2026-06-19
 
 ### Fixed — visibility microcopy was being shown to non-privileged viewers

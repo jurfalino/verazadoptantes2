@@ -15,7 +15,17 @@ import {
  *   ?page=1&filter=all&type=contract_result — paginated view for the full page
  */
 export async function GET(request: Request) {
-    const user = await getUser();
+    // v2.19.50: getUser() THROWS when unauthenticated (it doesn't return a
+    // sentinel — see src/app/actions/_db.ts:25). Without this try/catch, the
+    // error escapes the route, Next returns 500 with no body / no Axiom log.
+    // NotificationBell polls every 25s; an expired session would silently
+    // crash the bell. Treat the throw as the explicit unauth signal.
+    let user: string;
+    try {
+        user = await getUser();
+    } catch {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     if (!user || user === 'anonymous') {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -54,7 +64,17 @@ export async function GET(request: Request) {
  * Body: { id: string } | { markAllRead: true } | { dismiss: string } | { dismissAll: true }
  */
 export async function PATCH(request: Request) {
-    const user = await getUser();
+    // v2.19.50: getUser() THROWS when unauthenticated (it doesn't return a
+    // sentinel — see src/app/actions/_db.ts:25). Without this try/catch, the
+    // error escapes the route, Next returns 500 with no body / no Axiom log.
+    // NotificationBell polls every 25s; an expired session would silently
+    // crash the bell. Treat the throw as the explicit unauth signal.
+    let user: string;
+    try {
+        user = await getUser();
+    } catch {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     if (!user || user === 'anonymous') {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
