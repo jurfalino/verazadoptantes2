@@ -508,32 +508,45 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
     //   - every entry in the list is per-entry-public (legacy FB-imports
     //     before per-record consent existed — their effective visibility is
     //     public, even though the record-level flag is 0).
-    // This keeps the UI honest for legacy data without a migration. v2.19.46's
-    // per-chip "Público" badge and the three-state microcopy are gone — they
-    // exposed a distinction the user can't act on and that the new ImportWizard
-    // consent toggle now eliminates at the source for new records.
     const profileEffectivelyPublic = adopterIsPublic
         || (sorted.length > 0 && sorted.every(e => e.isPublic === true));
+    // v2.19.49: the microcopy ("Solo visible para vos y tus organizaciones")
+    // is addressed to the owner / privileged viewer — the "you" in the copy
+    // is them. Showing it to a stranger viewing the masked profile is
+    // confusing: they see masked data + copy claiming "only you can see
+    // this," and the "you" doesn't refer to them.
+    // The cleanest signal we already have: `onMaskedClick` is passed by
+    // `AdopterForm` ONLY when the viewer is non-privileged (it opens the
+    // verify popover when they tap a masked chip). Its absence means the
+    // viewer is privileged (owner / editor / admin / moderator / org-mate)
+    // OR we're rendering on the new-adopter form. Either way, the microcopy
+    // is appropriate for them. When it's present, the viewer is the stranger
+    // — hide the line. Public profiles still show the "público" copy
+    // regardless, since that statement is true for any viewer.
+    const viewerIsPrivileged = !onMaskedClick;
+    const showMicrocopy = profileEffectivelyPublic || viewerIsPrivileged;
     const microcopyKey = profileEffectivelyPublic
         ? 'adopter.ce_visibility_profile_public'
         : 'adopter.ce_visibility_microcopy';
 
     return (
         <div className="space-y-3">
-            <p className="flex items-start gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-                {profileEffectivelyPublic ? (
-                    <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
-                        <circle cx="12" cy="12" r="9" />
-                        <path strokeLinecap="round" d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18" />
-                    </svg>
-                ) : (
-                    <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
-                        <rect x="5" y="11" width="14" height="9" rx="2" />
-                        <path strokeLinecap="round" d="M8 11V8a4 4 0 118 0v3" />
-                    </svg>
-                )}
-                <span>{t(microcopyKey as never)}</span>
-            </p>
+            {showMicrocopy && (
+                <p className="flex items-start gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {profileEffectivelyPublic ? (
+                        <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
+                            <circle cx="12" cy="12" r="9" />
+                            <path strokeLinecap="round" d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18" />
+                        </svg>
+                    ) : (
+                        <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
+                            <rect x="5" y="11" width="14" height="9" rx="2" />
+                            <path strokeLinecap="round" d="M8 11V8a4 4 0 118 0v3" />
+                        </svg>
+                    )}
+                    <span>{t(microcopyKey as never)}</span>
+                </p>
+            )}
 
             {/* Inline undo bar shown while a delete is in its 5-second window. */}
             {pendingDeleteId && (

@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.49] - 2026-06-19
+
+### Fixed — visibility microcopy was being shown to non-privileged viewers
+- A stranger viewing a private profile (no org-mate access, no grant) saw the contact entries masked AND the microcopy *"Solo visible para vos y tus organizaciones."* The microcopy is addressed to the **owner** — the "vos" in the copy is them — so showing it to a stranger is doubly broken: (a) the entries aren't visible to that viewer at all, contradicting the literal reading, and (b) the "vos" doesn't refer to the visitor anyway.
+- Fix: gate the microcopy on `viewerIsPrivileged`, derived from `!onMaskedClick`. The `onMaskedClick` prop is passed by `AdopterForm` ONLY when the viewer is non-privileged (it opens the verify popover when they tap a masked chip), so its absence is the cleanest signal we already have for "viewer is owner / editor / admin / moderator / org-mate, or this is the new-adopter form." When the viewer is non-privileged AND the profile is not public, the line is hidden entirely.
+- Public profiles continue to show the *"Este perfil es público y visible para todos."* line regardless of viewer — that statement is true for every visitor.
+
+### Engineering
+- `src/components/ContactEntriesSection.tsx`: new `viewerIsPrivileged = !onMaskedClick` derivation; `showMicrocopy = profileEffectivelyPublic || viewerIsPrivileged`; the existing `<p>` wraps under a `showMicrocopy &&` gate.
+
 ## [2.19.48] - 2026-06-19
 
 ### Fixed — admin UI silently lied about two feature flags; toggle clicks could disable enabled features
