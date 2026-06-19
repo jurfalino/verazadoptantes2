@@ -763,8 +763,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                     // to themselves. Toast instead.
                                     if (previewAsStranger) {
                                         toast.info(
-                                            t('adopter.preview_action_blocked_title'),
-                                            t('adopter.preview_action_blocked_body'),
+                                            t('adopter.preview_simulate_title'),
+                                            t('adopter.preview_request_explainer'),
                                         );
                                         return;
                                     }

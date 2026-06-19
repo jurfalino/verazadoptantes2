@@ -102,7 +102,7 @@ export default function PiiVerifyPopover({
         // either issue them a grant they don't need or, on a typo, leave a
         // misleading audit trail. Toast-and-close instead.
         if (previewMode) {
-            toast.info(t('adopter.preview_action_blocked_title'), t('adopter.preview_action_blocked_body'));
+            toast.info(t('adopter.preview_simulate_title'), t('adopter.preview_verify_explainer'));
             onClose();
             return;
         }

@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.42] - 2026-06-19
+
+### Changed — preview-mode toasts now teach what would actually happen
+- v2.19.41's toast (*"Acción no ejecutada — Estás en vista previa"*) reassured the owner that nothing fired but didn't *explain* what the action would do for a real visitor — which is the whole pedagogical point of preview mode. Split into two action-specific bodies that describe the real-world effect first, then note that nothing happened because the owner is previewing:
+  - **Verify** (typed a guess + hit Verify): *"Si un visitante hiciera esto y adivinara correctamente, solo se le mostraría ese dato. Como estás en vista previa, no se ejecutó ninguna acción."* — teaches the per-field unlock semantics.
+  - **Request access**: *"Si un visitante hiciera esto, te llegaría una notificación para aprobar o denegar su pedido de acceso. Como estás en vista previa, no se envió ninguna solicitud."* — names the approval flow the owner would actually face.
+- Shared title `Vista previa` (was `Acción no ejecutada`). The title's job is "what kind of message is this"; the body's job is teaching.
+
+### Engineering
+- Renamed i18n keys: `preview_action_blocked_title/body` → `preview_simulate_title` + `preview_verify_explainer` + `preview_request_explainer` in both locales. `PiiVerifyPopover.submit()` and `AdopterProfileV2.onRequestAccess` updated to use the action-specific bodies.
+
 ## [2.19.41] - 2026-06-19
 
 ### Fixed — preview-as-stranger: verify + request-access were still firing real server actions
