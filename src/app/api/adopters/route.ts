@@ -443,7 +443,11 @@ export async function POST(request: Request) {
             await db.insert(adoptions).values({
                 id: adoptionId,
                 adopterId: newId,
-                animalName: adoption.animalName || 'Unknown',
+                // v2.19.52: was `|| 'Unknown'` — coerced empty/missing names
+                // to a literal English string regardless of the user's
+                // locale. Now passes through as NULL so downstream renderers
+                // and queries can distinguish "no name" from a real animal.
+                animalName: adoption.animalName?.trim() || null,
                 species: adoption.species || 'other',
                 status: 'completed',
                 rating: adoption.rating || 2,

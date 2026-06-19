@@ -2,6 +2,45 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.52] - 2026-06-19
+
+### Changed — animal name field is just optional now; "unknown" toggle removed everywhere
+
+User feedback: *"in step 2 of the activity creation wizard, when users need to enter the animal name, maybe instead of the 'unknown' toggle we could just make the input field optional?"* Acting as UX manager, ship the simpler model: optional label + null on save + drop every place that special-cases an "unknown" state.
+
+The toggle existed in **five places** (this is what the user caught when my first plan only touched the create wizard):
+
+#### Components
+- **`AdoptionFormWizard.tsx`** (new-activity wizard, step 2): toggle JSX, `unknownAnimal` state, draft-persistence keys, reset call, step-2 validation `unknownAnimal || formData.animalName.trim()`, step-3 review render `formData.animalName || (unknownAnimal ? 'Unknown' : formData.species)`, and the submit payload's `animalName: isRequest ? null : formData.animalName` all updated. New label reads *"Nombre del animal **(opcional)**"*. Submit payload sends `formData.animalName.trim() || null`.
+- **`AdoptionFormEditV2.tsx`** (edit an existing activity record): same toggle, same removal. The state was previously initialized from `!initialData?.animalName` — that branch is gone. Save payload now sends null for empty.
+- **`ImportWizard.tsx`** (FB / Google Contacts / AI-extraction import): a checkbox version of the same toggle in step 3. Auto-set to `true` when AI extraction failed to surface a name; auto-set when a Google Contacts import skipped to step 3. Removed in both places. Save payloads now send `extractedData.animalName?.trim() || undefined` (route does the null coercion).
+
+#### API routes — the actual data bug
+Both `src/app/api/adopters/route.ts:446` and `src/app/api/adopters/[id]/add-record/route.ts:83` coerced any falsy animalName to the **English literal string `'Unknown'`** before writing to D1. This was the underlying problem behind the UX surface: regardless of locale, regardless of whether the user actively chose "unknown" or just left the field blank, the DB ended up with `animal_name = 'Unknown'`. Queries couldn't distinguish "AI missed the name" from "this animal is genuinely named Unknown." Both routes now pass `adoption.animalName?.trim() || null`.
+
+#### Display surfaces — already do the right thing
+- `AdoptionHistory.tsx` activity-row renderer already branches `animalName ? "verbed {name}" : speciesLabel || recordType`. No change.
+- `my-adoptions/page.tsx` and `my-animals/page.tsx` already fall back to `t('adoption.unnamed')` (*"Sin nombre"*). No change.
+- Contract emails fall back to `'Animal'` as a generic — not user-facing copy, leave it.
+
+#### Migration — backfill the literal `'Unknown'` strings
+`drizzle/0050_backfill_unknown_animal_to_null.sql` runs a one-shot `UPDATE adoptions SET animal_name = NULL WHERE animal_name = 'Unknown'`. Idempotent. Normalizes historical inconsistency so every record where the rescuer didn't know the name renders as *"Sin nombre"* via the existing `adoption.unnamed` fallback, not as the locale-incongruent English literal "Unknown." Targets the exact toggle/coercion string only; we do not case-fold or partial-match. A legitimate animal genuinely named "Unknown" (vanishingly unlikely on a Spanish-language registry) would also match — that's collateral we accept.
+
+### Engineering
+- `src/components/AdoptionFormWizard.tsx` — toggle JSX gone, state + setter gone, reset call gone, step-2 validation simplified (`animalName` no longer factored in), step-3 review falls through name → species → `t('adoption.unnamed')`, two submit payloads use `formData.animalName.trim() || null`. `WizardDraft.formData.unknownAnimal: boolean` field kept on the type for backward-compat read of legacy localStorage drafts; written as `false` always.
+- `src/components/AdoptionFormEditV2.tsx` — same removals. Editing a record whose `animalName` is null/empty just shows a blank input; submit normalizes empty to null.
+- `src/components/ImportWizard.tsx` — checkbox in step 3 removed, `unknownAnimal` state removed, auto-set branches in `hydrateFromContact` (Google Contacts skip) and the AI-extraction completion removed, two save payloads (`POST /api/adopters` for new and merge paths) use `?.trim() || undefined`.
+- `src/app/api/adopters/route.ts` + `src/app/api/adopters/[id]/add-record/route.ts` — both literal-`'Unknown'` coercions replaced with `?.trim() || null`.
+- `drizzle/0050_backfill_unknown_animal_to_null.sql` — one-shot UPDATE.
+
+### Memory
+New memory `feedback_check_symmetric_form_surfaces`. User has caught me twice now planning a form/wizard UX change for the create flow only — once on v2.19.40's deliver-to-home foster toggle (already addressed by that release flagging an edit-form parity follow-up), and now on this. The memory codifies the rule: grep for the Edit / Import / api/.../add-record surfaces before stating the plan. Two minutes of grepping saves a six-version follow-up sequence.
+
+### What stays the same
+- `adoption.unknown_animal` i18n key kept in both locales (dead in code but still referenced by activity-history rendering for legacy records that may briefly retain the string before the migration runs).
+- The existing `adoption.unnamed` fallback strings unchanged.
+- `AdoptionHistory.tsx` rendering logic unchanged — already handles null cleanly.
+
 ## [2.19.51] - 2026-06-19
 
 ### Changed — contributor is no longer auto-promoted to privileged; access flows through a request

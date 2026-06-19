@@ -221,7 +221,10 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     const [direction, setDirection] = useState<'forward' | 'back'>('forward');
     const [pendingImages, setPendingImages] = useState<Array<{ data: string; file?: File; isVideo: boolean; thumbnail?: string }>>([]);
     const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
-    const [unknownAnimal, setUnknownAnimal] = useState(() => initialDraft?.unknownAnimal ?? false);
+    // v2.19.52: `unknownAnimal` is gone. Field is optional now; empty save
+    // is a first-class outcome. The WizardDraft.formData type keeps the
+    // `unknownAnimal` field for one release as a backward-compat read
+    // (legacy localStorage drafts won't crash) but we never write it.
     const [customSpecies, setCustomSpecies] = useState(() => initialDraft?.customSpecies ?? false);
     // v2.19.0: when an animalId arrived via URL AND matched our inventory,
     // force mode='existing' so the wizard starts on the dropdown branch with
@@ -298,7 +301,6 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     const resetForm = () => {
         setFormData({ animalId: '', animalName: '', details: '', status: 'completed', rating: 5, comments: '', species: 'cat', adopterId, recordType: 'adoption', date: new Date().toISOString().split('T')[0], adoptionDate: '', deliveredToHome: false, verifiedAddress: '', verifiedStreetAndNumber: '', verifiedLocality: '', identityVerified: false });
         setPendingImages([]);
-        setUnknownAnimal(false);
         setCustomSpecies(false);
         setMode('existing');
         setStep(1);
@@ -311,8 +313,11 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     // on modern hardware); skipping the debounce keeps things simple.
     useEffect(() => {
         if (!isOpen) return;
-        writeDraft(adopterId, { step, mode, unknownAnimal, customSpecies, formData });
-    }, [adopterId, isOpen, step, mode, unknownAnimal, customSpecies, formData]);
+        // v2.19.52: pass `unknownAnimal: false` to keep WizardDraft's type
+        // happy without the runtime concept existing — see the field's
+        // backward-compat note where the type is declared.
+        writeDraft(adopterId, { step, mode, unknownAnimal: false, customSpecies, formData });
+    }, [adopterId, isOpen, step, mode, customSpecies, formData]);
 
     // Body-scroll lock while the modal is open. Without this, the page below
     // scrolls under the dialog when the user scrolls inside the wizard on
@@ -367,7 +372,6 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     useEffect(() => {
         if (isObservation && (formData.animalId || formData.animalName || formData.species)) {
             setFormData(d => ({ ...d, animalId: '', animalName: '', species: '' }));
-            setUnknownAnimal(false);
             setCustomSpecies(false);
         }
     }, [isObservation, formData.animalId, formData.animalName, formData.species]);
@@ -456,7 +460,8 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                 const adoptionLocalDate = parseLocalDate(formData.adoptionDate);
                  
                 await saveAdoption({
-                    animalName: formData.animalName,
+                    // v2.19.52: empty animalName persists as NULL (was 'Unknown').
+                    animalName: formData.animalName.trim() || null,
                     species: formData.species,
                     details: '',
                     status: 'completed',
@@ -486,7 +491,9 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                 date: localDate,
                 // Adoption requests don't reference a specific animal — drop the
                 // name even if some leftover state held one. Species stays.
-                animalName: isRequest ? null : formData.animalName,
+                // v2.19.52: empty/blank → NULL. Requests always null (no
+                // specific animal referenced).
+                animalName: isRequest ? null : (formData.animalName.trim() || null),
                 onBehalfOf: null,
                 deliveredToHome: formData.deliveredToHome ? 1 : 0,
                 verifiedAddress: composedVerifiedAddress || null,
@@ -602,9 +609,11 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
             return true;
         }
 
+        // v2.19.52: animalName is optional now. Species stays required —
+        // it carries the activity's identity when there's no name.
         const isValid = effectiveMode === 'existing'
             ? !!formData.animalId
-            : (unknownAnimal || !!formData.animalName.trim()) && !!formData.species.trim();
+            : !!formData.species.trim();
 
         if (!isValid) {
             toast.warning(t('common.error'), t('adoption.fill_required'));
@@ -779,16 +788,21 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                 <div className={`grid gap-4 ${isRequest ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'}`}>
                                     {!isRequest && (
                                         <div>
-                                            <div className="flex items-center justify-between mb-1.5">
-                                                <label className="block text-xs font-semibold text-teal-800 uppercase tracking-wider">{t('adoption.animal_name')}</label>
-                                                <label className="flex items-center gap-1.5 cursor-pointer text-xs">
-                                                    <span className="text-stone-500">{t('common.unknown')}</span>
-                                                    <button type="button" onClick={() => { setUnknownAnimal(!unknownAnimal); if (!unknownAnimal) setFormData(d => ({ ...d, animalName: '' })); }} className={`relative w-9 h-5 rounded-full transition-colors ${unknownAnimal ? 'bg-amber-500' : 'bg-stone-200'}`}>
-                                                        <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${unknownAnimal ? 'translate-x-4' : 'translate-x-0'}`} />
-                                                    </button>
-                                                </label>
-                                            </div>
-                                            <input required={!unknownAnimal} disabled={unknownAnimal} className={`w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-base md:text-sm ${unknownAnimal ? 'bg-stone-100 text-stone-500 cursor-not-allowed' : 'bg-white'}`} value={unknownAnimal ? '' : formData.animalName} onChange={e => setFormData(d => ({ ...d, animalName: e.target.value }))} placeholder={unknownAnimal ? (t('adoption.unknown_animal')) : t('adoption.animal_placeholder')} />
+                                            <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
+                                                {t('adoption.animal_name')}
+                                                <span className="ml-1 font-normal lowercase text-stone-500">({t('common.optional')})</span>
+                                            </label>
+                                            {/* v2.19.52: the "I don't know the name" toggle is gone. The
+                                                field is just optional now — typing a name or leaving it
+                                                blank are equivalent first-class outcomes. Empty saves as
+                                                NULL (see the submit handler). Same change in
+                                                AdoptionFormEditV2 + ImportWizard. */}
+                                            <input
+                                                className="w-full h-10 px-4 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-base md:text-sm"
+                                                value={formData.animalName}
+                                                onChange={e => setFormData(d => ({ ...d, animalName: e.target.value }))}
+                                                placeholder={t('adoption.animal_placeholder')}
+                                            />
                                         </div>
                                     )}
                                     <div>
@@ -957,7 +971,10 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                     </div>
                                     <div>
                                         <p className="text-sm font-semibold text-stone-800">
-                                            {formData.animalName || (unknownAnimal ? 'Unknown' : formData.species)}
+                                            {/* v2.19.52: review-step display falls through name →
+                                                species → "Sin nombre" instead of the old literal
+                                                'Unknown' / `unknownAnimal` branch. */}
+                                            {formData.animalName.trim() || formData.species.trim() || t('adoption.unnamed')}
                                             <span className="mx-2 text-stone-300">|</span>
                                             {formatShortDate(new Date(formData.date))}
                                         </p>

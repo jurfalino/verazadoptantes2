@@ -270,7 +270,9 @@ export default function ImportWizard() {
     const [processedImages, setProcessedImages] = useState<Array<{ data: string; mimeType: string; originalUrl?: string }>>([]);
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [selectedModel, setSelectedModel] = useState<string>('');
-    const [unknownAnimal, setUnknownAnimal] = useState(false);
+    // v2.19.52: `unknownAnimal` state removed alongside the step-3 checkbox.
+    // Empty/missing animalName is now the first-class "no name yet" outcome —
+    // see AdoptionFormWizard for the matching change in the new-activity path.
     const [_customSpecies, setCustomSpecies] = useState(false);
 
     // Save state
@@ -367,7 +369,6 @@ export default function ImportWizard() {
             confidence: 'low',
             adoptionDetected: false,
         });
-        setUnknownAnimal(true);
         setFromContacts(true);
         setStep(3);
     };
@@ -707,7 +708,6 @@ export default function ImportWizard() {
                 }));
             }
             setCustomSpecies(false);
-            setUnknownAnimal(!aiData.animalName);
             if (result.processedImages) {
                 setProcessedImages(result.processedImages);
             }
@@ -854,7 +854,8 @@ export default function ImportWizard() {
                 // skips Steps 1-2 and never asks for an intent.
                 ...(fromContacts ? {} : {
                     adoption: {
-                        animalName: unknownAnimal ? '' : (extractedData.animalName || ''),
+                        // v2.19.52: blank goes through as undefined → API saves NULL.
+                        animalName: extractedData.animalName?.trim() || undefined,
                         species: extractedData.animalSpecies,
                         recordType: extractedData.recordType || 'observation',
                         rating: extractedData.adoptionRating || 2,
@@ -991,7 +992,11 @@ export default function ImportWizard() {
                 notes: extractedData.notes,
                 contactInfo: contactEntriesToBlob(contactEntries) || undefined,
                 adoption: {
-                    animalName: unknownAnimal ? '' : (extractedData.animalName || 'Unknown'),
+                    // v2.19.52: was `|| 'Unknown'` — literal English string
+                    // overwrote empty names with "Unknown" regardless of locale
+                    // and stuffed it into the DB. Blank now passes through as
+                    // undefined → API saves NULL.
+                    animalName: extractedData.animalName?.trim() || undefined,
                     species: extractedData.animalSpecies,
                     recordType: extractedData.recordType || 'observation',
                     rating: extractedData.adoptionRating || 2,
@@ -1608,17 +1613,18 @@ export default function ImportWizard() {
 
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.animalName') || 'Animal Name'}</label>
-                                    <input
-                                        value={unknownAnimal ? '' : (extractedData.animalName || '')}
-                                        onChange={e => setExtractedData({ ...extractedData, animalName: e.target.value })}
-                                        disabled={unknownAnimal}
-                                        className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm disabled:bg-stone-50"
-                                    />
-                                    <label className="flex items-center gap-1 mt-1 text-xs text-stone-500">
-                                        <input type="checkbox" checked={unknownAnimal} onChange={e => setUnknownAnimal(e.target.checked)} />
-                                        {t('import.unknownName') || 'Unknown name'}
+                                    <label className="block text-xs font-medium text-stone-500 mb-1">
+                                        {t('import.animalName') || 'Animal Name'}
+                                        <span className="ml-1 lowercase">({t('common.optional')})</span>
                                     </label>
+                                    {/* v2.19.52: "unknown name" checkbox gone. Field is just
+                                        optional — see AdoptionFormWizard for the full rationale.
+                                        Empty saves as NULL on the API side. */}
+                                    <input
+                                        value={extractedData.animalName || ''}
+                                        onChange={e => setExtractedData({ ...extractedData, animalName: e.target.value })}
+                                        className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm"
+                                    />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.species') || 'Species'}</label>
