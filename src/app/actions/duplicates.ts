@@ -61,11 +61,11 @@ export async function tokenizeAdopter(adopterId: string): Promise<void> {
         await db.update(adopters).set({ tokenHash: newHash }).where(eq(adopters.id, adopterId));
 
     } catch (error) {
-        // Fire-and-forget: log but don't throw
-        logger.warn('Tokenize adopter failed', {
-            adopterId,
-            error: error instanceof Error ? error.message : String(error),
-        });
+        // v2.19.44: tokenize failure is silent data corruption — the
+        // surrounding op succeeded but search/dedup will be wrong until
+        // the next save. logger.error generates an id so an operator can
+        // correlate Axiom entries with user-reported sightings.
+        logger.error('Tokenize adopter failed', error, { adopterId });
     }
 }
 

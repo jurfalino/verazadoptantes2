@@ -160,14 +160,10 @@ export async function addContactEntry(
             // Tokenize awaited so duplicate detection sees the new entry
             // before the response returns (Workers kill fire-and-forget).
             await tokenizeAdopter(adopterId).catch(e => {
-                logger.warn('addContactEntry: tokenize after add failed', {
-                    adopterId, error: e instanceof Error ? e.message : String(e),
-                });
+                logger.error('addContactEntry: tokenize after add failed', e, { adopterId });
             });
             notifyApprovers(adopterId, target.name, actor, type).catch(e => {
-                logger.warn('addContactEntry: notify approvers failed', {
-                    adopterId, actor, error: e instanceof Error ? e.message : String(e),
-                });
+                logger.error('addContactEntry: notify approvers failed', e, { adopterId, actor });
             });
             logAudit({ userEmail: actor, action: 'contact_entry_added', target: adopterId, details: { type } });
         }

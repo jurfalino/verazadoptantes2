@@ -99,37 +99,61 @@ function getEnvironmentInfo(): { env: string; domain?: string; branch?: string; 
     }
 }
 
-// One-time warning per worker boot when Axiom env is missing in a non-local
-// environment. Surfaces in `wrangler tail` so a misconfigured deploy is
-// visible immediately instead of only on the first error a user hits.
-let _axiomMissingWarned = false;
+// v2.19.44: counter of entries dropped to console-only because Axiom isn't
+// configured. Surfaces in every fallback log so a misconfigured deploy can't
+// silently lose observability — the audit found this was the worst-case
+// failure mode (the caller gets a fresh errorId that points to nothing).
+let _axiomDroppedCount = 0;
+// One-time prominent banner per worker boot when Axiom env is missing in a
+// non-local environment. The previous version warned once and then went
+// silent; now every subsequent fallback entry below is also tagged with
+// `🚨 LOGGER_FALLBACK_NOT_IN_AXIOM` so an operator scanning Cloudflare
+// worker logs can't miss it.
+let _axiomMissingBannerEmitted = false;
 
-function warnIfAxiomMissingInProduction(envName: string) {
-    if (_axiomMissingWarned) return;
+function emitAxiomMissingBannerOnce(envName: string) {
+    if (_axiomMissingBannerEmitted) return;
     if (envName === 'local') return;
-    _axiomMissingWarned = true;
-    console.warn(`[Logger] Axiom config missing in env="${envName}" — errors fall back to worker console only. Set AXIOM_DATASET and AXIOM_TOKEN in Cloudflare Pages environment variables.`);
+    _axiomMissingBannerEmitted = true;
+    console.error(
+        `🚨🚨🚨 LOGGER_BOOT_BANNER: AXIOM_DATASET / AXIOM_TOKEN missing in env="${envName}". ` +
+        `Every log line below this point is console-only. Set the secrets in Cloudflare Pages → Settings → Environment Variables, ` +
+        `then redeploy. This banner only fires once per worker boot; individual log lines carry a 🚨 LOGGER_FALLBACK prefix.`,
+    );
 }
 
 // Send log to Axiom (using waitUntil to keep worker alive on Edge)
 async function sendToAxiom(entries: LogEntry[]) {
     const config = getAxiomConfig();
     if (!config.dataset || !config.token) {
-        // Surface the misconfiguration once per worker boot (no-op locally).
+        // v2.19.44: emit the boot banner once + tag every fallback entry with a
+        // prominent prefix. Prior behaviour was a single console.warn at boot —
+        // easy to miss in Cloudflare logs and impossible to correlate against a
+        // specific user-reported errorId. The fallback prefix `🚨 LOGGER_FALLBACK`
+        // (level uppercase) + the structured payload means an operator searching
+        // for an id can find it in Cloudflare's Tail even when Axiom never received it.
         const envName = entries[0]?.env as string | undefined;
-        if (envName) warnIfAxiomMissingInProduction(envName);
-        // Local dev fallback: compact one-liner per entry
+        if (envName) emitAxiomMissingBannerOnce(envName);
+        const isProd = envName && envName !== 'local';
         for (const entry of entries) {
             const { level, message, _time, error: _err, ...rest } = entry;
-            const tag = `[${level.toUpperCase()}]`;
-            // Only show non-empty extra data
             const extras = Object.keys(rest).length > 0 ? rest : undefined;
-            if (level === 'error') {
-                console.error(tag, message, extras ?? '');
-            } else if (level === 'warn') {
-                console.warn(tag, message, extras ?? '');
+            if (isProd) {
+                _axiomDroppedCount++;
+                // Always console.error in non-local fallback so it shows up in
+                // Cloudflare's "error" log tier no matter what severity the
+                // entry originally was. Operator wants to see EVERYTHING that
+                // didn't make it to Axiom, not just the explicit errors.
+                console.error(
+                    `🚨 LOGGER_FALLBACK [${level.toUpperCase()}] (#${_axiomDroppedCount} dropped) ${message}`,
+                    extras ?? '',
+                );
             } else {
-                console.log(tag, message, extras ?? '');
+                // Local dev: keep the friendly multi-level behaviour.
+                const tag = `[${level.toUpperCase()}]`;
+                if (level === 'error') console.error(tag, message, extras ?? '');
+                else if (level === 'warn') console.warn(tag, message, extras ?? '');
+                else console.log(tag, message, extras ?? '');
             }
         }
         return;

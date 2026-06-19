@@ -74,7 +74,7 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
             // response returns (Workers kill fire-and-forget).
             const targetAdopterId2 = data.adopterId || existing.adopterId;
             if (targetAdopterId2 && data.onBehalfOf !== undefined) {
-                await tokenizeAdopter(targetAdopterId2).catch(e => { logger.warn('Tokenize adopter failed', { adopterId: targetAdopterId2, error: e instanceof Error ? e.message : String(e) }); });
+                await tokenizeAdopter(targetAdopterId2).catch(e => { logger.error('Tokenize adopter failed (adoption update)', e, { adopterId: targetAdopterId2 }); });
             }
 
             return { success: true, id: data.id };
@@ -163,7 +163,7 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
             // Re-tokenize adopter if onBehalfOf is set (cross-field name tokens).
             // Awaited — see comment on the update branch above.
             if (data.adopterId && data.onBehalfOf) {
-                await tokenizeAdopter(data.adopterId).catch(e => { logger.warn('Tokenize adopter failed', { adopterId: data.adopterId, error: e instanceof Error ? e.message : String(e) }); });
+                await tokenizeAdopter(data.adopterId).catch(e => { logger.error('Tokenize adopter failed (adoption create)', e, { adopterId: data.adopterId }); });
             }
 
             return { success: true, id };

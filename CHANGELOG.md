@@ -2,6 +2,41 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.44] - 2026-06-19
+
+### Fixed — Axiom observability gaps from the v2.19.43 audit (gaps #1 and #2)
+
+This release ships the two highest-leverage items from the engineering-management audit of error coverage. Estimated coverage jump: ~75% → ~90%.
+
+#### #1 — Missing-Axiom-config is now impossible to miss in Cloudflare logs
+- **Before**: when `AXIOM_DATASET` or `AXIOM_TOKEN` was unset in a non-local env, `sendToAxiom()` warned **once per worker boot** via `console.warn` and then silently fell back to `console.log`/`warn`/`error` per-entry. Callers still received fresh 8-char `errorId`s, but those ids pointed to nothing in Axiom. Operators only spotted the misconfig if they happened to scroll up to the boot warning. **This was the worst-case failure mode** of the whole observability stack.
+- **After**:
+  - **Boot banner** is a `console.error` (was `console.warn`) with `🚨🚨🚨 LOGGER_BOOT_BANNER:` prefix, explicitly naming the two env-var keys + telling the operator where to set them.
+  - **Every individual log entry in the fallback path** is also a `console.error` (was per-level) with `🚨 LOGGER_FALLBACK [LEVEL] (#N dropped) <message>` prefix. So even an operator who missed the boot banner sees a prominent prefix on every dropped log line in Cloudflare Tail, AND a running counter of how many lines have been dropped this worker lifetime.
+  - Local dev keeps the friendly multi-level (`console.log` / `warn` / `error`) behavior — the new prefix is production-non-local only.
+- Net effect: a misconfigured deploy is visible within the FIRST log line in Cloudflare logs, and stays visible on every subsequent line. No silent observability loss.
+
+#### #2 — Fire-and-forget catches: `logger.warn` → `logger.error` for correlatable ids
+- `logger.warn` ships to Axiom but doesn't generate a `errorId`. So every `tokenizeAdopter(...).catch(e => logger.warn(...))` pattern logged the failure but left it un-correlatable — an operator scanning Axiom couldn't tie a specific tokenize failure to a specific request. Worse, tokenize failures are *silent data corruption* (the surrounding op succeeded but search/dedup is now stale until the next save) — exactly the kind of bug that needs a quotable id.
+- Swept across server actions; 10 catch sites converted to `logger.error(message, error, { context })` so each gets an id:
+  - `src/app/actions/adopters.ts`: 4 sites (`logProfileView` fire-and-forget, `tokenizeAdopter` after append/update/create)
+  - `src/app/actions/adoptions.ts`: 2 sites (`tokenizeAdopter` after adoption update/create)
+  - `src/app/actions/addContactEntry.ts`: 2 sites (`tokenizeAdopter` + `notifyApprovers`)
+  - `src/app/actions/removeContactEntry.ts`: 1 site
+  - `src/app/actions/updateContactEntry.ts`: 1 site
+  - `src/app/actions/duplicates.ts`: 1 site (`tokenizeAdopter` internal catch)
+- Also patched **my own v2.19.40 client-side `console.warn`** in `AdoptionFormWizard.tsx:533` (the `appendToExistingAdopter` failure when persisting the delivered-to-home address). Routed through `reportClientError` so it gets a real Axiom id; the main activity record's save already succeeded, so the catch stays non-blocking (no toast, no re-throw) — only the observability changes.
+
+### Engineering
+- `src/lib/logger.ts` — `sendToAxiom` fallback path rewritten; counter + prefixes added.
+- 6 server-action files swept (see list above).
+- `src/components/AdoptionFormWizard.tsx` — `console.warn` → `reportClientError` for the v2.19.40 fire-and-forget.
+
+### Still pending (audit follow-ups)
+- **#3**: getter actions (`getAdopter`, `getAdopterStats`, etc.) return `null` on failure — id exists in Axiom but client can't display it. Plan: return `{ data, errorId? }` shape. Not in this release.
+- **#4**: `toast.error(...)` callsite sweep — ~20 of 115 omit the errorId arg. Per-callsite audit needed.
+- **#5**: `logger.warn` could also generate + ship an id so severity stays advisory but everything is traceable. This release went the other way (warn → error) for the fire-and-forget catches specifically; a broader policy change can come later.
+
 ## [2.19.43] - 2026-06-19
 
 ### Fixed — AdopterForm save errors now (1) don't crash on undefined `res` and (2) always carry an error-id

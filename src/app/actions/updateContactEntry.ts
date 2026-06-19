@@ -129,9 +129,7 @@ export async function updateContactEntry(
         });
 
         await tokenizeAdopter(adopterId).catch(e => {
-            logger.warn('updateContactEntry: tokenize after edit failed', {
-                adopterId, error: e instanceof Error ? e.message : String(e),
-            });
+            logger.error('updateContactEntry: tokenize after edit failed', e, { adopterId });
         });
 
         logAudit({ userEmail: actor, action: 'contact_entry_updated', target: adopterId, details: { entryId, type: updated.type } });

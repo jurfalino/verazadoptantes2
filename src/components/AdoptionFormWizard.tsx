@@ -12,6 +12,7 @@ import RecordTypeGuidance from '@/components/RecordTypeGuidance';
 import { StarRating } from '@/components/StarRating';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
+import { reportClientError } from '@/lib/clientErrorReporter';
 import { MediaLightbox } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 import { formatShortDate } from '@/lib/dates';
@@ -530,7 +531,18 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                         contactEntries: JSON.stringify([newEntry]),
                     });
                 } catch (e) {
-                    console.warn('[wizard] address contact-entry append failed:', e instanceof Error ? e.message : String(e));
+                    // v2.19.44: was console.warn — silent in Axiom. Now goes
+                    // through reportClientError so the contact-entry append
+                    // failure (delivered-to-home address persistence) gets
+                    // an id we can correlate against an Axiom row. The main
+                    // activity record already saved successfully, so this
+                    // stays non-blocking (no toast, no re-throw).
+                    reportClientError({
+                        message: 'AdoptionFormWizard: address contact-entry append failed',
+                        stack: e instanceof Error ? e.stack : undefined,
+                        source: 'AdoptionFormWizard.delivered-to-home append',
+                        extra: { adopterId, recordType: formData.recordType, errorMessage: e instanceof Error ? e.message : String(e) },
+                    }).catch(() => { /* best-effort observability — original save already succeeded */ });
                 }
             }
 
