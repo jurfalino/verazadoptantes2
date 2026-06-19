@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.48] - 2026-06-19
+
+### Fixed — admin UI silently lied about two feature flags; toggle clicks could disable enabled features
+
+User reported that `MINIMALIST_HOMEPAGE` (= `ENABLE_CLEAN_HOMEPAGE`) showed OFF in `/admin/config` but the homepage rendered as if it were ON. Live D1 query against staging confirmed: `ENABLE_CLEAN_HOMEPAGE = 'true'` and `ENABLE_PUBLIC_PROFILES = 'true'` in `app_config`. Both flags actually applied at runtime, but the admin UI showed both as OFF.
+
+**Root cause**: `/api/admin/config` GET handler (`src/app/api/admin/config/route.ts`) hand-enumerates 14 of the 16 feature-flag keys in its response. Both `ENABLE_PUBLIC_PROFILES` and `ENABLE_CLEAN_HOMEPAGE` were declared in the admin UI's expected `data.config` TypeScript shape (`page.tsx:38-39`) and read in its useEffect hydration (`page.tsx:157-158`) but were **never populated** in the API response. The admin UI's `data.config?.ENABLE_CLEAN_HOMEPAGE === 'true'` evaluated to `false`, toggle rendered OFF, even though the DB value was `'true'`.
+
+**Worse — silent state corruption from clicking the toggle**: with the UI showing OFF, the admin click handler (`page.tsx:248`) calls `handleToggleFlag(flag.key, !featureFlags[flag.key])`. With `featureFlags[flag.key] = false`, the POST writes `'true'` to the DB. Reload — UI still shows OFF because GET still omits the key. Click again, "thinking you're enabling," POST writes `'false'`. An admin could silently flip a feature OFF while believing they were enabling it.
+
+**Fix**: two lines added to the GET response — `ENABLE_PUBLIC_PROFILES: config['ENABLE_PUBLIC_PROFILES'] || 'false'` and `ENABLE_CLEAN_HOMEPAGE: config['ENABLE_CLEAN_HOMEPAGE'] || 'false'`. Now the admin UI reflects actual DB state.
+
+### Memory updated
+`feedback_feature_flag_5_place` extended with the "place #2 silently rots when other places get new flags" failure mode + the specific symptom pattern ("admin reports toggle does nothing or UI doesn't match toggle" → step 1 is direct D1 query). Long-term fix flagged: refactor the GET handler to iterate `FEATURE_FLAGS` rather than hand-enumerate, collapsing 3 of the 5 places to one source of truth.
+
+### Out of scope
+- Refactor of the GET handler to derive flags from `FEATURE_FLAGS` automatically — discussed in changelog comment but deferred for risk-management.
+- Orphan flags in DB that no code reads (`ENABLE_AI_EXTRACTION`, `ENABLE_FACEBOOK_IMPORT`, `ENABLE_TRUST_SNAPSHOT`, `ENABLE_VISIT_INTENT_PROMPT`) — left untouched.
+- The user's report of `ENABLE_GOOGLE_CONTACTS_IMPORT` showing off in admin while the homepage button rendered: the API does return that flag and the DB value is `'true'`. Most likely cache; if it persists after this deploy, please flag a fresh repro.
+
 ## [2.19.47] - 2026-06-19
 
 ### Changed — visibility shown at profile level only + import-time consent toggle

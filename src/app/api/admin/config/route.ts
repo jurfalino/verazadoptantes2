@@ -53,6 +53,20 @@ export async function GET() {
             ENABLE_QUICK_ACCESS_STRIP: config['ENABLE_QUICK_ACCESS_STRIP'] || 'true',
             ENABLE_CONTACT_PASTE: config['ENABLE_CONTACT_PASTE'] || 'true',
             ENABLE_PII_ACCESS_GATING: config['ENABLE_PII_ACCESS_GATING'] || 'false',
+            // v2.19.48: ENABLE_PUBLIC_PROFILES and ENABLE_CLEAN_HOMEPAGE were
+            // declared in the admin UI's expected `data.config` shape and in its
+            // useState initializer (`src/app/admin/config/page.tsx:38-39, 99-100`)
+            // but were never populated in this GET response. The admin UI then
+            // hydrated both flags as `undefined === 'true'` → false, so the
+            // toggles always rendered OFF regardless of the actual DB state.
+            // Worse, the POST handler from that toggle then sent `true` (because
+            // `!false` = `true`) on first click, then `false` on next click —
+            // admins could silently flip a feature off while believing they were
+            // enabling it. Added here. The four-place duplication noted below is
+            // still a wart — long-term, the API should iterate `FEATURE_FLAGS`
+            // and echo every key automatically. Out of scope for this patch.
+            ENABLE_PUBLIC_PROFILES: config['ENABLE_PUBLIC_PROFILES'] || 'false',
+            ENABLE_CLEAN_HOMEPAGE: config['ENABLE_CLEAN_HOMEPAGE'] || 'false',
             ENABLE_CONTACT_IMPORT: config['ENABLE_CONTACT_IMPORT'] || 'false',
             ENABLE_GOOGLE_CONTACTS_IMPORT: config['ENABLE_GOOGLE_CONTACTS_IMPORT'] || 'false',
             // v2.16.0-41: admin-overridable Gemini model. Empty string means
