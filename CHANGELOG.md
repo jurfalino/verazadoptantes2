@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.39] - 2026-06-18
+
+### Fixed — preview-as-stranger: clicking a masked chip didn't open the verify popover
+- In v2.19.38, toggling preview-as-stranger correctly re-rendered the contact entries as masked chips and wired the click handler into `onMaskedContactClick` (via `effectivePiiContext`). But the popover itself (`PiiVerifyPopover`) and the request-access modal (`RequestPiiAccessModal`) were gated on the **original** `piiContext?.masked`, which is `false` for a privileged viewer — so the components never mounted in preview mode. The state was being set, but nothing was listening.
+- Swapped both gating conditions to `effectivePiiContext?.masked`. Same fix for `piiOptInEligible` (line 135) so the popover's primary action (request-access) actually appears in preview mode; without it, the popover would render but its CTA would be missing.
+- Net effect: preview mode now lets you click a masked chip and see the exact verify / request popover a stranger would see, with the working primary action.
+
+### Engineering
+- `src/components/AdopterProfileV2.tsx` — three `piiContext?.masked` gates flipped to `effectivePiiContext?.masked` (RequestPiiAccessModal + PiiVerifyPopover renders + piiOptInEligible derivation). The popover's `requestState` prop also switched to `effectivePiiContext.requestState` to keep TypeScript happy — same value (`effectivePiiContext` spreads from `piiContext`), but the narrowing now flows from the gate.
+
 ## [2.19.38] - 2026-06-18
 
 ### Added — trust UX so rescuers know who can see what they enter

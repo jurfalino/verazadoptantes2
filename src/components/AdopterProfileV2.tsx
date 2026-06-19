@@ -132,10 +132,13 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
         : piiContext;
 
     // PII opt-in is offered to a masked viewer with no request already in flight.
-    const piiOptInEligible = !!piiContext?.masked
+    // v2.19.39: uses `effectivePiiContext` so the preview-as-stranger toggle
+    // also surfaces the request-access CTA on the verify popover — without
+    // this, the popover renders but its primary action is missing.
+    const piiOptInEligible = !!effectivePiiContext?.masked
         && !requestSubmitted
-        && !piiContext.requestState.pending
-        && !piiContext.requestState.cooldownUntil;
+        && !effectivePiiContext.requestState.pending
+        && !effectivePiiContext.requestState.cooldownUntil;
 
     // VisitIntentCard is the canonical (and only) entry point for recording
     // activity on a profile (v2.14.8). After the wizard closes, the card
@@ -721,7 +724,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                 )}
 
                 {/* PII access request modal — masked viewers only */}
-                {!isNew && adopter && piiContext?.masked && (
+                {!isNew && adopter && effectivePiiContext?.masked && (
                     <RequestPiiAccessModal
                         adopterId={id}
                         adopterName={adopter.name}
@@ -737,17 +740,17 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     Verify is always enabled (independent of any request
                     cooldown); the request CTA / pending state / cooldown state
                     sit underneath as the secondary action. */}
-                {!isNew && adopter && piiContext?.masked && (
+                {!isNew && adopter && effectivePiiContext?.masked && (
                     <PiiVerifyPopover
                         open={verifyPopoverOpen !== null}
                         onClose={() => setVerifyPopoverOpen(null)}
                         adopterId={id}
                         entryType={verifyPopoverOpen && verifyPopoverOpen !== 'open' ? verifyPopoverOpen : undefined}
                         requestState={
-                            (requestSubmitted || piiContext.requestState.pending)
+                            (requestSubmitted || effectivePiiContext.requestState.pending)
                                 ? { kind: 'pending' }
-                                : piiContext.requestState.cooldownUntil
-                                    ? { kind: 'cooldown', cooldownUntil: piiContext.requestState.cooldownUntil }
+                                : effectivePiiContext.requestState.cooldownUntil
+                                    ? { kind: 'cooldown', cooldownUntil: effectivePiiContext.requestState.cooldownUntil }
                                     : { kind: 'available' }
                         }
                         onRequestAccess={
