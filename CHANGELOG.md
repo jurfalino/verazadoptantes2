@@ -2,6 +2,30 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.38] - 2026-06-18
+
+### Added — trust UX so rescuers know who can see what they enter
+
+Two pieces that reinforce each other: an at-input visibility claim, and a way for the rescuer to see the claim is honest.
+
+#### Inline visibility microcopy on every contact-entries section
+- A small lock icon + line *"Solo visible para vos y tus organizaciones"* now renders at the top of the `ContactEntriesSection` chip list — both on the new-adopter form and on existing-record edit views. Reinforcement-at-the-moment-of-input: the rescuer sees the visibility claim where the act is happening, not buried on a separate policy page.
+- Theme-safe via `var(--text-muted)` so it works under both `claro` and `azul-noche`. SVG lock icon (not emoji) per the existing icon convention.
+- New i18n keys `adopter.ce_visibility_microcopy` in both locales.
+- Honest copy caveat: the line says "you and your organizations" — admins / moderators also have read access for moderation oversight, and that's not surfaced here. If we later expand the trust model or someone reads this as a guarantee against admin access, we'd revise. The simplification was the user's explicit copy choice.
+
+#### Preview-as-stranger toggle on the adopter profile
+- A discreet "Ver como otro usuario" button next to the back-nav on any adopter profile the rescuer can fully see. Privileged-only (owner / editor / admin / moderator / org-mate) — non-privileged viewers already see the masked version for real, so a toggle would be confusing.
+- Clicking it re-renders the page as a non-privileged stranger would see it: adopter name reduced to initials (`partialRevealName`), contact entries partial-revealed (`maskContactEntries` against `NO_ACCESS_VISIBILITY`), address masked (`partialRevealAddressString`), who-has-access disclosure and PII request panel hidden. An accent-bordered banner at the top makes it unmistakable that the view is a simulation, with the same toggle inverted as the exit button.
+- Genuinely-what-a-stranger-gets, not a hand-rolled mock — re-uses the same `maskAdopterContact` and `renderName` helpers the server runs in production. So the preview won't drift from what production actually shows. Strongest single trust signal: the rescuer sees the masking work, doesn't just have to trust the microcopy.
+- Activity history, family members, and audit log stay unchanged in preview. Strangers do see activity records (the registry's vetting purpose requires it), and conflating "preview PII masking" with "preview audit visibility" would confuse the signal.
+- Implementation: new `previewAsStranger: boolean` state, `displayedAdopter` `useMemo` swapping in masked field values, `effectivePiiContext` swapping `privileged: false` / `masked: true` so child components branch into stranger mode the same way they would in production. Gated panel renders via `!previewAsStranger && piiContext.privileged && ...` on the existing conditionals.
+
+### Engineering
+- `src/components/ContactEntriesSection.tsx` — new `<p>` block at the top of the rendered section with the visibility microcopy + lock icon.
+- `src/components/AdopterProfileV2.tsx` — new `previewAsStranger` state, `displayedAdopter` / `effectivePiiContext` `useMemo`s using `maskAdopterContact` / `renderName` / `NO_ACCESS_VISIBILITY` from `@/lib/piiAccess`. New toggle button alongside the back-nav. New accent-bordered banner above the (gated) PII panels. `AdopterForm` props now consume the masked variants. The PII request panel + grants disclosure also gate on `!previewAsStranger`.
+- New i18n keys `adopter.preview_enter` / `preview_exit` / `preview_enter_title` / `preview_exit_title` / `preview_banner_title` / `preview_banner_body` in both locales.
+
 ## [2.19.37] - 2026-06-13
 
 ### Added — open-from-search auto-scrolls to the matched activity

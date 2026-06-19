@@ -26,6 +26,7 @@ import { formatDateTime, formatShortDate, maskEmail } from '@/lib/dates';
 import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, HistoryEntry, AdopterStats, AdoptionConfig, DuplicateCandidateInfo } from '@/types/adopter';
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 import type { AdopterPiiContext } from '@/lib/piiAccess';
+import { NO_ACCESS_VISIBILITY, maskAdopterContact, renderName } from '@/lib/piiAccess';
 
 interface AdopterProfileV2Props {
     id: string;
@@ -92,9 +93,43 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     // in Phase B will host the unified add path inline next to the chip list.)
     const [deleteCheck, setDeleteCheck] = useState<{ canDelete: boolean; collaborators: { adoptions: number; images: number; edits: number; flags: number; forms: number } } | null>(null);
     const [showTransferModal, setShowTransferModal] = useState(false);
+    // v2.19.38: preview-as-stranger toggle. Owner / org-mate / admin / mod
+    // can flip this on to see what a non-privileged visitor (no approved
+    // access, not in any of the owner's orgs) would see — name reduced to
+    // initials, contact entries partial-revealed, who-has-access disclosure
+    // and PII request panel hidden. Reuses the same `maskAdopterContact`
+    // and `renderName` helpers the server runs in production, so the
+    // preview is genuinely what a stranger gets, not a hand-rolled mock
+    // that might drift. Only visible when `piiContext.privileged === true`
+    // — non-privileged viewers already see the masked version for real and
+    // a toggle would be confusing.
+    const [previewAsStranger, setPreviewAsStranger] = useState(false);
     const router = useRouter();
 
     const isOwner = adopter?.addedBy === currentUser;
+
+    // Masked adopter for preview mode. Pass-through when not in preview.
+    // Memoised so the children's prop reference is stable while the toggle
+    // is off (avoids cascade re-renders on every keystroke elsewhere).
+    const displayedAdopter = useMemo(() => {
+        if (!previewAsStranger || !adopter) return adopter;
+        const masked = maskAdopterContact(adopter, NO_ACCESS_VISIBILITY);
+        return {
+            ...adopter,
+            name: renderName(adopter.name, NO_ACCESS_VISIBILITY) || adopter.name,
+            contactInfo: masked.contactInfo,
+            contactEntries: masked.contactEntries,
+            addressInfo: masked.addressInfo,
+        };
+    }, [previewAsStranger, adopter]);
+
+    // Effective piiContext for preview mode — flips `privileged` off and
+    // `masked` on so children that branch on those flags render the
+    // stranger experience. AdopterForm's `canEdit` gate and the masked-
+    // chip click handler down below also key off these flags.
+    const effectivePiiContext = previewAsStranger && piiContext
+        ? { ...piiContext, privileged: false, masked: true }
+        : piiContext;
 
     // PII opt-in is offered to a masked viewer with no request already in flight.
     const piiOptInEligible = !!piiContext?.masked
@@ -228,13 +263,71 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                 {/* One-time legal disclaimer (localStorage-gated) */}
                 {!isNew && adopter && <DisclaimerToast />}
 
-                {/* Back Navigation */}
-                <div className="mb-2">
+                {/* Back Navigation + preview-as-stranger toggle (privileged-only). */}
+                <div className="mb-2 flex items-center justify-between gap-3">
                     <a href={backHref} className="inline-flex items-center gap-2 text-sm text-teal-700 hover:text-teal-800 transition-colors font-medium group">
                         <svg className="w-4 h-4 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
                         {backLabel}
                     </a>
+                    {/* v2.19.38: small "Ver como otro usuario" toggle. Only
+                        appears for privileged viewers — the people whose mental
+                        model is "what does my contributor entry look like to
+                        someone outside my org?" Non-privileged viewers already
+                        see the masked version for real, so a toggle would just
+                        be confusing. */}
+                    {!isNew && adopter && piiContext?.privileged && piiContext.gatingOn && (
+                        <button
+                            type="button"
+                            onClick={() => setPreviewAsStranger(p => !p)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors"
+                            style={previewAsStranger ? {
+                                background: 'var(--accent)',
+                                color: '#ffffff',
+                            } : {
+                                background: 'var(--surface-card)',
+                                color: 'var(--text-muted)',
+                                border: '1px solid var(--border-default)',
+                            }}
+                            aria-pressed={previewAsStranger}
+                            title={previewAsStranger ? t('adopter.preview_exit_title') : t('adopter.preview_enter_title')}
+                        >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            <span>{previewAsStranger ? t('adopter.preview_exit') : t('adopter.preview_enter')}</span>
+                        </button>
+                    )}
                 </div>
+
+                {/* v2.19.38: preview banner. Renders inside the page (not as a
+                    fixed overlay) so it's part of the scroll flow and doesn't
+                    cover any data. Communicates clearly that the view is a
+                    simulation, not the live state. */}
+                {previewAsStranger && (
+                    <div
+                        className="rounded-xl px-4 py-3 flex items-start gap-3 text-sm"
+                        style={{
+                            background: 'var(--accent-subtle-bg)',
+                            border: '1px solid var(--accent)',
+                            color: 'var(--text-primary)',
+                        }}
+                        role="status"
+                    >
+                        <svg className="w-5 h-5 mt-0.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        <div className="flex-1 min-w-0">
+                            <p className="font-semibold" style={{ color: 'var(--accent-strong)' }}>
+                                {t('adopter.preview_banner_title')}
+                            </p>
+                            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                                {t('adopter.preview_banner_body')}
+                            </p>
+                        </div>
+                    </div>
+                )}
 
                 {/* v39: pending-duplicate signal. Owner / admin gets the clickable
                     "Revisar" affordance straight to /my-adopters#pending-dedup
@@ -274,7 +367,9 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     here as a banner; it now opens as a per-field popover when a
                     masked chip is clicked (see PiiVerifyPopover below + the
                     onMaskedContactClick callback passed into AdopterForm). */}
-                {!isNew && adopter && piiContext?.gatingOn && (
+                {/* v2.19.38: hide privileged-only PII panels when previewing
+                    as a stranger — a real stranger wouldn't see either. */}
+                {!isNew && adopter && piiContext?.gatingOn && !previewAsStranger && (
                     <>
                         {piiContext.pendingRequests.length > 0 && (
                             <PiiAccessRequestPanel requests={piiContext.pendingRequests} />
@@ -296,7 +391,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     still opens when a non-privileged viewer taps a hidden
                     chip on a PII-gated profile. */}
                 <AdopterForm
-                    initialData={adopter}
+                    initialData={displayedAdopter}
                     currentUser={currentUser}
                     images={images}
                     adopterId={id}
@@ -305,20 +400,20 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     flags={flags}
                     adoptions={adoptions}
                     adoptionConfig={adoptionConfig}
-                    isAdmin={isAdmin}
+                    isAdmin={isAdmin && !previewAsStranger}
                     formPrefill={formPrefill}
                     hasDuplicateBanner={false}
                     attribution={attribution}
-                    isOrgMateOfOwner={isOrgMateOfOwner}
-                    isPrivileged={!!piiContext?.privileged}
-                    canEdit={!piiContext?.gatingOn || piiContext.privileged}
+                    isOrgMateOfOwner={isOrgMateOfOwner && !previewAsStranger}
+                    isPrivileged={!!effectivePiiContext?.privileged}
+                    canEdit={!effectivePiiContext?.gatingOn || !!effectivePiiContext?.privileged}
                     onMaskedContactClick={
-                        piiContext?.masked
+                        effectivePiiContext?.masked
                             ? (entryType) => setVerifyPopoverOpen(entryType)
                             : undefined
                     }
                     onMaskedNameClick={
-                        piiContext?.masked
+                        effectivePiiContext?.masked
                             ? () => setVerifyPopoverOpen('open')
                             : undefined
                     }

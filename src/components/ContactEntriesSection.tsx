@@ -494,6 +494,21 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
 
     return (
         <div className="space-y-3">
+            {/* v2.19.38: visibility reassurance microcopy. Shown right above
+                the chips on every render where this section is editable. The
+                point is reinforcement-at-the-moment-of-input: rescuers who are
+                about to enter sensitive contact info see the visibility claim
+                here, not buried in a separate policy page. Theme-safe colors
+                via --text-muted; small SVG lock instead of emoji per the
+                existing icon convention. */}
+            <p className="flex items-start gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="5" y="11" width="14" height="9" rx="2" />
+                    <path strokeLinecap="round" d="M8 11V8a4 4 0 118 0v3" />
+                </svg>
+                <span>{t('adopter.ce_visibility_microcopy')}</span>
+            </p>
+
             {/* Inline undo bar shown while a delete is in its 5-second window. */}
             {pendingDeleteId && (
                 <div className="flex items-center justify-between gap-3 bg-stone-100 border border-stone-200 rounded-md px-3 py-2 text-sm">
