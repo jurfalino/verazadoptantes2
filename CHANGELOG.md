@@ -2,6 +2,41 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.47] - 2026-06-19
+
+### Changed — visibility shown at profile level only + import-time consent toggle
+
+Two coordinated changes, one direction: the **data model stays as-is** (per-entry `isPublic` keeps existing, gets persisted, mask path keeps honoring it — left intact for a possible per-field visibility feature later). The user-facing surfaces only express visibility at the **profile** level. New social-URL imports get an explicit consent toggle instead of silently stamping per-entry public.
+
+#### `ContactEntriesSection` — single profile-level microcopy
+- v2.19.46's three-state copy (`all_public` / `mixed` / `private`) and the per-chip "🌐 Público" badge are gone. The section now picks between two states:
+  - **Profile public** (record-level `is_public = true` OR every entry has `isPublic: true` — the latter catches legacy FB-imported records before per-record consent existed): globe icon + *"Este perfil es público y visible para todos."*
+  - **Profile private** (default): lock icon + the existing *"Solo visible para vos y tus organizaciones."*
+- New `adopterIsPublic` prop. `AdopterForm` passes it down from `initialData.isPublic`.
+- **No data migration**. The `effectivelyPublic = adopterIsPublic || allEntriesPublic` computation handles legacy records correctly — fully-public-by-per-entry records render with the "público" copy without needing a backfill.
+
+#### `ImportWizard` — per-record consent toggle for social-URL imports
+- A new toggle in step 3 (review) appears **only for social-URL imports** (sourceUrl is set, not a Google Contacts import). Default ON. Copy: *"Este perfil será visible para todos. Los datos vienen de una fuente pública (red social). Si preferís que sean privados, desactivá esta opción."*
+- When ON: existing behaviour — per-entry `isPublic: true` stamping happens at the API route.
+- When OFF: wizard sends `isPublic: false` in the POST body; the route skips the `stampPublic` block entirely. Record is created fully private, no per-entry flags.
+- For Google Contacts and text-only AI imports, the toggle is hidden — those flows never had the public-source semantic.
+
+#### API route — new `body.isPublic` honoured
+- `createAdopterApiSchema` accepts `isPublic?: boolean`.
+- In the create handler: `callerConsentedToPublic = callerIsPublic !== false` — defaults to the previous behaviour when the field is omitted (Google Contacts and any legacy caller stay unchanged). Only `false` explicitly opts out of `stampPublic`.
+
+### Engineering
+- `src/components/ContactEntriesSection.tsx` — reverted v2.19.46 badge + mixed-state microcopy; new two-state logic.
+- `src/components/AdopterForm.tsx` — passes `adopterIsPublic` down on both isNew and existing-record render paths.
+- `src/components/ImportWizard.tsx` — new `isPublicProfile` state (default true), toggle render in step 3 gated on `sourceUrl && !fromContacts`, `isPublic` field added to POST payload.
+- `src/app/api/adopters/route.ts` — destructures `callerIsPublic`; `stampPublic` now AND'd with `callerIsPublic !== false`.
+- `src/app/actions/validation.ts` — `createAdopterApiSchema` gains optional `isPublic: boolean`.
+- `src/types/adopter.ts` — `isPublic?: boolean | null` added to the shared `Adopter` type (column has been around since v2.16.0-12 but wasn't on this type).
+- i18n: dropped `ce_visibility_all_public`, `ce_visibility_mixed`, `ce_public_badge`, `ce_public_badge_title`. Added `ce_visibility_profile_public` + four wizard-toggle keys (`public_profile_on/off/explainer/toggle_title`) in both locales.
+
+### Out of scope
+- Per-field visibility UI / per-entry public toggle for existing records — not built. The data model preserves the field for a future iteration.
+
 ## [2.19.46] - 2026-06-19
 
 ### Fixed — visibility microcopy claimed "private" on public-sourced entries

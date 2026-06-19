@@ -190,6 +190,16 @@ export default function ImportWizard() {
     // of the social-media post flow. Drives the Step 3 breadcrumb so the user
     // knows why animal fields are empty.
     const [fromContacts, setFromContacts] = useState(false);
+    // v2.19.47: explicit per-record consent toggle for social-URL imports.
+    // Default ON — historically these records were treated as public (the
+    // contact data came from a public Facebook/Instagram post). The toggle
+    // lets the rescuer flip the import to private if they actually want
+    // the record gated. Sent to the API as `isPublic` in the POST body;
+    // the route honours `isPublic === false` by skipping the `stampPublic`
+    // block (per-entry `isPublic:true` stamping). Hidden for Google Contacts
+    // (`fromContacts`) and text-only AI extractions — those aren't from a
+    // public channel, so the consent question doesn't apply.
+    const [isPublicProfile, setIsPublicProfile] = useState(true);
 
     // Extracted/fetched state
     const [_fetchedText, setFetchedText] = useState('');
@@ -825,6 +835,12 @@ export default function ImportWizard() {
                 // source='imported' AND (when ENABLE_PUBLIC_PROFILES is on)
                 // stamps isPublic=true on the contact entries it persists.
                 source: 'imported' as const,
+                // v2.19.47: per-record consent for the public-stamping. Only
+                // sent for social-URL imports — for Google Contacts / text
+                // extractions the field is omitted and the API keeps its
+                // default (private). When `false`, the API skips the
+                // stampPublic block entirely → entries land non-public.
+                ...(sourceUrl && !fromContacts ? { isPublic: isPublicProfile } : {}),
                 flags,
                 images: [
                     ...(processedImages.length > 0 ? processedImages : manualImages.filter(img => !img.file).map(img => ({ data: img.data, mimeType: img.mimeType }))),
@@ -1455,6 +1471,37 @@ export default function ImportWizard() {
                         <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
                             <span className="mt-0.5">⚠️</span>
                             <span>{t('import.aiValidationWarning') || 'AI-extracted data may contain errors. Please verify all fields before saving.'}</span>
+                        </div>
+                    )}
+
+                    {/* v2.19.47: per-record public-visibility consent toggle.
+                        Only rendered for social-URL imports — Google Contacts
+                        and text-only flows don't have the "this came from a
+                        public channel" semantic and should default private.
+                        Default ON (preserves the historical FB-import-is-public
+                        behaviour) but the rescuer can flip it off if they want
+                        the record gated like a normal manual entry. */}
+                    {!fromContacts && !!sourceUrl?.trim() && (
+                        <div className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border ${isPublicProfile ? 'bg-teal-50 border-teal-200' : 'bg-stone-50 border-stone-200'}`}>
+                            <button
+                                type="button"
+                                onClick={() => setIsPublicProfile(p => !p)}
+                                aria-pressed={isPublicProfile}
+                                className={`mt-0.5 relative w-9 h-5 rounded-full transition-colors shrink-0 ${isPublicProfile ? 'bg-teal-500' : 'bg-stone-300'}`}
+                                title={t('import.public_profile_toggle_title')}
+                            >
+                                <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${isPublicProfile ? 'translate-x-4' : 'translate-x-0'}`} />
+                            </button>
+                            <div className="flex-1 min-w-0 text-xs">
+                                <p className={`font-medium ${isPublicProfile ? 'text-teal-800' : 'text-stone-700'}`}>
+                                    {isPublicProfile
+                                        ? t('import.public_profile_on')
+                                        : t('import.public_profile_off')}
+                                </p>
+                                <p className="text-stone-600 mt-0.5">
+                                    {t('import.public_profile_explainer')}
+                                </p>
+                            </div>
                         </div>
                     )}
 

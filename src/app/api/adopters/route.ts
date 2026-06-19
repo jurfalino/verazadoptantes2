@@ -231,7 +231,7 @@ export async function POST(request: Request) {
         }, { status: 400 });
     }
 
-    const { name, contactInfo, contactEntries, notes, sourceUrl, flags, images, adoption, source } = parsed.data;
+    const { name, contactInfo, contactEntries, notes, sourceUrl, flags, images, adoption, source, isPublic: callerIsPublic } = parsed.data;
 
     // Log the incoming request (without image data for size)
     logger.info('Adopter create: start', {
@@ -289,7 +289,14 @@ export async function POST(request: Request) {
                 // rescuer can still flip individual chips public later
                 // via the per-entry isPublic affordance.
                 const isSocialImport = source === 'imported' && !!sourceUrl?.trim();
-                const stampPublic = isSocialImport && await isPublicProfilesEnabled();
+                // v2.19.47: per-record consent. When the ImportWizard sends
+                // `isPublic: false` (rescuer flipped the toggle off in the
+                // social-import flow), we honour it and skip stamping —
+                // record lands fully private. Default (undefined) keeps the
+                // historical "social import = public" behaviour so existing
+                // callers and the contacts path don't shift.
+                const callerConsentedToPublic = callerIsPublic !== false;
+                const stampPublic = isSocialImport && callerConsentedToPublic && await isPublicProfilesEnabled();
                 const persisted = stampPublic
                     ? entries.map(e => ({ ...e, isPublic: true }))
                     : entries;

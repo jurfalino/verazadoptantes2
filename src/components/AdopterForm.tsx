@@ -981,6 +981,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                     setContactEntries(next);
                                     setData(d => ({ ...d, contactInfo: contactEntriesToBlob(next) }));
                                 }}
+                                adopterIsPublic={false}
                             />
                         ) : initialData && (() => {
                             // Legacy rows have a contactInfo blob but no
@@ -1004,6 +1005,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                     canEditAll={isOwner || isAdmin}
                                     currentUser={currentUser}
                                     onMaskedClick={onMaskedContactClick}
+                                    adopterIsPublic={!!initialData.isPublic}
                                 />
                             );
                         })()}

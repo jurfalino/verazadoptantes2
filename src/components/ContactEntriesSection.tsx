@@ -64,6 +64,14 @@ interface Props {
     /** Tap-handler for masked chips — opens the verify popover. Undefined when
      * the viewer is not subject to PII gating. Server mode only. */
     onMaskedClick?: (entryType: ContactEntryType) => void;
+    /** v2.19.47: adopter-level `is_public` flag, plumbed down from
+     *  AdopterForm. The microcopy under the chip list honours BOTH this and
+     *  the existence of any per-entry `isPublic:true` (legacy FB imports
+     *  before per-record consent existed) so the UI stays accurate without
+     *  a backfill. The model itself stays as-is — we just account for
+     *  visibility at the PROFILE level in this surface; per-field
+     *  visibility is left for a future change. */
+    adopterIsPublic?: boolean;
 }
 
 interface EditDraft {
@@ -80,7 +88,7 @@ function socialHref(value: string): string | null {
     return null;
 }
 
-export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick }: Props) {
+export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick, adopterIsPublic = false }: Props) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
@@ -492,28 +500,28 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         return t(`adopter.ce_input_ph_${type}`) || '';
     }
 
-    // v2.19.46: the visibility microcopy is now conditional on the entries'
-    // actual `isPublic` state. v2.19.38 always claimed "Solo visible para vos
-    // y tus organizaciones" — but a Facebook (or other public-source) import
-    // flags individual entries with `isPublic: true`, and those entries ARE
-    // visible to everyone. Saying they're private is the same trust violation
-    // the original copy was supposed to avoid. Three states:
-    //   - All entries public → globe icon + "datos de fuente pública" copy.
-    //   - Some public, some private → globe icon + "mixto" copy + per-chip badge.
-    //   - All private / no entries yet → original lock + "solo visible..." copy.
-    // Per-entry badges below carry the visual signal for each row.
-    const hasPublicEntry = sorted.some(e => e.isPublic === true);
-    const allPublic = sorted.length > 0 && sorted.every(e => e.isPublic === true);
-    const microcopyKey = allPublic
-        ? 'adopter.ce_visibility_all_public'
-        : hasPublicEntry
-            ? 'adopter.ce_visibility_mixed'
-            : 'adopter.ce_visibility_microcopy';
+    // v2.19.47: visibility shown at the PROFILE level only. The data model
+    // still has per-entry `isPublic` (we keep it for a possible per-field
+    // visibility feature later), but here we collapse to a single profile
+    // verdict:
+    //   - `adopterIsPublic` prop (admin-flippable record-level flag), OR
+    //   - every entry in the list is per-entry-public (legacy FB-imports
+    //     before per-record consent existed — their effective visibility is
+    //     public, even though the record-level flag is 0).
+    // This keeps the UI honest for legacy data without a migration. v2.19.46's
+    // per-chip "Público" badge and the three-state microcopy are gone — they
+    // exposed a distinction the user can't act on and that the new ImportWizard
+    // consent toggle now eliminates at the source for new records.
+    const profileEffectivelyPublic = adopterIsPublic
+        || (sorted.length > 0 && sorted.every(e => e.isPublic === true));
+    const microcopyKey = profileEffectivelyPublic
+        ? 'adopter.ce_visibility_profile_public'
+        : 'adopter.ce_visibility_microcopy';
 
     return (
         <div className="space-y-3">
             <p className="flex items-start gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-                {(allPublic || hasPublicEntry) ? (
+                {profileEffectivelyPublic ? (
                     <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
                         <circle cx="12" cy="12" r="9" />
                         <path strokeLinecap="round" d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18" />
@@ -555,32 +563,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 data-entry-type={entry.type}
                             >
                                 <Icon className="w-4 h-4 mt-0.5 shrink-0 text-teal-600" aria-hidden="true" />
-                                <span className="w-24 shrink-0 text-stone-500 flex items-center gap-1">
-                                    {labelFor(entry)}
-                                    {/* v2.19.46: per-entry visibility badge.
-                                        When the entry was sourced from a public
-                                        channel (Facebook import, etc.), the
-                                        `isPublic` flag is set server-side and
-                                        masking is bypassed for everyone. We
-                                        surface that on the chip so the rescuer
-                                        understands at-a-glance which entries
-                                        are public and which are gated, instead
-                                        of having to read the section microcopy
-                                        and infer. Theme-safe via --text-muted. */}
-                                    {entry.isPublic === true && (
-                                        <span
-                                            className="inline-flex items-center gap-0.5 px-1 py-0 rounded text-[10px] font-medium"
-                                            style={{ color: 'var(--text-muted)' }}
-                                            title={t('adopter.ce_public_badge_title')}
-                                        >
-                                            <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
-                                                <circle cx="12" cy="12" r="9" />
-                                                <path strokeLinecap="round" d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18" />
-                                            </svg>
-                                            {t('adopter.ce_public_badge')}
-                                        </span>
-                                    )}
-                                </span>
+                                <span className="w-24 shrink-0 text-stone-500">{labelFor(entry)}</span>
                                 <div className="flex-1 min-w-0">
                                     {isEditing ? (
                                         <div className="space-y-2">
