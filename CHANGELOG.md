@@ -2,6 +2,27 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.40] - 2026-06-19
+
+### Added — `foster` (tránsito) wizard now asks "delivered to home?" + structured address goes into contact details
+- Recording a `foster` activity (tránsito) didn't surface the "delivered to the adopter's home?" toggle — only `adoption` did. With the toggle present, the address went into a single textarea and only persisted on the adoption row's `verifiedAddress` column; it never made it into the adopter's structured `contactEntries`, so the PII gating + masking that protects manually-added addresses didn't apply to it. Three changes:
+  1. **The toggle now shows for both `adoption` and `foster`.** Same condition path, same field set.
+  2. **The single address textarea becomes two structured inputs** mirroring the contact-entries composer: `streetAndNumber` + `locality`. Same placeholders (`ce_input_ph_address` / `ce_input_ph_locality`), so the visual idiom matches the form rescuers already know.
+  3. **On save, the address is written into the adopter's `contactEntries`** as a typed `address` entry — `{ type: 'address', value, streetAndNumber, locality, addedBy }`. Goes through `appendToExistingAdopter` so dedup against existing entries is handled by `mergeContactEntries`, and the entry gets the same PII gating + `partialRevealAddressString` masking as any manually-added address (street masked for non-privileged viewers, locality stays visible).
+- The activity row keeps its existing `verifiedAddress` string column (now composed as `[street, locality].filter(Boolean).join(', ')` on submit) for backward compat with read sites + the AI-import path. The structured halves are wizard-only state — stripped from the save payload before it hits `saveAdoption`.
+
+### Behavior notes
+- The contact-entries write is **fire-and-forget after the main save** — a failure to append doesn't undo the activity record. Logged via `console.warn` if it fails; the audit row from `appendToExistingAdopter` itself is the canonical trail if it succeeds.
+- The toggle's existing pre-fill behaviour (when turning ON, seed from the adopter's known address via `extractAddressFromContact`) now seeds the **street** field. The user can split it into the locality field manually if needed. When turning the toggle OFF, all three (`verifiedStreetAndNumber`, `verifiedLocality`, `verifiedAddress`) clear so a follow-up activity doesn't carry over stale data.
+- New trust microcopy below the inputs: *"Esta dirección se guardará en los datos de contacto del adoptante y queda protegida como dato personal."* — uses the same lock icon as the `ce_visibility_microcopy` line from v2.19.38 for visual consistency.
+
+### Not in this release
+- **`AdoptionFormEditV2` parity is deferred.** The edit form still shows the single textarea + adoption-only toggle. Editing an existing foster won't surface the toggle, and editing an adoption with delivered=true still uses the legacy single-input. Shipping the wizard side first matches what the user explicitly asked for; bring the edit form forward when next touching activity editing.
+
+### Engineering
+- `src/components/AdoptionFormWizard.tsx` — `WizardDraft.formData` gains `verifiedStreetAndNumber` + `verifiedLocality`. `useState` initializer + `resetForm` updated. Toggle render condition extended to `foster`. Submit path composes `verifiedAddress` from the two halves, strips the structured fields from the payload before `saveAdoption`, then awaits `appendToExistingAdopter` to persist the typed address.
+- New i18n key `adoption.verify_address_saved_hint` in both locales.
+
 ## [2.19.39] - 2026-06-18
 
 ### Fixed — preview-as-stranger: clicking a masked chip didn't open the verify popover

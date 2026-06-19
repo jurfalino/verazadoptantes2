@@ -78,6 +78,11 @@ interface WizardDraft {
         adoptionDate: string;
         deliveredToHome: boolean;
         verifiedAddress: string;
+        /** v2.19.40: structured halves of `verifiedAddress`. Source of truth
+         *  for the input panel when `deliveredToHome` is on. The submit path
+         *  composes `verifiedAddress` from these two on save. */
+        verifiedStreetAndNumber: string;
+        verifiedLocality: string;
         identityVerified: boolean;
         animalId: string;
     };
@@ -266,6 +271,8 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
             adoptionDate: '',
             deliveredToHome: false,
             verifiedAddress: '',
+            verifiedStreetAndNumber: '',
+            verifiedLocality: '',
             identityVerified: false,
             animalId: prefillAnimalId,
         };
@@ -288,7 +295,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     }, [isOpen, step, shouldOpenFromWizard, autoOpen]);
 
     const resetForm = () => {
-        setFormData({ animalId: '', animalName: '', details: '', status: 'completed', rating: 5, comments: '', species: 'cat', adopterId, recordType: 'adoption', date: new Date().toISOString().split('T')[0], adoptionDate: '', deliveredToHome: false, verifiedAddress: '', identityVerified: false });
+        setFormData({ animalId: '', animalName: '', details: '', status: 'completed', rating: 5, comments: '', species: 'cat', adopterId, recordType: 'adoption', date: new Date().toISOString().split('T')[0], adoptionDate: '', deliveredToHome: false, verifiedAddress: '', verifiedStreetAndNumber: '', verifiedLocality: '', identityVerified: false });
         setPendingImages([]);
         setUnknownAnimal(false);
         setCustomSpecies(false);
@@ -463,6 +470,14 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                 } as any);
             }
 
+            // v2.19.40: compose the legacy `verifiedAddress` string from the
+            // two structured halves the user filled in. The DB column stays a
+            // single string for backward compat with read sites + the AI
+            // import path that still emits free-text; the structured halves
+            // are used below to write a typed `address` contact entry.
+            const composedVerifiedAddress = formData.deliveredToHome
+                ? [formData.verifiedStreetAndNumber.trim(), formData.verifiedLocality.trim()].filter(Boolean).join(', ')
+                : formData.verifiedAddress;
             const submitData = {
                 ...formData,
                 id: idForSubmit,
@@ -473,15 +488,51 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                 animalName: isRequest ? null : formData.animalName,
                 onBehalfOf: null,
                 deliveredToHome: formData.deliveredToHome ? 1 : 0,
-                verifiedAddress: formData.verifiedAddress || null,
+                verifiedAddress: composedVerifiedAddress || null,
                 identityVerified: formData.identityVerified ? 1 : 0
             };
             // `adoptionDate` is wizard-only state, not a column.
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             delete (submitData as any).adoptionDate;
+            // `verifiedStreetAndNumber` / `verifiedLocality` are wizard-only
+            // state (the schema stores the composed string only), not columns.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            delete (submitData as any).verifiedStreetAndNumber;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            delete (submitData as any).verifiedLocality;
 
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const result = await saveAdoption(submitData as any);
+
+            // v2.19.40: persist the verified delivery address to the adopter's
+            // structured `contactEntries` so future viewers see it under their
+            // normal PII gating + masking rules (address is masked for
+            // non-privileged viewers; `partialRevealAddressString` keeps the
+            // locality visible, masks the street). Fire-and-forget after the
+            // main save — a failure here doesn't undo the activity record we
+            // already saved. Dedup is handled by `mergeContactEntries` inside
+            // `appendToExistingAdopter`.
+            if (formData.deliveredToHome && (formData.verifiedStreetAndNumber.trim() || formData.verifiedLocality.trim())) {
+                const street = formData.verifiedStreetAndNumber.trim();
+                const locality = formData.verifiedLocality.trim();
+                const composedValue = [street, locality].filter(Boolean).join(', ');
+                const newEntry = {
+                    id: crypto.randomUUID(),
+                    type: 'address' as const,
+                    value: composedValue,
+                    ...(street ? { streetAndNumber: street } : {}),
+                    ...(locality ? { locality } : {}),
+                    addedBy: currentUser || undefined,
+                };
+                try {
+                    const { appendToExistingAdopter } = await import('@/app/actions');
+                    await appendToExistingAdopter(adopterId, {
+                        contactEntries: JSON.stringify([newEntry]),
+                    });
+                } catch (e) {
+                    console.warn('[wizard] address contact-entry append failed:', e instanceof Error ? e.message : String(e));
+                }
+            }
 
             if (pendingImages.length > 0 && result?.id) {
                 const uploadPromises = pendingImages.map(async (pending) => {
@@ -796,22 +847,66 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                 <textarea className="w-full p-3 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-none text-base md:text-sm" rows={3} value={formData.details} onChange={e => setFormData(d => ({ ...d, details: e.target.value }))} placeholder={t('adoption.notes_placeholder')} />
                             </div>
 
-                            {/* Conditional Delivery / Verification Toggles */}
-                            {formData.recordType === 'adoption' && (
+                            {/* Conditional Delivery / Verification Toggles.
+                                v2.19.40: toggle now also appears for `foster`
+                                (tránsito) — same "delivered to the adopter's
+                                home" semantics, with the address persisted to
+                                the adopter's contact entries on save. */}
+                            {(formData.recordType === 'adoption' || formData.recordType === 'foster') && (
                                 <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-2">
                                             <span className="text-lg">🚗</span>
                                             <label className="text-sm font-medium text-blue-800">{t('adoption.delivered_to_home')}</label>
                                         </div>
-                                        <button type="button" onClick={() => { const nd = !formData.deliveredToHome; setFormData(d => ({ ...d, deliveredToHome: nd, verifiedAddress: nd ? (d.verifiedAddress || extractAddressFromContact(adopterAddress)) : '' })); }} className={`relative w-12 h-6 rounded-full transition-colors ${formData.deliveredToHome ? 'bg-blue-500' : 'bg-stone-200'}`}>
+                                        {/* Pre-fill behaviour: when turning the toggle ON, seed the
+                                            street field with whatever address we can derive from the
+                                            adopter's contactInfo (single string). The user can split
+                                            it across the two structured fields manually. When turning
+                                            OFF, clear all three so a follow-up activity doesn't carry
+                                            over a stale address. */}
+                                        <button type="button" onClick={() => {
+                                            const nd = !formData.deliveredToHome;
+                                            setFormData(d => ({
+                                                ...d,
+                                                deliveredToHome: nd,
+                                                verifiedStreetAndNumber: nd ? (d.verifiedStreetAndNumber || extractAddressFromContact(adopterAddress)) : '',
+                                                verifiedLocality: nd ? d.verifiedLocality : '',
+                                                verifiedAddress: nd ? d.verifiedAddress : '',
+                                            }));
+                                        }} className={`relative w-12 h-6 rounded-full transition-colors ${formData.deliveredToHome ? 'bg-blue-500' : 'bg-stone-200'}`}>
                                             <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${formData.deliveredToHome ? 'translate-x-6' : 'translate-x-0'}`} />
                                         </button>
                                     </div>
                                     {formData.deliveredToHome && (
-                                        <div className="mt-4 pt-4 border-t border-blue-100">
+                                        <div className="mt-4 pt-4 border-t border-blue-100 space-y-2">
                                             <label className="block text-xs font-semibold text-blue-800 mb-1.5 uppercase tracking-wider flex items-center gap-1"><span>📍</span> {t('adoption.verify_address')}</label>
-                                            <textarea className="w-full p-3 rounded-lg border border-blue-200 bg-white text-blue-950 placeholder-blue-800/40 font-medium focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none resize-none text-base md:text-sm" rows={2} value={formData.verifiedAddress} onChange={e => setFormData(d => ({ ...d, verifiedAddress: e.target.value }))} placeholder={t('adoption.address_placeholder')} />
+                                            {/* v2.19.40: two structured inputs mirroring the
+                                                contact-entries address composer (street + locality).
+                                                Saved as separate fields on the new ContactEntry below
+                                                so masking + duplicate-detection keep working the way
+                                                they do for manually-added addresses. */}
+                                            <input
+                                                type="text"
+                                                value={formData.verifiedStreetAndNumber}
+                                                onChange={e => setFormData(d => ({ ...d, verifiedStreetAndNumber: e.target.value }))}
+                                                placeholder={t('adopter.ce_input_ph_address')}
+                                                className="w-full p-3 rounded-lg border border-blue-200 bg-white text-blue-950 placeholder-blue-800/40 font-medium focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none text-base md:text-sm"
+                                            />
+                                            <input
+                                                type="text"
+                                                value={formData.verifiedLocality}
+                                                onChange={e => setFormData(d => ({ ...d, verifiedLocality: e.target.value }))}
+                                                placeholder={t('adopter.ce_input_ph_locality')}
+                                                className="w-full p-3 rounded-lg border border-blue-200 bg-white text-blue-950 placeholder-blue-800/40 font-medium focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none text-base md:text-sm"
+                                            />
+                                            <p className="text-xs text-blue-800/80 flex items-start gap-1.5 pt-1">
+                                                <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
+                                                    <rect x="5" y="11" width="14" height="9" rx="2" />
+                                                    <path strokeLinecap="round" d="M8 11V8a4 4 0 118 0v3" />
+                                                </svg>
+                                                <span>{t('adoption.verify_address_saved_hint')}</span>
+                                            </p>
                                         </div>
                                     )}
                                 </div>

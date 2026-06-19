@@ -760,6 +760,7 @@ export const en = {
         species_select_preset: 'Select preset',
         delivered_to_home: 'Delivered to adopter\'s home?',
         verify_address: 'Verify Address',
+        verify_address_saved_hint: 'This address will be saved into the adopter\'s contact details and protected as personal data.',
         address_placeholder: 'Enter or confirm the delivery address...',
         address_will_be_verified: 'Address will be verified on save',
         identity_verified: 'Did you verify their identity?',

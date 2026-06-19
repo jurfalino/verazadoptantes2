@@ -765,6 +765,7 @@ export const es = {
         species_select_preset: 'Seleccionar predefinido',
         delivered_to_home: '¿Entregado en casa del adoptante?',
         verify_address: 'Verificar Dirección',
+        verify_address_saved_hint: 'Esta dirección se guardará en los datos de contacto del adoptante y queda protegida como dato personal.',
         address_placeholder: 'Ingresa o confirma la dirección de entrega...',
         address_will_be_verified: 'La dirección será verificada al guardar',
         identity_verified: '¿Verificaste su identidad?',
