@@ -80,7 +80,9 @@ export async function POST(
         await db.insert(adoptions).values({
             id: adoptionId,
             adopterId,
-            animalName: adoption.animalName || 'Unknown',
+            // v2.19.52: see api/adopters/route.ts:446 — both routes had the
+            // same literal-'Unknown' coercion; both pass NULL through now.
+            animalName: adoption.animalName?.trim() || null,
             species: adoption.species || 'other',
             status: 'completed',
             rating: adoption.rating || 2,

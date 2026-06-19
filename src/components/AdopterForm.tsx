@@ -19,6 +19,7 @@ import { RatingBadge } from '@/components/RatingBadge';
 import { MediaLightbox, type MediaItem } from '@/components/ui/MediaLightbox';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
+import { reportClientError } from '@/lib/clientErrorReporter';
 
 import { getSourceIcon } from '@/lib/sourceIcons';
 import { getCountryByCode } from '@/config/countries';
@@ -393,6 +394,23 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                 ? { ...data, contactEntries: JSON.stringify(contactEntries) }
                 : { ...data, contactEntries: undefined, contactInfo: undefined };
             const res = await saveAdopter(payload);
+            // v2.19.43: defensive check. saveAdopter is supposed to either return
+            // { success: true | false, ... } or throw with an embedded errorId, but
+            // we've seen rare cases (transient edge-runtime panic, network hiccup
+            // mid-response) where `res` arrives undefined. Without this guard, the
+            // next `res.success` read throws `Cannot read properties of undefined`
+            // — a client-side runtime error with no server-side log to correlate
+            // against. Treat undefined as a failure and route through the same
+            // error-id path as a thrown server error.
+            if (!res) {
+                const errorId = await reportClientError({
+                    message: 'saveAdopter returned undefined',
+                    source: 'AdopterForm.performActualSave',
+                    extra: { adopterId: data.id || null, isNew },
+                });
+                toast.error(t('toast.save_error_title'), t('errors.save_adopter_failed'), errorId);
+                return;
+            }
             if (res.success) {
                 if (isNew) {
                     // Funnel-tracking event for Amplitude (via Zaraz). Fires
@@ -473,12 +491,35 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                     router.refresh();
                 }
             } else {
-                console.error("[ADOPTER FORM] Save failed - no success flag");
-                toast.error(t('errors.generic'), t('errors.save_adopter_failed'));
+                // v2.19.43: server-returned failure with no success flag. Report
+                // it via reportClientError so the toast carries a correlatable
+                // id. The server's `res.error` (if any) goes into the report's
+                // `extra` for the Axiom row; the user sees only the id.
+                const errorId = await reportClientError({
+                    message: `saveAdopter returned success=false${res && 'error' in res && res.error ? `: ${res.error}` : ''}`,
+                    source: 'AdopterForm.performActualSave',
+                    extra: { adopterId: data.id || null, isNew, serverError: res && 'error' in res ? res.error : null },
+                });
+                toast.error(t('errors.generic'), t('errors.save_adopter_failed'), errorId);
             }
         } catch (err: any) {
             console.error("Save Error:", err);
-            toast.error(t('toast.save_error_title'), err?.message || t('errors.unexpected'), extractErrorId(err));
+            // v2.19.43: every error toast must carry an id (per user reminder).
+            // Server-thrown errors (saveAdopter's catch block re-throws with the
+            // id embedded in the message — see adopters.ts:357-358) yield an id
+            // via extractErrorId. Client-side runtime errors (TypeError, network
+            // failure, etc.) don't carry one, so we fall back to reportClientError
+            // which logs to Axiom and returns a fresh id.
+            let errorId = extractErrorId(err);
+            if (!errorId) {
+                errorId = await reportClientError({
+                    message: err?.message ?? 'unknown error',
+                    stack: err?.stack,
+                    source: 'AdopterForm.performActualSave',
+                    extra: { adopterId: data.id || null, isNew },
+                });
+            }
+            toast.error(t('toast.save_error_title'), err?.message || t('errors.unexpected'), errorId);
         } finally {
             setLoading(false);
         }
@@ -940,6 +981,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                     setContactEntries(next);
                                     setData(d => ({ ...d, contactInfo: contactEntriesToBlob(next) }));
                                 }}
+                                adopterIsPublic={false}
                             />
                         ) : initialData && (() => {
                             // Legacy rows have a contactInfo blob but no
@@ -963,6 +1005,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                     canEditAll={isOwner || isAdmin}
                                     currentUser={currentUser}
                                     onMaskedClick={onMaskedContactClick}
+                                    adopterIsPublic={!!initialData.isPublic}
                                 />
                             );
                         })()}

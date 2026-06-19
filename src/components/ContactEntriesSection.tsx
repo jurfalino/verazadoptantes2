@@ -64,6 +64,14 @@ interface Props {
     /** Tap-handler for masked chips — opens the verify popover. Undefined when
      * the viewer is not subject to PII gating. Server mode only. */
     onMaskedClick?: (entryType: ContactEntryType) => void;
+    /** v2.19.47: adopter-level `is_public` flag, plumbed down from
+     *  AdopterForm. The microcopy under the chip list honours BOTH this and
+     *  the existence of any per-entry `isPublic:true` (legacy FB imports
+     *  before per-record consent existed) so the UI stays accurate without
+     *  a backfill. The model itself stays as-is — we just account for
+     *  visibility at the PROFILE level in this surface; per-field
+     *  visibility is left for a future change. */
+    adopterIsPublic?: boolean;
 }
 
 interface EditDraft {
@@ -80,7 +88,7 @@ function socialHref(value: string): string | null {
     return null;
 }
 
-export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick }: Props) {
+export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick, adopterIsPublic = false }: Props) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
@@ -269,7 +277,14 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                     // actually a masked chip is about to reveal itself in
                     // the refreshed list.
                     if (res.status === 'appended') {
-                        toast.success('✓', t('adopter.ce_add_toast_added'));
+                        // v2.19.51: when a non-owner contributes, the server
+                        // auto-fires a PII access request on their behalf.
+                        // Surface that in the toast so they understand why
+                        // they're not suddenly seeing the rest of the profile.
+                        toast.success(
+                            '✓',
+                            t(res.autoRequestFiled ? 'adopter.ce_add_toast_added_with_request' : 'adopter.ce_add_toast_added'),
+                        );
                     } else if (res.status === 'unlocked_existing') {
                         toast.success('🔓', t('adopter.ce_add_toast_unlocked'));
                     }
@@ -492,8 +507,54 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         return t(`adopter.ce_input_ph_${type}`) || '';
     }
 
+    // v2.19.47: visibility shown at the PROFILE level only. The data model
+    // still has per-entry `isPublic` (we keep it for a possible per-field
+    // visibility feature later), but here we collapse to a single profile
+    // verdict:
+    //   - `adopterIsPublic` prop (admin-flippable record-level flag), OR
+    //   - every entry in the list is per-entry-public (legacy FB-imports
+    //     before per-record consent existed — their effective visibility is
+    //     public, even though the record-level flag is 0).
+    const profileEffectivelyPublic = adopterIsPublic
+        || (sorted.length > 0 && sorted.every(e => e.isPublic === true));
+    // v2.19.49: the microcopy ("Solo visible para vos y tus organizaciones")
+    // is addressed to the owner / privileged viewer — the "you" in the copy
+    // is them. Showing it to a stranger viewing the masked profile is
+    // confusing: they see masked data + copy claiming "only you can see
+    // this," and the "you" doesn't refer to them.
+    // The cleanest signal we already have: `onMaskedClick` is passed by
+    // `AdopterForm` ONLY when the viewer is non-privileged (it opens the
+    // verify popover when they tap a masked chip). Its absence means the
+    // viewer is privileged (owner / editor / admin / moderator / org-mate)
+    // OR we're rendering on the new-adopter form. Either way, the microcopy
+    // is appropriate for them. When it's present, the viewer is the stranger
+    // — hide the line. Public profiles still show the "público" copy
+    // regardless, since that statement is true for any viewer.
+    const viewerIsPrivileged = !onMaskedClick;
+    const showMicrocopy = profileEffectivelyPublic || viewerIsPrivileged;
+    const microcopyKey = profileEffectivelyPublic
+        ? 'adopter.ce_visibility_profile_public'
+        : 'adopter.ce_visibility_microcopy';
+
     return (
         <div className="space-y-3">
+            {showMicrocopy && (
+                <p className="flex items-start gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {profileEffectivelyPublic ? (
+                        <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
+                            <circle cx="12" cy="12" r="9" />
+                            <path strokeLinecap="round" d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18" />
+                        </svg>
+                    ) : (
+                        <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
+                            <rect x="5" y="11" width="14" height="9" rx="2" />
+                            <path strokeLinecap="round" d="M8 11V8a4 4 0 118 0v3" />
+                        </svg>
+                    )}
+                    <span>{t(microcopyKey as never)}</span>
+                </p>
+            )}
+
             {/* Inline undo bar shown while a delete is in its 5-second window. */}
             {pendingDeleteId && (
                 <div className="flex items-center justify-between gap-3 bg-stone-100 border border-stone-200 rounded-md px-3 py-2 text-sm">

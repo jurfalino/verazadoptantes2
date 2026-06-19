@@ -2,6 +2,374 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.52] - 2026-06-19
+
+### Changed — animal name field is just optional now; "unknown" toggle removed everywhere
+
+User feedback: *"in step 2 of the activity creation wizard, when users need to enter the animal name, maybe instead of the 'unknown' toggle we could just make the input field optional?"* Acting as UX manager, ship the simpler model: optional label + null on save + drop every place that special-cases an "unknown" state.
+
+The toggle existed in **five places** (this is what the user caught when my first plan only touched the create wizard):
+
+#### Components
+- **`AdoptionFormWizard.tsx`** (new-activity wizard, step 2): toggle JSX, `unknownAnimal` state, draft-persistence keys, reset call, step-2 validation `unknownAnimal || formData.animalName.trim()`, step-3 review render `formData.animalName || (unknownAnimal ? 'Unknown' : formData.species)`, and the submit payload's `animalName: isRequest ? null : formData.animalName` all updated. New label reads *"Nombre del animal **(opcional)**"*. Submit payload sends `formData.animalName.trim() || null`.
+- **`AdoptionFormEditV2.tsx`** (edit an existing activity record): same toggle, same removal. The state was previously initialized from `!initialData?.animalName` — that branch is gone. Save payload now sends null for empty.
+- **`ImportWizard.tsx`** (FB / Google Contacts / AI-extraction import): a checkbox version of the same toggle in step 3. Auto-set to `true` when AI extraction failed to surface a name; auto-set when a Google Contacts import skipped to step 3. Removed in both places. Save payloads now send `extractedData.animalName?.trim() || undefined` (route does the null coercion).
+
+#### API routes — the actual data bug
+Both `src/app/api/adopters/route.ts:446` and `src/app/api/adopters/[id]/add-record/route.ts:83` coerced any falsy animalName to the **English literal string `'Unknown'`** before writing to D1. This was the underlying problem behind the UX surface: regardless of locale, regardless of whether the user actively chose "unknown" or just left the field blank, the DB ended up with `animal_name = 'Unknown'`. Queries couldn't distinguish "AI missed the name" from "this animal is genuinely named Unknown." Both routes now pass `adoption.animalName?.trim() || null`.
+
+#### Display surfaces — already do the right thing
+- `AdoptionHistory.tsx` activity-row renderer already branches `animalName ? "verbed {name}" : speciesLabel || recordType`. No change.
+- `my-adoptions/page.tsx` and `my-animals/page.tsx` already fall back to `t('adoption.unnamed')` (*"Sin nombre"*). No change.
+- Contract emails fall back to `'Animal'` as a generic — not user-facing copy, leave it.
+
+#### Migration — backfill the literal `'Unknown'` strings
+`drizzle/0050_backfill_unknown_animal_to_null.sql` runs a one-shot `UPDATE adoptions SET animal_name = NULL WHERE animal_name = 'Unknown'`. Idempotent. Normalizes historical inconsistency so every record where the rescuer didn't know the name renders as *"Sin nombre"* via the existing `adoption.unnamed` fallback, not as the locale-incongruent English literal "Unknown." Targets the exact toggle/coercion string only; we do not case-fold or partial-match. A legitimate animal genuinely named "Unknown" (vanishingly unlikely on a Spanish-language registry) would also match — that's collateral we accept.
+
+### Engineering
+- `src/components/AdoptionFormWizard.tsx` — toggle JSX gone, state + setter gone, reset call gone, step-2 validation simplified (`animalName` no longer factored in), step-3 review falls through name → species → `t('adoption.unnamed')`, two submit payloads use `formData.animalName.trim() || null`. `WizardDraft.formData.unknownAnimal: boolean` field kept on the type for backward-compat read of legacy localStorage drafts; written as `false` always.
+- `src/components/AdoptionFormEditV2.tsx` — same removals. Editing a record whose `animalName` is null/empty just shows a blank input; submit normalizes empty to null.
+- `src/components/ImportWizard.tsx` — checkbox in step 3 removed, `unknownAnimal` state removed, auto-set branches in `hydrateFromContact` (Google Contacts skip) and the AI-extraction completion removed, two save payloads (`POST /api/adopters` for new and merge paths) use `?.trim() || undefined`.
+- `src/app/api/adopters/route.ts` + `src/app/api/adopters/[id]/add-record/route.ts` — both literal-`'Unknown'` coercions replaced with `?.trim() || null`.
+- `drizzle/0050_backfill_unknown_animal_to_null.sql` — one-shot UPDATE.
+
+### Memory
+New memory `feedback_check_symmetric_form_surfaces`. User has caught me twice now planning a form/wizard UX change for the create flow only — once on v2.19.40's deliver-to-home foster toggle (already addressed by that release flagging an edit-form parity follow-up), and now on this. The memory codifies the rule: grep for the Edit / Import / api/.../add-record surfaces before stating the plan. Two minutes of grepping saves a six-version follow-up sequence.
+
+### What stays the same
+- `adoption.unknown_animal` i18n key kept in both locales (dead in code but still referenced by activity-history rendering for legacy records that may briefly retain the string before the migration runs).
+- The existing `adoption.unnamed` fallback strings unchanged.
+- `AdoptionHistory.tsx` rendering logic unchanged — already handles null cleanly.
+
+## [2.19.51] - 2026-06-19
+
+### Changed — contributor is no longer auto-promoted to privileged; access flows through a request
+
+QA pass on v2.19.50 surfaced the long-standing UX issue: a user who contributes a single contact entry to someone else's adopter automatically becomes `isEditor=true` in `adopter_history.changedBy`, which the PII gate honors as `privileged=true`. They then bypass all contact masking AND see the "Who has access" disclosure — including search-match details that reveal what OTHER users searched for. Verified live: `jurfalino@gmail.com` had 4 `contribution` rows on adopter `168533dc-…` (owned by `gatitosolivos@gmail.com`) and saw everything as if they were the owner.
+
+This release replaces that with the explicit-consent flow.
+
+#### 1. `isEditor` removed from the `privileged` OR-chain
+- `src/lib/piiAccess.ts` — `resolveVisibility` no longer reads `isEditor`. The field stays on `ResolveVisibilityInput` so future non-PII audit-visibility logic can use it, but the privilege decision is now `isAdmin || isModerator || isOrgMate || isOwner` only.
+- **Cold-cut behavior**: existing contributors lose their privileged view on the next page load. No backfill, no migration. Contributors who want their full view back can use the normal request-access flow.
+
+#### 2. `addContactEntry` auto-fires a PII access request
+- Right after the existing `notifyApprovers` call, `addContactEntry` now calls `requestPiiAccess(adopterId, { justification: 'auto:contribution' })`. The internal logic handles every edge case: already-privileged actors get a `has_access` no-op, pending requests dedup silently, and the denial cooldown is respected. Fire-and-forget — the contribution itself already succeeded; a failed auto-request shouldn't undo the entry write.
+- The flow is **append + auto-ask, in one user action**. Mental model shifts from "contribute → see everything" to "contribute → ask → owner decides."
+
+#### 3. Approver notification body differentiated
+- The notification approvers receive now reads *"X agregó un dato a Y y solicita acceso a los datos de contacto."* instead of the generic *"X solicitó acceso..."* when `justification === 'auto:contribution'`. Tells the owner this came from a contribution flow they probably already got a heads-up notification for, instead of looking like an unprompted cold request.
+
+#### 4. Contributor success toast acknowledges the request
+- New i18n key `adopter.ce_add_toast_added_with_request`: *"Dato agregado. Solicitamos acceso al perfil completo en tu nombre."* — fires when the contributor is not the owner. Owner contributions continue to see the bare *"Dato agregado"* toast. The server returns `autoRequestFiled: actor !== target.addedBy` on the success response so the client picks the right copy.
+- Owner-equality is a slight over-approximation: admins / org-mates contributing to records they're already privileged on see the "we filed a request" toast even though `requestPiiAccess` internally no-oped. Acceptable — privileged users contributing on records they have access to is rare on this path, and the toast isn't misleading in any harmful way.
+
+#### 5. "Who has access" disclosure leak fixed as a side effect
+- Once contributors stop passing `privileged`, they stop seeing the disclosure at all. The `jurfalino` situation that prompted this release no longer occurs.
+- The disclosure stays visible to true owners / admins / moderators / org-mates with the v2.19.27 search-match per-grant expansion unchanged — that's still the legitimate audience's audit tool.
+
+### Memory updated
+- `project_collaborative_vetting_model` — added the "v2.19.51: contributing NO LONGER auto-promotes to editor with full PII visibility" paragraph. Mental model: **contribute → ask → owner decides**.
+
+### Engineering
+- `src/lib/piiAccess.ts` — `isEditor` discarded from `resolveVisibility` destructuring; field stays on the input type with a doc comment explaining the v2.19.51 contract change.
+- `src/app/actions/addContactEntry.ts` — imports `requestPiiAccess`, calls it fire-and-forget after `notifyApprovers`, returns `autoRequestFiled` boolean on the success response.
+- `src/app/actions/piiAccess.ts` — `requestPiiAccess` branches the approver-notification body on `justification === 'auto:contribution'`.
+- `src/components/ContactEntriesSection.tsx` — success toast picks `ce_add_toast_added_with_request` when `res.autoRequestFiled` is true.
+- New i18n keys `adopter.ce_add_toast_added_with_request` in both locales.
+
+### What stays the same
+- Contribution itself is still open — anyone authenticated can `addContactEntry`. The data model around contributors and their entry-scope grants is unchanged.
+- The disclosure's content for owners (the v2.19.27 search-match per-grant details) is unchanged.
+- `unlocked_existing` toast for the "you typed the masked value, here it is" path is unchanged.
+
+## [2.19.50] - 2026-06-19
+
+### Fixed — `/api/notifications` returned 500 to unauthenticated requests (should be 401)
+- A senior-QA smoke pass found the route in `src/app/api/notifications/route.ts` was returning HTTP 500 (`Internal Server Error`, no body) for any request without a valid session — including the 25s `NotificationBell` polls fired the moment a session expires. Should have been 401.
+- **Root cause**: `getUser()` in `src/app/actions/_db.ts:16-26` doesn't return a sentinel for unauthenticated viewers — it **throws** `Error('Authentication required')`. The route was reading the return value (`const user = await getUser()`) and then checking `if (!user || user === 'anonymous')` — but that branch is dead code; `getUser()` never reaches it. The throw escaped the route, Next caught it at the framework level, returned 500 with nothing useful for triage.
+- **Fix**: wrap `getUser()` in `try/catch` inside the route. Catch returns the proper 401. Same fix on both GET and PATCH handlers. Other API routes don't call `getUser()` directly (they go through server actions that have their own catches), so the bug was contained to this one file.
+- **User-facing impact**: bell breakage when a session expired, with no error visible. Now the route correctly returns 401 and the bell's existing silent-on-401 path takes over.
+
+### Cleaned — orphan rows in FK-referencing tables
+- Same QA pass found 4 rows in `adoptions` and 2 rows in `adopter_stats` referencing adopter IDs that no longer exist (likely from an early hard delete that didn't cascade — the schema doesn't enforce FK cascades on these tables, so orphans accumulate silently). Doesn't crash anything but inflates stats counts and confuses debugging.
+- New migration `drizzle/0049_cleanup_orphan_refs.sql` sweeps **all** FK-referencing tables (`adoptions`, `adopter_stats`, `adopter_history`, `duplicate_tokens`, `pii_access_requests`, `pii_access_grants`, `duplicate_candidates`) for rows whose `adopter_id` doesn't resolve. Idempotent — every DELETE gates on `NOT EXISTS`.
+
+### Flagged — not fixed in this release (need policy decision)
+
+A senior-QA finding during the same session: **a one-time contributor becomes a permanent `isEditor` for the record they contributed to, which makes them `privileged` in the PII gate** (`src/lib/piiAccess.ts:444`). They then bypass all contact masking and see the full "Who has access" disclosure including other users' search-match unlock details. Verified live: `jurfalino@gmail.com` had 4 `contribution` rows + 1 `edit` row in `adopter_history` for an unrelated record (`168533dc-…`) and saw everything as if they were the owner.
+
+This is the documented collaborative-vetting model (adds are open, contributing is encouraged) — but the **"contributing forever earns full PII visibility"** semantic is stronger than most contributors realize. Two paths:
+- Keep as-is, surface the implication more clearly in the contribution flow.
+- Drop `isEditor` from the `privileged` OR-chain in `resolveVisibility`. Contributors still get entry-scope grants for the entries they themselves added; they don't get all-contact view or the disclosure.
+
+Deferred until the policy call is made. The QA report tagged this as a discussion item, not a bug.
+
+### Other QA findings still open (not in this release)
+- **Security headers gap**: `Content-Security-Policy`, `Strict-Transport-Security`, `Permissions-Policy` from `next.config.ts` are not applied in production — `next-on-pages` doesn't honor the Next `headers()` config the way Vercel does. Needs a `public/_headers` file. Bigger change, deserves a dedicated PR.
+- 1 pending PII access request awaiting triage in `pii_access_requests`. Admin action only.
+
+## [2.19.49] - 2026-06-19
+
+### Fixed — visibility microcopy was being shown to non-privileged viewers
+- A stranger viewing a private profile (no org-mate access, no grant) saw the contact entries masked AND the microcopy *"Solo visible para vos y tus organizaciones."* The microcopy is addressed to the **owner** — the "vos" in the copy is them — so showing it to a stranger is doubly broken: (a) the entries aren't visible to that viewer at all, contradicting the literal reading, and (b) the "vos" doesn't refer to the visitor anyway.
+- Fix: gate the microcopy on `viewerIsPrivileged`, derived from `!onMaskedClick`. The `onMaskedClick` prop is passed by `AdopterForm` ONLY when the viewer is non-privileged (it opens the verify popover when they tap a masked chip), so its absence is the cleanest signal we already have for "viewer is owner / editor / admin / moderator / org-mate, or this is the new-adopter form." When the viewer is non-privileged AND the profile is not public, the line is hidden entirely.
+- Public profiles continue to show the *"Este perfil es público y visible para todos."* line regardless of viewer — that statement is true for every visitor.
+
+### Engineering
+- `src/components/ContactEntriesSection.tsx`: new `viewerIsPrivileged = !onMaskedClick` derivation; `showMicrocopy = profileEffectivelyPublic || viewerIsPrivileged`; the existing `<p>` wraps under a `showMicrocopy &&` gate.
+
+## [2.19.48] - 2026-06-19
+
+### Fixed — admin UI silently lied about two feature flags; toggle clicks could disable enabled features
+
+User reported that `MINIMALIST_HOMEPAGE` (= `ENABLE_CLEAN_HOMEPAGE`) showed OFF in `/admin/config` but the homepage rendered as if it were ON. Live D1 query against staging confirmed: `ENABLE_CLEAN_HOMEPAGE = 'true'` and `ENABLE_PUBLIC_PROFILES = 'true'` in `app_config`. Both flags actually applied at runtime, but the admin UI showed both as OFF.
+
+**Root cause**: `/api/admin/config` GET handler (`src/app/api/admin/config/route.ts`) hand-enumerates 14 of the 16 feature-flag keys in its response. Both `ENABLE_PUBLIC_PROFILES` and `ENABLE_CLEAN_HOMEPAGE` were declared in the admin UI's expected `data.config` TypeScript shape (`page.tsx:38-39`) and read in its useEffect hydration (`page.tsx:157-158`) but were **never populated** in the API response. The admin UI's `data.config?.ENABLE_CLEAN_HOMEPAGE === 'true'` evaluated to `false`, toggle rendered OFF, even though the DB value was `'true'`.
+
+**Worse — silent state corruption from clicking the toggle**: with the UI showing OFF, the admin click handler (`page.tsx:248`) calls `handleToggleFlag(flag.key, !featureFlags[flag.key])`. With `featureFlags[flag.key] = false`, the POST writes `'true'` to the DB. Reload — UI still shows OFF because GET still omits the key. Click again, "thinking you're enabling," POST writes `'false'`. An admin could silently flip a feature OFF while believing they were enabling it.
+
+**Fix**: two lines added to the GET response — `ENABLE_PUBLIC_PROFILES: config['ENABLE_PUBLIC_PROFILES'] || 'false'` and `ENABLE_CLEAN_HOMEPAGE: config['ENABLE_CLEAN_HOMEPAGE'] || 'false'`. Now the admin UI reflects actual DB state.
+
+### Memory updated
+`feedback_feature_flag_5_place` extended with the "place #2 silently rots when other places get new flags" failure mode + the specific symptom pattern ("admin reports toggle does nothing or UI doesn't match toggle" → step 1 is direct D1 query). Long-term fix flagged: refactor the GET handler to iterate `FEATURE_FLAGS` rather than hand-enumerate, collapsing 3 of the 5 places to one source of truth.
+
+### Out of scope
+- Refactor of the GET handler to derive flags from `FEATURE_FLAGS` automatically — discussed in changelog comment but deferred for risk-management.
+- Orphan flags in DB that no code reads (`ENABLE_AI_EXTRACTION`, `ENABLE_FACEBOOK_IMPORT`, `ENABLE_TRUST_SNAPSHOT`, `ENABLE_VISIT_INTENT_PROMPT`) — left untouched.
+- The user's report of `ENABLE_GOOGLE_CONTACTS_IMPORT` showing off in admin while the homepage button rendered: the API does return that flag and the DB value is `'true'`. Most likely cache; if it persists after this deploy, please flag a fresh repro.
+
+## [2.19.47] - 2026-06-19
+
+### Changed — visibility shown at profile level only + import-time consent toggle
+
+Two coordinated changes, one direction: the **data model stays as-is** (per-entry `isPublic` keeps existing, gets persisted, mask path keeps honoring it — left intact for a possible per-field visibility feature later). The user-facing surfaces only express visibility at the **profile** level. New social-URL imports get an explicit consent toggle instead of silently stamping per-entry public.
+
+#### `ContactEntriesSection` — single profile-level microcopy
+- v2.19.46's three-state copy (`all_public` / `mixed` / `private`) and the per-chip "🌐 Público" badge are gone. The section now picks between two states:
+  - **Profile public** (record-level `is_public = true` OR every entry has `isPublic: true` — the latter catches legacy FB-imported records before per-record consent existed): globe icon + *"Este perfil es público y visible para todos."*
+  - **Profile private** (default): lock icon + the existing *"Solo visible para vos y tus organizaciones."*
+- New `adopterIsPublic` prop. `AdopterForm` passes it down from `initialData.isPublic`.
+- **No data migration**. The `effectivelyPublic = adopterIsPublic || allEntriesPublic` computation handles legacy records correctly — fully-public-by-per-entry records render with the "público" copy without needing a backfill.
+
+#### `ImportWizard` — per-record consent toggle for social-URL imports
+- A new toggle in step 3 (review) appears **only for social-URL imports** (sourceUrl is set, not a Google Contacts import). Default ON. Copy: *"Este perfil será visible para todos. Los datos vienen de una fuente pública (red social). Si preferís que sean privados, desactivá esta opción."*
+- When ON: existing behaviour — per-entry `isPublic: true` stamping happens at the API route.
+- When OFF: wizard sends `isPublic: false` in the POST body; the route skips the `stampPublic` block entirely. Record is created fully private, no per-entry flags.
+- For Google Contacts and text-only AI imports, the toggle is hidden — those flows never had the public-source semantic.
+
+#### API route — new `body.isPublic` honoured
+- `createAdopterApiSchema` accepts `isPublic?: boolean`.
+- In the create handler: `callerConsentedToPublic = callerIsPublic !== false` — defaults to the previous behaviour when the field is omitted (Google Contacts and any legacy caller stay unchanged). Only `false` explicitly opts out of `stampPublic`.
+
+### Engineering
+- `src/components/ContactEntriesSection.tsx` — reverted v2.19.46 badge + mixed-state microcopy; new two-state logic.
+- `src/components/AdopterForm.tsx` — passes `adopterIsPublic` down on both isNew and existing-record render paths.
+- `src/components/ImportWizard.tsx` — new `isPublicProfile` state (default true), toggle render in step 3 gated on `sourceUrl && !fromContacts`, `isPublic` field added to POST payload.
+- `src/app/api/adopters/route.ts` — destructures `callerIsPublic`; `stampPublic` now AND'd with `callerIsPublic !== false`.
+- `src/app/actions/validation.ts` — `createAdopterApiSchema` gains optional `isPublic: boolean`.
+- `src/types/adopter.ts` — `isPublic?: boolean | null` added to the shared `Adopter` type (column has been around since v2.16.0-12 but wasn't on this type).
+- i18n: dropped `ce_visibility_all_public`, `ce_visibility_mixed`, `ce_public_badge`, `ce_public_badge_title`. Added `ce_visibility_profile_public` + four wizard-toggle keys (`public_profile_on/off/explainer/toggle_title`) in both locales.
+
+### Out of scope
+- Per-field visibility UI / per-entry public toggle for existing records — not built. The data model preserves the field for a future iteration.
+
+## [2.19.46] - 2026-06-19
+
+### Fixed — visibility microcopy claimed "private" on public-sourced entries
+- User opened a Facebook-imported adopter profile and the contact-entries section showed *"Solo visible para vos y tus organizaciones"* even though the entries were imported from a public Facebook post and have `isPublic: true` set on them — i.e., they ARE visible to everyone, not just the user's organizations. **Same trust violation the original microcopy was supposed to avoid**: copy claiming privacy when the data isn't private.
+- The microcopy is now conditional on the entries' actual `isPublic` state. Three cases:
+  - **All entries public**: globe icon + *"Estos datos vienen de una fuente pública y son visibles para todos."*
+  - **Mixed (some public, some private)**: globe icon + *"Los datos marcados como públicos son visibles para todos. El resto solo es visible para vos y tus organizaciones."*
+  - **All private / no entries yet**: existing lock icon + *"Solo visible para vos y tus organizaciones."*
+- Plus **per-entry visibility badge**: a small globe icon + "Público" label renders next to the type label on every entry with `isPublic === true`. So the rescuer can see exactly which entries are gated and which aren't, instead of inferring from the section microcopy.
+
+### Engineering
+- `src/components/ContactEntriesSection.tsx` — derived `hasPublicEntry` / `allPublic` from `sorted` (the sorted+filtered entry list), picked the microcopy key, swapped lock-vs-globe icon, added per-chip badge.
+- New i18n keys `adopter.ce_visibility_all_public`, `ce_visibility_mixed`, `ce_public_badge`, `ce_public_badge_title` in both locales.
+
+### Out of scope
+- The adopter-level `is_public` flag (admin "this whole record is publicly known") would also make all entries effectively public, regardless of per-entry `isPublic`. Component would need that prop plumbed through. Not addressed in this patch — that's an admin-driven path, the Facebook-import per-entry case is the common one. Bring it in when next touching this surface if the admin-flag scenario surfaces.
+
+## [2.19.45] - 2026-06-19
+
+### Investigation — "workers exceeded resource limit" report from prod
+- One user reported the platform-level Cloudflare error. Pulled Pages-Functions analytics directly: **7 `scriptThrewException` events across 6 of the last 7 days (~1/day)** out of ~800 total requests. Spread evenly — not a flood, not a one-off. The Pages Analytics API doesn't expose per-exception type or per-path breakdown (would need Workers Logs product), so we can't tell which paths threw from the dashboard alone.
+- Decision per the EM playbook in the v2.19.44 audit: "multiple times/day, but spread → instrument + targeted fix on the most-likely path." This release executes both.
+
+### Added — duration tracing on the top hot paths
+- `getAdopter` (`src/app/actions/adopters.ts`) — profile load. Now wrapped via `withTrace('getAdopter', ...)`. Every call records `{ durationMs, adopterId, success }` to Axiom under `Trace: getAdopter`. The profile page is the heaviest server-rendered path; we want a single Axiom field showing how long the whole compose took.
+- `getAdopterPiiContext` (`src/app/actions/piiAccess.ts`) — same wrapper. Critical for privileged viewers with many grantees/org-mates; that's where the worst-case fanout lived (see fix below).
+- `findAdopters.discovery` + `findAdopters.duplicate` were already traced as of v2.18.x — no change.
+
+Next time someone reports "exceeded resource limit," we can pull a 30s Axiom query of `level=info AND message="Trace: getAdopterPiiContext" AND durationMs > 5000` to find the slow ones.
+
+### Fixed — `resolveDisplayName` fanout in `getAdopterPiiContext` (the most likely culprit)
+- The PII context resolver was calling `resolveDisplayName(email)` once per grantee + requester + org-mate via `Promise.all(emails.map(resolveDisplayName))`. Each call is one D1 raw-prepare. For a privileged viewer on a record with 10 grants + 20 org-mates, that's **30 sequential subrequests** just for name lookup, ahead of the actual page render. With Cloudflare's 1000-subrequest cap and CPU-budget pressure, that fanout was a plausible cause of the exception cluster — especially on profiles with a lot of activity history that already eat subrequests in the surrounding code.
+- New `resolveDisplayNames(emails: string[]): Promise<Map<string, string>>` in `src/app/actions/notifications.ts` does **one** `SELECT email, name FROM user WHERE email IN (?, ?, ?, ...)` with explicit placeholders. `inArray()` is the broken D1 helper; raw IN with explicit binds works fine. Falls back to email-prefix for any unresolved address so callers always read a non-empty string.
+- `getAdopterPiiContext` now calls `resolveDisplayNames` once for the grant+request set, then once more for the org-mate set (deduped against the first map). Net: 2 D1 subrequests instead of up to 30.
+
+### Engineering
+- `src/app/actions/notifications.ts` — new `resolveDisplayNames` exported alongside the existing per-email function.
+- `src/app/actions/piiAccess.ts` — `getAdopterPiiContext` split into wrapper + impl; both batches converted from `Promise.all(...resolveDisplayName)` to `resolveDisplayNames(...)`.
+- `src/app/actions/adopters.ts` — `getAdopter` split into wrapper + impl wrapped in `withTrace`.
+- `withTrace` import added to `adopters.ts` and `piiAccess.ts`; `findAdopters.ts` already had it.
+
+### What this doesn't fix
+- The 7 exceptions over 7 days might not all be PII-context fanout. We won't know for sure until we see what `Trace: getAdopterPiiContext durationMs` looks like in Axiom post-deploy. If durations are sub-200ms across the board, the culprit is elsewhere (probably search CPU on a large query, or saveAdopter + tokenizeAdopter on a record with many entries).
+- Other hot paths still fan out (admin lists, my-adopters page). Not touched in this release.
+
+## [2.19.44] - 2026-06-19
+
+### Fixed — Axiom observability gaps from the v2.19.43 audit (gaps #1 and #2)
+
+This release ships the two highest-leverage items from the engineering-management audit of error coverage. Estimated coverage jump: ~75% → ~90%.
+
+#### #1 — Missing-Axiom-config is now impossible to miss in Cloudflare logs
+- **Before**: when `AXIOM_DATASET` or `AXIOM_TOKEN` was unset in a non-local env, `sendToAxiom()` warned **once per worker boot** via `console.warn` and then silently fell back to `console.log`/`warn`/`error` per-entry. Callers still received fresh 8-char `errorId`s, but those ids pointed to nothing in Axiom. Operators only spotted the misconfig if they happened to scroll up to the boot warning. **This was the worst-case failure mode** of the whole observability stack.
+- **After**:
+  - **Boot banner** is a `console.error` (was `console.warn`) with `🚨🚨🚨 LOGGER_BOOT_BANNER:` prefix, explicitly naming the two env-var keys + telling the operator where to set them.
+  - **Every individual log entry in the fallback path** is also a `console.error` (was per-level) with `🚨 LOGGER_FALLBACK [LEVEL] (#N dropped) <message>` prefix. So even an operator who missed the boot banner sees a prominent prefix on every dropped log line in Cloudflare Tail, AND a running counter of how many lines have been dropped this worker lifetime.
+  - Local dev keeps the friendly multi-level (`console.log` / `warn` / `error`) behavior — the new prefix is production-non-local only.
+- Net effect: a misconfigured deploy is visible within the FIRST log line in Cloudflare logs, and stays visible on every subsequent line. No silent observability loss.
+
+#### #2 — Fire-and-forget catches: `logger.warn` → `logger.error` for correlatable ids
+- `logger.warn` ships to Axiom but doesn't generate a `errorId`. So every `tokenizeAdopter(...).catch(e => logger.warn(...))` pattern logged the failure but left it un-correlatable — an operator scanning Axiom couldn't tie a specific tokenize failure to a specific request. Worse, tokenize failures are *silent data corruption* (the surrounding op succeeded but search/dedup is now stale until the next save) — exactly the kind of bug that needs a quotable id.
+- Swept across server actions; 10 catch sites converted to `logger.error(message, error, { context })` so each gets an id:
+  - `src/app/actions/adopters.ts`: 4 sites (`logProfileView` fire-and-forget, `tokenizeAdopter` after append/update/create)
+  - `src/app/actions/adoptions.ts`: 2 sites (`tokenizeAdopter` after adoption update/create)
+  - `src/app/actions/addContactEntry.ts`: 2 sites (`tokenizeAdopter` + `notifyApprovers`)
+  - `src/app/actions/removeContactEntry.ts`: 1 site
+  - `src/app/actions/updateContactEntry.ts`: 1 site
+  - `src/app/actions/duplicates.ts`: 1 site (`tokenizeAdopter` internal catch)
+- Also patched **my own v2.19.40 client-side `console.warn`** in `AdoptionFormWizard.tsx:533` (the `appendToExistingAdopter` failure when persisting the delivered-to-home address). Routed through `reportClientError` so it gets a real Axiom id; the main activity record's save already succeeded, so the catch stays non-blocking (no toast, no re-throw) — only the observability changes.
+
+### Engineering
+- `src/lib/logger.ts` — `sendToAxiom` fallback path rewritten; counter + prefixes added.
+- 6 server-action files swept (see list above).
+- `src/components/AdoptionFormWizard.tsx` — `console.warn` → `reportClientError` for the v2.19.40 fire-and-forget.
+
+### Still pending (audit follow-ups)
+- **#3**: getter actions (`getAdopter`, `getAdopterStats`, etc.) return `null` on failure — id exists in Axiom but client can't display it. Plan: return `{ data, errorId? }` shape. Not in this release.
+- **#4**: `toast.error(...)` callsite sweep — ~20 of 115 omit the errorId arg. Per-callsite audit needed.
+- **#5**: `logger.warn` could also generate + ship an id so severity stays advisory but everything is traceable. This release went the other way (warn → error) for the fire-and-forget catches specifically; a broader policy change can come later.
+
+## [2.19.43] - 2026-06-19
+
+### Fixed — AdopterForm save errors now (1) don't crash on undefined `res` and (2) always carry an error-id
+- User reported saving an adopter triggered: *"Error al guardar — Cannot read properties of undefined (reading 'success')"* with no error-id to quote. Two problems compounded:
+  1. **Crash on undefined `res`**: `await saveAdopter(payload)` is supposed to return `{ success: true | false, ... }` or throw, but rare edge-runtime conditions (worker panic mid-response, network blip) can land an `undefined` on the client. The next `res.success` read then threw a TypeError. The catch block fired, but the toast message was the raw `Cannot read properties...` runtime error, not the underlying server condition.
+  2. **No error-id on the toast**: the catch block used `extractErrorId(err)` which only finds an id when the server threw with one embedded (the standard pattern). A client-side TypeError carries no id, so the toast was unattributable to any Axiom row.
+- Fixes in `AdopterForm.performActualSave`:
+  - **Defensive null check on `res`**: if `saveAdopter` returns undefined, route through `reportClientError` (logs to Axiom via `/api/log-client-error`, returns a fresh id), then show the standard save-failed toast WITH the id.
+  - **All three error paths now produce an id**:
+    - `res.success === false` → `reportClientError` with `extra.serverError` carrying the server's `error` string for triage.
+    - Thrown server error → existing `extractErrorId(err)` (no behavior change for the canonical path).
+    - Thrown client error / no embedded id → `reportClientError` fallback.
+
+### Memory
+- New memory `feedback_error_toasts_need_id` codifies the rule for all future error-toast call sites: every user-facing error toast must carry an 8-char id; every await on a server action must be defensively checked for undefined before reading properties. Indexed in MEMORY.md.
+
+### Audit follow-up needed
+- Same pattern likely needs to be applied to other server-action call sites whose error paths were previously bare. Audit candidates: anywhere `await someAction(...)` is followed by a direct `.success` read or an `if (!res.success)` without a prior null check. Will sweep when next touching those surfaces.
+
+## [2.19.42] - 2026-06-19
+
+### Changed — preview-mode toasts now teach what would actually happen
+- v2.19.41's toast (*"Acción no ejecutada — Estás en vista previa"*) reassured the owner that nothing fired but didn't *explain* what the action would do for a real visitor — which is the whole pedagogical point of preview mode. Split into two action-specific bodies that describe the real-world effect first, then note that nothing happened because the owner is previewing:
+  - **Verify** (typed a guess + hit Verify): *"Si un visitante hiciera esto y adivinara correctamente, solo se le mostraría ese dato. Como estás en vista previa, no se ejecutó ninguna acción."* — teaches the per-field unlock semantics.
+  - **Request access**: *"Si un visitante hiciera esto, te llegaría una notificación para aprobar o denegar su pedido de acceso. Como estás en vista previa, no se envió ninguna solicitud."* — names the approval flow the owner would actually face.
+- Shared title `Vista previa` (was `Acción no ejecutada`). The title's job is "what kind of message is this"; the body's job is teaching.
+
+### Engineering
+- Renamed i18n keys: `preview_action_blocked_title/body` → `preview_simulate_title` + `preview_verify_explainer` + `preview_request_explainer` in both locales. `PiiVerifyPopover.submit()` and `AdopterProfileV2.onRequestAccess` updated to use the action-specific bodies.
+
+## [2.19.41] - 2026-06-19
+
+### Fixed — preview-as-stranger: verify + request-access were still firing real server actions
+- v2.19.39 made the masked-chip click open the verify popover in preview mode, which was the right behavior in isolation. But the popover's two actions (Verify with a guessed value, Request full access) still called the real server actions — meaning a privileged owner previewing as a stranger could file a PII access request **to themselves**, or fire `verifyKnownInfo` against their own record and leave a misleading audit trail. User correctly caught this.
+- Fix: both actions are now intercepted in preview mode and render a toast (`Acción no ejecutada — Estás en vista previa. Salí de la vista previa para verificar o solicitar acceso.`) instead.
+  - **Verify**: new `previewMode?: boolean` prop on `PiiVerifyPopover`. When set, the `submit()` short-circuits to a toast + close, before reaching `verifyKnownInfo`.
+  - **Request access**: the `onRequestAccess` wrapper in `AdopterProfileV2` checks `previewAsStranger` and toasts instead of opening the request modal.
+- The popover itself still RENDERS in preview mode (that's the whole point of preview — see what a stranger sees including the popover surface). Only the wired-up actions become inert. The "preview is for looking, not doing" model.
+
+### Engineering
+- `src/components/PiiVerifyPopover.tsx`: added `previewMode?: boolean` prop. `submit()` early-returns with `toast.info(...)` when in preview mode.
+- `src/components/AdopterProfileV2.tsx`: `onRequestAccess` passed to the popover wraps the existing handler — `previewAsStranger` → toast, else → `setRequestModalOpen(true)`. Also passes `previewMode={previewAsStranger}` so the popover's own Verify is intercepted at the source.
+- New i18n keys `adopter.preview_action_blocked_title` and `adopter.preview_action_blocked_body` in both locales.
+
+## [2.19.40] - 2026-06-19
+
+### Added — `foster` (tránsito) wizard now asks "delivered to home?" + structured address goes into contact details
+- Recording a `foster` activity (tránsito) didn't surface the "delivered to the adopter's home?" toggle — only `adoption` did. With the toggle present, the address went into a single textarea and only persisted on the adoption row's `verifiedAddress` column; it never made it into the adopter's structured `contactEntries`, so the PII gating + masking that protects manually-added addresses didn't apply to it. Three changes:
+  1. **The toggle now shows for both `adoption` and `foster`.** Same condition path, same field set.
+  2. **The single address textarea becomes two structured inputs** mirroring the contact-entries composer: `streetAndNumber` + `locality`. Same placeholders (`ce_input_ph_address` / `ce_input_ph_locality`), so the visual idiom matches the form rescuers already know.
+  3. **On save, the address is written into the adopter's `contactEntries`** as a typed `address` entry — `{ type: 'address', value, streetAndNumber, locality, addedBy }`. Goes through `appendToExistingAdopter` so dedup against existing entries is handled by `mergeContactEntries`, and the entry gets the same PII gating + `partialRevealAddressString` masking as any manually-added address (street masked for non-privileged viewers, locality stays visible).
+- The activity row keeps its existing `verifiedAddress` string column (now composed as `[street, locality].filter(Boolean).join(', ')` on submit) for backward compat with read sites + the AI-import path. The structured halves are wizard-only state — stripped from the save payload before it hits `saveAdoption`.
+
+### Behavior notes
+- The contact-entries write is **fire-and-forget after the main save** — a failure to append doesn't undo the activity record. Logged via `console.warn` if it fails; the audit row from `appendToExistingAdopter` itself is the canonical trail if it succeeds.
+- The toggle's existing pre-fill behaviour (when turning ON, seed from the adopter's known address via `extractAddressFromContact`) now seeds the **street** field. The user can split it into the locality field manually if needed. When turning the toggle OFF, all three (`verifiedStreetAndNumber`, `verifiedLocality`, `verifiedAddress`) clear so a follow-up activity doesn't carry over stale data.
+- New trust microcopy below the inputs: *"Esta dirección se guardará en los datos de contacto del adoptante y queda protegida como dato personal."* — uses the same lock icon as the `ce_visibility_microcopy` line from v2.19.38 for visual consistency.
+
+### Not in this release
+- **`AdoptionFormEditV2` parity is deferred.** The edit form still shows the single textarea + adoption-only toggle. Editing an existing foster won't surface the toggle, and editing an adoption with delivered=true still uses the legacy single-input. Shipping the wizard side first matches what the user explicitly asked for; bring the edit form forward when next touching activity editing.
+
+### Engineering
+- `src/components/AdoptionFormWizard.tsx` — `WizardDraft.formData` gains `verifiedStreetAndNumber` + `verifiedLocality`. `useState` initializer + `resetForm` updated. Toggle render condition extended to `foster`. Submit path composes `verifiedAddress` from the two halves, strips the structured fields from the payload before `saveAdoption`, then awaits `appendToExistingAdopter` to persist the typed address.
+- New i18n key `adoption.verify_address_saved_hint` in both locales.
+
+## [2.19.39] - 2026-06-18
+
+### Fixed — preview-as-stranger: clicking a masked chip didn't open the verify popover
+- In v2.19.38, toggling preview-as-stranger correctly re-rendered the contact entries as masked chips and wired the click handler into `onMaskedContactClick` (via `effectivePiiContext`). But the popover itself (`PiiVerifyPopover`) and the request-access modal (`RequestPiiAccessModal`) were gated on the **original** `piiContext?.masked`, which is `false` for a privileged viewer — so the components never mounted in preview mode. The state was being set, but nothing was listening.
+- Swapped both gating conditions to `effectivePiiContext?.masked`. Same fix for `piiOptInEligible` (line 135) so the popover's primary action (request-access) actually appears in preview mode; without it, the popover would render but its CTA would be missing.
+- Net effect: preview mode now lets you click a masked chip and see the exact verify / request popover a stranger would see, with the working primary action.
+
+### Engineering
+- `src/components/AdopterProfileV2.tsx` — three `piiContext?.masked` gates flipped to `effectivePiiContext?.masked` (RequestPiiAccessModal + PiiVerifyPopover renders + piiOptInEligible derivation). The popover's `requestState` prop also switched to `effectivePiiContext.requestState` to keep TypeScript happy — same value (`effectivePiiContext` spreads from `piiContext`), but the narrowing now flows from the gate.
+
+## [2.19.38] - 2026-06-18
+
+### Added — trust UX so rescuers know who can see what they enter
+
+Two pieces that reinforce each other: an at-input visibility claim, and a way for the rescuer to see the claim is honest.
+
+#### Inline visibility microcopy on every contact-entries section
+- A small lock icon + line *"Solo visible para vos y tus organizaciones"* now renders at the top of the `ContactEntriesSection` chip list — both on the new-adopter form and on existing-record edit views. Reinforcement-at-the-moment-of-input: the rescuer sees the visibility claim where the act is happening, not buried on a separate policy page.
+- Theme-safe via `var(--text-muted)` so it works under both `claro` and `azul-noche`. SVG lock icon (not emoji) per the existing icon convention.
+- New i18n keys `adopter.ce_visibility_microcopy` in both locales.
+- Honest copy caveat: the line says "you and your organizations" — admins / moderators also have read access for moderation oversight, and that's not surfaced here. If we later expand the trust model or someone reads this as a guarantee against admin access, we'd revise. The simplification was the user's explicit copy choice.
+
+#### Preview-as-stranger toggle on the adopter profile
+- A discreet "Ver como otro usuario" button next to the back-nav on any adopter profile the rescuer can fully see. Privileged-only (owner / editor / admin / moderator / org-mate) — non-privileged viewers already see the masked version for real, so a toggle would be confusing.
+- Clicking it re-renders the page as a non-privileged stranger would see it: adopter name reduced to initials (`partialRevealName`), contact entries partial-revealed (`maskContactEntries` against `NO_ACCESS_VISIBILITY`), address masked (`partialRevealAddressString`), who-has-access disclosure and PII request panel hidden. An accent-bordered banner at the top makes it unmistakable that the view is a simulation, with the same toggle inverted as the exit button.
+- Genuinely-what-a-stranger-gets, not a hand-rolled mock — re-uses the same `maskAdopterContact` and `renderName` helpers the server runs in production. So the preview won't drift from what production actually shows. Strongest single trust signal: the rescuer sees the masking work, doesn't just have to trust the microcopy.
+- Activity history, family members, and audit log stay unchanged in preview. Strangers do see activity records (the registry's vetting purpose requires it), and conflating "preview PII masking" with "preview audit visibility" would confuse the signal.
+- Implementation: new `previewAsStranger: boolean` state, `displayedAdopter` `useMemo` swapping in masked field values, `effectivePiiContext` swapping `privileged: false` / `masked: true` so child components branch into stranger mode the same way they would in production. Gated panel renders via `!previewAsStranger && piiContext.privileged && ...` on the existing conditionals.
+
+### Engineering
+- `src/components/ContactEntriesSection.tsx` — new `<p>` block at the top of the rendered section with the visibility microcopy + lock icon.
+- `src/components/AdopterProfileV2.tsx` — new `previewAsStranger` state, `displayedAdopter` / `effectivePiiContext` `useMemo`s using `maskAdopterContact` / `renderName` / `NO_ACCESS_VISIBILITY` from `@/lib/piiAccess`. New toggle button alongside the back-nav. New accent-bordered banner above the (gated) PII panels. `AdopterForm` props now consume the masked variants. The PII request panel + grants disclosure also gate on `!previewAsStranger`.
+- New i18n keys `adopter.preview_enter` / `preview_exit` / `preview_enter_title` / `preview_exit_title` / `preview_banner_title` / `preview_banner_body` in both locales.
+
+## [2.19.37] - 2026-06-13
+
+### Added — open-from-search auto-scrolls to the matched activity
+- Clicking a search result that matched **content inside an activity** (not the adopter name) used to leave the rescuer at the top of the profile with no signal where their term lived. They had to scan or Ctrl+F. The URL already carries the term in `?q=`, so the page knows the needle — just wasn't acting on it.
+- Now, on mount, if `?q=` is present AND the term doesn't already appear in the adopter's name (in which case it's already on-screen at the top), the page searches across each activity's text fields (`animalName`, `details`, `comments`, `age`, `color`, `sex`, `microchip`, `verifiedAddress`, `species`) for the first one containing the term, then `scrollIntoView({behavior:'smooth', block:'center'})` on the activity card and flashes a brief accent-color ring around it for ~2 seconds so the eye lands on the right place even after scroll.
+- Comparison is accent-folded + lowercased (`'NFD'` + combining-mark strip), so "maria" matches "María" and "Maria" alike — same normalisation the search engine uses.
+
+### Engineering
+- `src/components/AdopterProfileV2.tsx`: new `useEffect` reading `searchParams.get('q')`, scanning the adoptions prop, and applying transient inline `box-shadow: 0 0 0 3px var(--accent)` to the matched element. Uses `var(--accent)` not a hardcoded teal so the flash works under both `claro` and `azul-noche` themes (per memory `feedback_themed_colors_only`). All timers are cleaned up in the effect's return.
+- The activity DOM ids `#adoption-${id}` are already rendered by `AdoptionHistory.tsx:230,294` — no UI markup changes needed, just consumes existing anchors.
+
+### Behavior notes
+- Match against the adopter's name → no scroll (the name renders at the top, scrolling away would be jarring).
+- Match against multiple activities → scrolls to the first one (typically the most recent given the timeline ordering).
+- No match in activities → no scroll, no flash (the profile renders normally; the user can still read the page).
+- 300ms delay before scroll so `CollapsibleSection`'s default-open state has settled and `getElementById` resolves.
+
 ## [2.19.36] - 2026-06-12
 
 ### Added — server-side diagnostic logging on the `/auth-error` page

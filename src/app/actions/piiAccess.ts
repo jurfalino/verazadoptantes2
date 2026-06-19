@@ -15,7 +15,7 @@
 import { piiAccessRequests, piiAccessGrants, adopters, adopterHistory } from '@/db/schema';
 import { and, eq, desc, asc, isNull } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
-import { logger } from '@/lib/logger';
+import { logger, withTrace } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { isAdminAsync } from '@/config/admins';
 import { isPiiGatingEnabled, resolveAdopterVisibility } from '@/lib/piiAccessServer';
@@ -35,7 +35,7 @@ import {
     type PiiOrgMateAccess,
 } from '@/lib/piiAccess';
 import { deserializeContactEntries, type ContactEntryType } from '@/lib/contactEntries';
-import { createNotification, resolveDisplayName } from './notifications';
+import { createNotification, resolveDisplayName, resolveDisplayNames } from './notifications';
 import { requestPiiAccessSchema, resolvePiiRequestSchema, verifyKnownInfoSchema } from './validation';
 
 type PiiRequest = typeof piiAccessRequests.$inferSelect;
@@ -137,11 +137,22 @@ export async function requestPiiAccess(
         const { all: approvers } = await loadApprovers(adopterId);
         const recipients = approvers.filter(e => e !== viewer);
         const requesterName = await resolveDisplayName(viewer);
+        // v2.19.51: differentiate the auto-fired contribution requests from
+        // cold "please let me see X" requests. The body tells the approver
+        // this came from a contribution they probably already received a
+        // notification for, so the mental sequence is "contributor added
+        // something → contributor is asking for access to validate / see
+        // more." Reduces "who is this person and why are they asking?"
+        // friction at approval time.
+        const isAutoContribution = opts.justification?.trim() === 'auto:contribution';
+        const body = isAutoContribution
+            ? `${requesterName} agregó un dato a ${adopter.name} y solicita acceso a los datos de contacto.`
+            : `${requesterName} solicitó acceso a los datos de contacto de ${adopter.name}.`;
         await Promise.all(recipients.map(email => createNotification({
             userId: email,
             type: 'pii_access_request',
             title: 'Solicitud de acceso a contacto',
-            body: `${requesterName} solicitó acceso a los datos de contacto de ${adopter.name}.`,
+            body,
             url: `/adopter/${adopterId}`,
             icon: '🔒',
             metadata: { adopterId, requestId },
@@ -402,6 +413,14 @@ export async function getPiiAccessRequestState(adopterId: string): Promise<PiiAc
  * approvers) the pending requests on this adopter.
  */
 export async function getAdopterPiiContext(adopterId: string): Promise<AdopterPiiContext> {
+    // v2.19.45: wrapped in `withTrace` so every call records {durationMs} in
+    // Axiom under `Trace: getAdopterPiiContext`. The action is on the profile-
+    // page critical path — if Cloudflare exception counts climb, we want to
+    // know whether it's CPU/duration-bound here before guessing.
+    return withTrace('getAdopterPiiContext', () => getAdopterPiiContextImpl(adopterId), { adopterId });
+}
+
+async function getAdopterPiiContextImpl(adopterId: string): Promise<AdopterPiiContext> {
     const empty: AdopterPiiContext = {
         gatingOn: false, privileged: false, masked: false, maskedFieldCount: 0,
         requestState: { pending: false, cooldownUntil: null, lastResolutionNote: null },
@@ -467,9 +486,15 @@ export async function getAdopterPiiContext(adopterId: string): Promise<AdopterPi
                     g.scope === 'all_contact' || g.scope === 'entry' || g.scope === 'name_token',
                 ).map(g => g.granteeEmail),
             ]);
-            const names = new Map<string, string>();
-            await Promise.all([...emails].map(async e => { names.set(e, await resolveDisplayName(e)); }));
-            const nameOf = (e: string) => names.get(e) ?? e.split('@')[0];
+            // v2.19.45: was N sequential D1 subrequests via
+            // `Promise.all(emails.map(resolveDisplayName))`. For a privileged
+            // viewer on an adopter with many grantees + org-mates that was a
+            // 30-50 subrequest fanout and a likely contributor to the
+            // ~1/day "scriptThrewException" we saw in Cloudflare Analytics
+            // over 2026-06-12 to 06-18. Batched into one `IN (?, ?, ?...)`
+            // query — same return shape; `nameOf` is unchanged.
+            const names = await resolveDisplayNames([...emails]);
+            const nameOf = (e: string) => names.get(e.toLowerCase()) ?? e.split('@')[0];
 
             pendingRequests = reqRows.map(r => ({
                 id: r.id,
@@ -502,9 +527,17 @@ export async function getAdopterPiiContext(adopterId: string): Promise<AdopterPi
             if (isRealActorEmail(adopter.addedBy)) {
                 const mates = await (await import('@/lib/orgMembership')).getOrgMatesOf(adopter.addedBy);
                 if (mates.length > 0) {
-                    await Promise.all(mates.map(async m => {
-                        if (!names.has(m.email)) names.set(m.email, await resolveDisplayName(m.email));
-                    }));
+                    // v2.19.45: was N sequential resolveDisplayName subrequests.
+                    // Batch into one `resolveDisplayNames` call covering only
+                    // the org-mate emails that aren't already in `names`
+                    // (the grant + request resolve above already covered some).
+                    const matesNeedingNames = mates
+                        .map(m => m.email)
+                        .filter(e => !names.has(e.toLowerCase()));
+                    if (matesNeedingNames.length > 0) {
+                        const mateNames = await resolveDisplayNames(matesNeedingNames);
+                        for (const [k, v] of mateNames) names.set(k, v);
+                    }
                     orgMates = mates.map(m => ({
                         granteeEmail: m.email,
                         granteeName: nameOf(m.email),

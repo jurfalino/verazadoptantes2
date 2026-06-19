@@ -161,6 +161,12 @@ export const createAdopterApiSchema = z.object({
     // When 'imported' AND ENABLE_PUBLIC_PROFILES is on, the route stamps
     // isPublic=true on every persisted contact entry.
     source: z.literal('imported').optional(),
+    // v2.19.47: per-record consent for the public-stamping on social-URL
+    // imports. The ImportWizard sends `false` when the rescuer flipped the
+    // "este perfil será visible para todos" toggle off; the route then
+    // skips the `stampPublic` block entirely so entries land non-public.
+    // Omitted by callers other than the social-URL path → existing behaviour.
+    isPublic: z.boolean().optional(),
     flags: z.array(z.string().max(200)).max(20).optional(),
     images: z.array(z.object({
         data: z.string().max(10_000_000), // ~7.5MB base64

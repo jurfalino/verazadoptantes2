@@ -3,7 +3,7 @@
 import { headers } from 'next/headers';
 import { adopters, adopterHistory, adopterStats } from '@/db/schema';
 import { eq, sql, and } from 'drizzle-orm';
-import { logger } from '@/lib/logger';
+import { logger, withTrace } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
@@ -20,6 +20,15 @@ import { isPiiGatingEnabled, resolveAdopterVisibility, buildMaskOptions } from '
 
 
 export async function getAdopter(id: string) {
+    // v2.19.45: trace-wrapped. Profile load is the heaviest server-rendered
+    // path in the app — adopter row + history + flags + images + ratings +
+    // stats + (separately) piiContext. If Cloudflare exception counts climb
+    // again, we want a single Axiom field showing how long the whole compose
+    // took per-request.
+    return withTrace('getAdopter', () => getAdopterImpl(id), { adopterId: id });
+}
+
+async function getAdopterImpl(id: string) {
     try {
         const db = await getDb();
         if (!db) return null;
@@ -27,7 +36,7 @@ export async function getAdopter(id: string) {
         // Log profile view with actor (fire and forget)
         let user = 'unknown';
         try { user = await getUser(); } catch { /* anonymous */ }
-        logProfileView(id, user).catch((e) => { logger.warn('Fire-and-forget profile view failed', { adopterId: id, error: e instanceof Error ? e.message : String(e) }); });
+        logProfileView(id, user).catch((e) => { logger.error('Fire-and-forget profile view failed', e, { adopterId: id }); });
 
         const adopter = await db.select().from(adopters).where(eq(adopters.id, id)).get();
         if (!adopter) return null;
@@ -165,7 +174,12 @@ export async function appendToExistingAdopter(
         // Awaited so the next duplicate check sees the appended fields
         // (Workers kill fire-and-forget).
         await tokenizeAdopter(targetId).catch(e => {
-            logger.warn('Tokenize after append failed', { adopterId: targetId, error: e instanceof Error ? e.message : String(e) });
+            // v2.19.44: tokenize failure is "silent data corruption" — the
+            // append succeeded, but the duplicate-detection index is now
+            // stale until the next save. logger.error generates an id so
+            // an operator scanning Axiom can correlate it back to this
+            // specific append.
+            logger.error('Tokenize after append failed', e, { adopterId: targetId });
         });
 
         return { success: true, adopterId: targetId };
@@ -296,7 +310,7 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
                 try {
                     await tokenizeAdopter(data.id as string);
                 } catch (e) {
-                    logger.warn('Tokenize adopter failed (update path)', { adopterId: data.id, error: e instanceof Error ? e.message : String(e) });
+                    logger.error('Tokenize adopter failed (update path)', e, { adopterId: data.id });
                 }
             }
             return { success: true, id: data.id };
@@ -347,7 +361,7 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
             try {
                 await tokenizeAdopter(newId);
             } catch (e) {
-                logger.warn('Tokenize adopter failed (create path)', { adopterId: newId, error: e instanceof Error ? e.message : String(e) });
+                logger.error('Tokenize adopter failed (create path)', e, { adopterId: newId });
             }
 
             return { success: true, id: newId };

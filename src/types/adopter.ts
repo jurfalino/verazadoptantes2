@@ -20,6 +20,13 @@ export interface Adopter {
     updatedAt?: Date | null;
     tokenHash?: string | null;
     deletedAt?: Date | null;
+    /** v2.19.47: surfaces the adopter-level public flag to client surfaces
+     *  that render visibility microcopy. The schema column has been around
+     *  since v2.16.0-12 but wasn't exposed on the shared `Adopter` type
+     *  until the import-wizard consent toggle made the flag user-controlled
+     *  at create time. Loaders coerce the integer column (0|1) to a
+     *  boolean here; null is treated as false by consumers. */
+    isPublic?: boolean | null;
 }
 
 export interface AdopterImage {

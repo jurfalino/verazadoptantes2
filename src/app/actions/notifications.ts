@@ -308,6 +308,51 @@ export async function resolveDisplayName(email: string): Promise<string> {
 }
 
 /**
+ * v2.19.45: batched form of `resolveDisplayName`. One D1 subrequest instead
+ * of N when the caller has multiple emails — critical on hot paths like
+ * `getAdopterPiiContext` where a privileged viewer with many grantees and
+ * org-mates was racking up 30-50 subrequests just for name resolution and
+ * was a likely cause of the prod "exceeded resource limit" exceptions we
+ * saw at ~1/day in Cloudflare Analytics over 2026-06-12 to 06-18.
+ *
+ * Returns a `Map<emailLower, displayName>` with the email-prefix fallback
+ * baked in for any address that didn't have a `user` row, so callers can
+ * always read out a non-empty string. Empty input → empty map.
+ *
+ * `inArray()` is broken on D1 (see `docs/D1_COMPATIBILITY.md`), but raw
+ * `IN (?, ?, ?)` with explicitly-bound parameters works fine — we build
+ * the placeholders ourselves and pass each email as its own bind.
+ */
+export async function resolveDisplayNames(emails: string[]): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const lower = [...new Set(emails.map(e => e.toLowerCase().trim()).filter(Boolean))];
+    if (lower.length === 0) return out;
+    // Seed fallback so every caller gets a string out, even for emails that
+    // don't resolve to a `user` row.
+    for (const e of lower) out.set(e, e.split('@')[0]);
+    try {
+        const { getRequestContext } = await import('@cloudflare/next-on-pages');
+        const { env } = getRequestContext();
+        if (env?.DB) {
+            const placeholders = lower.map(() => '?').join(', ');
+            const stmt = env.DB.prepare(
+                `SELECT email, name FROM user WHERE email IN (${placeholders})`,
+            ).bind(...lower);
+            const rows = await stmt.all<{ email: string; name: string | null }>();
+            for (const r of rows.results ?? []) {
+                if (r.name) out.set(r.email.toLowerCase(), r.name);
+            }
+        }
+    } catch (e) {
+        logger.warn('resolveDisplayNames: batch DB lookup failed', {
+            count: lower.length,
+            error: e instanceof Error ? e.message : String(e),
+        });
+    }
+    return out;
+}
+
+/**
  * Notify all admin users (bootstrap admins + role='admin' in user_profiles).
  * Excludes the actor who triggered the event.
  */

@@ -12,6 +12,7 @@ import RecordTypeGuidance from '@/components/RecordTypeGuidance';
 import { StarRating } from '@/components/StarRating';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
+import { reportClientError } from '@/lib/clientErrorReporter';
 import { MediaLightbox } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 import { formatShortDate } from '@/lib/dates';
@@ -78,6 +79,11 @@ interface WizardDraft {
         adoptionDate: string;
         deliveredToHome: boolean;
         verifiedAddress: string;
+        /** v2.19.40: structured halves of `verifiedAddress`. Source of truth
+         *  for the input panel when `deliveredToHome` is on. The submit path
+         *  composes `verifiedAddress` from these two on save. */
+        verifiedStreetAndNumber: string;
+        verifiedLocality: string;
         identityVerified: boolean;
         animalId: string;
     };
@@ -215,7 +221,10 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     const [direction, setDirection] = useState<'forward' | 'back'>('forward');
     const [pendingImages, setPendingImages] = useState<Array<{ data: string; file?: File; isVideo: boolean; thumbnail?: string }>>([]);
     const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
-    const [unknownAnimal, setUnknownAnimal] = useState(() => initialDraft?.unknownAnimal ?? false);
+    // v2.19.52: `unknownAnimal` is gone. Field is optional now; empty save
+    // is a first-class outcome. The WizardDraft.formData type keeps the
+    // `unknownAnimal` field for one release as a backward-compat read
+    // (legacy localStorage drafts won't crash) but we never write it.
     const [customSpecies, setCustomSpecies] = useState(() => initialDraft?.customSpecies ?? false);
     // v2.19.0: when an animalId arrived via URL AND matched our inventory,
     // force mode='existing' so the wizard starts on the dropdown branch with
@@ -266,6 +275,8 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
             adoptionDate: '',
             deliveredToHome: false,
             verifiedAddress: '',
+            verifiedStreetAndNumber: '',
+            verifiedLocality: '',
             identityVerified: false,
             animalId: prefillAnimalId,
         };
@@ -288,9 +299,8 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     }, [isOpen, step, shouldOpenFromWizard, autoOpen]);
 
     const resetForm = () => {
-        setFormData({ animalId: '', animalName: '', details: '', status: 'completed', rating: 5, comments: '', species: 'cat', adopterId, recordType: 'adoption', date: new Date().toISOString().split('T')[0], adoptionDate: '', deliveredToHome: false, verifiedAddress: '', identityVerified: false });
+        setFormData({ animalId: '', animalName: '', details: '', status: 'completed', rating: 5, comments: '', species: 'cat', adopterId, recordType: 'adoption', date: new Date().toISOString().split('T')[0], adoptionDate: '', deliveredToHome: false, verifiedAddress: '', verifiedStreetAndNumber: '', verifiedLocality: '', identityVerified: false });
         setPendingImages([]);
-        setUnknownAnimal(false);
         setCustomSpecies(false);
         setMode('existing');
         setStep(1);
@@ -303,8 +313,11 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     // on modern hardware); skipping the debounce keeps things simple.
     useEffect(() => {
         if (!isOpen) return;
-        writeDraft(adopterId, { step, mode, unknownAnimal, customSpecies, formData });
-    }, [adopterId, isOpen, step, mode, unknownAnimal, customSpecies, formData]);
+        // v2.19.52: pass `unknownAnimal: false` to keep WizardDraft's type
+        // happy without the runtime concept existing — see the field's
+        // backward-compat note where the type is declared.
+        writeDraft(adopterId, { step, mode, unknownAnimal: false, customSpecies, formData });
+    }, [adopterId, isOpen, step, mode, customSpecies, formData]);
 
     // Body-scroll lock while the modal is open. Without this, the page below
     // scrolls under the dialog when the user scrolls inside the wizard on
@@ -359,7 +372,6 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     useEffect(() => {
         if (isObservation && (formData.animalId || formData.animalName || formData.species)) {
             setFormData(d => ({ ...d, animalId: '', animalName: '', species: '' }));
-            setUnknownAnimal(false);
             setCustomSpecies(false);
         }
     }, [isObservation, formData.animalId, formData.animalName, formData.species]);
@@ -448,7 +460,8 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                 const adoptionLocalDate = parseLocalDate(formData.adoptionDate);
                  
                 await saveAdoption({
-                    animalName: formData.animalName,
+                    // v2.19.52: empty animalName persists as NULL (was 'Unknown').
+                    animalName: formData.animalName.trim() || null,
                     species: formData.species,
                     details: '',
                     status: 'completed',
@@ -463,6 +476,14 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                 } as any);
             }
 
+            // v2.19.40: compose the legacy `verifiedAddress` string from the
+            // two structured halves the user filled in. The DB column stays a
+            // single string for backward compat with read sites + the AI
+            // import path that still emits free-text; the structured halves
+            // are used below to write a typed `address` contact entry.
+            const composedVerifiedAddress = formData.deliveredToHome
+                ? [formData.verifiedStreetAndNumber.trim(), formData.verifiedLocality.trim()].filter(Boolean).join(', ')
+                : formData.verifiedAddress;
             const submitData = {
                 ...formData,
                 id: idForSubmit,
@@ -470,18 +491,67 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                 date: localDate,
                 // Adoption requests don't reference a specific animal — drop the
                 // name even if some leftover state held one. Species stays.
-                animalName: isRequest ? null : formData.animalName,
+                // v2.19.52: empty/blank → NULL. Requests always null (no
+                // specific animal referenced).
+                animalName: isRequest ? null : (formData.animalName.trim() || null),
                 onBehalfOf: null,
                 deliveredToHome: formData.deliveredToHome ? 1 : 0,
-                verifiedAddress: formData.verifiedAddress || null,
+                verifiedAddress: composedVerifiedAddress || null,
                 identityVerified: formData.identityVerified ? 1 : 0
             };
             // `adoptionDate` is wizard-only state, not a column.
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             delete (submitData as any).adoptionDate;
+            // `verifiedStreetAndNumber` / `verifiedLocality` are wizard-only
+            // state (the schema stores the composed string only), not columns.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            delete (submitData as any).verifiedStreetAndNumber;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            delete (submitData as any).verifiedLocality;
 
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const result = await saveAdoption(submitData as any);
+
+            // v2.19.40: persist the verified delivery address to the adopter's
+            // structured `contactEntries` so future viewers see it under their
+            // normal PII gating + masking rules (address is masked for
+            // non-privileged viewers; `partialRevealAddressString` keeps the
+            // locality visible, masks the street). Fire-and-forget after the
+            // main save — a failure here doesn't undo the activity record we
+            // already saved. Dedup is handled by `mergeContactEntries` inside
+            // `appendToExistingAdopter`.
+            if (formData.deliveredToHome && (formData.verifiedStreetAndNumber.trim() || formData.verifiedLocality.trim())) {
+                const street = formData.verifiedStreetAndNumber.trim();
+                const locality = formData.verifiedLocality.trim();
+                const composedValue = [street, locality].filter(Boolean).join(', ');
+                const newEntry = {
+                    id: crypto.randomUUID(),
+                    type: 'address' as const,
+                    value: composedValue,
+                    ...(street ? { streetAndNumber: street } : {}),
+                    ...(locality ? { locality } : {}),
+                    addedBy: currentUser || undefined,
+                };
+                try {
+                    const { appendToExistingAdopter } = await import('@/app/actions');
+                    await appendToExistingAdopter(adopterId, {
+                        contactEntries: JSON.stringify([newEntry]),
+                    });
+                } catch (e) {
+                    // v2.19.44: was console.warn — silent in Axiom. Now goes
+                    // through reportClientError so the contact-entry append
+                    // failure (delivered-to-home address persistence) gets
+                    // an id we can correlate against an Axiom row. The main
+                    // activity record already saved successfully, so this
+                    // stays non-blocking (no toast, no re-throw).
+                    reportClientError({
+                        message: 'AdoptionFormWizard: address contact-entry append failed',
+                        stack: e instanceof Error ? e.stack : undefined,
+                        source: 'AdoptionFormWizard.delivered-to-home append',
+                        extra: { adopterId, recordType: formData.recordType, errorMessage: e instanceof Error ? e.message : String(e) },
+                    }).catch(() => { /* best-effort observability — original save already succeeded */ });
+                }
+            }
 
             if (pendingImages.length > 0 && result?.id) {
                 const uploadPromises = pendingImages.map(async (pending) => {
@@ -539,9 +609,11 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
             return true;
         }
 
+        // v2.19.52: animalName is optional now. Species stays required —
+        // it carries the activity's identity when there's no name.
         const isValid = effectiveMode === 'existing'
             ? !!formData.animalId
-            : (unknownAnimal || !!formData.animalName.trim()) && !!formData.species.trim();
+            : !!formData.species.trim();
 
         if (!isValid) {
             toast.warning(t('common.error'), t('adoption.fill_required'));
@@ -716,16 +788,21 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                 <div className={`grid gap-4 ${isRequest ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'}`}>
                                     {!isRequest && (
                                         <div>
-                                            <div className="flex items-center justify-between mb-1.5">
-                                                <label className="block text-xs font-semibold text-teal-800 uppercase tracking-wider">{t('adoption.animal_name')}</label>
-                                                <label className="flex items-center gap-1.5 cursor-pointer text-xs">
-                                                    <span className="text-stone-500">{t('common.unknown')}</span>
-                                                    <button type="button" onClick={() => { setUnknownAnimal(!unknownAnimal); if (!unknownAnimal) setFormData(d => ({ ...d, animalName: '' })); }} className={`relative w-9 h-5 rounded-full transition-colors ${unknownAnimal ? 'bg-amber-500' : 'bg-stone-200'}`}>
-                                                        <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${unknownAnimal ? 'translate-x-4' : 'translate-x-0'}`} />
-                                                    </button>
-                                                </label>
-                                            </div>
-                                            <input required={!unknownAnimal} disabled={unknownAnimal} className={`w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-base md:text-sm ${unknownAnimal ? 'bg-stone-100 text-stone-500 cursor-not-allowed' : 'bg-white'}`} value={unknownAnimal ? '' : formData.animalName} onChange={e => setFormData(d => ({ ...d, animalName: e.target.value }))} placeholder={unknownAnimal ? (t('adoption.unknown_animal')) : t('adoption.animal_placeholder')} />
+                                            <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
+                                                {t('adoption.animal_name')}
+                                                <span className="ml-1 font-normal lowercase text-stone-500">({t('common.optional')})</span>
+                                            </label>
+                                            {/* v2.19.52: the "I don't know the name" toggle is gone. The
+                                                field is just optional now — typing a name or leaving it
+                                                blank are equivalent first-class outcomes. Empty saves as
+                                                NULL (see the submit handler). Same change in
+                                                AdoptionFormEditV2 + ImportWizard. */}
+                                            <input
+                                                className="w-full h-10 px-4 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-base md:text-sm"
+                                                value={formData.animalName}
+                                                onChange={e => setFormData(d => ({ ...d, animalName: e.target.value }))}
+                                                placeholder={t('adoption.animal_placeholder')}
+                                            />
                                         </div>
                                     )}
                                     <div>
@@ -796,22 +873,66 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                 <textarea className="w-full p-3 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-none text-base md:text-sm" rows={3} value={formData.details} onChange={e => setFormData(d => ({ ...d, details: e.target.value }))} placeholder={t('adoption.notes_placeholder')} />
                             </div>
 
-                            {/* Conditional Delivery / Verification Toggles */}
-                            {formData.recordType === 'adoption' && (
+                            {/* Conditional Delivery / Verification Toggles.
+                                v2.19.40: toggle now also appears for `foster`
+                                (tránsito) — same "delivered to the adopter's
+                                home" semantics, with the address persisted to
+                                the adopter's contact entries on save. */}
+                            {(formData.recordType === 'adoption' || formData.recordType === 'foster') && (
                                 <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-2">
                                             <span className="text-lg">🚗</span>
                                             <label className="text-sm font-medium text-blue-800">{t('adoption.delivered_to_home')}</label>
                                         </div>
-                                        <button type="button" onClick={() => { const nd = !formData.deliveredToHome; setFormData(d => ({ ...d, deliveredToHome: nd, verifiedAddress: nd ? (d.verifiedAddress || extractAddressFromContact(adopterAddress)) : '' })); }} className={`relative w-12 h-6 rounded-full transition-colors ${formData.deliveredToHome ? 'bg-blue-500' : 'bg-stone-200'}`}>
+                                        {/* Pre-fill behaviour: when turning the toggle ON, seed the
+                                            street field with whatever address we can derive from the
+                                            adopter's contactInfo (single string). The user can split
+                                            it across the two structured fields manually. When turning
+                                            OFF, clear all three so a follow-up activity doesn't carry
+                                            over a stale address. */}
+                                        <button type="button" onClick={() => {
+                                            const nd = !formData.deliveredToHome;
+                                            setFormData(d => ({
+                                                ...d,
+                                                deliveredToHome: nd,
+                                                verifiedStreetAndNumber: nd ? (d.verifiedStreetAndNumber || extractAddressFromContact(adopterAddress)) : '',
+                                                verifiedLocality: nd ? d.verifiedLocality : '',
+                                                verifiedAddress: nd ? d.verifiedAddress : '',
+                                            }));
+                                        }} className={`relative w-12 h-6 rounded-full transition-colors ${formData.deliveredToHome ? 'bg-blue-500' : 'bg-stone-200'}`}>
                                             <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${formData.deliveredToHome ? 'translate-x-6' : 'translate-x-0'}`} />
                                         </button>
                                     </div>
                                     {formData.deliveredToHome && (
-                                        <div className="mt-4 pt-4 border-t border-blue-100">
+                                        <div className="mt-4 pt-4 border-t border-blue-100 space-y-2">
                                             <label className="block text-xs font-semibold text-blue-800 mb-1.5 uppercase tracking-wider flex items-center gap-1"><span>📍</span> {t('adoption.verify_address')}</label>
-                                            <textarea className="w-full p-3 rounded-lg border border-blue-200 bg-white text-blue-950 placeholder-blue-800/40 font-medium focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none resize-none text-base md:text-sm" rows={2} value={formData.verifiedAddress} onChange={e => setFormData(d => ({ ...d, verifiedAddress: e.target.value }))} placeholder={t('adoption.address_placeholder')} />
+                                            {/* v2.19.40: two structured inputs mirroring the
+                                                contact-entries address composer (street + locality).
+                                                Saved as separate fields on the new ContactEntry below
+                                                so masking + duplicate-detection keep working the way
+                                                they do for manually-added addresses. */}
+                                            <input
+                                                type="text"
+                                                value={formData.verifiedStreetAndNumber}
+                                                onChange={e => setFormData(d => ({ ...d, verifiedStreetAndNumber: e.target.value }))}
+                                                placeholder={t('adopter.ce_input_ph_address')}
+                                                className="w-full p-3 rounded-lg border border-blue-200 bg-white text-blue-950 placeholder-blue-800/40 font-medium focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none text-base md:text-sm"
+                                            />
+                                            <input
+                                                type="text"
+                                                value={formData.verifiedLocality}
+                                                onChange={e => setFormData(d => ({ ...d, verifiedLocality: e.target.value }))}
+                                                placeholder={t('adopter.ce_input_ph_locality')}
+                                                className="w-full p-3 rounded-lg border border-blue-200 bg-white text-blue-950 placeholder-blue-800/40 font-medium focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none text-base md:text-sm"
+                                            />
+                                            <p className="text-xs text-blue-800/80 flex items-start gap-1.5 pt-1">
+                                                <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
+                                                    <rect x="5" y="11" width="14" height="9" rx="2" />
+                                                    <path strokeLinecap="round" d="M8 11V8a4 4 0 118 0v3" />
+                                                </svg>
+                                                <span>{t('adoption.verify_address_saved_hint')}</span>
+                                            </p>
                                         </div>
                                     )}
                                 </div>
@@ -850,7 +971,10 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                     </div>
                                     <div>
                                         <p className="text-sm font-semibold text-stone-800">
-                                            {formData.animalName || (unknownAnimal ? 'Unknown' : formData.species)}
+                                            {/* v2.19.52: review-step display falls through name →
+                                                species → "Sin nombre" instead of the old literal
+                                                'Unknown' / `unknownAnimal` branch. */}
+                                            {formData.animalName.trim() || formData.species.trim() || t('adoption.unnamed')}
                                             <span className="mx-2 text-stone-300">|</span>
                                             {formatShortDate(new Date(formData.date))}
                                         </p>

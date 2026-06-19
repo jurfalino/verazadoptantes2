@@ -81,7 +81,9 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
     const [adoptionImages, setAdoptionImages] = useState<any[]>([]);
     const [pendingImages, setPendingImages] = useState<Array<{ data: string; file?: File; isVideo: boolean; thumbnail?: string }>>([]);
     const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
-    const [unknownAnimal, setUnknownAnimal] = useState(!initialData?.animalName && initialData?.id ? true : false);
+    // v2.19.52: `unknownAnimal` removed — see AdoptionFormWizard for the
+    // rationale. Editing a record with a blank animalName just leaves the
+    // input blank; saving an empty value persists as NULL.
     const [customSpecies, setCustomSpecies] = useState(() => {
         // Check if initial species is not a preset
         const presets = ['cat', 'dog', 'bird', ''];
@@ -165,7 +167,6 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
     useEffect(() => {
         if (formData.recordType === 'observation' && (formData.animalName || formData.species)) {
             setFormData(prev => ({ ...prev, animalName: '', species: '' }));
-            setUnknownAnimal(false);
             setCustomSpecies(false);
         }
     }, [formData.recordType, formData.animalName, formData.species]);
@@ -303,6 +304,8 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
             const result = await saveAdoption({
                 ...formData,
                 adopterId: adopterId,
+                // v2.19.52: blank animalName saves as NULL (was kept as '').
+                animalName: formData.animalName.trim() || null,
                 rating: Number(formData.rating),
                 date: localDate,
                 onBehalfOf: null,
@@ -433,35 +436,21 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                     <div className="space-y-4" style={isObservation ? { display: 'none' } : undefined}>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <div className="flex items-center justify-between mb-1.5">
-                                    <label className="block text-xs font-semibold text-teal-800 uppercase tracking-wider">
-                                        {t('adoption.animal_name')}
-                                    </label>
-                                    {!initialData?.animalName && (
-                                        <label className="flex items-center gap-1.5 cursor-pointer text-xs">
-                                            <span className="text-stone-500">{t('common.unknown') || 'Unknown'}</span>
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setUnknownAnimal(!unknownAnimal);
-                                                    if (!unknownAnimal) {
-                                                        setFormData({ ...formData, animalName: '' });
-                                                    }
-                                                }}
-                                                className={`relative w-9 h-5 rounded-full transition-colors ${unknownAnimal ? 'bg-amber-500' : 'bg-stone-200'}`}
-                                            >
-                                                <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${unknownAnimal ? 'translate-x-4' : 'translate-x-0'}`} />
-                                            </button>
-                                        </label>
+                                <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
+                                    {t('adoption.animal_name')}
+                                    {!isObservation && (
+                                        <span className="ml-1 font-normal lowercase text-stone-500">({t('common.optional')})</span>
                                     )}
-                                </div>
+                                </label>
+                                {/* v2.19.52: toggle gone — see AdoptionFormWizard for the
+                                    rationale. Field is optional now; blank input persists
+                                    as NULL on save. */}
                                 <input
-                                    required={!unknownAnimal && !isObservation}
-                                    disabled={unknownAnimal || isObservation}
-                                    className={`w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm ${unknownAnimal ? 'bg-stone-100 text-stone-500 cursor-not-allowed' : 'bg-white'}`}
-                                    value={unknownAnimal ? '' : formData.animalName}
+                                    disabled={isObservation}
+                                    className={`w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm ${isObservation ? 'bg-stone-100 text-stone-500 cursor-not-allowed' : 'bg-white'}`}
+                                    value={formData.animalName}
                                     onChange={e => setFormData({ ...formData, animalName: e.target.value })}
-                                    placeholder={unknownAnimal ? (t('adoption.unknown_animal') || 'Unknown animal') : t('adoption.animal_placeholder')}
+                                    placeholder={t('adoption.animal_placeholder')}
                                 />
                             </div>
 

@@ -190,6 +190,16 @@ export default function ImportWizard() {
     // of the social-media post flow. Drives the Step 3 breadcrumb so the user
     // knows why animal fields are empty.
     const [fromContacts, setFromContacts] = useState(false);
+    // v2.19.47: explicit per-record consent toggle for social-URL imports.
+    // Default ON — historically these records were treated as public (the
+    // contact data came from a public Facebook/Instagram post). The toggle
+    // lets the rescuer flip the import to private if they actually want
+    // the record gated. Sent to the API as `isPublic` in the POST body;
+    // the route honours `isPublic === false` by skipping the `stampPublic`
+    // block (per-entry `isPublic:true` stamping). Hidden for Google Contacts
+    // (`fromContacts`) and text-only AI extractions — those aren't from a
+    // public channel, so the consent question doesn't apply.
+    const [isPublicProfile, setIsPublicProfile] = useState(true);
 
     // Extracted/fetched state
     const [_fetchedText, setFetchedText] = useState('');
@@ -260,7 +270,9 @@ export default function ImportWizard() {
     const [processedImages, setProcessedImages] = useState<Array<{ data: string; mimeType: string; originalUrl?: string }>>([]);
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [selectedModel, setSelectedModel] = useState<string>('');
-    const [unknownAnimal, setUnknownAnimal] = useState(false);
+    // v2.19.52: `unknownAnimal` state removed alongside the step-3 checkbox.
+    // Empty/missing animalName is now the first-class "no name yet" outcome —
+    // see AdoptionFormWizard for the matching change in the new-activity path.
     const [_customSpecies, setCustomSpecies] = useState(false);
 
     // Save state
@@ -357,7 +369,6 @@ export default function ImportWizard() {
             confidence: 'low',
             adoptionDetected: false,
         });
-        setUnknownAnimal(true);
         setFromContacts(true);
         setStep(3);
     };
@@ -697,7 +708,6 @@ export default function ImportWizard() {
                 }));
             }
             setCustomSpecies(false);
-            setUnknownAnimal(!aiData.animalName);
             if (result.processedImages) {
                 setProcessedImages(result.processedImages);
             }
@@ -825,6 +835,12 @@ export default function ImportWizard() {
                 // source='imported' AND (when ENABLE_PUBLIC_PROFILES is on)
                 // stamps isPublic=true on the contact entries it persists.
                 source: 'imported' as const,
+                // v2.19.47: per-record consent for the public-stamping. Only
+                // sent for social-URL imports — for Google Contacts / text
+                // extractions the field is omitted and the API keeps its
+                // default (private). When `false`, the API skips the
+                // stampPublic block entirely → entries land non-public.
+                ...(sourceUrl && !fromContacts ? { isPublic: isPublicProfile } : {}),
                 flags,
                 images: [
                     ...(processedImages.length > 0 ? processedImages : manualImages.filter(img => !img.file).map(img => ({ data: img.data, mimeType: img.mimeType }))),
@@ -838,7 +854,8 @@ export default function ImportWizard() {
                 // skips Steps 1-2 and never asks for an intent.
                 ...(fromContacts ? {} : {
                     adoption: {
-                        animalName: unknownAnimal ? '' : (extractedData.animalName || ''),
+                        // v2.19.52: blank goes through as undefined → API saves NULL.
+                        animalName: extractedData.animalName?.trim() || undefined,
                         species: extractedData.animalSpecies,
                         recordType: extractedData.recordType || 'observation',
                         rating: extractedData.adoptionRating || 2,
@@ -975,7 +992,11 @@ export default function ImportWizard() {
                 notes: extractedData.notes,
                 contactInfo: contactEntriesToBlob(contactEntries) || undefined,
                 adoption: {
-                    animalName: unknownAnimal ? '' : (extractedData.animalName || 'Unknown'),
+                    // v2.19.52: was `|| 'Unknown'` — literal English string
+                    // overwrote empty names with "Unknown" regardless of locale
+                    // and stuffed it into the DB. Blank now passes through as
+                    // undefined → API saves NULL.
+                    animalName: extractedData.animalName?.trim() || undefined,
                     species: extractedData.animalSpecies,
                     recordType: extractedData.recordType || 'observation',
                     rating: extractedData.adoptionRating || 2,
@@ -1458,6 +1479,37 @@ export default function ImportWizard() {
                         </div>
                     )}
 
+                    {/* v2.19.47: per-record public-visibility consent toggle.
+                        Only rendered for social-URL imports — Google Contacts
+                        and text-only flows don't have the "this came from a
+                        public channel" semantic and should default private.
+                        Default ON (preserves the historical FB-import-is-public
+                        behaviour) but the rescuer can flip it off if they want
+                        the record gated like a normal manual entry. */}
+                    {!fromContacts && !!sourceUrl?.trim() && (
+                        <div className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border ${isPublicProfile ? 'bg-teal-50 border-teal-200' : 'bg-stone-50 border-stone-200'}`}>
+                            <button
+                                type="button"
+                                onClick={() => setIsPublicProfile(p => !p)}
+                                aria-pressed={isPublicProfile}
+                                className={`mt-0.5 relative w-9 h-5 rounded-full transition-colors shrink-0 ${isPublicProfile ? 'bg-teal-500' : 'bg-stone-300'}`}
+                                title={t('import.public_profile_toggle_title')}
+                            >
+                                <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${isPublicProfile ? 'translate-x-4' : 'translate-x-0'}`} />
+                            </button>
+                            <div className="flex-1 min-w-0 text-xs">
+                                <p className={`font-medium ${isPublicProfile ? 'text-teal-800' : 'text-stone-700'}`}>
+                                    {isPublicProfile
+                                        ? t('import.public_profile_on')
+                                        : t('import.public_profile_off')}
+                                </p>
+                                <p className="text-stone-600 mt-0.5">
+                                    {t('import.public_profile_explainer')}
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Name */}
                     <div>
                         <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.name') || 'Name'}</label>
@@ -1561,17 +1613,18 @@ export default function ImportWizard() {
 
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.animalName') || 'Animal Name'}</label>
-                                    <input
-                                        value={unknownAnimal ? '' : (extractedData.animalName || '')}
-                                        onChange={e => setExtractedData({ ...extractedData, animalName: e.target.value })}
-                                        disabled={unknownAnimal}
-                                        className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm disabled:bg-stone-50"
-                                    />
-                                    <label className="flex items-center gap-1 mt-1 text-xs text-stone-500">
-                                        <input type="checkbox" checked={unknownAnimal} onChange={e => setUnknownAnimal(e.target.checked)} />
-                                        {t('import.unknownName') || 'Unknown name'}
+                                    <label className="block text-xs font-medium text-stone-500 mb-1">
+                                        {t('import.animalName') || 'Animal Name'}
+                                        <span className="ml-1 lowercase">({t('common.optional')})</span>
                                     </label>
+                                    {/* v2.19.52: "unknown name" checkbox gone. Field is just
+                                        optional — see AdoptionFormWizard for the full rationale.
+                                        Empty saves as NULL on the API side. */}
+                                    <input
+                                        value={extractedData.animalName || ''}
+                                        onChange={e => setExtractedData({ ...extractedData, animalName: e.target.value })}
+                                        className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm"
+                                    />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.species') || 'Species'}</label>

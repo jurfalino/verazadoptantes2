@@ -103,9 +103,7 @@ export async function removeContactEntry(
         }
 
         await tokenizeAdopter(adopterId).catch(e => {
-            logger.warn('removeContactEntry: tokenize after remove failed', {
-                adopterId, error: e instanceof Error ? e.message : String(e),
-            });
+            logger.error('removeContactEntry: tokenize after remove failed', e, { adopterId });
         });
 
         logAudit({ userEmail: actor, action: 'contact_entry_removed', target: adopterId, details: { entryId, type: removed.type } });
