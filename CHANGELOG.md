@@ -2,6 +2,45 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.54] - 2026-06-19
+
+### Added — public-profile provenance notice
+
+Public profiles (`adopter.isPublic = 1`) are readable by anyone, including the adopter themselves. Until now, there was no on-profile surface explaining the rationale — only a thin "este perfil es público y visible para todos" line in the contact-entries section, which states what but not why.
+
+This release adds a persistent, non-dismissible info banner at the top of the rendered profile body — directly below the back nav / preview banner, above the duplicate alert and header card. One sentence, themed info color (`bg-blue-50` + `text-blue-700`, which `globals.css` remaps to `--status-info-*` tokens under both `[data-theme]` rules so it works under "Claro" and "Azul Noche" alike), inline SVG info icon. When the record has a `sourceUrl` set, the banner also renders a "Ver fuente original →" / "View original source →" link that opens in a new tab.
+
+#### Copy
+
+- **es**: *"Este perfil incluye información que estaba publicada en redes sociales u otras fuentes abiertas cuando se registró. BuenAdoptante la centraliza para que la comunidad rescatista pueda verificar adoptantes."*
+- **en**: *"This profile includes information that was publicly available on social media or other open sources when it was added. BuenAdoptante centralizes it so the rescue community can vet adopters."*
+
+Two intentional choices:
+- **Third-person, no "tu información"**. The reader could be the adopter, a stranger arriving via search, or a rescuer doing routine vetting. Neutral framing fits all three; second-person reads accusatory when the reader is the adopter.
+- **No takedown / dispute CTA in this cut**. A "contactanos" link without a real verification flow behind it would damage trust more than its absence does. The takedown flow is a separate scope (`v2.19.5x` follow-up).
+
+#### Why non-dismissible
+
+The banner is doing legal-defensive UX work. Dismissibility undercuts the purpose — if the adopter dismisses it on first visit, the rationale never registers. Single-line + small icon + light info color keeps visual cost low for rescuers vetting many profiles in a session.
+
+#### Where it renders
+
+- `displayedAdopter?.isPublic` truthy (reads from `displayedAdopter` not `adopter`, so it stays visible under `previewAsStranger` mode — a privileged viewer previewing as a stranger should see what strangers see).
+- `!isNew` (don't show on the "new adopter" form route).
+- All viewers see it: owner, admin, org-mate, contributor, unauthenticated stranger.
+
+### Engineering
+
+- `src/components/PublicProfileSourceNotice.tsx` (new) — self-contained banner. Inline SVG info icon (per `feedback_svg_over_emoji`). Optional source-link rendered only when `sourceUrl` is non-null.
+- `src/components/AdopterProfileV2.tsx` — import + conditional render between the preview banner and the duplicate alert.
+- `src/i18n/locales/es.ts` + `en.ts` — `adopter.public_profile_source_notice` + `adopter.public_profile_source_link`. Mirror keys in both.
+
+### Deferred (intentional)
+
+- **🌐 "Público" chip next to the name** — would require editing `AdopterForm`'s header internals, larger diff. Banner does the heavy lift on its own; chip is a "what" reinforcement, banner does the "why". Add in a follow-up if user research shows the banner alone is missed by scroll-past viewers.
+- **Removing the duplicate "este perfil es público y visible para todos" line in `ContactEntriesSection.tsx`** — split out as a separate cleanup so this diff stays minimal.
+- **Takedown / data-dispute flow** — real scope, separate plan.
+
 ## [2.19.53] - 2026-06-19
 
 ### Fixed — v2.19.52 migration 0050 hotfix

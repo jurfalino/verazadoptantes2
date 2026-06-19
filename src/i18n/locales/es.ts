@@ -583,6 +583,8 @@ export const es = {
         ce_undo: 'Deshacer',
         ce_visibility_microcopy: 'Solo visible para vos y tus organizaciones.',
         ce_visibility_profile_public: 'Este perfil es público y visible para todos.',
+        public_profile_source_notice: 'Este perfil incluye información que estaba publicada en redes sociales u otras fuentes abiertas cuando se registró. BuenAdoptante la centraliza para que la comunidad rescatista pueda verificar adoptantes.',
+        public_profile_source_link: 'Ver fuente original',
         preview_enter: 'Ver como otro usuario',
         preview_exit: 'Salir de la vista previa',
         preview_enter_title: 'Ver este perfil como lo vería un usuario sin acceso aprobado',
