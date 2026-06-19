@@ -2,6 +2,34 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.45] - 2026-06-19
+
+### Investigation — "workers exceeded resource limit" report from prod
+- One user reported the platform-level Cloudflare error. Pulled Pages-Functions analytics directly: **7 `scriptThrewException` events across 6 of the last 7 days (~1/day)** out of ~800 total requests. Spread evenly — not a flood, not a one-off. The Pages Analytics API doesn't expose per-exception type or per-path breakdown (would need Workers Logs product), so we can't tell which paths threw from the dashboard alone.
+- Decision per the EM playbook in the v2.19.44 audit: "multiple times/day, but spread → instrument + targeted fix on the most-likely path." This release executes both.
+
+### Added — duration tracing on the top hot paths
+- `getAdopter` (`src/app/actions/adopters.ts`) — profile load. Now wrapped via `withTrace('getAdopter', ...)`. Every call records `{ durationMs, adopterId, success }` to Axiom under `Trace: getAdopter`. The profile page is the heaviest server-rendered path; we want a single Axiom field showing how long the whole compose took.
+- `getAdopterPiiContext` (`src/app/actions/piiAccess.ts`) — same wrapper. Critical for privileged viewers with many grantees/org-mates; that's where the worst-case fanout lived (see fix below).
+- `findAdopters.discovery` + `findAdopters.duplicate` were already traced as of v2.18.x — no change.
+
+Next time someone reports "exceeded resource limit," we can pull a 30s Axiom query of `level=info AND message="Trace: getAdopterPiiContext" AND durationMs > 5000` to find the slow ones.
+
+### Fixed — `resolveDisplayName` fanout in `getAdopterPiiContext` (the most likely culprit)
+- The PII context resolver was calling `resolveDisplayName(email)` once per grantee + requester + org-mate via `Promise.all(emails.map(resolveDisplayName))`. Each call is one D1 raw-prepare. For a privileged viewer on a record with 10 grants + 20 org-mates, that's **30 sequential subrequests** just for name lookup, ahead of the actual page render. With Cloudflare's 1000-subrequest cap and CPU-budget pressure, that fanout was a plausible cause of the exception cluster — especially on profiles with a lot of activity history that already eat subrequests in the surrounding code.
+- New `resolveDisplayNames(emails: string[]): Promise<Map<string, string>>` in `src/app/actions/notifications.ts` does **one** `SELECT email, name FROM user WHERE email IN (?, ?, ?, ...)` with explicit placeholders. `inArray()` is the broken D1 helper; raw IN with explicit binds works fine. Falls back to email-prefix for any unresolved address so callers always read a non-empty string.
+- `getAdopterPiiContext` now calls `resolveDisplayNames` once for the grant+request set, then once more for the org-mate set (deduped against the first map). Net: 2 D1 subrequests instead of up to 30.
+
+### Engineering
+- `src/app/actions/notifications.ts` — new `resolveDisplayNames` exported alongside the existing per-email function.
+- `src/app/actions/piiAccess.ts` — `getAdopterPiiContext` split into wrapper + impl; both batches converted from `Promise.all(...resolveDisplayName)` to `resolveDisplayNames(...)`.
+- `src/app/actions/adopters.ts` — `getAdopter` split into wrapper + impl wrapped in `withTrace`.
+- `withTrace` import added to `adopters.ts` and `piiAccess.ts`; `findAdopters.ts` already had it.
+
+### What this doesn't fix
+- The 7 exceptions over 7 days might not all be PII-context fanout. We won't know for sure until we see what `Trace: getAdopterPiiContext durationMs` looks like in Axiom post-deploy. If durations are sub-200ms across the board, the culprit is elsewhere (probably search CPU on a large query, or saveAdopter + tokenizeAdopter on a record with many entries).
+- Other hot paths still fan out (admin lists, my-adopters page). Not touched in this release.
+
 ## [2.19.44] - 2026-06-19
 
 ### Fixed — Axiom observability gaps from the v2.19.43 audit (gaps #1 and #2)

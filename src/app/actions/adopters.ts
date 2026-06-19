@@ -3,7 +3,7 @@
 import { headers } from 'next/headers';
 import { adopters, adopterHistory, adopterStats } from '@/db/schema';
 import { eq, sql, and } from 'drizzle-orm';
-import { logger } from '@/lib/logger';
+import { logger, withTrace } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
@@ -20,6 +20,15 @@ import { isPiiGatingEnabled, resolveAdopterVisibility, buildMaskOptions } from '
 
 
 export async function getAdopter(id: string) {
+    // v2.19.45: trace-wrapped. Profile load is the heaviest server-rendered
+    // path in the app — adopter row + history + flags + images + ratings +
+    // stats + (separately) piiContext. If Cloudflare exception counts climb
+    // again, we want a single Axiom field showing how long the whole compose
+    // took per-request.
+    return withTrace('getAdopter', () => getAdopterImpl(id), { adopterId: id });
+}
+
+async function getAdopterImpl(id: string) {
     try {
         const db = await getDb();
         if (!db) return null;
