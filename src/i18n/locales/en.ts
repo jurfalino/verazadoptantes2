@@ -552,6 +552,7 @@ export const en = {
         ce_delete_error: 'Could not delete the entry.',
         ce_add_error: 'Could not add the entry.',
         ce_add_toast_added: 'Entry added',
+        ce_add_toast_added_with_request: 'Entry added. We filed an access request to the full profile on your behalf.',
         ce_add_toast_unlocked: 'You confirmed an existing entry — it’s now unlocked',
         // Auto-commit toast title for v2.18.1 — see Spanish comment.
         // Made redundant by the v2.18.4 three-state composer redesign.

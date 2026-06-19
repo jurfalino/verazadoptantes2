@@ -277,7 +277,14 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                     // actually a masked chip is about to reveal itself in
                     // the refreshed list.
                     if (res.status === 'appended') {
-                        toast.success('✓', t('adopter.ce_add_toast_added'));
+                        // v2.19.51: when a non-owner contributes, the server
+                        // auto-fires a PII access request on their behalf.
+                        // Surface that in the toast so they understand why
+                        // they're not suddenly seeing the rest of the profile.
+                        toast.success(
+                            '✓',
+                            t(res.autoRequestFiled ? 'adopter.ce_add_toast_added_with_request' : 'adopter.ce_add_toast_added'),
+                        );
                     } else if (res.status === 'unlocked_existing') {
                         toast.success('🔓', t('adopter.ce_add_toast_unlocked'));
                     }

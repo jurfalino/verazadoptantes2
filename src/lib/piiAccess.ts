@@ -416,7 +416,15 @@ export interface ResolveVisibilityInput {
      *  teammate profiles. The audit log + owner notifications are the
      *  trust-but-verify backstop. */
     isOrgMate: boolean;
-    /** Whether the viewer appears in this adopter's `adopter_history.changedBy`. */
+    /** Whether the viewer appears in this adopter's `adopter_history.changedBy`.
+     *  v2.19.51: NO LONGER feeds into `privileged`. The historical contract
+     *  ("contribute once → see everything forever") was an unintended
+     *  consequence and a real trust violation — a one-time entry contribution
+     *  shouldn't earn permanent full-PII visibility. The field is preserved
+     *  on the input shape because callers may still want it for non-PII
+     *  audit-trail logic, but `resolveVisibility` ignores it. Contributors
+     *  who want full access go through the explicit request flow, which
+     *  `addContactEntry` now auto-fires on their behalf. */
     isEditor: boolean;
     /** The viewer's grants for THIS adopter (any scope; revoked ones are filtered here). */
     grants: PiiGrantRow[];
@@ -440,9 +448,12 @@ export interface Visibility {
  * fetches `isAdmin` / `isEditor` / `grants` (see piiAccessServer.ts).
  */
 export function resolveVisibility(input: ResolveVisibilityInput): Visibility {
-    const { viewerEmail, ownerEmail, isAdmin, isModerator, isOrgMate, isEditor, grants } = input;
+    // v2.19.51: `isEditor` no longer participates in `privileged` — see the
+    // comment on the field declaration above. Destructured but discarded here
+    // (kept on the type so callers don't need to change their fetch).
+    const { viewerEmail, ownerEmail, isAdmin, isModerator, isOrgMate, grants } = input;
     const privileged = !!viewerEmail && (
-        isAdmin || isModerator || isOrgMate || isEditor || (!!ownerEmail && viewerEmail === ownerEmail)
+        isAdmin || isModerator || isOrgMate || (!!ownerEmail && viewerEmail === ownerEmail)
     );
     const live = grants.filter(g => !g.revokedAt);
     const hasAllContactGrant = live.some(g => g.scope === 'all_contact');

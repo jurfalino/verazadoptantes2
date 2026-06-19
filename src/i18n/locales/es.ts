@@ -553,6 +553,7 @@ export const es = {
         ce_delete_error: 'No se pudo eliminar el dato.',
         ce_add_error: 'No se pudo agregar el dato.',
         ce_add_toast_added: 'Dato agregado',
+        ce_add_toast_added_with_request: 'Dato agregado. Solicitamos acceso al perfil completo en tu nombre.',
         ce_add_toast_unlocked: 'Reconociste un dato existente — ahora aparece desbloqueado',
         // Auto-commit toast title for v2.18.1 — when the user has unsaved
         // content in the composer and clicks a different type pill, the

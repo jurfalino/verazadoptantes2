@@ -137,11 +137,22 @@ export async function requestPiiAccess(
         const { all: approvers } = await loadApprovers(adopterId);
         const recipients = approvers.filter(e => e !== viewer);
         const requesterName = await resolveDisplayName(viewer);
+        // v2.19.51: differentiate the auto-fired contribution requests from
+        // cold "please let me see X" requests. The body tells the approver
+        // this came from a contribution they probably already received a
+        // notification for, so the mental sequence is "contributor added
+        // something → contributor is asking for access to validate / see
+        // more." Reduces "who is this person and why are they asking?"
+        // friction at approval time.
+        const isAutoContribution = opts.justification?.trim() === 'auto:contribution';
+        const body = isAutoContribution
+            ? `${requesterName} agregó un dato a ${adopter.name} y solicita acceso a los datos de contacto.`
+            : `${requesterName} solicitó acceso a los datos de contacto de ${adopter.name}.`;
         await Promise.all(recipients.map(email => createNotification({
             userId: email,
             type: 'pii_access_request',
             title: 'Solicitud de acceso a contacto',
-            body: `${requesterName} solicitó acceso a los datos de contacto de ${adopter.name}.`,
+            body,
             url: `/adopter/${adopterId}`,
             icon: '🔒',
             metadata: { adopterId, requestId },

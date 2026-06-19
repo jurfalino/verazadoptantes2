@@ -17,7 +17,7 @@ import {
 import { tokenizeAdopter } from './duplicates';
 import { hashEntryValue, isRealActorEmail } from '@/lib/piiAccess';
 import { createNotification, resolveDisplayName } from './notifications';
-import { getAdopterApprovers } from './piiAccess';
+import { getAdopterApprovers, requestPiiAccess } from './piiAccess';
 
 /**
  * Append-only contribution path. Open to ANY authenticated user, regardless
@@ -54,7 +54,7 @@ export type AddContactEntryStatus = 'appended' | 'unlocked_existing' | 'no_chang
 
 export async function addContactEntry(
     input: { adopterId: string; type: ContactEntry['type']; value: string; streetAndNumber?: string; locality?: string },
-): Promise<{ ok: true; adopterId: string; appended: boolean; status: AddContactEntryStatus } | { ok: false; error: string }> {
+): Promise<{ ok: true; adopterId: string; appended: boolean; status: AddContactEntryStatus; autoRequestFiled: boolean } | { ok: false; error: string }> {
     const parsed = addContactEntrySchema.safeParse(input);
     if (!parsed.success) return { ok: false, error: 'Invalid input' };
     const { adopterId, type, value } = parsed.data;
@@ -165,6 +165,16 @@ export async function addContactEntry(
             notifyApprovers(adopterId, target.name, actor, type).catch(e => {
                 logger.error('addContactEntry: notify approvers failed', e, { adopterId, actor });
             });
+            // v2.19.51: auto-fire a PII access request on the contributor's
+            // behalf. Replaces the v2.19.50-deprecated "contributing earns
+            // permanent privileged view" path. `requestPiiAccess` handles
+            // every edge case internally — already-privileged actors get a
+            // `has_access` no-op, pending requests dedup, and the denial
+            // cooldown is respected — so we just call it. Fire-and-forget
+            // since the contribution itself already succeeded; the request
+            // failing shouldn't undo the entry write.
+            requestPiiAccess(adopterId, { justification: 'auto:contribution' })
+                .catch(e => logger.error('addContactEntry: auto access-request failed', e, { adopterId, actor }));
             logAudit({ userEmail: actor, action: 'contact_entry_added', target: adopterId, details: { type } });
         }
 
@@ -182,7 +192,17 @@ export async function addContactEntry(
             : grantInserted
                 ? 'unlocked_existing'
                 : 'no_change';
-        return { ok: true, adopterId, appended, status };
+        // v2.19.51: client toast hint. The non-owner branch fired the auto
+        // PII access request above; tell the client so it can show the
+        // "Solicitamos acceso al perfil completo" line instead of the bare
+        // "Dato agregado" toast. We use the simple owner-equality heuristic
+        // because requestPiiAccess is fire-and-forget — we don't have its
+        // result. For admin / org-mate contributors the auto-request
+        // internally no-ops (returns has_access), but the toast will still
+        // mention the request — slightly misleading but not deeply wrong.
+        // The privileged actor cases are rare on the contribution path.
+        const autoRequestFiled = appended && actor !== target.addedBy;
+        return { ok: true, adopterId, appended, status, autoRequestFiled };
     } catch (error) {
         const errorId = logger.error('addContactEntry failed', error, { adopterId, actor });
         return { ok: false, error: `Failed (Error ID: ${errorId})` };

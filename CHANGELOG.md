@@ -2,6 +2,48 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.51] - 2026-06-19
+
+### Changed — contributor is no longer auto-promoted to privileged; access flows through a request
+
+QA pass on v2.19.50 surfaced the long-standing UX issue: a user who contributes a single contact entry to someone else's adopter automatically becomes `isEditor=true` in `adopter_history.changedBy`, which the PII gate honors as `privileged=true`. They then bypass all contact masking AND see the "Who has access" disclosure — including search-match details that reveal what OTHER users searched for. Verified live: `jurfalino@gmail.com` had 4 `contribution` rows on adopter `168533dc-…` (owned by `gatitosolivos@gmail.com`) and saw everything as if they were the owner.
+
+This release replaces that with the explicit-consent flow.
+
+#### 1. `isEditor` removed from the `privileged` OR-chain
+- `src/lib/piiAccess.ts` — `resolveVisibility` no longer reads `isEditor`. The field stays on `ResolveVisibilityInput` so future non-PII audit-visibility logic can use it, but the privilege decision is now `isAdmin || isModerator || isOrgMate || isOwner` only.
+- **Cold-cut behavior**: existing contributors lose their privileged view on the next page load. No backfill, no migration. Contributors who want their full view back can use the normal request-access flow.
+
+#### 2. `addContactEntry` auto-fires a PII access request
+- Right after the existing `notifyApprovers` call, `addContactEntry` now calls `requestPiiAccess(adopterId, { justification: 'auto:contribution' })`. The internal logic handles every edge case: already-privileged actors get a `has_access` no-op, pending requests dedup silently, and the denial cooldown is respected. Fire-and-forget — the contribution itself already succeeded; a failed auto-request shouldn't undo the entry write.
+- The flow is **append + auto-ask, in one user action**. Mental model shifts from "contribute → see everything" to "contribute → ask → owner decides."
+
+#### 3. Approver notification body differentiated
+- The notification approvers receive now reads *"X agregó un dato a Y y solicita acceso a los datos de contacto."* instead of the generic *"X solicitó acceso..."* when `justification === 'auto:contribution'`. Tells the owner this came from a contribution flow they probably already got a heads-up notification for, instead of looking like an unprompted cold request.
+
+#### 4. Contributor success toast acknowledges the request
+- New i18n key `adopter.ce_add_toast_added_with_request`: *"Dato agregado. Solicitamos acceso al perfil completo en tu nombre."* — fires when the contributor is not the owner. Owner contributions continue to see the bare *"Dato agregado"* toast. The server returns `autoRequestFiled: actor !== target.addedBy` on the success response so the client picks the right copy.
+- Owner-equality is a slight over-approximation: admins / org-mates contributing to records they're already privileged on see the "we filed a request" toast even though `requestPiiAccess` internally no-oped. Acceptable — privileged users contributing on records they have access to is rare on this path, and the toast isn't misleading in any harmful way.
+
+#### 5. "Who has access" disclosure leak fixed as a side effect
+- Once contributors stop passing `privileged`, they stop seeing the disclosure at all. The `jurfalino` situation that prompted this release no longer occurs.
+- The disclosure stays visible to true owners / admins / moderators / org-mates with the v2.19.27 search-match per-grant expansion unchanged — that's still the legitimate audience's audit tool.
+
+### Memory updated
+- `project_collaborative_vetting_model` — added the "v2.19.51: contributing NO LONGER auto-promotes to editor with full PII visibility" paragraph. Mental model: **contribute → ask → owner decides**.
+
+### Engineering
+- `src/lib/piiAccess.ts` — `isEditor` discarded from `resolveVisibility` destructuring; field stays on the input type with a doc comment explaining the v2.19.51 contract change.
+- `src/app/actions/addContactEntry.ts` — imports `requestPiiAccess`, calls it fire-and-forget after `notifyApprovers`, returns `autoRequestFiled` boolean on the success response.
+- `src/app/actions/piiAccess.ts` — `requestPiiAccess` branches the approver-notification body on `justification === 'auto:contribution'`.
+- `src/components/ContactEntriesSection.tsx` — success toast picks `ce_add_toast_added_with_request` when `res.autoRequestFiled` is true.
+- New i18n keys `adopter.ce_add_toast_added_with_request` in both locales.
+
+### What stays the same
+- Contribution itself is still open — anyone authenticated can `addContactEntry`. The data model around contributors and their entry-scope grants is unchanged.
+- The disclosure's content for owners (the v2.19.27 search-match per-grant details) is unchanged.
+- `unlocked_existing` toast for the "you typed the masked value, here it is" path is unchanged.
+
 ## [2.19.50] - 2026-06-19
 
 ### Fixed — `/api/notifications` returned 500 to unauthenticated requests (should be 401)
