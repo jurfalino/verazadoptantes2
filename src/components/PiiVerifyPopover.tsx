@@ -26,6 +26,12 @@ interface Props {
     /** Trigger to open the explicit-request modal (owned by the parent so
      * its single instance can be reused across many popover opens). */
     onRequestAccess?: () => void;
+    /** v2.19.41: when the privileged owner has flipped the preview-as-stranger
+     *  toggle on the profile, all live actions in this popover are inert —
+     *  Verify becomes a no-op + info toast, Request access does the same
+     *  via the parent's wrapper. Owner shouldn't be able to grant access
+     *  to themselves or file a request to themselves while previewing. */
+    previewMode?: boolean;
 }
 
 /**
@@ -42,6 +48,7 @@ export default function PiiVerifyPopover({
     entryType,
     requestState,
     onRequestAccess,
+    previewMode = false,
 }: Props) {
     const { t } = useLanguage();
     const toast = useShowToast();
@@ -90,6 +97,15 @@ export default function PiiVerifyPopover({
     async function submit() {
         const value = input.trim();
         if (!value) return;
+        // v2.19.41: preview-as-stranger short-circuit. Owner is simulating a
+        // stranger; firing verifyKnownInfo against their own record would
+        // either issue them a grant they don't need or, on a typo, leave a
+        // misleading audit trail. Toast-and-close instead.
+        if (previewMode) {
+            toast.info(t('adopter.preview_action_blocked_title'), t('adopter.preview_action_blocked_body'));
+            onClose();
+            return;
+        }
         setBusy(true);
         setError(null);
         try {

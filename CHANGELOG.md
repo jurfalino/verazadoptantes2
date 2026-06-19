@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.41] - 2026-06-19
+
+### Fixed — preview-as-stranger: verify + request-access were still firing real server actions
+- v2.19.39 made the masked-chip click open the verify popover in preview mode, which was the right behavior in isolation. But the popover's two actions (Verify with a guessed value, Request full access) still called the real server actions — meaning a privileged owner previewing as a stranger could file a PII access request **to themselves**, or fire `verifyKnownInfo` against their own record and leave a misleading audit trail. User correctly caught this.
+- Fix: both actions are now intercepted in preview mode and render a toast (`Acción no ejecutada — Estás en vista previa. Salí de la vista previa para verificar o solicitar acceso.`) instead.
+  - **Verify**: new `previewMode?: boolean` prop on `PiiVerifyPopover`. When set, the `submit()` short-circuits to a toast + close, before reaching `verifyKnownInfo`.
+  - **Request access**: the `onRequestAccess` wrapper in `AdopterProfileV2` checks `previewAsStranger` and toasts instead of opening the request modal.
+- The popover itself still RENDERS in preview mode (that's the whole point of preview — see what a stranger sees including the popover surface). Only the wired-up actions become inert. The "preview is for looking, not doing" model.
+
+### Engineering
+- `src/components/PiiVerifyPopover.tsx`: added `previewMode?: boolean` prop. `submit()` early-returns with `toast.info(...)` when in preview mode.
+- `src/components/AdopterProfileV2.tsx`: `onRequestAccess` passed to the popover wraps the existing handler — `previewAsStranger` → toast, else → `setRequestModalOpen(true)`. Also passes `previewMode={previewAsStranger}` so the popover's own Verify is intercepted at the source.
+- New i18n keys `adopter.preview_action_blocked_title` and `adopter.preview_action_blocked_body` in both locales.
+
 ## [2.19.40] - 2026-06-19
 
 ### Added — `foster` (tránsito) wizard now asks "delivered to home?" + structured address goes into contact details

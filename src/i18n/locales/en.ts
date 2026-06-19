@@ -580,6 +580,8 @@ export const en = {
         preview_exit_title: 'Return to the normal view',
         preview_banner_title: 'Preview: user without approved access',
         preview_banner_body: 'This is how this profile would look to someone outside your organization and without approved access.',
+        preview_action_blocked_title: 'Action not performed',
+        preview_action_blocked_body: 'You\'re in preview mode. Exit the preview to verify or request access.',
         ce_type_phone: 'Phone',
         ce_type_email: 'Email',
         ce_type_social: 'Social',

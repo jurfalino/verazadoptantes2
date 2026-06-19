@@ -587,6 +587,8 @@ export const es = {
         preview_exit_title: 'Volver a la vista normal',
         preview_banner_title: 'Vista previa: usuario sin acceso aprobado',
         preview_banner_body: 'Así se vería este perfil para alguien que no pertenece a tu organización ni tiene un acceso aprobado.',
+        preview_action_blocked_title: 'Acción no ejecutada',
+        preview_action_blocked_body: 'Estás en vista previa. Salí de la vista previa para verificar o solicitar acceso.',
         ce_type_phone: 'Teléfono',
         ce_type_email: 'Email',
         ce_type_social: 'Red social',

@@ -754,8 +754,25 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                     : { kind: 'available' }
                         }
                         onRequestAccess={
-                            piiOptInEligible ? () => setRequestModalOpen(true) : undefined
+                            piiOptInEligible
+                                ? () => {
+                                    // v2.19.41: in preview mode, intercept the
+                                    // request-access action — owner clicking
+                                    // would otherwise open the real request
+                                    // modal and ultimately file a PII request
+                                    // to themselves. Toast instead.
+                                    if (previewAsStranger) {
+                                        toast.info(
+                                            t('adopter.preview_action_blocked_title'),
+                                            t('adopter.preview_action_blocked_body'),
+                                        );
+                                        return;
+                                    }
+                                    setRequestModalOpen(true);
+                                }
+                                : undefined
                         }
+                        previewMode={previewAsStranger}
                     />
                 )}
             </div>
