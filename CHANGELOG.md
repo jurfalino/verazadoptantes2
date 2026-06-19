@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.53] - 2026-06-19
+
+### Fixed — v2.19.52 migration 0050 hotfix
+
+`drizzle/0050_backfill_unknown_animal_to_null.sql` referenced an `updated_at` column on the `adoptions` table that does not exist (the schema tracks row-level changes through `adopter_history`, not a row-level timestamp). Both staging and prod migration jobs failed with `no such column: updated_at: SQLITE_ERROR [code: 7500]`, leaving both pipelines stuck at v2.19.51's deployed code. 0049 (orphan FK cleanup) committed cleanly on both DBs before 0050 rolled back; this hotfix only patches the SQL.
+
+The fix drops the `updated_at = …` clause — the migration is a one-shot data-cleanup, not something that needs to advance any per-row timestamp anyway. The wrangler transaction rolled 0050 back fully on both DBs, so the patched migration will re-apply on the next pipeline run with no special handling needed.
+
 ## [2.19.52] - 2026-06-19
 
 ### Changed — animal name field is just optional now; "unknown" toggle removed everywhere

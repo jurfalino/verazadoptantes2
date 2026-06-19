@@ -28,7 +28,10 @@
 -- Idempotent: re-running is a no-op against a clean state (no rows match
 -- `animal_name = 'Unknown'`).
 
+-- Note: `adoptions` has no `updated_at` column (the schema tracks
+-- changes through `adopter_history`, not row-level timestamps). Earlier
+-- draft of this migration also set updated_at and failed with
+-- "no such column: updated_at" in the v2.19.52 prod deploy.
 UPDATE adoptions
-SET animal_name = NULL,
-    updated_at = strftime('%s', 'now') * 1000
+SET animal_name = NULL
 WHERE animal_name = 'Unknown';
