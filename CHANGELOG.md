@@ -2,6 +2,25 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.43] - 2026-06-19
+
+### Fixed — AdopterForm save errors now (1) don't crash on undefined `res` and (2) always carry an error-id
+- User reported saving an adopter triggered: *"Error al guardar — Cannot read properties of undefined (reading 'success')"* with no error-id to quote. Two problems compounded:
+  1. **Crash on undefined `res`**: `await saveAdopter(payload)` is supposed to return `{ success: true | false, ... }` or throw, but rare edge-runtime conditions (worker panic mid-response, network blip) can land an `undefined` on the client. The next `res.success` read then threw a TypeError. The catch block fired, but the toast message was the raw `Cannot read properties...` runtime error, not the underlying server condition.
+  2. **No error-id on the toast**: the catch block used `extractErrorId(err)` which only finds an id when the server threw with one embedded (the standard pattern). A client-side TypeError carries no id, so the toast was unattributable to any Axiom row.
+- Fixes in `AdopterForm.performActualSave`:
+  - **Defensive null check on `res`**: if `saveAdopter` returns undefined, route through `reportClientError` (logs to Axiom via `/api/log-client-error`, returns a fresh id), then show the standard save-failed toast WITH the id.
+  - **All three error paths now produce an id**:
+    - `res.success === false` → `reportClientError` with `extra.serverError` carrying the server's `error` string for triage.
+    - Thrown server error → existing `extractErrorId(err)` (no behavior change for the canonical path).
+    - Thrown client error / no embedded id → `reportClientError` fallback.
+
+### Memory
+- New memory `feedback_error_toasts_need_id` codifies the rule for all future error-toast call sites: every user-facing error toast must carry an 8-char id; every await on a server action must be defensively checked for undefined before reading properties. Indexed in MEMORY.md.
+
+### Audit follow-up needed
+- Same pattern likely needs to be applied to other server-action call sites whose error paths were previously bare. Audit candidates: anywhere `await someAction(...)` is followed by a direct `.success` read or an `if (!res.success)` without a prior null check. Will sweep when next touching those surfaces.
+
 ## [2.19.42] - 2026-06-19
 
 ### Changed — preview-mode toasts now teach what would actually happen
