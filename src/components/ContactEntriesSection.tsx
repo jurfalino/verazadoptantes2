@@ -492,21 +492,39 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         return t(`adopter.ce_input_ph_${type}`) || '';
     }
 
+    // v2.19.46: the visibility microcopy is now conditional on the entries'
+    // actual `isPublic` state. v2.19.38 always claimed "Solo visible para vos
+    // y tus organizaciones" — but a Facebook (or other public-source) import
+    // flags individual entries with `isPublic: true`, and those entries ARE
+    // visible to everyone. Saying they're private is the same trust violation
+    // the original copy was supposed to avoid. Three states:
+    //   - All entries public → globe icon + "datos de fuente pública" copy.
+    //   - Some public, some private → globe icon + "mixto" copy + per-chip badge.
+    //   - All private / no entries yet → original lock + "solo visible..." copy.
+    // Per-entry badges below carry the visual signal for each row.
+    const hasPublicEntry = sorted.some(e => e.isPublic === true);
+    const allPublic = sorted.length > 0 && sorted.every(e => e.isPublic === true);
+    const microcopyKey = allPublic
+        ? 'adopter.ce_visibility_all_public'
+        : hasPublicEntry
+            ? 'adopter.ce_visibility_mixed'
+            : 'adopter.ce_visibility_microcopy';
+
     return (
         <div className="space-y-3">
-            {/* v2.19.38: visibility reassurance microcopy. Shown right above
-                the chips on every render where this section is editable. The
-                point is reinforcement-at-the-moment-of-input: rescuers who are
-                about to enter sensitive contact info see the visibility claim
-                here, not buried in a separate policy page. Theme-safe colors
-                via --text-muted; small SVG lock instead of emoji per the
-                existing icon convention. */}
             <p className="flex items-start gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-                <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
-                    <rect x="5" y="11" width="14" height="9" rx="2" />
-                    <path strokeLinecap="round" d="M8 11V8a4 4 0 118 0v3" />
-                </svg>
-                <span>{t('adopter.ce_visibility_microcopy')}</span>
+                {(allPublic || hasPublicEntry) ? (
+                    <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="12" r="9" />
+                        <path strokeLinecap="round" d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18" />
+                    </svg>
+                ) : (
+                    <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="5" y="11" width="14" height="9" rx="2" />
+                        <path strokeLinecap="round" d="M8 11V8a4 4 0 118 0v3" />
+                    </svg>
+                )}
+                <span>{t(microcopyKey as never)}</span>
             </p>
 
             {/* Inline undo bar shown while a delete is in its 5-second window. */}
@@ -537,7 +555,32 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 data-entry-type={entry.type}
                             >
                                 <Icon className="w-4 h-4 mt-0.5 shrink-0 text-teal-600" aria-hidden="true" />
-                                <span className="w-24 shrink-0 text-stone-500">{labelFor(entry)}</span>
+                                <span className="w-24 shrink-0 text-stone-500 flex items-center gap-1">
+                                    {labelFor(entry)}
+                                    {/* v2.19.46: per-entry visibility badge.
+                                        When the entry was sourced from a public
+                                        channel (Facebook import, etc.), the
+                                        `isPublic` flag is set server-side and
+                                        masking is bypassed for everyone. We
+                                        surface that on the chip so the rescuer
+                                        understands at-a-glance which entries
+                                        are public and which are gated, instead
+                                        of having to read the section microcopy
+                                        and infer. Theme-safe via --text-muted. */}
+                                    {entry.isPublic === true && (
+                                        <span
+                                            className="inline-flex items-center gap-0.5 px-1 py-0 rounded text-[10px] font-medium"
+                                            style={{ color: 'var(--text-muted)' }}
+                                            title={t('adopter.ce_public_badge_title')}
+                                        >
+                                            <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                                                <circle cx="12" cy="12" r="9" />
+                                                <path strokeLinecap="round" d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18" />
+                                            </svg>
+                                            {t('adopter.ce_public_badge')}
+                                        </span>
+                                    )}
+                                </span>
                                 <div className="flex-1 min-w-0">
                                     {isEditing ? (
                                         <div className="space-y-2">

@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.46] - 2026-06-19
+
+### Fixed — visibility microcopy claimed "private" on public-sourced entries
+- User opened a Facebook-imported adopter profile and the contact-entries section showed *"Solo visible para vos y tus organizaciones"* even though the entries were imported from a public Facebook post and have `isPublic: true` set on them — i.e., they ARE visible to everyone, not just the user's organizations. **Same trust violation the original microcopy was supposed to avoid**: copy claiming privacy when the data isn't private.
+- The microcopy is now conditional on the entries' actual `isPublic` state. Three cases:
+  - **All entries public**: globe icon + *"Estos datos vienen de una fuente pública y son visibles para todos."*
+  - **Mixed (some public, some private)**: globe icon + *"Los datos marcados como públicos son visibles para todos. El resto solo es visible para vos y tus organizaciones."*
+  - **All private / no entries yet**: existing lock icon + *"Solo visible para vos y tus organizaciones."*
+- Plus **per-entry visibility badge**: a small globe icon + "Público" label renders next to the type label on every entry with `isPublic === true`. So the rescuer can see exactly which entries are gated and which aren't, instead of inferring from the section microcopy.
+
+### Engineering
+- `src/components/ContactEntriesSection.tsx` — derived `hasPublicEntry` / `allPublic` from `sorted` (the sorted+filtered entry list), picked the microcopy key, swapped lock-vs-globe icon, added per-chip badge.
+- New i18n keys `adopter.ce_visibility_all_public`, `ce_visibility_mixed`, `ce_public_badge`, `ce_public_badge_title` in both locales.
+
+### Out of scope
+- The adopter-level `is_public` flag (admin "this whole record is publicly known") would also make all entries effectively public, regardless of per-entry `isPublic`. Component would need that prop plumbed through. Not addressed in this patch — that's an admin-driven path, the Facebook-import per-entry case is the common one. Bring it in when next touching this surface if the admin-flag scenario surfaces.
+
 ## [2.19.45] - 2026-06-19
 
 ### Investigation — "workers exceeded resource limit" report from prod
