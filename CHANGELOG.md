@@ -2,6 +2,48 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.65] - 2026-06-20
+
+### Fixed — v2.19.63's "don't re-surface dismissed duplicates" was too easily defeated
+
+QA caught it within a minute of staging: type a single trailing space in the prefilled name on `/adopter/create` → `hasUserEdited` flips → detection fires → same 3 Marias the rescuer just dismissed reappear. The original principle was right (don't re-surface records they already saw) but the gate (a "was the form touched" dirty flag) was the wrong granularity. Mutating input ≠ supplying new information.
+
+#### The corrected gate
+
+Compare the **normalized search query** (what `findAdopters` would actually run on) against a **snapshot of the prefilled query** captured on first render. Skip detection while they match. Fire as soon as they diverge.
+
+Normalization is deliberately conservative: `trim().toLowerCase().replace(/\s+/g, ' ')`. Whitespace and case are noise that the search engine ignored upstream. We do NOT accent-strip — typing "María" over a prefilled "Maria" is a more specific spelling and warrants a fresh look.
+
+Matrix of what now happens:
+- Trailing space added → normalized query equals snapshot → no re-fire. ✓
+- "MARIA" / "maria" case toggle → same → no re-fire. ✓
+- Type a phone in the composer → normalized query now includes it, differs from snapshot → fires. ✓
+- Edit name to "Maria L." → differs → fires. ✓
+- Type "Maria", delete back to original → equals snapshot → no fire. ✓ (was a false re-fire under v2.19.63)
+- Direct nav to `/adopter/create`, type "M" → snapshot was empty, current is "m" → fires. ✓
+
+#### Same logic for the save modal
+
+`handleSave`'s strong-match modal also gates on the same comparison. If the rescuer hits Save with input that still normalizes to what they already saw, no modal. They've explicitly accepted what search showed.
+
+#### What got removed
+
+- `hasUserEdited` state, the `markEdited` `useCallback`, and the three `markEdited()` plumbing calls in the name / contactEntries / familyMembers onChange handlers. All replaced by the ref-based snapshot.
+
+### Engineering
+
+- `src/components/AdopterForm.tsx`:
+  - New `initialDetectedQuery: useRef<string | null>` capturing the snapshot on first effect run.
+  - New `normalizeDetectionQuery` `useCallback` for trim + lowercase + whitespace collapse.
+  - Detection effect early-exits when `normalize(currentQuery) === initialDetectedQuery.current`.
+  - `handleSave` skips the save-modal block under the same condition.
+  - Removed `hasUserEdited` and its plumbing.
+
+### Trade-off (accepted)
+
+- A rescuer who types "Maria " then "M" then "Maria" still gets no detection — equals snapshot. That's a feature: they're back to where they started, no new info, no nag.
+- The snapshot is captured **at mount** from whatever the form's initial state was (URL prefill from search, or `formPrefill`, or `initialData`). A fresh `/adopter/create` with no prefill → snapshot ref stays `null` → detection runs normally on the rescuer's first input.
+
 ## [2.19.64] - 2026-06-20
 
 ### Changed — `/admin/adopters` "Updated by" facet now excludes self-edits

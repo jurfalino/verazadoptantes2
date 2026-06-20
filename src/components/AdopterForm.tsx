@@ -138,18 +138,45 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     const [duplicateResults, setDuplicateResults] = useState<DiscoveryMatch[] | null>(null);
     const [duplicateSearching, setDuplicateSearching] = useState(false);
     const [saveDuplicateModal, setSaveDuplicateModal] = useState<{ matches: DiscoveryMatch[] } | null>(null);
-    // v2.19.63: gate the create-flow duplicate-detection effect on user
-    // input. On a fresh /adopter/create mount (whether the name/phone are
-    // URL-prefilled from a search or left blank), the rescuer has already
-    // been shown every duplicate the finder would surface — search and the
-    // form-finder run the same algorithm against the same data. Don't
-    // re-run the finder, and don't fire the save-time strong-match modal,
-    // until they actually edit something on the form. The moment any field
-    // changes they've supplied new evidence and re-evaluation earns its keep.
-    const [hasUserEdited, setHasUserEdited] = useState(false);
-    // setState(true) when the current value is already true is a React no-op
-    // — no re-render. Safe to call this from every keystroke / onChange.
-    const markEdited = useCallback(() => setHasUserEdited(true), []);
+    // v2.19.65: gate the create-flow duplicate-detection on whether the
+    // search-relevant content has actually changed from what the rescuer
+    // already saw in search.
+    //
+    // The rescuer landed on /adopter/create with name (+ optional phone)
+    // prefilled from their search query. By construction, the form-time
+    // finder running on those prefilled values would surface the same
+    // records search already showed them. We snapshot the normalized
+    // prefilled query on first render; the effect + save-modal both skip
+    // while the current normalized query equals the snapshot.
+    //
+    // v2.19.63 used a coarse `hasUserEdited` dirty flag here. The flag
+    // fired on ANY mutation — trailing space, case toggle, deleting and
+    // retyping the same character — input changes that don't change what
+    // search would have returned. Replaced with a content-based comparison
+    // so meaningless edits don't re-surface dismissed records.
+    //
+    // Normalization is conservative on purpose: trim + lowercase +
+    // whitespace collapse. NO accent-strip — typing "María" over a
+    // prefilled "Maria" is a more specific spelling and warrants a fresh
+    // check.
+    const normalizeDetectionQuery = useCallback(
+        (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' '),
+        []
+    );
+    // Snapshot of the prefilled query at mount time. Captured ONCE from the
+    // initial form values (whatever search routed into name + contactInfo).
+    // If the form started empty (direct nav, no search), the ref stays null
+    // and the detection effect runs normally on the rescuer's first input.
+    const initialDetectedQuery = useRef<string | null>(null);
+    useEffect(() => {
+        if (!isNew) return;
+        const initial = (getDuplicateSearchQuery() || data.name).trim();
+        if (!initial) return;
+        initialDetectedQuery.current = normalizeDetectionQuery(initial);
+        // Run once on mount — capture the prefilled state before the rescuer
+        // can edit it.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     const saveDuplicateModalRef = useRef<HTMLDivElement>(null);
     const createAnywayButtonRef = useRef<HTMLButtonElement>(null);
     const duplicateDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -363,14 +390,18 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             setDuplicateResults(null);
             return;
         }
-        // v2.19.63: don't surface duplicates against URL-prefilled values
-        // the rescuer just dismissed in search. See `hasUserEdited` declaration.
-        if (!hasUserEdited) {
+        const query = getDuplicateSearchQuery();
+        if (data.name.trim().length < MIN_NAME_LENGTH_FOR_SEARCH) {
             setDuplicateResults(null);
             return;
         }
-        const query = getDuplicateSearchQuery();
-        if (data.name.trim().length < MIN_NAME_LENGTH_FOR_SEARCH) {
+        // v2.19.65: skip if the current normalized query still equals what
+        // the rescuer's prefill (captured at mount) already showed in search.
+        // Whitespace, case, "type-then-undo" all collapse to the snapshot
+        // and don't re-fire detection. Once the content meaningfully
+        // diverges, the snapshot is stale and we resume detection.
+        const currentNorm = normalizeDetectionQuery(query || data.name.trim());
+        if (initialDetectedQuery.current !== null && currentNorm === initialDetectedQuery.current) {
             setDuplicateResults(null);
             return;
         }
@@ -398,7 +429,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         return () => {
             if (duplicateDebounceRef.current) clearTimeout(duplicateDebounceRef.current);
         };
-    }, [isNew, hasUserEdited, data.name, data.contactInfo, getDuplicateSearchQuery]);
+    }, [isNew, data.name, data.contactInfo, getDuplicateSearchQuery, normalizeDetectionQuery]);
 
     // Perform the actual save (used after "Create new anyway" or when no duplicates)
     const performActualSave = useCallback(async () => {
@@ -550,12 +581,17 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             return;
         }
         if (isNew) {
-            // v2.19.63: if the rescuer hasn't edited the form, they've already
-            // seen all duplicate matches in the search results upstream. Skip
-            // the save-time modal entirely — they explicitly clicked Save
-            // against the same state they evaluated then.
+            // v2.19.65: if the rescuer's input still normalizes to what
+            // search already showed them, skip the save-time modal — they're
+            // explicitly accepting the state they evaluated upstream. The
+            // null-check covers the very rare case where the detection
+            // effect never ran (sub-MIN_NAME_LENGTH name): no snapshot, so
+            // fall through to the normal flow.
             const query = getDuplicateSearchQuery() || data.name.trim();
-            if (hasUserEdited && query.length >= MIN_NAME_LENGTH_FOR_SEARCH) {
+            const currentNorm = normalizeDetectionQuery(query);
+            const queryUnchanged = initialDetectedQuery.current !== null
+                && currentNorm === initialDetectedQuery.current;
+            if (!queryUnchanged && query.length >= MIN_NAME_LENGTH_FOR_SEARCH) {
                 try {
                     const response = await findAdopters(
                         { raw: query },
@@ -752,7 +788,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                             required
                                             className="w-full text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight bg-transparent border-b-2 border-teal-300 focus:border-teal-500 outline-none py-0.5 placeholder-stone-500 transition-all"
                                             value={data.name}
-                                            onChange={e => { markEdited(); setData({ ...data, name: e.target.value }); }}
+                                            onChange={e => setData({ ...data, name: e.target.value })}
                                             placeholder={t('adopter.placeholder_name_aliases')}
                                             autoFocus
                                         />
@@ -1000,7 +1036,6 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                 canEditAll={true}
                                 currentUser={currentUser}
                                 onChange={next => {
-                                    markEdited();
                                     setContactEntries(next);
                                     setData(d => ({ ...d, contactInfo: contactEntriesToBlob(next) }));
                                 }}
@@ -1043,7 +1078,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                 rows={2}
                                 className="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-y min-h-[60px]"
                                 value={data.familyMembers}
-                                onChange={e => { markEdited(); setData({ ...data, familyMembers: e.target.value }); }}
+                                onChange={e => setData({ ...data, familyMembers: e.target.value })}
                                 placeholder={t('adopter.placeholder_family')}
                             />
                         ) : (
