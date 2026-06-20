@@ -2,6 +2,43 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.62] - 2026-06-20
+
+### Added — `/admin/users` faceted filters + sort
+
+Mirror of v2.19.61's `/admin/adopters` treatment, scaled to the user-registry page. Page is `'use client'` (data already fetched from `/api/admin/users`); all aggregation and sort is in-memory via `useMemo`, no API change.
+
+#### Filters added (each with counts)
+
+- **By Country** — chip card. Replaces the previous header dropdown. `{flag} {name} {count}`.
+- **By Location (province)** — chip card. Province is the natural next level under country; city would explode chip count (50+ in some prod data) and the row's `LocationCell` already shows the full triple. Click to filter, click again to clear.
+- **By Organization** — chip card. Each chip shows `🏢 {org name} {count}`. Counts sum users-in-org (multi-membership is one count per (org, user) pair). Single-select for v1, matches the country/location pattern.
+
+#### Sort added
+
+Replaces the (now-redundant) header country dropdown with a sort `<select>`. Options:
+- `last_active_desc` (default) / `last_active_asc`
+- `created_desc` / `created_asc` (uses `first_sign_in`)
+- `adopters_desc` / `adopters_asc` (uses `adopters_count`)
+- `name_asc` / `name_desc`
+
+Null-handling: nullable timestamps fall to the bottom regardless of direction. A user who never signed in shouldn't bubble to the top of "last login (oldest)" — they have no signal, not the oldest one.
+
+### Engineering
+
+- `src/app/admin/users/page.tsx`:
+  - New state: `locationFilter`, `orgFilter`, `sortKey`.
+  - Three `useMemo`-derived facets: `countryFacet`, `locationFacet`, `orgFacet` — each rebuilds only when `users` changes, NOT on every keystroke in the free-text filter.
+  - `filteredUsers` rewrapped in `useMemo` and now folds in the new filters + sort step (with null-bottom comparator).
+  - Header: country dropdown removed (replaced by the chip card); sort dropdown added in its place.
+  - Three chip-card sections inserted between header and table. Same visual pattern as `/admin/adopters` (active = teal-600 pill, idle = stone-100, count chip on the right).
+  - "N user(s) (filtered) · Clear all filters" footer extended to know about all four filter sources.
+
+### What stays the same
+
+- `/api/admin/users` payload — no schema change, no extra fields fetched. The facet counts derive from the same `users` array the page already loaded.
+- The desktop table and mobile cards — only the filter pipeline before them changed.
+
 ## [2.19.61] - 2026-06-20
 
 ### Added — `/admin/adopters` faceted filters: created-by, updated-by, visibility, sort
