@@ -1,6 +1,6 @@
 export const runtime = 'edge';
 import { getDb } from "@/app/actions";
-import { adopters, adopterHistory } from "@/db/schema";
+import { adopters, adopterHistory, adoptions } from "@/db/schema";
 import { desc, like, or, and, isNull, eq, sql, ne } from "drizzle-orm";
 import Link from "next/link";
 import AdminAdopterList from "@/components/AdminAdopterList";
@@ -94,26 +94,32 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
     const adopterIds = list.map((a: typeof adopters.$inferSelect) => a.id);
     const enrichmentMap = await enrichAdopters(db, adopterIds);
 
-    // ── Rating summary (computed from enrichment of ALL non-deleted adopters) ──
-    // We need global counts, so compute from the full enrichment set
+    // ── Rating summary (single aggregated query) ──
+    // v2.19.59: previously fan-out enriched every non-deleted adopter just
+    // to count rating-bucket sizes (5 queries × N adopters). At ~66 prod
+    // adopters that's ~330 D1 subrequests on every render — past the
+    // Cloudflare Worker resource cap. router.refresh() after a toggle flip
+    // produced Error 1102. Replaced with one aggregated SQL: per-adopter
+    // avg(rating) via a left-join + groupBy. Bucketing is identical math to
+    // the old in-process loop, one D1 round trip instead of 330.
     const ratingCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
     const noRatingCount = { count: 0 };
 
-    // For the rating summary, we need ALL adopters' ratings, not just the filtered list
-    // Fetch a broader set for accurate counts
-    const allAdoptersForRating = await db.select({ id: adopters.id })
+    const perAdopterAvg = await db.select({
+        id: adopters.id,
+        avgRating: sql<number | null>`AVG(${adoptions.rating})`,
+    })
         .from(adopters)
-        .where(isNull(adopters.deletedAt));
-    const allIds = allAdoptersForRating.map((a: { id: string }) => a.id);
-    const allEnrichment = allIds.length > 0 ? await enrichAdopters(db, allIds) : new Map();
+        .leftJoin(adoptions, and(eq(adoptions.adopterId, adopters.id), sql`${adoptions.rating} IS NOT NULL`))
+        .where(isNull(adopters.deletedAt))
+        .groupBy(adopters.id);
 
-    for (const [, data] of allEnrichment) {
-        if (data.avgRating !== null) {
-            const rounded = Math.round(data.avgRating);
-            const clamped = Math.max(1, Math.min(5, rounded));
-            ratingCounts[clamped] = (ratingCounts[clamped] || 0) + 1;
-        } else {
+    for (const row of perAdopterAvg as { avgRating: number | null }[]) {
+        if (row.avgRating === null) {
             noRatingCount.count++;
+        } else {
+            const clamped = Math.max(1, Math.min(5, Math.round(row.avgRating)));
+            ratingCounts[clamped] = (ratingCounts[clamped] || 0) + 1;
         }
     }
 
