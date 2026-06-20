@@ -2,6 +2,191 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.65] - 2026-06-20
+
+### Fixed — v2.19.63's "don't re-surface dismissed duplicates" was too easily defeated
+
+QA caught it within a minute of staging: type a single trailing space in the prefilled name on `/adopter/create` → `hasUserEdited` flips → detection fires → same 3 Marias the rescuer just dismissed reappear. The original principle was right (don't re-surface records they already saw) but the gate (a "was the form touched" dirty flag) was the wrong granularity. Mutating input ≠ supplying new information.
+
+#### The corrected gate
+
+Compare the **normalized search query** (what `findAdopters` would actually run on) against a **snapshot of the prefilled query** captured on first render. Skip detection while they match. Fire as soon as they diverge.
+
+Normalization is deliberately conservative: `trim().toLowerCase().replace(/\s+/g, ' ')`. Whitespace and case are noise that the search engine ignored upstream. We do NOT accent-strip — typing "María" over a prefilled "Maria" is a more specific spelling and warrants a fresh look.
+
+Matrix of what now happens:
+- Trailing space added → normalized query equals snapshot → no re-fire. ✓
+- "MARIA" / "maria" case toggle → same → no re-fire. ✓
+- Type a phone in the composer → normalized query now includes it, differs from snapshot → fires. ✓
+- Edit name to "Maria L." → differs → fires. ✓
+- Type "Maria", delete back to original → equals snapshot → no fire. ✓ (was a false re-fire under v2.19.63)
+- Direct nav to `/adopter/create`, type "M" → snapshot was empty, current is "m" → fires. ✓
+
+#### Same logic for the save modal
+
+`handleSave`'s strong-match modal also gates on the same comparison. If the rescuer hits Save with input that still normalizes to what they already saw, no modal. They've explicitly accepted what search showed.
+
+#### What got removed
+
+- `hasUserEdited` state, the `markEdited` `useCallback`, and the three `markEdited()` plumbing calls in the name / contactEntries / familyMembers onChange handlers. All replaced by the ref-based snapshot.
+
+### Engineering
+
+- `src/components/AdopterForm.tsx`:
+  - New `initialDetectedQuery: useRef<string | null>` capturing the snapshot on first effect run.
+  - New `normalizeDetectionQuery` `useCallback` for trim + lowercase + whitespace collapse.
+  - Detection effect early-exits when `normalize(currentQuery) === initialDetectedQuery.current`.
+  - `handleSave` skips the save-modal block under the same condition.
+  - Removed `hasUserEdited` and its plumbing.
+
+### Trade-off (accepted)
+
+- A rescuer who types "Maria " then "M" then "Maria" still gets no detection — equals snapshot. That's a feature: they're back to where they started, no new info, no nag.
+- The snapshot is captured **at mount** from whatever the form's initial state was (URL prefill from search, or `formPrefill`, or `initialData`). A fresh `/adopter/create` with no prefill → snapshot ref stays `null` → detection runs normally on the rescuer's first input.
+
+## [2.19.64] - 2026-06-20
+
+### Changed — `/admin/adopters` "Updated by" facet now excludes self-edits
+
+v2.19.61 introduced the "Updated by" facet defined as "most recent editor per adopter." Practical observation: most records' latest editor IS their creator, so the facet was effectively a noisier copy of "Created by" — same chips, similar counts, no extra signal. The genuinely useful signal is **external contribution**: "Maria created this, Pedro updated it later."
+
+This release tightens the definition: only count an adopter under "Updated by X" when X is the latest editor AND X is **not** the adopter's creator. Records last touched only by their own creator drop out of the facet entirely. Chips that disappear represent zero external-contribution records for that user.
+
+The filtered list stays in sync: when filtering by `?updated_by=X`, the WHERE clause now also enforces `added_by != X` so the displayed rows match what the chip count promised.
+
+### Engineering
+
+- `src/app/admin/adopters/page.tsx`:
+  - Facet query joins `adopters` on `adopter_id` to access `added_by`; adds `h.changed_by != a.added_by` to the WHERE clause. Also tightens `a.deleted_at IS NULL` for parity with the other facets.
+  - WHERE clause for `filterUpdatedBy` adds `ne(adopters.addedBy, filterUpdatedBy)` alongside the existing subquery.
+
+## [2.19.63] - 2026-06-20
+
+### Fixed — create form no longer re-surfaces the same duplicates the rescuer already saw in search
+
+**The bug as UX**: Rescuer searches `Maria` → reads the 3 Marias in the results → decides none is the person they want to add → clicks **Crear nuevo** → form opens with the name prefilled. Within ~350ms the form's debounced duplicate-detection fires on the prefilled name and re-surfaces the same 3 Marias in `DuplicatePeek` + `StrongMatchStrip`. On Save, the save-time modal fires for any strong match. The rescuer's just-made "not the same person" decision is invalidated three more times in 30 seconds.
+
+It reads as "we don't trust your judgement" and trains the rescuer to dismiss alerts reflexively — exactly the wrong reflex when a genuinely new signal appears later.
+
+**The insight**: search and the form-time duplicate-finder run the **same algorithm against the same data**. Anything the form-finder would surface against the *prefilled* values has already appeared in the search results the rescuer just dismissed. So: don't run the finder at all until they actually edit something.
+
+**The fix**: one state flag in `AdopterForm` — `hasUserEdited`, initial `false`. Any field `onChange` flips it `true` via a no-arg `markEdited()` callback. The existing duplicate-detection effect early-exits while it's `false`. The save-time strong-match modal is also gated on it. The moment the rescuer changes name, adds a contact entry, or edits family members, they've supplied **new evidence**, and re-evaluation earns its keep — the finder fires immediately on the next debounce cycle.
+
+Considered and rejected: passing the seen-IDs forward from search via sessionStorage. Same intent, more state to manage (per-tab dismissal lists, staleness windows, cleanup on submit/unmount). The dirty-flag approach is one variable in one file and produces equivalent behaviour because of the search/form algorithmic equivalence.
+
+### Trade-offs (documented, accepted)
+
+- **Save with no edits at all** — record is created with exactly the URL-prefilled name/phone, no duplicate prompts. The rescuer made the call at search time and is creating an intentionally-minimal stub. Acceptable.
+- **Edit a field, revert it** — `hasUserEdited` is a one-way flip. The form is "dirty." Detection fires on whatever's currently typed. Acceptable; the rescuer engaged with the form.
+- **Edit-the-name-to-be-more-like-an-existing-match** — detection re-fires correctly; surfaces matches that might not have been in the original search. That's the system doing its job on new evidence.
+
+### What stays the same
+
+- The post-save `duplicate_candidates` profile banner (the v39 "Posible duplicado detectado" alert) — driven by a separate precomputed-pairs table built by the tokenize-on-write job. It's a review-queue surface for owners/admins, not a transient form-time guard, and auto-resolving pairs from a dirty-flag signal would poison it.
+- Search-results rendering — no per-row "Not the same person" button. The implicit signal ("you clicked Create instead of one of these rows") is enough.
+
+### Engineering
+
+- `src/components/AdopterForm.tsx`:
+  - New state `hasUserEdited` + `markEdited` `useCallback`.
+  - Duplicate-detection effect (~line 349) early-exits when `!hasUserEdited`; `hasUserEdited` added to deps so the effect re-fires once the flag flips.
+  - `handleSave` (~line 528) gates the save-modal call on `hasUserEdited`.
+  - Three onChange call sites plumbed: name input, `ContactEntriesSection` onChange, familyMembers textarea.
+
+### Verification (manual)
+
+- Search a name with results → Crear nuevo → form opens. DuplicatePeek + StrongMatchStrip stay quiet; hit Save → no modal interruption; record saves.
+- Same path, but add a phone in the composer first → detection re-fires; matches surface; save modal triggers for any strong match.
+- Open `/adopter/create` via direct URL → empty form, type a name → detection fires on the debounce (same behaviour as today).
+
+## [2.19.62] - 2026-06-20
+
+### Added — `/admin/users` faceted filters + sort
+
+Mirror of v2.19.61's `/admin/adopters` treatment, scaled to the user-registry page. Page is `'use client'` (data already fetched from `/api/admin/users`); all aggregation and sort is in-memory via `useMemo`, no API change.
+
+#### Filters added (each with counts)
+
+- **By Country** — chip card. Replaces the previous header dropdown. `{flag} {name} {count}`.
+- **By Location (province)** — chip card. Province is the natural next level under country; city would explode chip count (50+ in some prod data) and the row's `LocationCell` already shows the full triple. Click to filter, click again to clear.
+- **By Organization** — chip card. Each chip shows `🏢 {org name} {count}`. Counts sum users-in-org (multi-membership is one count per (org, user) pair). Single-select for v1, matches the country/location pattern.
+
+#### Sort added
+
+Replaces the (now-redundant) header country dropdown with a sort `<select>`. Options:
+- `last_active_desc` (default) / `last_active_asc`
+- `created_desc` / `created_asc` (uses `first_sign_in`)
+- `adopters_desc` / `adopters_asc` (uses `adopters_count`)
+- `name_asc` / `name_desc`
+
+Null-handling: nullable timestamps fall to the bottom regardless of direction. A user who never signed in shouldn't bubble to the top of "last login (oldest)" — they have no signal, not the oldest one.
+
+### Engineering
+
+- `src/app/admin/users/page.tsx`:
+  - New state: `locationFilter`, `orgFilter`, `sortKey`.
+  - Three `useMemo`-derived facets: `countryFacet`, `locationFacet`, `orgFacet` — each rebuilds only when `users` changes, NOT on every keystroke in the free-text filter.
+  - `filteredUsers` rewrapped in `useMemo` and now folds in the new filters + sort step (with null-bottom comparator).
+  - Header: country dropdown removed (replaced by the chip card); sort dropdown added in its place.
+  - Three chip-card sections inserted between header and table. Same visual pattern as `/admin/adopters` (active = teal-600 pill, idle = stone-100, count chip on the right).
+  - "N user(s) (filtered) · Clear all filters" footer extended to know about all four filter sources.
+
+### What stays the same
+
+- `/api/admin/users` payload — no schema change, no extra fields fetched. The facet counts derive from the same `users` array the page already loaded.
+- The desktop table and mobile cards — only the filter pipeline before them changed.
+
+## [2.19.61] - 2026-06-20
+
+### Added — `/admin/adopters` faceted filters: created-by, updated-by, visibility, sort
+
+The page already had faceted chips for By Country and By Rating (each option shows its count). Extended the same model to three more facets and added a sort control. URL-driven throughout so filter/sort combos are bookmarkable.
+
+#### New facets
+
+- **By Visibility** — chip pair `🌐 Público (n) / 🔒 Privado (n)`. Single aggregated query `SELECT is_public, COUNT(*) GROUP BY is_public`.
+- **Created by** (dropdown) — `?created_by=email`. Single aggregated query `SELECT added_by, COUNT(*) GROUP BY added_by ORDER BY COUNT(*) DESC`. Each option label includes the count: `maria@org.com (12)`.
+- **Updated by** (dropdown) — `?updated_by=email`. Semantics: "most recent editor of the record". One aggregated SQL using a window function:
+  ```sql
+  SELECT changed_by, COUNT(*) FROM (
+      SELECT adopter_id, changed_by,
+             ROW_NUMBER() OVER (PARTITION BY adopter_id ORDER BY changed_at DESC) AS rn
+      FROM adopter_history
+  ) WHERE rn = 1 GROUP BY changed_by
+  ```
+  WHERE-clause uses the same subquery so filtered list and facet count stay in sync.
+
+#### Sort control
+
+New `?sort=` dropdown next to Created/Updated By. Options:
+- `updated_desc` (default, current behavior) / `updated_asc`
+- `created_desc` / `created_asc`
+- `name_asc` / `name_desc`
+- `rating_desc` / `rating_asc`
+
+Column-based sorts use SQL `ORDER BY`. Rating sort runs post-fetch on the already-enriched list (`avgRating` isn't a column). At current prod scale (~66 rows under the 200 LIMIT) that's exact; as the DB grows beyond 200, rating sort will sort the displayed window only — flagged as v2.19.6x follow-up.
+
+#### URL-param changes
+
+- New params: `created_by`, `updated_by`, `visibility`, `sort`.
+- **Deprecated**: `?user=` (previously a combined "created or updated by" that actually filtered creator only). Aliased to `?created_by=` for back-compat — existing bookmarks keep working.
+- All filters compose: every dropdown / chip click preserves the other params.
+
+#### Performance
+
+Each new facet is **one** aggregated SQL query — no per-row fan-out (the v2.19.59 lesson). Four total parallel facet queries for the page (country, created-by, updated-by, visibility) plus the existing rating-summary aggregate. The "Apply Filters" path adds at most one subquery (`updated_by`'s `id IN (subquery)`) — cheap, indexed.
+
+### Engineering
+
+- `src/app/admin/adopters/page.tsx` — facet aggregations restructured; new URL params destructured; WHERE clauses for created_by / updated_by (subquery) / visibility; sort dispatch with column-based ORDER BY + post-fetch rating sort; visibility chip card; three-dropdown card with Created by / Updated by / Sort by.
+- `src/components/UserFilterSelect.tsx` — refactored to take a discriminator (`kind: 'created_by' | 'updated_by'`), count-bearing user list, and full preserved-params object. Options display `email (count)`.
+- `src/components/SortSelect.tsx` (new) — sort dropdown client component. Omits the `?sort=` param when the user picks the default, keeping URLs clean.
+
+### Verification
+
+- `npx tsc --noEmit` clean, lint stable at 124 warnings.
+- Composability: a country chip click while `?sort=name_asc` is active should preserve the sort.
+
 ## [2.19.60] - 2026-06-20
 
 ### Observability — wire NextAuth's internal logger into Axiom

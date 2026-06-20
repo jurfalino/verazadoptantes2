@@ -138,6 +138,45 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     const [duplicateResults, setDuplicateResults] = useState<DiscoveryMatch[] | null>(null);
     const [duplicateSearching, setDuplicateSearching] = useState(false);
     const [saveDuplicateModal, setSaveDuplicateModal] = useState<{ matches: DiscoveryMatch[] } | null>(null);
+    // v2.19.65: gate the create-flow duplicate-detection on whether the
+    // search-relevant content has actually changed from what the rescuer
+    // already saw in search.
+    //
+    // The rescuer landed on /adopter/create with name (+ optional phone)
+    // prefilled from their search query. By construction, the form-time
+    // finder running on those prefilled values would surface the same
+    // records search already showed them. We snapshot the normalized
+    // prefilled query on first render; the effect + save-modal both skip
+    // while the current normalized query equals the snapshot.
+    //
+    // v2.19.63 used a coarse `hasUserEdited` dirty flag here. The flag
+    // fired on ANY mutation — trailing space, case toggle, deleting and
+    // retyping the same character — input changes that don't change what
+    // search would have returned. Replaced with a content-based comparison
+    // so meaningless edits don't re-surface dismissed records.
+    //
+    // Normalization is conservative on purpose: trim + lowercase +
+    // whitespace collapse. NO accent-strip — typing "María" over a
+    // prefilled "Maria" is a more specific spelling and warrants a fresh
+    // check.
+    const normalizeDetectionQuery = useCallback(
+        (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' '),
+        []
+    );
+    // Snapshot of the prefilled query at mount time. Captured ONCE from the
+    // initial form values (whatever search routed into name + contactInfo).
+    // If the form started empty (direct nav, no search), the ref stays null
+    // and the detection effect runs normally on the rescuer's first input.
+    const initialDetectedQuery = useRef<string | null>(null);
+    useEffect(() => {
+        if (!isNew) return;
+        const initial = (getDuplicateSearchQuery() || data.name).trim();
+        if (!initial) return;
+        initialDetectedQuery.current = normalizeDetectionQuery(initial);
+        // Run once on mount — capture the prefilled state before the rescuer
+        // can edit it.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     const saveDuplicateModalRef = useRef<HTMLDivElement>(null);
     const createAnywayButtonRef = useRef<HTMLButtonElement>(null);
     const duplicateDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -356,6 +395,16 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             setDuplicateResults(null);
             return;
         }
+        // v2.19.65: skip if the current normalized query still equals what
+        // the rescuer's prefill (captured at mount) already showed in search.
+        // Whitespace, case, "type-then-undo" all collapse to the snapshot
+        // and don't re-fire detection. Once the content meaningfully
+        // diverges, the snapshot is stale and we resume detection.
+        const currentNorm = normalizeDetectionQuery(query || data.name.trim());
+        if (initialDetectedQuery.current !== null && currentNorm === initialDetectedQuery.current) {
+            setDuplicateResults(null);
+            return;
+        }
         if (duplicateDebounceRef.current) clearTimeout(duplicateDebounceRef.current);
         duplicateDebounceRef.current = setTimeout(async () => {
             duplicateDebounceRef.current = null;
@@ -380,7 +429,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         return () => {
             if (duplicateDebounceRef.current) clearTimeout(duplicateDebounceRef.current);
         };
-    }, [isNew, data.name, data.contactInfo, getDuplicateSearchQuery]);
+    }, [isNew, data.name, data.contactInfo, getDuplicateSearchQuery, normalizeDetectionQuery]);
 
     // Perform the actual save (used after "Create new anyway" or when no duplicates)
     const performActualSave = useCallback(async () => {
@@ -532,8 +581,17 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             return;
         }
         if (isNew) {
+            // v2.19.65: if the rescuer's input still normalizes to what
+            // search already showed them, skip the save-time modal — they're
+            // explicitly accepting the state they evaluated upstream. The
+            // null-check covers the very rare case where the detection
+            // effect never ran (sub-MIN_NAME_LENGTH name): no snapshot, so
+            // fall through to the normal flow.
             const query = getDuplicateSearchQuery() || data.name.trim();
-            if (query.length >= MIN_NAME_LENGTH_FOR_SEARCH) {
+            const currentNorm = normalizeDetectionQuery(query);
+            const queryUnchanged = initialDetectedQuery.current !== null
+                && currentNorm === initialDetectedQuery.current;
+            if (!queryUnchanged && query.length >= MIN_NAME_LENGTH_FOR_SEARCH) {
                 try {
                     const response = await findAdopters(
                         { raw: query },

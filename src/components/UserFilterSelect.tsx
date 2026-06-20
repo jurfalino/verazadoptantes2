@@ -2,40 +2,53 @@
 
 import { useRouter } from 'next/navigation';
 
+interface UserOption {
+    email: string;
+    count: number;
+}
+
 interface UserFilterSelectProps {
-    users: string[];
+    /** Discriminator: which URL param this dropdown writes to. */
+    kind: 'created_by' | 'updated_by';
+    /** Users with counts — already sorted by the server. */
+    users: UserOption[];
+    /** Currently-selected user email for this kind, or undefined. */
     currentUser?: string;
-    query?: string;
-    filterCountry?: string;
-    filterRating?: string;
+    /** Whole current URL-param set so we preserve everything else on change. */
+    preserved: {
+        q?: string;
+        country?: string;
+        rating?: string;
+        created_by?: string;
+        updated_by?: string;
+        visibility?: string;
+        sort?: string;
+    };
+    /** Visible label inside the empty option ("All creators" / "All editors"). */
+    allLabel: string;
 }
 
 /**
- * Client component for the /admin/adopters "Created / Updated by" filter.
- *
- * Replaces an earlier inline-script + dangerouslySetInnerHTML implementation in
- * the page server component (v2.14.8-5 and earlier) — that pattern was fragile
- * under App Router hydration: the inline `addEventListener` ran once at parse
- * time, but the listener would be lost or never re-attached after hydration,
- * which is why selecting a user did nothing. A proper React `onChange` handler
- * with `useRouter().push()` is the right shape.
+ * Client component for the /admin/adopters per-user filter (created_by or
+ * updated_by). v2.19.61: split from the previous combined Created/Updated
+ * dropdown into two independent facets, with counts inline in each option.
  */
 export default function UserFilterSelect({
+    kind,
     users,
     currentUser,
-    query,
-    filterCountry,
-    filterRating,
+    preserved,
+    allLabel,
 }: UserFilterSelectProps) {
     const router = useRouter();
 
     const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const params = new URLSearchParams();
-        if (query) params.set('q', query);
-        if (filterCountry) params.set('country', filterCountry);
-        if (filterRating) params.set('rating', filterRating);
-        if (e.target.value) params.set('user', e.target.value);
-        const qs = params.toString();
+        const next: Record<string, string | undefined> = { ...preserved };
+        next[kind] = e.target.value || undefined;
+        const qs = Object.entries(next)
+            .filter(([, v]) => v !== undefined && v !== '')
+            .map(([k, v]) => `${k}=${encodeURIComponent(v as string)}`)
+            .join('&');
         router.push(`/admin/adopters${qs ? `?${qs}` : ''}`);
     };
 
@@ -45,9 +58,11 @@ export default function UserFilterSelect({
             onChange={handleChange}
             className="flex-1 px-3 py-1.5 rounded-lg border border-stone-200 text-sm text-stone-700 bg-white max-w-xs"
         >
-            <option value="">All users</option>
-            {users.map(u => (
-                <option key={u} value={u}>{u}</option>
+            <option value="">{allLabel}</option>
+            {users.map((u) => (
+                <option key={u.email} value={u.email}>
+                    {u.email} ({u.count})
+                </option>
             ))}
         </select>
     );

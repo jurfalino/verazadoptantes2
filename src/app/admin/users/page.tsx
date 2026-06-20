@@ -128,15 +128,67 @@ export default function AdminUsersPage() {
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const [filter, setFilter] = useState('');
     const [countryFilter, setCountryFilter] = useState('');
+    const [locationFilter, setLocationFilter] = useState('');
+    const [orgFilter, setOrgFilter] = useState('');
+    const [sortKey, setSortKey] = useState<'last_active_desc' | 'last_active_asc' | 'created_desc' | 'created_asc' | 'adopters_desc' | 'adopters_asc' | 'name_asc' | 'name_desc'>('last_active_desc');
 
-    // Derive unique countries from user data for the filter dropdown
-    const availableCountries = useMemo(() => {
-        const codes = new Set<string>();
-        users.forEach(u => { if (u.country) codes.add(u.country); });
-        return Array.from(codes).sort().map(code => {
-            const c = getCountryByCode(code);
-            return { code, label: c ? `${c.flag} ${c.name}` : code };
-        });
+    // v2.19.62: faceted counts derived once from the loaded user list. Each
+    // facet uses the same data source (`users`) so counts stay consistent.
+    // useMemo: this only re-runs when `users` changes, not on every keystroke
+    // in the free-text filter.
+
+    // Country counts.
+    const countryFacet = useMemo(() => {
+        const counts = new Map<string, number>();
+        for (const u of users) {
+            if (u.country) counts.set(u.country, (counts.get(u.country) || 0) + 1);
+        }
+        return Array.from(counts.entries())
+            .map(([code, count]) => {
+                const c = getCountryByCode(code);
+                return { code, label: c ? `${c.name}` : code, flag: c ? c.flag : '🌍', count };
+            })
+            .sort((a, b) => b.count - a.count);
+    }, [users]);
+
+    // Location = province (level below country). City would explode the chip
+    // count; the row's LocationCell still shows the full triple.
+    const locationFacet = useMemo(() => {
+        const counts = new Map<string, { count: number; country: string | null }>();
+        for (const u of users) {
+            if (u.province) {
+                const existing = counts.get(u.province);
+                counts.set(u.province, {
+                    count: (existing?.count || 0) + 1,
+                    country: u.country || existing?.country || null,
+                });
+            }
+        }
+        return Array.from(counts.entries())
+            .map(([province, { count, country }]) => {
+                const c = country ? getCountryByCode(country) : null;
+                return { province, label: province, flag: c?.flag || '📍', count };
+            })
+            .sort((a, b) => b.count - a.count);
+    }, [users]);
+
+    // Organization counts — a user can belong to multiple orgs, so this
+    // sums distinct (org, user) pairs. Chip count = number of users in that
+    // org.
+    const orgFacet = useMemo(() => {
+        const counts = new Map<string, { name: string; count: number }>();
+        for (const u of users) {
+            for (const org of u.orgMemberships || []) {
+                const existing = counts.get(org.id);
+                counts.set(org.id, {
+                    name: existing?.name || org.name,
+                    count: (existing?.count || 0) + 1,
+                });
+            }
+        }
+        return Array.from(counts.entries())
+            .map(([id, { name, count }]) => ({ id, name, count }))
+            .sort((a, b) => b.count - a.count);
     }, [users]);
 
     useEffect(() => {
@@ -204,16 +256,51 @@ export default function AdminUsersPage() {
         return formatDateTime(epoch);
     };
 
-    const filteredUsers = users.filter(u => {
-        if (countryFilter && u.country !== countryFilter) return false;
-        if (!filter) return true;
-        const q = filter.toLowerCase();
-        return u.name?.toLowerCase().includes(q) ||
-            u.email?.toLowerCase().includes(q) ||
-            (u.orgMemberships || []).some(o => o.name.toLowerCase().includes(q));
-    });
+    const filteredUsers = useMemo(() => {
+        const q = filter.trim().toLowerCase();
+        const filtered = users.filter(u => {
+            if (countryFilter && u.country !== countryFilter) return false;
+            if (locationFilter && u.province !== locationFilter) return false;
+            if (orgFilter && !(u.orgMemberships || []).some(o => o.id === orgFilter)) return false;
+            if (!q) return true;
+            return u.name?.toLowerCase().includes(q) ||
+                u.email?.toLowerCase().includes(q) ||
+                (u.orgMemberships || []).some(o => o.name.toLowerCase().includes(q));
+        });
+        // Sort. All sort fields exist on the loaded user object — no extra
+        // fetch needed. Nullable numeric fields fall to the bottom of either
+        // direction (treating null as -Infinity for desc / +Infinity for asc
+        // would surprise users; treating it as "no signal" → bottom is more
+        // intuitive).
+        const nullToBottom = (a: number | null, b: number | null, dir: 1 | -1): number => {
+            if (a === null && b === null) return 0;
+            if (a === null) return 1;   // a goes after b regardless of direction
+            if (b === null) return -1;
+            return (a - b) * dir;
+        };
+        const sorted = [...filtered];
+        switch (sortKey) {
+            case 'last_active_desc': sorted.sort((a, b) => nullToBottom(a.last_active_at, b.last_active_at, -1)); break;
+            case 'last_active_asc':  sorted.sort((a, b) => nullToBottom(a.last_active_at, b.last_active_at, 1)); break;
+            case 'created_desc':     sorted.sort((a, b) => nullToBottom(a.first_sign_in, b.first_sign_in, -1)); break;
+            case 'created_asc':      sorted.sort((a, b) => nullToBottom(a.first_sign_in, b.first_sign_in, 1)); break;
+            case 'adopters_desc':    sorted.sort((a, b) => (b.adopters_count || 0) - (a.adopters_count || 0)); break;
+            case 'adopters_asc':     sorted.sort((a, b) => (a.adopters_count || 0) - (b.adopters_count || 0)); break;
+            case 'name_asc':         sorted.sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)); break;
+            case 'name_desc':        sorted.sort((a, b) => (b.name || b.email).localeCompare(a.name || a.email)); break;
+        }
+        return sorted;
+    }, [users, filter, countryFilter, locationFilter, orgFilter, sortKey]);
 
     if (loading) return <div className="p-8 text-stone-500">Loading users...</div>;
+
+    const anyFilterActive = !!(countryFilter || locationFilter || orgFilter || filter);
+    const clearAllFilters = () => {
+        setCountryFilter('');
+        setLocationFilter('');
+        setOrgFilter('');
+        setFilter('');
+    };
 
     return (
         <div>
@@ -223,18 +310,21 @@ export default function AdminUsersPage() {
                     <p className="text-stone-500 text-sm mt-1">{users.length} registered user{users.length !== 1 ? 's' : ''}</p>
                 </div>
                 <div className="flex gap-2 w-full sm:w-auto">
-                    {availableCountries.length > 1 && (
-                        <select
-                            value={countryFilter}
-                            onChange={e => setCountryFilter(e.target.value)}
-                            className="px-2 py-2 border border-stone-200 rounded-lg text-sm focus:ring-2 focus:ring-stone-500/20 focus:border-stone-400 outline-none"
-                        >
-                            <option value="">All countries</option>
-                            {availableCountries.map(c => (
-                                <option key={c.code} value={c.code}>{c.label}</option>
-                            ))}
-                        </select>
-                    )}
+                    <select
+                        value={sortKey}
+                        onChange={e => setSortKey(e.target.value as typeof sortKey)}
+                        className="px-2 py-2 border border-stone-200 rounded-lg text-sm focus:ring-2 focus:ring-stone-500/20 focus:border-stone-400 outline-none"
+                        aria-label="Sort users"
+                    >
+                        <option value="last_active_desc">Last login (newest)</option>
+                        <option value="last_active_asc">Last login (oldest)</option>
+                        <option value="created_desc">Created (newest)</option>
+                        <option value="created_asc">Created (oldest)</option>
+                        <option value="adopters_desc">Adopters (high → low)</option>
+                        <option value="adopters_asc">Adopters (low → high)</option>
+                        <option value="name_asc">Name (A–Z)</option>
+                        <option value="name_desc">Name (Z–A)</option>
+                    </select>
                     <input
                         type="text"
                         placeholder="Filter by name, email, org..."
@@ -243,6 +333,100 @@ export default function AdminUsersPage() {
                         className="px-3 py-2 border border-stone-200 rounded-lg text-sm flex-1 sm:w-52 focus:ring-2 focus:ring-stone-500/20 focus:border-stone-400 outline-none"
                     />
                 </div>
+            </div>
+
+            {/* ── Facet chip rows (v2.19.62) ──────────────────────────── */}
+            <div className="space-y-3 mb-4">
+                {countryFacet.length > 0 && (
+                    <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-200">
+                        <div className="flex items-center justify-between mb-2">
+                            <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wide">By Country</h3>
+                            {countryFilter && (
+                                <button onClick={() => setCountryFilter('')} className="text-xs text-teal-700 hover:text-teal-800 font-medium">Clear ✕</button>
+                            )}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            {countryFacet.map(c => {
+                                const isActive = countryFilter === c.code;
+                                return (
+                                    <button
+                                        key={c.code}
+                                        type="button"
+                                        onClick={() => setCountryFilter(isActive ? '' : c.code)}
+                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${isActive ? 'bg-teal-600 text-white shadow-sm' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
+                                    >
+                                        <span>{c.flag}</span>
+                                        <span>{c.label}</span>
+                                        <span className={`font-semibold ${isActive ? 'text-teal-100' : 'text-stone-500'}`}>{c.count}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {locationFacet.length > 0 && (
+                    <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-200">
+                        <div className="flex items-center justify-between mb-2">
+                            <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wide">By Location (province)</h3>
+                            {locationFilter && (
+                                <button onClick={() => setLocationFilter('')} className="text-xs text-teal-700 hover:text-teal-800 font-medium">Clear ✕</button>
+                            )}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            {locationFacet.map(l => {
+                                const isActive = locationFilter === l.province;
+                                return (
+                                    <button
+                                        key={l.province}
+                                        type="button"
+                                        onClick={() => setLocationFilter(isActive ? '' : l.province)}
+                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${isActive ? 'bg-teal-600 text-white shadow-sm' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
+                                    >
+                                        <span>{l.flag}</span>
+                                        <span>{l.label}</span>
+                                        <span className={`font-semibold ${isActive ? 'text-teal-100' : 'text-stone-500'}`}>{l.count}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {orgFacet.length > 0 && (
+                    <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-200">
+                        <div className="flex items-center justify-between mb-2">
+                            <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wide">By Organization</h3>
+                            {orgFilter && (
+                                <button onClick={() => setOrgFilter('')} className="text-xs text-teal-700 hover:text-teal-800 font-medium">Clear ✕</button>
+                            )}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            {orgFacet.map(o => {
+                                const isActive = orgFilter === o.id;
+                                return (
+                                    <button
+                                        key={o.id}
+                                        type="button"
+                                        onClick={() => setOrgFilter(isActive ? '' : o.id)}
+                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${isActive ? 'bg-teal-600 text-white shadow-sm' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
+                                    >
+                                        <span>🏢</span>
+                                        <span>{o.name}</span>
+                                        <span className={`font-semibold ${isActive ? 'text-teal-100' : 'text-stone-500'}`}>{o.count}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            <div className="text-sm text-stone-500 mb-3">
+                {filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''}
+                {anyFilterActive && (
+                    <span> (filtered) · <button type="button" onClick={clearAllFilters} className="text-teal-700 hover:underline">Clear all filters</button></span>
+                )}
             </div>
 
             {/* Desktop table */}
