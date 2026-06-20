@@ -333,16 +333,25 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     </div>
                 )}
 
-                {/* v2.19.54: public-profile provenance notice. Surfaces the WHY
+                {/* v2.19.54: public-source provenance notice. Surfaces the WHY
                     (source data was already public when ingested) so that the
                     adopter — or any anonymous third-party who lands here from
                     search — registers the platform's defensive rationale
-                    immediately, not buried below the data. Renders for ALL
-                    viewers; reads from `displayedAdopter` so it stays visible
-                    under preview-as-stranger. Not dismissible: defensive
-                    purpose requires persistence. */}
-                {!isNew && displayedAdopter?.isPublic && (
-                    <PublicProfileSourceNotice sourceUrl={displayedAdopter.sourceUrl} />
+                    immediately, not buried below the data.
+
+                    v2.19.55: broadened from `isPublic` only to
+                    `isPublic || sourceUrl` — `isPublic` controls anonymous-
+                    viewer visibility (a separate concept), while `sourceUrl`
+                    is the actual provenance signal. A record imported from a
+                    public Instagram/FB post should carry the explainer
+                    regardless of whether the rescuer also toggled it
+                    anonymously-readable.
+
+                    Renders for ALL viewers; reads from `displayedAdopter` so
+                    it stays visible under preview-as-stranger. Not
+                    dismissible: defensive purpose requires persistence. */}
+                {!isNew && (displayedAdopter?.isPublic || displayedAdopter?.sourceUrl) && (
+                    <PublicProfileSourceNotice sourceUrl={displayedAdopter?.sourceUrl} />
                 )}
 
                 {/* v39: pending-duplicate signal. Owner / admin gets the clickable

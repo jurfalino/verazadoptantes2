@@ -2,6 +2,28 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.55] - 2026-06-19
+
+### Fixed — v2.19.54 banner gating was too narrow
+
+QA on staging found a record with a clear public Instagram `source_url` but `isPublic = 0` (the Instagram-import path doesn't auto-stamp `isPublic` unless the `ENABLE_PUBLIC_PROFILES` admin flag is on, and it's currently off on staging). v2.19.54 gated the banner on `isPublic` only, so the explainer didn't surface on records where it was most clearly applicable — those imported from a public social-media post.
+
+**Root cause analysis**: `isPublic` and `sourceUrl` model two different things and we treated them as one:
+- `isPublic` controls **anonymous-viewer visibility** — can someone without an account read this profile?
+- `sourceUrl` is the **provenance signal** — where did this data originate?
+
+The banner's job is provenance, not visibility. A record with `sourceUrl` set means the rescuer pasted a public link as the source; whether the record is then ALSO toggled visible-to-anonymous is independent of that fact. Either signal should trigger the banner.
+
+Broadened the gate to `displayedAdopter?.isPublic || displayedAdopter?.sourceUrl`. Matrix:
+- `isPublic = 1`, no `sourceUrl` → banner shows (anonymous-visibility implies the data is treated as public; admin presumably toggled because it's known-public).
+- `isPublic = 0`, `sourceUrl` set → banner shows (the case from QA — Instagram-imported record).
+- Both set → banner shows, source link prominent.
+- Neither set → no banner (no public-source signal; standard private record).
+
+### Engineering
+
+- `src/components/AdopterProfileV2.tsx` — gating expression broadened. Comment updated to document the two-concept distinction and why both signals trip the banner.
+
 ## [2.19.54] - 2026-06-19
 
 ### Added — public-profile provenance notice
