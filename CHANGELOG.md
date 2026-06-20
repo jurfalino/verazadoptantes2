@@ -2,6 +2,163 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.58] - 2026-06-19
+
+### Fixed — `adopters.is_public` was never being stamped on public-source records (A1)
+
+User QA on Patricia Núñez's profile surfaced a real product gap: a record imported from a public Instagram post had `source_url = https://www.instagram.com/...` but `is_public = 0`. Investigation: the create path at `src/app/api/adopters/route.ts:337-353` **never sets `isPublic`** on the INSERT. It falls through to the column default of `0`. The only existing "public-stamping" code (line 299) stamps per-entry `isPublic` inside the `contactEntries` JSON, never the record-level `adopters.is_public` field. And even that is gated on `ENABLE_PUBLIC_PROFILES` (off on staging).
+
+So pre-v2.19.58 the data model was lying: the system tracked provenance in `source_url` but couldn't act on it because the record-level flag was always 0. v2.19.55's broadened banner gate (`isPublic OR sourceUrl`) was me papering over this; the real fix is to make `is_public` mean what it says.
+
+#### Verified PII interaction before shipping
+
+Read `src/lib/piiAccess.ts` and `src/lib/piiAccessServer.ts:54-58` to confirm the contract:
+
+```ts
+return { adopterIsPublic: !!flag && !!adopter?.isPublic };  // BOTH required
+```
+
+The PII mask bypass requires **both** `ENABLE_PUBLIC_PROFILES = true` AND `adopters.is_public = 1`. Setting `is_public` alone is a **passive data-correctness change** under today's flag-off configuration — no masking behavior shifts. The banner copy + gate are now data-driven (the record actually IS marked public); functional unmasking activates if/when the global flag is flipped on.
+
+Also confirmed the override semantics at `piiAccess.ts:685` — when record-level fires, ALL entries get exposed including contributor-added private ones. That's the documented intent (the comment at line 671-675 spells it out: "wins over per-entry isPublic"), but it's a real footgun if the flag is ever flipped on. Captured as deferred work (A2-mod) — separate decision, not in scope for this release.
+
+#### Why sourceUrl, not source='imported'
+
+Originally planned to gate on `source = 'imported' && sourceUrl` — same condition as the existing per-entry `isSocialImport` check. DB survey first:
+
+- Staging: 1 row with `source = 'imported' + sourceUrl`, 9 with `source = 'manual' + sourceUrl`.
+- Prod: 0 rows with `source = 'imported' + sourceUrl`, 35 with `source = 'manual' + sourceUrl`.
+
+Most rescuers paste public URLs through the regular new-adopter form, not the ImportWizard. The `source` tag was almost useless as a public-provenance signal historically. The user's intent is "visible URL → public profile" — independent of which entry surface the URL came in through.
+
+So the rule is now: **`isPublic = 1` when `sourceUrl` is present** (regardless of `source` tag). Google Contacts imports arrive with `source = 'imported'` AND `sourceUrl = null`, so they're correctly excluded (their data is private address-book material). Caller can still opt out via `isPublic: false` (preserves the ImportWizard's v2.19.47 consent toggle).
+
+#### Going-forward + backfill
+
+- **Going-forward** (`src/app/api/adopters/route.ts:337-353`): the INSERT now passes `isPublic: stampRecordPublic ? 1 : 0` where `stampRecordPublic = !!sourceUrl?.trim() && callerIsPublic !== false`. Drizzle's integer column expects 0/1, not a boolean (matches the canonical pattern at `admin.ts:390`).
+- **Backfill** (`drizzle/0051_backfill_isPublic_for_sourceurl_records.sql`): `UPDATE adopters SET is_public = 1 WHERE is_public = 0 AND source_url LIKE 'https://%'`. Idempotent; no-op against a clean state. Will touch ~10 rows on staging, ~35 on prod.
+
+#### Banner gate stays broadened
+
+v2.19.55's `displayedAdopter?.isPublic || displayedAdopter?.sourceUrl` gate remains in place even though `isPublic` will now usually be true wherever `sourceUrl` is set. Two reasons:
+1. **Deploy ordering**: the migration runs before the new INSERT logic ships, but if there's any window between them the OR is the safety net.
+2. **Edge case — merge transfers `sourceUrl`**: `src/app/actions/duplicates.ts:166` transfers `sourceUrl` from secondary to primary on merge but doesn't restamp `isPublic` on the primary. Not in v2.19.58 scope; the OR gate keeps the banner correct meanwhile. Tracked as A1 follow-up.
+
+### Engineering
+
+- `src/app/api/adopters/route.ts` — new `recordHasPublicSource` / `recordCallerConsentedToPublic` / `stampRecordPublic` block before the INSERT; `isPublic` passed to `db.insert(adopters).values()`.
+- `drizzle/0051_backfill_isPublic_for_sourceurl_records.sql` — historical backfill.
+
+### Deferred (intentional, documented above)
+
+- **A2 / A2-mod** — turning `ENABLE_PUBLIC_PROFILES` on globally, or first changing `maskContactEntries` so per-entry `isPublic = false` wins over record-level. Separate scoped decision.
+- **Merge-time `isPublic` restamp** in `duplicates.ts` when secondary's `sourceUrl` transfers to primary. Tracked as A1 follow-up.
+
+## [2.19.57] - 2026-06-19
+
+### Security — scheme allowlist on `sourceUrl` (XSS hardening, defense in depth)
+
+QA-audit finding before promoting the v2.19.54 banner work to master: the new `PublicProfileSourceNotice` renders `<a href={sourceUrl}>`, where `sourceUrl` is server-validated by Zod's `.url()`. Zod's `.url()` uses the URL constructor under the hood, which accepts **any scheme** as syntactically valid — including `javascript:alert(1)`, `data:text/html,...`, `vbscript:`, `file:`, etc. None of those are sanitized by the existing schema.
+
+Today the only writers are authenticated rescuers, but:
+- The trust model is "rescuers vet each other on adopter data," not "we trust every rescuer with stored XSS."
+- An authenticated XSS still steals sessions: a teammate clicks the link, attacker gets their cookie.
+- Any future submission path (contract app, anonymous import) inherits the vector.
+
+Surveyed both DBs first: every existing `source_url` value in staging (10 rows) and prod (35 rows) starts with `https://`. Tightening to http(s)-only regresses nothing.
+
+#### Two layers added
+
+1. **Server (`src/app/actions/validation.ts`)** — new `httpUrl` shared primitive: `z.string().url().refine(u => /^https?:\/\//i.test(u)).max(2_000)`. Wired into all three `sourceUrl` schema declarations (`saveAdopterSchema`, `saveAdoptionSchema`, `createAdopterApiSchema`). Any future server action that needs a public-link field should reuse `httpUrl` instead of redeclaring.
+
+2. **Client (`src/components/PublicProfileSourceNotice.tsx`)** — render-time scheme check. Even if a legacy value or a future bypass write path smuggles a non-http(s) URL into the DB, the banner won't link it: `const safeSourceUrl = sourceUrl && /^https?:\/\//i.test(sourceUrl) ? sourceUrl : null;`. Without `safeSourceUrl`, the link is suppressed — banner copy still shows, no clickable XSS sink rendered.
+
+The server layer kills new writes; the client layer covers stored data that predates the schema tightening or arrives through a code path we haven't yet locked down. Both fail safe (reject / render nothing) rather than fail open.
+
+### Engineering
+
+- `src/app/actions/validation.ts` — `httpUrl` primitive; three callsite swaps.
+- `src/components/PublicProfileSourceNotice.tsx` — render-time scheme test; safe variable used for both the conditional and the `href`.
+
+### Verification
+
+- Both layers exercised by the existing path (all https URLs continue to work).
+- A hand-crafted `javascript:alert(1)` write attempt now fails Zod with "URL must start with http:// or https://" instead of saving.
+- A pre-existing DB row with a non-http scheme (none today but possible from a manual SQL admin operation) would render the banner copy without the link.
+
+## [2.19.56] - 2026-06-19
+
+### Fixed — stray "0" rendering above the back nav on adopter profile
+
+v2.19.54 shipped the public-source banner with the gate `!isNew && displayedAdopter?.isPublic && <Component />`. The `isPublic` field comes back from D1 as a number (`0` or `1`), not a boolean — TypeScript's `boolean | null` type masked this. For records where `isPublic = 0`, the short-circuit evaluation `true && 0` returned `0`, which React happily rendered as a literal `0` text node at the top of the profile.
+
+v2.19.55's broadened gate (`isPublic || sourceUrl`) incidentally hid the symptom on records where `sourceUrl` was set (the `||` returns the truthy string), but the latent footgun stayed: any future edit that re-narrowed to a single integer-valued field would re-trigger it. Wrapping in `Boolean()` makes the gate explicitly boolean and immune to the JSX-truthy-number pitfall.
+
+### Engineering
+
+- `src/components/AdopterProfileV2.tsx` — gate is now `Boolean(displayedAdopter?.isPublic || displayedAdopter?.sourceUrl)`. One-character defensive change, kills the entire bug-shape.
+
+## [2.19.55] - 2026-06-19
+
+### Fixed — v2.19.54 banner gating was too narrow
+
+QA on staging found a record with a clear public Instagram `source_url` but `isPublic = 0` (the Instagram-import path doesn't auto-stamp `isPublic` unless the `ENABLE_PUBLIC_PROFILES` admin flag is on, and it's currently off on staging). v2.19.54 gated the banner on `isPublic` only, so the explainer didn't surface on records where it was most clearly applicable — those imported from a public social-media post.
+
+**Root cause analysis**: `isPublic` and `sourceUrl` model two different things and we treated them as one:
+- `isPublic` controls **anonymous-viewer visibility** — can someone without an account read this profile?
+- `sourceUrl` is the **provenance signal** — where did this data originate?
+
+The banner's job is provenance, not visibility. A record with `sourceUrl` set means the rescuer pasted a public link as the source; whether the record is then ALSO toggled visible-to-anonymous is independent of that fact. Either signal should trigger the banner.
+
+Broadened the gate to `displayedAdopter?.isPublic || displayedAdopter?.sourceUrl`. Matrix:
+- `isPublic = 1`, no `sourceUrl` → banner shows (anonymous-visibility implies the data is treated as public; admin presumably toggled because it's known-public).
+- `isPublic = 0`, `sourceUrl` set → banner shows (the case from QA — Instagram-imported record).
+- Both set → banner shows, source link prominent.
+- Neither set → no banner (no public-source signal; standard private record).
+
+### Engineering
+
+- `src/components/AdopterProfileV2.tsx` — gating expression broadened. Comment updated to document the two-concept distinction and why both signals trip the banner.
+
+## [2.19.54] - 2026-06-19
+
+### Added — public-profile provenance notice
+
+Public profiles (`adopter.isPublic = 1`) are readable by anyone, including the adopter themselves. Until now, there was no on-profile surface explaining the rationale — only a thin "este perfil es público y visible para todos" line in the contact-entries section, which states what but not why.
+
+This release adds a persistent, non-dismissible info banner at the top of the rendered profile body — directly below the back nav / preview banner, above the duplicate alert and header card. One sentence, themed info color (`bg-blue-50` + `text-blue-700`, which `globals.css` remaps to `--status-info-*` tokens under both `[data-theme]` rules so it works under "Claro" and "Azul Noche" alike), inline SVG info icon. When the record has a `sourceUrl` set, the banner also renders a "Ver fuente original →" / "View original source →" link that opens in a new tab.
+
+#### Copy
+
+- **es**: *"Este perfil incluye información que estaba publicada en redes sociales u otras fuentes abiertas cuando se registró. BuenAdoptante la centraliza para que la comunidad rescatista pueda verificar adoptantes."*
+- **en**: *"This profile includes information that was publicly available on social media or other open sources when it was added. BuenAdoptante centralizes it so the rescue community can vet adopters."*
+
+Two intentional choices:
+- **Third-person, no "tu información"**. The reader could be the adopter, a stranger arriving via search, or a rescuer doing routine vetting. Neutral framing fits all three; second-person reads accusatory when the reader is the adopter.
+- **No takedown / dispute CTA in this cut**. A "contactanos" link without a real verification flow behind it would damage trust more than its absence does. The takedown flow is a separate scope (`v2.19.5x` follow-up).
+
+#### Why non-dismissible
+
+The banner is doing legal-defensive UX work. Dismissibility undercuts the purpose — if the adopter dismisses it on first visit, the rationale never registers. Single-line + small icon + light info color keeps visual cost low for rescuers vetting many profiles in a session.
+
+#### Where it renders
+
+- `displayedAdopter?.isPublic` truthy (reads from `displayedAdopter` not `adopter`, so it stays visible under `previewAsStranger` mode — a privileged viewer previewing as a stranger should see what strangers see).
+- `!isNew` (don't show on the "new adopter" form route).
+- All viewers see it: owner, admin, org-mate, contributor, unauthenticated stranger.
+
+### Engineering
+
+- `src/components/PublicProfileSourceNotice.tsx` (new) — self-contained banner. Inline SVG info icon (per `feedback_svg_over_emoji`). Optional source-link rendered only when `sourceUrl` is non-null.
+- `src/components/AdopterProfileV2.tsx` — import + conditional render between the preview banner and the duplicate alert.
+- `src/i18n/locales/es.ts` + `en.ts` — `adopter.public_profile_source_notice` + `adopter.public_profile_source_link`. Mirror keys in both.
+
+### Deferred (intentional)
+
+- **🌐 "Público" chip next to the name** — would require editing `AdopterForm`'s header internals, larger diff. Banner does the heavy lift on its own; chip is a "what" reinforcement, banner does the "why". Add in a follow-up if user research shows the banner alone is missed by scroll-past viewers.
+- **Removing the duplicate "este perfil es público y visible para todos" line in `ContactEntriesSection.tsx`** — split out as a separate cleanup so this diff stays minimal.
+- **Takedown / data-dispute flow** — real scope, separate plan.
+
 ## [2.19.53] - 2026-06-19
 
 ### Fixed — v2.19.52 migration 0050 hotfix

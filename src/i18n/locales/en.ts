@@ -576,6 +576,8 @@ export const en = {
         ce_undo: 'Undo',
         ce_visibility_microcopy: 'Only visible to you and your organizations.',
         ce_visibility_profile_public: 'This profile is public and visible to everyone.',
+        public_profile_source_notice: 'This profile includes information that was publicly available on social media or other open sources when it was added. BuenAdoptante centralizes it so the rescue community can vet adopters.',
+        public_profile_source_link: 'View original source',
         preview_enter: 'Preview as another user',
         preview_exit: 'Exit preview',
         preview_enter_title: 'See this profile as a user without approved access would',

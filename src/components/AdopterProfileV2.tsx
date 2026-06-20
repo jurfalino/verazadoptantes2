@@ -18,6 +18,7 @@ import VisitIntentCard from '@/components/VisitIntentCard';
 import { useLanguage } from '@/context/LanguageContext';
 import { saveImage, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from '@/app/actions';
 import { ImageGallery } from '@/components/ImageGallery';
+import { PublicProfileSourceNotice } from '@/components/PublicProfileSourceNotice';
 import { extractErrorId } from '@/lib/errorUtils';
 import { DisclaimerToast } from '@/components/DisclaimerToast';
 import { RatingBadge } from '@/components/RatingBadge';
@@ -330,6 +331,27 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             </p>
                         </div>
                     </div>
+                )}
+
+                {/* v2.19.54: public-source provenance notice. Surfaces the WHY
+                    (source data was already public when ingested) so that the
+                    adopter — or any anonymous third-party who lands here from
+                    search — registers the platform's defensive rationale
+                    immediately, not buried below the data.
+
+                    v2.19.55: broadened from `isPublic` only to
+                    `isPublic || sourceUrl` — `isPublic` controls anonymous-
+                    viewer visibility (a separate concept), while `sourceUrl`
+                    is the actual provenance signal. A record imported from a
+                    public Instagram/FB post should carry the explainer
+                    regardless of whether the rescuer also toggled it
+                    anonymously-readable.
+
+                    Renders for ALL viewers; reads from `displayedAdopter` so
+                    it stays visible under preview-as-stranger. Not
+                    dismissible: defensive purpose requires persistence. */}
+                {!isNew && Boolean(displayedAdopter?.isPublic || displayedAdopter?.sourceUrl) && (
+                    <PublicProfileSourceNotice sourceUrl={displayedAdopter?.sourceUrl} />
                 )}
 
                 {/* v39: pending-duplicate signal. Owner / admin gets the clickable

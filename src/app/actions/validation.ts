@@ -14,6 +14,18 @@ const id = z.string().uuid().or(z.string().max(64));
 const optionalText = z.string().max(10_000).optional().nullable();
 const requiredText = z.string().min(1).max(5_000);
 
+// v2.19.57: scheme-restricted URL. Zod's `.url()` uses the URL constructor,
+// which accepts `javascript:`, `data:`, `file:`, and other dangerous schemes
+// as syntactically valid. `sourceUrl` ends up in an <a href> on the
+// public-provenance banner; without a scheme allowlist a malicious or
+// careless input becomes a stored-XSS / drive-by vector. Enforce http(s)
+// only — matches every real social-media / news-site URL we'd accept.
+const httpUrl = z
+    .string()
+    .url()
+    .refine((u) => /^https?:\/\//i.test(u), { message: 'URL must start with http:// or https://' })
+    .max(2_000);
+
 // ── Adopter ──────────────────────────────────────────────────────
 
 // addContactEntry — the open-to-all-authenticated-users contribution path.
@@ -56,7 +68,7 @@ export const saveAdopterSchema = z.object({
     // notes: deprecated in v2.12.1-28 — backfilled into observation adoption records.
     // Field stripped server-side in saveAdopter as defense-in-depth.
     status: z.string().regex(/^[1-5]$/).optional().nullable(),
-    sourceUrl: z.string().url().max(2_000).optional().nullable().or(z.literal('')),
+    sourceUrl: httpUrl.optional().nullable().or(z.literal('')),
     country: z.string().length(2).optional().nullable(),
     tokenHash: z.string().max(256).optional().nullable(),
     deletedAt: z.coerce.date().optional().nullable(),
@@ -79,7 +91,7 @@ export const saveAdoptionSchema = z.object({
     deliveredToHome: z.number().int().min(0).max(1).optional().nullable(),
     verifiedAddress: z.string().max(2_000).optional().nullable(),
     identityVerified: z.number().int().min(0).max(1).optional().nullable(),
-    sourceUrl: z.string().url().max(2_000).optional().nullable().or(z.literal('')),
+    sourceUrl: httpUrl.optional().nullable().or(z.literal('')),
     age: z.string().max(100).optional().nullable(),
     estimatedBirthDate: z.union([z.coerce.date(), z.number()]).optional().nullable(),
     neutered: z.number().int().min(0).max(1).optional().nullable(),
@@ -155,7 +167,7 @@ export const createAdopterApiSchema = z.object({
     // JSON-serialized ContactEntry[]; structure sanitized by deserializeContactEntries.
     contactEntries: z.string().max(20_000).optional(),
     notes: z.string().max(10_000).optional(),
-    sourceUrl: z.string().url().max(2_000).optional().or(z.literal('')),
+    sourceUrl: httpUrl.optional().or(z.literal('')),
     // Provenance hint from the caller (v2.16.0-12+). Only 'imported' is
     // accepted — other values fall through to the column default 'manual'.
     // When 'imported' AND ENABLE_PUBLIC_PROFILES is on, the route stamps
