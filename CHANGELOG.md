@@ -2,6 +2,53 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.59] - 2026-06-20
+
+### Fixed — `/admin/adopters` was exhausting Cloudflare Worker resource limits on every render (Error 1102)
+
+QA flipping the public/private toggle on a profile via the admin UI triggered an in-app `errorId` followed by Cloudflare's `Error 1102: Worker exceeded resource limits` on the subsequent `router.refresh()`. Tracing the cascade:
+
+1. Click toggle → `setAdopterPublic` succeeds (UPDATE + audit + 3× `revalidatePath`).
+2. Client calls `router.refresh()` (AdminAdopterList.tsx:98) → re-renders `/admin/adopters/page.tsx`.
+3. The page runs **two** enrichment passes per render:
+   - `enrichAdopters(db, displayedIds)` for the 200-row paginated list.
+   - `enrichAdopters(db, ALL_NON_DELETED_IDS)` for the rating-summary widget — *every* non-deleted adopter, just to count how many fall into each rating bucket.
+4. Each `enrichAdopters` call fans out 5 queries per adopter (adoptions + flags + stats + images + dupe-candidate-count) because CLAUDE.md's D1 rule forbids `inArray()`. At ~66 prod adopters: ~330 D1 subrequests for the rating-summary call alone.
+5. Cloudflare Worker resource cap (CPU time + subrequest count) → Error 1102. The 8-char `errorId` was one of the inner enrichment sub-queries logging through `logger.error` as the worker died.
+
+This was a latent perf bomb unrelated to v2.19.58. Page load alone normally hits it; flipping a toggle just re-triggered it deliberately.
+
+#### The fix — aggregate in SQL instead of fanning out
+
+Replaced lines 102–118 of `src/app/admin/adopters/page.tsx`. The rating summary only needs **counts per bucket**, not the full enrichment payload (thumbnails, flags, stats). One Drizzle query computes per-adopter `AVG(rating)` via a `LEFT JOIN adoptions GROUP BY adopters.id`, then in-process bucketing identical to the old loop's math:
+
+```ts
+const perAdopterAvg = await db.select({
+    id: adopters.id,
+    avgRating: sql<number | null>`AVG(${adoptions.rating})`,
+})
+    .from(adopters)
+    .leftJoin(adoptions, and(eq(adoptions.adopterId, adopters.id), sql`${adoptions.rating} IS NOT NULL`))
+    .where(isNull(adopters.deletedAt))
+    .groupBy(adopters.id);
+```
+
+One D1 round trip instead of 330. Returns N rows (one per adopter); bucketing in JS is O(N) on a ~66-row set — trivial.
+
+#### Scope kept tight
+
+- **NOT touched**: the paginated `enrichAdopters(db, adopterIds)` call at line 95 for the displayed rows. That one IS functionally necessary (it populates thumbnails, flags, stats per displayed row) and is bounded by `limit(200)`. Today's prod size keeps it under the cap; if the DB grows past ~150 records the same fan-out will start tripping limits again. Tracked as v2.19.6x follow-up (rewrite `enrichAdopters` itself to use aggregated SQL — bigger surface, separate diff).
+- **NOT touched**: the `setAdopterPublic` action, the `togglePublic` client handler, or `revalidatePath`. All worked correctly.
+
+### Engineering
+
+- `src/app/admin/adopters/page.tsx` — `adoptions` added to drizzle imports; the all-adopters-enrichment block (~17 lines) replaced with a single aggregated query + identical in-process bucketing.
+
+### Verification
+
+- `npx tsc --noEmit` clean, lint stable at 124 warnings (under 125 ratchet).
+- Sanity check expected: rating-bucket totals match what the pre-fix loop produced (`computeAvgRating` is a plain mean of non-null ratings; `AVG(rating) IGNORE NULLS` in SQLite ignores NULL ratings the same way `.filter(r => r.rating !== null)` did).
+
 ## [2.19.58] - 2026-06-19
 
 ### Fixed — `adopters.is_public` was never being stamped on public-source records (A1)
