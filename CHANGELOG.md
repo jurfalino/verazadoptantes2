@@ -2,6 +2,38 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.57] - 2026-06-19
+
+### Security — scheme allowlist on `sourceUrl` (XSS hardening, defense in depth)
+
+QA-audit finding before promoting the v2.19.54 banner work to master: the new `PublicProfileSourceNotice` renders `<a href={sourceUrl}>`, where `sourceUrl` is server-validated by Zod's `.url()`. Zod's `.url()` uses the URL constructor under the hood, which accepts **any scheme** as syntactically valid — including `javascript:alert(1)`, `data:text/html,...`, `vbscript:`, `file:`, etc. None of those are sanitized by the existing schema.
+
+Today the only writers are authenticated rescuers, but:
+- The trust model is "rescuers vet each other on adopter data," not "we trust every rescuer with stored XSS."
+- An authenticated XSS still steals sessions: a teammate clicks the link, attacker gets their cookie.
+- Any future submission path (contract app, anonymous import) inherits the vector.
+
+Surveyed both DBs first: every existing `source_url` value in staging (10 rows) and prod (35 rows) starts with `https://`. Tightening to http(s)-only regresses nothing.
+
+#### Two layers added
+
+1. **Server (`src/app/actions/validation.ts`)** — new `httpUrl` shared primitive: `z.string().url().refine(u => /^https?:\/\//i.test(u)).max(2_000)`. Wired into all three `sourceUrl` schema declarations (`saveAdopterSchema`, `saveAdoptionSchema`, `createAdopterApiSchema`). Any future server action that needs a public-link field should reuse `httpUrl` instead of redeclaring.
+
+2. **Client (`src/components/PublicProfileSourceNotice.tsx`)** — render-time scheme check. Even if a legacy value or a future bypass write path smuggles a non-http(s) URL into the DB, the banner won't link it: `const safeSourceUrl = sourceUrl && /^https?:\/\//i.test(sourceUrl) ? sourceUrl : null;`. Without `safeSourceUrl`, the link is suppressed — banner copy still shows, no clickable XSS sink rendered.
+
+The server layer kills new writes; the client layer covers stored data that predates the schema tightening or arrives through a code path we haven't yet locked down. Both fail safe (reject / render nothing) rather than fail open.
+
+### Engineering
+
+- `src/app/actions/validation.ts` — `httpUrl` primitive; three callsite swaps.
+- `src/components/PublicProfileSourceNotice.tsx` — render-time scheme test; safe variable used for both the conditional and the `href`.
+
+### Verification
+
+- Both layers exercised by the existing path (all https URLs continue to work).
+- A hand-crafted `javascript:alert(1)` write attempt now fails Zod with "URL must start with http:// or https://" instead of saving.
+- A pre-existing DB row with a non-http scheme (none today but possible from a manual SQL admin operation) would render the banner copy without the link.
+
 ## [2.19.56] - 2026-06-19
 
 ### Fixed — stray "0" rendering above the back nav on adopter profile

@@ -8,6 +8,12 @@ interface Props {
 
 export function PublicProfileSourceNotice({ sourceUrl }: Props) {
     const { t } = useLanguage();
+    // v2.19.57: only render the link for http(s) URLs. Server validation also
+    // enforces this (validation.ts httpUrl primitive), but a stored value that
+    // predates the check — or any future write path that bypasses the schema —
+    // could still smuggle a `javascript:` or `data:` URI through. The href
+    // attribute on <a> is a stored-XSS sink, so we defend in depth at render.
+    const safeSourceUrl = sourceUrl && /^https?:\/\//i.test(sourceUrl) ? sourceUrl : null;
     return (
         <div
             className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 flex items-start gap-3"
@@ -25,9 +31,9 @@ export function PublicProfileSourceNotice({ sourceUrl }: Props) {
             </svg>
             <div className="flex-1 min-w-0 text-sm text-blue-700">
                 <p>{t('adopter.public_profile_source_notice')}</p>
-                {sourceUrl && (
+                {safeSourceUrl && (
                     <a
-                        href={sourceUrl}
+                        href={safeSourceUrl}
                         target="_blank"
                         rel="noreferrer noopener"
                         className="mt-1 inline-block font-medium underline underline-offset-2 hover:opacity-80"
