@@ -52,20 +52,28 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
             .groupBy(adopters.addedBy)
             .orderBy(sql`COUNT(*) DESC`),
 
-        // Updated by — "most recent editor per adopter," counted. Window
-        // function picks the latest history entry per adopter; outer query
-        // groups by changed_by.
+        // Updated by — "most recent editor per adopter" where the editor is
+        // NOT the creator (v2.19.64). A record whose latest editor is also
+        // its creator is just "untouched by anyone else" — counting it under
+        // the editor's chip makes the facet redundant with "Created by" for
+        // that row. The useful signal is external contribution: "Maria
+        // created it, Pedro updated it later." JOINs adopters to access
+        // `added_by` for the per-row exclusion. Soft-deleted rows are
+        // skipped (`a.deleted_at IS NULL`) to match every other facet.
         db.all(sql`
-            SELECT changed_by AS updated_by, COUNT(*) AS n
+            SELECT h.changed_by AS updated_by, COUNT(*) AS n
             FROM (
                 SELECT adopter_id, changed_by,
                        ROW_NUMBER() OVER (PARTITION BY adopter_id ORDER BY changed_at DESC) AS rn
                 FROM adopter_history
-            )
-            WHERE rn = 1
-              AND changed_by IS NOT NULL
-              AND changed_by != 'Unknown'
-            GROUP BY changed_by
+            ) h
+            JOIN adopters a ON a.id = h.adopter_id
+            WHERE h.rn = 1
+              AND h.changed_by IS NOT NULL
+              AND h.changed_by != 'Unknown'
+              AND h.changed_by != a.added_by
+              AND a.deleted_at IS NULL
+            GROUP BY h.changed_by
             ORDER BY n DESC
         `) as Promise<{ updated_by: string; n: number }[]>,
 
@@ -132,6 +140,10 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
             )
             WHERE rn = 1 AND changed_by = ${filterUpdatedBy}
         )`);
+        // v2.19.64: only show rows where the creator is a different person
+        // — keeps the filtered list in sync with the facet count
+        // (`changed_by != added_by` in the facet query).
+        conditions.push(ne(adopters.addedBy, filterUpdatedBy));
     }
     if (filterVisibility === 'public') {
         conditions.push(eq(adopters.isPublic, 1));

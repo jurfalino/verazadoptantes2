@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.64] - 2026-06-20
+
+### Changed — `/admin/adopters` "Updated by" facet now excludes self-edits
+
+v2.19.61 introduced the "Updated by" facet defined as "most recent editor per adopter." Practical observation: most records' latest editor IS their creator, so the facet was effectively a noisier copy of "Created by" — same chips, similar counts, no extra signal. The genuinely useful signal is **external contribution**: "Maria created this, Pedro updated it later."
+
+This release tightens the definition: only count an adopter under "Updated by X" when X is the latest editor AND X is **not** the adopter's creator. Records last touched only by their own creator drop out of the facet entirely. Chips that disappear represent zero external-contribution records for that user.
+
+The filtered list stays in sync: when filtering by `?updated_by=X`, the WHERE clause now also enforces `added_by != X` so the displayed rows match what the chip count promised.
+
+### Engineering
+
+- `src/app/admin/adopters/page.tsx`:
+  - Facet query joins `adopters` on `adopter_id` to access `added_by`; adds `h.changed_by != a.added_by` to the WHERE clause. Also tightens `a.deleted_at IS NULL` for parity with the other facets.
+  - WHERE clause for `filterUpdatedBy` adds `ne(adopters.addedBy, filterUpdatedBy)` alongside the existing subquery.
+
 ## [2.19.63] - 2026-06-20
 
 ### Fixed — create form no longer re-surfaces the same duplicates the rescuer already saw in search
