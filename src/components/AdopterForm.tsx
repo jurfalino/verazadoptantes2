@@ -138,6 +138,18 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     const [duplicateResults, setDuplicateResults] = useState<DiscoveryMatch[] | null>(null);
     const [duplicateSearching, setDuplicateSearching] = useState(false);
     const [saveDuplicateModal, setSaveDuplicateModal] = useState<{ matches: DiscoveryMatch[] } | null>(null);
+    // v2.19.63: gate the create-flow duplicate-detection effect on user
+    // input. On a fresh /adopter/create mount (whether the name/phone are
+    // URL-prefilled from a search or left blank), the rescuer has already
+    // been shown every duplicate the finder would surface — search and the
+    // form-finder run the same algorithm against the same data. Don't
+    // re-run the finder, and don't fire the save-time strong-match modal,
+    // until they actually edit something on the form. The moment any field
+    // changes they've supplied new evidence and re-evaluation earns its keep.
+    const [hasUserEdited, setHasUserEdited] = useState(false);
+    // setState(true) when the current value is already true is a React no-op
+    // — no re-render. Safe to call this from every keystroke / onChange.
+    const markEdited = useCallback(() => setHasUserEdited(true), []);
     const saveDuplicateModalRef = useRef<HTMLDivElement>(null);
     const createAnywayButtonRef = useRef<HTMLButtonElement>(null);
     const duplicateDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -351,6 +363,12 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             setDuplicateResults(null);
             return;
         }
+        // v2.19.63: don't surface duplicates against URL-prefilled values
+        // the rescuer just dismissed in search. See `hasUserEdited` declaration.
+        if (!hasUserEdited) {
+            setDuplicateResults(null);
+            return;
+        }
         const query = getDuplicateSearchQuery();
         if (data.name.trim().length < MIN_NAME_LENGTH_FOR_SEARCH) {
             setDuplicateResults(null);
@@ -380,7 +398,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         return () => {
             if (duplicateDebounceRef.current) clearTimeout(duplicateDebounceRef.current);
         };
-    }, [isNew, data.name, data.contactInfo, getDuplicateSearchQuery]);
+    }, [isNew, hasUserEdited, data.name, data.contactInfo, getDuplicateSearchQuery]);
 
     // Perform the actual save (used after "Create new anyway" or when no duplicates)
     const performActualSave = useCallback(async () => {
@@ -532,8 +550,12 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             return;
         }
         if (isNew) {
+            // v2.19.63: if the rescuer hasn't edited the form, they've already
+            // seen all duplicate matches in the search results upstream. Skip
+            // the save-time modal entirely — they explicitly clicked Save
+            // against the same state they evaluated then.
             const query = getDuplicateSearchQuery() || data.name.trim();
-            if (query.length >= MIN_NAME_LENGTH_FOR_SEARCH) {
+            if (hasUserEdited && query.length >= MIN_NAME_LENGTH_FOR_SEARCH) {
                 try {
                     const response = await findAdopters(
                         { raw: query },
@@ -730,7 +752,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                             required
                                             className="w-full text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight bg-transparent border-b-2 border-teal-300 focus:border-teal-500 outline-none py-0.5 placeholder-stone-500 transition-all"
                                             value={data.name}
-                                            onChange={e => setData({ ...data, name: e.target.value })}
+                                            onChange={e => { markEdited(); setData({ ...data, name: e.target.value }); }}
                                             placeholder={t('adopter.placeholder_name_aliases')}
                                             autoFocus
                                         />
@@ -978,6 +1000,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                 canEditAll={true}
                                 currentUser={currentUser}
                                 onChange={next => {
+                                    markEdited();
                                     setContactEntries(next);
                                     setData(d => ({ ...d, contactInfo: contactEntriesToBlob(next) }));
                                 }}
@@ -1020,7 +1043,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                 rows={2}
                                 className="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-y min-h-[60px]"
                                 value={data.familyMembers}
-                                onChange={e => setData({ ...data, familyMembers: e.target.value })}
+                                onChange={e => { markEdited(); setData({ ...data, familyMembers: e.target.value }); }}
                                 placeholder={t('adopter.placeholder_family')}
                             />
                         ) : (

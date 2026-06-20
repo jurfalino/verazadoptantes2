@@ -2,6 +2,45 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.63] - 2026-06-20
+
+### Fixed — create form no longer re-surfaces the same duplicates the rescuer already saw in search
+
+**The bug as UX**: Rescuer searches `Maria` → reads the 3 Marias in the results → decides none is the person they want to add → clicks **Crear nuevo** → form opens with the name prefilled. Within ~350ms the form's debounced duplicate-detection fires on the prefilled name and re-surfaces the same 3 Marias in `DuplicatePeek` + `StrongMatchStrip`. On Save, the save-time modal fires for any strong match. The rescuer's just-made "not the same person" decision is invalidated three more times in 30 seconds.
+
+It reads as "we don't trust your judgement" and trains the rescuer to dismiss alerts reflexively — exactly the wrong reflex when a genuinely new signal appears later.
+
+**The insight**: search and the form-time duplicate-finder run the **same algorithm against the same data**. Anything the form-finder would surface against the *prefilled* values has already appeared in the search results the rescuer just dismissed. So: don't run the finder at all until they actually edit something.
+
+**The fix**: one state flag in `AdopterForm` — `hasUserEdited`, initial `false`. Any field `onChange` flips it `true` via a no-arg `markEdited()` callback. The existing duplicate-detection effect early-exits while it's `false`. The save-time strong-match modal is also gated on it. The moment the rescuer changes name, adds a contact entry, or edits family members, they've supplied **new evidence**, and re-evaluation earns its keep — the finder fires immediately on the next debounce cycle.
+
+Considered and rejected: passing the seen-IDs forward from search via sessionStorage. Same intent, more state to manage (per-tab dismissal lists, staleness windows, cleanup on submit/unmount). The dirty-flag approach is one variable in one file and produces equivalent behaviour because of the search/form algorithmic equivalence.
+
+### Trade-offs (documented, accepted)
+
+- **Save with no edits at all** — record is created with exactly the URL-prefilled name/phone, no duplicate prompts. The rescuer made the call at search time and is creating an intentionally-minimal stub. Acceptable.
+- **Edit a field, revert it** — `hasUserEdited` is a one-way flip. The form is "dirty." Detection fires on whatever's currently typed. Acceptable; the rescuer engaged with the form.
+- **Edit-the-name-to-be-more-like-an-existing-match** — detection re-fires correctly; surfaces matches that might not have been in the original search. That's the system doing its job on new evidence.
+
+### What stays the same
+
+- The post-save `duplicate_candidates` profile banner (the v39 "Posible duplicado detectado" alert) — driven by a separate precomputed-pairs table built by the tokenize-on-write job. It's a review-queue surface for owners/admins, not a transient form-time guard, and auto-resolving pairs from a dirty-flag signal would poison it.
+- Search-results rendering — no per-row "Not the same person" button. The implicit signal ("you clicked Create instead of one of these rows") is enough.
+
+### Engineering
+
+- `src/components/AdopterForm.tsx`:
+  - New state `hasUserEdited` + `markEdited` `useCallback`.
+  - Duplicate-detection effect (~line 349) early-exits when `!hasUserEdited`; `hasUserEdited` added to deps so the effect re-fires once the flag flips.
+  - `handleSave` (~line 528) gates the save-modal call on `hasUserEdited`.
+  - Three onChange call sites plumbed: name input, `ContactEntriesSection` onChange, familyMembers textarea.
+
+### Verification (manual)
+
+- Search a name with results → Crear nuevo → form opens. DuplicatePeek + StrongMatchStrip stay quiet; hit Save → no modal interruption; record saves.
+- Same path, but add a phone in the composer first → detection re-fires; matches surface; save modal triggers for any strong match.
+- Open `/adopter/create` via direct URL → empty form, type a name → detection fires on the debounce (same behaviour as today).
+
 ## [2.19.62] - 2026-06-20
 
 ### Added — `/admin/users` faceted filters + sort
