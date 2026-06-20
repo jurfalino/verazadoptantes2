@@ -1,24 +1,34 @@
 export const runtime = 'edge';
 import { getDb } from "@/app/actions";
-import { adopters, adopterHistory, adoptions } from "@/db/schema";
+import { adopters, adoptions } from "@/db/schema";
 import { desc, like, or, and, isNull, eq, sql, ne } from "drizzle-orm";
 import Link from "next/link";
 import AdminAdopterList from "@/components/AdminAdopterList";
 import UserFilterSelect from "@/components/UserFilterSelect";
+import SortSelect from "@/components/SortSelect";
 import { enrichAdopters } from "@/app/actions/enrichAdopters";
 import { getRatingColors, getRatingDescription } from "@/lib/ratingColors";
 import { getFeatureFlag } from "@/config/features";
 
 
-export default async function AdminAdoptersPage({ searchParams }: { searchParams: Promise<{ q?: string; country?: string; rating?: string; user?: string }> }) {
+export default async function AdminAdoptersPage({ searchParams }: { searchParams: Promise<{ q?: string; country?: string; rating?: string; created_by?: string; updated_by?: string; visibility?: string; sort?: string; user?: string }> }) {
     const db = await getDb();
     if (!db) return <div>DB Unavailable</div>;
 
-    const { q, country: filterCountry, rating: filterRating, user: filterUser } = await searchParams;
+    const params = await searchParams;
+    const { q, country: filterCountry, rating: filterRating, visibility: filterVisibility, sort: filterSort } = params;
+    // v2.19.61: `?user=` was a single combined "Created / Updated by" filter
+    // that resolved to `eq(addedBy, user)` (i.e., creator only). Split into
+    // two independent facets. Legacy `?user=` aliases to `created_by` for
+    // bookmark compatibility.
+    const filterCreatedBy = params.created_by || params.user;
+    const filterUpdatedBy = params.updated_by;
     const query = q || '';
 
     // ── Aggregation queries (global counts, unfiltered) ─────────────────
-    const [countryRows, userRows, historyUserRows] = await Promise.all([
+    // v2.19.61: each facet is one aggregated SQL query. NEVER fan out per
+    // adopter (see v2.19.59 incident).
+    const [countryRows, createdByRows, updatedByRows, visibilityRows] = await Promise.all([
         // Country distribution
         db.select({
             country: adopters.country,
@@ -28,24 +38,45 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
             .groupBy(adopters.country)
             .orderBy(sql`COUNT(*) DESC`),
 
-        // Distinct creators
-        db.select({ addedBy: adopters.addedBy })
+        // Created by — distinct creators with adopter count.
+        db.select({
+            addedBy: adopters.addedBy,
+            count: sql<number>`COUNT(*)`,
+        })
             .from(adopters)
             .where(and(
                 isNull(adopters.deletedAt),
                 sql`${adopters.addedBy} IS NOT NULL`,
                 ne(adopters.addedBy, 'anonymous')
             ))
-            .groupBy(adopters.addedBy),
+            .groupBy(adopters.addedBy)
+            .orderBy(sql`COUNT(*) DESC`),
 
-        // Distinct editors from history
-        db.select({ changedBy: adopterHistory.changedBy })
-            .from(adopterHistory)
-            .where(and(
-                sql`${adopterHistory.changedBy} IS NOT NULL`,
-                ne(adopterHistory.changedBy, 'Unknown')
-            ))
-            .groupBy(adopterHistory.changedBy),
+        // Updated by — "most recent editor per adopter," counted. Window
+        // function picks the latest history entry per adopter; outer query
+        // groups by changed_by.
+        db.all(sql`
+            SELECT changed_by AS updated_by, COUNT(*) AS n
+            FROM (
+                SELECT adopter_id, changed_by,
+                       ROW_NUMBER() OVER (PARTITION BY adopter_id ORDER BY changed_at DESC) AS rn
+                FROM adopter_history
+            )
+            WHERE rn = 1
+              AND changed_by IS NOT NULL
+              AND changed_by != 'Unknown'
+            GROUP BY changed_by
+            ORDER BY n DESC
+        `) as Promise<{ updated_by: string; n: number }[]>,
+
+        // Visibility — `is_public` (0/1) counts.
+        db.select({
+            isPublic: adopters.isPublic,
+            count: sql<number>`COUNT(*)`,
+        })
+            .from(adopters)
+            .where(isNull(adopters.deletedAt))
+            .groupBy(adopters.isPublic),
     ]);
 
     // Build country summary: { code: count }
@@ -54,15 +85,19 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
         count: r.count,
     }));
 
-    // Build distinct users list (union of creators and editors)
-    const userSet = new Set<string>();
-    for (const r of userRows as { addedBy: string | null }[]) {
-        if (r.addedBy) userSet.add(r.addedBy);
+    // Created-by + Updated-by lists with counts (sorted descending by count).
+    const createdByList = (createdByRows as { addedBy: string | null; count: number }[])
+        .filter((r) => r.addedBy)
+        .map((r) => ({ email: r.addedBy as string, count: r.count }));
+    const updatedByList = (updatedByRows as { updated_by: string; n: number }[])
+        .map((r) => ({ email: r.updated_by, count: r.n }));
+
+    // Visibility: lookup public vs private counts. Default 0 if a bucket is empty.
+    const visibilityCounts = { public: 0, private: 0 };
+    for (const r of visibilityRows as { isPublic: number; count: number }[]) {
+        if (r.isPublic === 1) visibilityCounts.public = r.count;
+        else visibilityCounts.private = r.count;
     }
-    for (const r of historyUserRows as { changedBy: string | null }[]) {
-        if (r.changedBy) userSet.add(r.changedBy);
-    }
-    const distinctUsers = Array.from(userSet).sort();
 
     // ── Main list query (with filters) ──────────────────────────────────
     const conditions = [isNull(adopters.deletedAt)];
@@ -80,14 +115,48 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
             conditions.push(eq(adopters.country, filterCountry));
         }
     }
-    if (filterUser) {
-        conditions.push(eq(adopters.addedBy, filterUser));
+    if (filterCreatedBy) {
+        conditions.push(eq(adopters.addedBy, filterCreatedBy));
     }
+    if (filterUpdatedBy) {
+        // Most-recent-editor filter: pick adopters whose latest history entry
+        // was authored by `filterUpdatedBy`. Window-function subquery in raw
+        // SQL — D1's inArray helper is broken so we can't pre-fetch IDs and
+        // pass an array; the subquery runs in-engine. Cheap (one indexed
+        // pass on adopter_history) and self-contained.
+        conditions.push(sql`${adopters.id} IN (
+            SELECT adopter_id FROM (
+                SELECT adopter_id, changed_by,
+                       ROW_NUMBER() OVER (PARTITION BY adopter_id ORDER BY changed_at DESC) AS rn
+                FROM adopter_history
+            )
+            WHERE rn = 1 AND changed_by = ${filterUpdatedBy}
+        )`);
+    }
+    if (filterVisibility === 'public') {
+        conditions.push(eq(adopters.isPublic, 1));
+    } else if (filterVisibility === 'private') {
+        conditions.push(eq(adopters.isPublic, 0));
+    }
+
+    // Sort selector (v2.19.61). Default matches pre-existing behaviour.
+    const sortOptionsMap = {
+        updated_desc: desc(adopters.updatedAt),
+        updated_asc: adopters.updatedAt,
+        created_desc: desc(adopters.createdAt),
+        created_asc: adopters.createdAt,
+        name_asc: adopters.name,
+        name_desc: desc(adopters.name),
+    } as const;
+    const sortKey = (filterSort && filterSort in sortOptionsMap)
+        ? filterSort as keyof typeof sortOptionsMap
+        : 'updated_desc';
+    const orderByClause = sortOptionsMap[sortKey];
 
     const list = await db.select()
         .from(adopters)
         .where(and(...conditions))
-        .orderBy(desc(adopters.updatedAt))
+        .orderBy(orderByClause)
         .limit(200);
 
     // Enrich adopters with ratings, stats, flags, and thumbnails
@@ -136,9 +205,32 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
         }
     }
 
+    // ── Post-fetch sort (rating_*) ──────────────────────────────────────
+    // Rating isn't a column, so SQL ORDER BY can't sort it. SQL fetched the
+    // list in `updated_desc` order; if the user picked a rating sort we
+    // re-sort the already-fetched list in-process. Sorts the displayed
+    // ~200-row window only — fine for current prod scale.
+    if (filterSort === 'rating_desc' || filterSort === 'rating_asc') {
+        const dir = filterSort === 'rating_desc' ? -1 : 1;
+        filteredList = [...filteredList].sort((a: typeof adopters.$inferSelect, b: typeof adopters.$inferSelect) => {
+            const ra = enrichmentMap.get(a.id)?.avgRating ?? -1;
+            const rb = enrichmentMap.get(b.id)?.avgRating ?? -1;
+            return (ra - rb) * dir;
+        });
+    }
+
     // ── Helper to build filter URL ──────────────────────────────────────
-    function buildFilterUrl(params: Record<string, string | undefined>) {
-        const merged = { q: q || undefined, country: filterCountry, rating: filterRating, user: filterUser, ...params };
+    function buildFilterUrl(overrides: Record<string, string | undefined>) {
+        const merged: Record<string, string | undefined> = {
+            q: q || undefined,
+            country: filterCountry,
+            rating: filterRating,
+            created_by: filterCreatedBy,
+            updated_by: filterUpdatedBy,
+            visibility: filterVisibility,
+            sort: filterSort,
+            ...overrides,
+        };
         const qs = Object.entries(merged)
             .filter(([, v]) => v !== undefined && v !== '')
             .map(([k, v]) => `${k}=${encodeURIComponent(v!)}`)
@@ -163,7 +255,10 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                     {/* Preserve active filters in hidden inputs */}
                     {filterCountry && <input type="hidden" name="country" value={filterCountry} />}
                     {filterRating && <input type="hidden" name="rating" value={filterRating} />}
-                    {filterUser && <input type="hidden" name="user" value={filterUser} />}
+                    {filterCreatedBy && <input type="hidden" name="created_by" value={filterCreatedBy} />}
+                    {filterUpdatedBy && <input type="hidden" name="updated_by" value={filterUpdatedBy} />}
+                    {filterVisibility && <input type="hidden" name="visibility" value={filterVisibility} />}
+                    {filterSort && <input type="hidden" name="sort" value={filterSort} />}
                     <input
                         name="q"
                         defaultValue={query}
@@ -250,30 +345,88 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                     </div>
                 </div>
 
-                {/* User Filter Dropdown */}
+                {/* Visibility — public / private chip pair (v2.19.61). */}
                 <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-200">
-                    <div className="flex items-center gap-4">
-                        <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wide whitespace-nowrap">Created / Updated by</h3>
-                        <UserFilterSelect
-                            users={distinctUsers}
-                            currentUser={filterUser}
-                            query={query}
-                            filterCountry={filterCountry}
-                            filterRating={filterRating}
-                        />
-                        {filterUser && (
-                            <Link href={buildFilterUrl({ user: undefined })} className="text-xs text-teal-700 hover:text-teal-800 font-medium whitespace-nowrap">
+                    <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wide">By Visibility</h3>
+                        {filterVisibility && (
+                            <Link href={buildFilterUrl({ visibility: undefined })} className="text-xs text-teal-700 hover:text-teal-800 font-medium">
                                 Clear ✕
                             </Link>
                         )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        {([
+                            { key: 'public', label: 'Público', icon: '🌐', count: visibilityCounts.public },
+                            { key: 'private', label: 'Privado', icon: '🔒', count: visibilityCounts.private },
+                        ] as const).map((v) => {
+                            const isActive = filterVisibility === v.key;
+                            return (
+                                <Link
+                                    key={v.key}
+                                    href={buildFilterUrl({ visibility: isActive ? undefined : v.key })}
+                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${isActive
+                                        ? 'bg-teal-600 text-white shadow-sm'
+                                        : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                                        }`}
+                                >
+                                    <span>{v.icon}</span>
+                                    <span>{v.label}</span>
+                                    <span className={`font-semibold ${isActive ? 'text-teal-100' : 'text-stone-500'}`}>
+                                        {v.count}
+                                    </span>
+                                </Link>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* Created by / Updated by / Sort by — three dropdowns in one card (v2.19.61). */}
+                <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-200 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                        <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wide whitespace-nowrap sm:w-28">Created by</h3>
+                        <UserFilterSelect
+                            kind="created_by"
+                            users={createdByList}
+                            currentUser={filterCreatedBy}
+                            preserved={{ q: query || undefined, country: filterCountry, rating: filterRating, created_by: filterCreatedBy, updated_by: filterUpdatedBy, visibility: filterVisibility, sort: filterSort }}
+                            allLabel="All creators"
+                        />
+                        {filterCreatedBy && (
+                            <Link href={buildFilterUrl({ created_by: undefined })} className="text-xs text-teal-700 hover:text-teal-800 font-medium whitespace-nowrap">
+                                Clear ✕
+                            </Link>
+                        )}
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                        <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wide whitespace-nowrap sm:w-28">Updated by</h3>
+                        <UserFilterSelect
+                            kind="updated_by"
+                            users={updatedByList}
+                            currentUser={filterUpdatedBy}
+                            preserved={{ q: query || undefined, country: filterCountry, rating: filterRating, created_by: filterCreatedBy, updated_by: filterUpdatedBy, visibility: filterVisibility, sort: filterSort }}
+                            allLabel="All editors"
+                        />
+                        {filterUpdatedBy && (
+                            <Link href={buildFilterUrl({ updated_by: undefined })} className="text-xs text-teal-700 hover:text-teal-800 font-medium whitespace-nowrap">
+                                Clear ✕
+                            </Link>
+                        )}
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                        <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wide whitespace-nowrap sm:w-28">Sort by</h3>
+                        <SortSelect
+                            currentSort={filterSort}
+                            preserved={{ q: query || undefined, country: filterCountry, rating: filterRating, created_by: filterCreatedBy, updated_by: filterUpdatedBy, visibility: filterVisibility, sort: filterSort }}
+                        />
                     </div>
                 </div>
             </div>
 
             <div className="text-sm text-stone-500">
                 {filteredList.length} adopter{filteredList.length !== 1 ? 's' : ''}
-                {(filterCountry || filterRating || filterUser) && (
-                    <span> (filtered) · <Link href={buildFilterUrl({ country: undefined, rating: undefined, user: undefined, q: q || undefined })} className="text-teal-700 hover:underline">Clear all filters</Link></span>
+                {(filterCountry || filterRating || filterCreatedBy || filterUpdatedBy || filterVisibility || filterSort) && (
+                    <span> (filtered) · <Link href={buildFilterUrl({ country: undefined, rating: undefined, created_by: undefined, updated_by: undefined, visibility: undefined, sort: undefined, q: q || undefined })} className="text-teal-700 hover:underline">Clear all filters</Link></span>
                 )}
             </div>
 

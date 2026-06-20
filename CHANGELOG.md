@@ -2,6 +2,57 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.61] - 2026-06-20
+
+### Added — `/admin/adopters` faceted filters: created-by, updated-by, visibility, sort
+
+The page already had faceted chips for By Country and By Rating (each option shows its count). Extended the same model to three more facets and added a sort control. URL-driven throughout so filter/sort combos are bookmarkable.
+
+#### New facets
+
+- **By Visibility** — chip pair `🌐 Público (n) / 🔒 Privado (n)`. Single aggregated query `SELECT is_public, COUNT(*) GROUP BY is_public`.
+- **Created by** (dropdown) — `?created_by=email`. Single aggregated query `SELECT added_by, COUNT(*) GROUP BY added_by ORDER BY COUNT(*) DESC`. Each option label includes the count: `maria@org.com (12)`.
+- **Updated by** (dropdown) — `?updated_by=email`. Semantics: "most recent editor of the record". One aggregated SQL using a window function:
+  ```sql
+  SELECT changed_by, COUNT(*) FROM (
+      SELECT adopter_id, changed_by,
+             ROW_NUMBER() OVER (PARTITION BY adopter_id ORDER BY changed_at DESC) AS rn
+      FROM adopter_history
+  ) WHERE rn = 1 GROUP BY changed_by
+  ```
+  WHERE-clause uses the same subquery so filtered list and facet count stay in sync.
+
+#### Sort control
+
+New `?sort=` dropdown next to Created/Updated By. Options:
+- `updated_desc` (default, current behavior) / `updated_asc`
+- `created_desc` / `created_asc`
+- `name_asc` / `name_desc`
+- `rating_desc` / `rating_asc`
+
+Column-based sorts use SQL `ORDER BY`. Rating sort runs post-fetch on the already-enriched list (`avgRating` isn't a column). At current prod scale (~66 rows under the 200 LIMIT) that's exact; as the DB grows beyond 200, rating sort will sort the displayed window only — flagged as v2.19.6x follow-up.
+
+#### URL-param changes
+
+- New params: `created_by`, `updated_by`, `visibility`, `sort`.
+- **Deprecated**: `?user=` (previously a combined "created or updated by" that actually filtered creator only). Aliased to `?created_by=` for back-compat — existing bookmarks keep working.
+- All filters compose: every dropdown / chip click preserves the other params.
+
+#### Performance
+
+Each new facet is **one** aggregated SQL query — no per-row fan-out (the v2.19.59 lesson). Four total parallel facet queries for the page (country, created-by, updated-by, visibility) plus the existing rating-summary aggregate. The "Apply Filters" path adds at most one subquery (`updated_by`'s `id IN (subquery)`) — cheap, indexed.
+
+### Engineering
+
+- `src/app/admin/adopters/page.tsx` — facet aggregations restructured; new URL params destructured; WHERE clauses for created_by / updated_by (subquery) / visibility; sort dispatch with column-based ORDER BY + post-fetch rating sort; visibility chip card; three-dropdown card with Created by / Updated by / Sort by.
+- `src/components/UserFilterSelect.tsx` — refactored to take a discriminator (`kind: 'created_by' | 'updated_by'`), count-bearing user list, and full preserved-params object. Options display `email (count)`.
+- `src/components/SortSelect.tsx` (new) — sort dropdown client component. Omits the `?sort=` param when the user picks the default, keeping URLs clean.
+
+### Verification
+
+- `npx tsc --noEmit` clean, lint stable at 124 warnings.
+- Composability: a country chip click while `?sort=name_asc` is active should preserve the sort.
+
 ## [2.19.60] - 2026-06-20
 
 ### Observability — wire NextAuth's internal logger into Axiom
