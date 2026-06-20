@@ -2,6 +2,58 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.58] - 2026-06-19
+
+### Fixed — `adopters.is_public` was never being stamped on public-source records (A1)
+
+User QA on Patricia Núñez's profile surfaced a real product gap: a record imported from a public Instagram post had `source_url = https://www.instagram.com/...` but `is_public = 0`. Investigation: the create path at `src/app/api/adopters/route.ts:337-353` **never sets `isPublic`** on the INSERT. It falls through to the column default of `0`. The only existing "public-stamping" code (line 299) stamps per-entry `isPublic` inside the `contactEntries` JSON, never the record-level `adopters.is_public` field. And even that is gated on `ENABLE_PUBLIC_PROFILES` (off on staging).
+
+So pre-v2.19.58 the data model was lying: the system tracked provenance in `source_url` but couldn't act on it because the record-level flag was always 0. v2.19.55's broadened banner gate (`isPublic OR sourceUrl`) was me papering over this; the real fix is to make `is_public` mean what it says.
+
+#### Verified PII interaction before shipping
+
+Read `src/lib/piiAccess.ts` and `src/lib/piiAccessServer.ts:54-58` to confirm the contract:
+
+```ts
+return { adopterIsPublic: !!flag && !!adopter?.isPublic };  // BOTH required
+```
+
+The PII mask bypass requires **both** `ENABLE_PUBLIC_PROFILES = true` AND `adopters.is_public = 1`. Setting `is_public` alone is a **passive data-correctness change** under today's flag-off configuration — no masking behavior shifts. The banner copy + gate are now data-driven (the record actually IS marked public); functional unmasking activates if/when the global flag is flipped on.
+
+Also confirmed the override semantics at `piiAccess.ts:685` — when record-level fires, ALL entries get exposed including contributor-added private ones. That's the documented intent (the comment at line 671-675 spells it out: "wins over per-entry isPublic"), but it's a real footgun if the flag is ever flipped on. Captured as deferred work (A2-mod) — separate decision, not in scope for this release.
+
+#### Why sourceUrl, not source='imported'
+
+Originally planned to gate on `source = 'imported' && sourceUrl` — same condition as the existing per-entry `isSocialImport` check. DB survey first:
+
+- Staging: 1 row with `source = 'imported' + sourceUrl`, 9 with `source = 'manual' + sourceUrl`.
+- Prod: 0 rows with `source = 'imported' + sourceUrl`, 35 with `source = 'manual' + sourceUrl`.
+
+Most rescuers paste public URLs through the regular new-adopter form, not the ImportWizard. The `source` tag was almost useless as a public-provenance signal historically. The user's intent is "visible URL → public profile" — independent of which entry surface the URL came in through.
+
+So the rule is now: **`isPublic = 1` when `sourceUrl` is present** (regardless of `source` tag). Google Contacts imports arrive with `source = 'imported'` AND `sourceUrl = null`, so they're correctly excluded (their data is private address-book material). Caller can still opt out via `isPublic: false` (preserves the ImportWizard's v2.19.47 consent toggle).
+
+#### Going-forward + backfill
+
+- **Going-forward** (`src/app/api/adopters/route.ts:337-353`): the INSERT now passes `isPublic: stampRecordPublic ? 1 : 0` where `stampRecordPublic = !!sourceUrl?.trim() && callerIsPublic !== false`. Drizzle's integer column expects 0/1, not a boolean (matches the canonical pattern at `admin.ts:390`).
+- **Backfill** (`drizzle/0051_backfill_isPublic_for_sourceurl_records.sql`): `UPDATE adopters SET is_public = 1 WHERE is_public = 0 AND source_url LIKE 'https://%'`. Idempotent; no-op against a clean state. Will touch ~10 rows on staging, ~35 on prod.
+
+#### Banner gate stays broadened
+
+v2.19.55's `displayedAdopter?.isPublic || displayedAdopter?.sourceUrl` gate remains in place even though `isPublic` will now usually be true wherever `sourceUrl` is set. Two reasons:
+1. **Deploy ordering**: the migration runs before the new INSERT logic ships, but if there's any window between them the OR is the safety net.
+2. **Edge case — merge transfers `sourceUrl`**: `src/app/actions/duplicates.ts:166` transfers `sourceUrl` from secondary to primary on merge but doesn't restamp `isPublic` on the primary. Not in v2.19.58 scope; the OR gate keeps the banner correct meanwhile. Tracked as A1 follow-up.
+
+### Engineering
+
+- `src/app/api/adopters/route.ts` — new `recordHasPublicSource` / `recordCallerConsentedToPublic` / `stampRecordPublic` block before the INSERT; `isPublic` passed to `db.insert(adopters).values()`.
+- `drizzle/0051_backfill_isPublic_for_sourceurl_records.sql` — historical backfill.
+
+### Deferred (intentional, documented above)
+
+- **A2 / A2-mod** — turning `ENABLE_PUBLIC_PROFILES` on globally, or first changing `maskContactEntries` so per-entry `isPublic = false` wins over record-level. Separate scoped decision.
+- **Merge-time `isPublic` restamp** in `duplicates.ts` when secondary's `sourceUrl` transfers to primary. Tracked as A1 follow-up.
+
 ## [2.19.57] - 2026-06-19
 
 ### Security — scheme allowlist on `sourceUrl` (XSS hardening, defense in depth)

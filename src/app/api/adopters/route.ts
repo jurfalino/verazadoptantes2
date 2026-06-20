@@ -332,6 +332,32 @@ export async function POST(request: Request) {
             if (hdr) userCountry = hdr;
         }
 
+        // v2.19.58: stamp record-level `isPublic` when the record carries a
+        // sourceUrl. Whether the record came through the ImportWizard
+        // (`source='imported'`) or the manual new-adopter form
+        // (`source='manual'` + pasted URL), the provenance is the same: the
+        // data is on the open internet. DB survey at version-bump time showed
+        // 9/10 staging + 35/35 prod existing public-URL rows were tagged
+        // manual, so gating on source='imported' here would miss the
+        // overwhelming majority of the cases the user actually wants caught.
+        //
+        // Google-Contacts imports arrive with source='imported' AND
+        // sourceUrl=null, so the sourceUrl-only check correctly excludes them
+        // (private address-book data is NOT public).
+        //
+        // NOT gated on ENABLE_PUBLIC_PROFILES — the data-flag should reflect
+        // reality whether or not the global bypass flag is on. Functional
+        // unmasking still requires both record-level isPublic AND the global
+        // flag (see buildMaskOptions in piiAccessServer.ts), so this is a
+        // passive data-correctness change today; turning the global flag on
+        // later activates the bypass without a second backfill.
+        //
+        // Caller can opt out via `isPublic: false` (the ImportWizard's
+        // "este perfil será visible para todos" toggle, v2.19.47).
+        const recordHasPublicSource = !!sourceUrl?.trim();
+        const recordCallerConsentedToPublic = callerIsPublic !== false;
+        const stampRecordPublic = recordHasPublicSource && recordCallerConsentedToPublic;
+
         // Insert adopter record
         // notes deprecated v2.12.1-28 — handled below as a dedicated observation record.
         await db.insert(adopters).values({
@@ -344,6 +370,7 @@ export async function POST(request: Request) {
             addedBy: session.user.email || 'anonymous',
             sourceUrl: sourceUrl || null,
             country: userCountry,
+            isPublic: stampRecordPublic ? 1 : 0,
             // Provenance: 'imported' when the caller (ImportWizard) tells us
             // so; everything else falls through to the column default 'manual'.
             // Surfaces the 'Imported' badge on /my-adopters and gates the
