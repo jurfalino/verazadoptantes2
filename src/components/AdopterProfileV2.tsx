@@ -350,7 +350,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     Renders for ALL viewers; reads from `displayedAdopter` so
                     it stays visible under preview-as-stranger. Not
                     dismissible: defensive purpose requires persistence. */}
-                {!isNew && (displayedAdopter?.isPublic || displayedAdopter?.sourceUrl) && (
+                {!isNew && Boolean(displayedAdopter?.isPublic || displayedAdopter?.sourceUrl) && (
                     <PublicProfileSourceNotice sourceUrl={displayedAdopter?.sourceUrl} />
                 )}
 

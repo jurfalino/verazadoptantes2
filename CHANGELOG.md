@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.56] - 2026-06-19
+
+### Fixed — stray "0" rendering above the back nav on adopter profile
+
+v2.19.54 shipped the public-source banner with the gate `!isNew && displayedAdopter?.isPublic && <Component />`. The `isPublic` field comes back from D1 as a number (`0` or `1`), not a boolean — TypeScript's `boolean | null` type masked this. For records where `isPublic = 0`, the short-circuit evaluation `true && 0` returned `0`, which React happily rendered as a literal `0` text node at the top of the profile.
+
+v2.19.55's broadened gate (`isPublic || sourceUrl`) incidentally hid the symptom on records where `sourceUrl` was set (the `||` returns the truthy string), but the latent footgun stayed: any future edit that re-narrowed to a single integer-valued field would re-trigger it. Wrapping in `Boolean()` makes the gate explicitly boolean and immune to the JSX-truthy-number pitfall.
+
+### Engineering
+
+- `src/components/AdopterProfileV2.tsx` — gate is now `Boolean(displayedAdopter?.isPublic || displayedAdopter?.sourceUrl)`. One-character defensive change, kills the entire bug-shape.
+
 ## [2.19.55] - 2026-06-19
 
 ### Fixed — v2.19.54 banner gating was too narrow
