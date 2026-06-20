@@ -5,6 +5,7 @@ import { SESSION_MAX_AGE_SECONDS } from "./config/constants";
 import { getDb } from "@/lib/db";
 import { users, userProfiles } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { logger } from "@/lib/logger";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
     ...authConfig,
@@ -114,5 +115,30 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     session: {
         strategy: "jwt",
         maxAge: SESSION_MAX_AGE_SECONDS,
+    },
+    // v2.19.60: wire NextAuth's internal logger into our structured logger so
+    // the actual cause of `Configuration` / `OAuthCallbackError` / etc. lands
+    // in Axiom alongside the `auth-error page hit` breadcrumb. Without this,
+    // the underlying error message goes to `console.error` (visible only via
+    // `wrangler tail`) and the Axiom warn entry only carries the NextAuth
+    // error CODE (e.g. "Configuration"), not the cause.
+    //
+    // NextAuth v5 errors carry `.type` (AuthError type discriminator) and
+    // often a `.cause` chain — surface both explicitly. Debug is intentionally
+    // skipped; it's high-volume and our `logger.debug` is local-only anyway.
+    logger: {
+        error(error) {
+            const err = error as Error & { type?: string; cause?: unknown };
+            const cause = err.cause instanceof Error
+                ? { name: err.cause.name, message: err.cause.message }
+                : err.cause ?? null;
+            logger.error('next-auth error', err, {
+                authType: err.type ?? null,
+                authCause: cause,
+            });
+        },
+        warn(code: string) {
+            logger.warn('next-auth warn', { code });
+        },
     },
 })

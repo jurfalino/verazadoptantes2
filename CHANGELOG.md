@@ -2,6 +2,35 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.60] - 2026-06-20
+
+### Observability — wire NextAuth's internal logger into Axiom
+
+The `/auth-error` page logs a `warn` breadcrumb (`"auth-error page hit"`) on every landing with the NextAuth error CODE (`"Configuration"`, `"OAuthCallbackError"`, `"AccessDenied"`, etc.), but the **actual cause** — the underlying error message and chained `cause` — only ever went to `console.error`. On Cloudflare Pages that means it's visible only via `wrangler pages deployment tail` in real time and disappears after the request. A user-reported `Configuration` error couldn't be root-caused from Axiom alone; the breadcrumb was a dead end.
+
+NextAuth v5 exposes a `logger` option on the `NextAuth({ ... })` config — `error(err)` / `warn(code)` / `debug(msg, meta)`. By default it's wired to console. v2.19.60 wires it to `@/lib/logger` so the full error lands in Axiom alongside the breadcrumb.
+
+Captures the three fields that matter for diagnosing auth failures:
+- `error.name` + `error.message` + `error.stack` (via the existing `logger.error` Error-handling branch).
+- `error.type` — NextAuth's AuthError discriminator (e.g. `"CallbackRouteError"`).
+- `error.cause` — the wrapped underlying error, flattened to `{name, message}` when it's an `Error` or passed through otherwise. NextAuth wraps OAuth provider rejections, env-var misconfigurations, etc. as `.cause`.
+
+Debug is intentionally **not** wired — it's high-volume (every JWT decode, every callback), and `logger.debug` is local-only anyway.
+
+#### Why this matters today
+
+The reported case: a user hit `/auth-error?error=Configuration` from `3935840c.verazadoptantes2.pages.dev` (a Cloudflare Pages deployment-specific URL, not `buenadoptante.org`). Without the underlying cause logged, we couldn't tell whether it was a Google OAuth redirect-URI mismatch (most likely on a non-canonical domain), an `AUTH_SECRET` issue, a `trustHost` regression, or something else. After v2.19.60, the next hit logs the exact cause to Axiom — search `message: "next-auth error"`.
+
+### Engineering
+
+- `src/auth.ts` — imported `logger`; added `logger: { error, warn }` block to the `NextAuth({ ... })` config.
+
+### Verification path
+
+- After deploy, reproduce a sign-in failure (or wait for organic traffic to hit one).
+- In Axiom: `message: "next-auth error"` returns the full Error shape including `error.message`, `authType`, and `authCause`.
+- Cross-reference with the same `cf-ray` on the `"auth-error page hit"` entry to confirm pairing.
+
 ## [2.19.59] - 2026-06-20
 
 ### Fixed — `/admin/adopters` was exhausting Cloudflare Worker resource limits on every render (Error 1102)
