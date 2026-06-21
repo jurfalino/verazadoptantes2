@@ -184,6 +184,14 @@ export async function deleteAdoption(adoptionId: string, adopterId: string) {
         const existing = await db.select().from(adoptions).where(eq(adoptions.id, adoptionId)).get();
         if (!existing) throw new Error("Adoption not found");
 
+        // v2.19.68: previously UNGUARDED — any authenticated user could delete
+        // any activity record. Gate to the record's creator OR an admin, matching
+        // the UI (AdoptionHistory: canEdit = isAdmin || addedBy === currentUser).
+        const { isAdminAsync } = await import('@/config/admins');
+        if (existing.addedBy !== changedBy && !await isAdminAsync(changedBy)) {
+            throw new Error("Not authorized to delete this record");
+        }
+
         await db.delete(adoptions).where(eq(adoptions.id, adoptionId));
 
         // Log to adopter history
@@ -298,7 +306,9 @@ export async function deleteAnimalForAdoption(adoptionId: string) {
         // Verify ownership
         const existing = await db.select().from(adoptions).where(eq(adoptions.id, adoptionId)).get();
         if (!existing) throw new Error("Animal not found");
-        if (existing.addedBy !== changedBy) throw new Error("Not authorized to delete this animal");
+        // v2.19.66: admins may delete any record, not just the owner.
+        const { isAdminAsync } = await import('@/config/admins');
+        if (existing.addedBy !== changedBy && !await isAdminAsync(changedBy)) throw new Error("Not authorized to delete this animal");
 
         // Delete associated images first
         const { adopterImages } = await import('@/db/schema');
@@ -331,7 +341,9 @@ export async function deleteAnimalImage(imageId: string, adoptionId: string) {
         // Verify ownership via the parent adoption
         const adoption = await db.select().from(adoptions).where(eq(adoptions.id, adoptionId)).get();
         if (!adoption) throw new Error("Animal not found");
-        if (adoption.addedBy !== changedBy) throw new Error("Not authorized to delete this image");
+        // v2.19.66: admins may delete any record, not just the owner.
+        const { isAdminAsync } = await import('@/config/admins');
+        if (adoption.addedBy !== changedBy && !await isAdminAsync(changedBy)) throw new Error("Not authorized to delete this image");
 
         const { adopterImages } = await import('@/db/schema');
 
