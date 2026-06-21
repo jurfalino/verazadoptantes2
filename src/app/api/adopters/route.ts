@@ -224,6 +224,28 @@ export async function POST(request: Request) {
     // Validate input
     const parsed = createAdopterApiSchema.safeParse(body);
     if (!parsed.success) {
+        const issues = parsed.error.issues.map(i => ({ path: i.path.join('.'), message: i.message }));
+        // v2.19.66: a 400 validation reject previously logged NOTHING (only 500s
+        // hit logger), so a payload the schema rejects was invisible in Axiom —
+        // the user saw a bare "Invalid input" toast with no way to know which
+        // field failed. Log it as `warn` (degraded, not broken) with the field
+        // paths + privacy-safe size hints so we can pinpoint the offending field
+        // (empty/over-long name, oversized image base64, malformed sourceUrl)
+        // without dumping PII. errorId is shared with the response below so a
+        // user-reported id correlates to this entry.
+        const b = body as Record<string, unknown>;
+        const imgs = Array.isArray(b?.images) ? (b.images as Array<Record<string, unknown>>) : [];
+        logger.warn('Adopter create: validation rejected', {
+            errorId,
+            issues,
+            nameLen: typeof b?.name === 'string' ? (b.name as string).length : null,
+            imageCount: imgs.length,
+            maxImageDataLen: imgs.length
+                ? Math.max(0, ...imgs.map(im => (typeof im?.data === 'string' ? (im.data as string).length : 0)))
+                : 0,
+            sourceUrl: typeof b?.sourceUrl === 'string' ? b.sourceUrl : undefined,
+            user: session.user.email,
+        });
         return NextResponse.json({
             error: 'Invalid input',
             details: parsed.error.issues.map(i => i.message),

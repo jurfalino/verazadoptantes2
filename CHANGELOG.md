@@ -2,6 +2,32 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.66] - 2026-06-21
+
+### Fixed — "Invalid Input" on import-from-post was invisible in Axiom and unactionable
+
+A user hit "Invalid Input" when importing from an Instagram post in prod (not reproducible on staging, because staging can't fetch the same real post). The toast was useless and **nothing showed in Axiom** — and both were by design:
+
+- **Why nothing logged:** the failing call is the save step, `POST /api/adopters`. Its Zod-validation reject returns `400` — and that branch had **zero `logger` calls**. Only `500`s logged. A schema-rejected payload was completely invisible to observability.
+- **Why the toast was useless:** the server already computes *which field* failed (`details`), but the client discarded it and showed only the generic `error` string. No field, no `errorId`.
+
+#### The fix (diagnostic only — does not yet change validation)
+
+- `POST /api/adopters` now logs rejected payloads at `warn` with the field paths + privacy-safe size hints (`nameLen`, `imageCount`, `maxImageDataLen`, `sourceUrl`) and the shared `errorId`. Ships to Axiom via `waitUntil` like every other log.
+- `ImportWizard` now surfaces `details` **and** the `errorId` in the error toast — so the next prod repro shows the offending field *in the toast itself*, no Axiom round-trip needed.
+
+This makes the actual import breakage diagnosable; the field-specific fix follows once the `details` identify which constraint the real Instagram payload violates.
+
+### Added — admins can delete any record (needed to retest imports cleanly)
+
+Admins were blocked from deleting profiles they don't own — so test records from failed imports couldn't be cleared to retry. This is purely *additive* (admins gain the ability; non-admin behavior is unchanged):
+
+- `deleteOwnAdopter` and `checkAdopterDeletable` now bypass the owner check **and** the "other contributors" guard for DB-role admins (`isAdminAsync`), giving admins a direct delete instead of a deletion *request*. Routed through `deleteOwnAdopter`'s **complete cascade** (which also clears `duplicate_tokens` / `duplicate_candidates` and nulls `form_submissions.linkedAdopterId`) — the shallow `/api/admin/delete-adopter` route is intentionally avoided because it orphans those rows, which would surface as false duplicates on re-import.
+- The profile "Delete record" button now shows for `isOwner || isAdmin`.
+- `deleteAnimalForAdoption` and `deleteAnimalImage` now allow owner **or** admin.
+
+Note: `deleteAdoption` and `images.ts:deleteImage` still have **no authorization check** (any authenticated user can delete) — admins already pass, so they're untouched here. Closing those holes is a separate, restrictive security fix (tracked for a follow-up).
+
 ## [2.19.65] - 2026-06-20
 
 ### Fixed — v2.19.63's "don't re-surface dismissed duplicates" was too easily defeated

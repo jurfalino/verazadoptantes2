@@ -546,7 +546,13 @@ export async function checkAdopterDeletable(adopterId: string) {
         if (!adopter) return { canDelete: false, isOwner: false, collaborators: { adoptions: 0, images: 0, edits: 0, flags: 0, forms: 0 } };
 
         const isOwner = adopter.addedBy === user;
-        if (!isOwner) return { canDelete: false, isOwner: false, collaborators: { adoptions: 0, images: 0, edits: 0, flags: 0, forms: 0 } };
+        // v2.19.66: admins may delete ANY profile (see deleteOwnAdopter). Resolve
+        // DB-role admins (isAdminAsync, not the bootstrap-only sync variant) so
+        // the UI offers a direct delete instead of a deletion *request* on
+        // records they don't own.
+        const { isAdminAsync } = await import('@/config/admins');
+        const actorIsAdmin = await isAdminAsync(user);
+        if (!isOwner && !actorIsAdmin) return { canDelete: false, isOwner: false, collaborators: { adoptions: 0, images: 0, edits: 0, flags: 0, forms: 0 } };
 
         // Count contributions from OTHER users across all related tables
         const { adoptions: adoptionsTable, adopterImages, adopterFlags, formSubmissions } = await import('@/db/schema');
@@ -573,7 +579,8 @@ export async function checkAdopterDeletable(adopterId: string) {
         };
 
         const totalOtherContributions = Object.values(collaborators).reduce((a, b) => a + b, 0);
-        return { canDelete: totalOtherContributions === 0, isOwner: true, collaborators };
+        // Admins bypass the collaboration guard (direct delete, not a request).
+        return { canDelete: actorIsAdmin || totalOtherContributions === 0, isOwner: true, collaborators };
     } catch (error) {
         logger.error('Check adopter deletable failed', error, { adopterId });
         return { canDelete: false, isOwner: false, collaborators: { adoptions: 0, images: 0, edits: 0, flags: 0, forms: 0 } };
@@ -586,13 +593,20 @@ export async function deleteOwnAdopter(adopterId: string) {
         if (!db) throw new Error('No database');
 
         const user = await getUser();
+        // v2.19.66: admins can delete ANY profile — owner or not, with or without
+        // other contributors — so they can clean up records (e.g. a failed or
+        // half-imported test profile). isAdminAsync resolves DB-role admins, not
+        // just the bootstrap list. Owners keep the original safety rails below.
+        const { isAdminAsync } = await import('@/config/admins');
+        const actorIsAdmin = await isAdminAsync(user);
 
         // Inline ownership check — avoids a full checkAdopterDeletable call
         // to minimize the TOCTOU window. We re-verify ownership + collaboration
         // right before deleting. The window between these queries and the
         // actual delete is ~10-50ms on D1, which is an acceptable risk.
         const adopter = await db.select().from(adopters).where(eq(adopters.id, adopterId)).get();
-        if (!adopter || adopter.addedBy !== user) throw new Error('Not the owner');
+        if (!adopter) throw new Error('Adopter not found');
+        if (!actorIsAdmin && adopter.addedBy !== user) throw new Error('Not the owner');
 
         // Re-check collaboration inline (not via checkAdopterDeletable to shrink TOCTOU window)
         const { adoptions: adoptionsTable, adopterImages, adopterFlags, formSubmissions } = await import('@/db/schema');
@@ -609,7 +623,7 @@ export async function deleteOwnAdopter(adopterId: string) {
                 .where(eq(formSubmissions.linkedAdopterId, adopterId)).get(),
         ]);
         const totalOther = (otherAdoptions?.count || 0) + (otherImages?.count || 0) + (otherEdits?.count || 0) + (otherFlags?.count || 0) + (linkedForms?.count || 0);
-        if (totalOther > 0) throw new Error('Record has contributions from other users');
+        if (!actorIsAdmin && totalOther > 0) throw new Error('Record has contributions from other users');
 
         // Cascade delete all related data
         const { duplicateTokens, duplicateCandidates } = await import('@/db/schema');

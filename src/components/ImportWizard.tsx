@@ -870,10 +870,17 @@ export default function ImportWizard() {
                 body: JSON.stringify(payload),
             });
 
-            const result = await response.json() as { id: string; error?: string };
+            const result = await response.json() as { id: string; error?: string; details?: string[]; errorId?: string };
 
             if (!response.ok) {
-                throw new Error(result.error || 'Failed to create adopter');
+                // v2.19.66: surface the schema's per-field reason (`details`) and
+                // the server errorId instead of the bare "Invalid input". The
+                // 400 path already computes which field failed — show it so the
+                // rescuer (and we) can see *why* the save was rejected.
+                const base = result.details?.length
+                    ? `${result.error || 'Invalid input'}: ${result.details.join('; ')}`
+                    : (result.error || 'Failed to create adopter');
+                throw new Error(result.errorId ? `${base} (${result.errorId})` : base);
             }
 
             const adopterId = result.id;

@@ -696,8 +696,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     />
                 )}
 
-                {/* Delete record — owner only */}
-                {!isNew && adopter && isOwner && (
+                {/* Delete record — owner or admin (v2.19.66) */}
+                {!isNew && adopter && (isOwner || isAdmin) && (
                     <div className="pt-6 border-t border-stone-200 mt-6">
                         <button
                             onClick={handleDeleteClick}
