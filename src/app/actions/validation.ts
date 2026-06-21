@@ -163,11 +163,12 @@ export const createAdopterApiSchema = z.object({
             socialProfiles: z.array(z.string().max(500)).optional(),
             addresses: z.array(z.string().max(1_000)).optional(),
         }),
-    ]).optional(),
+    ]).optional().nullable(),
     // JSON-serialized ContactEntry[]; structure sanitized by deserializeContactEntries.
-    contactEntries: z.string().max(20_000).optional(),
-    notes: z.string().max(10_000).optional(),
-    sourceUrl: httpUrl.optional().or(z.literal('')),
+    // v2.19.66: `.nullable()` — AI-extracted fields arrive null, not undefined.
+    contactEntries: z.string().max(20_000).optional().nullable(),
+    notes: z.string().max(10_000).optional().nullable(),
+    sourceUrl: httpUrl.optional().nullable().or(z.literal('')),
     // Provenance hint from the caller (v2.16.0-12+). Only 'imported' is
     // accepted — other values fall through to the column default 'manual'.
     // When 'imported' AND ENABLE_PUBLIC_PROFILES is on, the route stamps
@@ -187,10 +188,16 @@ export const createAdopterApiSchema = z.object({
         thumbnail: z.string().max(10_000_000).optional(),
     })).max(20).optional(),
     adoption: z.object({
-        animalName: z.string().max(500).optional(),
-        species: z.string().max(100).optional(),
-        recordType: z.enum(['adoption', 'adoption_request', 'returned_pet', 'follow_up', 'observation', 'foster']).optional(),
-        rating: z.number().int().min(1).max(5).optional(),
-        date: z.string().max(50).optional(),
+        // v2.19.66: these arrive `null` from the AI extraction (e.g. species
+        // undetermined → animalSpecies: null; gemini.ts:111). Bare `.optional()`
+        // rejects null with "expected string, received null" — the exact bug
+        // behind the import-from-post "Invalid Input". Mirror saveAdoptionSchema,
+        // which already uses `.optional().nullable()`. The route already
+        // null-coalesces every one of these (route.ts:499-505).
+        animalName: z.string().max(500).optional().nullable(),
+        species: z.string().max(100).optional().nullable(),
+        recordType: z.enum(['adoption', 'adoption_request', 'returned_pet', 'follow_up', 'observation', 'foster']).optional().nullable(),
+        rating: z.number().int().min(1).max(5).optional().nullable(),
+        date: z.string().max(50).optional().nullable(),
     }).optional(),
 });

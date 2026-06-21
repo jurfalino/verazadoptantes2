@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.67] - 2026-06-21
+
+### Fixed — import-from-post "Invalid Input" root cause: schema rejected `null` on AI-extracted fields
+
+With v2.19.66's logging in place, the reproduction gave the exact reason: `"Invalid input: expected string, received null"`. Root cause:
+
+- The Gemini extraction returns `animalSpecies: null` (and `name`/`notes` can be null) when a value can't be determined (gemini.ts:111).
+- `createAdopterApiSchema.adoption.species` (and several other optional string fields) used bare `.optional()` — which permits `undefined` but **rejects `null`** — while the sibling `saveAdoptionSchema` already used `.optional().nullable()`. The create schema was stricter than the save schema. An Instagram post with undetermined species sent `species: null` → hard reject.
+
+Fix: align `createAdopterApiSchema` with `saveAdoptionSchema` — `.optional().nullable()` on `adoption.{animalName,species,recordType,rating,date}` plus top-level `contactInfo`, `contactEntries`, `notes`, `sourceUrl`. The route already null-coalesces every one of these (`route.ts:499-505`, `adoption.species || 'other'`), so this is purely the validation boundary catching up. `name` stays required (rejects null by design). Verified: the previously-failing payload now parses; a null `name` still correctly fails.
+
 ## [2.19.66] - 2026-06-21
 
 ### Fixed — "Invalid Input" on import-from-post was invisible in Axiom and unactionable
