@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.69] - 2026-06-21
+
+### Fixed — `/api/admin/delete-adopter` shallow cascade orphaned dup-tokens
+
+The admin delete route deleted only `adopter_stats/flags/history/images`, `adoptions`, and `adopters` — it skipped `duplicate_tokens`, `duplicate_candidates`, and the `form_submissions.linkedAdopterId` FK. Orphaned `duplicate_tokens` kept a deleted adopter in the fuzzy-match index → false duplicates on re-import. Now mirrors `deleteOwnAdopter`'s complete cascade. (The route is currently unused — only the dead `DeleteAdopterButton.tsx` calls it — so this is hardening a latent trap, not an active bug.)
+
 ## [2.19.68] - 2026-06-21
 
 ### Security — close two unguarded delete paths (any authenticated user could delete any record)
