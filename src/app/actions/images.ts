@@ -155,6 +155,14 @@ export async function deleteImage(imageId: string, adopterId: string) {
         const existing = await db.select().from(adopterImages).where(eq(adopterImages.id, imageId)).get();
         if (!existing) throw new Error("Image not found");
 
+        // v2.19.68: previously UNGUARDED — any authenticated user could delete
+        // any image. Gate to the uploader OR an admin, matching the UI
+        // (ImageGallery shows delete only when isAdmin || addedBy === currentUser).
+        const { isAdminAsync } = await import('@/config/admins');
+        if (existing.addedBy !== changedBy && !await isAdminAsync(changedBy)) {
+            throw new Error("Not authorized to delete this image");
+        }
+
         await db.delete(adopterImages).where(eq(adopterImages.id, imageId));
 
         // Log to history

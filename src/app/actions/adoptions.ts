@@ -184,6 +184,14 @@ export async function deleteAdoption(adoptionId: string, adopterId: string) {
         const existing = await db.select().from(adoptions).where(eq(adoptions.id, adoptionId)).get();
         if (!existing) throw new Error("Adoption not found");
 
+        // v2.19.68: previously UNGUARDED — any authenticated user could delete
+        // any activity record. Gate to the record's creator OR an admin, matching
+        // the UI (AdoptionHistory: canEdit = isAdmin || addedBy === currentUser).
+        const { isAdminAsync } = await import('@/config/admins');
+        if (existing.addedBy !== changedBy && !await isAdminAsync(changedBy)) {
+            throw new Error("Not authorized to delete this record");
+        }
+
         await db.delete(adoptions).where(eq(adoptions.id, adoptionId));
 
         // Log to adopter history

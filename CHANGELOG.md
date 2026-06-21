@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.68] - 2026-06-21
+
+### Security — close two unguarded delete paths (any authenticated user could delete any record)
+
+Two server actions had **no authorization check** — any logged-in user could delete any record by calling them directly (bypassing the UI):
+
+- `deleteAdoption` (adoptions.ts) — any activity/adoption record
+- `deleteImage` (images.ts) — any profile image
+
+Both now gate to the record's **creator/uploader OR an admin** (`isAdminAsync`). This exactly mirrors what the UI already enforces — `AdoptionHistory` (`canEdit = isAdmin || addedBy === currentUser`) and `ImageGallery` (delete button shown only when `isAdmin || addedBy === currentUser`) — so no legitimate UI flow changes; this is pure defense-in-depth against direct API calls. Closes the holes deferred from v2.19.66's additive admin-enablement.
+
 ## [2.19.67] - 2026-06-21
 
 ### Fixed — import-from-post "Invalid Input" root cause: schema rejected `null` on AI-extracted fields
