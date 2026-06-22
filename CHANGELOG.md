@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.70] - 2026-06-21
+
+### Fixed — /admin/data-requests Resolve/Reject 500'd
+
+Both the Resolve and Reject buttons on `/admin/data-requests` threw a 500. Root cause: the page's inline `'use server'` form action did the D1 `UPDATE` directly inside an edge-runtime page, with **no auth check, no try/catch, and no logging** — so when it threw, the user got a raw "Application error" and nothing reached Axiom (same blind-spot as the import bug). The sibling `/admin/flags` page works because it *delegates* to an exported, hardened action (`handleDismiss → dismissFlag`).
+
+Fix: moved the mutation into a new exported, admin-gated, logged server action `resolveDataRequest(id, action)` in `src/app/actions/admin.ts`, and made the page delegate to it — matching the flags pattern that already works on this Cloudflare/edge deploy. Now also records the actual admin email as `resolvedBy` (was hardcoded `'admin'`), validates the action, and returns a logged `errorId` instead of a bare 500. (Resolving still only marks the request status — it does not auto-delete the adopter; that remains a deliberate manual step.)
+
 ## [2.19.69] - 2026-06-21
 
 ### Fixed — `/api/admin/delete-adopter` shallow cascade orphaned dup-tokens

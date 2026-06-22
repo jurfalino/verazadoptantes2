@@ -68,6 +68,48 @@ export async function runAdminQuery(query: string) {
     }
 }
 
+/**
+ * Resolve or reject an ARCO/data-subject request from /admin/data-requests.
+ *
+ * v2.19.70: replaces the inline `'use server'` form action that did the D1
+ * UPDATE directly in the (edge-runtime) page with no auth, no try/catch, and no
+ * logging — which 500'd in prod with the error invisible to Axiom. This mirrors
+ * the flags page's working pattern (handleDismiss → dismissFlag): a hardened,
+ * exported, admin-gated action. Returns {success}/{error,errorId} instead of
+ * throwing, so a failure surfaces a logged errorId rather than a raw 500.
+ */
+export async function resolveDataRequest(id: string, action: 'resolved' | 'rejected') {
+    const session = await auth();
+    try {
+        if (!session?.user?.email || !await checkIsAdminAsync(session.user.email)) {
+            return { success: false, error: 'Unauthorized' };
+        }
+        if (action !== 'resolved' && action !== 'rejected') {
+            return { success: false, error: 'Invalid action' };
+        }
+        if (!id) return { success: false, error: 'Missing request id' };
+
+        const db = await getDb();
+        if (!db) return { success: false, error: 'No database' };
+
+        const { dataRequests } = await import('@/db/schema');
+        await db.update(dataRequests)
+            .set({ status: action, resolvedAt: new Date(), resolvedBy: session.user.email })
+            .where(eq(dataRequests.id, id));
+
+        logAudit({ userEmail: session.user.email, action: `data_request_${action}`, target: id });
+        revalidatePath('/admin/data-requests');
+        return { success: true };
+    } catch (error) {
+        const errorId = logger.error('resolveDataRequest failed', error, {
+            id,
+            action,
+            user: session?.user?.email,
+        });
+        return { success: false, error: 'Failed to resolve request', errorId };
+    }
+}
+
 export async function deleteAdopter(adopterId: string) {
     const session = await auth();
     try {

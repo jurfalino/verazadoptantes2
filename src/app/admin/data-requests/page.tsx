@@ -1,24 +1,17 @@
 export const runtime = 'edge';
-import { getDb } from "@/app/actions";
+import { getDb, resolveDataRequest } from "@/app/actions";
 import { dataRequests, adopters } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { revalidatePath } from "next/cache";
 import { formatShortDate } from '@/lib/dates';
 
+// v2.19.70: delegate to the hardened, admin-gated, logged server action in
+// src/app/actions/admin.ts (mirrors the flags page's handleDismiss → dismissFlag).
+// The previous inline D1 UPDATE 500'd in prod with no auth and no logging.
 async function handleResolve(formData: FormData) {
     'use server';
     const id = formData.get('id') as string;
-    const action = formData.get('action') as string; // 'resolved' or 'rejected'
-    const db = await getDb();
-    if (!db) return;
-    await db.update(dataRequests)
-        .set({
-            status: action,
-            resolvedAt: new Date(),
-            resolvedBy: 'admin',
-        })
-        .where(eq(dataRequests.id, id));
-    revalidatePath('/admin/data-requests');
+    const action = formData.get('action') as 'resolved' | 'rejected';
+    await resolveDataRequest(id, action);
 }
 
 export default async function AdminDataRequestsPage() {
