@@ -6,12 +6,20 @@ import { formatShortDate } from '@/lib/dates';
 
 // v2.19.70: delegate to the hardened, admin-gated, logged server action in
 // src/app/actions/admin.ts (mirrors the flags page's handleDismiss → dismissFlag).
-// The previous inline D1 UPDATE 500'd in prod with no auth and no logging.
-async function handleResolve(formData: FormData) {
+// v2.19.71: bind id+action as ARGUMENTS instead of reading them from FormData.
+// The submit button's `value` ("resolved"/"rejected") was not reaching the
+// action's FormData (React server-action submitter quirk), so `action` was
+// effectively null: the original inline code did set({ status: null }) → NOT
+// NULL violation → 500; the delegated version then silently rejected the null
+// action (looked like "nothing happens"). Binding removes the dependency on the
+// submitter (and the hidden id input) entirely. Throw on failure so a problem
+// surfaces with an errorId instead of silently doing nothing.
+async function handleResolve(id: string, action: 'resolved' | 'rejected') {
     'use server';
-    const id = formData.get('id') as string;
-    const action = formData.get('action') as 'resolved' | 'rejected';
-    await resolveDataRequest(id, action);
+    const res = await resolveDataRequest(id, action);
+    if (!res?.success) {
+        throw new Error(res?.errorId ? `${res.error} (${res.errorId})` : (res?.error || 'Failed to resolve request'));
+    }
 }
 
 export default async function AdminDataRequestsPage() {
@@ -109,20 +117,17 @@ export default async function AdminDataRequestsPage() {
                                                 {r.createdAt ? formatShortDate(new Date(r.createdAt)) : '-'}
                                             </td>
                                             <td className="p-4 text-right space-x-2">
-                                                <form action={handleResolve} className="inline-flex gap-2">
-                                                    <input type="hidden" name="id" value={r.id} />
+                                                <form className="inline-flex gap-2">
                                                     <button
                                                         type="submit"
-                                                        name="action"
-                                                        value="resolved"
+                                                        formAction={handleResolve.bind(null, r.id, 'resolved')}
                                                         className="px-3 py-1.5 text-xs font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600"
                                                     >
                                                         ✓ Resolve
                                                     </button>
                                                     <button
                                                         type="submit"
-                                                        name="action"
-                                                        value="rejected"
+                                                        formAction={handleResolve.bind(null, r.id, 'rejected')}
                                                         className="px-3 py-1.5 text-xs font-semibold text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200"
                                                     >
                                                         ✕ Reject
@@ -164,20 +169,17 @@ export default async function AdminDataRequestsPage() {
                                     <div className="text-xs text-stone-500 mb-3">
                                         {r.createdAt ? formatShortDate(new Date(r.createdAt)) : '-'}
                                     </div>
-                                    <form action={handleResolve} className="flex gap-2">
-                                        <input type="hidden" name="id" value={r.id} />
+                                    <form className="flex gap-2">
                                         <button
                                             type="submit"
-                                            name="action"
-                                            value="resolved"
+                                            formAction={handleResolve.bind(null, r.id, 'resolved')}
                                             className="flex-1 px-3 py-2 text-xs font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600"
                                         >
                                             ✓ Resolve
                                         </button>
                                         <button
                                             type="submit"
-                                            name="action"
-                                            value="rejected"
+                                            formAction={handleResolve.bind(null, r.id, 'rejected')}
                                             className="flex-1 px-3 py-2 text-xs font-semibold text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200"
                                         >
                                             ✕ Reject

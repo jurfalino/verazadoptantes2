@@ -82,15 +82,23 @@ export async function resolveDataRequest(id: string, action: 'resolved' | 'rejec
     const session = await auth();
     try {
         if (!session?.user?.email || !await checkIsAdminAsync(session.user.email)) {
+            logger.warn('resolveDataRequest: unauthorized', { id, action, user: session?.user?.email });
             return { success: false, error: 'Unauthorized' };
         }
         if (action !== 'resolved' && action !== 'rejected') {
+            logger.warn('resolveDataRequest: invalid action', { id, action, user: session.user.email });
             return { success: false, error: 'Invalid action' };
         }
-        if (!id) return { success: false, error: 'Missing request id' };
+        if (!id) {
+            logger.warn('resolveDataRequest: missing id', { action, user: session.user.email });
+            return { success: false, error: 'Missing request id' };
+        }
 
         const db = await getDb();
-        if (!db) return { success: false, error: 'No database' };
+        if (!db) {
+            logger.warn('resolveDataRequest: no database', { id, action, user: session.user.email });
+            return { success: false, error: 'No database' };
+        }
 
         const { dataRequests } = await import('@/db/schema');
         await db.update(dataRequests)

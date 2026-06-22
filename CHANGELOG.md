@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.71] - 2026-06-22
+
+### Fixed — /admin/data-requests Resolve/Reject did nothing (and originally 500'd)
+
+After v2.19.70 stopped the 500, the buttons silently did nothing. Real root cause: the action value came from the **submit button's `value`** (`name="action" value="resolved"`), which was **not reaching the server action's FormData** (React server-action submitter quirk on this deploy). So `action` was effectively null — which explains *both* symptoms: the original inline code did `set({ status: null })` on a `NOT NULL` column → constraint violation → 500; the v2.19.70 delegated action then silently rejected the null action.
+
+Fix: `handleResolve` now binds `id` + `action` as **arguments** (`handleResolve.bind(null, r.id, 'resolved')` via per-button `formAction`) instead of reading them from FormData — no dependency on the submitter or a hidden input. It also **throws on failure** (with the `errorId`) so a problem can never again silently do nothing. Added `logger.warn` to `resolveDataRequest`'s early returns (unauthorized / invalid / no-db) to close the last observability gap.
+
 ## [2.19.70] - 2026-06-21
 
 ### Fixed — /admin/data-requests Resolve/Reject 500'd
