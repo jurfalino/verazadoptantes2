@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.20.0] - 2026-06-23
+
+### Added — soft-delete + restore + permanent purge ("Papelera") for adopters
+
+Records can now be removed recoverably and managed from one place.
+
+- **Resolving a deletion request now SOFT-deletes** the adopter (revises v2.19.72's hard delete): sets `deletedAt` + a `tokenHash` marker and drops the dedup tokens, hiding the record from search, duplicate-detection, and its profile — but keeping the row so it can be restored.
+- **New `/admin/deleted` ("Eliminados / Papelera") page** — the single home for every soft-deleted adopter (both merged duplicates *and* deletion-request soft-deletes). Per row: **↩ Restaurar** and **🗑 Purgar definitivamente**; plus bulk **select → Purgar seleccionados** and **Purgar todo**. (Merged duplicates, which previously accumulated with no management UI, now show up here too.)
+- **Profile page hides soft-deleted adopters** — `getAdopter` returns not-found for any `deletedAt` row, which also closes a pre-existing leak where a *merged* adopter was still viewable by direct `/adopter/<id>` link.
+- **Restore** clears `deletedAt`, re-tokenizes, and marks any linked resolved deletion request as `restored`. **Purge** runs the complete-cascade `deleteAdopter` (irreversible). New admin-gated actions: `listDeletedAdopters`, `restoreAdopter`, `purgeAdopter`, `purgeDeletedAdopters`.
+
 ## [2.19.74] - 2026-06-23
 
 ### Fixed — admin /admin/users + /admin/adopters review fixes
