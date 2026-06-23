@@ -146,15 +146,20 @@ export async function DELETE(request: Request) {
             return NextResponse.json({ error: "Cannot delete your own account" }, { status: 400 });
         }
 
-        // Delete user profile first (FK dependency), then user record
-        await env.DB.prepare(`DELETE FROM user_profiles WHERE user_id = ?`).bind(body.userId).run();
-        await env.DB.prepare(`DELETE FROM account WHERE "userId" = ?`).bind(body.userId).run();
-        await env.DB.prepare(`DELETE FROM session WHERE "userId" = ?`).bind(body.userId).run();
-        await env.DB.prepare(`DELETE FROM user WHERE id = ?`).bind(body.userId).run();
+        // v2.20.1: also remove org memberships (keyed by email, previously
+        // orphaned) and run everything as a single batch so a mid-sequence
+        // failure can't leave a half-deleted user.
+        await env.DB.batch([
+            env.DB.prepare(`DELETE FROM org_members WHERE user_email = ?`).bind(targetUser?.email ?? ''),
+            env.DB.prepare(`DELETE FROM user_profiles WHERE user_id = ?`).bind(body.userId),
+            env.DB.prepare(`DELETE FROM account WHERE "userId" = ?`).bind(body.userId),
+            env.DB.prepare(`DELETE FROM session WHERE "userId" = ?`).bind(body.userId),
+            env.DB.prepare(`DELETE FROM user WHERE id = ?`).bind(body.userId),
+        ]);
 
         return NextResponse.json({ success: true });
     } catch (error) {
-        const errorId = logger.error('Delete user failed', error);
+        const errorId = logger.error('Delete user failed', error, { actor: session.user.email });
         return NextResponse.json({ error: "Failed to delete user", errorId }, { status: 500 });
     }
 }

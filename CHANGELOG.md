@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.20.1] - 2026-06-23
+
+### Performance + fixes — admin audit roadmap (#1, #3, #5)
+
+- **#1 — `enrichAdopters` batched (perf).** It fired 5 queries *per adopter* (~5×N → up to ~1000 D1 subrequests at 200 rows, the Error-1102 class the rating-summary was already rescued from). Now batches into ~5 grouped queries per 40-id chunk using D1-safe `IN (?, ?, …)` (each id its own bound param — not `inArray`). Feeds both search and the admin list; domain logic (ratings, flags, stats, density, thumbnail) is unchanged.
+- **#3 — `/admin/users` delete no longer orphans org memberships and is atomic.** Also deletes `org_members` (keyed by email, previously left dangling) and runs all deletes in a single `DB.batch()` so a mid-sequence failure can't half-delete a user.
+- **#5 — admin user avatars.** Added `referrerPolicy="no-referrer"` (resolves most broken Google avatar 403s) + `onError` hide for the rest.
+
 ## [2.20.0] - 2026-06-23
 
 ### Added — soft-delete + restore + permanent purge ("Papelera") for adopters

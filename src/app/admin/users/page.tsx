@@ -459,7 +459,7 @@ export default function AdminUsersPage() {
                                 <td className="px-4 py-3">
                                     <div className="flex items-center gap-3">
                                         {user.image ? (
-                                            <img src={user.image} alt="" className="w-8 h-8 rounded-full" />
+                                            <img src={user.image} alt="" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} className="w-8 h-8 rounded-full" />
                                         ) : (
                                             <div className="w-8 h-8 rounded-full bg-stone-200 flex items-center justify-center text-stone-500 text-xs font-semibold">
                                                 {(user.name || user.email || '?')[0].toUpperCase()}
@@ -617,7 +617,7 @@ export default function AdminUsersPage() {
                     <div key={user.id} className="bg-white rounded-xl p-4 shadow-sm border border-stone-200">
                         <div className="flex items-center gap-3 mb-3">
                             {user.image ? (
-                                <img src={user.image} alt="" className="w-10 h-10 rounded-full" />
+                                <img src={user.image} alt="" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} className="w-10 h-10 rounded-full" />
                             ) : (
                                 <div className="w-10 h-10 rounded-full bg-stone-200 flex items-center justify-center text-stone-500 text-sm font-semibold">
                                     {(user.name || user.email || '?')[0].toUpperCase()}
