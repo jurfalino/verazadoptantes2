@@ -163,6 +163,16 @@ export default function AdminAuditPage() {
         }
     };
 
+    // v2.19.73: initialize filters from the URL (?userId, ?action, ?category) so
+    // the "audit" deep-link from /admin/users actually pre-filters. Before, the
+    // query string was ignored and the page opened completely unfiltered.
+    useEffect(() => {
+        const sp = new URLSearchParams(window.location.search);
+        const u = sp.get('userId'); if (u) setFilterUser(u);
+        const a = sp.get('action'); if (a) setFilterAction(a);
+        const c = sp.get('category'); if (c) setCategory(c as AuditCategory);
+    }, []);
+
     useEffect(() => {
         fetchAudit(page);
         // eslint-disable-next-line react-hooks/exhaustive-deps

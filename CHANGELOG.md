@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.73] - 2026-06-23
+
+### Fixed — admin audit deep-link ignored its filter, and imports weren't audited
+
+Two issues behind "the /admin/users → audit link doesn't filter, and filtering by the user's email shows nothing":
+
+- **(A) The audit deep-link was ignored.** `/admin/audit` is a client page that read its filters from React state initialised to `''` and never consumed the `?userId=` (or `?action`/`?category`) query string — so the link from `/admin/users` opened the log completely unfiltered. It now reads those params from the URL on mount and pre-filters.
+- **(B) Import-created adopters had no audit trail.** Only the `saveAdopter` *server action* logged `adopter_created`/`adopter_updated`; `POST /api/adopters` (the import-wizard path) wrote the domain tables but never called `logAudit`. So a user whose activity came via import showed counts in `/admin/users` (sourced from domain tables) but had **zero `audit_log` rows** — a per-user audit filter came up empty. The API path now logs `adopter_created` (+ `adoption_created` for the inline record), and `deleteAdoption` now records the actor email (was null). Audits **going forward**; does not backfill past actions.
+
+Note: `/admin/users` activity counts (👤 adopters created · 📋 records added · ✏️ history edits) come from the domain tables, which is why they can exist independently of the audit log.
+
 ## [2.19.72] - 2026-06-22
 
 ### Fixed — resolving a deletion request didn't actually delete the record

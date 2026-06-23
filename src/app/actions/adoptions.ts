@@ -205,7 +205,7 @@ export async function deleteAdoption(adoptionId: string, adopterId: string) {
             changedAt: new Date()
         });
 
-        logAudit({ action: 'adoption_deleted', target: adoptionId, details: { adopterId } });
+        logAudit({ userEmail: changedBy, action: 'adoption_deleted', target: adoptionId, details: { adopterId } });
         revalidatePath(`/adopter/${adopterId}`);
         return { success: true };
     } catch (error) {
