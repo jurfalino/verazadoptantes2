@@ -100,7 +100,7 @@ async function _enrichAdoptersImpl(
                         eq(duplicateCandidates.adopter1Id, adopterId),
                         eq(duplicateCandidates.adopter2Id, adopterId),
                     ),
-                )).catch(() => [{ count: 0 }])
+                )).catch(logD1Fallback('dupCandidates', adopterId))
         ]);
 
         // Process adoptions

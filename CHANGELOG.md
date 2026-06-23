@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.74] - 2026-06-23
+
+### Fixed — admin /admin/users + /admin/adopters review fixes
+
+From an engineering-manager audit of both admin surfaces. Bugs fixed (larger refactors tracked separately):
+
+- **`/admin/adopters` bulk "set country" silently corrupted data (D1).** `mass-action/route.ts` used `inArray(adopters.id, adopterIds)` — D1 binds only the first id, so selecting N adopters updated **one** row while `processedCount` was hardcoded to the array length and reported full success. Now fans out per-id and counts actual successes.
+- **`/admin/users` failed role/profile saves showed as success.** `saveProfile` never checked `res.ok` (only `deleteUser` did), so a 4xx/5xx still ran the optimistic update and closed the editor. Now checks the response and surfaces an error toast with the `errorId`; `deleteUser`'s `alert()` is now a toast too.
+- **Role had no server-side validation.** The PUT handler wrote `body.role` unchecked (any string). Added a `USER_ROLES` constant (`src/domain/constants.ts`) and reject invalid roles with `400`.
+- **Mobile role select/pill dropped `moderator`** — added (drift from the desktop control).
+- **Rating-4 badge rendered raw light lime in dark mode** — added the missing `lime` `[data-theme]` overrides in `globals.css`.
+- **Silent D1 swallow** in `enrichAdopters` duplicate-candidates query (`.catch(() => [{count:0}])`) now routes through `logD1Fallback`.
+
 ## [2.19.73] - 2026-06-23
 
 ### Fixed — admin audit deep-link ignored its filter, and imports weren't audited

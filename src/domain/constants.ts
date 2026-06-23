@@ -26,3 +26,8 @@ export const EVENT_TYPES = {
     SEARCH_HIT: 'search_hit',
     PROFILE_VIEW: 'profile_view',
 } as const;
+
+// User roles (user_profiles.role). Source of truth for the /admin/users role
+// selects + the PUT validation. Order is ascending privilege.
+export const USER_ROLES = ['viewer', 'contributor', 'moderator', 'admin'] as const;
+export type UserRole = typeof USER_ROLES[number];

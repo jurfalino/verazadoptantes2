@@ -2,7 +2,7 @@ export const runtime = 'edge';
 
 import { getDb } from "@/app/actions";
 import { adopters } from "@/db/schema";
-import { inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { logger } from "@/lib/logger";
 import { logAudit } from "@/lib/audit";
@@ -67,20 +67,26 @@ export async function POST(request: NextRequest) {
                 details: { count: processedCount, totalRequested: adopterIds.length, errors: errors.length },
             });
         } else if (action === 'set_country') {
-            try {
-                await db.update(adopters)
-                    .set({ country: country!, updatedAt: new Date() })
-                    .where(inArray(adopters.id, adopterIds));
-                processedCount = adopterIds.length;
+            // D1 does NOT expand array params in IN() — `inArray` silently bound
+            // only the first id, so this updated ONE row while reporting all N as
+            // success (processedCount was hardcoded to the array length). Fan out
+            // per-id and count actual successes (CLAUDE.md D1 rule).
+            await Promise.all(adopterIds.map(async (id) => {
+                try {
+                    await db.update(adopters)
+                        .set({ country: country!, updatedAt: new Date() })
+                        .where(eq(adopters.id, id));
+                    processedCount++;
+                } catch (e) {
+                    errors.push(`${id}: ${e instanceof Error ? e.message : String(e)}`);
+                }
+            }));
 
-                logAudit({
-                    userEmail: session.user.email,
-                    action: 'mass_set_country',
-                    details: { country, count: processedCount },
-                });
-            } catch (e) {
-                errors.push(e instanceof Error ? e.message : String(e));
-            }
+            logAudit({
+                userEmail: session.user.email,
+                action: 'mass_set_country',
+                details: { country, count: processedCount, totalRequested: adopterIds.length, errors: errors.length },
+            });
         } else {
             return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
         }
