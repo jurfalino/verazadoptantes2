@@ -5,6 +5,7 @@ import { auth } from '@/auth';
 import { extractAdopterData } from '@/lib/gemini';
 import { getFeatureFlag } from '@/config/features';
 import { logger } from '@/lib/logger';
+import { arrayBufferToBase64 } from '@/lib/base64';
 import { getDb } from '@/lib/db';
 import { appConfig } from '@/db/schema';
 import { eq } from 'drizzle-orm';
@@ -85,9 +86,7 @@ export async function POST(request: NextRequest) {
                     if (imgResponse.ok) {
                         const contentType = imgResponse.headers.get('content-type') || 'image/jpeg';
                         const buffer = await imgResponse.arrayBuffer();
-                        const base64 = btoa(
-                            new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-                        );
+                        const base64 = arrayBufferToBase64(buffer);
                         // Include original URL so it can be stored in DB instead of base64
                         allImages.push({ data: base64, mimeType: contentType, originalUrl: url });
                     } else {

@@ -15,7 +15,6 @@
 
 import { getDb } from '@/lib/db';
 import { appConfig } from '@/db/schema';
-import { inArray } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 
 export const PUBLIC_FLAG_KEYS = [
@@ -77,10 +76,14 @@ export async function getPublicConfig(): Promise<Record<string, string>> {
     try {
         const db = await getDb();
         if (db) {
-            const rows = await db.select().from(appConfig)
-                .where(inArray(appConfig.key, [...PUBLIC_FLAG_KEYS]));
+            // D1 does NOT expand array params in IN() — drizzle inArray() binds
+            // only the first key, so 17 of the 18 public flags were silently
+            // frozen at defaults regardless of the admin toggle. app_config is a
+            // tiny key/value table; fetch all and filter to the public set in JS.
+            const wanted = new Set<string>(PUBLIC_FLAG_KEYS);
+            const rows = await db.select().from(appConfig);
             for (const row of rows) {
-                value[row.key] = row.value;
+                if (wanted.has(row.key)) value[row.key] = row.value;
             }
         }
     } catch (e) {

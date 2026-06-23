@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.20.2] - 2026-06-23
+
+### Fixed — import-wizard review findings (M2, H1, M3–M6)
+
+From an EM audit of the post import wizard.
+
+- **M2 (prod bug) — `inArray` froze the public feature flags.** `publicConfig.ts` read `PUBLIC_FLAG_KEYS` (18 keys) with the D1-banned `inArray`, which binds only the first key — so 17 public flags (homepage clean-mode, animals-for-adoption, showcase visibility, Instagram CTA, social-proof…) were stuck at defaults regardless of the `/admin/config` toggle. Now fetches `app_config` and filters in JS (D1-safe; also clears the lint violation).
+- **H1 (data loss) — post-import *merge* dropped reviewed contact edits and skipped re-tokenization.** `add-record` only logged the merged contact data into the activity's `details`; it never updated the adopter's contact fields or rebuilt the dedup index. The merge path now also calls `appendToExistingAdopter` (the same primitive the contacts path uses), so reviewed phones/emails land on the profile and become searchable.
+- **M3 — O(n²) base64 image encoding (3 routes).** Replaced the per-byte string concat with a shared linear `arrayBufferToBase64` helper (`src/lib/base64.ts`), removing the edge-worker memory/CPU spike on multi-MB scraped images.
+- **M4 — unchecked `res.ok`.** The URL duplicate-check now treats a non-OK response as "check failed" (was silently read as "no duplicate"); both `upload-media` calls now surface a warning toast (with `errorId`) on a failed video upload.
+- **M5 — magic-string flag reason.** `import_${confidence}` now comes from `IMPORT_FLAGS` in `src/domain/constants.ts`.
+- **M6 — 4-layer.** The duplicate-match → sentence helpers moved out of the component into `src/lib/importMatch.ts`.
+
 ## [2.20.1] - 2026-06-23
 
 ### Performance + fixes — admin audit roadmap (#1, #3, #5)

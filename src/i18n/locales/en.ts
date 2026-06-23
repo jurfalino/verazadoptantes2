@@ -1499,6 +1499,8 @@ export const en = {
         thisProfile: 'this profile',
         // Post-import toasts
         record_added_to_profile: 'Record added to profile',
+        video_upload_failed: "Couldn't upload the video",
+        contact_merge_failed: "Couldn't merge the contact data",
         // Contact-import (v2.16.0-33) — homepage CTA + PWA share-target flow.
         from_contacts_breadcrumb: 'Imported from your contacts',
         public_profile_on: 'This profile will be visible to everyone',
