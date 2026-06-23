@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.20.3] - 2026-06-23
+
+### Fixed — `ENABLE_CONTENT_IMPORT` is a homepage-visibility toggle, not a kill-switch
+
+The flag is only meant to hide the import CTA on the homepage — the **OS-share → `/import` → extract** path is a deliberate second entry point that must keep working when the homepage option is off. But `extract-from-post` gated on the flag and returned `403 "Feature not enabled"`, so turning the flag off silently broke share-to-import at the AI-extract step. Removed that gate (auth is the real gate); the flag now purely controls homepage visibility.
+
 ## [2.20.2] - 2026-06-23
 
 ### Fixed — import-wizard review findings (M2, H1, M3–M6)
