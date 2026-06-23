@@ -40,6 +40,10 @@ async function getAdopterImpl(id: string) {
 
         const adopter = await db.select().from(adopters).where(eq(adopters.id, id)).get();
         if (!adopter) return null;
+        // v2.20.0: hide soft-deleted adopters (merged duplicates OR
+        // deletion-request soft-deletes) from direct profile access — same as a
+        // non-existent id. Restore/purge is managed in /admin/deleted.
+        if (adopter.deletedAt) return null;
 
         // PII access gating: mask contact fields for non-privileged viewers.
         if (await isPiiGatingEnabled()) {

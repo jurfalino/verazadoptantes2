@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { formatDateTime } from '@/lib/dates';
 import { getCountryByCode } from '@/config/countries';
 import { useLanguage } from '@/context/LanguageContext';
+import { useShowToast } from '@/components/ui/Toast';
 import OrphanSubmissionsSection from '@/components/OrphanSubmissionsSection';
 
 function CopyIdButton({ id, className = '' }: { id: string; className?: string }) {
@@ -120,6 +121,7 @@ function ActivityCell({ user }: { user: UserProfile }) {
 
 export default function AdminUsersPage() {
     const { t } = useLanguage();
+    const toast = useShowToast();
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [loading, setLoading] = useState(true);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -211,12 +213,19 @@ export default function AdminUsersPage() {
     const saveProfile = async (userId: string) => {
         setSaving(true);
         try {
-            await fetch('/api/admin/users', {
+            const res = await fetch('/api/admin/users', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId, ...editForm }),
             });
-            // Update local state
+            const data = await res.json().catch(() => ({})) as { error?: string; errorId?: string };
+            // H1 fix: fetch only rejects on network error, not on 4xx/5xx. Without
+            // this guard a failed save (e.g. invalid role → 400) showed as success.
+            if (!res.ok) {
+                toast.error(t('errors.generic') || 'Error', data.error || 'Failed to save profile', data.errorId);
+                return;
+            }
+            // Update local state only after a confirmed-OK response
             setUsers(prev => prev.map(u => u.id === userId ? {
                 ...u,
                 role: editForm.role,
@@ -226,6 +235,7 @@ export default function AdminUsersPage() {
             setEditingId(null);
         } catch (e) {
             console.error(e);
+            toast.error(t('errors.generic') || 'Error', 'Failed to save profile');
         } finally {
             setSaving(false);
         }
@@ -238,16 +248,16 @@ export default function AdminUsersPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId }),
             });
-            const data = await res.json() as { error?: string };
+            const data = await res.json().catch(() => ({})) as { error?: string; errorId?: string };
             if (!res.ok) {
-                alert(data.error || 'Failed to delete user');
+                toast.error(t('errors.generic') || 'Error', data.error || 'Failed to delete user', data.errorId);
                 return;
             }
             setUsers(prev => prev.filter(u => u.id !== userId));
             setDeletingId(null);
         } catch (e) {
             console.error(e);
-            alert('Failed to delete user');
+            toast.error(t('errors.generic') || 'Error', 'Failed to delete user');
         }
     };
 
@@ -449,7 +459,7 @@ export default function AdminUsersPage() {
                                 <td className="px-4 py-3">
                                     <div className="flex items-center gap-3">
                                         {user.image ? (
-                                            <img src={user.image} alt="" className="w-8 h-8 rounded-full" />
+                                            <img src={user.image} alt="" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} className="w-8 h-8 rounded-full" />
                                         ) : (
                                             <div className="w-8 h-8 rounded-full bg-stone-200 flex items-center justify-center text-stone-500 text-xs font-semibold">
                                                 {(user.name || user.email || '?')[0].toUpperCase()}
@@ -607,7 +617,7 @@ export default function AdminUsersPage() {
                     <div key={user.id} className="bg-white rounded-xl p-4 shadow-sm border border-stone-200">
                         <div className="flex items-center gap-3 mb-3">
                             {user.image ? (
-                                <img src={user.image} alt="" className="w-10 h-10 rounded-full" />
+                                <img src={user.image} alt="" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} className="w-10 h-10 rounded-full" />
                             ) : (
                                 <div className="w-10 h-10 rounded-full bg-stone-200 flex items-center justify-center text-stone-500 text-sm font-semibold">
                                     {(user.name || user.email || '?')[0].toUpperCase()}
@@ -628,6 +638,7 @@ export default function AdminUsersPage() {
                             </div>
                             {editingId !== user.id && (
                                 <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${user.role === 'admin' ? 'bg-purple-100 text-purple-700' :
+                                    user.role === 'moderator' ? 'bg-teal-100 text-teal-700' :
                                     user.role === 'contributor' ? 'bg-blue-100 text-blue-700' :
                                         'bg-stone-100 text-stone-600'
                                     }`}>
@@ -647,6 +658,7 @@ export default function AdminUsersPage() {
                                     >
                                         <option value="viewer">Viewer</option>
                                         <option value="contributor">Contributor</option>
+                                        <option value="moderator">Moderator</option>
                                         <option value="admin">Admin</option>
                                     </select>
                                 </div>

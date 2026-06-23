@@ -2,6 +2,79 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.20.1] - 2026-06-23
+
+### Performance + fixes — admin audit roadmap (#1, #3, #5)
+
+- **#1 — `enrichAdopters` batched (perf).** It fired 5 queries *per adopter* (~5×N → up to ~1000 D1 subrequests at 200 rows, the Error-1102 class the rating-summary was already rescued from). Now batches into ~5 grouped queries per 40-id chunk using D1-safe `IN (?, ?, …)` (each id its own bound param — not `inArray`). Feeds both search and the admin list; domain logic (ratings, flags, stats, density, thumbnail) is unchanged.
+- **#3 — `/admin/users` delete no longer orphans org memberships and is atomic.** Also deletes `org_members` (keyed by email, previously left dangling) and runs all deletes in a single `DB.batch()` so a mid-sequence failure can't half-delete a user.
+- **#5 — admin user avatars.** Added `referrerPolicy="no-referrer"` (resolves most broken Google avatar 403s) + `onError` hide for the rest.
+
+## [2.20.0] - 2026-06-23
+
+### Added — soft-delete + restore + permanent purge ("Papelera") for adopters
+
+Records can now be removed recoverably and managed from one place.
+
+- **Resolving a deletion request now SOFT-deletes** the adopter (revises v2.19.72's hard delete): sets `deletedAt` + a `tokenHash` marker and drops the dedup tokens, hiding the record from search, duplicate-detection, and its profile — but keeping the row so it can be restored.
+- **New `/admin/deleted` ("Eliminados / Papelera") page** — the single home for every soft-deleted adopter (both merged duplicates *and* deletion-request soft-deletes). Per row: **↩ Restaurar** and **🗑 Purgar definitivamente**; plus bulk **select → Purgar seleccionados** and **Purgar todo**. (Merged duplicates, which previously accumulated with no management UI, now show up here too.)
+- **Profile page hides soft-deleted adopters** — `getAdopter` returns not-found for any `deletedAt` row, which also closes a pre-existing leak where a *merged* adopter was still viewable by direct `/adopter/<id>` link.
+- **Restore** clears `deletedAt`, re-tokenizes, and marks any linked resolved deletion request as `restored`. **Purge** runs the complete-cascade `deleteAdopter` (irreversible). New admin-gated actions: `listDeletedAdopters`, `restoreAdopter`, `purgeAdopter`, `purgeDeletedAdopters`.
+
+## [2.19.74] - 2026-06-23
+
+### Fixed — admin /admin/users + /admin/adopters review fixes
+
+From an engineering-manager audit of both admin surfaces. Bugs fixed (larger refactors tracked separately):
+
+- **`/admin/adopters` bulk "set country" silently corrupted data (D1).** `mass-action/route.ts` used `inArray(adopters.id, adopterIds)` — D1 binds only the first id, so selecting N adopters updated **one** row while `processedCount` was hardcoded to the array length and reported full success. Now fans out per-id and counts actual successes.
+- **`/admin/users` failed role/profile saves showed as success.** `saveProfile` never checked `res.ok` (only `deleteUser` did), so a 4xx/5xx still ran the optimistic update and closed the editor. Now checks the response and surfaces an error toast with the `errorId`; `deleteUser`'s `alert()` is now a toast too.
+- **Role had no server-side validation.** The PUT handler wrote `body.role` unchecked (any string). Added a `USER_ROLES` constant (`src/domain/constants.ts`) and reject invalid roles with `400`.
+- **Mobile role select/pill dropped `moderator`** — added (drift from the desktop control).
+- **Rating-4 badge rendered raw light lime in dark mode** — added the missing `lime` `[data-theme]` overrides in `globals.css`.
+- **Silent D1 swallow** in `enrichAdopters` duplicate-candidates query (`.catch(() => [{count:0}])`) now routes through `logD1Fallback`.
+
+## [2.19.73] - 2026-06-23
+
+### Fixed — admin audit deep-link ignored its filter, and imports weren't audited
+
+Two issues behind "the /admin/users → audit link doesn't filter, and filtering by the user's email shows nothing":
+
+- **(A) The audit deep-link was ignored.** `/admin/audit` is a client page that read its filters from React state initialised to `''` and never consumed the `?userId=` (or `?action`/`?category`) query string — so the link from `/admin/users` opened the log completely unfiltered. It now reads those params from the URL on mount and pre-filters.
+- **(B) Import-created adopters had no audit trail.** Only the `saveAdopter` *server action* logged `adopter_created`/`adopter_updated`; `POST /api/adopters` (the import-wizard path) wrote the domain tables but never called `logAudit`. So a user whose activity came via import showed counts in `/admin/users` (sourced from domain tables) but had **zero `audit_log` rows** — a per-user audit filter came up empty. The API path now logs `adopter_created` (+ `adoption_created` for the inline record), and `deleteAdoption` now records the actor email (was null). Audits **going forward**; does not backfill past actions.
+
+Note: `/admin/users` activity counts (👤 adopters created · 📋 records added · ✏️ history edits) come from the domain tables, which is why they can exist independently of the audit log.
+
+## [2.19.72] - 2026-06-22
+
+### Fixed — resolving a deletion request didn't actually delete the record
+
+On `/admin/data-requests`, clicking **Resolve** on a `deletion`-type request only flipped the request's `status` — it never deleted the linked adopter. So the request moved to History while the adopter stayed **live and visible to everyone**. (The "request deletion" flow exists because that adopter has other contributors, so the deletion was deferred to an admin — but resolving never completed it.)
+
+Now `resolveDataRequest`, when **resolving** a `deletion` request that has an `adopterId`, runs the complete-cascade `deleteAdopter` (clears stats/flags/history/images/adoptions/duplicate_tokens/duplicate_candidates + unlinks form_submissions, then the adopter) before marking the request resolved. If the deletion fails, the request is **not** marked resolved and a logged `errorId` is returned. **Reject** and non-deletion request types are unchanged (status only — Reject = decline the deletion). The Resolve button now reads **“🗑 Resolver y eliminar”** (rose) on deletion requests to make the destructive action explicit.
+
+## [2.19.71] - 2026-06-22
+
+### Fixed — /admin/data-requests Resolve/Reject did nothing (and originally 500'd)
+
+After v2.19.70 stopped the 500, the buttons silently did nothing. Real root cause: the action value came from the **submit button's `value`** (`name="action" value="resolved"`), which was **not reaching the server action's FormData** (React server-action submitter quirk on this deploy). So `action` was effectively null — which explains *both* symptoms: the original inline code did `set({ status: null })` on a `NOT NULL` column → constraint violation → 500; the v2.19.70 delegated action then silently rejected the null action.
+
+Fix: `handleResolve` now binds `id` + `action` as **arguments** (`handleResolve.bind(null, r.id, 'resolved')` via per-button `formAction`) instead of reading them from FormData — no dependency on the submitter or a hidden input. It also **throws on failure** (with the `errorId`) so a problem can never again silently do nothing. Added `logger.warn` to `resolveDataRequest`'s early returns (unauthorized / invalid / no-db) to close the last observability gap.
+
+## [2.19.70] - 2026-06-21
+
+### Fixed — /admin/data-requests Resolve/Reject 500'd
+
+Both the Resolve and Reject buttons on `/admin/data-requests` threw a 500. Root cause: the page's inline `'use server'` form action did the D1 `UPDATE` directly inside an edge-runtime page, with **no auth check, no try/catch, and no logging** — so when it threw, the user got a raw "Application error" and nothing reached Axiom (same blind-spot as the import bug). The sibling `/admin/flags` page works because it *delegates* to an exported, hardened action (`handleDismiss → dismissFlag`).
+
+Fix: moved the mutation into a new exported, admin-gated, logged server action `resolveDataRequest(id, action)` in `src/app/actions/admin.ts`, and made the page delegate to it — matching the flags pattern that already works on this Cloudflare/edge deploy. Now also records the actual admin email as `resolvedBy` (was hardcoded `'admin'`), validates the action, and returns a logged `errorId` instead of a bare 500. (Resolving still only marks the request status — it does not auto-delete the adopter; that remains a deliberate manual step.)
+
+## [2.19.69] - 2026-06-21
+
+### Fixed — `/api/admin/delete-adopter` shallow cascade orphaned dup-tokens
+
+The admin delete route deleted only `adopter_stats/flags/history/images`, `adoptions`, and `adopters` — it skipped `duplicate_tokens`, `duplicate_candidates`, and the `form_submissions.linkedAdopterId` FK. Orphaned `duplicate_tokens` kept a deleted adopter in the fuzzy-match index → false duplicates on re-import. Now mirrors `deleteOwnAdopter`'s complete cascade. (The route is currently unused — only the dead `DeleteAdopterButton.tsx` calls it — so this is hardening a latent trap, not an active bug.)
+
 ## [2.19.68] - 2026-06-21
 
 ### Security — close two unguarded delete paths (any authenticated user could delete any record)

@@ -777,6 +777,18 @@ button {
   color: var(--status-success-text) !important;
 }
 
+/* ── Lime Colors (rating-4 badges) — previously unremapped, so the rating-4
+   chip rendered raw light-palette lime in dark mode (see ratingColors.ts). ── */
+[data-theme="dark"] .bg-lime-50 {
+  background-color: rgba(132, 204, 22, 0.15) !important;
+}
+[data-theme="dark"] .text-lime-700 {
+  color: #bef264 !important;
+}
+[data-theme="dark"] .border-lime-200 {
+  border-color: rgba(132, 204, 22, 0.35) !important;
+}
+
 /* ── Sky Colors (adoption_request badges) ── */
 [data-theme="dark"] .bg-sky-50 {
   background-color: var(--status-sky-bg) !important;

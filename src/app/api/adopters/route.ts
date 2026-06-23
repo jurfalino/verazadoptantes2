@@ -6,6 +6,7 @@ import { adopters, adopterFlags, adopterImages, adoptions } from '@/db/schema';
 import { eq, like, or, and, isNull, type InferSelectModel } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
+import { logAudit } from '@/lib/audit';
 import { tokenizeAdopter } from '@/app/actions/duplicates';
 import { processImageForStorage, uploadToR2 } from '@/lib/r2';
 import { createAdopterApiSchema } from '@/app/actions/validation';
@@ -561,6 +562,15 @@ export async function POST(request: Request) {
         // acceptable on submit). Tokenize is idempotent and try/catches
         // internally — await is safe.
         await tokenizeAdopter(newId);
+
+        // v2.19.73: audit creates from this API/import path. Previously only the
+        // saveAdopter server action logged adopter_created/adoption_created, so
+        // adopters created via the import wizard had NO audit trail — a per-user
+        // audit filter came up empty even though /admin/users showed the activity.
+        logAudit({ userEmail: session.user.email || undefined, action: 'adopter_created', target: newId, details: { name, source: source || 'manual', viaApi: true } });
+        if (adoptionId) {
+            logAudit({ userEmail: session.user.email || undefined, action: 'adoption_created', target: adoptionId, details: { adopterId: newId, viaApi: true } });
+        }
 
         return NextResponse.json({ success: true, id: newId });
 

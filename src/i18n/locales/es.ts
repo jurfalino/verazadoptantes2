@@ -64,6 +64,7 @@ export const es = {
         nav_sql: 'Consola SQL',
         nav_config: 'Configuración',
         nav_data_requests: 'Solicitudes de datos',
+        nav_deleted: 'Eliminados',
         nav_pii_requests: 'Acceso a contacto',
         nav_communications: 'Comunicaciones',
         nav_users: 'Usuarios',

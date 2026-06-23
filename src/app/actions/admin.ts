@@ -2,7 +2,7 @@
 
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, adopterStats, searches, users } from '@/db/schema';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, and, isNotNull, desc } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
@@ -68,6 +68,78 @@ export async function runAdminQuery(query: string) {
     }
 }
 
+/**
+ * Resolve or reject an ARCO/data-subject request from /admin/data-requests.
+ *
+ * v2.19.70: replaces the inline `'use server'` form action that did the D1
+ * UPDATE directly in the (edge-runtime) page with no auth, no try/catch, and no
+ * logging — which 500'd in prod with the error invisible to Axiom. This mirrors
+ * the flags page's working pattern (handleDismiss → dismissFlag): a hardened,
+ * exported, admin-gated action. Returns {success}/{error,errorId} instead of
+ * throwing, so a failure surfaces a logged errorId rather than a raw 500.
+ */
+export async function resolveDataRequest(id: string, action: 'resolved' | 'rejected') {
+    const session = await auth();
+    try {
+        if (!session?.user?.email || !await checkIsAdminAsync(session.user.email)) {
+            logger.warn('resolveDataRequest: unauthorized', { id, action, user: session?.user?.email });
+            return { success: false, error: 'Unauthorized' };
+        }
+        if (action !== 'resolved' && action !== 'rejected') {
+            logger.warn('resolveDataRequest: invalid action', { id, action, user: session.user.email });
+            return { success: false, error: 'Invalid action' };
+        }
+        if (!id) {
+            logger.warn('resolveDataRequest: missing id', { action, user: session.user.email });
+            return { success: false, error: 'Missing request id' };
+        }
+
+        const db = await getDb();
+        if (!db) {
+            logger.warn('resolveDataRequest: no database', { id, action, user: session.user.email });
+            return { success: false, error: 'No database' };
+        }
+
+        const { dataRequests } = await import('@/db/schema');
+        const reqRow = await db.select().from(dataRequests).where(eq(dataRequests.id, id)).get();
+        if (!reqRow) {
+            logger.warn('resolveDataRequest: request not found', { id, action, user: session.user.email });
+            return { success: false, error: 'Request not found' };
+        }
+
+        // v2.19.72: RESOLVING a deletion request now actually deletes the linked
+        // adopter (complete cascade via deleteAdopter) — not just a status flip.
+        // Before, "Resolve" only marked the request handled, so the record stayed
+        // live and visible to everyone (the bug). REJECT and non-deletion request
+        // types are unchanged (status only — Reject = decline the deletion).
+        let deletedAdopter = false;
+        if (action === 'resolved' && reqRow.requestType === 'deletion' && reqRow.adopterId) {
+            // v2.20.0: SOFT-delete (recoverable) instead of a hard cascade. The
+            // record is hidden from search, dedup and its profile, and can be
+            // restored or permanently purged from /admin/deleted. (Was a hard
+            // delete in v2.19.72.)
+            await softDeleteAdopter(db, reqRow.adopterId);
+            deletedAdopter = true;
+        }
+
+        await db.update(dataRequests)
+            .set({ status: action, resolvedAt: new Date(), resolvedBy: session.user.email })
+            .where(eq(dataRequests.id, id));
+
+        logAudit({ userEmail: session.user.email, action: `data_request_${action}`, target: id, details: deletedAdopter ? { deletedAdopterId: reqRow.adopterId } : undefined });
+        revalidatePath('/admin/data-requests');
+        if (deletedAdopter && reqRow.adopterId) revalidatePath(`/adopter/${reqRow.adopterId}`);
+        return { success: true, deletedAdopter };
+    } catch (error) {
+        const errorId = logger.error('resolveDataRequest failed', error, {
+            id,
+            action,
+            user: session?.user?.email,
+        });
+        return { success: false, error: 'Failed to resolve request', errorId };
+    }
+}
+
 export async function deleteAdopter(adopterId: string) {
     const session = await auth();
     try {
@@ -115,6 +187,116 @@ export async function deleteAdopter(adopterId: string) {
     } catch (error) {
         logger.error('Delete adopter failed', error, { adopterId, user: session?.user?.email });
         return { success: false, error: error instanceof Error ? error.message : "Failed to delete adopter" };
+    }
+}
+
+// ── Soft-delete / restore / purge — the /admin/deleted "Papelera" (v2.20.0) ──
+
+/**
+ * Soft-delete an adopter: hide it from search, dedup, and its profile while
+ * keeping the row for restore. Mirrors the merge soft-delete (duplicates.ts:180):
+ * set deletedAt + a tokenHash marker and drop the dedup tokens.
+ */
+async function softDeleteAdopter(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, adopterId: string) {
+    const { duplicateTokens } = await import('@/db/schema');
+    await db.update(adopters).set({ deletedAt: new Date(), tokenHash: 'DELETED' }).where(eq(adopters.id, adopterId));
+    await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, adopterId));
+}
+
+/** List all soft-deleted adopters (merges + deletion-requests) for /admin/deleted. */
+export async function listDeletedAdopters() {
+    const session = await auth();
+    try {
+        if (!session?.user?.email || !await checkIsAdminAsync(session.user.email)) {
+            return { ok: false as const, error: 'Unauthorized', rows: [] };
+        }
+        const db = await getDb();
+        if (!db) return { ok: false as const, error: 'No database', rows: [] };
+        const rows = await db.select({
+            id: adopters.id,
+            name: adopters.name,
+            addedBy: adopters.addedBy,
+            country: adopters.country,
+            deletedAt: adopters.deletedAt,
+            tokenHash: adopters.tokenHash,
+        }).from(adopters).where(isNotNull(adopters.deletedAt)).orderBy(desc(adopters.deletedAt)).all();
+        return { ok: true as const, rows };
+    } catch (error) {
+        const errorId = logger.error('listDeletedAdopters failed', error, { user: session?.user?.email });
+        return { ok: false as const, error: 'Failed to load deleted records', errorId, rows: [] };
+    }
+}
+
+/** Restore a soft-deleted adopter: clear deletedAt, re-tokenize, mark any linked deletion request restored. */
+export async function restoreAdopter(adopterId: string) {
+    const session = await auth();
+    try {
+        if (!session?.user?.email || !await checkIsAdminAsync(session.user.email)) {
+            return { ok: false as const, error: 'Unauthorized' };
+        }
+        const db = await getDb();
+        if (!db) return { ok: false as const, error: 'No database' };
+        const existing = await db.select({ id: adopters.id }).from(adopters).where(eq(adopters.id, adopterId)).get();
+        if (!existing) return { ok: false as const, error: 'Adopter not found' };
+
+        // Clear soft-delete; null tokenHash forces re-tokenization, then rebuild tokens.
+        await db.update(adopters).set({ deletedAt: null, tokenHash: null }).where(eq(adopters.id, adopterId));
+        const { tokenizeAdopter } = await import('./duplicates');
+        await tokenizeAdopter(adopterId);
+
+        // If a resolved deletion request points here, mark it restored.
+        const { dataRequests } = await import('@/db/schema');
+        await db.update(dataRequests).set({ status: 'restored' }).where(and(
+            eq(dataRequests.adopterId, adopterId),
+            eq(dataRequests.requestType, 'deletion'),
+            eq(dataRequests.status, 'resolved'),
+        ));
+
+        logAudit({ userEmail: session.user.email, action: 'adopter_restored', target: adopterId });
+        revalidatePath('/admin/deleted');
+        return { ok: true as const };
+    } catch (error) {
+        const errorId = logger.error('restoreAdopter failed', error, { adopterId, user: session?.user?.email });
+        return { ok: false as const, error: 'Failed to restore', errorId };
+    }
+}
+
+/** Permanently purge a single soft-deleted adopter (complete cascade, irreversible). */
+export async function purgeAdopter(adopterId: string) {
+    const res = await deleteAdopter(adopterId); // admin-gated + complete cascade
+    if (res.success) revalidatePath('/admin/deleted');
+    return res;
+}
+
+/**
+ * Bulk purge. Pass specific ids to purge those; pass an empty array to purge
+ * ALL soft-deleted adopters ("Purgar todo"). Irreversible.
+ */
+export async function purgeDeletedAdopters(adopterIds: string[]) {
+    const session = await auth();
+    try {
+        if (!session?.user?.email || !await checkIsAdminAsync(session.user.email)) {
+            return { ok: false as const, error: 'Unauthorized', purged: 0 };
+        }
+        const db = await getDb();
+        if (!db) return { ok: false as const, error: 'No database', purged: 0 };
+
+        let ids = adopterIds;
+        if (!ids?.length) {
+            const all = await db.select({ id: adopters.id }).from(adopters).where(isNotNull(adopters.deletedAt)).all();
+            ids = all.map((r: { id: string }) => r.id);
+        }
+        let purged = 0;
+        for (const id of ids) {
+            const r = await deleteAdopter(id);
+            if (r.success) purged++;
+        }
+        logAudit({ userEmail: session.user.email, action: 'mass_purge_deleted', details: { purged, requested: ids.length } });
+        revalidatePath('/admin/deleted');
+        return { ok: true as const, purged };
+    } catch (error) {
+        const errorId = logger.error('purgeDeletedAdopters failed', error, { count: adopterIds?.length, user: session?.user?.email });
+        return { ok: false as const, error: 'Failed to purge', errorId, purged: 0 };
     }
 }
 

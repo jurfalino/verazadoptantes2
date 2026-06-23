@@ -4,6 +4,7 @@ import { isAdminAsync } from "@/config/admins";
 import { NextResponse } from "next/server";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 import { logger } from '@/lib/logger';
+import { USER_ROLES } from '@/domain/constants';
 
 export async function GET(_request: Request) {
     const session = await auth();
@@ -89,6 +90,14 @@ export async function PUT(request: Request) {
             commsOptIn?: boolean;
         };
 
+        // Validate role against the allow-list — the column previously accepted
+        // ANY string (body.role || 'viewer'), so a malformed/forged body could
+        // write an arbitrary role that the UI then mis-renders.
+        const role = body.role || 'viewer';
+        if (!USER_ROLES.includes(role as typeof USER_ROLES[number])) {
+            return NextResponse.json({ error: `Invalid role: ${role}` }, { status: 400 });
+        }
+
         // Ensure profile exists
         await env.DB.prepare(
             `INSERT OR IGNORE INTO user_profiles (user_id, created_at) VALUES (?, strftime('%s','now'))`
@@ -100,7 +109,7 @@ export async function PUT(request: Request) {
             SET role = ?, notes = ?, comms_opt_in = ?
             WHERE user_id = ?
         `).bind(
-            body.role || 'viewer',
+            role,
             body.notes || null,
             body.commsOptIn ? 1 : 0,
             body.userId
@@ -137,15 +146,20 @@ export async function DELETE(request: Request) {
             return NextResponse.json({ error: "Cannot delete your own account" }, { status: 400 });
         }
 
-        // Delete user profile first (FK dependency), then user record
-        await env.DB.prepare(`DELETE FROM user_profiles WHERE user_id = ?`).bind(body.userId).run();
-        await env.DB.prepare(`DELETE FROM account WHERE "userId" = ?`).bind(body.userId).run();
-        await env.DB.prepare(`DELETE FROM session WHERE "userId" = ?`).bind(body.userId).run();
-        await env.DB.prepare(`DELETE FROM user WHERE id = ?`).bind(body.userId).run();
+        // v2.20.1: also remove org memberships (keyed by email, previously
+        // orphaned) and run everything as a single batch so a mid-sequence
+        // failure can't leave a half-deleted user.
+        await env.DB.batch([
+            env.DB.prepare(`DELETE FROM org_members WHERE user_email = ?`).bind(targetUser?.email ?? ''),
+            env.DB.prepare(`DELETE FROM user_profiles WHERE user_id = ?`).bind(body.userId),
+            env.DB.prepare(`DELETE FROM account WHERE "userId" = ?`).bind(body.userId),
+            env.DB.prepare(`DELETE FROM session WHERE "userId" = ?`).bind(body.userId),
+            env.DB.prepare(`DELETE FROM user WHERE id = ?`).bind(body.userId),
+        ]);
 
         return NextResponse.json({ success: true });
     } catch (error) {
-        const errorId = logger.error('Delete user failed', error);
+        const errorId = logger.error('Delete user failed', error, { actor: session.user.email });
         return NextResponse.json({ error: "Failed to delete user", errorId }, { status: 500 });
     }
 }

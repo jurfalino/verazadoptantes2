@@ -1,7 +1,7 @@
 'use server';
 
 import { adoptions, adopterFlags, adopterStats, adopterImages, duplicateCandidates } from '@/db/schema';
-import { eq, sql, and, isNull, ne, or } from 'drizzle-orm';
+import { eq, sql, and, isNull, ne } from 'drizzle-orm';
 import { ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
 import type { AdopterFlags } from '@/types/adopter';
 import { getAdoptionConfig } from './config';
@@ -13,10 +13,12 @@ import { RECORD_TYPES } from '@/domain/constants';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
 import { logger, withTrace } from '@/lib/logger';
 
-const logD1Fallback = (op: string, adopterId: string) => (e: unknown) => {
-    logger.warn('enrichAdopters: D1 fallback hit', {
+// v2.20.0: batch-query fallback (per chunk, not per adopter). Returns [] so the
+// chunk degrades to "no data" for that table rather than throwing the whole list.
+const logBatchFallback = (op: string, chunkSize: number) => (e: unknown) => {
+    logger.warn('enrichAdopters: D1 batch fallback hit', {
         op,
-        adopterId,
+        chunkSize,
         error: e instanceof Error ? e.message : String(e),
     });
     return [];
@@ -47,154 +49,116 @@ async function _enrichAdoptersImpl(
 ): Promise<Map<string, EnrichmentResult>> {
     const adoptionConfig = await getAdoptionConfig();
 
-    // Initialize maps for enrichment data
-    const adoptionMap = new Map<string, { avgRating: number | null; count: number; adoptionCount: number; requestCount: number }>();
-    const flagsMap = new Map<string, AdopterFlags>();
-    const statsMap = new Map<string, { searchHits: number; profileViews: number; requests: number; adoptions: number }>();
-    const thumbnailMap = new Map<string, string>();
-    const allAdoptionRecords: { adopterId: string; recordType: string | null; date: number | null }[] = [];
+    // v2.20.0: batch the enrichment into a handful of grouped queries instead of
+    // 5 queries PER adopter (~5×N — up to ~1000 D1 subrequests at 200 rows, the
+    // Error-1102 class). D1-safe IN(?, ?, …) via sql.join (each id is its own
+    // bound param — NOT drizzle inArray(), which mis-binds on D1). Chunked to
+    // stay under D1's per-query bound-parameter limit (the dup query uses the IN
+    // list twice, so chunk*2 must stay within budget).
+    const CHUNK = 40;
+    type AdoptionRow = { adopterId: string; rating: number | null; recordType: string | null; date: number | null };
+    type FlagRow = { adopterId: string; reason: string };
+    type StatRow = { adopterId: string; eventType: string };
+    type ImageRow = { adopterId: string; url: string; isProfilePicture: number | null };
+    type DupRow = { adopter1Id: string; adopter2Id: string };
 
-    // Fetch data for each adopter in parallel (D1 compatible - uses eq() not inArray())
-    await Promise.all(adopterIds.map(async (adopterId) => {
-        const [adopterAdoptions, adopterFlagRecords, adopterStatRecords, adopterImagesResult, systemDupCount] = await Promise.all([
-            // Adoptions
-            db.select({
-                rating: adoptions.rating,
-                recordType: adoptions.recordType,
-                date: adoptions.date
-            }).from(adoptions).where(eq(adoptions.adopterId, adopterId)).catch(logD1Fallback('adoptions', adopterId)),
+    const adoptionRows: AdoptionRow[] = [];
+    const flagRows: FlagRow[] = [];
+    const statRows: StatRow[] = [];
+    const imageRows: ImageRow[] = [];
+    const dupRows: DupRow[] = [];
 
-            // Flags
-            db.select({ reason: adopterFlags.reason })
-                .from(adopterFlags)
-                .where(eq(adopterFlags.adopterId, adopterId)).catch(logD1Fallback('flags', adopterId)),
-
-            // Stats (exclude admin activity)
-            db.select({ eventType: adopterStats.eventType })
-                .from(adopterStats)
-                .where(and(
-                    eq(adopterStats.adopterId, adopterId),
+    for (let i = 0; i < adopterIds.length; i += CHUNK) {
+        const chunk = adopterIds.slice(i, i + CHUNK);
+        const inList = sql.join(chunk.map((id) => sql`${id}`), sql`, `);
+        const [a, f, s, im, d] = await Promise.all([
+            db.select({ adopterId: adoptions.adopterId, rating: adoptions.rating, recordType: adoptions.recordType, date: adoptions.date })
+                .from(adoptions).where(sql`${adoptions.adopterId} IN (${inList})`).catch(logBatchFallback('adoptions', chunk.length)),
+            db.select({ adopterId: adopterFlags.adopterId, reason: adopterFlags.reason })
+                .from(adopterFlags).where(sql`${adopterFlags.adopterId} IN (${inList})`).catch(logBatchFallback('flags', chunk.length)),
+            db.select({ adopterId: adopterStats.adopterId, eventType: adopterStats.eventType })
+                .from(adopterStats).where(and(
+                    sql`${adopterStats.adopterId} IN (${inList})`,
                     sql`(${adopterStats.userId} IS NULL OR ${adopterStats.userId} NOT IN (${sql.raw(ADMIN_STATS_EXCLUSION_SQL)}))`
-                )).catch(logD1Fallback('stats', adopterId)),
-
-            // Images
-            db.select({
-                url: adopterImages.url,
-                isProfilePicture: adopterImages.isProfilePicture
-            })
-                .from(adopterImages)
-                .where(and(
-                    eq(adopterImages.adopterId, adopterId),
+                )).catch(logBatchFallback('stats', chunk.length)),
+            // Ordered so the first row per adopter is the chosen thumbnail.
+            db.select({ adopterId: adopterImages.adopterId, url: adopterImages.url, isProfilePicture: adopterImages.isProfilePicture })
+                .from(adopterImages).where(and(
+                    sql`${adopterImages.adopterId} IN (${inList})`,
                     isNull(adopterImages.adoptionId)
-                ))
-                .orderBy(sql`${adopterImages.isProfilePicture} DESC, ${adopterImages.uploadedAt} DESC`)
-                .limit(1).catch(logD1Fallback('images', adopterId)),
-
-            // System-detected duplicates (medium/high confidence only)
-            db.select({ count: sql<number>`COUNT(*)` })
-                .from(duplicateCandidates)
-                .where(and(
+                )).orderBy(sql`${adopterImages.adopterId}, ${adopterImages.isProfilePicture} DESC, ${adopterImages.uploadedAt} DESC`)
+                .catch(logBatchFallback('images', chunk.length)),
+            db.select({ adopter1Id: duplicateCandidates.adopter1Id, adopter2Id: duplicateCandidates.adopter2Id })
+                .from(duplicateCandidates).where(and(
                     eq(duplicateCandidates.status, 'pending'),
                     ne(duplicateCandidates.confidence, 'low'),
-                    or(
-                        eq(duplicateCandidates.adopter1Id, adopterId),
-                        eq(duplicateCandidates.adopter2Id, adopterId),
-                    ),
-                )).catch(() => [{ count: 0 }])
+                    sql`(${duplicateCandidates.adopter1Id} IN (${inList}) OR ${duplicateCandidates.adopter2Id} IN (${inList}))`
+                )).catch(logBatchFallback('dupCandidates', chunk.length)),
         ]);
-
-        // Process adoptions
-        if (adopterAdoptions.length > 0) {
-            const avgRating = computeAvgRating(adopterAdoptions);
-            const adoptionCount = adopterAdoptions.filter((a: { recordType: string | null }) => a.recordType === RECORD_TYPES.ADOPTION).length;
-            const requestCount = adopterAdoptions.filter((a: { recordType: string | null }) => a.recordType === RECORD_TYPES.REQUEST).length;
-            adoptionMap.set(adopterId, { avgRating, count: adopterAdoptions.length, adoptionCount, requestCount });
-            for (const rec of adopterAdoptions) {
-                allAdoptionRecords.push({ adopterId, recordType: rec.recordType, date: rec.date });
-            }
-        }
-
-        // Process flags (using domain function — fixes 'inaccurate' vs 'inaccurate_information' mismatch)
-        const flagReasons = adopterFlagRecords.map((f: { reason: string }) => f.reason);
-        const flags = buildFlags(flagReasons, systemDupCount[0]?.count ?? 0);
-        flagsMap.set(adopterId, flags);
-
-        // Process stats (using domain function)
-        const stats = computeStats(adopterStatRecords, adopterAdoptions);
-        statsMap.set(adopterId, stats);
-
-        // Process thumbnail
-        if (adopterImagesResult.length > 0) {
-            thumbnailMap.set(adopterId, adopterImagesResult[0].url);
-        }
-    }));
-
-    // Group adoptions by adopterId
-    const recordsByAdopterId = new Map<string, any[]>();
-    for (const rec of allAdoptionRecords) {
-        if (!recordsByAdopterId.has(rec.adopterId)) {
-            recordsByAdopterId.set(rec.adopterId, []);
-        }
-        recordsByAdopterId.get(rec.adopterId)!.push(rec);
+        adoptionRows.push(...(a as AdoptionRow[]));
+        flagRows.push(...(f as FlagRow[]));
+        statRows.push(...(s as StatRow[]));
+        imageRows.push(...(im as ImageRow[]));
+        dupRows.push(...(d as DupRow[]));
     }
 
-    for (const [adopterId, records] of recordsByAdopterId) {
-        const flags = flagsMap.get(adopterId) || {
-            inaccurate: false, duplicate: false, systemDuplicate: false, verified_identity: false, verified_address: false,
-            tooManyAdoptions: null, tooManyRequests: null
-        };
-        
-        const adoptionsDensity = computeMaxDensityPeriod(records as any, RECORD_TYPES.ADOPTION, adoptionConfig.periodDays);
+    // Group rows by adopterId
+    const groupBy = <T extends { adopterId: string }>(rows: T[]): Map<string, T[]> => {
+        const m = new Map<string, T[]>();
+        for (const r of rows) {
+            const arr = m.get(r.adopterId);
+            if (arr) arr.push(r); else m.set(r.adopterId, [r]);
+        }
+        return m;
+    };
+    const adoptionsByAdopter = groupBy(adoptionRows);
+    const flagsByAdopter = groupBy(flagRows);
+    const statsByAdopter = groupBy(statRows);
+    // Images come pre-ordered; first seen per adopter is the chosen thumbnail.
+    const thumbByAdopter = new Map<string, string>();
+    for (const r of imageRows) if (!thumbByAdopter.has(r.adopterId)) thumbByAdopter.set(r.adopterId, r.url);
+    // Each pending dup candidate counts toward both of its adopters (matches the
+    // original per-adopter `adopter1Id = id OR adopter2Id = id` count).
+    const dupCountByAdopter = new Map<string, number>();
+    for (const r of dupRows) {
+        dupCountByAdopter.set(r.adopter1Id, (dupCountByAdopter.get(r.adopter1Id) ?? 0) + 1);
+        dupCountByAdopter.set(r.adopter2Id, (dupCountByAdopter.get(r.adopter2Id) ?? 0) + 1);
+    }
+
+    // Build result per adopter — domain logic unchanged, only the source differs.
+    const resultMap = new Map<string, EnrichmentResult>();
+    for (const id of adopterIds) {
+        const adopterAdoptions = adoptionsByAdopter.get(id) ?? [];
+        const adopterFlagRecords = flagsByAdopter.get(id) ?? [];
+        const adopterStatRecords = statsByAdopter.get(id) ?? [];
+        const systemDupCount = dupCountByAdopter.get(id) ?? 0;
+
+        const avgRating = adopterAdoptions.length > 0 ? computeAvgRating(adopterAdoptions) : null;
+        const adoptionCount = adopterAdoptions.filter((a) => a.recordType === RECORD_TYPES.ADOPTION).length;
+        const requestCount = adopterAdoptions.filter((a) => a.recordType === RECORD_TYPES.REQUEST).length;
+
+        const flags = buildFlags(adopterFlagRecords.map((fr) => fr.reason), systemDupCount);
+        const adoptionsDensity = computeMaxDensityPeriod(adopterAdoptions as any, RECORD_TYPES.ADOPTION, adoptionConfig.periodDays);
         if (adoptionsDensity.count >= adoptionConfig.threshold) {
             flags.tooManyAdoptions = {
-                count: adoptionsDensity.count,
-                threshold: adoptionConfig.threshold,
-                periodDays: adoptionConfig.periodDays,
-                actualSpanDays: adoptionsDensity.timeSpanDays,
-                startDate: adoptionsDensity.startDate,
-                endDate: adoptionsDensity.endDate
+                count: adoptionsDensity.count, threshold: adoptionConfig.threshold, periodDays: adoptionConfig.periodDays,
+                actualSpanDays: adoptionsDensity.timeSpanDays, startDate: adoptionsDensity.startDate, endDate: adoptionsDensity.endDate,
             };
         }
-
-        const requestsDensity = computeMaxDensityPeriod(records as any, RECORD_TYPES.REQUEST, adoptionConfig.requestsPeriodDays);
+        const requestsDensity = computeMaxDensityPeriod(adopterAdoptions as any, RECORD_TYPES.REQUEST, adoptionConfig.requestsPeriodDays);
         if (requestsDensity.count >= adoptionConfig.requestsThreshold) {
             flags.tooManyRequests = {
-                count: requestsDensity.count,
-                threshold: adoptionConfig.requestsThreshold,
-                periodDays: adoptionConfig.requestsPeriodDays,
-                actualSpanDays: requestsDensity.timeSpanDays,
-                startDate: requestsDensity.startDate,
-                endDate: requestsDensity.endDate
+                count: requestsDensity.count, threshold: adoptionConfig.requestsThreshold, periodDays: adoptionConfig.requestsPeriodDays,
+                actualSpanDays: requestsDensity.timeSpanDays, startDate: requestsDensity.startDate, endDate: requestsDensity.endDate,
             };
         }
 
-        flagsMap.set(adopterId, flags);
+        const stats = computeStats(adopterStatRecords, adopterAdoptions);
+        stats.adoptions = adoptionCount;
+        stats.requests = requestCount;
+
+        resultMap.set(id, { avgRating, thumbnail: thumbByAdopter.get(id) || null, stats, flags });
     }
-
-    // Build combined result map
-    const resultMap = new Map<string, EnrichmentResult>();
-    const defaultFlags: AdopterFlags = {
-        inaccurate: false, duplicate: false, systemDuplicate: false,
-        verified_identity: false, verified_address: false,
-        tooManyAdoptions: null, tooManyRequests: null
-    };
-
-    for (const id of adopterIds) {
-        const adoptionData = adoptionMap.get(id);
-        const statData = statsMap.get(id) || { searchHits: 0, profileViews: 0, requests: 0, adoptions: 0 };
-
-        // Use real counts from adoptions table
-        statData.adoptions = adoptionData?.adoptionCount ?? 0;
-        statData.requests = adoptionData?.requestCount ?? 0;
-
-        resultMap.set(id, {
-            avgRating: adoptionData?.avgRating ?? null,
-            thumbnail: thumbnailMap.get(id) || null,
-            stats: statData,
-            flags: flagsMap.get(id) || defaultFlags,
-        });
-    }
-
 
     return resultMap;
 }
