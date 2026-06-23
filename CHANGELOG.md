@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.19.72] - 2026-06-22
+
+### Fixed — resolving a deletion request didn't actually delete the record
+
+On `/admin/data-requests`, clicking **Resolve** on a `deletion`-type request only flipped the request's `status` — it never deleted the linked adopter. So the request moved to History while the adopter stayed **live and visible to everyone**. (The "request deletion" flow exists because that adopter has other contributors, so the deletion was deferred to an admin — but resolving never completed it.)
+
+Now `resolveDataRequest`, when **resolving** a `deletion` request that has an `adopterId`, runs the complete-cascade `deleteAdopter` (clears stats/flags/history/images/adoptions/duplicate_tokens/duplicate_candidates + unlinks form_submissions, then the adopter) before marking the request resolved. If the deletion fails, the request is **not** marked resolved and a logged `errorId` is returned. **Reject** and non-deletion request types are unchanged (status only — Reject = decline the deletion). The Resolve button now reads **“🗑 Resolver y eliminar”** (rose) on deletion requests to make the destructive action explicit.
+
 ## [2.19.71] - 2026-06-22
 
 ### Fixed — /admin/data-requests Resolve/Reject did nothing (and originally 500'd)

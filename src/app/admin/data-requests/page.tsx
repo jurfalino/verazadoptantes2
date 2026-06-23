@@ -121,9 +121,10 @@ export default async function AdminDataRequestsPage() {
                                                     <button
                                                         type="submit"
                                                         formAction={handleResolve.bind(null, r.id, 'resolved')}
-                                                        className="px-3 py-1.5 text-xs font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600"
+                                                        title={r.requestType === 'deletion' ? 'Elimina el registro del adoptante (definitivo)' : undefined}
+                                                        className={`px-3 py-1.5 text-xs font-semibold text-white rounded-lg ${r.requestType === 'deletion' ? 'bg-rose-600 hover:bg-rose-500' : 'bg-teal-700 hover:bg-teal-600'}`}
                                                     >
-                                                        ✓ Resolve
+                                                        {r.requestType === 'deletion' ? '🗑 Resolver y eliminar' : '✓ Resolve'}
                                                     </button>
                                                     <button
                                                         type="submit"
@@ -173,9 +174,9 @@ export default async function AdminDataRequestsPage() {
                                         <button
                                             type="submit"
                                             formAction={handleResolve.bind(null, r.id, 'resolved')}
-                                            className="flex-1 px-3 py-2 text-xs font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600"
+                                            className={`flex-1 px-3 py-2 text-xs font-semibold text-white rounded-lg ${r.requestType === 'deletion' ? 'bg-rose-600 hover:bg-rose-500' : 'bg-teal-700 hover:bg-teal-600'}`}
                                         >
-                                            ✓ Resolve
+                                            {r.requestType === 'deletion' ? '🗑 Resolver y eliminar' : '✓ Resolve'}
                                         </button>
                                         <button
                                             type="submit"

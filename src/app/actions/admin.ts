@@ -101,13 +101,37 @@ export async function resolveDataRequest(id: string, action: 'resolved' | 'rejec
         }
 
         const { dataRequests } = await import('@/db/schema');
+        const reqRow = await db.select().from(dataRequests).where(eq(dataRequests.id, id)).get();
+        if (!reqRow) {
+            logger.warn('resolveDataRequest: request not found', { id, action, user: session.user.email });
+            return { success: false, error: 'Request not found' };
+        }
+
+        // v2.19.72: RESOLVING a deletion request now actually deletes the linked
+        // adopter (complete cascade via deleteAdopter) — not just a status flip.
+        // Before, "Resolve" only marked the request handled, so the record stayed
+        // live and visible to everyone (the bug). REJECT and non-deletion request
+        // types are unchanged (status only — Reject = decline the deletion).
+        let deletedAdopter = false;
+        if (action === 'resolved' && reqRow.requestType === 'deletion' && reqRow.adopterId) {
+            const del = await deleteAdopter(reqRow.adopterId);
+            if (!del.success) {
+                const errorId = logger.error('resolveDataRequest: adopter deletion failed', undefined, {
+                    id, adopterId: reqRow.adopterId, reason: del.error, user: session.user.email,
+                });
+                return { success: false, error: `No se pudo eliminar el registro: ${del.error ?? 'error'}`, errorId };
+            }
+            deletedAdopter = true;
+        }
+
         await db.update(dataRequests)
             .set({ status: action, resolvedAt: new Date(), resolvedBy: session.user.email })
             .where(eq(dataRequests.id, id));
 
-        logAudit({ userEmail: session.user.email, action: `data_request_${action}`, target: id });
+        logAudit({ userEmail: session.user.email, action: `data_request_${action}`, target: id, details: deletedAdopter ? { deletedAdopterId: reqRow.adopterId } : undefined });
         revalidatePath('/admin/data-requests');
-        return { success: true };
+        if (deletedAdopter && reqRow.adopterId) revalidatePath(`/adopter/${reqRow.adopterId}`);
+        return { success: true, deletedAdopter };
     } catch (error) {
         const errorId = logger.error('resolveDataRequest failed', error, {
             id,
