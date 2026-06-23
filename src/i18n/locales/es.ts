@@ -1504,6 +1504,8 @@ export const es = {
         thisProfile: 'este perfil',
         // Toasts post-import
         record_added_to_profile: 'Registro agregado al perfil',
+        video_upload_failed: 'No se pudo subir el video',
+        contact_merge_failed: 'No se pudieron fusionar los datos de contacto',
         go_to_profile_link: '→ Ver perfil',
         // Contact-import (v2.16.0-33) — homepage CTA + PWA share-target flow.
         from_contacts_breadcrumb: 'Importado desde tu agenda',

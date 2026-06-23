@@ -3,6 +3,7 @@ export const runtime = 'edge';
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
+import { arrayBufferToBase64 } from '@/lib/base64';
 
 interface FacebookPostData {
     text: string;
@@ -165,9 +166,7 @@ export async function POST(request: NextRequest) {
                 if (thumbResponse.ok) {
                     const contentType = thumbResponse.headers.get('content-type') || 'image/jpeg';
                     const buffer = await thumbResponse.arrayBuffer();
-                    const base64 = btoa(
-                        new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-                    );
+                    const base64 = arrayBufferToBase64(buffer);
                     postData.videoThumbnailBase64 = `data:${contentType};base64,${base64}`;
                     logger.info('Video thumbnail fetched for OCR', {
                         thumbnailSize: buffer.byteLength,

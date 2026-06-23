@@ -18,6 +18,8 @@ import { confidenceBand } from '@/lib/scoring';
 import type { ExtractedAdopterData } from '@/lib/gemini';
 import ContactEntriesInput from '@/components/ContactEntriesInput';
 import { buildContactEntries, contactEntriesToBlob, type ContactEntry } from '@/lib/contactEntries';
+import { humanMatchSentence } from '@/lib/importMatch';
+import { IMPORT_FLAGS } from '@/domain/constants';
 import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
 import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
 
@@ -36,56 +38,6 @@ interface PersonMatch {
      * locale or used to drive non-text affordances later.
      */
     matchTypes: string[];
-}
-
-/**
- * Map a duplicate-detection token type (from the tokenizer / findAdopters)
- * to its user-facing label key (v2.16.0-43). Synonym token types collapse
- * to one user-visible noun so the sentence builder never produces
- * "Comparte teléfono y teléfono" or "Shares name and name."
- *
- * Returns null for token types we deliberately don't surface (`like_fallback`
- * is noise; `name_word_fuzzy` is the fuzzy-match flag added by findAdopters
- * alongside a name_word and shouldn't render as a separate signal).
- */
-function matchTypeToLabelKey(type: string): string | null {
-    switch (type) {
-        case 'phone': case 'phone_suffix': return 'import.match_label_phone';
-        case 'email': return 'import.match_label_email';
-        case 'social': return 'import.match_label_social';
-        case 'name_full': case 'name_word': return 'import.match_label_name';
-        case 'address_word': return 'import.match_label_address';
-        case 'source_url': return 'import.match_label_source_url';
-        case 'id_number': return 'import.match_label_id_number';
-        default: return null;
-    }
-}
-
-/**
- * Build a natural-language sentence describing what the proposed duplicate
- * shares with the user's input. Returns a string — the name is expected to
- * render separately (Step 4 cards stack name above the sentence), so we
- * don't include it here. Falls back to the low-band preamble if every
- * match type is filtered out by matchTypeToLabelKey.
- */
-function humanMatchSentence(
-    matchTypes: string[],
-    t: (key: string) => string,
-): string {
-    const labelKeys = Array.from(new Set(
-        matchTypes.map(matchTypeToLabelKey).filter((k): k is string => !!k)
-    ));
-    const labels = labelKeys.map(k => t(k));
-    if (labels.length === 0) {
-        return t('import.match_band_low');
-    }
-    if (labels.length === 1) {
-        return t('import.shares_one').replace('{x}', labels[0]);
-    }
-    if (labels.length === 2) {
-        return t('import.shares_two').replace('{x}', labels[0]).replace('{y}', labels[1]);
-    }
-    return t('import.shares_many').replace('{x}', labels[0]).replace('{y}', labels[1]);
 }
 
 /** Render the confidence-band pill — themed colours only (theme-safe). */
@@ -748,6 +700,10 @@ export default function ImportWizard() {
         if (sourceUrl) {
             try {
                 const res = await fetch(`/api/adopters?sourceUrl=${encodeURIComponent(sourceUrl)}`);
+                // M4: a 500 here used to fall through as "no duplicate" (res.json()
+                // succeeds on an error body, matches undefined). Treat non-OK as a
+                // failed check so the warning UI shows instead of silently skipping.
+                if (!res.ok) throw new Error(`URL duplicate check failed (${res.status})`);
                 const data = await res.json() as { matches: any[]; matchType?: string };
                 if (data.matches && data.matches.length > 0) {
                     setDuplicateAdopter(data.matches[0]);
@@ -811,7 +767,7 @@ export default function ImportWizard() {
         setIsSaving(true);
 
         try {
-            const flags = [`import_${extractedData.confidence}`];
+            const flags = [IMPORT_FLAGS[extractedData.confidence] ?? IMPORT_FLAGS.low];
 
             // Generate thumbnails for fetched videos (via proxy for CORS)
             const videoPayloads = await Promise.all(
@@ -895,7 +851,11 @@ export default function ImportWizard() {
                 fd.append('caption', 'Imported video');
                 fd.append('mediaType', 'video');
                 if (vid.thumbnail) fd.append('thumbnail', vid.thumbnail);
-                await fetch('/api/upload-media', { method: 'POST', body: fd });
+                const upRes = await fetch('/api/upload-media', { method: 'POST', body: fd });
+                if (!upRes.ok) {
+                    const up = await upRes.json().catch(() => ({})) as { errorId?: string };
+                    toast.error(t('errors.generic') || 'Error', t('import.video_upload_failed') || 'No se pudo subir el video', up.errorId);
+                }
             }
 
             // v2.19.18: contacts-import suppresses the success toast because
@@ -1021,14 +981,34 @@ export default function ImportWizard() {
                 body: JSON.stringify(payload),
             });
 
-            const result = await response.json() as { adoptionId?: string; adopterId?: string; adopterName?: string; error?: string };
+            const result = await response.json() as { adoptionId?: string; adopterId?: string; adopterName?: string; error?: string; errorId?: string };
 
             if (!response.ok) {
-                throw new Error(result.error || 'Failed to add record');
+                throw new Error(result.errorId ? `${result.error || 'Failed to add record'} (${result.errorId})` : (result.error || 'Failed to add record'));
             }
 
             const adopterId = result.adopterId || mergeTarget.id;
             const adopterName = result.adopterName || mergeTarget.name;
+
+            // H1 (v2.20.2): add-record only records the reviewed contact data in
+            // the new activity's `details`. Also MERGE it into the adopter's
+            // contact fields + re-tokenize via appendToExistingAdopter, so the
+            // edits the rescuer made in the review step actually land on the
+            // profile and in the dedup index (the contacts-import path already
+            // does this; the post-import merge path used to drop them).
+            if (contactEntries.length) {
+                const { appendToExistingAdopter } = await import('@/app/actions');
+                const appendRes = await appendToExistingAdopter(mergeTarget.id, {
+                    contactInfo: contactEntriesToBlob(contactEntries) || undefined,
+                    contactEntries: JSON.stringify(contactEntries),
+                    sourceUrl: sourceUrl || undefined,
+                });
+                if (!appendRes?.success) {
+                    // Non-fatal: the activity record saved. appendRes.error already
+                    // carries an "(Error ID: …)" suffix from the server action.
+                    toast.error(t('errors.generic') || 'Error', appendRes?.error || (t('import.contact_merge_failed') || 'No se pudieron fusionar los datos de contacto'));
+                }
+            }
 
             // Upload any pending video files via FormData (they were excluded from JSON body)
             const pendingVideoFiles = manualImages.filter(img => img.file);
@@ -1040,7 +1020,11 @@ export default function ImportWizard() {
                 fd.append('caption', 'Imported video');
                 fd.append('mediaType', 'video');
                 if (vid.thumbnail) fd.append('thumbnail', vid.thumbnail);
-                await fetch('/api/upload-media', { method: 'POST', body: fd });
+                const upRes = await fetch('/api/upload-media', { method: 'POST', body: fd });
+                if (!upRes.ok) {
+                    const up = await upRes.json().catch(() => ({})) as { errorId?: string };
+                    toast.error(t('errors.generic') || 'Error', t('import.video_upload_failed') || 'No se pudo subir el video', up.errorId);
+                }
             }
 
             toast.success(t('import.record_added_to_profile') || 'Registro agregado al perfil', adopterName, {

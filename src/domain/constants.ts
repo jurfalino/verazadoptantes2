@@ -31,3 +31,11 @@ export const EVENT_TYPES = {
 // selects + the PUT validation. Order is ascending privilege.
 export const USER_ROLES = ['viewer', 'contributor', 'moderator', 'admin'] as const;
 export type UserRole = typeof USER_ROLES[number];
+
+// Flag reasons stamped on adopters created via the import wizard, by the AI
+// extraction's confidence band. Stored in adopter_flags.reason.
+export const IMPORT_FLAGS = {
+    high: 'import_high',
+    medium: 'import_medium',
+    low: 'import_low',
+} as const;

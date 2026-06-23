@@ -3,6 +3,7 @@ export const runtime = 'edge';
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
+import { arrayBufferToBase64 } from '@/lib/base64';
 
 interface FetchedContent {
     title?: string;
@@ -157,9 +158,7 @@ export async function POST(request: NextRequest) {
         // Handle images directly
         if (contentType.startsWith('image/')) {
             const buffer = await response.arrayBuffer();
-            const base64 = btoa(
-                new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-            );
+            const base64 = arrayBufferToBase64(buffer);
             return NextResponse.json({
                 success: true,
                 data: {

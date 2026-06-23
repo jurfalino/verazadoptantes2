@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc --noEmit)",
+      "Bash(npx tsc --noEmit *)",
+      "Bash(npm run lint)",
+      "Bash(npx next lint)",
+      "Bash(gh run watch *)"
+    ]
+  }
+}
