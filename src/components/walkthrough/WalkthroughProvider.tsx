@@ -56,8 +56,6 @@ export function WalkthroughProvider({
         observerRef.current = null;
     }, []);
 
-    const stepAt = (i: number): WalkthroughStep | undefined => WALKTHROUGH_STEPS[i];
-
     const start = useCallback(async () => {
         if (driverRef.current?.isActive() || startingRef.current) return;
         startingRef.current = true;
@@ -69,15 +67,46 @@ export function WalkthroughProvider({
                 import('./walkthrough.css'),
             ]);
 
+            const SEARCH_STEP = WALKTHROUGH_STEPS.find((s) => s.gate === 'searchRan')!;
+            const RESULT_STEPS = WALKTHROUGH_STEPS.filter((s) => !s.gate); // rating, flags, history
+
+            const toDriveStep = (s: WalkthroughStep): DriveStep => ({
+                element: s.selector,
+                popover: {
+                    title: t(s.titleKey),
+                    description: t(s.bodyKey),
+                    side: s.side,
+                    align: s.align,
+                    // The search step has no Next — the user types and presses the
+                    // real Buscar (both inside the spotlight); the observer advances.
+                    ...(s.gate === 'searchRan' ? { showButtons: (['close'] as const).slice() } : {}),
+                },
+            });
+
+            // Guard so a burst of mutations transitions the tour only once.
+            const advanced = { done: false };
+
             const finishNoResults = () => {
                 cleanupObserver();
                 toast.info(t('walkthrough.no_results_title'), t('walkthrough.no_results_body'));
                 driverRef.current?.destroy();
             };
 
-            // MutationObserver: when the search step is active and a search has
-            // completed, advance on a result card — or end gracefully if the
-            // search returned nothing. No coupling into SearchSection's logic.
+            // Swap the single search step for the result steps that actually
+            // rendered (a result may have no rating badge or no flags). Building
+            // the step list from the live DOM avoids skipping absent steps mid-tour.
+            const enterResultsPhase = () => {
+                const d = driverRef.current;
+                if (!d) return;
+                const visible = RESULT_STEPS.filter((s) => isVisible(s.selector));
+                if (visible.length === 0) { finishNoResults(); return; } // shouldn't happen — history always renders
+                d.setSteps(visible.map(toDriveStep)); // soft reset; does NOT fire onDestroyed
+                d.moveTo(0);
+            };
+
+            // MutationObserver: once the real search completes, advance to the
+            // result steps on a result card — or end gracefully on zero results.
+            // No coupling into SearchSection's logic (passive markers only).
             const connectObserver = () => {
                 cleanupObserver();
                 const root = document.getElementById('search-section') || document.body;
@@ -86,28 +115,14 @@ export function WalkthroughProvider({
                     if (settle) clearTimeout(settle);
                     settle = setTimeout(() => {
                         const d = driverRef.current;
-                        if (!d?.isActive() || stepAt(d.getActiveIndex() ?? -1)?.id !== 'search') return;
-                        if (document.querySelector(RESULT_CARD)) { cleanupObserver(); d.moveNext(); }
-                        else if (document.querySelector(RESULTS)) finishNoResults(); // search ran, zero results
+                        if (!d?.isActive() || advanced.done) return;
+                        if (document.querySelector(RESULT_CARD)) { advanced.done = true; cleanupObserver(); enterResultsPhase(); }
+                        else if (document.querySelector(RESULTS)) { advanced.done = true; finishNoResults(); } // search ran, zero results
                     }, 450);
                 });
                 obs.observe(root, { childList: true, subtree: true });
                 observerRef.current = obs;
             };
-
-            const steps: DriveStep[] = WALKTHROUGH_STEPS.map((s) => ({
-                element: s.selector,
-                popover: {
-                    title: t(s.titleKey),
-                    description: t(s.bodyKey),
-                    side: s.side,
-                    align: s.align,
-                    // The search step has no Next — the user types and presses
-                    // the real Buscar (both inside the spotlight); the observer
-                    // advances. Only the X (close/skip) is offered.
-                    showButtons: s.gate === 'searchRan' ? (['close'] as const).slice() : undefined,
-                },
-            }));
 
             const d = driver({
                 animate: !reduce,
@@ -115,27 +130,10 @@ export function WalkthroughProvider({
                 showProgress: false,
                 overlayColor: 'rgba(4, 47, 46, 0.55)',
                 popoverClass: 'walkthrough-popover',
-                steps,
+                steps: [toDriveStep(SEARCH_STEP)],
                 nextBtnText: t('walkthrough.next'),
                 prevBtnText: t('walkthrough.back'),
                 doneBtnText: t('walkthrough.finish'),
-                onHighlightStarted: (_el, _step, opts) => {
-                    const cur = stepAt(opts.state.activeIndex ?? -1);
-                    // Skip a result step whose target isn't present/visible
-                    // (e.g. a result with no rating badge or no flags).
-                    if (cur && (cur.id === 'rating' || cur.id === 'flags' || cur.id === 'history') && !isVisible(cur.selector)) {
-                        opts.driver.moveNext();
-                    }
-                },
-                onHighlighted: (_el, _step, opts) => {
-                    const cur = stepAt(opts.state.activeIndex ?? -1);
-                    if (cur?.id === 'search') {
-                        document.querySelector<HTMLInputElement>('[data-walkthrough="search-input"]')?.focus();
-                        connectObserver();
-                    } else {
-                        cleanupObserver();
-                    }
-                },
                 onDestroyed: () => {
                     cleanupObserver();
                     try { localStorage.setItem(keys.done, '1'); } catch { /* ignore */ }
@@ -145,6 +143,9 @@ export function WalkthroughProvider({
 
             driverRef.current = d;
             d.drive();
+            // Search phase: focus the input and watch for the real search result.
+            document.querySelector<HTMLInputElement>('[data-walkthrough="search-input"]')?.focus();
+            connectObserver();
         } catch {
             // driver.js failed to load — fail silently (onboarding is non-critical)
             cleanupObserver();

@@ -2,7 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
-## [2.21.1] - 2026-06-24
+## [2.21.2] - 2026-06-24
+
+### Fixed — walkthrough: result steps (rating/flags/history) never appeared
+
+After the search, the tour ended without explaining the result card. Root cause: the result steps were prebuilt at launch and relied on `onHighlightStarted` calling `moveNext()` mid-highlight to skip absent regions (a result with no rating badge or no flags) — a fragile re-entrant pattern, and the post-search advance landed on steps whose elements might not resolve. Reworked the result phase to be deterministic: the tour now initializes with only the search step, and when the real search produces a result card the MutationObserver swaps in **only the result steps that actually rendered** via `setSteps()` + `moveTo(0)` (confirmed against driver.js 1.5.0: `moveTo` always re-highlights and `setSteps` does not fire `onDestroyed`). The observer is now connected deterministically right after `drive()` rather than from a highlight hook. `history` always renders, so at least one result step always shows.
+
 
 ### Changed — walkthrough: merge "type" + "run search" into one step
 
