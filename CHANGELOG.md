@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.21.1] - 2026-06-24
+
+### Changed — walkthrough: merge "type" + "run search" into one step
+
+The first two tour steps were redundant — we asked the user to type a name *and* click a Next button, then a separate step to press Search. Now there's a single step: the spotlight highlights the whole search **form** (so both the input and the Buscar button are inside the cutout and clickable — driver blocks clicks outside the highlight), with no Next button. The user types and presses Buscar; the existing MutationObserver advances the tour when a result appears (or ends gracefully on zero results). Rewrote the step copy to explain *who* to search (an adopter you're about to give an animal to — adoption or foster — or one you already did) and end with "Luego presioná Buscar". Removed the now-unused `step_run_*` strings.
+
 ## [2.21.0] - 2026-06-24
 
 ### Added — guided walkthrough (interactive spotlight tour), flag-gated

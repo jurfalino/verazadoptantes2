@@ -222,7 +222,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
             {/* Search card — just the search tool */}
             <div className={`bg-white rounded-3xl p-5 md:p-6 shadow-sm border border-stone-200 transition-all ${hasResults ? 'md:static sticky top-16 z-30 rounded-b-xl md:rounded-3xl shadow-md md:shadow-sm' : ''
                 }`}>
-                <form onSubmit={handleSearch} className={hasResults ? 'flex gap-2 items-center md:block md:space-y-4' : 'space-y-3'}>
+                <form onSubmit={handleSearch} data-walkthrough="search-form" className={hasResults ? 'flex gap-2 items-center md:block md:space-y-4' : 'space-y-3'}>
                     <div className="relative flex-1">
                         <label htmlFor="search" className="sr-only">{t('common.search')}</label>
                         <input

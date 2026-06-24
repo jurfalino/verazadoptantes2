@@ -4,8 +4,8 @@
  * Guided walkthrough (v2.21.0) — a driver.js spotlight tour that guides a new
  * rescuer to type an adopter's name from memory, run the REAL search, and read
  * the result. driver.js handles the overlay/popover/positioning/keyboard; this
- * provider owns the app-specific logic: the flag/auto-launch, the two action
- * gates, the MutationObserver that advances on a real search result, and the
+ * provider owns the app-specific logic: the flag/auto-launch, the search-step
+ * gate, the MutationObserver that advances on a real search result, and the
  * graceful zero-result / missing-element handling. driver.js + its CSS are
  * lazy-loaded only when the tour starts (kept off the homepage LCP path).
  */
@@ -75,7 +75,7 @@ export function WalkthroughProvider({
                 driverRef.current?.destroy();
             };
 
-            // MutationObserver: when the run step is active and a search has
+            // MutationObserver: when the search step is active and a search has
             // completed, advance on a result card — or end gracefully if the
             // search returned nothing. No coupling into SearchSection's logic.
             const connectObserver = () => {
@@ -86,7 +86,7 @@ export function WalkthroughProvider({
                     if (settle) clearTimeout(settle);
                     settle = setTimeout(() => {
                         const d = driverRef.current;
-                        if (!d?.isActive() || stepAt(d.getActiveIndex() ?? -1)?.id !== 'run') return;
+                        if (!d?.isActive() || stepAt(d.getActiveIndex() ?? -1)?.id !== 'search') return;
                         if (document.querySelector(RESULT_CARD)) { cleanupObserver(); d.moveNext(); }
                         else if (document.querySelector(RESULTS)) finishNoResults(); // search ran, zero results
                     }, 450);
@@ -102,15 +102,10 @@ export function WalkthroughProvider({
                     description: t(s.bodyKey),
                     side: s.side,
                     align: s.align,
-                    // The "run" step has no Next — the observer advances it.
-                    showButtons: s.gate === 'searchRan' ? (['previous', 'close'] as const).slice() : undefined,
-                    // The "type" step gates Next on a non-empty input.
-                    onNextClick: s.gate === 'typed'
-                        ? () => {
-                            const input = document.querySelector<HTMLInputElement>('[data-walkthrough="search-input"]');
-                            if (input && input.value.trim().length > 0) driverRef.current?.moveNext();
-                        }
-                        : undefined,
+                    // The search step has no Next — the user types and presses
+                    // the real Buscar (both inside the spotlight); the observer
+                    // advances. Only the X (close/skip) is offered.
+                    showButtons: s.gate === 'searchRan' ? (['close'] as const).slice() : undefined,
                 },
             }));
 
@@ -134,9 +129,12 @@ export function WalkthroughProvider({
                 },
                 onHighlighted: (_el, _step, opts) => {
                     const cur = stepAt(opts.state.activeIndex ?? -1);
-                    if (cur?.id === 'type') document.querySelector<HTMLInputElement>('[data-walkthrough="search-input"]')?.focus();
-                    if (cur?.id === 'run') connectObserver();
-                    else cleanupObserver();
+                    if (cur?.id === 'search') {
+                        document.querySelector<HTMLInputElement>('[data-walkthrough="search-input"]')?.focus();
+                        connectObserver();
+                    } else {
+                        cleanupObserver();
+                    }
                 },
                 onDestroyed: () => {
                     cleanupObserver();

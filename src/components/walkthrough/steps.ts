@@ -1,12 +1,14 @@
 // Guided-walkthrough step model (v2.21.0). Pure data — selectors target the
 // `data-walkthrough` markers in SearchSection; copy is resolved via i18n keys
-// at runtime in WalkthroughProvider. `gate` marks the two action-gated steps:
-//  - 'typed'     → advance only when the real #search input is non-empty
+// at runtime in WalkthroughProvider. `gate` marks the single action-gated step:
 //  - 'searchRan' → advance when a result card appears (MutationObserver)
+// The first step highlights the whole search FORM (input + Buscar button) so the
+// user can both type and submit through the spotlight (driver blocks clicks
+// outside the highlight); it has no Next — running the real search advances it.
 // The result steps (rating/flags/history) are skipped at runtime if their
 // element is missing/zero-size (e.g. a result with no rating or no flags).
 
-export type WalkthroughStepId = 'type' | 'run' | 'rating' | 'flags' | 'history';
+export type WalkthroughStepId = 'search' | 'rating' | 'flags' | 'history';
 
 export interface WalkthroughStep {
     id: WalkthroughStepId;
@@ -15,24 +17,15 @@ export interface WalkthroughStep {
     bodyKey: string;
     side: 'top' | 'bottom' | 'left' | 'right';
     align?: 'start' | 'center' | 'end';
-    gate?: 'typed' | 'searchRan';
+    gate?: 'searchRan';
 }
 
 export const WALKTHROUGH_STEPS: WalkthroughStep[] = [
     {
-        id: 'type',
-        selector: '[data-walkthrough="search-input"]',
+        id: 'search',
+        selector: '[data-walkthrough="search-form"]',
         titleKey: 'walkthrough.step_type_title',
         bodyKey: 'walkthrough.step_type_body',
-        side: 'bottom',
-        align: 'start',
-        gate: 'typed',
-    },
-    {
-        id: 'run',
-        selector: '[data-walkthrough="search-submit"]',
-        titleKey: 'walkthrough.step_run_title',
-        bodyKey: 'walkthrough.step_run_body',
         side: 'bottom',
         align: 'start',
         gate: 'searchRan',
