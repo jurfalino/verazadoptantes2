@@ -146,6 +146,10 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
             return; // do NOT dismiss — user must retry
         }
         localStorage.setItem(`country_confirmed_${email}`, '1');
+        // v2.21.0: mark a genuine NEW user as eligible for the guided walkthrough
+        // auto-launch (only on this new-user path, never on terms re-accept), so
+        // flipping ENABLE_GUIDED_WALKTHROUGH on doesn't flood existing users.
+        try { localStorage.setItem(`walkthrough_pending_${email}`, '1'); } catch { /* SSR-safe */ }
         setDismissed(true);
         setSaving(false);
         router.refresh();

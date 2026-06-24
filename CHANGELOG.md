@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.21.0] - 2026-06-24
+
+### Added — guided walkthrough (interactive spotlight tour), flag-gated
+
+A first-run **driver.js** spotlight tour that teaches the core habit: search an adopter before you hand over an animal. It dims the homepage and highlights the *real* search box, guiding the user to type the name of the last person they adopted an animal out to (from memory), run the search, then read the result (rating → flags → history). Behind a new admin-togglable public flag `ENABLE_GUIDED_WALKTHROUGH` (**default off**).
+
+- **Trigger:** auto-launches once for genuine new users (a `walkthrough_pending` signal is set only on `CountryConfirmBanner`'s new-user path, so flipping the flag on can't flood existing users), plus a flag-gated "Show me how to search" re-launch button on the homepage.
+- **Mechanics:** driver.js handles the overlay/popover/positioning/keyboard (lazy-loaded with its CSS only when the tour starts, off the homepage LCP path). The app keeps only the custom logic: passive `data-walkthrough` markers in `SearchSection` (no tour logic coupling), a scoped `MutationObserver` that advances the "run search" step when a result card appears (and ends gracefully on zero results), and the new-user/persistence/flag wiring (localStorage). The search input stays typeable through the spotlight (`disableActiveInteraction` default).
+- Result steps (rating/flags) are skipped when absent; popover themed via CSS vars for dark mode; `prefers-reduced-motion` honored; E2E suppressed via the existing `playwright_test_mode` escape.
+
 ## [2.20.3] - 2026-06-23
 
 ### Fixed — `ENABLE_CONTENT_IMPORT` is a homepage-visibility toggle, not a kill-switch

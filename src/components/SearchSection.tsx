@@ -228,6 +228,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                         <input
                             type="text"
                             id="search"
+                            data-walkthrough="search-input"
                             placeholder={t('search.placeholder')}
                             className={`w-full border border-stone-200 focus:border-teal-400 focus:ring-4 focus:ring-teal-100 transition-all outline-none text-stone-900 placeholder:text-stone-500 font-medium bg-stone-50 ${hasResults
                                 ? 'px-4 py-3 pr-10 rounded-xl text-sm md:px-5 md:py-4 md:pr-12 md:rounded-2xl md:text-base'
@@ -252,6 +253,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                     </div>
                     <button
                         type="submit"
+                        data-walkthrough="search-submit"
                         disabled={loading}
                         className={`bg-teal-200 text-teal-900 font-semibold shadow-sm hover:bg-teal-300 hover:shadow-md transition-all disabled:opacity-70 transform active:scale-[0.98] ${hasResults
                             ? 'px-4 py-3 rounded-xl text-sm md:w-full md:py-4 md:px-6 md:rounded-2xl md:text-lg'
@@ -333,7 +335,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
             )}
 
             {results && (
-                <div ref={resultsRef} className="mt-8 space-y-4 scroll-mt-4">
+                <div ref={resultsRef} data-walkthrough="results" className="mt-8 space-y-4 scroll-mt-4">
 
                     {/* Refinement Nudge — inside scroll target so mobile auto-scroll doesn't skip it (P1 fix)
                         Amber palette to distinguish from the teal login_required banner (P2 fix) */}
@@ -430,7 +432,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                                             without this, the inline-flex badge content overflows its box on
                                             mobile and visually overlaps the truncated name. */}
                                         {res.avgRating !== null && (
-                                            <div className="flex-shrink-0">
+                                            <div className="flex-shrink-0" data-walkthrough="result-rating">
                                                 <RatingExplainer rating={res.avgRating}>
                                                     <RatingBadge rating={res.avgRating} size="sm" label="search" />
                                                 </RatingExplainer>
@@ -439,14 +441,14 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                                     </div>
 
                                     {/* Stats Row */}
-                                    <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
+                                    <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500" data-walkthrough="result-history">
                                         {showCardMetadata && (
                                             <span>👁 {res.stats.profileViews} {t('stats.views')}</span>
                                         )}
                                         <span>📋 {res.stats.requests} {t('stats.requests')}</span>
                                         <span>🏠 {res.stats.adoptions} {t('stats.adoptions')}</span>
                                         {/* Flag indicators */}
-                                        <div className="flex flex-wrap gap-1 ml-auto">
+                                        <div className="flex flex-wrap gap-1 ml-auto" data-walkthrough="result-flags">
                                             {res.flags.inaccurate && (
                                                 <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-rose-100 text-rose-700">⚠ {t('flags.inaccurate') || 'Inaccurate'}</span>
                                             )}
