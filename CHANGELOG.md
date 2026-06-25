@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.12] - 2026-06-25
+
+### Changed — walkthrough Dudoso copy: "reventa" → "maltrato"
+
+The too-many-adoptions step now reads "...pueden indicar maltrato o acumulación" (en: "...can signal abuse or hoarding").
+
 ## [2.22.11] - 2026-06-25
 
 ### Fixed — result-card mobile layout (name was getting squeezed)

@@ -1897,7 +1897,7 @@ export const es = {
         demo_malo_title: 'Juan MalAdoptante: alerta',
         demo_malo_body: 'Calificación 1: hay malas experiencias registradas. Este registro es público (importado de Facebook), por eso sus datos se ven sin ocultar.',
         demo_dudoso_title: 'Juan Dudoso: para mirar de cerca',
-        demo_dudoso_body: 'Calificación 2 y una alerta: 4 adopciones en 20 días. Tantas adopciones en tan poco tiempo pueden indicar reventa o acumulación.',
+        demo_dudoso_body: 'Calificación 2 y una alerta: 4 adopciones en 20 días. Tantas adopciones en tan poco tiempo pueden indicar maltrato o acumulación.',
         demo_revealphone_title: 'Validá lo que ya sabés',
         demo_revealphone_body: '¿Conocés su teléfono? Agreguémoslo a la búsqueda, junto al nombre. Mirá lo que pasa.',
         demo_revealresult_title: 'Su teléfono, revelado',
