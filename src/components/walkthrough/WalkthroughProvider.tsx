@@ -122,7 +122,7 @@ export function WalkthroughProvider({
                 disableActiveInteraction: true, // demo cards are inert — user only clicks Next
                 showProgress: true,
                 progressText: '{{current}} / {{total}}',
-                overlayColor: 'rgba(4, 47, 46, 0.55)',
+                overlayColor: 'rgba(8, 11, 20, 0.72)',
                 popoverClass: 'walkthrough-popover',
                 steps,
                 nextBtnText: t('walkthrough.next'),

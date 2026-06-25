@@ -1895,8 +1895,8 @@ export const es = {
         demo_malo_body: 'Calificación 1: hay malas experiencias registradas. Este registro es público (importado de Facebook), por eso sus datos se ven sin ocultar.',
         demo_dudoso_title: 'Juan Dudoso: para mirar de cerca',
         demo_dudoso_body: 'Calificación 2 y una alerta: 4 adopciones en 20 días. Tantas adopciones en tan poco tiempo pueden indicar reventa o acumulación.',
-        demo_cierre_title: 'Eso es todo',
-        demo_cierre_body: 'Cada tarjeta te ayuda a decidir. Recordá: buscá siempre antes de entregar un animal.',
+        demo_cierre_title: '¿Es alguno de estos?',
+        demo_cierre_body: 'Si uno es el Juan que buscás, ya ves su historial. Si no aparece, creá un registro nuevo. ¿Conocés su teléfono? Repetí la búsqueda con el nombre y el teléfono: si coincide, se revelan sus datos.',
     },
 };
 

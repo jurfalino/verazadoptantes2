@@ -1890,7 +1890,7 @@ export const en = {
         demo_malo_body: 'Rating 1: bad experiences are on record. This record is public (imported from Facebook), so his data is shown in the open.',
         demo_dudoso_title: 'Juan Dudoso: look closely',
         demo_dudoso_body: 'Rating 2 and an alert: 4 adoptions in 20 days. That many adoptions in so little time can signal reselling or hoarding.',
-        demo_cierre_title: 'That’s it',
-        demo_cierre_body: 'Each card helps you decide. Remember: always search before you hand over an animal.',
+        demo_cierre_title: 'Is it one of these?',
+        demo_cierre_body: 'If one is the Juan you want, you’ve got their history. If none match, create a new record. Know their phone? Search again with the name and phone — if it matches, their details are revealed.',
     },
 };

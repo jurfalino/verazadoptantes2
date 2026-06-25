@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.3] - 2026-06-25
+
+### Changed — walkthrough: dark-theme spotlight contrast + decision/phone-reveal copy
+
+- **Spotlight contrast (dark mode).** The highlighted element now gets a bright teal ring, and the overlay is a neutral darker dim — so it's obvious WHAT is spotlighted even in dark mode, where the dimmed page and the (dark) card were too close in tone to tell apart. Verified in both themes.
+- **Closing step copy.** Reframed from "that's it" to "**Is it one of these?**" — it now coaches the actual decision: if one is the Juan you're after you have their history; if none match, create a new record; and if you know their phone, search again with name + phone so the matching record's contact is revealed (the search-match reveal). Both locales.
+
 ## [2.22.2] - 2026-06-25
 
 ### Changed — walkthrough: progressive reveal + dark-theme polish
