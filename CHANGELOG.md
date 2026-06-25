@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.6] - 2026-06-25
+
+### Changed — adopter names always visible; "(público)" badge in search results
+
+- **Names are no longer PII-gated.** `renderName` now returns the full name for every viewer (authenticated or not) — surnames the searcher didn't type no longer collapse to initials. Contact fields, address, and family members stay gated. (The `name_token` grant plumbing remains for the "who has access" disclosure but no longer affects what the name shows.) Updated the `renderName` unit tests, the unauthenticated-search e2e test, and dropped "el nombre" from the walkthrough's *Datos protegidos* copy (it's no longer accurate). Also corrected a pre-existing stale unit test that still asserted a one-time editor gets full visibility (dropped in v2.19.51).
+- **Public records show "(público)".** Search-result cards now render a subtle "(público)" / "(public)" label next to the name when `adopters.isPublic = 1`, so it's clear which records are public (contact shown in the open) vs. gated.
+
 ## [2.22.5] - 2026-06-25
 
 ### Fixed — walkthrough dark-theme contrast (root cause, not a band-aid)
