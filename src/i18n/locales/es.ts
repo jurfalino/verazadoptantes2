@@ -63,6 +63,7 @@ export const es = {
         nav_adopters_list: 'Lista de adoptantes',
         nav_sql: 'Consola SQL',
         nav_config: 'Configuración',
+        nav_walkthrough: 'Recorrido guiado',
         nav_data_requests: 'Solicitudes de datos',
         nav_deleted: 'Eliminados',
         nav_pii_requests: 'Acceso a contacto',

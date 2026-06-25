@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.4] - 2026-06-25
+
+### Added — /admin/walkthrough panel to edit the demo records
+
+The walkthrough's three "Juan" records are now admin-editable. New `/admin/walkthrough` page (sidebar entry "Recorrido guiado") with a per-record form: name, phone/email/social/address, public toggle, rating, the flag checkboxes (verified address/ID, inaccurate, duplicate, "N adoptions in M days"), and the views/requests/adoptions stats. Plus a "Reset to defaults" button.
+
+- **PII** (name/contact/public) persists to the soft-deleted `isDemo` rows (still excluded from every real search); the **display values** (rating/flags/stats) persist to a `WALKTHROUGH_DEMO_OVERLAY` `app_config` JSON override. `getWalkthroughDemoMatches` merges both, falling back to code fixtures so the demo always renders. The masking on gated records stays genuine (real `maskAdopterContact`).
+- Round-trip logic covered by unit tests (`walkthroughDemo.test.ts`): edit → overlay/row → match, incl. public→unmasked / gated→masked and the soft-delete-stays-excluded invariant.
+
 ## [2.22.3] - 2026-06-25
 
 ### Changed — walkthrough: dark-theme spotlight contrast + decision/phone-reveal copy

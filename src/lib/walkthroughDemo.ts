@@ -20,7 +20,9 @@ import type { DiscoveryMatch } from '@/app/actions/types';
 import type { AdopterFlags } from '@/types/adopter';
 import {
     type ContactEntry,
+    type ContactEntryType,
     contactEntriesToBlob,
+    deserializeContactEntries,
     joinedAddressValue,
 } from './contactEntries';
 import { maskAdopterContact, NO_ACCESS_VISIBILITY } from './piiAccess';
@@ -210,4 +212,145 @@ export function buildDemoMatch(row: AdopterRow, overlay: DemoOverlay, gated: boo
 /** Overlay lookup by id (for merging an appConfig override later). */
 export function demoOverlayFor(id: string): DemoOverlay | undefined {
     return WALKTHROUGH_DEMO_FIXTURES.find(f => f.id === id)?.overlay;
+}
+
+export function demoFixtureFor(id: string): DemoFixture | undefined {
+    return WALKTHROUGH_DEMO_FIXTURES.find(f => f.id === id);
+}
+
+// ── Admin edit shape ──────────────────────────────────────────────────────────
+// A flat, form-friendly view of one demo record: the maskable PII (lives on the
+// real adopter row) plus the display overlay (rating/flags/stats — lives in the
+// WALKTHROUGH_DEMO_OVERLAY appConfig JSON). The admin panel edits this; the save
+// action splits it back into a row update + an overlay write.
+
+export interface DemoRecordEdit {
+    id: string;
+    name: string;
+    isPublic: boolean;
+    phone: string;
+    email: string;
+    social: string;
+    address: string;
+    rating: number | null;
+    verifiedAddress: boolean;
+    verifiedIdentity: boolean;
+    inaccurate: boolean;
+    duplicate: boolean;
+    /** 0 = no "too many adoptions" flag. */
+    tooManyAdoptionsCount: number;
+    tooManyAdoptionsDays: number;
+    profileViews: number;
+    requests: number;
+    adoptions: number;
+}
+
+function firstEntryValue(entries: ContactEntry[], type: ContactEntryType): string {
+    return entries.find(e => e.type === type)?.value ?? '';
+}
+
+/** Flatten a fixture (the defaults) into the editable shape. */
+export function fixtureToEdit(f: DemoFixture): DemoRecordEdit {
+    const e = f.contactEntries;
+    const o = f.overlay;
+    return {
+        id: f.id,
+        name: f.name,
+        isPublic: f.isPublic,
+        phone: firstEntryValue(e, 'phone'),
+        email: firstEntryValue(e, 'email'),
+        social: firstEntryValue(e, 'social'),
+        address: firstEntryValue(e, 'address'),
+        rating: o.avgRating,
+        verifiedAddress: o.flags.verified_address,
+        verifiedIdentity: o.flags.verified_identity,
+        inaccurate: o.flags.inaccurate,
+        duplicate: o.flags.duplicate,
+        tooManyAdoptionsCount: o.flags.tooManyAdoptions?.count ?? 0,
+        tooManyAdoptionsDays: o.flags.tooManyAdoptions?.periodDays ?? 20,
+        profileViews: o.stats.profileViews,
+        requests: o.stats.requests,
+        adoptions: o.stats.adoptions,
+    };
+}
+
+/** Overlay a saved DB row's PII onto an edit (admin load path). */
+export function applyRowToEdit(edit: DemoRecordEdit, row: AdopterRow): DemoRecordEdit {
+    const entries = deserializeContactEntries(row.contactEntries);
+    return {
+        ...edit,
+        name: row.name,
+        isPublic: row.isPublic === 1,
+        phone: firstEntryValue(entries, 'phone'),
+        email: firstEntryValue(entries, 'email'),
+        social: firstEntryValue(entries, 'social'),
+        address: firstEntryValue(entries, 'address') || (row.addressInfo ?? ''),
+    };
+}
+
+/** Overlay a saved override onto an edit (admin load path). */
+export function applyOverlayToEdit(edit: DemoRecordEdit, o: DemoOverlay): DemoRecordEdit {
+    return {
+        ...edit,
+        rating: o.avgRating,
+        verifiedAddress: o.flags.verified_address,
+        verifiedIdentity: o.flags.verified_identity,
+        inaccurate: o.flags.inaccurate,
+        duplicate: o.flags.duplicate,
+        tooManyAdoptionsCount: o.flags.tooManyAdoptions?.count ?? 0,
+        tooManyAdoptionsDays: o.flags.tooManyAdoptions?.periodDays ?? 20,
+        profileViews: o.stats.profileViews,
+        requests: o.stats.requests,
+        adoptions: o.stats.adoptions,
+    };
+}
+
+/** Build contact entries from an edit (only the filled fields). */
+export function editToContactEntries(e: DemoRecordEdit): ContactEntry[] {
+    const out: ContactEntry[] = [];
+    if (e.phone.trim()) out.push({ type: 'phone', value: e.phone.trim() });
+    if (e.email.trim()) out.push({ type: 'email', value: e.email.trim() });
+    if (e.social.trim()) out.push({ type: 'social', value: e.social.trim() });
+    if (e.address.trim()) out.push({ type: 'address', value: e.address.trim() });
+    return out;
+}
+
+/** Build the display overlay from an edit. */
+export function editToOverlay(e: DemoRecordEdit): DemoOverlay {
+    const count = Math.max(0, Math.round(e.tooManyAdoptionsCount));
+    const days = Math.max(1, Math.round(e.tooManyAdoptionsDays));
+    return {
+        avgRating: e.rating,
+        flags: {
+            ...NO_FLAGS,
+            verified_address: e.verifiedAddress,
+            verified_identity: e.verifiedIdentity,
+            inaccurate: e.inaccurate,
+            duplicate: e.duplicate,
+            tooManyAdoptions: count > 0 ? { count, threshold: 3, periodDays: days, actualSpanDays: days } : null,
+        },
+        stats: {
+            searchHits: Math.max(0, Math.round(e.profileViews)),
+            profileViews: Math.max(0, Math.round(e.profileViews)),
+            requests: Math.max(0, Math.round(e.requests)),
+            adoptions: Math.max(0, Math.round(e.adoptions)),
+        },
+        thumbnail: null,
+    };
+}
+
+/** Build the adopter row to persist from an edit (keeps the fixture's provenance). */
+export function editToAdopterRow(e: DemoRecordEdit): AdopterRow {
+    const fixture = demoFixtureFor(e.id);
+    const base = demoAdopterRow(fixture ?? WALKTHROUGH_DEMO_FIXTURES[0]);
+    const entries = editToContactEntries(e);
+    return {
+        ...base,
+        id: e.id,
+        name: e.name.trim() || base.name,
+        contactEntries: JSON.stringify(entries),
+        contactInfo: contactEntriesToBlob(entries) || null,
+        addressInfo: null,
+        isPublic: e.isPublic ? 1 : 0,
+    };
 }
