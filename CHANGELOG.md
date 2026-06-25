@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.11] - 2026-06-25
+
+### Fixed — result-card mobile layout (name was getting squeezed)
+
+After adding the "Público" tag, long names had no room on phones. Two fixes, both responsive (full treatment returns ≥640px):
+- **Rating label shortens on mobile** — "⭐1.0 · Dangerous Adopter" → "⭐1.0 · Dangerous" (es: "Adoptante Peligroso" → "Peligroso"). Uses the existing short `ratings.*` strings; the full `search_label` form still shows on desktop.
+- **"Público" tag is icon-only on mobile** — just the open-padlock (with its tooltip); the "Público" label returns on ≥sm. Frees the name's room directly.
+
+Verified at 390px and 920px.
+
 ## [2.22.10] - 2026-06-25
 
 ### Refactored — shared `assembleDiscoveryMatch` (real search + walkthrough demo)

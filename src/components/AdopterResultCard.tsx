@@ -77,7 +77,8 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                                     <path d="M7 11V7a5 5 0 0 1 9.9-1" />
                                 </svg>
-                                {t('search.public_label')}
+                                {/* Mobile: icon-only (keeps room for the name); ≥sm: icon + label. */}
+                                <span className="hidden sm:inline">{t('search.public_label')}</span>
                             </span>
                         )}
                     </div>
