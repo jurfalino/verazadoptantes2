@@ -72,7 +72,13 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                                 : res.adopter.name}
                         </span>
                         {res.adopter.isPublic === 1 && (
-                            <span className="flex-shrink-0 text-[11px] font-medium text-stone-400">{t('search.public_label')}</span>
+                            <span className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-sky-100 text-sky-700" title={t('search.public_title')}>
+                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                    <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+                                </svg>
+                                {t('search.public_label')}
+                            </span>
                         )}
                     </div>
                     <div className="text-xs text-stone-500 truncate" title={res.adopter.contactInfo || undefined}>

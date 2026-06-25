@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.7] - 2026-06-25
+
+### Changed — public-record label is now a tag with an unlocked-lock icon
+
+The "(público)" parenthetical on search-result cards is now a proper chip: an inline open-padlock SVG (currentColor) + "Público" / "Public" on a sky background, with a tooltip ("Registro público: datos de contacto a la vista"). Verified in light + dark.
+
 ## [2.22.6] - 2026-06-25
 
 ### Changed — adopter names always visible; "(público)" badge in search results
