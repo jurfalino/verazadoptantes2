@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { findAdopters } from '@/app/actions';
 import type { DiscoveryMatch } from '@/app/actions';
 import { AdopterResultCard } from './AdopterResultCard';
+import { useWalkthrough } from './walkthrough/WalkthroughProvider';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
@@ -21,6 +22,10 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
     const { data: session } = useSession();
     const { openLogin } = useAuthContext();
     const toast = useShowToast();
+    // Guided walkthrough: when it injects demo matches, this section renders them
+    // as the results for a "Juan" search (the spotlight tour highlights these
+    // real cards). Null when the tour isn't running.
+    const { demoMatches } = useWalkthrough();
 
     // Initialize from URL params for back-navigation persistence
     const initialQuery = searchParams.get('q') || '';
@@ -75,6 +80,27 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
             runSearch(initialQuery);
         }
     }, [initialQuery, results, runSearch, loading]);
+
+    // Guided-walkthrough injection: show the demo "Juan" results in the real UI
+    // while the tour runs, and restore the page when it ends. The restore branch
+    // is gated on `demoWasActive` so it NEVER runs on mount — otherwise a real
+    // deep-link like /?q=Juan would have its search box blanked. We also only
+    // clear our own injected set (demo ids) so a fresh real search isn't lost.
+    const demoWasActive = useRef(false);
+    useEffect(() => {
+        if (demoMatches) {
+            demoWasActive.current = true;
+            setQuery('Juan');
+            setResults(demoMatches);
+            setValidationError(null);
+            setTruncatedInfo(null);
+            setSingleTokenResultCount(undefined);
+        } else if (demoWasActive.current) {
+            demoWasActive.current = false;
+            setResults(prev => (prev?.some(r => r.adopterId.startsWith('demo-juan-')) ? null : prev));
+            setQuery(prev => (prev === 'Juan' ? '' : prev));
+        }
+    }, [demoMatches]);
 
     const handleCreateNew = (e: React.MouseEvent) => {
         e.preventDefault();
@@ -311,7 +337,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
             )}
 
             {results && (
-                <div ref={resultsRef} className="mt-8 space-y-4 scroll-mt-4">
+                <div ref={resultsRef} data-walkthrough="results" className="mt-8 space-y-4 scroll-mt-4">
 
                     {/* Refinement Nudge — inside scroll target so mobile auto-scroll doesn't skip it (P1 fix)
                         Amber palette to distinguish from the teal login_required banner (P2 fix) */}

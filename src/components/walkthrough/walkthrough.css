@@ -1,0 +1,58 @@
+/* Guided-walkthrough driver.js popover theming. Scoped to .walkthrough-popover
+ * so it never affects other driver usages. Uses the app's teal accent and reads
+ * a couple of theme vars so it stays legible in dark mode. */
+
+.driver-popover.walkthrough-popover {
+    background: var(--surface-card, #ffffff);
+    color: var(--text-primary, #1c1917);
+    border-radius: 1rem;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+    max-width: 22rem;
+}
+
+.driver-popover.walkthrough-popover .driver-popover-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary, #1c1917);
+}
+
+.driver-popover.walkthrough-popover .driver-popover-description {
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--text-secondary, #57534e);
+}
+
+.driver-popover.walkthrough-popover .driver-popover-progress-text {
+    font-size: 0.75rem;
+    color: var(--text-secondary, #78716c);
+}
+
+.driver-popover.walkthrough-popover .driver-popover-navigation-btns button.driver-popover-next-btn,
+.driver-popover.walkthrough-popover .driver-popover-navigation-btns button.driver-popover-done-btn {
+    background: #0d9488; /* teal-600 */
+    color: #ffffff;
+    text-shadow: none;
+    border: none;
+    border-radius: 0.5rem;
+    padding: 0.4rem 0.9rem;
+    font-weight: 600;
+    font-size: 0.8125rem;
+}
+
+.driver-popover.walkthrough-popover .driver-popover-navigation-btns button.driver-popover-next-btn:hover,
+.driver-popover.walkthrough-popover .driver-popover-navigation-btns button.driver-popover-done-btn:hover {
+    background: #0f766e; /* teal-700 */
+}
+
+.driver-popover.walkthrough-popover .driver-popover-navigation-btns button.driver-popover-prev-btn {
+    background: transparent;
+    color: var(--text-secondary, #57534e);
+    text-shadow: none;
+    border: none;
+    font-weight: 500;
+    font-size: 0.8125rem;
+}
+
+.driver-popover.walkthrough-popover .driver-popover-arrow {
+    border-color: var(--surface-card, #ffffff);
+}

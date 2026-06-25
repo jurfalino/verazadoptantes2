@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.1] - 2026-06-25
+
+### Changed — walkthrough spotlights the REAL UI (corrects 2.22.0's modal)
+
+2.22.0 wrongly rendered the demo in a separate modal. The walkthrough is meant to **spotlight the real homepage UI**. Reverted to a **driver.js** spotlight: on start it injects the three mocked "Juan" records into the **live SearchSection** (those `isDemo` rows are excluded from every real search *except here*), fills the real search box with "Juan", and spotlights the **real** search box → the **real** result cards as the user clicks Next (`disableActiveInteraction`, so the inert demo cards can't be clicked through to a 404).
+
+Browser-verified end-to-end: the spotlight cutout lands on `#search` then each `a[/adopter/demo-juan-*]` card in order; BuenAdoptante's contact renders masked (`j•••@gmail.com`, `+54 11 ••••-••••`) while MalAdoptante's public record shows unmasked; rating badges, the Address-Verified chip, and the "4 adoptions in 20 days" alert all render.
+
+- Re-added `driver.js`; rewrote `WalkthroughProvider` to inject `demoMatches` via context and drive the spotlight; restored `walkthrough.css` + `css.d.ts`; deleted the modal. Fixed a mount-clobber bug (the demo restore branch could blank a real `/?q=Juan` deep-link's search box).
+
 ## [2.22.0] - 2026-06-24
 
 ### Changed — guided walkthrough is now a click-Next demo over mocked data
