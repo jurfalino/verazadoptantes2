@@ -66,8 +66,8 @@ export const FEATURE_FLAGS = {
     SHOWCASE_GLOBAL_VISIBLE: false,
     SHOWCASE_ORG_VISIBLE: false,
     SHOWCASE_USER_VISIBLE: false,
-    // v2.21.0: first-run interactive spotlight tour (driver.js) guiding a new
-    // rescuer to search an adopter by name. Public + admin-togglable. Default off.
+    // v2.22.0: first-run click-Next demo modal teaching how to search an adopter,
+    // over three mocked records. Public + admin-togglable. Default off.
     ENABLE_GUIDED_WALKTHROUGH: false,
 } as const;
 

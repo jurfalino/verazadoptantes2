@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.0] - 2026-06-24
+
+### Changed — guided walkthrough is now a click-Next demo over mocked data
+
+Replaced the driver.js spotlight tour (v2.21.x) with a self-contained demo modal: the user just clicks **Next** through a scripted search for "Juan" that returns three teaching records — **Juan BuenAdoptante** (rating 4, verified address, PII gated → masked), **Juan MalAdoptante** (rating 1, public record imported from Facebook → contact shown), and **Juan Dudoso** (rating 2, "4 adopciones en 20 días" alert). No live-DOM coupling, no MutationObserver, no dependency — the modal owns its surface and renders the **real** `<AdopterResultCard>` against the mocked records, so the *Datos protegidos* masking on the gated cards is genuine. Still behind `ENABLE_GUIDED_WALKTHROUGH` (default off); reuses the relaunch button + new-user auto-launch.
+
+### Added
+- **`<AdopterResultCard>`** — extracted from `SearchSection` so real search and the demo render one identical card (no drift). Now also renders a `verified_address` chip.
+- **`adopters.isDemo`** column (migration `0052`). Demo rows are real rows but **soft-deleted** (`deletedAt` set), so every existing `deleted_at IS NULL` query excludes them automatically — they can never leak into real search/duplicate/analytics. The walkthrough fetches them by the `isDemo` marker; an idempotent `seedWalkthroughDemo` action upserts them; tokenization skips them; Trash + bulk-purge exclude them. Until seeded, the demo renders from code fixtures (identical masking), so it works out of the box.
+
+### Removed
+- `driver.js` dependency, the spotlight `WalkthroughProvider` logic, `steps.ts`, `walkthrough.css`, the `css.d.ts` shim, and the `data-walkthrough` markers in `SearchSection`.
+
+### Pending follow-up
+- `/admin/walkthrough` panel to seed/reset the demo rows and edit their PII + rating/flags overlay (the demo is fully functional from fixtures without it).
+
 ## [2.21.2] - 2026-06-24
 
 ### Fixed — walkthrough: result steps (rating/flags/history) never appeared
