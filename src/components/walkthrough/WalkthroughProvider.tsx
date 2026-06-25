@@ -3,26 +3,25 @@
 /**
  * Guided walkthrough (v2.22.x) — a driver.js spotlight tour over the REAL
  * homepage UI. It reveals progressively: empty search box → "Juan" typed →
- * results appear → spotlight each real card, advancing on Next. The three
- * mocked "Juan" records are injected into the LIVE SearchSection via this
- * context (`demoQuery` + `demoResults`); those `isDemo` rows are excluded from
- * every real search EXCEPT here. driver.js + CSS are lazy-loaded on start.
+ * results appear → spotlight each real card → THEN it re-searches "Juan + the
+ * phone of Juan BuenAdoptante" and shows that gated record's contact becoming
+ * revealed (the search-match reveal, demonstrated live). The three mocked
+ * records are injected into the live SearchSection via this context; those
+ * `isDemo` rows are excluded from every real search EXCEPT here.
  */
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { Driver, DriveStep } from 'driver.js';
 import type { DiscoveryMatch } from '@/app/actions';
-import { getWalkthroughDemoMatches } from '@/app/actions/walkthroughDemo';
+import { getWalkthroughDemoMatches, getWalkthroughDemoRevealed } from '@/app/actions/walkthroughDemo';
+import { deserializeContactEntries } from '@/lib/contactEntries';
 import { useLanguage } from '@/context/LanguageContext';
 
 interface WalkthroughContextValue {
     enabled: boolean;
     start: () => void;
-    /** True while the tour is running — SearchSection takes over query/results. */
     demoActive: boolean;
-    /** What the real search box should show ('' empty, then 'Juan'). */
     demoQuery: string;
-    /** Demo results to render in the real list (null until the "results" step). */
     demoResults: DiscoveryMatch[] | null;
 }
 
@@ -37,11 +36,13 @@ const keysFor = (email: string | null) => {
     return { pending: `walkthrough_pending_${e}`, done: `walkthrough_done_${e}` };
 };
 
+const REVEAL_ID = 'demo-juan-bueno';
+
 interface StepDef { key: string; element?: string; side: 'top' | 'bottom' | 'left' | 'right'; align: 'start' | 'center' | 'end'; }
 
-// Each step spotlights a REAL element. Steps 0–1 show the search box (empty,
-// then "Juan"); step 2 reveals the results; 3–6 are the real cards (matched by
-// the injected demo hrefs); the last has no element → centered popover.
+// Each step spotlights a REAL element. 0–1 the search box (empty, then "Juan");
+// 2 reveals the results; 3–6 the cards; 7 adds the phone to the box; 8 shows
+// BuenAdoptante revealed; 9 (no element) is the centered close.
 const STEP_DEFS: StepDef[] = [
     { key: 'search', element: '#search', side: 'bottom', align: 'start' },
     { key: 'typed', element: '#search', side: 'bottom', align: 'start' },
@@ -50,11 +51,17 @@ const STEP_DEFS: StepDef[] = [
     { key: 'protegido', element: 'a[href*="/adopter/demo-juan-bueno"]', side: 'bottom', align: 'start' },
     { key: 'malo', element: 'a[href*="/adopter/demo-juan-malo"]', side: 'top', align: 'start' },
     { key: 'dudoso', element: 'a[href*="/adopter/demo-juan-dudoso"]', side: 'top', align: 'start' },
+    { key: 'revealphone', element: '#search', side: 'bottom', align: 'start' },
+    { key: 'revealresult', element: 'a[href*="/adopter/demo-juan-bueno"]', side: 'bottom', align: 'start' },
     { key: 'cierre', side: 'top', align: 'center' },
 ];
 
-const TYPED_FROM = 1;   // step index at which the box shows "Juan"
-const RESULTS_FROM = 2; // step index at which the result cards appear
+const TYPED_FROM = 1;          // box shows "Juan"
+const RESULTS_FROM = 2;        // result cards appear (masked)
+const REVEAL_PHONE_FROM = 7;   // box shows "Juan <phone>"
+const REVEAL_RESULTS_FROM = 8; // BuenAdoptante renders revealed
+// Steps where the spotlight target's presence/content depends on a fresh render.
+const needsRender = (idx: number) => idx === RESULTS_FROM || idx === REVEAL_RESULTS_FROM;
 
 export function WalkthroughProvider({
     flagEnabled,
@@ -69,15 +76,18 @@ export function WalkthroughProvider({
     const [demoActive, setDemoActive] = useState(false);
     const [demoQuery, setDemoQuery] = useState('');
     const [demoResults, setDemoResults] = useState<DiscoveryMatch[] | null>(null);
-    const matchesRef = useRef<DiscoveryMatch[]>([]);
+    const matchesRef = useRef<DiscoveryMatch[]>([]);       // masked
+    const revealRef = useRef<DiscoveryMatch[]>([]);        // BuenAdoptante unmasked
+    const revealQueryRef = useRef<string>('Juan');         // "Juan <phone>"
     const driverRef = useRef<Driver | null>(null);
     const startingRef = useRef(false);
     const keys = keysFor(userEmail);
 
-    // Set the injected state for the step about to be shown (progressive reveal).
+    // Set the injected state for the step about to be shown (progressive reveal,
+    // then the phone-search reveal).
     const applyPhase = useCallback((idx: number) => {
-        setDemoQuery(idx >= TYPED_FROM ? 'Juan' : '');
-        setDemoResults(idx >= RESULTS_FROM ? matchesRef.current : null);
+        setDemoQuery(idx >= REVEAL_PHONE_FROM ? revealQueryRef.current : (idx >= TYPED_FROM ? 'Juan' : ''));
+        setDemoResults(idx >= REVEAL_RESULTS_FROM ? revealRef.current : (idx >= RESULTS_FROM ? matchesRef.current : null));
     }, []);
 
     const start = useCallback(async () => {
@@ -85,14 +95,26 @@ export function WalkthroughProvider({
         startingRef.current = true;
         try {
             const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-            matchesRef.current = await getWalkthroughDemoMatches();
+            const [normal, revealed] = await Promise.all([
+                getWalkthroughDemoMatches(),
+                getWalkthroughDemoRevealed(),
+            ]);
+            matchesRef.current = normal;
+            revealRef.current = revealed;
+            // Build the "Juan <phone>" query from the revealed record's real phone
+            // (so it reflects any admin edit, not a hardcoded value).
+            const bueno = revealed.find(m => m.adopterId === REVEAL_ID);
+            const phone = bueno
+                ? deserializeContactEntries(bueno.adopter.contactEntries).find(e => e.type === 'phone')?.value ?? ''
+                : '';
+            revealQueryRef.current = phone ? `Juan ${phone}` : 'Juan';
+
             const [{ driver }] = await Promise.all([
                 import('driver.js'),
                 import('driver.js/dist/driver.css'),
                 import('./walkthrough.css'),
             ]);
 
-            // Enter the tour at the empty-box phase.
             setDemoActive(true);
             applyPhase(0);
 
@@ -106,20 +128,17 @@ export function WalkthroughProvider({
                 },
             }));
 
-            // We drive Next/Prev ourselves so we can stage the reveal and let the
-            // newly-revealed element (the results container) render before driver
-            // tries to spotlight it.
-            const advance = (target: number, needsRender: boolean) => {
+            const advance = (target: number) => {
                 applyPhase(target);
                 const go = () => driverRef.current?.moveTo(target);
-                if (needsRender) requestAnimationFrame(() => requestAnimationFrame(go));
+                if (needsRender(target)) requestAnimationFrame(() => requestAnimationFrame(go));
                 else go();
             };
 
             const d = driver({
                 animate: !reduce,
                 allowClose: true,
-                disableActiveInteraction: true, // demo cards are inert — user only clicks Next
+                disableActiveInteraction: true,
                 showProgress: true,
                 progressText: '{{current}} / {{total}}',
                 overlayColor: 'rgba(8, 11, 20, 0.72)',
@@ -131,12 +150,12 @@ export function WalkthroughProvider({
                 onNextClick: () => {
                     const cur = driverRef.current?.getActiveIndex() ?? 0;
                     if (cur >= STEP_DEFS.length - 1) { driverRef.current?.destroy(); return; }
-                    advance(cur + 1, cur + 1 === RESULTS_FROM);
+                    advance(cur + 1);
                 },
                 onPrevClick: () => {
                     const cur = driverRef.current?.getActiveIndex() ?? 0;
                     if (cur <= 0) return;
-                    advance(cur - 1, false);
+                    advance(cur - 1);
                 },
                 onDestroyed: () => {
                     setDemoActive(false);
@@ -148,7 +167,6 @@ export function WalkthroughProvider({
             });
 
             driverRef.current = d;
-            // Let SearchSection commit the empty "Juan" box before spotlighting.
             requestAnimationFrame(() => requestAnimationFrame(() => d.drive()));
         } catch {
             setDemoActive(false);
@@ -177,7 +195,6 @@ export function WalkthroughProvider({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [flagEnabled, userEmail]);
 
-    // Teardown on unmount.
     useEffect(() => () => { driverRef.current?.destroy(); }, []);
 
     return (

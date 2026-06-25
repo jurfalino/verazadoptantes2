@@ -1893,7 +1893,11 @@ export const en = {
         demo_malo_body: 'Rating 1: bad experiences are on record. This record is public (imported from Facebook), so his data is shown in the open.',
         demo_dudoso_title: 'Juan Dudoso: look closely',
         demo_dudoso_body: 'Rating 2 and an alert: 4 adoptions in 20 days. That many adoptions in so little time can signal reselling or hoarding.',
+        demo_revealphone_title: 'Validate what you know',
+        demo_revealphone_body: 'Know their phone? Let’s add it to the search, next to the name. Watch what happens.',
+        demo_revealresult_title: 'Their data, revealed',
+        demo_revealresult_body: 'Because the phone matches this record, you now see its full details — email, phone, and address. Only what you already knew is revealed.',
         demo_cierre_title: 'Is it one of these?',
-        demo_cierre_body: 'If one is the Juan you want, you’ve got their history. If none match, create a new record. Know their phone? Search again with the name and phone — if it matches, their details are revealed.',
+        demo_cierre_body: 'If one is the Juan you want, you’ve got their history. If none match, create a new record.',
     },
 };

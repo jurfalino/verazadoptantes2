@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.8] - 2026-06-25
+
+### Changed — walkthrough now *demonstrates* the phone reveal (doesn't just describe it)
+
+The closing used to tell the user "search again with the phone and it reveals their data." The tour now actually does it: after the card tour it adds Juan BuenAdoptante's phone to the search box ("Juan +54 11 4567-8901") and shows that gated record's masked contact becoming **revealed** in place — full email/phone/address — while the other gated record (Dudoso) stays masked, so it's clear only a value you already know reveals. Two new steps (`demo_revealphone`, `demo_revealresult`, both locales); the closing step trimmed to the keep-or-create-new decision.
+
+- Server: `getWalkthroughDemoMatches(revealIds)` can render given records unmasked; a param-less `getWalkthroughDemoRevealed()` wrapper builds the reveal set server-side. The reveal phone is derived from the (possibly admin-edited) record, not hardcoded. Browser-verified.
+
 ## [2.22.7] - 2026-06-25
 
 ### Changed — public-record label is now a tag with an unlocked-lock icon

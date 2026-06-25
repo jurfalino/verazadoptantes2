@@ -37,6 +37,8 @@ type AdopterRow = typeof adopters.$inferSelect;
 type AnyDb = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
 const OVERLAY_KEY = 'WALKTHROUGH_DEMO_OVERLAY';
+/** The record the tour reveals in its "search name + phone" demonstration. */
+const REVEAL_DEMO_ID = 'demo-juan-bueno';
 
 /** Parse the admin overlay overrides ({ [id]: DemoOverlay }). Never throws. */
 async function readOverlayOverrides(db: AnyDb): Promise<Record<string, DemoOverlay>> {
@@ -59,7 +61,10 @@ async function readDemoRows(db: AnyDb): Promise<Map<string, AdopterRow>> {
  * `isDemo` rows when present (else fixtures); overlay from the appConfig
  * override when present (else fixtures). Masking is applied in `buildDemoMatch`.
  */
-export async function getWalkthroughDemoMatches(): Promise<DiscoveryMatch[]> {
+export async function getWalkthroughDemoMatches(revealIds: string[] = []): Promise<DiscoveryMatch[]> {
+    // `revealIds` force those records to render UNMASKED — used by the tour's
+    // "search name + phone → contact revealed" demonstration step.
+    const gatedFor = (id: string, normalGated: boolean) => (revealIds.includes(id) ? false : normalGated);
     try {
         const db = await getDb();
         if (db) {
@@ -68,8 +73,8 @@ export async function getWalkthroughDemoMatches(): Promise<DiscoveryMatch[]> {
                 const row = byId.get(f.id);
                 const overlay = overrides[f.id] ?? f.overlay;
                 return row
-                    ? buildDemoMatch(row, overlay, row.isPublic !== 1)
-                    : buildDemoMatch(demoAdopterRow(f), overlay, f.gated);
+                    ? buildDemoMatch(row, overlay, gatedFor(f.id, row.isPublic !== 1))
+                    : buildDemoMatch(demoAdopterRow(f), overlay, gatedFor(f.id, f.gated));
             });
         }
     } catch (e) {
@@ -77,7 +82,14 @@ export async function getWalkthroughDemoMatches(): Promise<DiscoveryMatch[]> {
             error: e instanceof Error ? e.message : String(e),
         });
     }
-    return WALKTHROUGH_DEMO_FIXTURES.map(f => buildDemoMatch(demoAdopterRow(f), f.overlay, f.gated));
+    return WALKTHROUGH_DEMO_FIXTURES.map(f => buildDemoMatch(demoAdopterRow(f), f.overlay, gatedFor(f.id, f.gated)));
+}
+
+/** Same as getWalkthroughDemoMatches but with the reveal record UNMASKED — the
+ * tour's "search name + phone → contact revealed" step. Param-less so the reveal
+ * set is built entirely server-side (no array arg across the client boundary). */
+export async function getWalkthroughDemoRevealed(): Promise<DiscoveryMatch[]> {
+    return getWalkthroughDemoMatches([REVEAL_DEMO_ID]);
 }
 
 /** The 3 records flattened into the admin-editable shape (admin only). */
