@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.5] - 2026-06-25
+
+### Fixed — walkthrough dark-theme contrast (root cause, not a band-aid)
+
+The spotlight was unreadable in dark mode. Root cause: driver.js creates focus only by *dimming the page around the target*, so the highlight is purely the luminance gap between the lit target and the dimmed surround. That works in light mode (lots of brightness to remove) but collapses in dark mode — dimming an already-dark page (#0a1628 / #1e293b cards) removes almost no luminance, so target and surround end up equally dark and indistinguishable. The earlier border was cosmetic and fixed none of this.
+
+- **Lift the target instead of darkening the surround (dark only):** the highlighted element now gets a brightness boost + a soft teal glow, so it reads as *lit* — restoring figure-ground with an additive-brightness cue rather than a subtractive one. A crisp teal ring marks the edge in both themes.
+- **Elevate the popover:** it was using `--surface-card`, the exact same color as the cards, so it blended. In dark mode it now sits on `--surface-elevated` (a lighter slate) and reads as a raised panel; the cosmetic border is gone. Verified in both themes.
+
 ## [2.22.4] - 2026-06-25
 
 ### Added — /admin/walkthrough panel to edit the demo records

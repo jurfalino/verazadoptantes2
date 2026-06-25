@@ -1,31 +1,50 @@
-/* Guided-walkthrough driver.js popover theming. Scoped to .walkthrough-popover
- * so it never affects other driver usages. Uses the app's teal accent and reads
- * a couple of theme vars so it stays legible in dark mode. */
+/* Guided-walkthrough driver.js styling. Scoped to .walkthrough-popover /
+ * .driver-active-element so it never affects other driver usages. Reads the
+ * app's theme vars so it adapts to light/dark.
+ *
+ * Dark-mode focus problem: driver dims the page around the target, but dimming
+ * an already-dark page barely changes its luminance, so the target doesn't stand
+ * out. The fix below LIFTS the target (brightness + glow) in dark mode instead of
+ * relying on darkening the surround, and elevates the popover onto a lighter
+ * surface so it doesn't blend into the (same-colored) cards. */
 
-/* Highlighted element — a bright teal ring so it's obvious WHAT is spotlighted,
- * even in dark mode where the dimmed page and the (dark) card are close in tone.
- * The walkthrough is the only driver instance, and this CSS only loads while the
- * tour runs, so styling the global active-element class is safe. */
+/* ── Highlighted element ───────────────────────────────────────────────────── */
+
+/* Both themes: a crisp teal ring marks the edge of what's spotlighted. */
 .driver-active-element {
     border-radius: 0.85rem !important;
-    box-shadow: 0 0 0 3px #14b8a6, 0 0 0 8px rgba(20, 184, 166, 0.30) !important;
+    box-shadow: 0 0 0 3px #0d9488 !important; /* teal-600 */
 }
+
+/* Dark only: the dim-the-surround trick is too weak on a dark page, so make the
+ * target read as LIT — raise its brightness and spill a soft glow around it. */
+[data-theme="dark"] .driver-active-element {
+    filter: brightness(1.16) saturate(1.05);
+    box-shadow: 0 0 0 2px #2dd4bf, 0 0 34px 8px rgba(45, 212, 191, 0.42) !important; /* teal-300 glow */
+}
+
+/* ── Popover ───────────────────────────────────────────────────────────────── */
 
 .driver-popover.walkthrough-popover {
     background: var(--surface-card, #ffffff);
     color: var(--text-primary, #1c1917);
-    border: 1px solid var(--border-default, #e7e5e4);
+    border: none;
     border-radius: 1rem;
-    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
+    box-shadow: 0 18px 56px rgba(0, 0, 0, 0.55);
     max-width: 22rem;
 }
 
-/* Close (×) — themed so it stays visible on the dark surface. */
-.driver-popover.walkthrough-popover .driver-popover-close-btn {
-    color: var(--text-faint, #9ca3af);
+/* Dark: sit the popover on the ELEVATED surface (lighter than the cards) so it
+ * reads as a raised panel instead of blending into same-colored content. */
+[data-theme="dark"] .driver-popover.walkthrough-popover {
+    background: var(--surface-elevated, #334155);
 }
-.driver-popover.walkthrough-popover .driver-popover-close-btn:hover {
-    color: var(--text-primary, #1c1917);
+
+.driver-popover.walkthrough-popover .driver-popover-arrow {
+    border-color: var(--surface-card, #ffffff);
+}
+[data-theme="dark"] .driver-popover.walkthrough-popover .driver-popover-arrow {
+    border-color: var(--surface-elevated, #334155);
 }
 
 .driver-popover.walkthrough-popover .driver-popover-title {
@@ -42,8 +61,18 @@
 
 .driver-popover.walkthrough-popover .driver-popover-progress-text {
     font-size: 0.75rem;
-    color: var(--text-secondary, #78716c);
+    color: var(--text-faint, #78716c);
 }
+
+/* Close (×) — themed so it stays visible on both surfaces. */
+.driver-popover.walkthrough-popover .driver-popover-close-btn {
+    color: var(--text-faint, #9ca3af);
+}
+.driver-popover.walkthrough-popover .driver-popover-close-btn:hover {
+    color: var(--text-primary, #1c1917);
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────────── */
 
 .driver-popover.walkthrough-popover .driver-popover-navigation-btns button.driver-popover-next-btn,
 .driver-popover.walkthrough-popover .driver-popover-navigation-btns button.driver-popover-done-btn {
@@ -69,8 +98,4 @@
     border: none;
     font-weight: 500;
     font-size: 0.8125rem;
-}
-
-.driver-popover.walkthrough-popover .driver-popover-arrow {
-    border-color: var(--surface-card, #ffffff);
 }
