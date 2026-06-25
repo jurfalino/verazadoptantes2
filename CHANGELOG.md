@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.2] - 2026-06-25
+
+### Changed — walkthrough: progressive reveal + dark-theme polish
+
+- **Progressive reveal.** The tour no longer shows the box and results all at once. It now steps: empty search box → "Juan" typed in → results appear → spotlight each card. Implemented by staging the injected state (`demoQuery`/`demoResults`) per step and driving Next/Prev manually so the results container renders before driver spotlights it. New `demo_typed` copy step (both locales). Browser-verified: step 0 input empty / 0 cards, step 1 input "Juan" / 0 cards, step 2 results appear (3 cards), then the card spotlights.
+- **Dark theme.** Gave the driver popover a defining border + stronger shadow so it separates from the dimmed dark page, and themed the close (×) so it stays visible in dark mode (it reads the existing `--surface-card` / `--text-*` / `--border-default` theme vars).
+
 ## [2.22.1] - 2026-06-25
 
 ### Changed — walkthrough spotlights the REAL UI (corrects 2.22.0's modal)

@@ -5,9 +5,18 @@
 .driver-popover.walkthrough-popover {
     background: var(--surface-card, #ffffff);
     color: var(--text-primary, #1c1917);
+    border: 1px solid var(--border-default, #e7e5e4);
     border-radius: 1rem;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
     max-width: 22rem;
+}
+
+/* Close (×) — themed so it stays visible on the dark surface. */
+.driver-popover.walkthrough-popover .driver-popover-close-btn {
+    color: var(--text-faint, #9ca3af);
+}
+.driver-popover.walkthrough-popover .driver-popover-close-btn:hover {
+    color: var(--text-primary, #1c1917);
 }
 
 .driver-popover.walkthrough-popover .driver-popover-title {

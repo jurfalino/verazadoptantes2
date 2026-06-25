@@ -22,10 +22,10 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
     const { data: session } = useSession();
     const { openLogin } = useAuthContext();
     const toast = useShowToast();
-    // Guided walkthrough: when it injects demo matches, this section renders them
-    // as the results for a "Juan" search (the spotlight tour highlights these
-    // real cards). Null when the tour isn't running.
-    const { demoMatches } = useWalkthrough();
+    // Guided walkthrough: while it runs, this section renders the demo query +
+    // results (the spotlight tour highlights these real elements). The tour
+    // reveals progressively — empty box → "Juan" → results.
+    const { demoActive, demoQuery, demoResults } = useWalkthrough();
 
     // Initialize from URL params for back-navigation persistence
     const initialQuery = searchParams.get('q') || '';
@@ -88,10 +88,10 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
     // clear our own injected set (demo ids) so a fresh real search isn't lost.
     const demoWasActive = useRef(false);
     useEffect(() => {
-        if (demoMatches) {
+        if (demoActive) {
             demoWasActive.current = true;
-            setQuery('Juan');
-            setResults(demoMatches);
+            setQuery(demoQuery);
+            setResults(demoResults);
             setValidationError(null);
             setTruncatedInfo(null);
             setSingleTokenResultCount(undefined);
@@ -100,7 +100,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
             setResults(prev => (prev?.some(r => r.adopterId.startsWith('demo-juan-')) ? null : prev));
             setQuery(prev => (prev === 'Juan' ? '' : prev));
         }
-    }, [demoMatches]);
+    }, [demoActive, demoQuery, demoResults]);
 
     const handleCreateNew = (e: React.MouseEvent) => {
         e.preventDefault();
