@@ -25,7 +25,7 @@ import {
     deserializeContactEntries,
     joinedAddressValue,
 } from './contactEntries';
-import { maskAdopterContact, NO_ACCESS_VISIBILITY } from './piiAccess';
+import { maskAdopterContact, hashEntryValue, NO_ACCESS_VISIBILITY, type Visibility } from './piiAccess';
 
 type AdopterRow = typeof adopters.$inferSelect;
 
@@ -199,6 +199,41 @@ export function buildDemoMatch(row: AdopterRow, overlay: DemoOverlay, gated: boo
         relevancePercent: 100,
         matchTypes: ['name_exact'],
         matchValues: [{ type: 'name', value: 'Juan' }],
+        source: 'token',
+        adopter,
+        matchSnippet: null,
+        avgRating: overlay.avgRating,
+        thumbnail: overlay.thumbnail,
+        stats: overlay.stats,
+        flags: overlay.flags,
+    };
+}
+
+/**
+ * Build a demo match with ONLY the phone entry revealed — the accurate result of
+ * a "name + phone" search-match (you see the value you matched; everything else
+ * stays masked). Uses the real `maskAdopterContact` with just the phone entry
+ * unlocked, so the email/address still partial-reveal exactly as in production.
+ */
+export function buildDemoMatchPhoneRevealed(row: AdopterRow, overlay: DemoOverlay): DiscoveryMatch {
+    const phone = deserializeContactEntries(row.contactEntries).find(e => e.type === 'phone');
+    const unlocked = new Set<string>();
+    if (phone) unlocked.add(hashEntryValue('phone', phone.value));
+    const vis: Visibility = { ...NO_ACCESS_VISIBILITY, tier: 'partial', unlockedEntryHashes: unlocked };
+    const masked = maskAdopterContact(row, vis);
+    const adopter: AdopterRow = {
+        ...row,
+        contactInfo: masked.contactInfo,
+        contactEntries: masked.contactEntries,
+        addressInfo: masked.addressInfo,
+        familyMembers: null,
+    };
+    return {
+        adopterId: row.id,
+        adopterName: row.name,
+        relevancePercent: 100,
+        matchTypes: ['phone'],
+        matchValues: [{ type: 'phone', value: 'Juan' }],
         source: 'token',
         adopter,
         matchSnippet: null,

@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.9] - 2026-06-25
+
+### Fixed — walkthrough reveal now matches reality (only the phone, not email/address)
+
+The reveal step claimed (and showed) that a "name + phone" search reveals the full record — email and address included. That's wrong: a search-match only unlocks the entries the query actually matched, so `Juan + phone` reveals the **phone** and nothing else (the address only unlocks if you also search the address). Fixed the demonstration to use the real masking with just the phone entry unlocked — the phone shows in full while email and address stay masked — and rewrote the copy ("Su teléfono, revelado … el correo y la dirección siguen ocultos"). New `buildDemoMatchPhoneRevealed` builds the partial reveal via the production `maskAdopterContact`. Browser-verified.
+
 ## [2.22.8] - 2026-06-25
 
 ### Changed — walkthrough now *demonstrates* the phone reveal (doesn't just describe it)

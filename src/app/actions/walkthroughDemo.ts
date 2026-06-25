@@ -23,6 +23,7 @@ import { getDb, checkIsAdminAsync } from './_db';
 import {
     WALKTHROUGH_DEMO_FIXTURES,
     buildDemoMatch,
+    buildDemoMatchPhoneRevealed,
     demoAdopterRow,
     fixtureToEdit,
     applyRowToEdit,
@@ -62,19 +63,20 @@ async function readDemoRows(db: AnyDb): Promise<Map<string, AdopterRow>> {
  * override when present (else fixtures). Masking is applied in `buildDemoMatch`.
  */
 export async function getWalkthroughDemoMatches(revealIds: string[] = []): Promise<DiscoveryMatch[]> {
-    // `revealIds` force those records to render UNMASKED — used by the tour's
-    // "search name + phone → contact revealed" demonstration step.
-    const gatedFor = (id: string, normalGated: boolean) => (revealIds.includes(id) ? false : normalGated);
+    // For a record in `revealIds`, render it as a "name + phone" search-match
+    // would: ONLY the phone unlocked, email/address still masked (the accurate
+    // partial reveal). Other records render normally (gated unless public).
+    const build = (row: AdopterRow, overlay: DemoOverlay) =>
+        revealIds.includes(row.id)
+            ? buildDemoMatchPhoneRevealed(row, overlay)
+            : buildDemoMatch(row, overlay, row.isPublic !== 1);
     try {
         const db = await getDb();
         if (db) {
             const [overrides, byId] = await Promise.all([readOverlayOverrides(db), readDemoRows(db)]);
             return WALKTHROUGH_DEMO_FIXTURES.map(f => {
-                const row = byId.get(f.id);
-                const overlay = overrides[f.id] ?? f.overlay;
-                return row
-                    ? buildDemoMatch(row, overlay, gatedFor(f.id, row.isPublic !== 1))
-                    : buildDemoMatch(demoAdopterRow(f), overlay, gatedFor(f.id, f.gated));
+                const row = byId.get(f.id) ?? demoAdopterRow(f);
+                return build(row, overrides[f.id] ?? f.overlay);
             });
         }
     } catch (e) {
@@ -82,7 +84,7 @@ export async function getWalkthroughDemoMatches(revealIds: string[] = []): Promi
             error: e instanceof Error ? e.message : String(e),
         });
     }
-    return WALKTHROUGH_DEMO_FIXTURES.map(f => buildDemoMatch(demoAdopterRow(f), f.overlay, gatedFor(f.id, f.gated)));
+    return WALKTHROUGH_DEMO_FIXTURES.map(f => build(demoAdopterRow(f), f.overlay));
 }
 
 /** Same as getWalkthroughDemoMatches but with the reveal record UNMASKED — the
