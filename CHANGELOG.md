@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.10] - 2026-06-25
+
+### Refactored — shared `assembleDiscoveryMatch` (real search + walkthrough demo)
+
+Removed the duplication between `findAdopters` and the walkthrough demo: both now build their `DiscoveryMatch` through one shared `assembleDiscoveryMatch(adopter, enrichment, meta, visibility)` (`src/lib/discoveryMatch.ts`), which applies the partial-reveal contact mask + snippet scrub and assembles the object. The masking and result shape can no longer drift between the two paths. The only thing that stays caller-specific is the **enrichment source** — real search computes it from child tables via `enrichAdopters`; the demo supplies its overlay (its records have no child rows) — which is a legitimate difference, not duplication.
+
+No behavior change: `findAdopters`' grant-writing is unchanged, and the demo masks identically. Covered by new `discoveryMatch.test.ts` (mask / no-mask / snippet-scrub / name-stays-full) plus the existing demo + search e2e tests.
+
 ## [2.22.9] - 2026-06-25
 
 ### Fixed — walkthrough reveal now matches reality (only the phone, not email/address)

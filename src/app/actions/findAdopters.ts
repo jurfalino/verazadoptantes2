@@ -31,7 +31,8 @@ import { enrichAdopters } from './enrichAdopters';
 import { normalizeConfidence, fuzzyNameScore, SEARCH_SCORE_CEILING, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 import { normalizeText, extractPhones, extractEmails, extractSocials, isPlaceholderPhone, extractIds, stripIdsFromText } from '@/lib/tokenizer';
 import { count } from 'drizzle-orm';
-import { maskAdopterContact, matchSearchEntries, matchSearchNameTokens, hashNameToken, renderName, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
+import { matchSearchEntries, matchSearchNameTokens, hashNameToken, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
+import { assembleDiscoveryMatch } from '@/lib/discoveryMatch';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 
@@ -832,19 +833,18 @@ async function runDiscoveryMode(
 
         const relevancePercent = normalizeConfidence(score, SEARCH_SCORE_CEILING);
 
-        const result: DiscoveryMatch = {
-            adopterId: a.id,
-            adopterName: a.name,
-            relevancePercent,
-            matchTypes,
-            matchValues: [], // discovery mode doesn't track per-token values (different scoring path)
-            source: 'like', // LIKE-based discovery (token index not used in this mode)
-            adopter: { ...a },
-            matchSnippet: bestSnippet ? { ...bestSnippet } : null,
+        const enrichmentVals = {
             avgRating: enrichment?.avgRating ?? null,
             thumbnail: enrichment?.thumbnail ?? null,
             stats: enrichment?.stats ?? defaultStats,
             flags: enrichment?.flags ?? defaultFlags,
+        };
+        const meta = {
+            relevancePercent,
+            matchTypes,
+            matchValues: [] as Array<{ type: string; value: string }>, // discovery mode doesn't track per-token values
+            source: 'like' as const, // LIKE-based discovery (token index not used in this mode)
+            matchSnippet: bestSnippet ? { ...bestSnippet } : null,
         };
 
         // Unified mask for any non-privileged viewer (unauth — always — and
@@ -859,75 +859,52 @@ async function runDiscoveryMode(
         // public AND the feature flag is on, treat the viewer as if they
         // had nothing-masked visibility for this row.
         const maskOpts = maskOptionsFor(publicProfilesFlag, a);
-        if (vis && !vis.nothingMasked && !maskOpts.adopterIsPublic) {
-            // Search-match grant write (auth only). Two flavours, same pattern:
-            // contact-entry matches and name-token matches both write a grant
-            // and augment `vis` so this response renders the unlocked values.
-            if (!isUnauthenticated) {
-                const entryMatches = matchSearchEntries(deserializeContactEntries(a.contactEntries), normalizedQuery);
-                if (entryMatches.length > 0) {
-                    const unlocked = new Set(vis.unlockedEntryHashes);
-                    for (const m of entryMatches) {
-                        if (!unlocked.has(m.hash)) {
-                            unlocked.add(m.hash);
-                            newGrants.push({ adopterId: a.id, entryRef: m.hash, scope: 'entry' });
-                        }
+
+        // Search-match grant write (auth only). Contact-entry and name-token
+        // matches both write a grant and augment `vis` so this response renders
+        // the unlocked values. (The actual masking is done by the shared
+        // assembler below, the same path the walkthrough demo uses.)
+        if (vis && !vis.nothingMasked && !maskOpts.adopterIsPublic && !isUnauthenticated) {
+            const entryMatches = matchSearchEntries(deserializeContactEntries(a.contactEntries), normalizedQuery);
+            if (entryMatches.length > 0) {
+                const unlocked = new Set(vis.unlockedEntryHashes);
+                for (const m of entryMatches) {
+                    if (!unlocked.has(m.hash)) {
+                        unlocked.add(m.hash);
+                        newGrants.push({ adopterId: a.id, entryRef: m.hash, scope: 'entry' });
                     }
-                    // Anchor-grade identifier match (phone / email / social / id /
-                    // address) is strong evidence the viewer means THIS person.
-                    // Auto-grant every name token alongside the entry grant so the
-                    // viewer doesn't have to verify-the-name as a second step —
-                    // they already proved they knew an identifier. Skips initials
-                    // / single-char tokens which can't self-grant.
-                    const unlockedNames = new Set(vis.unlockedNameTokenHashes);
-                    for (const token of (a.name ?? '').trim().split(/\s+/)) {
-                        if (token.length < 2) continue;
-                        const h = hashNameToken(token);
-                        if (!unlockedNames.has(h)) {
-                            unlockedNames.add(h);
-                            newGrants.push({ adopterId: a.id, entryRef: h, scope: 'name_token' });
-                        }
-                    }
-                    vis = { ...vis, unlockedEntryHashes: unlocked, unlockedNameTokenHashes: unlockedNames, tier: 'partial' };
                 }
-                const nameMatches = matchSearchNameTokens(a.name, normalizedQuery);
-                if (nameMatches.length > 0) {
-                    const unlockedNames = new Set(vis.unlockedNameTokenHashes);
-                    for (const token of nameMatches) {
-                        const h = hashNameToken(token);
-                        if (!unlockedNames.has(h)) {
-                            unlockedNames.add(h);
-                            newGrants.push({ adopterId: a.id, entryRef: h, scope: 'name_token' });
-                        }
+                // Anchor-grade identifier match is strong evidence the viewer
+                // means THIS person — auto-grant every name token too (skips
+                // initials / single-char tokens which can't self-grant).
+                const unlockedNames = new Set(vis.unlockedNameTokenHashes);
+                for (const token of (a.name ?? '').trim().split(/\s+/)) {
+                    if (token.length < 2) continue;
+                    const h = hashNameToken(token);
+                    if (!unlockedNames.has(h)) {
+                        unlockedNames.add(h);
+                        newGrants.push({ adopterId: a.id, entryRef: h, scope: 'name_token' });
                     }
-                    vis = { ...vis, unlockedNameTokenHashes: unlockedNames, tier: 'partial' };
                 }
+                vis = { ...vis, unlockedEntryHashes: unlocked, unlockedNameTokenHashes: unlockedNames, tier: 'partial' };
             }
-            // Partial-reveal mask — identical for both paths. `renderName`
-            // also picks up transient per-query reveals for unauth (no grants).
-            // maskOpts is empty under unauth (publicProfilesFlag is false then).
-            const masked = maskAdopterContact(result.adopter, vis, maskOpts);
-            result.adopter = {
-                ...result.adopter,
-                name: renderName(result.adopter.name, vis, normalizedQuery, maskOpts),
-                contactInfo: masked.contactInfo,
-                contactEntries: masked.contactEntries,
-                addressInfo: masked.addressInfo,
-                familyMembers: null, // PII — hidden from non-privileged viewers
-            };
-            // Field-scoped snippet scrub. 'contact'/'address' are windows into
-            // the (now masked) blob; 'adoption' is scrubbed because the import
-            // route packs `Contact: …` into adoptions.details.
-            if (result.matchSnippet && (
-                result.matchSnippet.field === 'contact' ||
-                result.matchSnippet.field === 'address' ||
-                result.matchSnippet.field === 'adoption'
-            )) {
-                result.matchSnippet = { ...result.matchSnippet, snippet: '', highlights: [] };
+            const nameMatches = matchSearchNameTokens(a.name, normalizedQuery);
+            if (nameMatches.length > 0) {
+                const unlockedNames = new Set(vis.unlockedNameTokenHashes);
+                for (const token of nameMatches) {
+                    const h = hashNameToken(token);
+                    if (!unlockedNames.has(h)) {
+                        unlockedNames.add(h);
+                        newGrants.push({ adopterId: a.id, entryRef: h, scope: 'name_token' });
+                    }
+                }
+                vis = { ...vis, unlockedNameTokenHashes: unlockedNames, tier: 'partial' };
             }
         }
 
-        return result;
+        // Shared assembly + partial-reveal mask (also used by the walkthrough
+        // demo, so the two can't drift). `vis` undefined ⇒ no masking.
+        return assembleDiscoveryMatch({ ...a }, enrichmentVals, meta, vis, normalizedQuery, maskOpts);
     });
 
     allResults.sort((a, b) => b.relevancePercent - a.relevancePercent);
