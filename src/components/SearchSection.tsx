@@ -402,6 +402,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                                 showMetadata={showCardMetadata}
                                 href={profileHref}
                                 onClick={handleCardClick}
+                                wrapContact={demoActive}
                             />
                         );
                     })}

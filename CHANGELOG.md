@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.16] - 2026-06-26
+
+### Fixed — walkthrough reveal: phone hidden by truncation on mobile
+
+At the reveal step the phone was unmasked but, on a phone, the contact line's `truncate` cut it off — the blob order is `Email … Tel … Dirección`, so the revealed `Tel` fell past the ellipsis. Added a `wrapContact` prop to `<AdopterResultCard>` (default off) that the walkthrough demo passes, so demo cards **wrap** the contact line instead of truncating it — the revealed phone is now visible on its own line. `break-words` only wraps when content overflows, so desktop demo cards stay single-line and real search is unchanged.
+
 ## [2.22.15] - 2026-06-26
 
 ### Fixed — walkthrough overlay barely visible in dark mode

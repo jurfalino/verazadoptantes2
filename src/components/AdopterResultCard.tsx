@@ -43,9 +43,12 @@ export interface AdopterResultCardProps {
     /** Profile link target. When omitted the card is inert (walkthrough demo). */
     href?: string;
     onClick?: (e: React.MouseEvent) => void;
+    /** Wrap the contact line instead of truncating it — the walkthrough demo needs
+     *  the (revealed) phone visible on mobile, where truncation would hide it. */
+    wrapContact?: boolean;
 }
 
-export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = true, href, onClick }: AdopterResultCardProps) {
+export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = true, href, onClick, wrapContact = false }: AdopterResultCardProps) {
     const { t } = useLanguage();
 
     const addedDate = res.adopter.createdAt ? formatShortDate(res.adopter.createdAt) : null;
@@ -82,7 +85,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                             </span>
                         )}
                     </div>
-                    <div className="text-xs text-stone-500 truncate" title={res.adopter.contactInfo || undefined}>
+                    <div className={`text-xs text-stone-500 ${wrapContact ? 'break-words' : 'truncate'}`} title={res.adopter.contactInfo || undefined}>
                         {isAuthenticated && res.matchSnippet?.field === 'contact' && res.matchSnippet.snippet === res.adopter.contactInfo
                             ? (renderHighlightedSnippet(res.adopter.contactInfo, res.matchSnippet.highlights) || res.adopter.contactInfo)
                             : (res.adopter.contactInfo || t('common.no_contact'))}
