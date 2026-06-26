@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.14] - 2026-06-26
+
+### Fixed — walkthrough mobile: card under sticky header; decision step spotlights the create CTA
+
+- **Mobile sticky overlap:** when the tour highlighted the first card, its top sat under the sticky search header. The search card is now **non-sticky while the walkthrough runs** (`!demoActive`), so a spotlighted card scrolls to the top fully visible. (Also gave the cards a `scroll-mt` for good measure.)
+- **Decision step target:** the "¿Es alguno de estos?" step now spotlights the **"None of these match? → Create New Record"** CTA (a `data-walkthrough="create-new"` marker) instead of a centered popover, so "if none match, create a new record" points at the actual button.
+
 ## [2.22.13] - 2026-06-26
 
 ### Fixed/Changed — walkthrough reveal narrows to one record; reordered; type effects

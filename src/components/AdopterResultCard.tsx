@@ -170,10 +170,12 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
         </div>
     );
 
+    // scroll-mt clears the sticky search header so a scrolled-to card (e.g. the
+    // walkthrough spotlight) isn't tucked under it on mobile.
     if (href) {
         return (
-            <a href={href} onClick={onClick} className="block group">{inner}</a>
+            <a href={href} onClick={onClick} className="block group scroll-mt-28 md:scroll-mt-4">{inner}</a>
         );
     }
-    return <div className="block group">{inner}</div>;
+    return <div className="block group scroll-mt-28 md:scroll-mt-4">{inner}</div>;
 }

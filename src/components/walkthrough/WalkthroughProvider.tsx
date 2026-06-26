@@ -51,7 +51,7 @@ const STEP_DEFS: StepDef[] = [
     { key: 'protegido', element: 'a[href*="/adopter/demo-juan-bueno"]', side: 'bottom', align: 'start' },
     { key: 'malo', element: 'a[href*="/adopter/demo-juan-malo"]', side: 'top', align: 'start' },
     { key: 'dudoso', element: 'a[href*="/adopter/demo-juan-dudoso"]', side: 'top', align: 'start' },
-    { key: 'cierre', side: 'top', align: 'center' },
+    { key: 'cierre', element: '[data-walkthrough="create-new"]', side: 'top', align: 'center' },
     { key: 'revealphone', element: '#search', side: 'bottom', align: 'start' },
     { key: 'revealresult', element: 'a[href*="/adopter/demo-juan-bueno"]', side: 'bottom', align: 'start' },
 ];
