@@ -17,10 +17,14 @@
 }
 
 /* Dark only: the dim-the-surround trick is too weak on a dark page, so make the
- * target read as LIT — raise its brightness and spill a soft glow around it. */
+ * target read as LIT — raise its brightness and spill a strong soft glow around
+ * it (focus is carried by the lit element, not the near-invisible veil). */
 [data-theme="dark"] .driver-active-element {
-    filter: brightness(1.16) saturate(1.05);
-    box-shadow: 0 0 0 2px #2dd4bf, 0 0 34px 8px rgba(45, 212, 191, 0.42) !important; /* teal-300 glow */
+    filter: brightness(1.18) saturate(1.06);
+    box-shadow:
+        0 0 0 2px #2dd4bf,                       /* crisp teal-300 edge */
+        0 0 0 5px rgba(45, 212, 191, 0.22),       /* inner halo */
+        0 0 48px 14px rgba(45, 212, 191, 0.5) !important; /* outer glow */
 }
 
 /* ── Popover ───────────────────────────────────────────────────────────────── */

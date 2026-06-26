@@ -110,6 +110,11 @@ export function WalkthroughProvider({
         startingRef.current = true;
         try {
             const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+            // Theme-aware overlay: a dark page has almost no luminance to remove,
+            // so in dark mode push the veil to near-pure-black at higher opacity
+            // (snuffs the page's residual blue glow). Light keeps a softer veil.
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            const overlayColor = isDark ? 'rgba(0, 0, 0, 0.86)' : 'rgba(8, 11, 20, 0.68)';
             const [normal, revealedAll] = await Promise.all([
                 getWalkthroughDemoMatches(),
                 getWalkthroughDemoRevealed(),
@@ -170,7 +175,7 @@ export function WalkthroughProvider({
                 disableActiveInteraction: true,
                 showProgress: true,
                 progressText: '{{current}} / {{total}}',
-                overlayColor: 'rgba(8, 11, 20, 0.72)',
+                overlayColor,
                 popoverClass: 'walkthrough-popover',
                 steps,
                 nextBtnText: t('walkthrough.next'),

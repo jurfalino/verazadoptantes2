@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.15] - 2026-06-26
+
+### Fixed — walkthrough overlay barely visible in dark mode
+
+The dim overlay was a near-black color at fixed opacity. On a dark page (already ~8% luminance) a darken-the-background veil removes almost no brightness, so the "dimmed" area was indistinguishable from the page — the overlay read as nearly absent. Two-part fix:
+- **Theme-aware overlay:** dark mode uses near-pure-black at higher opacity (`rgba(0,0,0,0.86)`), which snuffs the page's residual blue glow so the background visibly recedes; light keeps a softer veil (`0.68`).
+- **Stronger spotlight in dark:** the highlighted element's brightness lift + teal ring/glow are intensified, so focus is carried by the lit element (the reliable cue on dark themes) rather than the low-headroom veil.
+
+Verified in both themes.
+
 ## [2.22.14] - 2026-06-26
 
 ### Fixed — walkthrough mobile: card under sticky header; decision step spotlights the create CTA
