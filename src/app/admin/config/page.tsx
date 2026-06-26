@@ -44,6 +44,7 @@ interface ConfigData {
         SHOWCASE_ORG_VISIBLE?: string;
         SHOWCASE_USER_VISIBLE?: string;
         INSTAGRAM_URL?: string;
+        ENABLE_GUIDED_WALKTHROUGH?: string;
         TELEGRAM_ADMIN_CHAT_ID?: string;
         TELEGRAM_BOT_TOKEN_SET?: string;
         TELEGRAM_WEBHOOK_SECRET_SET?: string;
@@ -76,6 +77,7 @@ const FEATURE_FLAGS = [
     { key: 'SHOWCASE_GLOBAL_VISIBLE', labelKey: 'flag_label_showcase_global', descKey: 'flag_desc_showcase_global' },
     { key: 'SHOWCASE_ORG_VISIBLE', labelKey: 'flag_label_showcase_org', descKey: 'flag_desc_showcase_org' },
     { key: 'SHOWCASE_USER_VISIBLE', labelKey: 'flag_label_showcase_user', descKey: 'flag_desc_showcase_user' },
+    { key: 'ENABLE_GUIDED_WALKTHROUGH', labelKey: 'flag_label_guided_walkthrough', descKey: 'flag_desc_guided_walkthrough' },
 ];
 
 export default function AdminConfigPage() {
@@ -103,6 +105,7 @@ export default function AdminConfigPage() {
         SHOWCASE_GLOBAL_VISIBLE: false,
         SHOWCASE_ORG_VISIBLE: false,
         SHOWCASE_USER_VISIBLE: false,
+        ENABLE_GUIDED_WALKTHROUGH: false,
     });
     const [instagramUrl, setInstagramUrl] = useState('');
     const [savingInstagram, setSavingInstagram] = useState(false);
@@ -161,6 +164,7 @@ export default function AdminConfigPage() {
                         SHOWCASE_GLOBAL_VISIBLE: data.config?.SHOWCASE_GLOBAL_VISIBLE === 'true',
                         SHOWCASE_ORG_VISIBLE: data.config?.SHOWCASE_ORG_VISIBLE === 'true',
                         SHOWCASE_USER_VISIBLE: data.config?.SHOWCASE_USER_VISIBLE === 'true',
+                        ENABLE_GUIDED_WALKTHROUGH: data.config?.ENABLE_GUIDED_WALKTHROUGH === 'true',
                     });
                     setInstagramUrl(data.config?.INSTAGRAM_URL || '');
                     setGeminiDefaultModel(data.config?.GEMINI_DEFAULT_MODEL || '');

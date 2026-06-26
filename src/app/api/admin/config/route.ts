@@ -79,6 +79,7 @@ export async function GET() {
             SHOWCASE_ORG_VISIBLE: config['SHOWCASE_ORG_VISIBLE'] || 'false',
             SHOWCASE_USER_VISIBLE: config['SHOWCASE_USER_VISIBLE'] || 'false',
             INSTAGRAM_URL: config['INSTAGRAM_URL'] || '',
+            ENABLE_GUIDED_WALKTHROUGH: config['ENABLE_GUIDED_WALKTHROUGH'] || 'false',
             // Telegram support chat — chat_id is non-sensitive and returned
             // verbatim. The bot token and webhook secret are sensitive: never
             // returned to the client. Instead we expose a *_SET indicator so

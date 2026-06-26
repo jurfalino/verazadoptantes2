@@ -39,6 +39,7 @@ export const PUBLIC_FLAG_KEYS = [
     'SHOWCASE_ORG_VISIBLE',
     'SHOWCASE_USER_VISIBLE',
     'INSTAGRAM_URL',
+    'ENABLE_GUIDED_WALKTHROUGH',
 ] as const;
 
 export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
@@ -57,6 +58,7 @@ export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
     SHOWCASE_ORG_VISIBLE: 'false',
     SHOWCASE_USER_VISIBLE: 'false',
     INSTAGRAM_URL: '',
+    ENABLE_GUIDED_WALKTHROUGH: 'false',
 };
 
 const CACHE_TTL_MS = 30 * 1000;

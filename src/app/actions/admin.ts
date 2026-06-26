@@ -219,7 +219,7 @@ export async function listDeletedAdopters() {
             country: adopters.country,
             deletedAt: adopters.deletedAt,
             tokenHash: adopters.tokenHash,
-        }).from(adopters).where(isNotNull(adopters.deletedAt)).orderBy(desc(adopters.deletedAt)).all();
+        }).from(adopters).where(and(isNotNull(adopters.deletedAt), eq(adopters.isDemo, 0))).orderBy(desc(adopters.deletedAt)).all();
         return { ok: true as const, rows };
     } catch (error) {
         const errorId = logger.error('listDeletedAdopters failed', error, { user: session?.user?.email });
@@ -283,7 +283,7 @@ export async function purgeDeletedAdopters(adopterIds: string[]) {
 
         let ids = adopterIds;
         if (!ids?.length) {
-            const all = await db.select({ id: adopters.id }).from(adopters).where(isNotNull(adopters.deletedAt)).all();
+            const all = await db.select({ id: adopters.id }).from(adopters).where(and(isNotNull(adopters.deletedAt), eq(adopters.isDemo, 0))).all();
             ids = all.map((r: { id: string }) => r.id);
         }
         let purged = 0;

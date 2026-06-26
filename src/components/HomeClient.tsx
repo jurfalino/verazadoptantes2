@@ -15,6 +15,8 @@ import SocialProofBanner from '@/components/SocialProofBanner';
 import MilestoneBadge from '@/components/MilestoneBadge';
 import ReferralBanner from '@/components/ReferralBanner';
 import { useShowToast } from '@/components/ui/Toast';
+import { WalkthroughProvider } from '@/components/walkthrough/WalkthroughProvider';
+import { RelaunchButton } from '@/components/walkthrough/RelaunchButton';
 
 /**
  * Client-side homepage logic. The outer `src/app/page.tsx` is now a server
@@ -29,7 +31,7 @@ import { useShowToast } from '@/components/ui/Toast';
  * URL param), wizard-card navigation, and toast notifications — all of
  * which legitimately need to run client-side.
  */
-export default function HomeClient({ initialConfig }: { initialConfig: Record<string, string> }) {
+export default function HomeClient({ initialConfig, userEmail }: { initialConfig: Record<string, string>; userEmail: string | null }) {
     const { t, locale } = useLanguage();
     const router = useRouter();
     const { data: session } = useSession();
@@ -99,12 +101,14 @@ export default function HomeClient({ initialConfig }: { initialConfig: Record<st
     };
 
     return (
+        <WalkthroughProvider flagEnabled={appConfig.ENABLE_GUIDED_WALKTHROUGH === 'true'} userEmail={userEmail}>
         <main className="min-h-screen bg-stone-50 py-6 px-4 relative">
             <div className="max-w-3xl mx-auto space-y-6">
                 <h1 className="sr-only">{t('home.h1')}</h1>
                 <div id="search-section">
                     <SearchSection locale={locale} showCardMetadata={appConfig.ENABLE_SEARCH_CARD_METADATA !== 'false'} />
                 </div>
+                <RelaunchButton />
 
                 {/* Social proof + milestone — below search for mobile-first.
                     MilestoneBadge gated by ENABLE_MILESTONE_BADGE (admin-toggleable, default ON). */}
@@ -272,5 +276,6 @@ export default function HomeClient({ initialConfig }: { initialConfig: Record<st
                 <ReferralBanner />
             </div>
         </main>
+        </WalkthroughProvider>
     );
 }

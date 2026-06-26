@@ -2,31 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { findAdopters } from '@/app/actions';
-import type { DiscoveryMatch, SnippetField } from '@/app/actions';
-
-const SNIPPET_ICONS: Record<SnippetField, string> = {
-    name: '👤', contact: '📞', address: '📍',
-    family: '👨‍👩‍👧', adoption: '🐾', history: '📝',
-};
-
-function renderHighlightedSnippet(snippet: string, highlights: { start: number; end: number }[]) {
-    if (highlights.length === 0) return null;
-    const parts: React.ReactNode[] = [];
-    let lastEnd = 0;
-    for (const h of highlights) {
-        if (h.start > lastEnd) parts.push(snippet.slice(lastEnd, h.start));
-        parts.push(
-            <mark key={h.start} className="bg-amber-200/70 text-stone-900 rounded px-0.5 font-medium">
-                {snippet.slice(h.start, h.end)}
-            </mark>
-        );
-        lastEnd = h.end;
-    }
-    if (lastEnd < snippet.length) parts.push(snippet.slice(lastEnd));
-    return <>{parts}</>;
-}
-import { RatingBadge } from './RatingBadge';
-import { RatingExplainer } from './RatingExplainer';
+import type { DiscoveryMatch } from '@/app/actions';
+import { AdopterResultCard } from './AdopterResultCard';
+import { useWalkthrough } from './walkthrough/WalkthroughProvider';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
@@ -34,7 +12,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { isPlaceholderPhone } from '@/lib/tokenizer';
-import { formatShortDate } from '@/lib/dates';
 import { zarazTrack } from '@/lib/zaraz';
 import WhatIsBuenAdoptante from '@/components/WhatIsBuenAdoptante';
 
@@ -45,6 +22,10 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
     const { data: session } = useSession();
     const { openLogin } = useAuthContext();
     const toast = useShowToast();
+    // Guided walkthrough: while it runs, this section renders the demo query +
+    // results (the spotlight tour highlights these real elements). The tour
+    // reveals progressively — empty box → "Juan" → results.
+    const { demoActive, demoQuery, demoResults } = useWalkthrough();
 
     // Initialize from URL params for back-navigation persistence
     const initialQuery = searchParams.get('q') || '';
@@ -99,6 +80,27 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
             runSearch(initialQuery);
         }
     }, [initialQuery, results, runSearch, loading]);
+
+    // Guided-walkthrough injection: show the demo "Juan" results in the real UI
+    // while the tour runs, and restore the page when it ends. The restore branch
+    // is gated on `demoWasActive` so it NEVER runs on mount — otherwise a real
+    // deep-link like /?q=Juan would have its search box blanked. We also only
+    // clear our own injected set (demo ids) so a fresh real search isn't lost.
+    const demoWasActive = useRef(false);
+    useEffect(() => {
+        if (demoActive) {
+            demoWasActive.current = true;
+            setQuery(demoQuery);
+            setResults(demoResults);
+            setValidationError(null);
+            setTruncatedInfo(null);
+            setSingleTokenResultCount(undefined);
+        } else if (demoWasActive.current) {
+            demoWasActive.current = false;
+            setResults(prev => (prev?.some(r => r.adopterId.startsWith('demo-juan-')) ? null : prev));
+            setQuery(prev => (prev === 'Juan' ? '' : prev));
+        }
+    }, [demoActive, demoQuery, demoResults]);
 
     const handleCreateNew = (e: React.MouseEvent) => {
         e.preventDefault();
@@ -228,6 +230,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                         <input
                             type="text"
                             id="search"
+
                             placeholder={t('search.placeholder')}
                             className={`w-full border border-stone-200 focus:border-teal-400 focus:ring-4 focus:ring-teal-100 transition-all outline-none text-stone-900 placeholder:text-stone-500 font-medium bg-stone-50 ${hasResults
                                 ? 'px-4 py-3 pr-10 rounded-xl text-sm md:px-5 md:py-4 md:pr-12 md:rounded-2xl md:text-base'
@@ -252,6 +255,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                     </div>
                     <button
                         type="submit"
+
                         disabled={loading}
                         className={`bg-teal-200 text-teal-900 font-semibold shadow-sm hover:bg-teal-300 hover:shadow-md transition-all disabled:opacity-70 transform active:scale-[0.98] ${hasResults
                             ? 'px-4 py-3 rounded-xl text-sm md:w-full md:py-4 md:px-6 md:rounded-2xl md:text-lg'
@@ -333,7 +337,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
             )}
 
             {results && (
-                <div ref={resultsRef} className="mt-8 space-y-4 scroll-mt-4">
+                <div ref={resultsRef} data-walkthrough="results" className="mt-8 space-y-4 scroll-mt-4">
 
                     {/* Refinement Nudge — inside scroll target so mobile auto-scroll doesn't skip it (P1 fix)
                         Amber palette to distinguish from the teal login_required banner (P2 fix) */}
@@ -390,128 +394,15 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                             }
                         };
 
-                        // Format dates
-                        const addedDate = res.adopter.createdAt ? formatShortDate(res.adopter.createdAt) : null;
-                        const updatedDate = res.adopter.updatedAt ? formatShortDate(res.adopter.updatedAt) : null;
-
                         return (
-                            <a key={res.adopter.id} href={profileHref} onClick={handleCardClick} className="block group">
-                                <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-200 group-hover:border-teal-300 group-hover:shadow-md transition-all">
-                                    {/* Top Row: Avatar + Name/Contact + Rating */}
-                                    <div className="flex items-center gap-3 mb-3">
-                                        {/* Thumbnail - larger 48px */}
-                                        <div className="w-12 h-12 rounded-full bg-stone-100 flex-shrink-0 overflow-hidden ring-2 ring-white shadow-sm">
-                                            {res.thumbnail ? (
-                                                <img src={res.thumbnail} alt="" className="w-full h-full object-cover" />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center text-stone-500">
-                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                                                </div>
-                                            )}
-                                        </div>
-                                        {/* Name + Contact */}
-                                        <div className="flex-1 min-w-0">
-                                            <div className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate" title={res.adopter.name}>
-                                                {isAuthenticated && res.matchSnippet?.field === 'name' && res.matchSnippet.snippet === res.adopter.name
-                                                    ? (renderHighlightedSnippet(res.adopter.name, res.matchSnippet.highlights) || res.adopter.name)
-                                                    : res.adopter.name}
-                                            </div>
-                                            <div className="text-xs text-stone-500 truncate" title={res.adopter.contactInfo || undefined}>
-                                                {isAuthenticated && res.matchSnippet?.field === 'contact' && res.matchSnippet.snippet === res.adopter.contactInfo
-                                                    ? (renderHighlightedSnippet(res.adopter.contactInfo, res.matchSnippet.highlights) || res.adopter.contactInfo)
-                                                    : (res.adopter.contactInfo || t('common.no_contact'))}
-                                                {!isAuthenticated && res.adopter.contactInfo && (
-                                                    <span className="ml-1 text-teal-700 font-medium">• {t('search.login_to_view')}</span>
-                                                )}
-                                            </div>
-                                        </div>
-                                        {/* Rating Badge — flex-shrink-0 so the badge claims its natural width
-                                            and the name (which has min-w-0 + truncate above) shrinks to fit;
-                                            without this, the inline-flex badge content overflows its box on
-                                            mobile and visually overlaps the truncated name. */}
-                                        {res.avgRating !== null && (
-                                            <div className="flex-shrink-0">
-                                                <RatingExplainer rating={res.avgRating}>
-                                                    <RatingBadge rating={res.avgRating} size="sm" label="search" />
-                                                </RatingExplainer>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Stats Row */}
-                                    <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
-                                        {showCardMetadata && (
-                                            <span>👁 {res.stats.profileViews} {t('stats.views')}</span>
-                                        )}
-                                        <span>📋 {res.stats.requests} {t('stats.requests')}</span>
-                                        <span>🏠 {res.stats.adoptions} {t('stats.adoptions')}</span>
-                                        {/* Flag indicators */}
-                                        <div className="flex flex-wrap gap-1 ml-auto">
-                                            {res.flags.inaccurate && (
-                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-rose-100 text-rose-700">⚠ {t('flags.inaccurate') || 'Inaccurate'}</span>
-                                            )}
-                                            {res.flags.duplicate && (
-                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-amber-100 text-amber-700">📄 {t('flags.duplicate') || 'Duplicate'}</span>
-                                            )}
-                                            {res.flags.systemDuplicate && !res.flags.duplicate && (
-                                                <span
-                                                    title={t('search.possible_duplicate_tooltip') || 'El sistema detectó otro registro similar. El responsable del registro puede revisarlo.'}
-                                                    className="text-xs px-1.5 py-0.5 rounded font-medium bg-stone-100 text-stone-600 cursor-help"
-                                                >
-                                                    🔍 {t('flags.possible_duplicate') || 'Possible duplicate'}
-                                                </span>
-                                            )}
-                                            {res.flags.verified_identity && (
-                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-teal-100 text-teal-700">✓ {t('flags.verified_identity') || 'Verified ID'}</span>
-                                            )}
-
-                                            {res.flags.tooManyAdoptions && (
-                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">⚠ {t('flags.too_many_adoptions').replace('{count}', res.flags.tooManyAdoptions.count.toString()).replace('{days}', Math.round(res.flags.tooManyAdoptions.actualSpanDays || res.flags.tooManyAdoptions.periodDays).toString())}</span>
-                                            )}
-                                            {res.flags.tooManyRequests && (
-                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">⚠ {t('flags.too_many_requests').replace('{count}', res.flags.tooManyRequests.count.toString()).replace('{days}', Math.round(res.flags.tooManyRequests.actualSpanDays || res.flags.tooManyRequests.periodDays).toString())}</span>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Match Snippet — shows why this result appeared */}
-                                    {res.matchSnippet && (() => {
-                                        const s = res.matchSnippet;
-                                        // Hide redundant snippets for fields already visible on the card (Name / Contact)
-                                        if (s.field === 'name' || s.field === 'contact') return null;
-
-                                        const icon = SNIPPET_ICONS[s.field];
-                                        const label = t(`search.snippet_${s.field}`);
-                                        return (
-                                            <div className="mt-2 flex items-start gap-2 text-xs text-stone-600 bg-stone-50 px-3 py-2 rounded-lg border border-stone-100">
-                                                <span className="flex-shrink-0 mt-0.5">{icon}</span>
-                                                <span className="min-w-0 break-words">
-                                                    <span className="font-semibold text-stone-500">{label}:</span>{' '}
-                                                    {s.field === 'history' ? (
-                                                        <span className="italic">{t('search.snippet_history_generic')}</span>
-                                                    ) : !isAuthenticated ? (
-                                                        <span className="italic">{t('search.protected_info') || 'Información protegida'}</span>
-                                                    ) : (
-                                                        renderHighlightedSnippet(s.snippet, s.highlights) || s.snippet
-                                                    )}
-                                                </span>
-                                            </div>
-                                        );
-                                    })()}
-
-                                    {/* Dates Row - bottom right */}
-                                    {showCardMetadata && (addedDate || updatedDate) && (
-                                        <div className="flex justify-end gap-3 mt-2 pt-2 border-t border-stone-100 text-xs text-stone-500">
-                                            {addedDate && (
-                                                <span>📅 {addedDate}</span>
-                                            )}
-                                            {updatedDate && (
-                                                <span>✏️ {updatedDate}</span>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            </a>
+                            <AdopterResultCard
+                                key={res.adopter.id}
+                                match={res}
+                                isAuthenticated={isAuthenticated}
+                                showMetadata={showCardMetadata}
+                                href={profileHref}
+                                onClick={handleCardClick}
+                            />
                         );
                     })}
                     {/* End-of-results "none match" CTA — appears under the last card so the

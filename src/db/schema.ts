@@ -51,6 +51,13 @@ export const adopters = sqliteTable("adopters", {
     // known" override that wins over a contributor's later-added private
     // contact entries too. 0 = private (default), 1 = public.
     isPublic: integer("is_public").notNull().default(0),
+
+    // Walkthrough demo rows (added in migration 0052). 1 = a seeded record used
+    // ONLY by the guided walkthrough demo. These rows are also soft-deleted
+    // (deletedAt SET) so every `deleted_at IS NULL` query excludes them for
+    // free; the walkthrough + the /admin/walkthrough panel fetch them by this
+    // marker (ignoring deletedAt). Never tokenized, never in real search.
+    isDemo: integer("is_demo").notNull().default(0),
 }, (table) => ({
     nameIdx: index("name_idx").on(table.name),
 }));

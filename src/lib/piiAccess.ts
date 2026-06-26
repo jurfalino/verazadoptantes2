@@ -601,43 +601,21 @@ export function partialRevealName(name: string | null | undefined): string {
 }
 
 /**
- * Render a name with per-token reveal — the chunk-1 `partialRevealName`
- * initials baseline, plus full reveal for any token the viewer has
- * demonstrated knowing:
- *  - tokens whose hash is in `visibility.unlockedNameTokenHashes` (persistent
- *    `scope='name_token'` grants — auth viewers only),
- *  - tokens that appear (whole word, normalized) in `currentQuery` (transient
- *    reveal — works for unauth too, just doesn't carry across pages).
- *
- * A privileged viewer (owner / editor / admin / all-contact grant) gets the
- * unchanged name. Falls back to the original name if extraction yields the
- * empty string (e.g. a name made of only punctuation).
+ * Render an adopter's name. As of v2.22.x adopter names are **no longer
+ * PII-gated** — they always render in full for every viewer. Contact fields,
+ * address, and family members remain gated (see `maskAdopterContact`). The
+ * `visibility` / `currentQuery` / `options` params are kept so the call sites
+ * (search, profile, API) don't change. `partialRevealName` /
+ * `unlockedNameTokenHashes` stay in the model for the "who has access"
+ * disclosure but no longer drive what the name shows.
  */
 export function renderName(
     name: string | null | undefined,
-    visibility: Visibility,
-    currentQuery?: string,
-    options: MaskContactOptions = {},
+    _visibility: Visibility,
+    _currentQuery?: string,
+    _options: MaskContactOptions = {},
 ): string {
-    // `adopterIsPublic` is the admin "this whole record is publicly known"
-    // override — name renders fully alongside the contact bypass (v2.16.0-12+).
-    if (visibility.nothingMasked || options.adopterIsPublic) return name ?? '';
-    if (!name) return '';
-
-    const queryTokens = currentQuery
-        ? new Set(currentQuery.trim().split(/\s+/).map(t => normalizeText(t)).filter(t => t.length >= 2))
-        : null;
-
-    const rendered = name.trim().split(/\s+/).map(token => {
-        const normalized = normalizeText(token);
-        if (normalized.length >= 2) {
-            if (visibility.unlockedNameTokenHashes.has(hashNameToken(token))) return token;
-            if (queryTokens && queryTokens.has(normalized)) return token;
-        }
-        return token.charAt(0) || '';
-    }).filter(Boolean).join(' ');
-
-    return rendered || name;
+    return name ?? '';
 }
 
 // ── Masking ───────────────────────────────────────────────────────────────────

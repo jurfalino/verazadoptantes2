@@ -2,6 +2,136 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.12] - 2026-06-25
+
+### Changed — walkthrough Dudoso copy: "reventa" → "maltrato"
+
+The too-many-adoptions step now reads "...pueden indicar maltrato o acumulación" (en: "...can signal abuse or hoarding").
+
+## [2.22.11] - 2026-06-25
+
+### Fixed — result-card mobile layout (name was getting squeezed)
+
+After adding the "Público" tag, long names had no room on phones. Two fixes, both responsive (full treatment returns ≥640px):
+- **Rating label shortens on mobile** — "⭐1.0 · Dangerous Adopter" → "⭐1.0 · Dangerous" (es: "Adoptante Peligroso" → "Peligroso"). Uses the existing short `ratings.*` strings; the full `search_label` form still shows on desktop.
+- **"Público" tag is icon-only on mobile** — just the open-padlock (with its tooltip); the "Público" label returns on ≥sm. Frees the name's room directly.
+
+Verified at 390px and 920px.
+
+## [2.22.10] - 2026-06-25
+
+### Refactored — shared `assembleDiscoveryMatch` (real search + walkthrough demo)
+
+Removed the duplication between `findAdopters` and the walkthrough demo: both now build their `DiscoveryMatch` through one shared `assembleDiscoveryMatch(adopter, enrichment, meta, visibility)` (`src/lib/discoveryMatch.ts`), which applies the partial-reveal contact mask + snippet scrub and assembles the object. The masking and result shape can no longer drift between the two paths. The only thing that stays caller-specific is the **enrichment source** — real search computes it from child tables via `enrichAdopters`; the demo supplies its overlay (its records have no child rows) — which is a legitimate difference, not duplication.
+
+No behavior change: `findAdopters`' grant-writing is unchanged, and the demo masks identically. Covered by new `discoveryMatch.test.ts` (mask / no-mask / snippet-scrub / name-stays-full) plus the existing demo + search e2e tests.
+
+## [2.22.9] - 2026-06-25
+
+### Fixed — walkthrough reveal now matches reality (only the phone, not email/address)
+
+The reveal step claimed (and showed) that a "name + phone" search reveals the full record — email and address included. That's wrong: a search-match only unlocks the entries the query actually matched, so `Juan + phone` reveals the **phone** and nothing else (the address only unlocks if you also search the address). Fixed the demonstration to use the real masking with just the phone entry unlocked — the phone shows in full while email and address stay masked — and rewrote the copy ("Su teléfono, revelado … el correo y la dirección siguen ocultos"). New `buildDemoMatchPhoneRevealed` builds the partial reveal via the production `maskAdopterContact`. Browser-verified.
+
+## [2.22.8] - 2026-06-25
+
+### Changed — walkthrough now *demonstrates* the phone reveal (doesn't just describe it)
+
+The closing used to tell the user "search again with the phone and it reveals their data." The tour now actually does it: after the card tour it adds Juan BuenAdoptante's phone to the search box ("Juan +54 11 4567-8901") and shows that gated record's masked contact becoming **revealed** in place — full email/phone/address — while the other gated record (Dudoso) stays masked, so it's clear only a value you already know reveals. Two new steps (`demo_revealphone`, `demo_revealresult`, both locales); the closing step trimmed to the keep-or-create-new decision.
+
+- Server: `getWalkthroughDemoMatches(revealIds)` can render given records unmasked; a param-less `getWalkthroughDemoRevealed()` wrapper builds the reveal set server-side. The reveal phone is derived from the (possibly admin-edited) record, not hardcoded. Browser-verified.
+
+## [2.22.7] - 2026-06-25
+
+### Changed — public-record label is now a tag with an unlocked-lock icon
+
+The "(público)" parenthetical on search-result cards is now a proper chip: an inline open-padlock SVG (currentColor) + "Público" / "Public" on a sky background, with a tooltip ("Registro público: datos de contacto a la vista"). Verified in light + dark.
+
+## [2.22.6] - 2026-06-25
+
+### Changed — adopter names always visible; "(público)" badge in search results
+
+- **Names are no longer PII-gated.** `renderName` now returns the full name for every viewer (authenticated or not) — surnames the searcher didn't type no longer collapse to initials. Contact fields, address, and family members stay gated. (The `name_token` grant plumbing remains for the "who has access" disclosure but no longer affects what the name shows.) Updated the `renderName` unit tests, the unauthenticated-search e2e test, and dropped "el nombre" from the walkthrough's *Datos protegidos* copy (it's no longer accurate). Also corrected a pre-existing stale unit test that still asserted a one-time editor gets full visibility (dropped in v2.19.51).
+- **Public records show "(público)".** Search-result cards now render a subtle "(público)" / "(public)" label next to the name when `adopters.isPublic = 1`, so it's clear which records are public (contact shown in the open) vs. gated.
+
+## [2.22.5] - 2026-06-25
+
+### Fixed — walkthrough dark-theme contrast (root cause, not a band-aid)
+
+The spotlight was unreadable in dark mode. Root cause: driver.js creates focus only by *dimming the page around the target*, so the highlight is purely the luminance gap between the lit target and the dimmed surround. That works in light mode (lots of brightness to remove) but collapses in dark mode — dimming an already-dark page (#0a1628 / #1e293b cards) removes almost no luminance, so target and surround end up equally dark and indistinguishable. The earlier border was cosmetic and fixed none of this.
+
+- **Lift the target instead of darkening the surround (dark only):** the highlighted element now gets a brightness boost + a soft teal glow, so it reads as *lit* — restoring figure-ground with an additive-brightness cue rather than a subtractive one. A crisp teal ring marks the edge in both themes.
+- **Elevate the popover:** it was using `--surface-card`, the exact same color as the cards, so it blended. In dark mode it now sits on `--surface-elevated` (a lighter slate) and reads as a raised panel; the cosmetic border is gone. Verified in both themes.
+
+## [2.22.4] - 2026-06-25
+
+### Added — /admin/walkthrough panel to edit the demo records
+
+The walkthrough's three "Juan" records are now admin-editable. New `/admin/walkthrough` page (sidebar entry "Recorrido guiado") with a per-record form: name, phone/email/social/address, public toggle, rating, the flag checkboxes (verified address/ID, inaccurate, duplicate, "N adoptions in M days"), and the views/requests/adoptions stats. Plus a "Reset to defaults" button.
+
+- **PII** (name/contact/public) persists to the soft-deleted `isDemo` rows (still excluded from every real search); the **display values** (rating/flags/stats) persist to a `WALKTHROUGH_DEMO_OVERLAY` `app_config` JSON override. `getWalkthroughDemoMatches` merges both, falling back to code fixtures so the demo always renders. The masking on gated records stays genuine (real `maskAdopterContact`).
+- Round-trip logic covered by unit tests (`walkthroughDemo.test.ts`): edit → overlay/row → match, incl. public→unmasked / gated→masked and the soft-delete-stays-excluded invariant.
+
+## [2.22.3] - 2026-06-25
+
+### Changed — walkthrough: dark-theme spotlight contrast + decision/phone-reveal copy
+
+- **Spotlight contrast (dark mode).** The highlighted element now gets a bright teal ring, and the overlay is a neutral darker dim — so it's obvious WHAT is spotlighted even in dark mode, where the dimmed page and the (dark) card were too close in tone to tell apart. Verified in both themes.
+- **Closing step copy.** Reframed from "that's it" to "**Is it one of these?**" — it now coaches the actual decision: if one is the Juan you're after you have their history; if none match, create a new record; and if you know their phone, search again with name + phone so the matching record's contact is revealed (the search-match reveal). Both locales.
+
+## [2.22.2] - 2026-06-25
+
+### Changed — walkthrough: progressive reveal + dark-theme polish
+
+- **Progressive reveal.** The tour no longer shows the box and results all at once. It now steps: empty search box → "Juan" typed in → results appear → spotlight each card. Implemented by staging the injected state (`demoQuery`/`demoResults`) per step and driving Next/Prev manually so the results container renders before driver spotlights it. New `demo_typed` copy step (both locales). Browser-verified: step 0 input empty / 0 cards, step 1 input "Juan" / 0 cards, step 2 results appear (3 cards), then the card spotlights.
+- **Dark theme.** Gave the driver popover a defining border + stronger shadow so it separates from the dimmed dark page, and themed the close (×) so it stays visible in dark mode (it reads the existing `--surface-card` / `--text-*` / `--border-default` theme vars).
+
+## [2.22.1] - 2026-06-25
+
+### Changed — walkthrough spotlights the REAL UI (corrects 2.22.0's modal)
+
+2.22.0 wrongly rendered the demo in a separate modal. The walkthrough is meant to **spotlight the real homepage UI**. Reverted to a **driver.js** spotlight: on start it injects the three mocked "Juan" records into the **live SearchSection** (those `isDemo` rows are excluded from every real search *except here*), fills the real search box with "Juan", and spotlights the **real** search box → the **real** result cards as the user clicks Next (`disableActiveInteraction`, so the inert demo cards can't be clicked through to a 404).
+
+Browser-verified end-to-end: the spotlight cutout lands on `#search` then each `a[/adopter/demo-juan-*]` card in order; BuenAdoptante's contact renders masked (`j•••@gmail.com`, `+54 11 ••••-••••`) while MalAdoptante's public record shows unmasked; rating badges, the Address-Verified chip, and the "4 adoptions in 20 days" alert all render.
+
+- Re-added `driver.js`; rewrote `WalkthroughProvider` to inject `demoMatches` via context and drive the spotlight; restored `walkthrough.css` + `css.d.ts`; deleted the modal. Fixed a mount-clobber bug (the demo restore branch could blank a real `/?q=Juan` deep-link's search box).
+
+## [2.22.0] - 2026-06-24
+
+### Changed — guided walkthrough is now a click-Next demo over mocked data
+
+Replaced the driver.js spotlight tour (v2.21.x) with a self-contained demo modal: the user just clicks **Next** through a scripted search for "Juan" that returns three teaching records — **Juan BuenAdoptante** (rating 4, verified address, PII gated → masked), **Juan MalAdoptante** (rating 1, public record imported from Facebook → contact shown), and **Juan Dudoso** (rating 2, "4 adopciones en 20 días" alert). No live-DOM coupling, no MutationObserver, no dependency — the modal owns its surface and renders the **real** `<AdopterResultCard>` against the mocked records, so the *Datos protegidos* masking on the gated cards is genuine. Still behind `ENABLE_GUIDED_WALKTHROUGH` (default off); reuses the relaunch button + new-user auto-launch.
+
+### Added
+- **`<AdopterResultCard>`** — extracted from `SearchSection` so real search and the demo render one identical card (no drift). Now also renders a `verified_address` chip.
+- **`adopters.isDemo`** column (migration `0052`). Demo rows are real rows but **soft-deleted** (`deletedAt` set), so every existing `deleted_at IS NULL` query excludes them automatically — they can never leak into real search/duplicate/analytics. The walkthrough fetches them by the `isDemo` marker; an idempotent `seedWalkthroughDemo` action upserts them; tokenization skips them; Trash + bulk-purge exclude them. Until seeded, the demo renders from code fixtures (identical masking), so it works out of the box.
+
+### Removed
+- `driver.js` dependency, the spotlight `WalkthroughProvider` logic, `steps.ts`, `walkthrough.css`, the `css.d.ts` shim, and the `data-walkthrough` markers in `SearchSection`.
+
+### Pending follow-up
+- `/admin/walkthrough` panel to seed/reset the demo rows and edit their PII + rating/flags overlay (the demo is fully functional from fixtures without it).
+
+## [2.21.2] - 2026-06-24
+
+### Fixed — walkthrough: result steps (rating/flags/history) never appeared
+
+After the search, the tour ended without explaining the result card. Root cause: the result steps were prebuilt at launch and relied on `onHighlightStarted` calling `moveNext()` mid-highlight to skip absent regions (a result with no rating badge or no flags) — a fragile re-entrant pattern, and the post-search advance landed on steps whose elements might not resolve. Reworked the result phase to be deterministic: the tour now initializes with only the search step, and when the real search produces a result card the MutationObserver swaps in **only the result steps that actually rendered** via `setSteps()` + `moveTo(0)` (confirmed against driver.js 1.5.0: `moveTo` always re-highlights and `setSteps` does not fire `onDestroyed`). The observer is now connected deterministically right after `drive()` rather than from a highlight hook. `history` always renders, so at least one result step always shows.
+
+
+### Changed — walkthrough: merge "type" + "run search" into one step
+
+The first two tour steps were redundant — we asked the user to type a name *and* click a Next button, then a separate step to press Search. Now there's a single step: the spotlight highlights the whole search **form** (so both the input and the Buscar button are inside the cutout and clickable — driver blocks clicks outside the highlight), with no Next button. The user types and presses Buscar; the existing MutationObserver advances the tour when a result appears (or ends gracefully on zero results). Rewrote the step copy to explain *who* to search (an adopter you're about to give an animal to — adoption or foster — or one you already did) and end with "Luego presioná Buscar". Removed the now-unused `step_run_*` strings.
+
+## [2.21.0] - 2026-06-24
+
+### Added — guided walkthrough (interactive spotlight tour), flag-gated
+
+A first-run **driver.js** spotlight tour that teaches the core habit: search an adopter before you hand over an animal. It dims the homepage and highlights the *real* search box, guiding the user to type the name of the last person they adopted an animal out to (from memory), run the search, then read the result (rating → flags → history). Behind a new admin-togglable public flag `ENABLE_GUIDED_WALKTHROUGH` (**default off**).
+
+- **Trigger:** auto-launches once for genuine new users (a `walkthrough_pending` signal is set only on `CountryConfirmBanner`'s new-user path, so flipping the flag on can't flood existing users), plus a flag-gated "Show me how to search" re-launch button on the homepage.
+- **Mechanics:** driver.js handles the overlay/popover/positioning/keyboard (lazy-loaded with its CSS only when the tour starts, off the homepage LCP path). The app keeps only the custom logic: passive `data-walkthrough` markers in `SearchSection` (no tour logic coupling), a scoped `MutationObserver` that advances the "run search" step when a result card appears (and ends gracefully on zero results), and the new-user/persistence/flag wiring (localStorage). The search input stays typeable through the spotlight (`disableActiveInteraction` default).
+- Result steps (rating/flags) are skipped when absent; popover themed via CSS vars for dark mode; `prefers-reduced-motion` honored; E2E suppressed via the existing `playwright_test_mode` escape.
+
 ## [2.20.3] - 2026-06-23
 
 ### Fixed — `ENABLE_CONTENT_IMPORT` is a homepage-visibility toggle, not a kill-switch

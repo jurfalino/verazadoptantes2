@@ -22,9 +22,11 @@ export function RatingBadge({ rating, size = 'md', variant = 'badge', label = 'n
     const display = numRating % 1 !== 0 ? numRating.toFixed(1) : `${numRating}.0`;
 
     const labelKey = getRatingLabelKey(numRating);
+    const shortText = (t(`ratings.${labelKey}` as any) || '');             // "Peligroso"
+    const searchText = (t(`ratings.search_label.${labelKey}` as any) || ''); // "Adoptante Peligroso"
     const labelText =
-        label === 'short' ? (t(`ratings.${labelKey}` as any) || '')
-        : label === 'search' ? (t(`ratings.search_label.${labelKey}` as any) || '')
+        label === 'short' ? shortText
+        : label === 'search' ? searchText
         : '';
 
     if (variant === 'inline') {
@@ -50,7 +52,13 @@ export function RatingBadge({ rating, size = 'md', variant = 'badge', label = 'n
     return (
         <div className={`inline-flex items-center gap-1 rounded-full font-semibold shadow-sm ${colors.bg} ${colors.text} ${colors.border} border ${sizeClasses.pad} ${sizeClasses.text}`}>
             <span>⭐</span><span>{display}</span>
-            {labelText && <span className="ml-0.5">· {labelText}</span>}
+            {label === 'search' ? (
+                // Mobile: the short adjective ("Peligroso") so the name keeps room;
+                // ≥sm: the full label ("Adoptante Peligroso").
+                <span className="ml-0.5 whitespace-nowrap">· <span className="sm:hidden">{shortText}</span><span className="hidden sm:inline">{searchText}</span></span>
+            ) : labelText ? (
+                <span className="ml-0.5">· {labelText}</span>
+            ) : null}
         </div>
     );
 }

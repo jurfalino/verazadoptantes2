@@ -22,7 +22,10 @@ export async function tokenizeAdopter(adopterId: string): Promise<void> {
 
         // Fetch adopter
         const adopter = await db.select().from(adopters).where(eq(adopters.id, adopterId)).get();
-        if (!adopter || adopter.deletedAt) return;
+        // Skip soft-deleted and walkthrough-demo rows — neither belongs in the
+        // duplicate index. (Demo rows are also soft-deleted, so the first check
+        // already covers them; the isDemo guard is defensive.)
+        if (!adopter || adopter.deletedAt || adopter.isDemo) return;
 
         // Check if tokens are fresh via hash
         const newHash = computeTokenHash(adopter);

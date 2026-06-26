@@ -66,6 +66,9 @@ export const FEATURE_FLAGS = {
     SHOWCASE_GLOBAL_VISIBLE: false,
     SHOWCASE_ORG_VISIBLE: false,
     SHOWCASE_USER_VISIBLE: false,
+    // v2.22.0: first-run click-Next demo modal teaching how to search an adopter,
+    // over three mocked records. Public + admin-togglable. Default off.
+    ENABLE_GUIDED_WALKTHROUGH: false,
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;
@@ -158,6 +161,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         SHOWCASE_GLOBAL_VISIBLE: false,
         SHOWCASE_ORG_VISIBLE: false,
         SHOWCASE_USER_VISIBLE: false,
+        ENABLE_GUIDED_WALKTHROUGH: false,
     };
 
     for (const flag of Object.keys(FEATURE_FLAGS) as FeatureFlag[]) {

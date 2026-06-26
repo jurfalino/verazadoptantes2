@@ -134,12 +134,14 @@ describe('resolveVisibility', () => {
         expect(v.nothingMasked).toBe(true);
     });
 
-    it('admin, moderator, org-mate, and editor all get full visibility', () => {
+    it('admin, moderator, and org-mate get full visibility; editor does not (v2.19.51)', () => {
         expect(resolveVisibility({ ...base, viewerEmail: 'a@x.com', ownerEmail: 'o@x.com', isAdmin: true }).nothingMasked).toBe(true);
         expect(resolveVisibility({ ...base, viewerEmail: 'm@x.com', ownerEmail: 'o@x.com', isModerator: true }).privileged).toBe(true);
         expect(resolveVisibility({ ...base, viewerEmail: 'team@x.com', ownerEmail: 'o@x.com', isOrgMate: true }).privileged).toBe(true);
         expect(resolveVisibility({ ...base, viewerEmail: 'team@x.com', ownerEmail: 'o@x.com', isOrgMate: true }).nothingMasked).toBe(true);
-        expect(resolveVisibility({ ...base, viewerEmail: 'e@x.com', ownerEmail: 'o@x.com', isEditor: true }).nothingMasked).toBe(true);
+        // A one-time editor is NO LONGER privileged (a one-time contribution
+        // shouldn't earn permanent full-PII visibility).
+        expect(resolveVisibility({ ...base, viewerEmail: 'e@x.com', ownerEmail: 'o@x.com', isEditor: true }).nothingMasked).toBe(false);
     });
 
     it('authenticated non-privileged viewer with no grants gets tier none', () => {
@@ -300,30 +302,12 @@ describe('matchSearchNameTokens', () => {
 });
 
 describe('renderName', () => {
-    it('returns the original name for a privileged viewer', () => {
+    it('always returns the full name (names are no longer PII-gated)', () => {
         expect(renderName('Maria Gomez', vis({ nothingMasked: true }))).toBe('Maria Gomez');
-    });
-
-    it('returns initials only with no grants and no query', () => {
-        expect(renderName('Maria Gomez', vis({}))).toBe('M G');
-        expect(renderName('Maria Jose Gomez', vis({}))).toBe('M J G');
-    });
-
-    it('reveals tokens carried in the current query (transient)', () => {
-        expect(renderName('Maria Gomez', vis({}), 'Maria 1123456789')).toBe('Maria G');
-        expect(renderName('Maria Gomez', vis({}), 'Maria Gomez')).toBe('Maria Gomez');
-        // Whole-word match — "Mariano" does NOT reveal "Maria".
-        expect(renderName('Maria Gomez', vis({}), 'Mariano')).toBe('M G');
-    });
-
-    it('reveals tokens covered by persistent name_token grants', () => {
-        const v = vis({ unlockedNameTokenHashes: new Set([hashNameToken('Maria')]) });
-        expect(renderName('Maria Gomez', v)).toBe('Maria G');
-    });
-
-    it('combines persistent grants with current-query reveals', () => {
-        const v = vis({ unlockedNameTokenHashes: new Set([hashNameToken('Maria')]) });
-        expect(renderName('Maria Jose Gomez', v, 'Gomez')).toBe('Maria J Gomez');
+        expect(renderName('Maria Gomez', vis({}))).toBe('Maria Gomez');
+        expect(renderName('Maria Jose Gomez', vis({}))).toBe('Maria Jose Gomez');
+        // Visibility / query no longer affect the name.
+        expect(renderName('Maria Gomez', vis({}), 'unrelated')).toBe('Maria Gomez');
     });
 
     it('returns empty for empty / null / undefined input', () => {
@@ -518,12 +502,12 @@ describe('maskAdopterContact', () => {
         expect(r.addressInfo).toBe('Calle 1, CABA');
     });
 
-    it('renderName returns the full name when adopterIsPublic is set', () => {
+    it('renderName always returns the full name (names no longer PII-gated)', () => {
         expect(renderName('María García López', vis({}), undefined, { adopterIsPublic: true }))
             .toBe('María García López');
-        // Sanity: WITHOUT the option the same call partial-reveals to initials.
+        // Names are no longer masked for any viewer.
         expect(renderName('María García López', vis({})))
-            .toBe('M G L');
+            .toBe('María García López');
     });
 });
 

@@ -1,6 +1,7 @@
 export const runtime = 'edge';
 import HomeClient from '@/components/HomeClient';
 import { getPublicConfig, PUBLIC_FLAG_DEFAULTS } from '@/lib/publicConfig';
+import { auth } from '@/auth';
 
 /**
  * Homepage server-component wrapper. Fetches the public feature flags
@@ -18,6 +19,12 @@ import { getPublicConfig, PUBLIC_FLAG_DEFAULTS } from '@/lib/publicConfig';
  * in the SSR HTML on first byte.
  */
 export default async function Page() {
-    const initialConfig = await getPublicConfig().catch(() => ({ ...PUBLIC_FLAG_DEFAULTS }));
-    return <HomeClient initialConfig={initialConfig} />;
+    // auth() is a cached JWT decode (layout already calls it this request), no
+    // DB — the email is only used client-side for the walkthrough's per-user
+    // localStorage keys, so a null here just disables auto-launch for that view.
+    const [initialConfig, session] = await Promise.all([
+        getPublicConfig().catch(() => ({ ...PUBLIC_FLAG_DEFAULTS })),
+        auth().catch(() => null),
+    ]);
+    return <HomeClient initialConfig={initialConfig} userEmail={session?.user?.email ?? null} />;
 }
