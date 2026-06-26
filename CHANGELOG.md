@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.17] - 2026-06-26
+
+### Fixed — walkthrough left its query in the search box on exit
+
+When the tour ended (finished or closed), the cleanup only reset the box if the query was exactly "Juan", so the reveal step's "Juan +54 11 4567-8901" lingered. The cleanup now always clears the query + results to a clean slate when the walkthrough ends, however it ends. Verified for both finish and mid-tour close.
+
 ## [2.22.16] - 2026-06-26
 
 ### Fixed — walkthrough reveal: phone hidden by truncation on mobile

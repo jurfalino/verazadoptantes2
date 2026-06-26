@@ -96,9 +96,15 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
             setTruncatedInfo(null);
             setSingleTokenResultCount(undefined);
         } else if (demoWasActive.current) {
+            // Walkthrough ended (finished OR closed) — always reset the search box
+            // and results to a clean slate (the injected query, e.g. "Juan +54 11
+            // 4567-8901", must not linger).
             demoWasActive.current = false;
-            setResults(prev => (prev?.some(r => r.adopterId.startsWith('demo-juan-')) ? null : prev));
-            setQuery(prev => (prev === 'Juan' ? '' : prev));
+            setQuery('');
+            setResults(null);
+            setValidationError(null);
+            setTruncatedInfo(null);
+            setSingleTokenResultCount(undefined);
         }
     }, [demoActive, demoQuery, demoResults]);
 
