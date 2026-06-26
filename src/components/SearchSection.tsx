@@ -96,9 +96,15 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
             setTruncatedInfo(null);
             setSingleTokenResultCount(undefined);
         } else if (demoWasActive.current) {
+            // Walkthrough ended (finished OR closed) — always reset the search box
+            // and results to a clean slate (the injected query, e.g. "Juan +54 11
+            // 4567-8901", must not linger).
             demoWasActive.current = false;
-            setResults(prev => (prev?.some(r => r.adopterId.startsWith('demo-juan-')) ? null : prev));
-            setQuery(prev => (prev === 'Juan' ? '' : prev));
+            setQuery('');
+            setResults(null);
+            setValidationError(null);
+            setTruncatedInfo(null);
+            setSingleTokenResultCount(undefined);
         }
     }, [demoActive, demoQuery, demoResults]);
 
@@ -222,7 +228,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
             </div>
 
             {/* Search card — just the search tool */}
-            <div className={`bg-white rounded-3xl p-5 md:p-6 shadow-sm border border-stone-200 transition-all ${hasResults ? 'md:static sticky top-16 z-30 rounded-b-xl md:rounded-3xl shadow-md md:shadow-sm' : ''
+            <div className={`bg-white rounded-3xl p-5 md:p-6 shadow-sm border border-stone-200 transition-all ${hasResults && !demoActive ? 'md:static sticky top-16 z-30 rounded-b-xl md:rounded-3xl shadow-md md:shadow-sm' : ''
                 }`}>
                 <form onSubmit={handleSearch} className={hasResults ? 'flex gap-2 items-center md:block md:space-y-4' : 'space-y-3'}>
                     <div className="relative flex-1">
@@ -402,6 +408,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                                 showMetadata={showCardMetadata}
                                 href={profileHref}
                                 onClick={handleCardClick}
+                                wrapContact={demoActive}
                             />
                         );
                     })}
@@ -410,7 +417,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                         without scrolling back to the small top-of-list chip. Empty-state
                         below uses a more prominent treatment; this is the secondary path. */}
                     {results.length > 0 && (
-                        <div className="bg-stone-50 rounded-2xl p-6 text-center border border-stone-200 mt-4">
+                        <div data-walkthrough="create-new" className="bg-stone-50 rounded-2xl p-6 text-center border border-stone-200 mt-4 scroll-mt-28 md:scroll-mt-4">
                             <p className="text-stone-600 mb-1 text-base font-medium">
                                 {t('search.none_match_heading')}
                             </p>

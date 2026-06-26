@@ -2,6 +2,43 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.17] - 2026-06-26
+
+### Fixed — walkthrough left its query in the search box on exit
+
+When the tour ended (finished or closed), the cleanup only reset the box if the query was exactly "Juan", so the reveal step's "Juan +54 11 4567-8901" lingered. The cleanup now always clears the query + results to a clean slate when the walkthrough ends, however it ends. Verified for both finish and mid-tour close.
+
+## [2.22.16] - 2026-06-26
+
+### Fixed — walkthrough reveal: phone hidden by truncation on mobile
+
+At the reveal step the phone was unmasked but, on a phone, the contact line's `truncate` cut it off — the blob order is `Email … Tel … Dirección`, so the revealed `Tel` fell past the ellipsis. Added a `wrapContact` prop to `<AdopterResultCard>` (default off) that the walkthrough demo passes, so demo cards **wrap** the contact line instead of truncating it — the revealed phone is now visible on its own line. `break-words` only wraps when content overflows, so desktop demo cards stay single-line and real search is unchanged.
+
+## [2.22.15] - 2026-06-26
+
+### Fixed — walkthrough overlay barely visible in dark mode
+
+The dim overlay was a near-black color at fixed opacity. On a dark page (already ~8% luminance) a darken-the-background veil removes almost no brightness, so the "dimmed" area was indistinguishable from the page — the overlay read as nearly absent. Two-part fix:
+- **Theme-aware overlay:** dark mode uses near-pure-black at higher opacity (`rgba(0,0,0,0.86)`), which snuffs the page's residual blue glow so the background visibly recedes; light keeps a softer veil (`0.68`).
+- **Stronger spotlight in dark:** the highlighted element's brightness lift + teal ring/glow are intensified, so focus is carried by the lit element (the reliable cue on dark themes) rather than the low-headroom veil.
+
+Verified in both themes.
+
+## [2.22.14] - 2026-06-26
+
+### Fixed — walkthrough mobile: card under sticky header; decision step spotlights the create CTA
+
+- **Mobile sticky overlap:** when the tour highlighted the first card, its top sat under the sticky search header. The search card is now **non-sticky while the walkthrough runs** (`!demoActive`), so a spotlighted card scrolls to the top fully visible. (Also gave the cards a `scroll-mt` for good measure.)
+- **Decision step target:** the "¿Es alguno de estos?" step now spotlights the **"None of these match? → Create New Record"** CTA (a `data-walkthrough="create-new"` marker) instead of a centered popover, so "if none match, create a new record" points at the actual button.
+
+## [2.22.13] - 2026-06-26
+
+### Fixed/Changed — walkthrough reveal narrows to one record; reordered; type effects
+
+- **Bug fix:** at the phone-reveal step the result list kept showing all 3 records. A name+phone search narrows to the matching person, so the reveal step now shows **only** Juan BuenAdoptante ("Found 1 match"), with the others gone. (`getWalkthroughDemoRevealed` is filtered to the matched record.)
+- **Reorder:** the "¿Es alguno de estos?" decision step moved to right after Dudoso (after examining the 3 cards), so the phone-reveal is now the finale instead of trailing the closing.
+- **Type effects:** "Juan" types into the search box on the typed step, and the phone is typed (appended) on the reveal step — a fast char-by-char animation instead of appearing instantly.
+
 ## [2.22.12] - 2026-06-25
 
 ### Changed — walkthrough Dudoso copy: "reventa" → "maltrato"
