@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.13] - 2026-06-26
+
+### Fixed/Changed — walkthrough reveal narrows to one record; reordered; type effects
+
+- **Bug fix:** at the phone-reveal step the result list kept showing all 3 records. A name+phone search narrows to the matching person, so the reveal step now shows **only** Juan BuenAdoptante ("Found 1 match"), with the others gone. (`getWalkthroughDemoRevealed` is filtered to the matched record.)
+- **Reorder:** the "¿Es alguno de estos?" decision step moved to right after Dudoso (after examining the 3 cards), so the phone-reveal is now the finale instead of trailing the closing.
+- **Type effects:** "Juan" types into the search box on the typed step, and the phone is typed (appended) on the reveal step — a fast char-by-char animation instead of appearing instantly.
+
 ## [2.22.12] - 2026-06-25
 
 ### Changed — walkthrough Dudoso copy: "reventa" → "maltrato"

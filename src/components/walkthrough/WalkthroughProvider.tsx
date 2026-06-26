@@ -2,10 +2,10 @@
 
 /**
  * Guided walkthrough (v2.22.x) — a driver.js spotlight tour over the REAL
- * homepage UI. It reveals progressively: empty search box → "Juan" typed →
- * results appear → spotlight each real card → THEN it re-searches "Juan + the
- * phone of Juan BuenAdoptante" and shows that gated record's contact becoming
- * revealed (the search-match reveal, demonstrated live). The three mocked
+ * homepage UI. Flow: empty search box → "Juan" typed (type effect) → results
+ * appear → spotlight each card → "is it one of these?" → then the power tip:
+ * append Juan BuenAdoptante's phone to the search (type effect), the result set
+ * narrows to the ONE matching record, and its phone reveals in place. The mocked
  * records are injected into the live SearchSection via this context; those
  * `isDemo` rows are excluded from every real search EXCEPT here.
  */
@@ -40,9 +40,9 @@ const REVEAL_ID = 'demo-juan-bueno';
 
 interface StepDef { key: string; element?: string; side: 'top' | 'bottom' | 'left' | 'right'; align: 'start' | 'center' | 'end'; }
 
-// Each step spotlights a REAL element. 0–1 the search box (empty, then "Juan");
-// 2 reveals the results; 3–6 the cards; 7 adds the phone to the box; 8 shows
-// BuenAdoptante revealed; 9 (no element) is the centered close.
+// 0–1 the search box (empty, then "Juan"); 2 reveals the 3 results; 3–6 the
+// cards; 7 the "is it one of these?" decision (centered); 8 appends the phone to
+// the box; 9 shows the ONE matching record with its phone revealed (finale).
 const STEP_DEFS: StepDef[] = [
     { key: 'search', element: '#search', side: 'bottom', align: 'start' },
     { key: 'typed', element: '#search', side: 'bottom', align: 'start' },
@@ -51,17 +51,19 @@ const STEP_DEFS: StepDef[] = [
     { key: 'protegido', element: 'a[href*="/adopter/demo-juan-bueno"]', side: 'bottom', align: 'start' },
     { key: 'malo', element: 'a[href*="/adopter/demo-juan-malo"]', side: 'top', align: 'start' },
     { key: 'dudoso', element: 'a[href*="/adopter/demo-juan-dudoso"]', side: 'top', align: 'start' },
+    { key: 'cierre', side: 'top', align: 'center' },
     { key: 'revealphone', element: '#search', side: 'bottom', align: 'start' },
     { key: 'revealresult', element: 'a[href*="/adopter/demo-juan-bueno"]', side: 'bottom', align: 'start' },
-    { key: 'cierre', side: 'top', align: 'center' },
 ];
 
-const TYPED_FROM = 1;          // box shows "Juan"
-const RESULTS_FROM = 2;        // result cards appear (masked)
-const REVEAL_PHONE_FROM = 7;   // box shows "Juan <phone>"
-const REVEAL_RESULTS_FROM = 8; // BuenAdoptante renders revealed
+const TYPED_FROM = 1;           // box shows "Juan"
+const RESULTS_FROM = 2;         // the 3 (masked) result cards appear
+const REVEAL_PHONE_FROM = 8;    // box shows "Juan <phone>"
+const REVEAL_RESULTS_FROM = 9;  // narrowed to the one matching record, revealed
 // Steps where the spotlight target's presence/content depends on a fresh render.
 const needsRender = (idx: number) => idx === RESULTS_FROM || idx === REVEAL_RESULTS_FROM;
+// Steps where the query is "typed in" with an animation (forward only).
+const isTypeStep = (idx: number) => idx === TYPED_FROM || idx === REVEAL_PHONE_FROM;
 
 export function WalkthroughProvider({
     flagEnabled,
@@ -76,34 +78,46 @@ export function WalkthroughProvider({
     const [demoActive, setDemoActive] = useState(false);
     const [demoQuery, setDemoQuery] = useState('');
     const [demoResults, setDemoResults] = useState<DiscoveryMatch[] | null>(null);
-    const matchesRef = useRef<DiscoveryMatch[]>([]);       // masked
-    const revealRef = useRef<DiscoveryMatch[]>([]);        // BuenAdoptante unmasked
-    const revealQueryRef = useRef<string>('Juan');         // "Juan <phone>"
+    const matchesRef = useRef<DiscoveryMatch[]>([]);   // the 3, masked
+    const revealRef = useRef<DiscoveryMatch[]>([]);    // ONLY BuenAdoptante, phone revealed
+    const revealQueryRef = useRef<string>('Juan');     // "Juan <phone>"
     const driverRef = useRef<Driver | null>(null);
     const startingRef = useRef(false);
+    const typingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const keys = keysFor(userEmail);
 
-    // Set the injected state for the step about to be shown (progressive reveal,
-    // then the phone-search reveal).
-    const applyPhase = useCallback((idx: number) => {
-        setDemoQuery(idx >= REVEAL_PHONE_FROM ? revealQueryRef.current : (idx >= TYPED_FROM ? 'Juan' : ''));
-        setDemoResults(idx >= REVEAL_RESULTS_FROM ? revealRef.current : (idx >= RESULTS_FROM ? matchesRef.current : null));
+    const clearTyping = useCallback(() => {
+        if (typingRef.current) { clearTimeout(typingRef.current); typingRef.current = null; }
     }, []);
+
+    // Fast type-in effect: animate `to` from `fromLen` chars to its full length.
+    const typeQuery = useCallback((to: string, fromLen: number) => {
+        clearTyping();
+        setDemoQuery(to.slice(0, fromLen));
+        let i = fromLen;
+        const tick = () => {
+            i++;
+            setDemoQuery(to.slice(0, i));
+            if (i < to.length) typingRef.current = setTimeout(tick, 45);
+            else typingRef.current = null;
+        };
+        if (fromLen < to.length) typingRef.current = setTimeout(tick, 160);
+        else setDemoQuery(to);
+    }, [clearTyping]);
 
     const start = useCallback(async () => {
         if (driverRef.current?.isActive() || startingRef.current) return;
         startingRef.current = true;
         try {
             const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-            const [normal, revealed] = await Promise.all([
+            const [normal, revealedAll] = await Promise.all([
                 getWalkthroughDemoMatches(),
                 getWalkthroughDemoRevealed(),
             ]);
             matchesRef.current = normal;
-            revealRef.current = revealed;
-            // Build the "Juan <phone>" query from the revealed record's real phone
-            // (so it reflects any admin edit, not a hardcoded value).
-            const bueno = revealed.find(m => m.adopterId === REVEAL_ID);
+            // The phone-search narrows to the ONE record whose phone matched.
+            revealRef.current = revealedAll.filter(m => m.adopterId === REVEAL_ID);
+            const bueno = revealedAll.find(m => m.adopterId === REVEAL_ID);
             const phone = bueno
                 ? deserializeContactEntries(bueno.adopter.contactEntries).find(e => e.type === 'phone')?.value ?? ''
                 : '';
@@ -115,8 +129,14 @@ export function WalkthroughProvider({
                 import('./walkthrough.css'),
             ]);
 
+            const queryFor = (idx: number) =>
+                idx >= REVEAL_PHONE_FROM ? revealQueryRef.current : (idx >= TYPED_FROM ? 'Juan' : '');
+            const resultsFor = (idx: number): DiscoveryMatch[] | null =>
+                idx >= REVEAL_RESULTS_FROM ? revealRef.current : (idx >= RESULTS_FROM ? matchesRef.current : null);
+
             setDemoActive(true);
-            applyPhase(0);
+            setDemoQuery('');
+            setDemoResults(null);
 
             const steps: DriveStep[] = STEP_DEFS.map((s) => ({
                 ...(s.element ? { element: s.element } : {}),
@@ -128,9 +148,18 @@ export function WalkthroughProvider({
                 },
             }));
 
-            const advance = (target: number) => {
-                applyPhase(target);
-                const go = () => driverRef.current?.moveTo(target);
+            const advance = (target: number, forward: boolean) => {
+                clearTyping();
+                setDemoResults(resultsFor(target));
+                const go = () => {
+                    driverRef.current?.moveTo(target);
+                    if (forward && isTypeStep(target)) {
+                        // type "Juan" from empty, or append the phone after "Juan"
+                        typeQuery(queryFor(target), target === TYPED_FROM ? 0 : 'Juan'.length);
+                    } else {
+                        setDemoQuery(queryFor(target));
+                    }
+                };
                 if (needsRender(target)) requestAnimationFrame(() => requestAnimationFrame(go));
                 else go();
             };
@@ -150,14 +179,15 @@ export function WalkthroughProvider({
                 onNextClick: () => {
                     const cur = driverRef.current?.getActiveIndex() ?? 0;
                     if (cur >= STEP_DEFS.length - 1) { driverRef.current?.destroy(); return; }
-                    advance(cur + 1);
+                    advance(cur + 1, true);
                 },
                 onPrevClick: () => {
                     const cur = driverRef.current?.getActiveIndex() ?? 0;
                     if (cur <= 0) return;
-                    advance(cur - 1);
+                    advance(cur - 1, false);
                 },
                 onDestroyed: () => {
+                    clearTyping();
                     setDemoActive(false);
                     setDemoQuery('');
                     setDemoResults(null);
@@ -169,6 +199,7 @@ export function WalkthroughProvider({
             driverRef.current = d;
             requestAnimationFrame(() => requestAnimationFrame(() => d.drive()));
         } catch {
+            clearTyping();
             setDemoActive(false);
             setDemoQuery('');
             setDemoResults(null);
@@ -176,7 +207,7 @@ export function WalkthroughProvider({
         } finally {
             startingRef.current = false;
         }
-    }, [t, keys.done, applyPhase]);
+    }, [t, keys.done, clearTyping, typeQuery]);
 
     // Auto-launch once for genuine new users (pending set by CountryConfirmBanner's
     // new-user path, so flipping the flag on never floods existing users).
@@ -195,7 +226,7 @@ export function WalkthroughProvider({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [flagEnabled, userEmail]);
 
-    useEffect(() => () => { driverRef.current?.destroy(); }, []);
+    useEffect(() => () => { clearTyping(); driverRef.current?.destroy(); }, [clearTyping]);
 
     return (
         <WalkthroughContext.Provider value={{ enabled: flagEnabled, start, demoActive, demoQuery, demoResults }}>
