@@ -41,8 +41,9 @@ const REVEAL_ID = 'demo-juan-bueno';
 interface StepDef { key: string; element?: string; side: 'top' | 'bottom' | 'left' | 'right'; align: 'start' | 'center' | 'end'; }
 
 // 0–1 the search box (empty, then "Juan"); 2 reveals the 3 results; 3–6 the
-// cards; 7 the "is it one of these?" decision (centered); 8 appends the phone to
-// the box; 9 shows the ONE matching record with its phone revealed (finale).
+// cards; 7 the "is it one of these?" decision; 8 appends the phone; 9 shows the
+// ONE matching record revealed; 10 the activation CTA — clears the box and
+// hands off to the user's first real search.
 const STEP_DEFS: StepDef[] = [
     { key: 'search', element: '#search', side: 'bottom', align: 'start' },
     { key: 'typed', element: '#search', side: 'bottom', align: 'start' },
@@ -54,12 +55,14 @@ const STEP_DEFS: StepDef[] = [
     { key: 'cierre', element: '[data-walkthrough="create-new"]', side: 'top', align: 'center' },
     { key: 'revealphone', element: '#search', side: 'bottom', align: 'start' },
     { key: 'revealresult', element: 'a[href*="/adopter/demo-juan-bueno"]', side: 'bottom', align: 'start' },
+    { key: 'activation', element: '#search', side: 'bottom', align: 'start' },
 ];
 
 const TYPED_FROM = 1;           // box shows "Juan"
 const RESULTS_FROM = 2;         // the 3 (masked) result cards appear
 const REVEAL_PHONE_FROM = 8;    // box shows "Juan <phone>"
 const REVEAL_RESULTS_FROM = 9;  // narrowed to the one matching record, revealed
+const ACTIVATION_FROM = 10;     // box cleared — "now your turn" handoff
 // Steps where the spotlight target's presence/content depends on a fresh render.
 const needsRender = (idx: number) => idx === RESULTS_FROM || idx === REVEAL_RESULTS_FROM;
 // Steps where the query is "typed in" with an animation (forward only).
@@ -135,9 +138,9 @@ export function WalkthroughProvider({
             ]);
 
             const queryFor = (idx: number) =>
-                idx >= REVEAL_PHONE_FROM ? revealQueryRef.current : (idx >= TYPED_FROM ? 'Juan' : '');
+                idx >= ACTIVATION_FROM ? '' : idx >= REVEAL_PHONE_FROM ? revealQueryRef.current : (idx >= TYPED_FROM ? 'Juan' : '');
             const resultsFor = (idx: number): DiscoveryMatch[] | null =>
-                idx >= REVEAL_RESULTS_FROM ? revealRef.current : (idx >= RESULTS_FROM ? matchesRef.current : null);
+                idx >= ACTIVATION_FROM ? null : idx >= REVEAL_RESULTS_FROM ? revealRef.current : (idx >= RESULTS_FROM ? matchesRef.current : null);
 
             setDemoActive(true);
             setDemoQuery('');

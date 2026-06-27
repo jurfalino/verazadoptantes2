@@ -1897,6 +1897,8 @@ export const en = {
         demo_revealphone_body: 'Know their phone? Let’s add it to the search, next to the name. Watch what happens.',
         demo_revealresult_title: 'Their phone, revealed',
         demo_revealresult_body: 'Because the phone matches this record, you now see the full number. The email and address stay hidden — only the detail you already knew is revealed.',
+        demo_activation_title: 'Now it’s your turn',
+        demo_activation_body: 'You’ve got it. Search by phone and/or name for the last person you gave an animal to —in adoption or foster— and see what comes up.',
         demo_cierre_title: 'Is it one of these?',
         demo_cierre_body: 'If one is the Juan you want, you’ve got their history. If none match, create a new record.',
     },
