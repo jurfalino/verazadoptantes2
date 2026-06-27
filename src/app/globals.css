@@ -1927,3 +1927,13 @@ button {
 .btn-destructive:hover:not(:disabled) {
   background: rgba(251, 113, 133, 0.15);
 }
+/* Prototype B — nudge the smallest type tiers up on mobile (<=640px) so the app's
+   body text (mostly text-xs / text-sm) isn't sub-13px on phones. Desktop unchanged. */
+@media (max-width: 640px) {
+  :root {
+    --text-xs: 0.8125rem;   /* 12px -> 13px */
+    --text-xs--line-height: 1.1rem;
+    --text-sm: 0.9375rem;   /* 14px -> 15px */
+    --text-sm--line-height: 1.3rem;
+  }
+}
