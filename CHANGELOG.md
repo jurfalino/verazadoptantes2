@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.19] - 2026-06-27
+
+### Fixed — walkthrough is now non-destructive to an in-progress search
+
+Starting the tour while the homepage already showed results from a previous search wiped that search (the demo injected over it), and the v2.22.17 cleanup then cleared the box on exit — so the user lost their results and landed on an empty box. Now SearchSection **snapshots the user's query + results when the tour starts and restores them when it ends** (finished or closed). If there was no prior search it restores to empty (so the injected "Juan …" query still never lingers); if there was one, it comes back exactly as it was. Verified both paths.
+
 ## [2.22.18] - 2026-06-27
 
 ### Changed — bump the smallest type tiers up on mobile (legibility)

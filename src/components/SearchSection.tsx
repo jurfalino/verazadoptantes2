@@ -81,32 +81,40 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
         }
     }, [initialQuery, results, runSearch, loading]);
 
-    // Guided-walkthrough injection: show the demo "Juan" results in the real UI
-    // while the tour runs, and restore the page when it ends. The restore branch
-    // is gated on `demoWasActive` so it NEVER runs on mount — otherwise a real
-    // deep-link like /?q=Juan would have its search box blanked. We also only
-    // clear our own injected set (demo ids) so a fresh real search isn't lost.
+    // Guided-walkthrough injection: while the tour runs, this section shows the
+    // demo "Juan" search; when it ends it restores whatever the user had before
+    // (non-destructive — starting the tour mid-search no longer wipes that
+    // search). `demoWasActive` gates the restore so it never runs on mount.
     const demoWasActive = useRef(false);
+    const preDemoSearch = useRef<{ query: string; results: DiscoveryMatch[] | null } | null>(null);
     useEffect(() => {
         if (demoActive) {
-            demoWasActive.current = true;
+            if (!demoWasActive.current) {
+                // Entering the tour — snapshot the user's current search to restore on exit.
+                demoWasActive.current = true;
+                preDemoSearch.current = { query, results };
+            }
             setQuery(demoQuery);
             setResults(demoResults);
             setValidationError(null);
             setTruncatedInfo(null);
             setSingleTokenResultCount(undefined);
         } else if (demoWasActive.current) {
-            // Walkthrough ended (finished OR closed) — always reset the search box
-            // and results to a clean slate (the injected query, e.g. "Juan +54 11
-            // 4567-8901", must not linger).
+            // Leaving the tour (finished OR closed) — restore the pre-demo search
+            // (empty if there was none), so the injected "Juan …" query never
+            // lingers AND a real search the user had isn't lost.
             demoWasActive.current = false;
-            setQuery('');
-            setResults(null);
+            const pre = preDemoSearch.current;
+            preDemoSearch.current = null;
+            setQuery(pre?.query ?? '');
+            setResults(pre?.results ?? null);
             setValidationError(null);
             setTruncatedInfo(null);
             setSingleTokenResultCount(undefined);
         }
-    }, [demoActive, demoQuery, demoResults]);
+        // query/results are read only to snapshot on entry; outside enter/exit
+        // this effect is a no-op, so including them can't clobber a real search.
+    }, [demoActive, demoQuery, demoResults, query, results]);
 
     const handleCreateNew = (e: React.MouseEvent) => {
         e.preventDefault();
