@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.18] - 2026-06-27
+
+### Changed — bump the smallest type tiers up on mobile (legibility)
+
+The app's content baseline sits at `text-xs` (12px, the single most-used type class) / `text-sm` (14px) — the caption tier doing body-text duty, which reads small/dense on phones. Nudged the tiers up **on mobile only** (`≤640px`): `--text-xs` 12px → 13px and `--text-sm` 14px → 15px (with matching line-heights), via the Tailwind v4 theme tokens in one `@media` block. **Desktop is unchanged** (verified 12/14 at ≥640px). One systemic change, no per-component edits; reversible/tunable in one place.
+
 ## [2.22.17] - 2026-06-26
 
 ### Fixed — walkthrough left its query in the search box on exit
