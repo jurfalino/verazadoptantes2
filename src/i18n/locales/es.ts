@@ -1902,6 +1902,8 @@ export const es = {
         demo_revealphone_body: '¿Conocés su teléfono? Agreguémoslo a la búsqueda, junto al nombre. Mirá lo que pasa.',
         demo_revealresult_title: 'Su teléfono, revelado',
         demo_revealresult_body: 'Como el teléfono coincide con este registro, ahora ves el número completo. El correo y la dirección siguen ocultos: solo se revela el dato que ya conocías.',
+        demo_activation_title: 'Ahora te toca a vos',
+        demo_activation_body: 'Ya sabés cómo. Buscá por teléfono y/o nombre de la última persona a la que le diste un animal —en adopción o tránsito— y fijate qué aparece.',
         demo_cierre_title: '¿Es alguno de estos?',
         demo_cierre_body: 'Si uno es el Juan que buscás, ya tenés su historial. Si no aparece, creá un registro nuevo.',
     },

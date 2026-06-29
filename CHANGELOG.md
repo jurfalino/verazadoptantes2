@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.22.20] - 2026-06-27
+
+### Added — walkthrough activation step ("now your turn")
+
+The tour ended on the reveal payoff, leaving the user passive. Added a new final step that hands off from watch → do: it clears the search box, spotlights the now-empty `#search`, and prompts the real first search — *"Ahora te toca a vos. Ya sabés cómo. Buscá por teléfono y/o nombre de la última persona a la que le diste un animal —en adopción o tránsito— y fijate qué aparece."* (en: "Now it's your turn…"). The reveal step is no longer the last (its button is now Next); the new step is the finale (Listo → exits onto a clean search box). 11 steps total.
+
 ## [2.22.19] - 2026-06-27
 
 ### Fixed — walkthrough is now non-destructive to an in-progress search
