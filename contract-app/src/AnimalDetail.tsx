@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
 import { PawIcon, AlertIcon } from './components/Icons'
+import { useT, localizedHref } from './i18n/LocaleContext'
+
+type TFn = (key: string, vars?: Record<string, string | number>) => string
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -29,30 +32,38 @@ interface ApiResponse {
     instagramUrl?: string
 }
 
-const SPECIES_LABEL: Record<string, string> = { cat: 'Gato', dog: 'Perro', bird: 'Ave' }
-
-function speciesLabel(s: string | null): string {
-    if (!s) return ''
-    return SPECIES_LABEL[s.toLowerCase()] || s
+// Canonical species key, accepting either Spanish or English source values.
+const SPECIES_KEY: Record<string, string> = {
+    perro: 'dog', dog: 'dog',
+    gato: 'cat', cat: 'cat',
+    ave: 'bird', bird: 'bird',
+    conejo: 'rabbit', rabbit: 'rabbit',
+    otro: 'other', other: 'other',
 }
 
-function sexLabel(s: string | null): string {
+function speciesLabel(s: string | null, t: TFn): string {
+    if (!s) return ''
+    const key = SPECIES_KEY[s.toLowerCase()]
+    return key ? t(`animal.species_${key}`) : s
+}
+
+function sexLabel(s: string | null, t: TFn): string {
     if (!s) return ''
     const v = s.toLowerCase()
-    if (v === 'macho' || v === 'male') return 'Macho'
-    if (v === 'hembra' || v === 'female') return 'Hembra'
+    if (v === 'macho' || v === 'male') return t('animal.sex_male')
+    if (v === 'hembra' || v === 'female') return t('animal.sex_female')
     return s
 }
 
-function ageLabel(estimatedBirthDate: number | null, ageText: string | null): string {
+function ageLabel(estimatedBirthDate: number | null, ageText: string | null, t: TFn): string {
     if (estimatedBirthDate) {
         const years = (Date.now() / 1000 - estimatedBirthDate) / (365.25 * 24 * 3600)
         if (years < 1) {
             const months = Math.max(1, Math.round(years * 12))
-            return `${months} ${months === 1 ? 'mes' : 'meses'}`
+            return t(months === 1 ? 'animal.age_month' : 'animal.age_months', { n: months })
         }
         const yrs = Math.round(years)
-        return `${yrs} ${yrs === 1 ? 'año' : 'años'}`
+        return t(yrs === 1 ? 'animal.age_year' : 'animal.age_years', { n: yrs })
     }
     return ageText || ''
 }
@@ -66,6 +77,7 @@ function ageLabel(estimatedBirthDate: number | null, ageText: string | null): st
  * structured data so Google can extract richer card data for search results.
  */
 export default function AnimalDetail({ animalId }: { animalId: string }) {
+    const { t, locale } = useT()
     const [data, setData] = useState<ApiResponse | null>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
@@ -78,26 +90,26 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
             try {
                 const res = await fetch(`${API_URL}/api/showcase/animal/${encodeURIComponent(animalId)}`)
                 if (!res.ok) {
-                    setError(res.status === 404 ? 'Este animal ya no está disponible' : 'Error de red')
+                    setError(res.status === 404 ? t('animal.no_longer_available') : t('common.network_error'))
                     return
                 }
                 const body = await res.json() as ApiResponse
                 setData(body)
             } catch {
-                setError('Error de red')
+                setError(t('common.network_error'))
             } finally {
                 setLoading(false)
             }
         }
         load()
-    }, [animalId])
+    }, [animalId, t])
 
     // SEO meta + JSON-LD
     useEffect(() => {
         if (!data) return
         const a = data.animal
         const name = a.animalName?.trim() || 'Animal en adopción'
-        const subtitle = [speciesLabel(a.species), sexLabel(a.sex), ageLabel(a.estimatedBirthDate, a.age)].filter(Boolean).join(' · ')
+        const subtitle = [speciesLabel(a.species, t), sexLabel(a.sex, t), ageLabel(a.estimatedBirthDate, a.age, t)].filter(Boolean).join(' · ')
         document.title = `${name} busca hogar · Buen Adoptante`
         setMetaTag('description', `${name}${subtitle ? ' — ' + subtitle : ''}. Conocelo y postulate para adoptar.`)
         setMetaTag('og:title', `${name} busca hogar`, 'property')
@@ -123,10 +135,10 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
             image: a.images.map(i => i.url),
             brand: { '@type': 'Organization', name: a.rescuer.orgName || a.rescuer.displayName },
         })
-    }, [data])
+    }, [data, t])
 
     if (loading) {
-        return <main className="ps-showcase-page"><div className="ps-showcase-loading">Cargando…</div></main>
+        return <main className="ps-showcase-page"><div className="ps-showcase-loading">{t('common.loading')}</div></main>
     }
     if (error || !data) {
         return (
@@ -135,9 +147,9 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
                     <div className="ps-showcase-empty__icon" aria-hidden>
                         <AlertIcon size={48} />
                     </div>
-                    <h2 className="ps-showcase-empty__title">{error || 'No encontrado'}</h2>
+                    <h2 className="ps-showcase-empty__title">{error || t('common.not_found')}</h2>
                     <p className="ps-showcase-empty__desc">
-                        <a href="/" className="ps-showcase-back-link">Ver otros animales en adopción</a>
+                        <a href={localizedHref('/', locale)} className="ps-showcase-back-link">{t('common.view_animals_cta')}</a>
                     </p>
                 </div>
             </main>
@@ -145,20 +157,20 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
     }
 
     const a = data.animal
-    const name = a.animalName?.trim() || 'Sin nombre'
+    const name = a.animalName?.trim() || t('animal.unnamed')
     const heroImage = a.images[activeImageIdx]?.url || a.images[0]?.url
     const adoptHref = a.rescuer.userId
-        ? `/form?u=${encodeURIComponent(a.rescuer.userId)}&animal=${encodeURIComponent(a.id)}`
+        ? localizedHref(`/form?u=${encodeURIComponent(a.rescuer.userId)}&animal=${encodeURIComponent(a.id)}`, locale)
         : null
     const rescuerBackHref =
-        a.rescuer.orgSlug ? `/org/${a.rescuer.orgSlug}` :
-        a.rescuer.userHandle ? `/user/${a.rescuer.userHandle}` :
+        a.rescuer.orgSlug ? localizedHref(`/org/${a.rescuer.orgSlug}`, locale) :
+        a.rescuer.userHandle ? localizedHref(`/user/${a.rescuer.userHandle}`, locale) :
         null
     const rescuerLabel = a.rescuer.orgName || a.rescuer.displayName
 
     return (
         <main className="ps-showcase-page ps-animal-detail">
-            <a href="/all" className="ps-showcase-back-link">← Volver al catálogo</a>
+            <a href={localizedHref('/all', locale)} className="ps-showcase-back-link">{t('animal.back_to_catalog')}</a>
 
             <div className="ps-animal-hero">
                 {heroImage ? (
@@ -178,7 +190,7 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
                             type="button"
                             className={`ps-animal-thumb ${i === activeImageIdx ? 'ps-animal-thumb--active' : ''}`}
                             onClick={() => setActiveImageIdx(i)}
-                            aria-label={`Foto ${i + 1} de ${a.images.length}`}
+                            aria-label={t('animal.photo_position', { n: i + 1, total: a.images.length })}
                         >
                             <img src={img.url} alt="" />
                         </button>
@@ -189,24 +201,24 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
             <h1 className="ps-animal-name">{name}</h1>
 
             <div className="ps-animal-badges">
-                {speciesLabel(a.species) && <span className="ps-animal-badge">{speciesLabel(a.species)}</span>}
-                {sexLabel(a.sex) && <span className="ps-animal-badge">{sexLabel(a.sex)}</span>}
-                {ageLabel(a.estimatedBirthDate, a.age) && <span className="ps-animal-badge">{ageLabel(a.estimatedBirthDate, a.age)}</span>}
-                {a.neutered === 1 && <span className="ps-animal-badge">Castrado/a</span>}
+                {speciesLabel(a.species, t) && <span className="ps-animal-badge">{speciesLabel(a.species, t)}</span>}
+                {sexLabel(a.sex, t) && <span className="ps-animal-badge">{sexLabel(a.sex, t)}</span>}
+                {ageLabel(a.estimatedBirthDate, a.age, t) && <span className="ps-animal-badge">{ageLabel(a.estimatedBirthDate, a.age, t)}</span>}
+                {a.neutered === 1 && <span className="ps-animal-badge">{t('animal.neutered')}</span>}
                 {a.color && <span className="ps-animal-badge">{a.color}</span>}
                 {a.microchip && <span className="ps-animal-badge ps-animal-badge--mono">Microchip</span>}
             </div>
 
             {a.details && (
                 <div className="ps-animal-details">
-                    <h2 className="ps-animal-section-title">Sobre {name}</h2>
+                    <h2 className="ps-animal-section-title">{t('animal.about', { name })}</h2>
                     <p className="ps-animal-description">{a.details}</p>
                 </div>
             )}
 
             {rescuerLabel && (
                 <div className="ps-animal-rescuer">
-                    <span className="ps-animal-rescuer__label">Publicado por</span>
+                    <span className="ps-animal-rescuer__label">{t('animal.posted_by')}</span>
                     {rescuerBackHref ? (
                         <a href={rescuerBackHref} className="ps-animal-rescuer__link">{rescuerLabel}</a>
                     ) : (
@@ -217,9 +229,9 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
 
             <div className="ps-animal-cta">
                 {adoptHref ? (
-                    <a href={adoptHref} className="ps-btn ps-btn--primary ps-animal-cta__btn">Quiero adoptarlo</a>
+                    <a href={adoptHref} className="ps-btn ps-btn--primary ps-animal-cta__btn">{t('animal.adopt_cta')}</a>
                 ) : (
-                    <p className="ps-animal-cta__unavailable">Este animal no está disponible para postulación en este momento.</p>
+                    <p className="ps-animal-cta__unavailable">{t('animal.unavailable_for_application')}</p>
                 )}
                 {data.instagramUrl && (
                     <a
@@ -228,7 +240,7 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
                         rel="noopener noreferrer"
                         className="ps-btn ps-btn--ghost ps-animal-cta__ig"
                     >
-                        Seguinos en Instagram
+                        {t('animal.follow_instagram')}
                     </a>
                 )}
             </div>
@@ -239,7 +251,7 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
             {adoptHref && (
                 <div className="ps-animal-cta-sticky" aria-hidden="false">
                     <a href={adoptHref} className="ps-btn ps-btn--primary ps-animal-cta-sticky__btn">
-                        Quiero adoptarlo
+                        {t('animal.adopt_cta')}
                     </a>
                 </div>
             )}

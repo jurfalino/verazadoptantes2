@@ -1,4 +1,7 @@
 import { PawIcon } from './Icons'
+import { useT, localizedHref } from '../i18n/LocaleContext'
+
+type TFn = (key: string, vars?: Record<string, string | number>) => string
 
 /**
  * AnimalCard — one card in the showcase grid (v2.14.10-3).
@@ -16,32 +19,37 @@ export interface AnimalSummary {
     rescuer?: { displayName: string; orgName?: string }
 }
 
-const SPECIES_LABEL: Record<string, string> = {
-    cat: 'Gato',
-    dog: 'Perro',
-    bird: 'Ave',
+// Canonical species key, accepting either Spanish or English source values.
+const SPECIES_KEY: Record<string, string> = {
+    perro: 'dog', dog: 'dog',
+    gato: 'cat', cat: 'cat',
+    ave: 'bird', bird: 'bird',
+    conejo: 'rabbit', rabbit: 'rabbit',
+    otro: 'other', other: 'other',
 }
 
-function speciesLabel(s: string | null | undefined): string {
+function speciesLabel(s: string | null | undefined, t: TFn): string {
     if (!s) return ''
-    return SPECIES_LABEL[s.toLowerCase()] || s
+    const key = SPECIES_KEY[s.toLowerCase()]
+    return key ? t(`animal.species_${key}`) : s
 }
 
-function sexLabel(s: string | null | undefined): string {
+function sexLabel(s: string | null | undefined, t: TFn): string {
     if (!s) return ''
     const v = s.toLowerCase()
-    if (v === 'macho' || v === 'male') return 'Macho'
-    if (v === 'hembra' || v === 'female') return 'Hembra'
+    if (v === 'macho' || v === 'male') return t('animal.sex_male')
+    if (v === 'hembra' || v === 'female') return t('animal.sex_female')
     return s
 }
 
 export default function AnimalCard({ animal }: { animal: AnimalSummary }) {
+    const { t, locale } = useT()
     const hero = animal.images[0]?.url
-    const name = animal.animalName?.trim() || 'Sin nombre'
-    const subtitle = [speciesLabel(animal.species), sexLabel(animal.sex)].filter(Boolean).join(' · ')
+    const name = animal.animalName?.trim() || t('animal.unnamed')
+    const subtitle = [speciesLabel(animal.species, t), sexLabel(animal.sex, t)].filter(Boolean).join(' · ')
     const rescuerLabel = animal.rescuer?.orgName || animal.rescuer?.displayName
     return (
-        <a className="ps-showcase-card" href={`/animal/${animal.id}`}>
+        <a className="ps-showcase-card" href={localizedHref(`/animal/${animal.id}`, locale)}>
             <div className="ps-showcase-card__photo">
                 {hero ? (
                     <img src={hero} alt={name} loading="lazy" />

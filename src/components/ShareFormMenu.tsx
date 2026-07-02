@@ -25,7 +25,7 @@ interface ShareFormMenuProps {
 }
 
 export default function ShareFormMenu({ userId, animalId, animalName, compact = false }: ShareFormMenuProps) {
-    const { t } = useLanguage();
+    const { t, locale } = useLanguage();
     const contractBase = useContractBase();
     const [isOpen, setIsOpen] = useState(false);
     const [showQr, setShowQr] = useState(false);
@@ -33,7 +33,10 @@ export default function ShareFormMenu({ userId, animalId, animalName, compact = 
 
     const perAnimal = !!animalId;
     const baseUrl = contractBase ? `${contractBase}/form?u=${encodeURIComponent(userId)}` : '';
-    const fullUrl = baseUrl && animalId ? `${baseUrl}&animal=${encodeURIComponent(animalId)}` : baseUrl;
+    // ?lang= renders the contract-app form in the sharer's language (defaults to es).
+    const fullUrl = baseUrl
+        ? `${baseUrl}${animalId ? `&animal=${encodeURIComponent(animalId)}` : ''}&lang=${locale}`
+        : '';
     const ready = fullUrl !== '';
     const shareText = perAnimal
         ? `${t('dashboard.share_form_for_animal_share_text') || 'Formulario de adopción para'} ${animalName || 'este animal'}`

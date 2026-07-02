@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import './petshield.css'
+import { useT } from './i18n/LocaleContext'
 
 // ══════════════════════════════════════════════
 // TYPES — JSON Schema
@@ -44,180 +45,6 @@ interface PetCounterStep {
 
 type FormStep = ConsentStep | TextFieldsStep | GeolocationStep | CameraUploadStep
     | IconCardsStep | SegmentedCardsStep | ToggleStep | ChecklistStep | PetCounterStep;
-
-// ══════════════════════════════════════════════
-// DEFAULT SCHEMA
-// ══════════════════════════════════════════════
-
-const DEFAULT_SCHEMA: FormStep[] = [
-    {
-        id: 'legal', type: 'consent', title: 'Solicitud de adopción',
-        body: 'Completá este breve formulario para registrar tu interés en adoptar. Nos ayuda a encontrar el animal ideal según lo que buscás. El rescatista revisará tu solicitud para ponerse en contacto.',
-    },
-    // Preferences & situation first (honesty-friendly order)
-    {
-        id: 'species', type: 'icon-cards', title: '¿Qué animal buscás?',
-        options: [
-            { value: 'dog', label: 'Perro', icon: 'dog' },
-            { value: 'cat', label: 'Gato', icon: 'cat' },
-            { value: 'other', label: 'Otro', icon: 'other' },
-        ],
-    },
-    {
-        id: 'lifeStage', type: 'segmented-cards', title: '¿Qué edad preferís?',
-        options: [
-            { value: 'puppy', label: 'Cachorro' },
-            { value: 'young', label: 'Joven' },
-            { value: 'senior', label: 'Senior' },
-            { value: 'none', label: 'Sin preferencia' },
-        ],
-    },
-    {
-        id: 'specialNeeds', type: 'toggle',
-        label: 'Abierto a necesidades especiales',
-        description: 'Ej: gatos con ERC, animales con discapacidad o cuidado crónico.',
-    },
-    {
-        id: 'intent', type: 'icon-cards', title: '¿Es para vos o es un regalo?',
-        options: [
-            { value: 'self', label: 'Para mí', icon: 'self' },
-            { value: 'gift', label: 'Es un regalo', icon: 'gift' },
-        ],
-    },
-    {
-        id: 'children', type: 'segmented-cards', title: '¿Hay niños en el hogar?',
-        options: [
-            { value: 'none', label: 'No' },
-            { value: '1', label: '1' },
-            { value: '2', label: '2' },
-            { value: '3+', label: '3+' },
-        ],
-    },
-    {
-        id: 'existingPets', type: 'pet-counter', title: '¿Tenés mascotas actualmente?',
-        subtitle: 'Tocá cada ícono para sumar una mascota de ese tipo',
-        petTypes: [
-            { value: 'dogs', label: 'Perros', icon: 'dog' },
-            { value: 'cats', label: 'Gatos', icon: 'cat' },
-            { value: 'birds', label: 'Pájaros', icon: 'bird' },
-            { value: 'other', label: 'Otro', icon: 'other' },
-        ],
-    },
-    {
-        id: 'housingType', type: 'icon-cards', title: '¿Dónde vivís?',
-        options: [
-            { value: 'house', label: 'Casa', icon: 'outdoor' },
-            { value: 'apartment', label: 'Departamento', icon: 'apartment' },
-        ],
-    },
-    {
-        id: 'hasOutdoor', type: 'icon-cards', title: '¿Tenés patio o jardín?',
-        options: [
-            { value: 'yes', label: 'Sí', icon: 'patio' },
-            { value: 'no', label: 'No', icon: 'noPatio' },
-        ],
-    },
-    {
-        id: 'isSafe', type: 'icon-cards', title: '¿El espacio está protegido?',
-        options: [
-            { value: 'yes', label: 'Sí, está cerrado', icon: 'outdoor' },
-            { value: 'no', label: 'No está cerrado', icon: 'unfenced' },
-            { value: 'na', label: 'No aplica', icon: 'other' },
-        ],
-    },
-    {
-        id: 'hoursAlone', type: 'segmented-cards', title: '¿Cuántas horas al día estaría solo el animal?',
-        options: [
-            { value: '0-2', label: '0–2' },
-            { value: '3-5', label: '3–5' },
-            { value: '6-8', label: '6–8' },
-            { value: '8+', label: '8+' },
-        ],
-    },
-    {
-        id: 'petExperience', type: 'icon-cards', title: '¿Tuviste mascotas antes?',
-        options: [
-            { value: 'no', label: 'No, primera vez', icon: 'other' },
-            { value: 'cat', label: 'Sí, gato', icon: 'cat' },
-            { value: 'dog', label: 'Sí, perro', icon: 'dog' },
-            { value: 'other', label: 'Sí, otro', icon: 'bird' },
-        ],
-    },
-    {
-        id: 'willingToSterilize', type: 'icon-cards', title: '¿Estás dispuesto/a a castrar o esterilizar?',
-        options: [
-            { value: 'yes', label: 'Sí', icon: 'self' },
-            { value: 'no', label: 'No', icon: 'sadDog' },
-        ],
-    },
-    {
-        id: 'vetCommitment', type: 'toggle',
-        label: 'Me comprometo a llevar al animal al veterinario',
-        description: 'Vacunación, controles y atención cuando sea necesario',
-    },
-    {
-        id: 'movingPlans', type: 'icon-cards', title: '¿Tenés pensado mudarte pronto?',
-        options: [
-            { value: 'no', label: 'No', icon: 'outdoor' },
-            { value: 'maybe', label: 'Posiblemente', icon: 'maybe' },
-            { value: 'yes', label: 'Sí', icon: 'gift' },
-        ],
-    },
-    {
-        id: 'vacationPlan', type: 'icon-cards', title: '¿Qué harías con el animal en vacaciones?',
-        options: [
-            { value: 'take', label: 'Lo llevo conmigo', icon: 'self' },
-            { value: 'family', label: 'Lo cuida familia', icon: 'children' },
-            { value: 'sitter', label: 'Cuidador / guardería', icon: 'sitter' },
-            { value: 'unsure', label: 'No lo sé aún', icon: 'other' },
-        ],
-    },
-    // Identity & verification last
-    {
-        id: 'identity-name', type: 'text-fields', title: '¿Cómo te llamás?',
-        fields: [
-            { name: 'name', label: 'Nombre completo', placeholder: 'Juan García', required: true },
-        ],
-    },
-    {
-        id: 'identity-email', type: 'text-fields', title: '¿Cuál es tu email?',
-        fields: [
-            { name: 'email', label: 'Email', placeholder: 'juan@ejemplo.com', required: true, validation: 'email' },
-        ],
-    },
-    {
-        id: 'identity-phone', type: 'text-fields', title: '¿Tu teléfono?',
-        fields: [
-            { name: 'phone', label: 'Teléfono', placeholder: 'Código de país + número', validation: 'phone-ar' },
-        ],
-    },
-    {
-        id: 'identity-address', type: 'text-fields', title: '¿Dónde vivís?',
-        fields: [
-            { name: 'address', label: 'Dirección', placeholder: 'Calle, número, ciudad, país', required: true },
-        ],
-    },
-    {
-        id: 'ageRange', type: 'segmented-cards', title: '¿Qué edad tenés?',
-        options: [
-            { value: '18-25', label: '18–25' },
-            { value: '26-35', label: '26–35' },
-            { value: '36-45', label: '36–45' },
-            { value: '46-55', label: '46–55' },
-            { value: '56+', label: '56+' },
-        ],
-    },
-    {
-        id: 'geo', type: 'geolocation',
-        question: '¿Estás actualmente en tu domicilio?',
-        yesLabel: 'Sí, estoy en mi casa', noLabel: 'No',
-    },
-    {
-        id: 'selfie', type: 'camera-upload',
-        title: 'Verificación de identidad',
-        instructions: 'Tomá una selfie o subí una foto tuya para verificar tu identidad.',
-    },
-]
 
 // ══════════════════════════════════════════════
 // SVG ICONS
@@ -500,6 +327,183 @@ const API_URL = import.meta.env.VITE_API_URL || ''
 // ══════════════════════════════════════════════
 
 export default function PetShieldForm({ userId, animalId }: { userId: string | null; animalId?: string | null }) {
+    const { t } = useT()
+
+    // Schema lives inside the component so option/title text can resolve through
+    // t(). Shape is identical to the former module-level const — only the
+    // user-visible strings became translation keys; ids/values/validation/icons
+    // are unchanged. The explicit <FormStep[]> generic preserves the
+    // discriminated-union narrowing the renderers rely on.
+    const DEFAULT_SCHEMA = useMemo<FormStep[]>(() => [
+        {
+            id: 'legal', type: 'consent', title: t('form.legal_title'),
+            body: t('form.legal_body'),
+        },
+        // Preferences & situation first (honesty-friendly order)
+        {
+            id: 'species', type: 'icon-cards', title: t('form.q_species_title'),
+            options: [
+                { value: 'dog', label: t('form.opt_dog'), icon: 'dog' },
+                { value: 'cat', label: t('form.opt_cat'), icon: 'cat' },
+                { value: 'other', label: t('form.opt_other'), icon: 'other' },
+            ],
+        },
+        {
+            id: 'lifeStage', type: 'segmented-cards', title: t('form.q_lifestage_title'),
+            options: [
+                { value: 'puppy', label: t('form.opt_puppy') },
+                { value: 'young', label: t('form.opt_young') },
+                { value: 'senior', label: t('form.opt_senior') },
+                { value: 'none', label: t('form.opt_no_preference') },
+            ],
+        },
+        {
+            id: 'specialNeeds', type: 'toggle',
+            label: t('form.q_special_needs_label'),
+            description: t('form.q_special_needs_desc'),
+        },
+        {
+            id: 'intent', type: 'icon-cards', title: t('form.q_intent_title'),
+            options: [
+                { value: 'self', label: t('form.opt_intent_self'), icon: 'self' },
+                { value: 'gift', label: t('form.opt_intent_gift'), icon: 'gift' },
+            ],
+        },
+        {
+            id: 'children', type: 'segmented-cards', title: t('form.q_children_title'),
+            options: [
+                { value: 'none', label: t('form.opt_no') },
+                { value: '1', label: '1' },
+                { value: '2', label: '2' },
+                { value: '3+', label: '3+' },
+            ],
+        },
+        {
+            id: 'existingPets', type: 'pet-counter', title: t('form.q_existing_pets_title'),
+            subtitle: t('form.q_existing_pets_subtitle'),
+            petTypes: [
+                { value: 'dogs', label: t('form.opt_dogs'), icon: 'dog' },
+                { value: 'cats', label: t('form.opt_cats'), icon: 'cat' },
+                { value: 'birds', label: t('form.opt_birds'), icon: 'bird' },
+                { value: 'other', label: t('form.opt_other'), icon: 'other' },
+            ],
+        },
+        {
+            id: 'housingType', type: 'icon-cards', title: t('form.q_housing_title'),
+            options: [
+                { value: 'house', label: t('form.opt_house'), icon: 'outdoor' },
+                { value: 'apartment', label: t('form.opt_apartment'), icon: 'apartment' },
+            ],
+        },
+        {
+            id: 'hasOutdoor', type: 'icon-cards', title: t('form.q_outdoor_title'),
+            options: [
+                { value: 'yes', label: t('form.opt_yes'), icon: 'patio' },
+                { value: 'no', label: t('form.opt_no'), icon: 'noPatio' },
+            ],
+        },
+        {
+            id: 'isSafe', type: 'icon-cards', title: t('form.q_is_safe_title'),
+            options: [
+                { value: 'yes', label: t('form.opt_safe_yes'), icon: 'outdoor' },
+                { value: 'no', label: t('form.opt_safe_no'), icon: 'unfenced' },
+                { value: 'na', label: t('form.opt_na'), icon: 'other' },
+            ],
+        },
+        {
+            id: 'hoursAlone', type: 'segmented-cards', title: t('form.q_hours_alone_title'),
+            options: [
+                { value: '0-2', label: '0–2' },
+                { value: '3-5', label: '3–5' },
+                { value: '6-8', label: '6–8' },
+                { value: '8+', label: '8+' },
+            ],
+        },
+        {
+            id: 'petExperience', type: 'icon-cards', title: t('form.q_pet_experience_title'),
+            options: [
+                { value: 'no', label: t('form.opt_exp_none'), icon: 'other' },
+                { value: 'cat', label: t('form.opt_exp_cat'), icon: 'cat' },
+                { value: 'dog', label: t('form.opt_exp_dog'), icon: 'dog' },
+                { value: 'other', label: t('form.opt_exp_other'), icon: 'bird' },
+            ],
+        },
+        {
+            id: 'willingToSterilize', type: 'icon-cards', title: t('form.q_sterilize_title'),
+            options: [
+                { value: 'yes', label: t('form.opt_yes'), icon: 'self' },
+                { value: 'no', label: t('form.opt_no'), icon: 'sadDog' },
+            ],
+        },
+        {
+            id: 'vetCommitment', type: 'toggle',
+            label: t('form.q_vet_label'),
+            description: t('form.q_vet_desc'),
+        },
+        {
+            id: 'movingPlans', type: 'icon-cards', title: t('form.q_moving_title'),
+            options: [
+                { value: 'no', label: t('form.opt_no'), icon: 'outdoor' },
+                { value: 'maybe', label: t('form.opt_moving_maybe'), icon: 'maybe' },
+                { value: 'yes', label: t('form.opt_yes'), icon: 'gift' },
+            ],
+        },
+        {
+            id: 'vacationPlan', type: 'icon-cards', title: t('form.q_vacation_title'),
+            options: [
+                { value: 'take', label: t('form.opt_vac_take'), icon: 'self' },
+                { value: 'family', label: t('form.opt_vac_family'), icon: 'children' },
+                { value: 'sitter', label: t('form.opt_vac_sitter'), icon: 'sitter' },
+                { value: 'unsure', label: t('form.opt_vac_unsure'), icon: 'other' },
+            ],
+        },
+        // Identity & verification last
+        {
+            id: 'identity-name', type: 'text-fields', title: t('form.q_name_title'),
+            fields: [
+                { name: 'name', label: t('form.field_name_label'), placeholder: t('form.field_name_placeholder'), required: true },
+            ],
+        },
+        {
+            id: 'identity-email', type: 'text-fields', title: t('form.q_email_title'),
+            fields: [
+                { name: 'email', label: t('form.field_email_label'), placeholder: t('form.field_email_placeholder'), required: true, validation: 'email' },
+            ],
+        },
+        {
+            id: 'identity-phone', type: 'text-fields', title: t('form.q_phone_title'),
+            fields: [
+                { name: 'phone', label: t('form.field_phone_label'), placeholder: t('form.field_phone_placeholder'), validation: 'phone-ar' },
+            ],
+        },
+        {
+            id: 'identity-address', type: 'text-fields', title: t('form.q_address_title'),
+            fields: [
+                { name: 'address', label: t('form.field_address_label'), placeholder: t('form.field_address_placeholder'), required: true },
+            ],
+        },
+        {
+            id: 'ageRange', type: 'segmented-cards', title: t('form.q_age_title'),
+            options: [
+                { value: '18-25', label: '18–25' },
+                { value: '26-35', label: '26–35' },
+                { value: '36-45', label: '36–45' },
+                { value: '46-55', label: '46–55' },
+                { value: '56+', label: '56+' },
+            ],
+        },
+        {
+            id: 'geo', type: 'geolocation',
+            question: t('form.q_geo_question'),
+            yesLabel: t('form.geo_yes'), noLabel: t('form.opt_no'),
+        },
+        {
+            id: 'selfie', type: 'camera-upload',
+            title: t('form.q_selfie_title'),
+            instructions: t('form.q_selfie_instructions'),
+        },
+    ], [t])
+
     // When the form was launched from the public showcase (animalId present),
     // skip the three steps that ask about the desired animal — the choice is
     // already made. The animalId travels with the submission so the rescuer's
@@ -575,7 +579,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
 
         if (currentStep.type === 'consent') {
             if (!answersToCheck[currentStep.id]) {
-                newErrors[currentStep.id] = 'Debés aceptar para continuar'
+                newErrors[currentStep.id] = t('form.err_must_accept')
             }
         }
 
@@ -583,16 +587,16 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             for (const field of currentStep.fields) {
                 const val = (answersToCheck[field.name] || '').trim()
                 if (field.required && !val) {
-                    newErrors[field.name] = 'Campo obligatorio'
+                    newErrors[field.name] = t('form.err_required')
                 } else if (val && field.validation && VALIDATORS[field.validation] && !VALIDATORS[field.validation](val)) {
-                    newErrors[field.name] = field.validation === 'email' ? 'Email inválido' : 'Formato inválido'
+                    newErrors[field.name] = field.validation === 'email' ? t('form.err_email') : t('form.err_format')
                 }
             }
         }
 
         if (currentStep.type === 'icon-cards') {
             if (!answersToCheck[currentStep.id]) {
-                newErrors[currentStep.id] = 'Seleccioná una opción'
+                newErrors[currentStep.id] = t('form.err_select_option')
             }
         }
 
@@ -647,7 +651,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     // ── Submit ──
     async function handleSubmit(finalAnswers: Record<string, any>) {
         if (!userId) {
-            setToast({ message: 'Error: enlace inválido — falta ID de usuario', id: 'ERR-FORM-001' })
+            setToast({ message: t('form.err_invalid_link_user'), id: 'ERR-FORM-001' })
             return
         }
         setSubmitting(true)
@@ -664,9 +668,9 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                 body: JSON.stringify(submitBody),
             })
             if (!res.ok) {
-                const data = await res.json().catch(() => ({ error: 'Error desconocido' })) as { error?: string }
+                const data = await res.json().catch(() => ({ error: t('form.err_unknown') })) as { error?: string }
                 const errIdMatch = data.error?.match(/Error ID:\s*([a-zA-Z0-9-]+)/)
-                setToast({ message: data.error || 'Error al enviar', id: errIdMatch?.[1] })
+                setToast({ message: data.error || t('form.err_submit'), id: errIdMatch?.[1] })
                 return
             }
             // Success
@@ -674,7 +678,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             setSubmitted(true)
         } catch (err) {
             console.error('[PetShield submit]', err)
-            setToast({ message: 'Error de red. Verificá tu conexión e intentá de nuevo.', id: 'ERR-NET-001' })
+            setToast({ message: t('form.err_network'), id: 'ERR-NET-001' })
         } finally {
             setSubmitting(false)
         }
@@ -703,7 +707,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                     setAnswer('longitude', String(pos.coords.longitude))
                 },
                 () => {
-                    setToast({ message: 'No se pudo obtener la ubicación. Podés continuar sin ella.', id: 'ERR-GEO-102' })
+                    setToast({ message: t('form.err_geo'), id: 'ERR-GEO-102' })
                 },
                 { enableHighAccuracy: true, timeout: 10000 }
             )
@@ -715,7 +719,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     function handleFileSelect(file: File | null) {
         if (!file) return
         if (!file.type.startsWith('image/')) {
-            setToast({ message: 'Solo se permiten imágenes.', id: 'ERR-FILE-301' })
+            setToast({ message: t('form.err_images_only'), id: 'ERR-FILE-301' })
             return
         }
         const reader = new FileReader()
@@ -730,9 +734,9 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                 <div className="ps-step-container">
                     <div className="ps-complete">
                         <div className="ps-complete__icon">🎉</div>
-                        <h2 className="ps-complete__title">¡Listo!</h2>
+                        <h2 className="ps-complete__title">{t('form.complete_title')}</h2>
                         <p className="ps-complete__desc">
-                            Tu solicitud fue enviada exitosamente. El rescatista recibirá tu información y se pondrá en contacto pronto.
+                            {t('form.complete_desc')}
                         </p>
                     </div>
                 </div>
@@ -747,9 +751,9 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                 <div className="ps-step-container">
                     <div className="ps-complete">
                         <div className="ps-complete__icon">🔗</div>
-                        <h2 className="ps-complete__title">Enlace inválido</h2>
+                        <h2 className="ps-complete__title">{t('form.invalid_link_title')}</h2>
                         <p className="ps-complete__desc">
-                            Este formulario necesita un enlace válido. Pedí uno nuevo al rescatista.
+                            {t('form.invalid_link_desc')}
                         </p>
                     </div>
                 </div>
@@ -782,7 +786,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                     >
                         <div>
                             <div className="ps-toggle__label">
-                                Acepto los{' '}
+                                {t('form.consent_accept_prefix')}{' '}
                                 <a
                                     href="/terms"
                                     target="_blank"
@@ -790,11 +794,11 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                                     onClick={(e) => e.stopPropagation()}
                                     style={{ color: 'var(--ps-accent)', textDecoration: 'underline' }}
                                 >
-                                    Términos y Condiciones
+                                    {t('form.consent_terms_link')}
                                 </a>
                             </div>
                             {currentStep.legalRef && (
-                                <div className="ps-toggle__desc">Conforme a {currentStep.legalRef}</div>
+                                <div className="ps-toggle__desc">{t('form.consent_conforms', { ref: currentStep.legalRef })}</div>
                             )}
                         </div>
                         <div className={`ps-toggle__track ${answers[currentStep.id] ? 'ps-toggle__track--on' : ''}`}>
@@ -827,7 +831,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                         ))}
                     </div>
                     <div className="ps-kbd-hint">
-                        Presioná <kbd>Enter</kbd> para continuar
+                        {t('form.kbd_hint_prefix')} <kbd>Enter</kbd> {t('form.kbd_hint_suffix')}
                     </div>
                 </div>
             )
@@ -835,11 +839,11 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             case 'geolocation': return (
                 <div className="ps-step" key={key}>
                     <h1 className="ps-title">{currentStep.question}</h1>
-                    <p className="ps-subtitle">Esto nos ayuda a verificar tu ubicación. Es opcional.</p>
+                    <p className="ps-subtitle">{t('form.geo_subtitle')}</p>
                     <div className="ps-card-grid ps-card-grid--2">
                         {[
-                            { value: 'yes', label: currentStep.yesLabel || 'Sí', icon: '📍' },
-                            { value: 'no', label: currentStep.noLabel || 'No', icon: '🚶' },
+                            { value: 'yes', label: currentStep.yesLabel || t('form.opt_yes'), icon: '📍' },
+                            { value: 'no', label: currentStep.noLabel || t('form.opt_no'), icon: '🚶' },
                         ].map(opt => (
                             <button
                                 key={opt.value}
@@ -858,7 +862,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                     {answers.latitude && (
                         <div className="ps-geo-status">
                             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" fill="#34d399" /><path d="M5 8l2 2 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" /></svg>
-                            Ubicación obtenida
+                            {t('form.geo_obtained')}
                         </div>
                     )}
                 </div>
@@ -871,20 +875,20 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
 
                     {answers.selfie ? (
                         <div style={{ textAlign: 'center' }}>
-                            <img src={answers.selfie} alt="Selfie" className="ps-upload-zone__preview" />
+                            <img src={answers.selfie} alt={t('form.selfie_alt')} className="ps-upload-zone__preview" />
                             <button
                                 className="ps-btn ps-btn--ghost"
                                 onClick={() => setAnswer('selfie', null)}
                                 style={{ marginTop: 'var(--ps-2)' }}
                             >
-                                Cambiar foto
+                                {t('form.change_photo')}
                             </button>
                         </div>
                     ) : (
                         <>
                             {/* Native camera capture — works reliably on mobile */}
                             <label className="ps-btn ps-btn--primary" style={{ width: '100%', marginBottom: 'var(--ps-2)', justifyContent: 'center', cursor: 'pointer' }}>
-                                📸 Tomar Selfie
+                                {t('form.take_selfie')}
                                 <input
                                     type="file"
                                     accept="image/*"
@@ -903,10 +907,10 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                             >
                                 <div style={{ fontSize: 40, marginBottom: 'var(--ps-1)' }}>📁</div>
                                 <p style={{ color: 'var(--ps-text-secondary)', fontSize: 14, fontWeight: 600 }}>
-                                    O elegí una foto de tu galería
+                                    {t('form.gallery_pick')}
                                 </p>
                                 <p style={{ color: 'var(--ps-text-muted)', fontSize: 12, marginTop: 4 }}>
-                                    JPG, PNG — máx 5MB
+                                    {t('form.file_hint')}
                                 </p>
                             </div>
                             <input
@@ -919,7 +923,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                         </>
                     )}
                     <p className="ps-kbd-hint" style={{ marginTop: 'var(--ps-3)' }}>
-                        Este paso es opcional — podés continuar sin foto
+                        {t('form.selfie_optional')}
                     </p>
                 </div>
             )
@@ -962,7 +966,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                         <div style={{ marginTop: 'var(--ps-3)' }}>
                             <input
                                 className="ps-input"
-                                placeholder="¿Qué animal buscás?"
+                                placeholder={t('form.q_species_title')}
                                 value={answers.speciesOther || ''}
                                 onChange={(e) => setAnswer('speciesOther', e.target.value)}
                                 autoFocus
@@ -1074,7 +1078,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                                                     textDecoration: 'underline',
                                                 }}
                                             >
-                                                − Restar
+                                                {t('form.counter_subtract')}
                                             </button>
                                         )}
                                     </div>
@@ -1083,7 +1087,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                         </div>
                         {total === 0 && (
                             <p style={{ textAlign: 'center', color: 'var(--ps-text-muted)', fontSize: 13, marginTop: 'var(--ps-3)' }}>
-                                Si no tenés mascotas, continuá al siguiente paso
+                                {t('form.counter_none')}
                             </p>
                         )}
                         {errors[currentStep.id] && <div className="ps-field__error">{errors[currentStep.id]}</div>}
@@ -1168,7 +1172,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             {/* Step Content */}
             <div className="ps-step-container">
                 <div className="ps-step-counter" style={{ marginBottom: 'var(--ps-3)' }}>
-                    Paso {step + 1} de {totalSteps}
+                    {t('form.step_of', { n: step + 1, total: totalSteps })}
                 </div>
                 {renderStep()}
             </div>
@@ -1180,7 +1184,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                         className="ps-btn ps-btn--ghost"
                         onClick={goBack}
                     >
-                        ← Atrás
+                        {t('form.back')}
                     </button>
                 )}
                 {step === 0 && <div />}
@@ -1190,10 +1194,10 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                     disabled={!canAdvance() || submitting}
                 >
                     {submitting ? (
-                        <><svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ animation: 'spin 1s linear infinite' }}><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" opacity="0.3" /><path d="M14 8a6 6 0 00-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg> Enviando...</>
+                        <><svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ animation: 'spin 1s linear infinite' }}><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" opacity="0.3" /><path d="M14 8a6 6 0 00-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg> {t('form.submitting')}</>
                     ) : isLastStep ? (
-                        <><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1 8.5l2.5-7 12 6.5-12 6.5 2.5-7h7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg> Enviar</>
-                    ) : 'Continuar →'}
+                        <><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1 8.5l2.5-7 12 6.5-12 6.5 2.5-7h7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg> {t('form.submit')}</>
+                    ) : t('form.continue')}
                 </button>
             </div>
         </div>

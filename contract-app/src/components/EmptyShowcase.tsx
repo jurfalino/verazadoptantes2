@@ -1,4 +1,5 @@
 import { PawIcon } from './Icons'
+import { useT } from '../i18n/LocaleContext'
 
 /**
  * EmptyShowcase — the "no animals available" state.
@@ -13,16 +14,17 @@ interface Props {
 }
 
 export default function EmptyShowcase({ instagramUrl, scopeLabel }: Props) {
-    const where = scopeLabel || 'la plataforma'
+    const { t } = useT()
+    const where = scopeLabel || t('showcase.scope_platform')
     return (
         <div className="ps-showcase-empty">
             <div className="ps-showcase-empty__icon" aria-hidden>
                 <PawIcon size={56} />
             </div>
-            <h2 className="ps-showcase-empty__title">Sin animales disponibles</h2>
+            <h2 className="ps-showcase-empty__title">{t('showcase.empty_title')}</h2>
             <p className="ps-showcase-empty__desc">
-                Por ahora no hay animales en adopción en {where}.
-                {instagramUrl ? ' Seguinos en redes para enterarte cuando publiquemos.' : ''}
+                {t('showcase.empty_desc', { where })}
+                {instagramUrl ? ` ${t('showcase.empty_follow_hint')}` : ''}
             </p>
             {instagramUrl && (
                 <a
@@ -31,7 +33,7 @@ export default function EmptyShowcase({ instagramUrl, scopeLabel }: Props) {
                     rel="noopener noreferrer"
                     className="ps-btn ps-btn--primary ps-showcase-empty__cta"
                 >
-                    Seguinos en Instagram
+                    {t('showcase.empty_cta')}
                 </a>
             )}
         </div>

@@ -5,12 +5,14 @@ import TermsPage from './TermsPage'
 import Showcase from './Showcase'
 import AnimalDetail from './AnimalDetail'
 import HomePage from './HomePage'
+import { LocaleProvider, useT } from './i18n/LocaleContext'
 
 // UUIDs are 36 chars: 8-4-4-4-12 hex with hyphens. Check before the named
 // routes so existing `/{animalId}` contract URLs keep working unchanged.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-function App() {
+function AppRoutes() {
+    const { t } = useT()
     const path = window.location.pathname.replace(/^\//, '').replace(/\/$/, '')
     const params = new URLSearchParams(window.location.search)
 
@@ -113,13 +115,21 @@ function App() {
         <div className="min-h-screen bg-stone-200 flex items-center justify-center px-4">
             <div className="bg-white rounded-2xl p-8 text-center border border-stone-200 shadow-sm max-w-md">
                 <div className="text-5xl mb-4">🔍</div>
-                <h1 className="text-xl font-bold text-stone-900 mb-2">Página no encontrada</h1>
+                <h1 className="text-xl font-bold text-stone-900 mb-2">{t('common.not_found_title')}</h1>
                 <p className="text-stone-500 text-sm mb-4">
-                    Verificá que el link sea correcto.
+                    {t('common.not_found_body')}
                 </p>
-                <a href="/" className="ps-btn ps-btn--primary inline-block">Ver animales en adopción</a>
+                <a href="/" className="ps-btn ps-btn--primary inline-block">{t('common.view_animals_cta')}</a>
             </div>
         </div>
+    )
+}
+
+function App() {
+    return (
+        <LocaleProvider>
+            <AppRoutes />
+        </LocaleProvider>
     )
 }
 

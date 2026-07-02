@@ -152,6 +152,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
             animal: animalPayload,
             adopterName: adopter.name,
             prefill,
+            // Language the rescuer shared this in; the contract-app uses it as
+            // the backstop when the URL carries no ?lang=. Null for legacy rows.
+            locale: invite.locale ?? null,
         }), origin);
     } catch (e) {
         const errorId = logger.error('Contract by-token fetch failed', e, { token });

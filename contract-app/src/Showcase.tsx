@@ -3,6 +3,7 @@ import AnimalCard, { type AnimalSummary } from './components/AnimalCard'
 import ShowcaseHeader from './components/ShowcaseHeader'
 import EmptyShowcase from './components/EmptyShowcase'
 import { AlertIcon } from './components/Icons'
+import { useT } from './i18n/LocaleContext'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -30,6 +31,7 @@ interface ApiResponse {
  * (see Tech-stack call in the plan doc).
  */
 export default function Showcase({ scope }: { scope: ShowcaseScope }) {
+    const { t } = useT()
     const [data, setData] = useState<ApiResponse | null>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
@@ -46,7 +48,7 @@ export default function Showcase({ scope }: { scope: ShowcaseScope }) {
                     `${API_URL}/api/showcase/user/${encodeURIComponent(scope.handle)}`
                 const res = await fetch(endpoint)
                 if (!res.ok) {
-                    setError(res.status === 404 ? 'No encontrado' : 'Error de red')
+                    setError(res.status === 404 ? t('showcase.error_not_found') : t('showcase.error_network'))
                     setData(null)
                     return
                 }
@@ -64,32 +66,36 @@ export default function Showcase({ scope }: { scope: ShowcaseScope }) {
                     } catch { /* swallow */ }
                 }
             } catch {
-                setError('Error de red')
+                setError(t('showcase.error_network'))
             } finally {
                 setLoading(false)
             }
         }
         load()
-    }, [scope.kind, scope.kind === 'org' ? scope.slug : scope.kind === 'user' ? scope.handle : ''])
+    }, [scope.kind, scope.kind === 'org' ? scope.slug : scope.kind === 'user' ? scope.handle : '', t])
 
     // SEO meta + document title via React effect (SPA-side best-effort).
     useEffect(() => {
+        const scopeName =
+            scope.kind === 'all' ? t('showcase.title_all') :
+            scope.kind === 'org' ? (data?.org?.name || t('showcase.org_fallback')) :
+            (data?.rescuer?.displayName || t('showcase.rescuer_fallback'))
         const baseTitle =
-            scope.kind === 'all' ? 'Animales en adopción' :
-            scope.kind === 'org' ? `${data?.org?.name || 'Organización'} — Animales en adopción` :
-            `${data?.rescuer?.displayName || 'Rescatista'} — Animales en adopción`
-        document.title = `${baseTitle} · Buen Adoptante`
-        setMetaTag('description', `Conocé los animales en adopción${scope.kind === 'all' ? '' : ` de ${baseTitle.split(' — ')[0]}`}. Adoptá responsablemente.`)
+            scope.kind === 'all' ? scopeName : t('showcase.meta_title_scoped', { name: scopeName })
+        document.title = t('showcase.doc_title', { title: baseTitle })
+        setMetaTag('description', scope.kind === 'all'
+            ? t('showcase.meta_desc_all')
+            : t('showcase.meta_desc_scoped', { name: scopeName }))
         setMetaTag('og:title', baseTitle, 'property')
         setMetaTag('og:type', 'website', 'property')
         const heroImg = data?.animals[0]?.images[0]?.url
         if (heroImg) setMetaTag('og:image', heroImg, 'property')
-    }, [scope.kind, data])
+    }, [scope.kind, data, t])
 
     if (loading) {
         return (
             <main className="ps-showcase-page">
-                <div className="ps-showcase-loading" aria-busy="true">Cargando…</div>
+                <div className="ps-showcase-loading" aria-busy="true">{t('showcase.loading')}</div>
             </main>
         )
     }
@@ -100,8 +106,8 @@ export default function Showcase({ scope }: { scope: ShowcaseScope }) {
                     <div className="ps-showcase-empty__icon" aria-hidden>
                         <AlertIcon size={48} />
                     </div>
-                    <h2 className="ps-showcase-empty__title">No pudimos cargar el catálogo</h2>
-                    <p className="ps-showcase-empty__desc">{error}. Intentá nuevamente en unos minutos.</p>
+                    <h2 className="ps-showcase-empty__title">{t('showcase.error_title')}</h2>
+                    <p className="ps-showcase-empty__desc">{t('showcase.error_desc', { error })}</p>
                 </div>
             </main>
         )
@@ -109,17 +115,17 @@ export default function Showcase({ scope }: { scope: ShowcaseScope }) {
     if (!data) return null
 
     const headerTitle =
-        scope.kind === 'all' ? 'Animales en adopción' :
-        scope.kind === 'org' ? data.org?.name || 'Organización' :
-        data.rescuer?.displayName || 'Rescatista'
+        scope.kind === 'all' ? t('showcase.title_all') :
+        scope.kind === 'org' ? data.org?.name || t('showcase.org_fallback') :
+        data.rescuer?.displayName || t('showcase.rescuer_fallback')
     const headerSubtitle =
-        scope.kind === 'all' ? 'De toda la comunidad rescatista' :
-        scope.kind === 'org' ? 'Animales disponibles de esta organización' :
-        'Animales disponibles de este rescatista'
+        scope.kind === 'all' ? t('showcase.subtitle_all') :
+        scope.kind === 'org' ? t('showcase.subtitle_org') :
+        t('showcase.subtitle_user')
     const scopeLabel =
-        scope.kind === 'all' ? 'la plataforma' :
-        scope.kind === 'org' ? 'esta organización' :
-        'este rescatista'
+        scope.kind === 'all' ? t('showcase.scope_platform') :
+        scope.kind === 'org' ? t('showcase.scope_org') :
+        t('showcase.scope_user')
 
     return (
         <main className="ps-showcase-page">

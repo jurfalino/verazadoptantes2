@@ -204,7 +204,7 @@ export default function AnimalApplicants({
         if (busySubmissionId) return;
         setBusySubmissionId(applicant.submissionId);
         try {
-            const result = await createContractInvitation(animalId, applicant.adopterId);
+            const result = await createContractInvitation(animalId, applicant.adopterId, locale);
             if (result.success && result.url) {
                 setShareUrl({ url: result.url, adopterName: applicant.adopterName });
             } else {

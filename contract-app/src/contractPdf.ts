@@ -1,11 +1,15 @@
 /**
  * Contract PDF Generator
- * 
- * Generates a formal adoption contract PDF using jsPDF.
- * Replaces the broken html2canvas screenshot approach.
+ *
+ * Generates a formal adoption contract PDF using jsPDF. The contract text comes
+ * from the single source in `i18n/contractContent.ts` (shared with the on-screen
+ * ContractPage) and is ASCII-folded here because the built-in helvetica font
+ * lacks full accented-glyph coverage.
  */
 
 import { jsPDF } from 'jspdf'
+import { CONTRACT_CONTENT, stripAccents } from './i18n/contractContent'
+import type { Locale } from './i18n/types'
 
 interface AnimalData {
     animalName: string
@@ -39,11 +43,12 @@ const SECTION_GAP = 8
 const PAGE_BOTTOM = 280 // Leave margin at bottom
 
 /**
- * Generates a contract PDF from structured form data.
+ * Generates a contract PDF from structured form data in the given locale.
  * Returns a Blob or null on failure.
  */
-export function generateContractPdf(animal: AnimalData, form: FormData): Blob | null {
+export function generateContractPdf(animal: AnimalData, form: FormData, locale: Locale = 'es'): Blob | null {
     try {
+        const c = CONTRACT_CONTENT[locale] ?? CONTRACT_CONTENT.es
         const doc = new jsPDF({ unit: 'mm', format: 'a4' })
         let y = 20
 
@@ -55,13 +60,13 @@ export function generateContractPdf(animal: AnimalData, form: FormData): Blob | 
             }
         }
 
-        // Helper: add wrapped text and advance y
+        // Helper: add wrapped text and advance y. ASCII-folds for helvetica.
         const addText = (text: string, x: number, maxWidth: number, opts?: { bold?: boolean; size?: number; italic?: boolean }) => {
             const size = opts?.size || 10
             const style = opts?.bold && opts?.italic ? 'bolditalic' : opts?.bold ? 'bold' : opts?.italic ? 'italic' : 'normal'
             doc.setFont('helvetica', style)
             doc.setFontSize(size)
-            const lines = doc.splitTextToSize(text, maxWidth)
+            const lines = doc.splitTextToSize(stripAccents(text), maxWidth)
             const lineH = size * 0.45
             checkPage(lines.length * lineH)
             doc.text(lines, x, y)
@@ -71,15 +76,15 @@ export function generateContractPdf(animal: AnimalData, form: FormData): Blob | 
         // Helper: add a labeled field
         const addField = (label: string, value: string | null | undefined) => {
             const size = 10
+            const lbl = stripAccents(label)
             doc.setFont('helvetica', 'bold')
             doc.setFontSize(size)
-            const labelWidth = doc.getTextWidth(label + ' ')
-            doc.text(label, MARGIN_LEFT + 4, y)
+            const labelWidth = doc.getTextWidth(lbl + ' ')
+            doc.text(lbl, MARGIN_LEFT + 4, y)
             doc.setFont('helvetica', 'normal')
-            const val = value || '—'
+            const val = stripAccents(value || '—')
             const remainingWidth = CONTENT_WIDTH - 4 - labelWidth
             if (doc.getTextWidth(val) > remainingWidth) {
-                // Value wraps to next line
                 doc.text(val.substring(0, Math.floor(remainingWidth / (size * 0.25))), MARGIN_LEFT + 4 + labelWidth, y)
                 y += LINE_HEIGHT
                 const rest = val.substring(Math.floor(remainingWidth / (size * 0.25)))
@@ -94,11 +99,16 @@ export function generateContractPdf(animal: AnimalData, form: FormData): Blob | 
             }
         }
 
+        const divider = () => {
+            doc.setDrawColor(200, 200, 200)
+            doc.line(MARGIN_LEFT, y, PAGE_WIDTH - MARGIN_RIGHT, y)
+            y += SECTION_GAP
+        }
+
         // === HEADER ===
         doc.setFont('helvetica', 'bold')
         doc.setFontSize(13)
-        const title = 'CONTRATO DE ADOPCION RESPONSABLE DE ANIMAL DE COMPANIA'
-        const titleLines = doc.splitTextToSize(title, CONTENT_WIDTH)
+        const titleLines = doc.splitTextToSize(stripAccents(c.title), CONTENT_WIDTH)
         titleLines.forEach((line: string) => {
             const tw = doc.getTextWidth(line)
             doc.text(line, (PAGE_WIDTH - tw) / 2, y)
@@ -109,15 +119,18 @@ export function generateContractPdf(animal: AnimalData, form: FormData): Blob | 
         // === Date & Location ===
         const today = new Date()
         const day = today.getDate()
-        const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
-        const month = months[today.getMonth()]
+        const month = c.months[today.getMonth()]
         const year = today.getFullYear()
-        const locality = form.locality || ''
+        const locality = form.locality || '________________'
 
         doc.setFont('helvetica', 'normal')
         doc.setFontSize(10)
-        const dateText = `En la localidad de ${locality || '________________'}, a los ${day} dias del mes de ${month} de ${year}, se celebra el presente contrato entre:`
-        const dateLines = doc.splitTextToSize(dateText, CONTENT_WIDTH)
+        const dateText = c.intro
+            .replace('{locality}', locality)
+            .replace('{day}', String(day))
+            .replace('{month}', month)
+            .replace('{year}', String(year))
+        const dateLines = doc.splitTextToSize(stripAccents(dateText), CONTENT_WIDTH)
         doc.text(dateLines, MARGIN_LEFT, y)
         y += dateLines.length * LINE_HEIGHT + SECTION_GAP
 
@@ -126,16 +139,16 @@ export function generateContractPdf(animal: AnimalData, form: FormData): Blob | 
         doc.setFont('helvetica', 'bold')
         doc.setFontSize(10)
         doc.setTextColor(67, 56, 202) // indigo-700
-        doc.text('El Adoptante:', MARGIN_LEFT, y)
+        doc.text(stripAccents(c.adopterHeading), MARGIN_LEFT, y)
         doc.setTextColor(0, 0, 0)
         y += LINE_HEIGHT + 1
 
-        addField('Nombre y Apellido:', `${form.name} ${form.lastName}`.trim() || '—')
-        addField('Documento de Identidad / Personal ID:', form.dni || '—')
-        addField('Domicilio Real:', form.address || '—')
-        addField('Telefono de contacto:', form.phone || '—')
-        addField('Email:', form.email || '—')
-        addField('Redes Sociales:', form.socialNetworks || '—')
+        addField(c.labels.fullName, `${form.name} ${form.lastName}`.trim() || '—')
+        addField(c.labels.doc, form.dni || '—')
+        addField(c.labels.address, form.address || '—')
+        addField(c.labels.phone, form.phone || '—')
+        addField(c.labels.email, form.email || '—')
+        addField(c.labels.social, form.socialNetworks || '—')
         y += 3
 
         // === EL RESCATISTA ===
@@ -143,133 +156,82 @@ export function generateContractPdf(animal: AnimalData, form: FormData): Blob | 
         doc.setFont('helvetica', 'bold')
         doc.setFontSize(10)
         doc.setTextColor(120, 113, 108) // stone-500
-        doc.text('El Rescatista / Protectora:', MARGIN_LEFT, y)
+        doc.text(stripAccents(c.rescuerHeading), MARGIN_LEFT, y)
         doc.setTextColor(0, 0, 0)
         y += LINE_HEIGHT + 1
-        addField('Nombre / Institucion:', animal.rescuerName || '—')
+        addField(c.labels.rescuerInstitution, animal.rescuerName || '—')
         y += 3
 
-        // === Divider ===
-        doc.setDrawColor(200, 200, 200)
-        doc.line(MARGIN_LEFT, y, PAGE_WIDTH - MARGIN_RIGHT, y)
-        y += SECTION_GAP
+        divider()
 
         // === 1. DATOS DEL ANIMAL ===
         checkPage(40)
-        addText('1. DATOS DEL ANIMAL', MARGIN_LEFT, CONTENT_WIDTH, { bold: true, size: 11 })
+        addText(c.animalSectionTitle, MARGIN_LEFT, CONTENT_WIDTH, { bold: true, size: 11 })
         y += 1
 
-        const speciesEmoji = animal.species === 'cat' ? 'Gato' : animal.species === 'dog' ? 'Perro' : (animal.species || '—')
-        addField('Nombre:', animal.animalName)
-        addField('Especie:', speciesEmoji)
-        addField('Edad aprox.:', animal.age)
-        addField('Sexo:', animal.sex ? (animal.sex.toLowerCase() === 'macho' ? 'Macho' : animal.sex.toLowerCase() === 'hembra' ? 'Hembra' : animal.sex) : null)
-        addField('Color/Senas:', animal.color || animal.details)
-        addField('N. de Microchip (si posee):', animal.microchip)
+        const speciesLabel = animal.species === 'cat' ? c.speciesCat : animal.species === 'dog' ? c.speciesDog : (animal.species || '—')
+        const sexLabel = animal.sex
+            ? (animal.sex.toLowerCase() === 'macho' ? c.sexMale : animal.sex.toLowerCase() === 'hembra' ? c.sexFemale : animal.sex)
+            : null
+        addField(c.animalLabels.name, animal.animalName)
+        addField(c.animalLabels.species, speciesLabel)
+        addField(c.animalLabels.age, animal.age)
+        addField(c.animalLabels.sex, sexLabel)
+        addField(c.animalLabels.color, animal.color || animal.details)
+        addField(c.animalLabels.microchip, animal.microchip)
         y += 3
 
-        // === Divider ===
-        doc.line(MARGIN_LEFT, y, PAGE_WIDTH - MARGIN_RIGHT, y)
-        y += SECTION_GAP
+        divider()
 
-        // === 2. COMPROMISOS DEL ADOPTANTE ===
-        checkPage(30)
-        addText('2. COMPROMISOS DEL ADOPTANTE', MARGIN_LEFT, CONTENT_WIDTH, { bold: true, size: 11 })
-        y += 1
-        addText('El adoptante declara aceptar la tenencia del animal bajo las siguientes clausulas obligatorias:', MARGIN_LEFT, CONTENT_WIDTH)
-        y += 2
-
-        const clauses = [
-            { title: 'Bienestar y Trato:', text: 'El animal sera tratado como un miembro de la familia. Se prohibe terminantemente mantenerlo encadenado, en balcones sin proteccion, en terrazas/patios sin refugio o deambulando solo por la via publica.' },
-            { title: 'Salud:', text: 'El adoptante se compromete a brindar asistencia veterinaria inmediata ante enfermedades o accidentes, mantener el plan de vacunacion anual y la desparasitacion al dia.' },
-            { title: 'Esterilizacion:', text: '(Si no esta castrado) El adoptante se obliga a castrar al animal al cumplir los 6 meses de edad, enviando el certificado correspondiente al rescatista. Se prohibe su uso para cria o reproduccion.' },
-            { title: 'Seguridad (Gatos):', text: 'En caso de felinos, el adoptante garantiza que la vivienda cuenta con mallas de proteccion en ventanas y balcones para evitar caidas (Sindrome del gato paracaidista) o escapes.' },
-            { title: 'Prohibicion de Uso Utilitario:', text: 'El animal no podra ser utilizado para fines de seguridad (guardia), control de plagas (caza de roedores), ni experimentos de ninguna indole.' },
-        ]
-
-        for (const clause of clauses) {
-            checkPage(15)
-            addText(clause.title, MARGIN_LEFT + 4, CONTENT_WIDTH - 4, { bold: true, size: 9 })
-            addText(clause.text, MARGIN_LEFT + 4, CONTENT_WIDTH - 4)
+        // === PROSE SECTIONS 2–5 (data-driven) ===
+        c.sections.forEach((section, i) => {
+            checkPage(30)
+            addText(section.title, MARGIN_LEFT, CONTENT_WIDTH, { bold: true, size: 11 })
             y += 1
-        }
-
-        // === Divider ===
-        checkPage(10)
-        doc.line(MARGIN_LEFT, y, PAGE_WIDTH - MARGIN_RIGHT, y)
-        y += SECTION_GAP
-
-        // === 3. SEGUIMIENTO Y NO ABANDONO ===
-        checkPage(25)
-        addText('3. SEGUIMIENTO Y NO ABANDONO', MARGIN_LEFT, CONTENT_WIDTH, { bold: true, size: 11 })
-        y += 1
-
-        checkPage(15)
-        addText('Seguimiento:', MARGIN_LEFT + 4, CONTENT_WIDTH - 4, { bold: true, size: 9 })
-        addText('El adoptante acepta recibir visitas programadas y enviar fotos/videos periodicos del animal para constatar su estado de salud y adaptacion.', MARGIN_LEFT + 4, CONTENT_WIDTH - 4)
-        y += 1
-
-        checkPage(20)
-        addText('Prohibicion de Cesion:', MARGIN_LEFT + 4, CONTENT_WIDTH - 4, { bold: true, size: 9 })
-        addText('Si por razones de fuerza mayor el adoptante no pudiera continuar con la tenencia, esta estrictamente prohibido regalarlo, venderlo o abandonarlo. Debera comunicarse inmediatamente con el rescatista para coordinar el retorno del animal o una nueva adopcion supervisada.', MARGIN_LEFT + 4, CONTENT_WIDTH - 4)
-        y += 3
-
-        // === Divider ===
-        checkPage(10)
-        doc.line(MARGIN_LEFT, y, PAGE_WIDTH - MARGIN_RIGHT, y)
-        y += SECTION_GAP
-
-        // === 4. INCUMPLIMIENTO ===
-        checkPage(35)
-        addText('4. INCUMPLIMIENTO Y PROTECCION ANIMAL', MARGIN_LEFT, CONTENT_WIDTH, { bold: true, size: 11 })
-        y += 1
-        addText('El incumplimiento de cualquiera de las obligaciones pactadas en este documento facultara al rescatista a declarar la resolucion del contrato y exigir la restitucion inmediata del animal para garantizar su integridad fisica y emocional.', MARGIN_LEFT + 4, CONTENT_WIDTH - 4)
-        y += 2
-        addText('Esta accion se llevara a cabo sin perjuicio de las denuncias y acciones legales (civiles o penales) que correspondan bajo la legislacion vigente en materia de proteccion y bienestar animal de la jurisdiccion correspondiente, la cual sanciona el maltrato, la crueldad y el abandono de seres sintientes.', MARGIN_LEFT + 4, CONTENT_WIDTH - 4)
-        y += 3
-
-        // === Divider ===
-        checkPage(10)
-        doc.line(MARGIN_LEFT, y, PAGE_WIDTH - MARGIN_RIGHT, y)
-        y += SECTION_GAP
-
-        // === 5. CONSENTIMIENTO ===
-        checkPage(25)
-        addText('5. CONSENTIMIENTO DE TRATAMIENTO DE DATOS Y REGISTRO', MARGIN_LEFT, CONTENT_WIDTH, { bold: true, size: 11 })
-        y += 1
-        addText('El Adoptante presta su consentimiento expreso para que los datos personales consignados en este contrato sean incorporados a los registros internos del Rescatista y a bases de datos compartidas entre organizaciones de proteccion animal debidamente acreditadas.', MARGIN_LEFT + 4, CONTENT_WIDTH - 4)
-        y += 6
+            if (section.intro) {
+                addText(section.intro, MARGIN_LEFT, CONTENT_WIDTH)
+                y += 2
+            }
+            for (const clause of section.clauses) {
+                checkPage(15)
+                if (clause.title) addText(clause.title, MARGIN_LEFT + 4, CONTENT_WIDTH - 4, { bold: true, size: 9 })
+                addText(clause.body, MARGIN_LEFT + 4, CONTENT_WIDTH - 4)
+                y += 1
+            }
+            y += 2
+            // Divider between sections, but not after the last one (signatures follow).
+            if (i < c.sections.length - 1) {
+                checkPage(10)
+                divider()
+            }
+        })
+        y += 4
 
         // === SIGNATURES ===
         checkPage(35)
-        doc.setDrawColor(150, 150, 150)
-        doc.setLineWidth(0.5)
-
-        // Thick divider
         doc.setDrawColor(120, 120, 120)
         doc.setLineWidth(0.8)
         doc.line(MARGIN_LEFT, y, PAGE_WIDTH - MARGIN_RIGHT, y)
         doc.setLineWidth(0.3)
         y += 15
 
-        // Adopter signature
         const sigWidth = (CONTENT_WIDTH - 20) / 2
         const sigLeft = MARGIN_LEFT
         const sigRight = MARGIN_LEFT + sigWidth + 20
 
-        // Adopter name
+        // Names
         doc.setFont('helvetica', 'italic')
         doc.setFontSize(10)
         doc.setTextColor(150, 150, 150)
-        const adopterName = `${form.name} ${form.lastName}`.trim()
+        const adopterName = stripAccents(`${form.name} ${form.lastName}`.trim())
         if (adopterName) {
             const nameW = doc.getTextWidth(adopterName)
             doc.text(adopterName, sigLeft + (sigWidth - nameW) / 2, y)
         }
-        // Rescuer name
         if (animal.rescuerName) {
-            const rescW = doc.getTextWidth(animal.rescuerName)
-            doc.text(animal.rescuerName, sigRight + (sigWidth - rescW) / 2, y)
+            const resc = stripAccents(animal.rescuerName)
+            const rescW = doc.getTextWidth(resc)
+            doc.text(resc, sigRight + (sigWidth - rescW) / 2, y)
         }
         y += 2
 
@@ -283,25 +245,22 @@ export function generateContractPdf(animal: AnimalData, form: FormData): Blob | 
         doc.setFont('helvetica', 'bold')
         doc.setFontSize(8)
         doc.setTextColor(120, 113, 108)
-        const adoptLabel = 'FIRMA DEL ADOPTANTE'
+        const adoptLabel = stripAccents(c.signAdopter)
         doc.text(adoptLabel, sigLeft + (sigWidth - doc.getTextWidth(adoptLabel)) / 2, y)
-        const rescLabel = 'FIRMA DEL RESCATISTA'
+        const rescLabel = stripAccents(c.signRescuer)
         doc.text(rescLabel, sigRight + (sigWidth - doc.getTextWidth(rescLabel)) / 2, y)
         y += 4
 
-        // DNI under adopter
+        // Doc number under adopter
         if (form.dni) {
             doc.setFont('helvetica', 'normal')
             doc.setFontSize(8)
             doc.setTextColor(150, 150, 150)
-            const dniText = `Documento: ${form.dni}`
+            const dniText = stripAccents(`${c.docLabel} ${form.dni}`)
             doc.text(dniText, sigLeft + (sigWidth - doc.getTextWidth(dniText)) / 2, y)
         }
 
-        // Reset colors
         doc.setTextColor(0, 0, 0)
-
-        // Return as blob
         return doc.output('blob')
     } catch (err) {
         console.error('[CONTRACT PDF] Generation failed:', err)

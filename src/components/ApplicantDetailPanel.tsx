@@ -47,7 +47,7 @@ function FlagBadge({ icon, label, tone }: { icon: string; label: string; tone: '
 }
 
 export default function ApplicantDetailPanel({ applicants, initialIndex, animalId, animalName, onClose, onContractIssued }: Props) {
-    const { t } = useLanguage();
+    const { t, locale } = useLanguage();
     const toast = useShowToast();
     const [index, setIndex] = useState(initialIndex);
     const [busy, setBusy] = useState(false);
@@ -82,7 +82,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
         if (!applicant.adopterId || busy) return;
         setBusy(true);
         try {
-            const result = await createContractInvitation(animalId, applicant.adopterId);
+            const result = await createContractInvitation(animalId, applicant.adopterId, locale);
             if (result.success && result.url) {
                 setShareUrl(result.url);
                 onContractIssued?.(result.url, applicant);

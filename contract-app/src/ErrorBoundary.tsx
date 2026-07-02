@@ -1,4 +1,6 @@
 import { Component, type ReactNode } from 'react'
+import { translate } from './i18n/index'
+import { resolveInitialLocale } from './i18n/LocaleContext'
 
 interface Props {
     children: ReactNode
@@ -25,23 +27,24 @@ export default class ErrorBoundary extends Component<Props, State> {
 
     render() {
         if (this.state.hasError) {
+            // Class component + crash path: resolve locale straight from the URL
+            // (?lang=) rather than context, which may be unavailable mid-crash.
+            const locale = resolveInitialLocale()
             return (
                 <div className="min-h-screen bg-stone-200 flex items-center justify-center px-4">
                     <div className="bg-white rounded-2xl p-8 text-center border border-stone-200 shadow-sm max-w-md space-y-4">
                         <div className="text-5xl">😿</div>
                         <h2 className="text-xl font-extrabold text-stone-900">
-                            Algo salió mal / Something went wrong
+                            {translate(locale, 'common.something_wrong')}
                         </h2>
                         <p className="text-stone-500 text-sm">
-                            Si el problema persiste, intentá abrir el enlace de nuevo.
-                            <br />
-                            If the issue persists, try opening the link again.
+                            {translate(locale, 'common.error_persist_hint')}
                         </p>
                         <button
                             onClick={() => window.location.reload()}
                             className="px-6 py-2.5 bg-stone-800 text-white rounded-xl font-bold text-sm hover:bg-stone-900 transition-colors shadow-md"
                         >
-                            🔄 Reintentar / Try Again
+                            🔄 {translate(locale, 'common.retry')}
                         </button>
                     </div>
                 </div>

@@ -18,14 +18,15 @@ interface ShareMenuProps {
 const getQrImageSrc = (url: string) => `/api/qr?data=${encodeURIComponent(url)}`;
 
 export default function ShareMenu({ contractUrl, animalName, compact = false }: ShareMenuProps) {
-    const { t } = useLanguage();
+    const { t, locale } = useLanguage();
     const contractBase = useContractBase();
     const [isOpen, setIsOpen] = useState(false);
     const [showQr, setShowQr] = useState(false);
     const [copied, setCopied] = useState(false);
 
     const animalId = contractUrl.replace(/^\/contract\//, '');
-    const fullUrl = contractBase ? `${contractBase}/${animalId}` : '';
+    // ?lang= renders the contract-app in the sharer's language (defaults to es).
+    const fullUrl = contractBase ? `${contractBase}/${animalId}?lang=${locale}` : '';
     const ready = fullUrl !== '';
 
     const shareText = `Contrato de adopción para ${animalName}`;

@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.24.0] - 2026-07-02
+
+### Added — contract-app speaks the sharer's language (es / en / pt-BR)
+
+The public contract/form/showcase mini-app is now multilingual. Language is a **property of the shared artifact**, set from the rescuer's UI language at share time, and it drives the **whole screen** (chrome + contract body + PDF) — never a mixed-language page.
+
+- **contract-app i18n** — new `i18n/` system (`useT()`, `?lang=`-resolved locale defaulting to es, Spanish fallback, `{var}` interpolation). All UI chrome localized across HomePage, Showcase, AnimalDetail, the 21-step PetShieldForm, ContractPage, Terms, and error states (~204 keys × 3, verified key-parity).
+- **Single-source contract body** — the ~5–6 page adoption contract was duplicated between the on-screen JSX and the PDF; extracted into one `contractContent.ts` (es/en/pt) consumed by both. The PDF ASCII-folds the shared text at render time, so screen and PDF can no longer drift.
+- **Locale threading** — `contract_invitations` gains a nullable `locale` column (migration 0053), stamped by `createContractInvitation()` from the sharer's locale and returned by `/api/contract/by-token`. Share URLs (contract, form, showcase) now carry `?lang=`; the contract-app also adopts the invite's stored locale as a backstop. Internal browse links propagate the language across navigations.
+
+**⚠️ Legal review pending:** the `en`/`pt` translations of the contract body, the data-consent clause, and the Terms & Conditions are **drafts pending human/legal review** and are flagged as such in the source. `es` remains authoritative. These ship to staging for in-context review; the translated legal text must not be promoted to production until signed off.
+
 ## [2.23.1] - 2026-07-01
 
 ### Changed — language selector drops country flags

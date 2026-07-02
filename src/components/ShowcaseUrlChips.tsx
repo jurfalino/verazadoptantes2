@@ -31,7 +31,10 @@ interface PublicConfig {
  * (server-side runtime env, so staging and prod resolve correctly).
  */
 export default function ShowcaseUrlChips() {
-    const { t } = useLanguage();
+    const { t, locale } = useLanguage();
+    // Stamp the sharer's language onto the public showcase link so the
+    // contract-app renders in it (?lang=). Contract-app defaults to es.
+    const withLang = (u: string) => `${u}${u.includes('?') ? '&' : '?'}lang=${locale}`;
     const toast = useShowToast();
     const [info, setInfo] = useState<Info | null>(null);
     const [flags, setFlags] = useState<PublicConfig>({});
@@ -77,7 +80,7 @@ export default function ShowcaseUrlChips() {
             id: 'all',
             label: t('myAnimals.showcase_global'),
             sublabel: t('myAnimals.showcase_global_desc'),
-            url: `${contractBase}/`,
+            url: withLang(`${contractBase}/`),
         });
     }
     if (userOn && info?.handle && contractBase) {
@@ -85,7 +88,7 @@ export default function ShowcaseUrlChips() {
             id: 'user',
             label: t('myAnimals.showcase_user'),
             sublabel: t('myAnimals.showcase_user_desc'),
-            url: `${contractBase}/user/${info.handle}`,
+            url: withLang(`${contractBase}/user/${info.handle}`),
         });
     }
     if (orgOn && info?.orgs && contractBase) {
@@ -94,7 +97,7 @@ export default function ShowcaseUrlChips() {
                 id: `org-${org.slug}`,
                 label: org.name,
                 sublabel: t('myAnimals.showcase_org_desc'),
-                url: `${contractBase}/org/${org.slug}`,
+                url: withLang(`${contractBase}/org/${org.slug}`),
             });
         }
     }
