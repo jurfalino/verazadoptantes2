@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.23.1] - 2026-07-01
+
+### Changed — language selector drops country flags
+
+Country flags for languages are a UX anti-pattern once a language spans many countries (🇦🇷 for "Español" reads as *Argentine* Spanish to a Mexican or Spanish user). Dropped the flags from the nav language dropdown: the trigger now shows a globe icon + the language code (EN / ES / PT), and the menu lists plain language names (English / Español / Português) with the active-language checkmark. Cleaner and neutral as the language list grows.
+
 ## [2.23.0] - 2026-07-01
 
 ### Added — Portuguese (pt-BR) as a third language
