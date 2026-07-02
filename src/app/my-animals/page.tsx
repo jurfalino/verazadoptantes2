@@ -329,8 +329,8 @@ export default function MyAnimalsPage() {
                                         <div className="flex flex-wrap gap-1.5 mb-3">
                                             {animal.sex && (
                                                 <span className="px-2 py-0.5 bg-stone-100 text-stone-600 rounded-full text-xs font-medium">
-                                                    {animal.sex === 'male' || animal.sex === 'macho' ? '♂ ' + (locale === 'es' ? 'Macho' : 'Male')
-                                                        : animal.sex === 'female' || animal.sex === 'hembra' ? '♀ ' + (locale === 'es' ? 'Hembra' : 'Female')
+                                                    {animal.sex === 'male' || animal.sex === 'macho' ? '♂ ' + (locale !== 'en' ? 'Macho' : 'Male')
+                                                        : animal.sex === 'female' || animal.sex === 'hembra' ? '♀ ' + (locale !== 'en' ? 'Hembra' : 'Female')
                                                         : animal.sex}
                                                 </span>
                                             )}

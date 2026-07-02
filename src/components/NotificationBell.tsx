@@ -34,12 +34,12 @@ function timeAgo(date: Date, locale: string): string {
     const diffHr = Math.floor(diffMin / 60);
     const diffDays = Math.floor(diffHr / 24);
 
-    const isEs = locale === 'es';
+    const isEs = locale !== 'en';
     if (diffMin < 1) return isEs ? 'ahora' : 'now';
     if (diffMin < 60) return isEs ? `hace ${diffMin} min` : `${diffMin}m ago`;
     if (diffHr < 24) return isEs ? `hace ${diffHr}h` : `${diffHr}h ago`;
     if (diffDays < 7) return isEs ? `hace ${diffDays}d` : `${diffDays}d ago`;
-    return date.toLocaleDateString(locale === 'es' ? 'es-AR' : 'en-US', { month: 'short', day: 'numeric' });
+    return date.toLocaleDateString(locale === 'pt' ? 'pt-BR' : locale === 'en' ? 'en-US' : 'es-AR', { month: 'short', day: 'numeric' });
 }
 
 export default function NotificationBell() {
@@ -207,7 +207,7 @@ export default function NotificationBell() {
     // Don't render for unauthenticated users (AFTER all hooks)
     if (!isAuthenticated) return null;
 
-    const isEs = locale === 'es';
+    const isEs = locale !== 'en';
 
     // The dropdown/sheet is rendered into a portal because the <nav>
     // ancestor uses `backdrop-blur-md` (== `backdrop-filter`), which makes

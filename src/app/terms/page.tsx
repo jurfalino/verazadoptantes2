@@ -18,7 +18,7 @@ export default function TermsPage() {
                 </button>
 
                 <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-8 prose prose-stone max-w-none">
-                    {locale === 'es' ? <TermsES /> : <TermsEN />}
+                    {locale === 'en' ? <TermsEN /> : locale === 'pt' ? <TermsPT /> : <TermsES />}
                 </div>
 
                 <div className="mt-6 text-center text-stone-500 text-xs">
@@ -219,6 +219,105 @@ function TermsEN() {
                 animal-welfare laws in force in the user&apos;s country of residence. For any dispute,
                 the parties agree to submit to the jurisdiction of the competent courts at the platform
                 operator&apos;s domicile or, failing that, where the data was originally registered.
+            </p>
+        </>
+    );
+}
+
+// ⚠️ DRAFT pt-BR legal text — pending human/legal review. es/en are the reviewed versions.
+function TermsPT() {
+    return (
+        <>
+            <h1 className="text-2xl font-semibold text-stone-900">Termos e Condições de Uso — BuenAdoptante</h1>
+
+            <p className="text-sm text-stone-500 italic">
+                Ao utilizar o BuenAdoptante, você aceita os seguintes termos e condições.
+                Se você não concordar com eles, deverá abster-se de utilizar a plataforma.
+            </p>
+
+            <h2>1. Descrição do Serviço</h2>
+            <p>
+                O BuenAdoptante é uma plataforma colaborativa, sem fins lucrativos, projetada para que a comunidade
+                de resgatistas compartilhe e consulte informações sobre adotantes de animais. O objetivo primordial
+                é a prevenção dos maus-tratos, do abandono e a promoção do bem-estar animal por meio da
+                transparência informativa.
+            </p>
+
+            <h2 id="content-responsibility">2. Responsabilidade do Usuário sobre o Conteúdo</h2>
+            <p>Ao registrar informações sobre um terceiro, o usuário declara e garante que:</p>
+            <ul>
+                <li><strong>Veracidade:</strong> as informações são verídicas, baseiam-se em sua experiência direta e são inseridas de boa-fé.</li>
+                <li><strong>Interesse Legítimo:</strong> atua sob um interesse legítimo de proteção animal, voltado a prevenir danos a seres sencientes, conforme as normas de bem-estar animal locais e internacionais.</li>
+                <li><strong>Privacidade:</strong> não publicará dados sensíveis (saúde, crenças, orientação sexual, situação financeira, etc.) que não sejam estritamente necessários para a finalidade de proteção da plataforma.</li>
+                <li><strong>Imagens:</strong> as fotografias enviadas contam com o consentimento implícito ou explícito de quem aparece nelas, ou foram tiradas no âmbito de uma transação de adoção pública ou privada.</li>
+                <li><strong>Responsabilidade Legal:</strong> o usuário é o único responsável legal pelo conteúdo que publicar. O BuenAdoptante não assume qualquer responsabilidade por reclamações de difamação, calúnia ou violação de direitos de terceiros decorrentes das publicações dos usuários.</li>
+            </ul>
+
+            <h2>3. Precisão das Informações</h2>
+            <p>
+                O BuenAdoptante atua como um repositório colaborativo e não verifica de forma independente a
+                exatidão das informações publicadas pelos usuários. A plataforma não se responsabiliza pelas
+                decisões de adoção tomadas com base no histórico ou na avaliação exibidos nos perfis.
+            </p>
+
+            <h2>4. Usos Proibidos</h2>
+            <p>É estritamente proibido utilizar a plataforma para:</p>
+            <ul>
+                <li>Assediar, ameaçar, discriminar ou intimidar qualquer pessoa.</li>
+                <li>Publicar informações falsas com o objetivo deliberado de prejudicar a reputação de terceiros.</li>
+                <li>Utilizar os dados para fins comerciais, de marketing ou qualquer finalidade alheia ao bem-estar animal.</li>
+                <li>Extração massiva de dados (scraping) por meio de processos automatizados.</li>
+            </ul>
+
+            <h2>5. Moderação e Remoção de Conteúdo</h2>
+            <p>O BuenAdoptante se reserva o direito de modificar ou excluir conteúdo que:</p>
+            <ul>
+                <li>Infrinja estes termos.</li>
+                <li>Seja denunciado como manifestamente falso ou mal-intencionado.</li>
+                <li>Seja objeto de uma reclamação legítima por parte do titular dos dados no exercício de seus direitos de proteção de dados pessoais.</li>
+            </ul>
+
+            <h2 id="disputes">6. Disputas e Reclamações</h2>
+            <p>
+                Se você considerar que um perfil contém informações imprecisas ou afeta seus direitos fundamentais:
+            </p>
+            <ul>
+                <li>Entre em contato com <strong>privacidad@buenadoptante.com</strong> detalhando o perfil e a informação em questão.</li>
+                <li>A plataforma avaliará a solicitação conforme a evidência apresentada e os prazos estabelecidos pela norma local de proteção de dados.</li>
+                <li>Em casos de falsidade evidente, procederá à remoção ou retificação imediata.</li>
+            </ul>
+
+            <h2>7. Limitação de Responsabilidade</h2>
+            <p>
+                O BuenAdoptante é um intermediário tecnológico. Na medida máxima permitida pela lei
+                aplicável, a plataforma não será responsável por:
+            </p>
+            <ul>
+                <li>Danos diretos ou indiretos decorrentes do uso das informações compartilhadas por outros usuários.</li>
+                <li>Qualquer conflito legal entre resgatistas e adotantes.</li>
+                <li>A veracidade dos depoimentos e das avaliações.</li>
+            </ul>
+
+            <h2>8. Propriedade Intelectual</h2>
+            <p>
+                Os usuários conservam a autoria de seus relatos e imagens, concedendo ao BuenAdoptante uma
+                licença gratuita e não exclusiva para sua visualização e processamento dentro do serviço.
+                O design, o software e as marcas do BuenAdoptante são propriedade exclusiva de seus desenvolvedores.
+            </p>
+
+            <h2>9. Modificações</h2>
+            <p>
+                A plataforma poderá atualizar estes termos a qualquer momento. O uso contínuo do
+                serviço após a publicação de alterações constitui a aceitação dos novos termos.
+            </p>
+
+            <h2>10. Legislação Aplicável e Jurisdição</h2>
+            <p>
+                Estes termos regem-se pelos princípios gerais do direito e pelas leis de proteção
+                de dados e bem-estar animal vigentes no país de residência do usuário. Para qualquer
+                controvérsia, as partes concordam em submeter-se à jurisdição dos tribunais competentes
+                no domicílio do titular da plataforma ou, na sua falta, onde tiver sido originado o
+                registro dos dados.
             </p>
         </>
     );

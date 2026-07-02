@@ -249,7 +249,7 @@ const NEW_POLL_INTERVAL_MS = 60_000;
 
 export default function OrgActivityFeed() {
     const { locale, t } = useLanguage();
-    const isEs = locale === 'es';
+    const isEs = locale !== 'en';
 
     const [entries, setEntries] = useState<OrgActivityEntry[]>([]);
     const [actors, setActors] = useState<Array<{ email: string; name: string }>>([]);

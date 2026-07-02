@@ -78,16 +78,16 @@ export function formatAge(
     const diffMonths = Math.round(diffMs / (30.44 * 24 * 60 * 60 * 1000));
 
     if (diffMonths < 1) {
-        return locale === 'es' ? '< 1 mes' : '< 1 month';
+        return locale !== 'en' ? '< 1 mes' : '< 1 month';
     }
     if (diffMonths < 24) {
-        const unit = locale === 'es'
+        const unit = locale !== 'en'
             ? (diffMonths === 1 ? 'mes' : 'meses')
             : (diffMonths === 1 ? 'month' : 'months');
         return `~${diffMonths} ${unit}`;
     }
     const years = Math.round(diffMonths / 12);
-    const unit = locale === 'es'
+    const unit = locale !== 'en'
         ? (years === 1 ? 'año' : 'años')
         : (years === 1 ? 'year' : 'years');
     return `~${years} ${unit}`;
