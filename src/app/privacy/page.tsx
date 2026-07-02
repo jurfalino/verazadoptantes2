@@ -18,7 +18,7 @@ export default function PrivacyPage() {
                 </button>
 
                 <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-8 prose prose-stone max-w-none">
-                    {locale === 'es' ? <PrivacyES /> : <PrivacyEN />}
+                    {locale === 'en' ? <PrivacyEN /> : locale === 'pt' ? <PrivacyPT /> : <PrivacyES />}
                 </div>
 
                 <div className="mt-6 text-center text-stone-500 text-xs">
@@ -184,6 +184,87 @@ function PrivacyEN() {
                 If you believe that the processing of your data violates the rules of your country, you have
                 the right to file a complaint with the <strong>Data Protection Authority</strong> or equivalent
                 body in your national jurisdiction.
+            </p>
+        </>
+    );
+}
+
+// ⚠️ DRAFT pt-BR legal text — pending human/legal review. es/en are the reviewed versions.
+function PrivacyPT() {
+    return (
+        <>
+            <h1 className="text-2xl font-semibold text-stone-900">Política de Privacidade Global — BuenAdoptante</h1>
+
+            <p className="text-sm text-stone-500 italic">
+                Responsável: BuenAdoptante — Plataforma colaborativa de verificação de adotantes de animais.
+            </p>
+
+            <h2>1. Quais dados coletamos?</h2>
+            <p>
+                O BuenAdoptante armazena informações fornecidas voluntariamente pela comunidade de resgatistas
+                com a finalidade exclusiva de proteger o bem-estar animal. Os dados incluem:
+            </p>
+            <ul>
+                <li><strong>Identificação:</strong> nome completo ou parcial do adotante.</li>
+                <li><strong>Contato:</strong> telefone, e-mail, redes sociais ou localização geral.</li>
+                <li><strong>Histórico:</strong> espécie do animal, data de adoção e avaliação da experiência.</li>
+                <li><strong>Observações:</strong> comentários e avaliações de resgatistas sobre a experiência.</li>
+                <li><strong>Evidência:</strong> fotografias anexadas para respaldar os registros.</li>
+            </ul>
+
+            <h2>2. Base Legal do Tratamento</h2>
+            <p>
+                O tratamento destes dados fundamenta-se no <strong>interesse legítimo</strong> da comunidade
+                para prevenir os maus-tratos, o abandono e a crueldade animal, em conformidade com as normas
+                locais de proteção animal e com as exceções previstas nas leis de proteção de dados
+                pessoais para fins de segurança e bem-estar geral.
+            </p>
+            <p>
+                Os dados não são comercializados, não são utilizados para fins publicitários nem compartilhados com
+                terceiros alheios à plataforma.
+            </p>
+
+            <h2>3. Níveis de Acesso</h2>
+            <ul>
+                <li><strong>Público (não registrado):</strong> só pode visualizar dados mascarados (ex. J*** P****) para proteger a privacidade básica.</li>
+                <li><strong>Usuários registrados (resgatistas):</strong> acesso ao perfil completo para avaliar a idoneidade do adotante.</li>
+                <li><strong>Administradores:</strong> acesso total para moderação, gestão de denúncias e manutenção.</li>
+            </ul>
+
+            <h2>4. Conservação de Dados</h2>
+            <p>
+                As informações serão conservadas enquanto forem úteis para a segurança dos animais.
+                Os registros sem atividade ou relevância após um período prolongado (mínimo de 2 anos) poderão
+                ser anonimizados ou excluídos de forma definitiva.
+            </p>
+
+            <h2>5. Seus Direitos (ARCO)</h2>
+            <p>
+                Independentemente do seu país de residência, garantimos o exercício dos seus direitos:
+            </p>
+            <ul>
+                <li><strong>Acesso:</strong> saber quais informações temos sobre você.</li>
+                <li><strong>Retificação:</strong> corrigir dados imprecisos ou desatualizados.</li>
+                <li><strong>Cancelamento (supressão):</strong> solicitar a exclusão dos seus dados de nossa base.</li>
+                <li><strong>Oposição:</strong> recusar o tratamento dos seus dados por motivos legítimos.</li>
+            </ul>
+            <p>
+                Para exercer estes direitos, entre em contato conosco pelo <strong>privacidad@buenadoptante.com</strong>.
+                As solicitações serão processadas nos prazos estabelecidos pela norma local vigente
+                do seu país (geralmente entre 10 e 15 dias úteis).
+            </p>
+
+            <h2>6. Segurança e Confidencialidade</h2>
+            <p>
+                Implementamos medidas técnicas de padrão internacional: criptografia de dados, acesso autenticado
+                e registros de auditoria para evitar o uso indevido da plataforma.
+            </p>
+
+            <h2>7. Autoridade de Controle</h2>
+            <p>
+                Se você considerar que o tratamento dos seus dados infringe as normas do seu país, tem direito
+                a apresentar uma reclamação perante a <strong>Autoridade de Proteção de Dados Pessoais</strong>
+                ou órgão equivalente na sua jurisdição nacional.
             </p>
         </>
     );

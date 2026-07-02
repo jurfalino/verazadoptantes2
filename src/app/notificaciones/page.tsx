@@ -36,12 +36,12 @@ function timeAgo(date: Date, locale: string): string {
     const diffHr = Math.floor(diffMin / 60);
     const diffDays = Math.floor(diffHr / 24);
 
-    const isEs = locale === 'es';
+    const isEs = locale !== 'en';
     if (diffMin < 1) return isEs ? 'ahora' : 'now';
     if (diffMin < 60) return isEs ? `hace ${diffMin} min` : `${diffMin}m ago`;
     if (diffHr < 24) return isEs ? `hace ${diffHr}h` : `${diffHr}h ago`;
     if (diffDays < 7) return isEs ? `hace ${diffDays}d` : `${diffDays}d ago`;
-    return date.toLocaleDateString(locale === 'es' ? 'es-AR' : 'en-US', { month: 'short', day: 'numeric' });
+    return date.toLocaleDateString(locale === 'pt' ? 'pt-BR' : locale === 'en' ? 'en-US' : 'es-AR', { month: 'short', day: 'numeric' });
 }
 
 const TYPE_LABELS: Record<string, { es: string; en: string; icon: string }> = {
@@ -70,7 +70,7 @@ export default function NotificacionesPage() {
     const [loading, setLoading] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
 
-    const isEs = locale === 'es';
+    const isEs = locale !== 'en';
 
     const fetchPage = useCallback(async (pageNum: number, filterTab: FilterTab, type: string, append = false) => {
         if (!session?.user?.email) return;

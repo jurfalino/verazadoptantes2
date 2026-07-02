@@ -112,7 +112,7 @@ function dateInputToEpoch(s: string, endOfDay = false): number {
 
 export default function AdminAuditPage() {
     const { locale, t } = useLanguage();
-    const isEs = locale === 'es';
+    const isEs = locale !== 'en';
 
     const [entries, setEntries] = useState<EnrichedAuditEntry[]>([]);
     const [loading, setLoading] = useState(true);

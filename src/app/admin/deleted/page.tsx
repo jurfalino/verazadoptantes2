@@ -22,7 +22,7 @@ interface DeletedRow {
  */
 export default function AdminDeletedPage() {
     const { locale } = useLanguage();
-    const isEs = locale === 'es';
+    const isEs = locale !== 'en';
     const toast = useShowToast();
 
     const [rows, setRows] = useState<DeletedRow[]>([]);

@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.24.1] - 2026-07-02
+
+### Fixed — Portuguese users no longer fall through to English
+
+Several surfaces predated pt with a 2-way `locale === 'es' ? ES : EN` branch, so Portuguese users saw **English** (while the rest of the app was Portuguese).
+
+- **`/terms` and `/privacy`** — added Portuguese versions (`TermsPT` / `PrivacyPT`, drafts pending legal review, flagged in-source) and a 3-way branch (`en → EN`, `pt → PT`, else `ES`).
+- **Everywhere else** — normalized the branches to `locale !== 'en'` so pt falls back to **Spanish** (the app's default, matching `t()`), never English: my-animals toasts/sex-labels, CountryConfirmBanner, CountrySelector, ImportWizard, admin audit/deleted pages, OrgActivityFeed, age strings. Dates now use `pt-BR` formatting.
+
+`es`/`en` legal copy remains the reviewed version; the pt legal text is a draft (same review follow-up as v2.24.0).
+
 ## [2.24.0] - 2026-07-02
 
 ### Added — contract-app speaks the sharer's language (es / en / pt-BR)

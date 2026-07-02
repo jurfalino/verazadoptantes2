@@ -92,7 +92,7 @@ export function CountrySelector({ value, onChange, detectedCountry }: CountrySel
         }
     };
 
-    const getName = (c: Country) => locale === 'es' ? c.nameEs : c.name;
+    const getName = (c: Country) => locale !== 'en' ? c.nameEs : c.name;
 
     return (
         <div className="relative" ref={dropdownRef}>
@@ -132,7 +132,7 @@ export function CountrySelector({ value, onChange, detectedCountry }: CountrySel
                             value={search}
                             onChange={e => setSearch(e.target.value)}
                             onKeyDown={handleKeyDown}
-                            placeholder={locale === 'es' ? 'Buscar país...' : 'Search country...'}
+                            placeholder={locale !== 'en' ? 'Buscar país...' : 'Search country...'}
                             className="w-full px-3 py-2 text-sm rounded-lg border border-stone-200 dark:border-stone-600 bg-stone-50 dark:bg-stone-900 text-stone-800 dark:text-stone-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
                         />
                     </div>
@@ -141,7 +141,7 @@ export function CountrySelector({ value, onChange, detectedCountry }: CountrySel
                     <div ref={listRef} className="max-h-60 overflow-y-auto">
                         {filtered.length === 0 ? (
                             <div className="px-4 py-3 text-sm text-stone-500">
-                                {locale === 'es' ? 'No se encontraron países' : 'No countries found'}
+                                {locale !== 'en' ? 'No se encontraron países' : 'No countries found'}
                             </div>
                         ) : (
                             filtered.map((c, i) => (

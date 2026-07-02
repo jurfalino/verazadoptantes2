@@ -176,7 +176,7 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
     };
 
     const quickCountries = countries.filter(c => ['AR', 'UY', 'CL', 'MX'].includes(c.code));
-    const getName = (c: Country) => locale === 'es' ? c.nameEs : c.name;
+    const getName = (c: Country) => locale !== 'en' ? c.nameEs : c.name;
 
     // ── Shared sub-elements ────────────────────────────────────────────────────
 
@@ -184,7 +184,7 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
     const nameSection = (
         <div className="mb-5 pb-5 border-b border-stone-200">
             <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">
-                {locale === 'es' ? 'Tu nombre' : 'Your name'}
+                {locale !== 'en' ? 'Tu nombre' : 'Your name'}
             </label>
             {editingName ? (
                 <div className="flex gap-2">
@@ -201,7 +201,7 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                         onClick={() => setEditingName(false)}
                         className="px-3 py-2 text-xs font-medium text-teal-700 hover:bg-teal-50 rounded-lg transition-colors"
                     >
-                        {locale === 'es' ? 'Listo' : 'Done'}
+                        {locale !== 'en' ? 'Listo' : 'Done'}
                     </button>
                 </div>
             ) : (
@@ -211,7 +211,7 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                     className="w-full flex items-center justify-between px-3 py-2.5 text-sm rounded-lg border border-stone-200 bg-stone-50 hover:bg-stone-100 transition-colors text-left group"
                 >
                     <span className="text-stone-800 font-medium truncate">
-                        {userName || (locale === 'es' ? 'Sin nombre' : 'No name')}
+                        {userName || (locale !== 'en' ? 'Sin nombre' : 'No name')}
                     </span>
                     <svg className="w-3.5 h-3.5 text-stone-400 group-hover:text-stone-600 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -232,17 +232,17 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                 className="mt-0.5 w-4 h-4 rounded border-stone-300 text-teal-600 focus:ring-teal-500 focus:ring-offset-0 cursor-pointer flex-shrink-0"
             />
             <span className="text-sm text-stone-600 leading-snug">
-                {locale === 'es' ? 'Acepto los' : 'I accept the'}{' '}
+                {locale !== 'en' ? 'Acepto los' : 'I accept the'}{' '}
                 <a href="/terms" target="_blank" rel="noopener noreferrer"
                    className="text-teal-700 underline underline-offset-2 hover:text-teal-800"
                    onClick={e => e.stopPropagation()}>
-                    {locale === 'es' ? 'Términos de Uso' : 'Terms of Use'}
+                    {locale !== 'en' ? 'Términos de Uso' : 'Terms of Use'}
                 </a>{' '}
-                {locale === 'es' ? 'y la' : 'and the'}{' '}
+                {locale !== 'en' ? 'y la' : 'and the'}{' '}
                 <a href="/privacy" target="_blank" rel="noopener noreferrer"
                    className="text-teal-700 underline underline-offset-2 hover:text-teal-800"
                    onClick={e => e.stopPropagation()}>
-                    {locale === 'es' ? 'Política de Privacidad' : 'Privacy Policy'}
+                    {locale !== 'en' ? 'Política de Privacidad' : 'Privacy Policy'}
                 </a>.
             </span>
         </label>
@@ -251,7 +251,7 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
     // Error + retry message
     const errorMessage = saveError && (
         <p className="text-xs text-red-600 text-center mt-2">
-            {locale === 'es'
+            {locale !== 'en'
                 ? 'Hubo un error al guardar. Por favor intentá de nuevo.'
                 : 'Something went wrong. Please try again.'}
         </p>
@@ -279,10 +279,10 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                     <div className="text-center mb-6">
                         <span className="text-5xl block mb-4">📋</span>
                         <h2 className="text-xl font-semibold text-stone-800 tracking-tight">
-                            {locale === 'es' ? 'Actualizamos nuestros Términos' : "We've updated our Terms"}
+                            {locale !== 'en' ? 'Actualizamos nuestros Términos' : "We've updated our Terms"}
                         </h2>
                         <p className="text-stone-500 text-sm mt-2 leading-relaxed">
-                            {locale === 'es'
+                            {locale !== 'en'
                                 ? 'Revisamos los Términos de Uso y la Política de Privacidad. Por favor léelos y aceptalos para continuar.'
                                 : "We've revised our Terms of Use and Privacy Policy. Please review and accept them to continue."
                             }
@@ -298,8 +298,8 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                         disabled={saving || !termsChecked}
                         className="w-full px-4 py-3 text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                        {saving ? <>{spinner}{locale === 'es' ? 'Guardando...' : 'Saving...'}</> : (
-                            locale === 'es' ? 'Aceptar y continuar' : 'Accept and continue'
+                        {saving ? <>{spinner}{locale !== 'en' ? 'Guardando...' : 'Saving...'}</> : (
+                            locale !== 'en' ? 'Aceptar y continuar' : 'Accept and continue'
                         )}
                     </button>
                     {errorMessage}
@@ -320,10 +320,10 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                     <div className="text-center mb-6">
                         <span className="text-5xl block mb-4">{country.flag}</span>
                         <h2 className="text-xl font-semibold text-stone-800 tracking-tight">
-                            {locale === 'es' ? '¡Bienvenido!' : 'Welcome!'}
+                            {locale !== 'en' ? '¡Bienvenido!' : 'Welcome!'}
                         </h2>
                         <p className="text-stone-500 text-sm mt-2">
-                            {locale === 'es'
+                            {locale !== 'en'
                                 ? 'Confirmá tu información para empezar.'
                                 : 'Confirm your info to get started.'
                             }
@@ -344,8 +344,8 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                             className="w-full px-4 py-3 text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                             {saving
-                                ? <>{spinner}{locale === 'es' ? 'Guardando...' : 'Saving...'}</>
-                                : (locale === 'es'
+                                ? <>{spinner}{locale !== 'en' ? 'Guardando...' : 'Saving...'}</>
+                                : (locale !== 'en'
                                     ? `Sí, estoy en ${getName(country)}`
                                     : `Yes, I'm in ${getName(country)}`
                                 )
@@ -355,7 +355,7 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                             onClick={() => setShowSelector(true)}
                             className="w-full px-4 py-2.5 text-sm font-medium text-stone-600 hover:bg-stone-100 rounded-xl transition-colors"
                         >
-                            {locale === 'es' ? 'No, elegir otro país' : 'No, choose a different country'}
+                            {locale !== 'en' ? 'No, elegir otro país' : 'No, choose a different country'}
                         </button>
                     </div>
                     {errorMessage}
@@ -372,10 +372,10 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                 <div className="text-center mb-6">
                     <span className="text-5xl block mb-4">🌎</span>
                     <h2 className="text-xl font-semibold text-stone-800 tracking-tight">
-                        {locale === 'es' ? '¡Bienvenido!' : 'Welcome!'}
+                        {locale !== 'en' ? '¡Bienvenido!' : 'Welcome!'}
                     </h2>
                     <p className="text-stone-500 text-sm mt-2">
-                        {locale === 'es'
+                        {locale !== 'en'
                             ? 'Completá tu información para empezar.'
                             : 'Complete your info to get started.'
                         }
@@ -390,7 +390,7 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                 </div>
 
                 <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-3">
-                    {locale === 'es' ? 'Tu país' : 'Your country'}
+                    {locale !== 'en' ? 'Tu país' : 'Your country'}
                 </label>
 
                 {/* Quick-pick buttons — disabled until T&C accepted */}
@@ -412,7 +412,7 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                 <div className="flex items-center gap-3 my-4">
                     <div className="flex-1 h-px bg-stone-200" />
                     <span className="text-xs text-stone-500 uppercase tracking-wider">
-                        {locale === 'es' ? 'u otro país' : 'or another country'}
+                        {locale !== 'en' ? 'u otro país' : 'or another country'}
                     </span>
                     <div className="flex-1 h-px bg-stone-200" />
                 </div>
@@ -430,8 +430,8 @@ export function CountryConfirmBanner({ userEmail: serverEmail }: CountryConfirmB
                         className="w-full mt-4 px-4 py-3 text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                         {saving
-                            ? <>{spinner}{locale === 'es' ? 'Guardando...' : 'Saving...'}</>
-                            : (locale === 'es' ? 'Continuar' : 'Continue')
+                            ? <>{spinner}{locale !== 'en' ? 'Guardando...' : 'Saving...'}</>
+                            : (locale !== 'en' ? 'Continuar' : 'Continue')
                         }
                     </button>
                 )}

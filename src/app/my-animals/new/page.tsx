@@ -439,7 +439,7 @@ export default function NewAnimalPage() {
                                                 onClick={async () => {
                                                     if (!editId) return;
                                                     const confirmed = window.confirm(
-                                                        locale === 'es'
+                                                        locale !== 'en'
                                                             ? '¿Eliminar esta foto? Esta acción no se puede deshacer.'
                                                             : 'Delete this photo? This cannot be undone.'
                                                     );
@@ -447,13 +447,13 @@ export default function NewAnimalPage() {
                                                     try {
                                                         await deleteAnimalImage(img.id, editId);
                                                         setExistingImages(prev => prev.filter(i => i.id !== img.id));
-                                                        toast.success('✓', locale === 'es' ? 'Foto eliminada' : 'Photo deleted');
+                                                        toast.success('✓', locale !== 'en' ? 'Foto eliminada' : 'Photo deleted');
                                                     } catch (err) {
-                                                        toast.error('Error', locale === 'es' ? 'No se pudo eliminar la foto' : 'Could not delete photo', extractErrorId(err));
+                                                        toast.error('Error', locale !== 'en' ? 'No se pudo eliminar la foto' : 'Could not delete photo', extractErrorId(err));
                                                     }
                                                 }}
                                                 className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
-                                                title={locale === 'es' ? 'Eliminar foto' : 'Delete photo'}
+                                                title={locale !== 'en' ? 'Eliminar foto' : 'Delete photo'}
                                             >
                                                 ×
                                             </button>
@@ -503,7 +503,7 @@ export default function NewAnimalPage() {
                                     disabled={deleting}
                                     onClick={async () => {
                                         const confirmed = window.confirm(
-                                            locale === 'es'
+                                            locale !== 'en'
                                                 ? `¿Eliminar "${formData.animalName || 'este animal'}"? Se borrarán también todas sus fotos. Esta acción no se puede deshacer.`
                                                 : `Delete "${formData.animalName || 'this animal'}"? All photos will also be removed. This cannot be undone.`
                                         );
@@ -511,18 +511,18 @@ export default function NewAnimalPage() {
                                         setDeleting(true);
                                         try {
                                             await deleteAnimalForAdoption(editId);
-                                            toast.success('✓', locale === 'es' ? 'Animal eliminado' : 'Animal deleted');
+                                            toast.success('✓', locale !== 'en' ? 'Animal eliminado' : 'Animal deleted');
                                             router.push('/my-animals');
                                         } catch (err) {
-                                            toast.error('Error', locale === 'es' ? 'No se pudo eliminar' : 'Could not delete', extractErrorId(err));
+                                            toast.error('Error', locale !== 'en' ? 'No se pudo eliminar' : 'Could not delete', extractErrorId(err));
                                             setDeleting(false);
                                         }
                                     }}
                                     className="px-4 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-50"
                                 >
                                     {deleting
-                                        ? (locale === 'es' ? 'Eliminando...' : 'Deleting...')
-                                        : '🗑️ ' + (locale === 'es' ? 'Eliminar animal' : 'Delete animal')
+                                        ? (locale !== 'en' ? 'Eliminando...' : 'Deleting...')
+                                        : '🗑️ ' + (locale !== 'en' ? 'Eliminar animal' : 'Delete animal')
                                     }
                                 </button>
                             ) : <div />}

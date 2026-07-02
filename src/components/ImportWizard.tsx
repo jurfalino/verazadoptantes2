@@ -386,7 +386,7 @@ export default function ImportWizard() {
         if (sharedVcardLost) {
             // SW was inactive when the share arrived — file body never made it
             // to the cache. Show a soft hint, leave the user on Step 1.
-            setError(t('import.vcard_parse_failed') || (locale === 'es'
+            setError(t('import.vcard_parse_failed') || (locale !== 'en'
                 ? 'No se pudo cargar el contacto compartido. Probá nuevamente.'
                 : 'Could not load the shared contact. Please try again.'));
             return;
@@ -394,7 +394,7 @@ export default function ImportWizard() {
         if (isSharedVcard) {
             loadSharedVcard().then(loaded => {
                 if (!loaded) {
-                    setError(t('import.vcard_parse_failed') || (locale === 'es'
+                    setError(t('import.vcard_parse_failed') || (locale !== 'en'
                         ? 'No se pudo cargar el contacto compartido. Probá nuevamente.'
                         : 'Could not load the shared contact. Please try again.'));
                 }
@@ -409,7 +409,7 @@ export default function ImportWizard() {
 
         // Show warning if SW wasn't active and images were lost
         if (imagesLost) {
-            setError(locale === 'es'
+            setError(locale !== 'en'
                 ? 'Las imágenes compartidas no se pudieron cargar. Por favor, subilas manualmente.'
                 : 'Shared images could not be loaded. Please upload them manually.');
         }
@@ -486,7 +486,7 @@ export default function ImportWizard() {
                     if (responseData.requiresManualInput) {
                         // Private group post or restricted content — skip to manual input
                         setSourceUrl(targetUrl);
-                        setError(responseData.error || (locale === 'es'
+                        setError(responseData.error || (locale !== 'en'
                             ? 'No se pudo extraer contenido. Pegá el texto manualmente.'
                             : 'Could not extract content. Please paste text manually.'));
                         setStep(2);
@@ -495,7 +495,7 @@ export default function ImportWizard() {
                     // Temporary extraction failure — start 30s retry countdown
                     setRetryCountdown(30);
                     throw new Error(
-                        responseData.error || (locale === 'es'
+                        responseData.error || (locale !== 'en'
                             ? 'No se pudo extraer contenido de esta publicación.'
                             : 'Could not extract content from this post.')
                     );
@@ -1096,7 +1096,7 @@ export default function ImportWizard() {
                             <p className="text-red-700 font-medium">{error}</p>
                             {retryCountdown > 0 && (
                                 <p className="text-red-500 mt-1">
-                                    {locale === 'es'
+                                    {locale !== 'en'
                                         ? `Podés reintentar en ${retryCountdown}s`
                                         : `You can retry in ${retryCountdown}s`}
                                 </p>
@@ -1115,7 +1115,7 @@ export default function ImportWizard() {
                                     }}
                                     className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium hover:bg-red-700 transition-colors"
                                 >
-                                    {locale === 'es' ? 'Reintentar' : 'Retry'}
+                                    {locale !== 'en' ? 'Reintentar' : 'Retry'}
                                 </button>
                             ) : null}
                             <button onClick={() => { setError(null); setRetryCountdown(0); }} className="text-red-400 hover:text-red-600">
@@ -1252,9 +1252,9 @@ export default function ImportWizard() {
                         <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
                             <span className="text-lg flex-shrink-0">📹</span>
                             <div>
-                                <p className="font-medium">{locale === 'es' ? 'Este enlace contiene un video' : 'This link contains a video'}</p>
+                                <p className="font-medium">{locale !== 'en' ? 'Este enlace contiene un video' : 'This link contains a video'}</p>
                                 <p className="mt-0.5 text-amber-700">
-                                    {locale === 'es'
+                                    {locale !== 'en'
                                         ? 'La información puede estar en el video. Adjuntá capturas de pantalla del video para que las analicemos mejor.'
                                         : 'The information may be in the video. Attach screenshots from the video for better extraction.'}
                                 </p>
@@ -1349,7 +1349,7 @@ export default function ImportWizard() {
                     {fetchedVideos.length > 0 && (
                         <div>
                             <label className="block text-sm font-medium text-stone-600 mb-2">
-                                🎬 {fetchedVideos.length} {fetchedVideos.length !== 1 ? 'videos' : 'video'} {locale === 'es' ? 'encontrados' : 'found'}
+                                🎬 {fetchedVideos.length} {fetchedVideos.length !== 1 ? 'videos' : 'video'} {locale !== 'en' ? 'encontrados' : 'found'}
                             </label>
                             <div className="grid grid-cols-2 gap-3">
                                 {fetchedVideos.map((url, i) => (
