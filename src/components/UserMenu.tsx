@@ -5,6 +5,7 @@ import { signOut, useSession } from 'next-auth/react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useAuthContext } from '@/context/AuthContext';
 import { ThemeSelector } from '@/components/ThemeSelector';
+import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import Link from 'next/link';
 
 interface UserMenuProps {
@@ -26,7 +27,7 @@ interface QuickCounts {
 }
 
 export default function UserMenu({ user, isAdmin: isAdminFromServer }: UserMenuProps) {
-    const { t, locale, setLocale } = useLanguage();
+    const { t } = useLanguage();
     const { openLogin } = useAuthContext();
     const { data: session } = useSession();
     const [isOpen, setIsOpen] = useState(false);
@@ -83,22 +84,8 @@ export default function UserMenu({ user, isAdmin: isAdminFromServer }: UserMenuP
         await signOut({ redirectTo: '/' });
     };
 
-    const toggleLanguage = () => {
-        setLocale(locale === 'es' ? 'en' : 'es');
-    };
-
-    // Language toggle — always visible to all users
-    const langToggle = (
-        <button
-            onClick={toggleLanguage}
-            title={locale === 'es' ? 'Switch to English' : 'Cambiar a Español'}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl hover:bg-stone-100 transition-colors text-sm font-medium text-stone-600"
-            aria-label={locale === 'es' ? 'Switch to English' : 'Cambiar a Español'}
-        >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" /></svg>
-            {locale === 'es' ? 'ES' : 'EN'}
-        </button>
-    );
+    // Language selector — dropdown (EN / ES / PT), always visible to all users
+    const langToggle = <LanguageSwitcher />;
 
     if (!user) {
         return (

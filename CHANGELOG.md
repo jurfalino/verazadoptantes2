@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.23.0] - 2026-07-01
+
+### Added — Portuguese (pt-BR) as a third language
+
+The app now speaks Brazilian Portuguese alongside Spanish and English. Full UI translation (~1,000 keys) plus the Adoption Guide and FAQ content, in the warm *você* register that mirrors the app's Argentine-Spanish tone.
+
+- **New locale `src/i18n/locales/pt.ts`** — every UI string translated to pt-BR, structurally cloned from `es.ts` so keys and interpolation placeholders stay identical (verified by a line-aligned integrity check: 0 key/placeholder drift). Missing keys fall back to Spanish, never a raw key.
+- **Plumbing** — `LanguageContext` now carries `pt` in the `Locale` type, the dictionaries map, and browser auto-detection (a `pt-*` browser lands on Portuguese).
+- **Guide & FAQ** — `guide-data.ts` extended with `*Pt` fields across steps, FAQ, hero, benefits, and labels; the `/guia` and `/guia/faq` readers are now locale-aware (3-way `pick`/`label`, pt→es fallback).
+
+### Fixed — nav language selector is now a real EN / ES / PT dropdown
+
+The nav's language control was a hardcoded 2-way es↔en toggle in `UserMenu`, and the `LanguageSwitcher` dropdown component was mounted nowhere (dead code). Wired the dropdown into the nav (both signed-in and signed-out states) so Portuguese is reachable, replacing the toggle. Added `data-testid`s and updated the i18n e2e test to drive the dropdown (EN → PT → ES).
+
 ## [2.22.20] - 2026-06-27
 
 ### Added — walkthrough activation step ("now your turn")

@@ -9,9 +9,11 @@ import { ShieldPawIcon } from '@/components/Logo';
 type StepDetail = {
     textEs: string;
     textEn: string;
+    textPt: string;
     linkUrl?: string;
     linkTextEs?: string;
     linkTextEn?: string;
+    linkTextPt?: string;
 };
 
 type GuideStep = {
@@ -20,8 +22,10 @@ type GuideStep = {
         title: string;
         titleEs: string;
         titleEn: string;
+        titlePt: string;
         descriptionEs: string;
         descriptionEn: string;
+        descriptionPt: string;
         icon: string;
         order: number;
         details?: StepDetail[];
@@ -34,6 +38,7 @@ type BenefitItem = {
         icon: string;
         textEs: string;
         textEn: string;
+        textPt: string;
         order: number;
     };
 };
@@ -41,24 +46,32 @@ type BenefitItem = {
 type HeroData = {
     titleEs: string;
     titleEn: string;
+    titlePt: string;
     subtitleEs: string;
     subtitleEn: string;
+    subtitlePt: string;
     ctaTextEs: string;
     ctaTextEn: string;
+    ctaTextPt: string;
     ctaUrl: string;
 };
 
 type LabelsData = {
     processHeaderEs: string;
     processHeaderEn: string;
+    processHeaderPt: string;
     stepPrefixEs: string;
     stepPrefixEn: string;
+    stepPrefixPt: string;
     whyVetEs: string;
     whyVetEn: string;
+    whyVetPt: string;
     faqHeaderEs: string;
     faqHeaderEn: string;
+    faqHeaderPt: string;
     ctaButtonEs: string;
     ctaButtonEn: string;
+    ctaButtonPt: string;
 };
 
 // Phase color scheme — each phase gets its own accent
@@ -76,6 +89,7 @@ export default function GuiaPage() {
     const { data: session } = useSession();
 
     const isEnglish = locale === 'en';
+    const isPortuguese = locale === 'pt';
 
     const [steps, setSteps] = useState<GuideStep[]>([]);
     const [benefits, setBenefits] = useState<BenefitItem[]>([]);
@@ -95,10 +109,13 @@ export default function GuiaPage() {
             .catch((err) => console.error('[Guide] Failed to load content:', err));
     }, [session]);
 
-    const pick = <T,>(es: T, en: T) => (isEnglish ? en : es);
+    // pt falls back to es when a Portuguese value is absent (mirrors the t() fallback).
+    const pick = <T,>(es: T, en: T, pt?: T) => (isEnglish ? en : isPortuguese ? (pt ?? es) : es);
 
-    const label = (esKey: keyof LabelsData, enKey: keyof LabelsData, fallbackEs: string, fallbackEn: string) =>
-        labels ? pick(labels[esKey] as string, labels[enKey] as string) : pick(fallbackEs, fallbackEn);
+    const label = (esKey: keyof LabelsData, enKey: keyof LabelsData, ptKey: keyof LabelsData, fallbackEs: string, fallbackEn: string, fallbackPt: string) =>
+        labels
+            ? pick(labels[esKey] as string, labels[enKey] as string, labels[ptKey] as string)
+            : pick(fallbackEs, fallbackEn, fallbackPt);
 
     const sortedSteps = steps.sort((a, b) => a.entry.order - b.entry.order);
 
@@ -115,12 +132,13 @@ export default function GuiaPage() {
                         <ShieldPawIcon className="w-10 h-10" />
                     </div>
                     <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight leading-tight">
-                        {hero ? pick(hero.titleEs, hero.titleEn) : pick('Guía de Adopción Responsable', 'Responsible Adoption Guide')}
+                        {hero ? pick(hero.titleEs, hero.titleEn, hero.titlePt) : pick('Guía de Adopción Responsable', 'Responsible Adoption Guide', 'Guia de Adoção Responsável')}
                     </h1>
                     <p className="text-teal-100 text-lg md:text-xl max-w-2xl mx-auto font-medium leading-relaxed">
-                        {hero ? pick(hero.subtitleEs, hero.subtitleEn) : pick(
+                        {hero ? pick(hero.subtitleEs, hero.subtitleEn, hero.subtitlePt) : pick(
                             '6 fases para garantizar que cada animal llegue al hogar correcto — y se quede ahí',
-                            '6 phases to ensure every animal reaches the right home — and stays there'
+                            '6 phases to ensure every animal reaches the right home — and stays there',
+                            '6 fases para garantir que cada animal chegue ao lar certo — e permaneça nele'
                         )}
                     </p>
                     {/* Quick jump pills */}
@@ -133,7 +151,7 @@ export default function GuiaPage() {
                                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-white/15 hover:bg-white/25 backdrop-blur-sm transition-all hover:scale-105"
                                 >
                                     <span>{step.entry.icon}</span>
-                                    <span className="hidden sm:inline">{pick(step.entry.titleEs, step.entry.titleEn).replace(/^Fase \d+:\s*/, '').replace(/^Phase \d+:\s*/, '').split('(')[0].trim()}</span>
+                                    <span className="hidden sm:inline">{pick(step.entry.titleEs, step.entry.titleEn, step.entry.titlePt).replace(/^Fase \d+:\s*/, '').replace(/^Phase \d+:\s*/, '').split('(')[0].trim()}</span>
                                 </button>
                             ))}
                         </div>
@@ -146,7 +164,7 @@ export default function GuiaPage() {
                 {sortedSteps.length > 0 && (
                     <section className="space-y-2">
                         <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-widest text-center mb-8">
-                            {label('processHeaderEs', 'processHeaderEn', 'Las 6 Fases', 'The 6 Phases')}
+                            {label('processHeaderEs', 'processHeaderEn', 'processHeaderPt', 'Las 6 Fases', 'The 6 Phases', 'As 6 Fases')}
                         </h2>
                         <div className="relative">
                             {/* Vertical timeline connector */}
@@ -172,14 +190,14 @@ export default function GuiaPage() {
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-center gap-2 mb-1">
                                                             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${colors.badge}`}>
-                                                                {label('stepPrefixEs', 'stepPrefixEn', 'Fase', 'Phase')} {i + 1}
+                                                                {label('stepPrefixEs', 'stepPrefixEn', 'stepPrefixPt', 'Fase', 'Phase', 'Fase')} {i + 1}
                                                             </span>
                                                         </div>
                                                         <h3 className="text-lg font-semibold text-stone-900 mb-1 leading-snug">
-                                                            {pick(step.entry.titleEs, step.entry.titleEn)}
+                                                            {pick(step.entry.titleEs, step.entry.titleEn, step.entry.titlePt)}
                                                         </h3>
                                                         <p className="text-stone-500 text-sm leading-relaxed">
-                                                            {pick(step.entry.descriptionEs, step.entry.descriptionEn)}
+                                                            {pick(step.entry.descriptionEs, step.entry.descriptionEn, step.entry.descriptionPt)}
                                                         </p>
                                                     </div>
                                                 </div>
@@ -195,14 +213,14 @@ export default function GuiaPage() {
                                                                     </span>
                                                                     <div className="flex-1 min-w-0">
                                                                         <p className="text-stone-700 text-sm leading-relaxed">
-                                                                            {pick(detail.textEs, detail.textEn)}
+                                                                            {pick(detail.textEs, detail.textEn, detail.textPt)}
                                                                         </p>
                                                                         {detail.linkUrl && (
                                                                             <Link
                                                                                 href={detail.linkUrl}
                                                                                 className={`inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg text-xs font-semibold ${colors.badge} hover:opacity-80 transition-opacity shadow-sm`}
                                                                             >
-                                                                                {pick(detail.linkTextEs || detail.linkUrl, detail.linkTextEn || detail.linkUrl)}
+                                                                                {pick(detail.linkTextEs || detail.linkUrl, detail.linkTextEn || detail.linkUrl, detail.linkTextPt || detail.linkUrl)}
                                                                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                                                                             </Link>
                                                                         )}
@@ -224,7 +242,7 @@ export default function GuiaPage() {
                 {/* Why Vetting Matters */}
                 <section className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6 md:p-8">
                     <h2 className="text-xl font-semibold text-stone-900 mb-6 text-center">
-                        {label('whyVetEs', 'whyVetEn', '¿Por qué verificar adoptantes?', 'Why Vet Adopters?')}
+                        {label('whyVetEs', 'whyVetEn', 'whyVetPt', '¿Por qué verificar adoptantes?', 'Why Vet Adopters?', 'Por que verificar adotantes?')}
                     </h2>
                     <div className="grid gap-4 md:grid-cols-2">
                         {benefits.length > 0
@@ -233,18 +251,18 @@ export default function GuiaPage() {
                                 .map((item) => (
                                     <div key={item.slug} className="flex gap-3 items-start p-3 rounded-xl bg-stone-50 hover:bg-teal-50 transition-colors group">
                                         <span className="text-xl flex-shrink-0 group-hover:scale-110 transition-transform">{item.entry.icon}</span>
-                                        <p className="text-stone-600 text-sm font-medium">{pick(item.entry.textEs, item.entry.textEn)}</p>
+                                        <p className="text-stone-600 text-sm font-medium">{pick(item.entry.textEs, item.entry.textEn, item.entry.textPt)}</p>
                                     </div>
                                 ))
                             : [
-                                { icon: '🛡️', es: 'Protege a los animales de adopciones irresponsables', en: 'Protect animals from irresponsible adoptions' },
-                                { icon: '🤝', es: 'Construye confianza en la comunidad de rescate', en: 'Build trust in the rescue community' },
-                                { icon: '📋', es: 'Mantiene un historial compartido entre refugios', en: 'Maintain shared history across shelters' },
-                                { icon: '⚠️', es: 'Alerta sobre adoptantes con advertencias previas', en: 'Flag adopters with previous warnings' },
+                                { icon: '🛡️', es: 'Protege a los animales de adopciones irresponsables', en: 'Protect animals from irresponsible adoptions', pt: 'Protege os animais de adoções irresponsáveis' },
+                                { icon: '🤝', es: 'Construye confianza en la comunidad de rescate', en: 'Build trust in the rescue community', pt: 'Constrói confiança na comunidade de resgate' },
+                                { icon: '📋', es: 'Mantiene un historial compartido entre refugios', en: 'Maintain shared history across shelters', pt: 'Mantém um histórico compartilhado entre abrigos' },
+                                { icon: '⚠️', es: 'Alerta sobre adoptantes con advertencias previas', en: 'Flag adopters with previous warnings', pt: 'Alerta sobre adotantes com advertências anteriores' },
                             ].map((item, i) => (
                                 <div key={i} className="flex gap-3 items-start p-3 rounded-xl bg-stone-50">
                                     <span className="text-xl flex-shrink-0">{item.icon}</span>
-                                    <p className="text-stone-600 text-sm font-medium">{pick(item.es, item.en)}</p>
+                                    <p className="text-stone-600 text-sm font-medium">{pick(item.es, item.en, item.pt)}</p>
                                 </div>
                             ))
                         }
@@ -257,20 +275,20 @@ export default function GuiaPage() {
                         <span className="text-3xl">🐾</span>
                     </div>
                     <h2 className="text-2xl md:text-3xl font-semibold text-stone-900">
-                        {hero ? pick(hero.ctaTextEs, hero.ctaTextEn) : pick('¿Listo para empezar?', 'Ready to start?')}
+                        {hero ? pick(hero.ctaTextEs, hero.ctaTextEn, hero.ctaTextPt) : pick('¿Listo para empezar?', 'Ready to start?', 'Pronto para começar?')}
                     </h2>
                     <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                         <Link
                             href={hero?.ctaUrl || '/'}
                             className="inline-flex items-center gap-2 bg-teal-600 text-white px-8 py-3.5 rounded-xl font-semibold hover:bg-teal-700 transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 transform"
                         >
-                            {label('ctaButtonEs', 'ctaButtonEn', 'Empezar a Verificar', 'Start Vetting')} →
+                            {label('ctaButtonEs', 'ctaButtonEn', 'ctaButtonPt', 'Empezar a Verificar', 'Start Vetting', 'Começar a Verificar')} →
                         </Link>
                         <Link
                             href="/guia/faq"
                             className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-stone-600 bg-stone-100 hover:bg-stone-200 transition-all"
                         >
-                            {label('faqHeaderEs', 'faqHeaderEn', 'Preguntas Frecuentes', 'FAQ')} →
+                            {label('faqHeaderEs', 'faqHeaderEn', 'faqHeaderPt', 'Preguntas Frecuentes', 'FAQ', 'Perguntas Frequentes')} →
                         </Link>
                     </div>
                 </section>

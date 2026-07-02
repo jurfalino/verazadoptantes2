@@ -171,24 +171,26 @@ test.describe('i18n Language Switching', () => {
         await page.goto('/');
         await dismissCountryBanner(page);
 
-        // The language toggle button shows current lang — click to switch
-        const langBtn = page.getByRole('button', { name: /Cambiar a Español|Switch to English/i });
+        // Language selector is a dropdown (EN / ES / PT). Open it, then pick a language.
+        const langBtn = page.getByTestId('language-switcher');
 
         if (await langBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-            const currentText = await langBtn.textContent();
-
-            // If currently EN, the search button should say "Search Records"
-            if (currentText?.includes('EN')) {
-                await expect(page.locator('button[type="submit"]')).toContainText(/Search/i);
-            }
-
-            // Click to switch language
+            // Switch to English → search button should read "Search"
             await langBtn.click();
+            await page.getByTestId('lang-option-en').click();
+            await expect(page.locator('button[type="submit"]')).toContainText(/Search/i, { timeout: 5000 });
 
-            // Wait for the page to re-render with new language
-            await expect(page.locator('button[type="submit"]')).toContainText(/Buscar|Search/i, { timeout: 5000 });
+            // Switch to Portuguese → search button should read "Buscar"
+            await langBtn.click();
+            await page.getByTestId('lang-option-pt').click();
+            await expect(page.locator('button[type="submit"]')).toContainText(/Buscar/i, { timeout: 5000 });
+
+            // Switch back to Spanish → also "Buscar"
+            await langBtn.click();
+            await page.getByTestId('lang-option-es').click();
+            await expect(page.locator('button[type="submit"]')).toContainText(/Buscar/i, { timeout: 5000 });
         } else {
-            // Language toggle not visible — skip gracefully
+            // Language selector not visible — skip gracefully
             test.skip();
         }
     });

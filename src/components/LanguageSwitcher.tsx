@@ -6,6 +6,7 @@ import { useState, useRef, useEffect } from 'react';
 const languages = [
     { id: 'en' as const, label: 'English', flag: '🇺🇸' },
     { id: 'es' as const, label: 'Español', flag: '🇦🇷' },
+    { id: 'pt' as const, label: 'Português', flag: '🇧🇷' },
 ];
 
 export function LanguageSwitcher() {
@@ -32,6 +33,7 @@ export function LanguageSwitcher() {
                 className="p-2 rounded-xl hover:bg-stone-200/50 transition-colors flex items-center gap-1"
                 title={t('nav.change_language')}
                 aria-label={t('nav.change_language')}
+                data-testid="language-switcher"
             >
                 <span className="text-lg">{currentLang.flag}</span>
                 <span className="text-xs font-semibold text-stone-500 uppercase">{currentLang.id}</span>
@@ -42,6 +44,7 @@ export function LanguageSwitcher() {
                     {languages.map((lang) => (
                         <button
                             key={lang.id}
+                            data-testid={`lang-option-${lang.id}`}
                             onClick={() => {
                                 setLocale(lang.id);
                                 setIsOpen(false);
