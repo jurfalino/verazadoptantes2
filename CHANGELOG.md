@@ -2,6 +2,38 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.24.0] - 2026-07-02
+
+### Added — contract-app speaks the sharer's language (es / en / pt-BR)
+
+The public contract/form/showcase mini-app is now multilingual. Language is a **property of the shared artifact**, set from the rescuer's UI language at share time, and it drives the **whole screen** (chrome + contract body + PDF) — never a mixed-language page.
+
+- **contract-app i18n** — new `i18n/` system (`useT()`, `?lang=`-resolved locale defaulting to es, Spanish fallback, `{var}` interpolation). All UI chrome localized across HomePage, Showcase, AnimalDetail, the 21-step PetShieldForm, ContractPage, Terms, and error states (~204 keys × 3, verified key-parity).
+- **Single-source contract body** — the ~5–6 page adoption contract was duplicated between the on-screen JSX and the PDF; extracted into one `contractContent.ts` (es/en/pt) consumed by both. The PDF ASCII-folds the shared text at render time, so screen and PDF can no longer drift.
+- **Locale threading** — `contract_invitations` gains a nullable `locale` column (migration 0053), stamped by `createContractInvitation()` from the sharer's locale and returned by `/api/contract/by-token`. Share URLs (contract, form, showcase) now carry `?lang=`; the contract-app also adopts the invite's stored locale as a backstop. Internal browse links propagate the language across navigations.
+
+**⚠️ Legal review pending:** the `en`/`pt` translations of the contract body, the data-consent clause, and the Terms & Conditions are **drafts pending human/legal review** and are flagged as such in the source. `es` remains authoritative. These ship to staging for in-context review; the translated legal text must not be promoted to production until signed off.
+
+## [2.23.1] - 2026-07-01
+
+### Changed — language selector drops country flags
+
+Country flags for languages are a UX anti-pattern once a language spans many countries (🇦🇷 for "Español" reads as *Argentine* Spanish to a Mexican or Spanish user). Dropped the flags from the nav language dropdown: the trigger now shows a globe icon + the language code (EN / ES / PT), and the menu lists plain language names (English / Español / Português) with the active-language checkmark. Cleaner and neutral as the language list grows.
+
+## [2.23.0] - 2026-07-01
+
+### Added — Portuguese (pt-BR) as a third language
+
+The app now speaks Brazilian Portuguese alongside Spanish and English. Full UI translation (~1,000 keys) plus the Adoption Guide and FAQ content, in the warm *você* register that mirrors the app's Argentine-Spanish tone.
+
+- **New locale `src/i18n/locales/pt.ts`** — every UI string translated to pt-BR, structurally cloned from `es.ts` so keys and interpolation placeholders stay identical (verified by a line-aligned integrity check: 0 key/placeholder drift). Missing keys fall back to Spanish, never a raw key.
+- **Plumbing** — `LanguageContext` now carries `pt` in the `Locale` type, the dictionaries map, and browser auto-detection (a `pt-*` browser lands on Portuguese).
+- **Guide & FAQ** — `guide-data.ts` extended with `*Pt` fields across steps, FAQ, hero, benefits, and labels; the `/guia` and `/guia/faq` readers are now locale-aware (3-way `pick`/`label`, pt→es fallback).
+
+### Fixed — nav language selector is now a real EN / ES / PT dropdown
+
+The nav's language control was a hardcoded 2-way es↔en toggle in `UserMenu`, and the `LanguageSwitcher` dropdown component was mounted nowhere (dead code). Wired the dropdown into the nav (both signed-in and signed-out states) so Portuguese is reachable, replacing the toggle. Added `data-testid`s and updated the i18n e2e test to drive the dropdown (EN → PT → ES).
+
 ## [2.22.20] - 2026-06-27
 
 ### Added — walkthrough activation step ("now your turn")

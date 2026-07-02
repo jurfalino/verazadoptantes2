@@ -457,6 +457,10 @@ export const contractInvitations = sqliteTable("contract_invitations", {
     createdAt: integer("created_at").notNull(),
     usedAt: integer("used_at"),
     expiresAt: integer("expires_at"),
+    // Language the sharing rescuer was using when they issued the invite.
+    // Drives the contract-app's whole-screen language (chrome + contract body).
+    // Nullable for legacy rows; the contract-app falls back to 'es'.
+    locale: text("locale"),
 }, (table) => ({
     animalIdx: index("idx_contract_inv_animal").on(table.animalId),
 }));

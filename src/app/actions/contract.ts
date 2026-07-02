@@ -36,6 +36,9 @@ const INVITATION_TTL_DAYS = 30;
 export async function createContractInvitation(
     animalId: string,
     adopterId: string,
+    // The sharing rescuer's current UI language, captured client-side at share
+    // time. Persisted so the contract-app renders the whole flow in it.
+    locale?: string,
 ): Promise<CreateInvitationResult> {
     try {
         const session = await auth();
@@ -79,6 +82,7 @@ export async function createContractInvitation(
 
         const token = crypto.randomUUID();
         const expiresAt = now + INVITATION_TTL_DAYS * 24 * 3600;
+        const validLocale = locale === 'es' || locale === 'en' || locale === 'pt' ? locale : null;
 
         await db.insert(contractInvitations).values({
             token,
@@ -88,11 +92,14 @@ export async function createContractInvitation(
             createdAt: now,
             usedAt: null,
             expiresAt,
+            locale: validLocale,
         });
 
         const { getContractBaseUrl } = await import('@/lib/contractUrl');
         const base = (await getContractBaseUrl()).replace(/\/+$/, '');
-        const url = `${base}/c/${token}`;
+        // Stamp ?lang= so the contract-app has the language immediately (before
+        // its by-token fetch resolves); the persisted column is the backstop.
+        const url = validLocale ? `${base}/c/${token}?lang=${validLocale}` : `${base}/c/${token}`;
 
         logger.info('Contract invitation created', { animalId, adopterId, createdBy: userEmail });
         return { success: true, token, url };

@@ -11,8 +11,10 @@ type FaqItem = {
         question: string;
         questionEs: string;
         questionEn: string;
+        questionPt: string;
         answerEs: string;
         answerEn: string;
+        answerPt: string;
         order: number;
     };
 };
@@ -27,6 +29,7 @@ export default function FaqPage() {
     const { locale, t } = useLanguage();
     const { data: session } = useSession();
     const isEnglish = locale === 'en';
+    const isPortuguese = locale === 'pt';
 
     const [faq, setFaq] = useState<FaqItem[]>([]);
     const [labels, setLabels] = useState<LabelsData | null>(null);
@@ -42,11 +45,11 @@ export default function FaqPage() {
             .catch((err) => console.error('[FAQ] Failed to load content:', err));
     }, [session]);
 
-    const pick = <T,>(es: T, en: T) => (isEnglish ? en : es);
+    const pick = <T,>(es: T, en: T, pt?: T) => (isEnglish ? en : isPortuguese ? (pt ?? es) : es);
 
     const header = labels
-        ? pick(labels.faqHeaderEs, labels.faqHeaderEn)
-        : pick('Preguntas Frecuentes', 'Frequently Asked Questions');
+        ? pick(labels.faqHeaderEs, labels.faqHeaderEn, labels.faqHeaderPt)
+        : pick('Preguntas Frecuentes', 'Frequently Asked Questions', 'Perguntas Frequentes');
 
     return (
         <main className="min-h-screen bg-stone-50 py-12 px-4">
@@ -62,7 +65,8 @@ export default function FaqPage() {
                     <p className="text-stone-500 text-sm">
                         {pick(
                             'Todo lo que necesitás saber sobre el proceso de adopción',
-                            'Everything you need to know about the adoption process'
+                            'Everything you need to know about the adoption process',
+                            'Tudo o que você precisa saber sobre o processo de adoção'
                         )}
                     </p>
                 </header>
@@ -84,7 +88,7 @@ export default function FaqPage() {
                                             className="w-full px-5 py-4 text-left flex items-center justify-between gap-3 hover:bg-stone-50 transition-colors"
                                         >
                                             <span className="font-semibold text-stone-900 text-sm leading-snug">
-                                                {pick(item.entry.questionEs, item.entry.questionEn)}
+                                                {pick(item.entry.questionEs, item.entry.questionEn, item.entry.questionPt)}
                                             </span>
                                             <span className={`text-stone-500 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}>
                                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
@@ -92,7 +96,7 @@ export default function FaqPage() {
                                         </button>
                                         {isExpanded && (
                                             <div className="px-5 pb-4 text-stone-600 text-sm leading-relaxed border-t border-stone-100 pt-3">
-                                                {pick(item.entry.answerEs, item.entry.answerEn)}
+                                                {pick(item.entry.answerEs, item.entry.answerEn, item.entry.answerPt)}
                                             </div>
                                         )}
                                     </div>
@@ -107,7 +111,7 @@ export default function FaqPage() {
                         href="/guia"
                         className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors text-sm"
                     >
-                        ← {pick('Volver a la Guía', 'Back to Guide')}
+                        ← {pick('Volver a la Guía', 'Back to Guide', 'Voltar ao Guia')}
                     </Link>
                     <Link
                         href="/"

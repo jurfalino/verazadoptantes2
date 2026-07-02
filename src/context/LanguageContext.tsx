@@ -3,11 +3,12 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { en } from '@/i18n/locales/en';
 import { es } from '@/i18n/locales/es';
+import { pt } from '@/i18n/locales/pt';
 
-type Locale = 'en' | 'es';
+type Locale = 'en' | 'es' | 'pt';
 type Dictionary = typeof en;
 
-const dictionaries: Record<Locale, Dictionary> = { en, es };
+const dictionaries: Record<Locale, Dictionary> = { en, es, pt };
 const DEFAULT_LOCALE: Locale = 'es'; // Spanish as default
 
 // Helper to get initial locale synchronously (avoids flash)
@@ -15,13 +16,13 @@ function getInitialLocale(): Locale {
     if (typeof window === 'undefined') return DEFAULT_LOCALE;
 
     const saved = localStorage.getItem('app-locale') as Locale;
-    if (saved && (saved === 'en' || saved === 'es')) {
+    if (saved && (saved === 'en' || saved === 'es' || saved === 'pt')) {
         return saved;
     }
 
     // Auto-detect from browser, default to Spanish
     const browserLang = navigator.language.split('-')[0];
-    const detected: Locale = browserLang === 'en' ? 'en' : DEFAULT_LOCALE;
+    const detected: Locale = browserLang === 'en' ? 'en' : browserLang === 'pt' ? 'pt' : DEFAULT_LOCALE;
     // Persist so it survives refreshes and re-renders
     localStorage.setItem('app-locale', detected);
     return detected;

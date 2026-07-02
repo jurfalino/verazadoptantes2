@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import AnimalCard, { type AnimalSummary } from './components/AnimalCard'
+import { useT, localizedHref } from './i18n/LocaleContext'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 const FEATURED_COUNT = 6
@@ -21,6 +22,8 @@ interface AllResponse {
  * for first-impression / discovery; /all is for browsing.
  */
 export default function HomePage() {
+    const { t, locale } = useT()
+    const allHref = localizedHref('/all', locale)
     const [animals, setAnimals] = useState<AnimalSummary[] | null>(null)
     const [total, setTotal] = useState<number>(0)
     const [loading, setLoading] = useState(true)
@@ -54,12 +57,12 @@ export default function HomePage() {
         <main className="ps-home">
             {/* ── Hero ─────────────────────────────────────────── */}
             <section className="ps-home-hero">
-                <h1 className="ps-home-hero__title">Encontrá a tu próxima compañía</h1>
+                <h1 className="ps-home-hero__title">{t('home.hero_title')}</h1>
                 <p className="ps-home-hero__sub">
-                    Animales rescatados que buscan un hogar responsable.
+                    {t('home.hero_sub')}
                 </p>
-                <a href="/all" className="ps-btn ps-btn--primary ps-home-hero__cta">
-                    Ver animales en adopción
+                <a href={allHref} className="ps-btn ps-btn--primary ps-home-hero__cta">
+                    {t('home.hero_cta')}
                     <span aria-hidden>→</span>
                 </a>
             </section>
@@ -71,13 +74,13 @@ export default function HomePage() {
                 </section>
             ) : showFeatured ? (
                 <section className="ps-home-section">
-                    <p className="ps-home-section__eyebrow">Algunos que buscan hogar</p>
+                    <p className="ps-home-section__eyebrow">{t('home.featured_eyebrow')}</p>
                     <div className="ps-showcase-grid ps-home-featured">
                         {animals!.map((a) => <AnimalCard key={a.id} animal={a} />)}
                     </div>
                     {moreCount > 0 && (
-                        <a href="/all" className="ps-home-featured__more">
-                            Ver los {total} animales disponibles
+                        <a href={allHref} className="ps-home-featured__more">
+                            {t('home.featured_more', { total })}
                             <span aria-hidden>→</span>
                         </a>
                     )}
@@ -86,22 +89,22 @@ export default function HomePage() {
 
             {/* ── How it works ─────────────────────────────────── */}
             <section className="ps-home-section ps-home-steps-section">
-                <p className="ps-home-section__eyebrow">Cómo adoptamos acá</p>
+                <p className="ps-home-section__eyebrow">{t('home.steps_eyebrow')}</p>
                 <ol className="ps-home-steps">
                     <li className="ps-home-step">
                         <div className="ps-home-step__num" aria-hidden>1</div>
-                        <h3 className="ps-home-step__title">Conocé</h3>
-                        <p className="ps-home-step__desc">Mirá los animales en adopción y sus historias.</p>
+                        <h3 className="ps-home-step__title">{t('home.step1_title')}</h3>
+                        <p className="ps-home-step__desc">{t('home.step1_desc')}</p>
                     </li>
                     <li className="ps-home-step">
                         <div className="ps-home-step__num" aria-hidden>2</div>
-                        <h3 className="ps-home-step__title">Postulate</h3>
-                        <p className="ps-home-step__desc">Completá un formulario corto sobre vos y tu casa.</p>
+                        <h3 className="ps-home-step__title">{t('home.step2_title')}</h3>
+                        <p className="ps-home-step__desc">{t('home.step2_desc')}</p>
                     </li>
                     <li className="ps-home-step">
                         <div className="ps-home-step__num" aria-hidden>3</div>
-                        <h3 className="ps-home-step__title">Te contactan</h3>
-                        <p className="ps-home-step__desc">La organización rescatista te escribe para coordinar.</p>
+                        <h3 className="ps-home-step__title">{t('home.step3_title')}</h3>
+                        <p className="ps-home-step__desc">{t('home.step3_desc')}</p>
                     </li>
                 </ol>
             </section>
@@ -109,11 +112,10 @@ export default function HomePage() {
             {/* ── Closing CTA / mission ────────────────────────── */}
             <section className="ps-home-closing">
                 <p className="ps-home-closing__text">
-                    Adoptar es un compromiso de años. Por eso pedimos un formulario corto antes de
-                    conectarte con la organización rescatista — para que el match sea para toda la vida.
+                    {t('home.closing_text')}
                 </p>
-                <a href="/all" className="ps-btn ps-btn--primary ps-home-closing__cta">
-                    Ver todos los animales
+                <a href={allHref} className="ps-btn ps-btn--primary ps-home-closing__cta">
+                    {t('home.closing_cta')}
                     <span aria-hidden>→</span>
                 </a>
             </section>
