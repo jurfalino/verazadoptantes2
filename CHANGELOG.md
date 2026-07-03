@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.24.2] - 2026-07-03
+
+### Added — degradation-aware error message on search failures
+
+When a search fails in a way that could be an upstream platform outage (not a validation error), the app now does a fast, browser-direct probe of the provider's public status page. If an incident is active, the error toast reads *"Interrupción temporal del servicio — Nuestro proveedor está sufriendo una degradación…"* (es/en/pt) instead of a bare error id; if the provider is healthy, the normal error shows — so a real app bug is never masked as a service disruption. The errorId is preserved either way.
+
+- `src/lib/serviceStatus.ts` — browser-direct, fail-open status probe (never throws, 2.5s timeout, 60s `sessionStorage` cache). Runs client-side against the independently-hosted status page on purpose: during a real outage our own edge may be the thing that's down.
+- `src/lib/notifyError.ts` — reusable `notifyRequestError` helper; upgrades the toast copy only when the provider is genuinely degraded.
+- Wired into both `SearchSection` search catch blocks; `errors.service_degraded_*` keys in all three locales.
+
 ## [2.24.1] - 2026-07-02
 
 ### Fixed — Portuguese users no longer fall through to English
