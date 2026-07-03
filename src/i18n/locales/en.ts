@@ -302,6 +302,8 @@ export const en = {
         delete_request_failed: 'Failed to send deletion request.',
         set_profile_pic_failed: 'Failed to set profile picture.',
         search_failed: 'An error occurred while searching. Please try again.',
+        service_degraded_title: 'Temporary service disruption',
+        service_degraded_body: 'Our service provider is experiencing a degradation and some features may not work. Your data is safe. Please try again in a few minutes.',
         submit_report_failed: 'Failed to submit report.',
         submit_request_failed: 'Failed to submit request.',
         report_error: 'Error submitting report.',

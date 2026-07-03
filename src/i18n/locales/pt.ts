@@ -301,6 +301,8 @@ export const pt = {
         delete_request_failed: 'Não foi possível enviar a solicitação de exclusão.',
         set_profile_pic_failed: 'Não foi possível definir a foto de perfil.',
         search_failed: 'Ocorreu um erro na busca. Tente novamente.',
+        service_degraded_title: 'Interrupção temporária do serviço',
+        service_degraded_body: 'Nosso provedor está enfrentando uma degradação nos serviços e algumas funções podem falhar. Seus dados estão seguros. Tente novamente em alguns minutos.',
         submit_report_failed: 'Não foi possível enviar o relato.',
         submit_request_failed: 'Não foi possível enviar a solicitação.',
         report_error: 'Erro ao enviar o relato.',

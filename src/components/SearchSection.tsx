@@ -10,7 +10,7 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useShowToast } from '@/components/ui/Toast';
-import { extractErrorId } from '@/lib/errorUtils';
+import { notifyRequestError } from '@/lib/notifyError';
 import { isPlaceholderPhone } from '@/lib/tokenizer';
 import { zarazTrack } from '@/lib/zaraz';
 import WhatIsBuenAdoptante from '@/components/WhatIsBuenAdoptante';
@@ -64,7 +64,10 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
             }
         } catch (err) {
             console.error(err);
-            toast.error(t('toast.search_failed_title'), t('errors.search_failed'), extractErrorId(err));
+            await notifyRequestError(toast.error, t, err, {
+                title: t('toast.search_failed_title'),
+                message: t('errors.search_failed'),
+            });
         } finally {
             setLoading(false);
         }
@@ -205,7 +208,10 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                 setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
             }
         } catch (err) {
-            toast.error(t('toast.search_failed_title'), t('errors.search_failed'), extractErrorId(err));
+            await notifyRequestError(toast.error, t, err, {
+                title: t('toast.search_failed_title'),
+                message: t('errors.search_failed'),
+            });
         } finally {
             setLoading(false);
         }

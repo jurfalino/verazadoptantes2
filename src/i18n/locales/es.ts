@@ -301,6 +301,8 @@ export const es = {
         delete_request_failed: 'No se pudo enviar la solicitud de eliminación.',
         set_profile_pic_failed: 'No se pudo establecer la foto de perfil.',
         search_failed: 'Ocurrió un error en la búsqueda. Probá de nuevo.',
+        service_degraded_title: 'Interrupción temporal del servicio',
+        service_degraded_body: 'Nuestro proveedor está sufriendo una degradación en sus servicios y algunas funciones pueden fallar. Tus datos están a salvo. Probá de nuevo en unos minutos.',
         submit_report_failed: 'No se pudo enviar el reporte.',
         submit_request_failed: 'No se pudo enviar la solicitud.',
         report_error: 'Error al enviar el reporte.',
