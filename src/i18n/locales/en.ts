@@ -1250,7 +1250,6 @@ export const en = {
     },
     myAnimals: {
         record_adoption: 'Record adoption',
-        give_for_adoption: 'Give for adoption',
         move_to_foster: 'Move to another foster',
         pick_adopter_title: 'Record adoption',
         pick_foster_title: 'Move to another foster',

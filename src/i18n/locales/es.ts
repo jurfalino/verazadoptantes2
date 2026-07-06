@@ -1255,7 +1255,6 @@ export const es = {
     },
     myAnimals: {
         record_adoption: 'Registrar adopción',
-        give_for_adoption: 'Dar en adopción',
         move_to_foster: 'Mover a otro tránsito',
         pick_adopter_title: 'Registrar adopción',
         pick_foster_title: 'Mover a otro tránsito',

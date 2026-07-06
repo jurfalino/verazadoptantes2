@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.24.4-1] - 2026-07-06
+
+### Changed — unify the adoption CTA label
+
+The foster card's "Dar en adopción" button and the available card's "Registrar adopción" button open the exact same record-a-permanent-adoption flow; they now share the canonical **"Registrar adopción"** label. Removed the orphaned `myAnimals.give_for_adoption` i18n key (es/en/pt).
+
 ## [2.24.4] - 2026-07-05
 
 ### Fixed — fostered animals no longer vanish from /my-animals

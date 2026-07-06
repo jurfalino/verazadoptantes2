@@ -487,7 +487,7 @@ export default function MyAnimalsPage() {
                                                     data-testid={`record-adoption-${animal.id}`}
                                                 >
                                                     <span aria-hidden>🏠</span>
-                                                    {t('myAnimals.give_for_adoption') || 'Dar en adopción'}
+                                                    {t('myAnimals.record_adoption') || 'Registrar adopción'}
                                                 </button>
                                                 <button
                                                     type="button"

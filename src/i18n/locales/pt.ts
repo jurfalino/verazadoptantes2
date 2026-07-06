@@ -1255,7 +1255,6 @@ export const pt = {
     },
     myAnimals: {
         record_adoption: 'Registrar adoção',
-        give_for_adoption: 'Dar para adoção',
         move_to_foster: 'Mover para outro acolhimento',
         pick_adopter_title: 'Registrar adoção',
         pick_foster_title: 'Mover para outro acolhimento',
