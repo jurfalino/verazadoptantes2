@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.24.4-2] - 2026-07-06
+
+### Changed — consistent card navigation in the /my-animals Available tab
+
+A fostered animal's card used to open the foster home's profile (it has an adopterId) while a plain available animal's card opened the edit form — two behaviors in the same tab. Foster cards now open the animal edit form like available animals; the foster home stays one tap away via the "En tránsito con {home}" badge. The Adopted tab is unchanged (cards → adopter profile).
+
 ## [2.24.4-1] - 2026-07-06
 
 ### Changed — unify the adoption CTA label

@@ -293,7 +293,7 @@ export default function MyAnimalsPage() {
                                 className="bg-white rounded-xl shadow-sm border border-stone-200 hover:shadow-md hover:border-teal-200 transition-all relative"
                             >
                                 {/* Image — overflow-hidden only here so ShareMenu can overflow the card */}
-                                <Link href={animal.adopterId ? `/adopter/${animal.adopterId}` : `/my-animals/new?edit=${animal.id}`} className="block">
+                                <Link href={(animal.adopterId && !isFoster) ? `/adopter/${animal.adopterId}` : `/my-animals/new?edit=${animal.id}`} className="block">
                                     <div className="aspect-video bg-stone-100 relative overflow-hidden rounded-t-xl">
                                         {animal.images && animal.images.length > 0 ? (
                                             <img
@@ -327,7 +327,7 @@ export default function MyAnimalsPage() {
 
                                 {/* Content */}
                                 <div className="p-4">
-                                    <Link href={animal.adopterId ? `/adopter/${animal.adopterId}` : `/my-animals/new?edit=${animal.id}`} className="block">
+                                    <Link href={(animal.adopterId && !isFoster) ? `/adopter/${animal.adopterId}` : `/my-animals/new?edit=${animal.id}`} className="block">
                                         <h3 className="font-semibold text-stone-900 text-lg mb-1 hover:text-teal-700 transition-colors cursor-pointer">
                                             {animal.animalName || t('adoption.unnamed') || 'Unnamed'}
                                         </h3>
