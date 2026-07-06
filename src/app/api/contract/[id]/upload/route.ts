@@ -44,15 +44,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const contractUrl = await uploadToR2(key, arrayBuffer, contentType);
         logger.info('Contract document uploaded via retry', { animalId, key, sizeKB: Math.round(arrayBuffer.byteLength / 1024) });
 
-        // Update the adoption record with the contract URL
+        // Store the contract URL on the animal's active placement (contract
+        // screenshot lives on the placement in the normalized model; the
+        // adoptions view surfaces it as `comments`). This is a retry after
+        // submit, so an active adoption placement should already exist.
         const { getDb } = await import('@/lib/db');
         const db = await getDb();
         if (db) {
-            const { adoptions } = await import('@/db/schema');
-            const { eq } = await import('drizzle-orm');
-            await db.update(adoptions).set({
-                comments: JSON.stringify({ contractScreenshot: contractUrl }),
-            }).where(eq(adoptions.id, animalId));
+            const { placements } = await import('@/db/schema');
+            const { eq, and, isNull } = await import('drizzle-orm');
+            const active = await db.select().from(placements).where(and(eq(placements.animalId, animalId), isNull(placements.endedAt))).get();
+            if (active) {
+                await db.update(placements).set({
+                    comments: JSON.stringify({ contractScreenshot: contractUrl }),
+                }).where(eq(placements.id, active.id));
+            }
         }
 
         return withCors(NextResponse.json({ success: true, contractUrl }), origin);

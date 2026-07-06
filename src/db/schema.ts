@@ -130,6 +130,93 @@ export const adoptions = sqliteTable("adoptions", {
     microchip: text("microchip"), // Microchip number if available
 });
 
+// ============================================================================
+// NORMALIZED MODEL (replaces the overloaded `adoptions` table)
+// See .agents/plans/animals-placements-normalization.md. `adoptions` conflated
+// three concepts; these split them cleanly:
+//   - animals        : physical identity + inventory status
+//   - placements     : custody spans (animal↔adopter, foster/adoption, start/end)
+//   - adopterEvents  : adopter-scoped activity (observation, request, follow-up, return)
+// Migration preserves ids: each old adoptions.id becomes an animals.id (for
+// available/foster/adoption rows) OR an adopter_events.id (for the 4 event types),
+// so existing refs (contractInvitations.animalId, adopterImages.adoptionId,
+// formSubmissions.selectedAnimalId, piiAccessRequests.activityId) keep resolving.
+// ============================================================================
+
+// Physical animal identity + inventory status. One row per animal.
+// Current placement is DERIVED (placements WHERE animalId=? AND endedAt IS NULL) —
+// no denormalized pointer (avoids a mutable-sync obligation).
+export const animals = sqliteTable("animals", {
+    id: text("id").primaryKey(), // Preserves the originating adoptions.id
+    name: text("name"), // was animal_name
+    species: text("species"),
+    details: text("details"),
+    age: text("age"), // legacy free-text; prefer estimatedBirthDate
+    estimatedBirthDate: integer("estimated_birth_date", { mode: "timestamp" }),
+    neutered: integer("neutered"),
+    sex: text("sex"),
+    color: text("color"),
+    microchip: text("microchip"),
+    sourceUrl: text("source_url"), // Original post/source for the animal
+    addedBy: text("added_by").default("anonymous"), // Rescuer who owns it
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    deletedAt: integer("deleted_at", { mode: "timestamp" }), // Soft delete
+}, (table) => ({
+    addedByIdx: index("idx_animals_added_by").on(table.addedBy),
+}));
+
+// Custody spans: an animal held by an adopter as foster or adoption. Active
+// placement has endedAt IS NULL; ended rows ARE the custody history (subsumes the
+// interim animal_placements ledger). A move closes the prior span (set endedAt)
+// and inserts a new active one.
+export const placements = sqliteTable("placements", {
+    id: text("id").primaryKey(), // NEW id (not preserved from adoptions)
+    animalId: text("animal_id").notNull(), // → animals.id
+    adopterId: text("adopter_id").notNull(), // → adopters.id (the foster home / adopter)
+    recordType: text("record_type").notNull(), // 'foster' | 'adoption'
+    startedAt: integer("started_at", { mode: "timestamp" }), // was adoptions.date
+    endedAt: integer("ended_at", { mode: "timestamp" }), // NULL = active/current
+    rating: integer("rating"),
+    status: text("status"),
+    deliveredToHome: integer("delivered_to_home"),
+    verifiedAddress: text("verified_address"),
+    identityVerified: integer("identity_verified"),
+    onBehalfOf: text("on_behalf_of"),
+    comments: text("comments"), // contract screenshot JSON etc.
+    sourceUrl: text("source_url"),
+    recordedBy: text("recorded_by").default("anonymous"),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+    animalIdx: index("idx_placements_animal").on(table.animalId),
+    adopterIdx: index("idx_placements_adopter").on(table.adopterId),
+    activeIdx: index("idx_placements_active").on(table.animalId, table.endedAt),
+}));
+
+// Adopter-scoped activity that is NOT a custody placement: observations and
+// adoption requests (no specific animal) + follow-ups / returns (reference a prior
+// placement/animal). Preserves the originating adoptions.id.
+export const adopterEvents = sqliteTable("adopter_events", {
+    id: text("id").primaryKey(), // Preserves the originating adoptions.id
+    adopterId: text("adopter_id").notNull(),
+    eventType: text("event_type").notNull(), // 'observation' | 'adoption_request' | 'follow_up' | 'returned_pet'
+    animalId: text("animal_id"), // NULL for observation/adoption_request
+    placementId: text("placement_id"), // NULL unless follow_up/returned_pet references a placement
+    animalName: text("animal_name"), // denormalized name for follow_up/returned_pet (references an animal, possibly not in inventory)
+    species: text("species"), // for adoption_request
+    status: text("status"), // legacy free-text status carried from adoptions (vestigial, never filtered)
+    rating: integer("rating"),
+    details: text("details"),
+    date: integer("date", { mode: "timestamp" }),
+    onBehalfOf: text("on_behalf_of"),
+    sourceUrl: text("source_url"),
+    recordedBy: text("recorded_by").default("anonymous"),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+    adopterIdx: index("idx_events_adopter").on(table.adopterId),
+    animalIdx: index("idx_events_animal").on(table.animalId),
+}));
+
 // Adopter Stats - Track analytics events (search hits, profile views)
 // Note: adoption/request counts come from the adoptions table, not from stats events
 export const adopterStats = sqliteTable("adopter_stats", {

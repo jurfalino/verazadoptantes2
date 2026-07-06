@@ -4,6 +4,7 @@ import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, adopt
 import { eq, or, and, inArray } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { getDb } from './_db';
+import { reassignAdopterRecords } from './_recordWrite';
 import { extractTokens, computeTokenHash, normalizeText, extractPhones, extractEmails, extractSocials, type Token } from '@/lib/tokenizer';
 import { normalizeConfidence, confidenceBand, fuzzyNameScore, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 import { deserializeContactEntries } from '@/lib/contactEntries';
@@ -118,11 +119,9 @@ export async function mergeAdopters(
 
         const mergeDetails: Record<string, number> = {};
 
-        // 1. Re-point adoptions
-        const movedAdoptions = await db.update(adoptions)
-            .set({ adopterId: primaryId })
-            .where(eq(adoptions.adopterId, secondaryId));
-        mergeDetails.adoptions = movedAdoptions?.rowsAffected || 0;
+        // 1. Re-point adoptions (placements + adopter_events → normalized tables)
+        const movedCount = await reassignAdopterRecords(db, secondaryId, primaryId);
+        mergeDetails.adoptions = movedCount;
 
         // 2. Re-point images
         const movedImages = await db.update(adopterImages)

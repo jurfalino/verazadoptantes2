@@ -3,6 +3,7 @@
 import { formSubmissions, adoptions } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
+import { insertRecord } from './_recordWrite';
 import { logger } from '@/lib/logger';
 
 // ── Human-readable label helpers ──────────────────────────────────
@@ -204,17 +205,15 @@ export async function linkFormSubmissionToAdopter(submissionId: string, adopterI
                 }).from(formSubmissions).where(eq(formSubmissions.id, submissionId)).get();
 
                 if (formRow) {
-                    await db.insert(adoptions).values({
-                        id: crypto.randomUUID(),
+                    await insertRecord(db, {
                         adopterId,
                         recordType: 'adoption_request',
                         species: formRow.species,
                         status: 'pending',
                         details: buildDetailedDescription(formRow) || 'Solicitud de adopción',
                         sourceUrl,
-                        addedBy: currentUser,
                         date: formRow.createdAt,
-                    });
+                    }, currentUser);
                 }
             }
         } catch (adoptionErr) {

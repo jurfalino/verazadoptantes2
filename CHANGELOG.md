@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.24.3] - 2026-07-05
+
+### Changed — normalize the `adoptions` table into animals / placements / adopter_events (internal, no user-visible change)
+
+Split the overloaded `adoptions` table, which conflated three concepts (animal identity, adopter↔animal custody, and adopter-scoped events), into a clean normalized model. This is the "expand + transitional view" phase: the normalized tables are now the source of truth for all writes, while reads keep working unchanged through a compatibility view. **Behavior is externally identical** — the view reconstructs the old row shape byte-for-byte.
+
+- New tables `animals` (identity + status), `placements` (custody spans; active = `ended_at IS NULL`, ended rows are custody history), `adopter_events` (observation / adoption_request / follow_up / returned_pet). Migrations `0054` (create), `0055` (id-preserving backfill), `0056` (drop `adoptions` table → replace with a read-only reconstruction VIEW).
+- All 14 write sites cut over to the normalized tables via a single adapter `src/app/actions/_recordWrite.ts` (`insertRecord` / `updateRecord` / `deleteRecordById` / `deleteAdopterRecords` / `reassignAdopterRecords`), reusing `src/domain/placements.ts` `deriveEndedPlacement` for placement transitions. Reads are unchanged (they hit the `adoptions` view).
+- Ids preserved across the split (old `adoptions.id` → `animals.id` or `adopter_events.id`), so `contractInvitations.animalId`, `adopterImages.adoptionId`, `formSubmissions.selectedAnimalId`, and `piiAccessRequests.activityId` keep resolving. `tests/seed.sql` + the `contract-link` / `adopter` E2E specs rewritten to seed the normalized tables. Parity harness at `scripts/parity-check-normalization.sql`. Full plan: `.agents/plans/animals-placements-normalization.md`.
+
 ## [2.24.2] - 2026-07-03
 
 ### Added — degradation-aware error message on search failures

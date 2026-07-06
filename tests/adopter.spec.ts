@@ -266,11 +266,12 @@ test.describe('Adopter Profile', () => {
         const isNullish = (v: unknown): boolean =>
             v === null || v === undefined || v === 'null' || v === '';
 
-        // 1. Seed an available animal owned by the test user. INSERT OR REPLACE
-        //    so a prior run that didn't clean up doesn't break this run.
+        // 1. Seed an available animal owned by the test user. Normalized model:
+        //    an available animal is an animals row with no active placement (the
+        //    adoptions compat view derives adopter_id NULL, record_type 'available').
         execD1(
-            `INSERT OR REPLACE INTO adoptions (id, adopter_id, animal_name, species, details, status, record_type, date, added_by) ` +
-            `VALUES ('${animalId}', NULL, '${animalName}', 'dog', 'E2E available→adopted fixture', NULL, 'available', strftime('%s','now'), '${FIXTURE_OWNER}')`,
+            `INSERT OR REPLACE INTO animals (id, name, species, details, added_by, created_at, updated_at) ` +
+            `VALUES ('${animalId}', '${animalName}', 'dog', 'E2E available→adopted fixture', '${FIXTURE_OWNER}', strftime('%s','now'), strftime('%s','now'))`,
         );
 
         try {
@@ -325,8 +326,9 @@ test.describe('Adopter Profile', () => {
             ));
             expect(stillAvailableRows).toHaveLength(0);
         } finally {
-            // Clean up the fixture row regardless of test outcome.
-            execD1(`DELETE FROM adoptions WHERE id = '${animalId}'`);
+            // Clean up the fixture (normalized tables — adoptions is a view).
+            execD1(`DELETE FROM placements WHERE animal_id = '${animalId}'`);
+            execD1(`DELETE FROM animals WHERE id = '${animalId}'`);
         }
     });
 });

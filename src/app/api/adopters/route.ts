@@ -2,7 +2,7 @@ export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { adopters, adopterFlags, adopterImages, adoptions } from '@/db/schema';
+import { adopters, adopterFlags, adopterImages } from '@/db/schema';
 import { eq, like, or, and, isNull, type InferSelectModel } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
@@ -489,9 +489,8 @@ export async function POST(request: Request) {
             if (notes && adoptionRecordType === 'observation') detailsParts.push(notes);
             if (contactInfoStr) detailsParts.push(`Contact: ${contactInfoStr}`);
 
-            adoptionId = crypto.randomUUID();
-            await db.insert(adoptions).values({
-                id: adoptionId,
+            const { insertRecord } = await import('@/app/actions/_recordWrite');
+            adoptionId = await insertRecord(db, {
                 adopterId: newId,
                 // v2.19.52: was `|| 'Unknown'` — coerced empty/missing names
                 // to a literal English string regardless of the user's
@@ -501,12 +500,11 @@ export async function POST(request: Request) {
                 species: adoption.species || 'other',
                 status: 'completed',
                 rating: adoption.rating || 2,
-                addedBy: session.user.email || 'anonymous',
                 recordType: adoptionRecordType,
                 date: adoption.date ? new Date(adoption.date) : new Date(),
                 sourceUrl: sourceUrl || null,
                 details: detailsParts.length > 0 ? detailsParts.join('\n') : null
-            });
+            }, session.user.email || 'anonymous');
 
             // Link all imported media to this adoption record
             if (savedImageCount > 0) {
@@ -528,16 +526,15 @@ export async function POST(request: Request) {
         // (if any) was not itself an observation. Replaces the deprecated adopter.notes
         // write. v2.12.1-28.
         if (notes && (!adoption || (adoption.recordType || 'adoption') !== 'observation')) {
-            await db.insert(adoptions).values({
-                id: crypto.randomUUID(),
+            const { insertRecord } = await import('@/app/actions/_recordWrite');
+            await insertRecord(db, {
                 adopterId: newId,
                 details: notes,
                 status: null,
-                addedBy: session.user.email || 'anonymous',
                 recordType: 'observation',
                 date: new Date(),
                 sourceUrl: sourceUrl || null,
-            });
+            }, session.user.email || 'anonymous');
         }
 
         logger.info('Adopter create: complete', {

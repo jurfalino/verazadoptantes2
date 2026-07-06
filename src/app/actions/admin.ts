@@ -1,13 +1,14 @@
 'use server';
 
 import { getRequestContext } from '@cloudflare/next-on-pages';
-import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, adopterStats, searches, users } from '@/db/schema';
+import { adopters, adopterImages, adopterFlags, adopterHistory, adopterStats, searches, users, placements, adopterEvents, animals } from '@/db/schema';
 import { eq, sql, and, isNotNull, desc } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, checkIsAdmin, checkIsAdminAsync } from './_db';
+import { deleteAdopterRecords } from './_recordWrite';
 
 export async function runAdminQuery(query: string) {
     try {
@@ -166,8 +167,8 @@ export async function deleteAdopter(adopterId: string) {
         // 4. Delete Adopter Images
         await db.delete(adopterImages).where(eq(adopterImages.adopterId, adopterId));
 
-        // 5. Delete linked Adoptions entirely
-        await db.delete(adoptions).where(eq(adoptions.adopterId, adopterId));
+        // 5. Delete linked records (placements + adopter_events; animals stay)
+        await deleteAdopterRecords(db, adopterId);
 
         // 6. Delete duplicate detection tokens & candidates
         await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, adopterId));
@@ -332,8 +333,10 @@ export async function purgeAllData(confirmationCode: string) {
         // 4. Delete adopter images
         await db.delete(adopterImages);
 
-        // 5. Delete adoptions
-        await db.delete(adoptions);
+        // 5. Delete normalized records (placements, events, animals)
+        await db.delete(placements);
+        await db.delete(adopterEvents);
+        await db.delete(animals);
 
         // 6. Delete searches
         await db.delete(searches);
