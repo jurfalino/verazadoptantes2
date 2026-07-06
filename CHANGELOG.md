@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.24.6] - 2026-07-06
+
+### Added — spreadsheet import P2+P3: per-row cleanup + batched import
+
+Completes the `/import/sheet` importer. After AI mapping (P1), each row is normalized and imported:
+- **P2 — per-row cleanup + validation:** combined-contact cells are split deterministically via `categorizeContactText`, with AI escalation (`aiCleanRowContacts`) only for cells it can't structure. Rating (1–5), date (ISO + day-first → YYYY-MM-DD), species, record type, and neutered are canonicalized; a present-but-invalid rating/date is a row error (never silently dropped). Pure + unit-tested.
+- **P3 — batched import:** rows are POSTed to `/api/adopters` sequentially (respects the D1 subrequest budget + per-row tokenization) with a progress bar, live created/skipped/failed tallies, a downloadable error CSV, and one bad row never aborting the batch. Duplicates are handled import-then-flag (dedup runs inside `/api/adopters`; matches surface in each profile for later merge).
+- **Field-contract fix:** `POST /api/adopters` (and `createAdopterApiSchema`) now accept + persist `sex, neutered, color, microchip, age, details, onBehalfOf` on the adoption record — previously the importer could map these but they were silently dropped. `insertRecord` already stored them; this forwards them at the boundary. Guarded by a contract test.
+
+Verified at the unit level (199 tests); the actual import write path runs for the first time on staging. `contactInfo` is derived by the route from `contactEntries` (not sent).
+
 ## [2.24.5] - 2026-07-06
 
 ### Added — spreadsheet import: AI column-mapping + preview (P1, no import yet)

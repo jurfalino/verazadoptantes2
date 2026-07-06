@@ -4,8 +4,9 @@ import { getDb, getUser } from './_db';
 import { appConfig } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
-import { mapSpreadsheetColumns } from '@/lib/gemini';
+import { mapSpreadsheetColumns, extractAdopterData } from '@/lib/gemini';
 import { parseColumnMap, type ColumnMap } from '@/domain/importFields';
+import type { ExtraContacts } from '@/lib/importRow';
 
 /** Admin-configured default Gemini model (mirrors the extract-from-post route). */
 async function getDefaultModel(): Promise<string | undefined> {
@@ -44,5 +45,33 @@ export async function mapImportColumns(
     } catch (e) {
         logger.error('mapImportColumns failed', e, { user, headerCount: headers.length });
         return parseColumnMap(null, headers);
+    }
+}
+
+/**
+ * AI escalation for a single messy "combined contact" cell that the deterministic
+ * `categorizeContactText` couldn't structure (P2). Best-effort — returns {} on
+ * failure so the row still imports with whatever was parsed deterministically.
+ * NOTE: reuses `extractAdopterData`, whose prompt is tuned for social-post prose;
+ * it extracts contacts adequately but a dedicated cell-cleanup prompt is a known
+ * follow-up. Called only for the unparseable tail, so cost stays bounded.
+ */
+export async function aiCleanRowContacts(text: string): Promise<ExtraContacts> {
+    const user = await getUser();
+    if (!user || user === 'anonymous') throw new Error('Not authorized');
+    if (!text || !text.trim()) return {};
+    try {
+        const model = await getDefaultModel();
+        const data = await extractAdopterData(text, undefined, model, 'es');
+        return {
+            phones: data.phones ?? [],
+            emails: data.emails ?? [],
+            socials: data.socialProfiles ?? [],
+            addresses: data.addresses ?? [],
+            ids: [],
+        };
+    } catch (e) {
+        logger.warn('aiCleanRowContacts failed (row imports with deterministic contacts only)', { user, error: e instanceof Error ? e.message : String(e) });
+        return {};
     }
 }

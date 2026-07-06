@@ -486,6 +486,9 @@ export async function POST(request: Request) {
             // separately below as its own observation record.
             const detailsParts: string[] = [];
             const adoptionRecordType = adoption.recordType || 'adoption';
+            // v2.24.6: an explicit per-record `details` (spreadsheet import) is
+            // part of the record itself, regardless of type.
+            if (adoption.details?.trim()) detailsParts.push(adoption.details.trim());
             if (notes && adoptionRecordType === 'observation') detailsParts.push(notes);
             if (contactInfoStr) detailsParts.push(`Contact: ${contactInfoStr}`);
 
@@ -503,7 +506,14 @@ export async function POST(request: Request) {
                 recordType: adoptionRecordType,
                 date: adoption.date ? new Date(adoption.date) : new Date(),
                 sourceUrl: sourceUrl || null,
-                details: detailsParts.length > 0 ? detailsParts.join('\n') : null
+                details: detailsParts.length > 0 ? detailsParts.join('\n') : null,
+                // v2.24.6: animal/record fields forwarded from the importer.
+                sex: adoption.sex || null,
+                neutered: adoption.neutered ?? null,
+                color: adoption.color || null,
+                microchip: adoption.microchip || null,
+                age: adoption.age || null,
+                onBehalfOf: adoption.onBehalfOf || null,
             }, session.user.email || 'anonymous');
 
             // Link all imported media to this adoption record

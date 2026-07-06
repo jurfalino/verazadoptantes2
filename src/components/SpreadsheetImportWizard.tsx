@@ -2,12 +2,16 @@
 
 import { useMemo, useState } from 'react';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
-import { mapImportColumns } from '@/app/actions';
+import { mapImportColumns, aiCleanRowContacts } from '@/app/actions';
+import { buildImportBody } from '@/lib/importRow';
 import {
     TARGET_IMPORT_FIELDS, COMBINED_CONTACT, IGNORE,
     applyColumnMap, hasNameMapping,
     type ColumnMap, type ColumnAssignment,
 } from '@/domain/importFields';
+
+type RowStatus = 'created' | 'skipped' | 'failed';
+interface RowResult { index: number; name: string; status: RowStatus; message?: string }
 
 // Destination options for the per-column dropdown.
 const FIELD_OPTIONS: { value: string; label: string }[] = [
@@ -19,7 +23,7 @@ const CONFIDENCE_DOT: Record<string, string> = {
     high: 'bg-emerald-500', medium: 'bg-amber-400', low: 'bg-stone-300',
 };
 
-type Step = 'upload' | 'map' | 'preview';
+type Step = 'upload' | 'map' | 'preview' | 'import';
 
 export default function SpreadsheetImportWizard() {
     const [step, setStep] = useState<Step>('upload');
@@ -28,6 +32,10 @@ export default function SpreadsheetImportWizard() {
     const [map, setMap] = useState<ColumnMap | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // Import (P3) state.
+    const [progress, setProgress] = useState({ done: 0, total: 0 });
+    const [results, setResults] = useState<RowResult[]>([]);
+    const [importDone, setImportDone] = useState(false);
 
     const handleFile = async (file: File) => {
         setError(null);
@@ -77,6 +85,62 @@ export default function SpreadsheetImportWizard() {
     const nameMapped = map ? hasNameMapping(map) : false;
     const rowsMissingName = preview.filter(p => !p.name).length;
 
+    // P3: import every row sequentially (respects D1 subrequest budget + per-row
+    // tokenization). Deterministic build first; AI-escalate only messy combined
+    // cells. Dedup runs inside /api/adopters (import-then-flag). One bad row never
+    // aborts the batch.
+    const runImport = async () => {
+        if (!parsed || !map) return;
+        setStep('import');
+        setImportDone(false);
+        setResults([]);
+        setProgress({ done: 0, total: parsed.rows.length });
+        const acc: RowResult[] = [];
+        for (let i = 0; i < parsed.rows.length; i++) {
+            const mapped = applyColumnMap(map, parsed.headers, parsed.rows[i]);
+            let built = buildImportBody(mapped);
+            if (built.needsAiCleanup) {
+                try {
+                    const extra = await aiCleanRowContacts(mapped.combinedContacts.join('\n'));
+                    built = buildImportBody(mapped, extra);
+                } catch { /* keep the deterministic build */ }
+            }
+            if (built.errors.length || !built.body) {
+                acc.push({ index: i, name: mapped.name || `Fila ${i + 1}`, status: 'skipped', message: built.errors.join(' ') });
+            } else {
+                try {
+                    const r = await fetch('/api/adopters', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(built.body) });
+                    if (r.ok) {
+                        acc.push({ index: i, name: built.body.name, status: 'created' });
+                    } else {
+                        const b = await r.json().catch(() => ({})) as { error?: string; errorId?: string };
+                        acc.push({ index: i, name: built.body.name, status: 'failed', message: b.error ? `${b.error}${b.errorId ? ` (${b.errorId})` : ''}` : `HTTP ${r.status}` });
+                    }
+                } catch (e) {
+                    acc.push({ index: i, name: built.body.name, status: 'failed', message: e instanceof Error ? e.message : 'error de red' });
+                }
+            }
+            setProgress({ done: i + 1, total: parsed.rows.length });
+            setResults([...acc]);
+        }
+        setImportDone(true);
+    };
+
+    const downloadErrors = () => {
+        const bad = results.filter(r => r.status !== 'created');
+        const csv = ['fila,nombre,estado,motivo', ...bad.map(r => `${r.index + 1},"${(r.name || '').replace(/"/g, '""')}",${r.status},"${(r.message || '').replace(/"/g, '""')}"`)].join('\n');
+        const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+        const a = document.createElement('a');
+        a.href = url; a.download = 'errores-importacion.csv'; a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const tally = {
+        created: results.filter(r => r.status === 'created').length,
+        skipped: results.filter(r => r.status === 'skipped').length,
+        failed: results.filter(r => r.status === 'failed').length,
+    };
+
     return (
         <div className="max-w-4xl mx-auto p-4">
             <h1 className="text-2xl font-extrabold text-stone-900 mb-1">Importar adopciones desde planilla</h1>
@@ -84,9 +148,9 @@ export default function SpreadsheetImportWizard() {
 
             {/* Steps indicator */}
             <div className="flex gap-2 mb-6 text-xs font-semibold">
-                {(['upload', 'map', 'preview'] as Step[]).map((s, i) => (
+                {(['upload', 'map', 'preview', 'import'] as Step[]).map((s, i) => (
                     <span key={s} className={`px-3 py-1 rounded-full ${step === s ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-500'}`}>
-                        {i + 1}. {s === 'upload' ? 'Subir' : s === 'map' ? 'Mapear' : 'Previsualizar'}
+                        {i + 1}. {s === 'upload' ? 'Subir' : s === 'map' ? 'Mapear' : s === 'preview' ? 'Previsualizar' : 'Importar'}
                     </span>
                 ))}
             </div>
@@ -193,11 +257,60 @@ export default function SpreadsheetImportWizard() {
                     </div>
                     <div className="flex justify-between mt-4">
                         <button onClick={() => setStep('map')} className="px-4 py-2 text-sm text-stone-500 hover:text-stone-700">← Ajustar mapeo</button>
-                        <button disabled title="La importación se implementa en el siguiente paso (P3)"
-                            className="px-5 py-2 text-sm font-semibold text-white bg-teal-600 rounded-xl opacity-40 cursor-not-allowed">
-                            Importar (próximamente)
+                        <button onClick={runImport}
+                            className="px-5 py-2 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700">
+                            Importar {parsed.rowCount} filas →
                         </button>
                     </div>
+                </div>
+            )}
+
+            {/* STEP 4: Import (progress + results) */}
+            {step === 'import' && (
+                <div>
+                    <div className="mb-2 flex items-center justify-between text-sm">
+                        <span className="font-semibold text-stone-700">{importDone ? 'Importación completa' : 'Importando…'}</span>
+                        <span className="text-stone-500">{progress.done} / {progress.total}</span>
+                    </div>
+                    <div className="h-3 rounded-full bg-stone-100 overflow-hidden mb-4">
+                        <div className="h-full bg-teal-500 transition-all" style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} />
+                    </div>
+
+                    <div className="flex gap-3 mb-4 text-sm">
+                        <span className="px-3 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-medium">✅ {tally.created} creados</span>
+                        <span className="px-3 py-1 rounded-lg bg-amber-50 text-amber-700 font-medium">⏭️ {tally.skipped} omitidos</span>
+                        <span className="px-3 py-1 rounded-lg bg-rose-50 text-rose-700 font-medium">⚠️ {tally.failed} fallidos</span>
+                    </div>
+
+                    {!importDone && <p className="text-xs text-stone-400 mb-4">Puede tardar unos minutos (cada fila se verifica y tokeniza). No cierres la pestaña.</p>}
+
+                    {(tally.skipped + tally.failed) > 0 && (
+                        <div className="border border-stone-200 rounded-xl overflow-hidden mb-4">
+                            <div className="bg-stone-50 px-3 py-2 text-xs uppercase tracking-wider text-stone-500 flex items-center justify-between">
+                                <span>Filas no importadas</span>
+                                {importDone && <button onClick={downloadErrors} className="text-teal-600 hover:underline normal-case tracking-normal">Descargar CSV</button>}
+                            </div>
+                            <div className="max-h-64 overflow-y-auto">
+                                {results.filter(r => r.status !== 'created').map(r => (
+                                    <div key={r.index} className="px-3 py-1.5 text-sm border-t border-stone-100 flex gap-2">
+                                        <span className="text-stone-400 w-10 flex-shrink-0">#{r.index + 1}</span>
+                                        <span className="font-medium text-stone-700 w-40 flex-shrink-0 truncate">{r.name}</span>
+                                        <span className={r.status === 'failed' ? 'text-rose-600' : 'text-amber-600'}>{r.message || r.status}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {importDone && (
+                        <div className="flex items-center justify-between gap-4">
+                            <p className="text-xs text-stone-400">Los posibles duplicados con registros existentes quedan marcados para revisar/fusionar en cada perfil. Reimportar la misma planilla vuelve a crear registros (marcados como duplicados).</p>
+                            <button onClick={() => { setStep('upload'); setParsed(null); setMap(null); setResults([]); setImportDone(false); }}
+                                className="flex-shrink-0 px-5 py-2 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700">
+                                Importar otra planilla
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
         </div>

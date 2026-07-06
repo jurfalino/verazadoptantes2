@@ -29,7 +29,7 @@ export { saveImage, getImages, setProfilePicture, getAdoptionImages, deleteImage
 export { saveAdoption, deleteAdoption, getAdoptions, getAvailableAnimals, deleteAnimalForAdoption, deleteAnimalImage } from './adoptions';
 
 // Spreadsheet import
-export { mapImportColumns } from './importSheet';
+export { mapImportColumns, aiCleanRowContacts } from './importSheet';
 
 // Flags
 export { flagAdopter, getFlags, dismissFlag, removeVerification } from './flags';
