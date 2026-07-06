@@ -1011,6 +1011,7 @@ export const en = {
         no_adopted_animals: 'No animals adopted yet',
         no_adopted_desc: 'Animals that have been adopted by someone will appear here.',
         adopted_by: 'Adopted by',
+        in_foster_with: 'In foster with',
         view_signed_contract: 'View Signed Contract',
         view_contract: 'View contract',
         share_contract: 'Share contract',
@@ -1249,7 +1250,10 @@ export const en = {
     },
     myAnimals: {
         record_adoption: 'Record adoption',
+        give_for_adoption: 'Give for adoption',
+        move_to_foster: 'Move to another foster',
         pick_adopter_title: 'Record adoption',
+        pick_foster_title: 'Move to another foster',
         pick_adopter_for: 'For {name}',
         showcase_section_title: 'Your public catalog',
         showcase_section_desc: 'Share these links so people can browse your animals available for adoption.',

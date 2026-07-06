@@ -31,6 +31,9 @@ interface Animal {
     comments: string | null;
     adopterId: string | null;
     adopterName: string | null;
+    /** Distinguishes a foster placement ('foster') from a plain available
+        animal ('available') or a permanent adoption ('adoption'). */
+    recordType: string | null;
     date: number | null;
     age: string | null;
     estimatedBirthDate: number | null;
@@ -59,6 +62,10 @@ export default function MyAnimalsPage() {
     // modal. Null = closed. Holding the whole animal so the modal can show
     // the name in its header without an extra prop dance.
     const [adoptingAnimal, setAdoptingAnimal] = useState<Animal | null>(null);
+    // Which record the pick-adopter flow should pre-select. 'adoption' for a plain
+    // available animal; a foster card offers both 'adoption' (give for adoption)
+    // and 'foster' (move to another foster home).
+    const [adoptingType, setAdoptingType] = useState<'adoption' | 'foster'>('adoption');
 
     useEffect(() => {
         async function fetchAnimals() {
@@ -274,7 +281,13 @@ export default function MyAnimalsPage() {
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {filteredAnimals.map((animal) => (
+                        {filteredAnimals.map((animal) => {
+                            // A fostered ("Tránsito") animal carries an adopterId
+                            // (the foster home) but recordType='foster'. It lives
+                            // in the Available tab, so the card can't treat
+                            // adopterId alone as "adopted" — branch on recordType.
+                            const isFoster = animal.recordType === 'foster';
+                            return (
                             <div
                                 key={animal.id}
                                 className="bg-white rounded-xl shadow-sm border border-stone-200 hover:shadow-md hover:border-teal-200 transition-all relative"
@@ -360,7 +373,7 @@ export default function MyAnimalsPage() {
                                     )}
 
                                     {/* Adopter info (for adopted view) */}
-                                    {animal.adopterId && animal.adopterName && (
+                                    {animal.adopterId && animal.adopterName && !isFoster && (
                                         <div className="flex items-center gap-2 mb-3 p-2 bg-teal-50 rounded-lg">
                                             <span className="text-sm">✅</span>
                                             <Link
@@ -368,6 +381,20 @@ export default function MyAnimalsPage() {
                                                 className="text-sm font-medium text-teal-700 hover:underline"
                                             >
                                                 {t('dashboard.adopted_by') || 'Adopted by'} {animal.adopterName}
+                                            </Link>
+                                        </div>
+                                    )}
+
+                                    {/* Foster ("Tránsito") info — animal is in a
+                                        temporary home, still the rescuer's to place. */}
+                                    {isFoster && animal.adopterId && animal.adopterName && (
+                                        <div className="flex items-center gap-2 mb-3 p-2 bg-indigo-100 rounded-lg">
+                                            <span className="text-sm">🤝</span>
+                                            <Link
+                                                href={`/adopter/${animal.adopterId}`}
+                                                className="text-sm font-medium text-indigo-800 hover:underline"
+                                            >
+                                                {t('dashboard.in_foster_with') || 'In foster with'} {animal.adopterName}
                                             </Link>
                                         </div>
                                     )}
@@ -414,7 +441,7 @@ export default function MyAnimalsPage() {
                                                     <span>📅 {formatShortDate(animal.date)}</span>
                                                 )}
                                             </div>
-                                            {!animal.adopterId && (
+                                            {(!animal.adopterId || isFoster) && (
                                                 <div className="flex items-center gap-1.5 flex-shrink-0">
                                                     {userId && (
                                                         <ShareFormMenu
@@ -437,10 +464,10 @@ export default function MyAnimalsPage() {
                                             and record the adoption. The share
                                             actions above are precursors; this
                                             is the destination. */}
-                                        {!animal.adopterId && (
+                                        {!animal.adopterId && !isFoster && (
                                             <button
                                                 type="button"
-                                                onClick={() => setAdoptingAnimal(animal)}
+                                                onClick={() => { setAdoptingType('adoption'); setAdoptingAnimal(animal); }}
                                                 className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 active:scale-[0.98] shadow-sm transition-all"
                                                 data-testid={`record-adoption-${animal.id}`}
                                             >
@@ -448,10 +475,36 @@ export default function MyAnimalsPage() {
                                                 {t('myAnimals.record_adoption') || 'Registrar adopción'}
                                             </button>
                                         )}
+                                        {/* A fostered animal can go two ways next:
+                                            given for adoption, or moved to another
+                                            foster home. Offer both explicitly. */}
+                                        {isFoster && (
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setAdoptingType('adoption'); setAdoptingAnimal(animal); }}
+                                                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 active:scale-[0.98] shadow-sm transition-all"
+                                                    data-testid={`record-adoption-${animal.id}`}
+                                                >
+                                                    <span aria-hidden>🏠</span>
+                                                    {t('myAnimals.give_for_adoption') || 'Dar en adopción'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setAdoptingType('foster'); setAdoptingAnimal(animal); }}
+                                                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-indigo-800 bg-indigo-100 hover:bg-indigo-200 active:scale-[0.98] shadow-sm transition-all"
+                                                    data-testid={`move-foster-${animal.id}`}
+                                                >
+                                                    <span aria-hidden>🤝</span>
+                                                    {t('myAnimals.move_to_foster') || 'Mover a otro tránsito'}
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
             </div>
@@ -464,6 +517,7 @@ export default function MyAnimalsPage() {
                 <PickAdopterForAnimalModal
                     animalId={adoptingAnimal.id}
                     animalName={adoptingAnimal.animalName || ''}
+                    recordType={adoptingType}
                     open={!!adoptingAnimal}
                     onClose={() => setAdoptingAnimal(null)}
                 />

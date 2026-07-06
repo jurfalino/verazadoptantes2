@@ -331,4 +331,65 @@ test.describe('Adopter Profile', () => {
             execD1(`DELETE FROM animals WHERE id = '${animalId}'`);
         }
     });
+
+    test('Fostered animal moved to another foster home CLOSES the prior placement and OPENS a new one (custody history preserved)', async ({ page }) => {
+        // The payoff of the normalization: moving a fostered animal to another
+        // foster home no longer overwrites the prior placement — the `placements`
+        // table keeps the ended span (home A) and opens a new active span (home B),
+        // so home A's custody of the animal survives.
+        const animalId = `test-foster-move-${Date.now()}`;
+        const animalName = `FosterMove ${Date.now()}`;
+        const FIXTURE_OWNER = 'testuser@example.com';
+        const HOME_A = TEST_ADOPTERS.CARLOS;   // initial foster home
+        const HOME_B = TEST_ADOPTERS.NUEVA;    // move target (profile we drive)
+
+        // 1. Seed an animal already fostered to home A: animals row + ACTIVE foster placement.
+        execD1(
+            `INSERT OR REPLACE INTO animals (id, name, species, details, added_by, created_at, updated_at) ` +
+            `VALUES ('${animalId}', '${animalName}', 'dog', 'E2E foster-move fixture', '${FIXTURE_OWNER}', strftime('%s','now','-5 days'), strftime('%s','now','-5 days'))`,
+        );
+        execD1(
+            `INSERT OR REPLACE INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at, recorded_by) ` +
+            `VALUES ('${animalId}-pl-a', '${animalId}', '${HOME_A}', 'foster', strftime('%s','now','-5 days'), NULL, '${FIXTURE_OWNER}')`,
+        );
+
+        try {
+            // 2. On home B's profile, pick the "Foster" intent + the fostered animal.
+            await page.goto(`/adopter/${HOME_B}`);
+            await dismissCountryBanner(page);
+            await expect(page.getByRole('heading', { name: TEST_NAMES.NUEVA })).toBeVisible({ timeout: 30000 });
+            await page.getByTestId('visit-intent-foster').click();
+            await expect(page.getByTestId('animal-picker-trigger')).toBeVisible({ timeout: 10000 });
+            await page.getByTestId('animal-picker-trigger').click();
+            await page.getByTestId(`animal-option-${animalId}`).click();
+            await page.getByTestId('wizard-next-step1').click();
+            await page.getByTestId('wizard-next-step2').click();
+            await page.getByTestId('wizard-submit').click();
+            await expect(page.getByTestId('wizard-close')).toHaveCount(0, { timeout: 30000 });
+
+            // 3. Current placement (via view) is now home B, still foster.
+            const afterRows = parseD1Rows(execD1(
+                `SELECT adopter_id, record_type FROM adoptions WHERE id = '${animalId}'`,
+            ));
+            expect(afterRows).toHaveLength(1);
+            expect(afterRows[0].adopter_id).toBe(HOME_B);
+            expect(afterRows[0].record_type).toBe('foster');
+
+            // 4. LOAD-BEARING: the placements table has TWO rows for this animal —
+            //    home A ended, home B active. History preserved.
+            const active = parseD1Rows(execD1(
+                `SELECT adopter_id FROM placements WHERE animal_id = '${animalId}' AND ended_at IS NULL`,
+            ));
+            expect(active).toHaveLength(1);
+            expect(active[0].adopter_id).toBe(HOME_B);
+            const ended = parseD1Rows(execD1(
+                `SELECT adopter_id FROM placements WHERE animal_id = '${animalId}' AND ended_at IS NOT NULL`,
+            ));
+            expect(ended).toHaveLength(1);
+            expect(ended[0].adopter_id).toBe(HOME_A);
+        } finally {
+            execD1(`DELETE FROM placements WHERE animal_id = '${animalId}'`);
+            execD1(`DELETE FROM animals WHERE id = '${animalId}'`);
+        }
+    });
 });

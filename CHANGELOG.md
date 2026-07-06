@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.24.4] - 2026-07-05
+
+### Fixed — fostered animals no longer vanish from /my-animals
+
+A fostered ("Tránsito") animal has an adopterId (the foster home) + recordType='foster', so it matched neither the Available nor the Adopted tab filter and disappeared from `/my-animals`. Fostered animals now stay in the **Available** tab with an indigo *"En tránsito con {foster home}"* badge.
+
+### Added — two-way next-step actions on foster cards
+
+A fostered animal can next be **given for adoption** or **moved to another foster home**, so its card shows two explicit buttons ("Dar en adopción" / "Mover a otro tránsito") instead of one. Both open the wizard pre-set to the right record type. Thanks to the normalized model, moving a foster animal to another home now **preserves custody history** — the prior placement is closed (`placements.ended_at` set) and a new active one opened, rather than overwritten.
+
+- `/api/my-animals` available query + `getAvailableAnimals` broadened to include `recordType='foster'` (so foster animals list, and remain pickable in the wizard for re-placement).
+- `PickAdopterForAnimalModal` gains a `recordType` prop; `AdoptionFormWizard` honors any `?newAdoption=<type>` (foster included). New i18n keys `dashboard.in_foster_with`, `myAnimals.give_for_adoption` / `move_to_foster` / `pick_foster_title` in es/en/pt. E2E: foster→foster move asserts the prior placement ends and a new one opens.
+
 ## [2.24.3] - 2026-07-05
 
 ### Changed — normalize the `adoptions` table into animals / placements / adopter_events (internal, no user-visible change)

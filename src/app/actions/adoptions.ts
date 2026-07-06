@@ -282,9 +282,13 @@ export async function getAvailableAnimals() {
         const session = await auth();
         if (!session?.user?.email) return [];
 
+        // Unlinked inventory (adopterId IS NULL) PLUS animals currently in a
+        // foster home (recordType='foster'). Fostered animals stay "placeable" —
+        // they can still be given for adoption or moved to another foster home —
+        // so the wizard picker must list them for the animalId prefill match to
+        // resolve on a foster→adoption / foster→foster save.
         const rows = await db.select().from(adoptions)
-            .where(sql`${adoptions.addedBy} = ${session.user.email} AND ${adoptions.adopterId} IS NULL`);
-        // We could add status check, but usually available animals are just unlinked.
+            .where(sql`${adoptions.addedBy} = ${session.user.email} AND (${adoptions.adopterId} IS NULL OR ${adoptions.recordType} = 'foster')`);
         return await attachAdoptionThumbnails(db, rows);
     } catch (error) {
         logger.error('getAvailableAnimals failed', error);
