@@ -9,6 +9,7 @@
 import { GoogleGenerativeAI, Part } from "@google/generative-ai";
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { logger } from '@/lib/logger';
+import { parseColumnMap, TARGET_IMPORT_FIELDS, COMBINED_CONTACT, IGNORE, type ColumnMap } from '@/domain/importFields';
 
 // Extracted adopter data from AI
 export interface ExtractedAdopterData {
@@ -198,6 +199,70 @@ export async function extractAdopterData(
             notes: `Extraction failed: ${error instanceof Error ? error.message : String(error)}`,
             rawExtraction: String(error),
         };
+    }
+}
+
+/**
+ * Spreadsheet column-mapper. Given the sheet's headers + a few sample rows, ask
+ * the model to classify each column into one of our target fields (see
+ * TARGET_IMPORT_FIELDS), or `combined_contact` (a messy cell holding several
+ * contact types) / `ignore`. ONE call per file — rows are then applied
+ * deterministically. Falls back to an all-`ignore` map on any failure so the
+ * user can still map manually. Response validated by `parseColumnMap` (never
+ * trusts the raw model output). See .claude plan: spreadsheet import.
+ */
+function getColumnMapPrompt(headers: string[], sampleRows: string[][], language: string): string {
+    const fieldList = TARGET_IMPORT_FIELDS.map(f => `  - "${f.key}": ${f.hint}`).join('\n');
+    // Render a compact sample table so the model sees example values per column.
+    const sample = [headers.join(' | '), ...sampleRows.slice(0, 5).map(r => headers.map((_, i) => (r[i] ?? '')).join(' | '))].join('\n');
+    const lang = language === 'en' ? 'English' : 'Spanish';
+    return `You are mapping columns of an adoption-records spreadsheet to a fixed schema for a pet-adoption vetting system.
+
+For EACH column header below, decide which target field it best represents. Valid targets:
+${fieldList}
+  - "${COMBINED_CONTACT}": the column holds SEVERAL contact types mixed together (e.g. phone + email + address in one cell). Use this so we can split it per-row later.
+  - "${IGNORE}": the column is irrelevant or has no clear target.
+
+RULES:
+- Judge by BOTH the header name and the sample values.
+- Assign each column exactly once. Never invent columns.
+- Exactly one column should map to "name" when a name column exists; if several could be the name, pick the most likely and mark the others appropriately.
+- Set confidence to "high" only when header + sample values clearly agree; "low" when guessing.
+- Any notes should be in ${lang}.
+
+Headers: ${JSON.stringify(headers)}
+
+Sample rows (pipe-separated, header row first):
+${sample}
+
+Return ONLY JSON in this exact shape (no prose, no markdown):
+{"columns":[{"column":"<exact header>","field":"<target key>","confidence":"high|medium|low"}],"notes":"<optional>"}`;
+}
+
+export async function mapSpreadsheetColumns(
+    headers: string[],
+    sampleRows: string[][],
+    modelName: string = "gemini-2.5-flash",
+    language: string = "es",
+): Promise<ColumnMap> {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) throw new Error('GEMINI_API_KEY not configured');
+    if (!headers.length) return parseColumnMap(null, headers);
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: modelName });
+
+    try {
+        const result = await model.generateContent(getColumnMapPrompt(headers, sampleRows, language));
+        const responseText = (await result.response).text() || '';
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        const raw = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+        return parseColumnMap(raw, headers);
+    } catch (error) {
+        // Fall open to an all-ignore map — the user maps manually rather than the
+        // whole flow breaking. Logged (not silent) so a persistent AI outage shows.
+        logger.error('Gemini column-mapping failed', error, { headerCount: headers.length });
+        return parseColumnMap(null, headers);
     }
 }
 

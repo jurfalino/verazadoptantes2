@@ -28,6 +28,9 @@ export { saveImage, getImages, setProfilePicture, getAdoptionImages, deleteImage
 // Adoptions
 export { saveAdoption, deleteAdoption, getAdoptions, getAvailableAnimals, deleteAnimalForAdoption, deleteAnimalImage } from './adoptions';
 
+// Spreadsheet import
+export { mapImportColumns } from './importSheet';
+
 // Flags
 export { flagAdopter, getFlags, dismissFlag, removeVerification } from './flags';
 

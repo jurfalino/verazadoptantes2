@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.24.5] - 2026-07-06
+
+### Added — spreadsheet import: AI column-mapping + preview (P1, no import yet)
+
+First slice of the spreadsheet adoption importer, at `/import/sheet`. Upload a CSV → the AI proposes how to map your (arbitrary) columns to our schema → you validate/correct the mapping via dropdowns → preview the first 20 mapped rows with missing-name flagging. The actual write/import is a later phase (the "Importar" button is intentionally disabled).
+
+- `src/domain/importFields.ts` — `TARGET_IMPORT_FIELDS`, `parseColumnMap` (validates raw AI output — never drops a header, coerces invalid destinations to ignore), `applyColumnMap` (projects a row onto the schema). Pure + unit-tested (8 tests).
+- `src/lib/gemini.ts` → `mapSpreadsheetColumns(headers, sampleRows)` — one Gemini call per file; fails open to an all-ignore map so an AI outage still lets the user map manually.
+- `src/lib/spreadsheetParse.ts` — client-side CSV parsing via `papaparse` (raw file stays in the browser; Excel `.xlsx` is a fast-follow). `src/app/actions/importSheet.ts` — auth-gated server action wrapping the mapper. `SpreadsheetImportWizard` + `/import/sheet` route.
+
 ## [2.24.4-2] - 2026-07-06
 
 ### Changed — consistent card navigation in the /my-animals Available tab
