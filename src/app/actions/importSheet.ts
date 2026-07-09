@@ -43,7 +43,8 @@ export async function mapImportColumns(
         logger.info('Spreadsheet columns mapped', { user, headerCount: headers.length, sampleRows: (sampleRows || []).length });
         return map;
     } catch (e) {
-        logger.error('mapImportColumns failed', e, { user, headerCount: headers.length });
+        // Handled: returns an all-ignore map so the user maps manually. warn, not error.
+        logger.warn('mapImportColumns failed (returned all-ignore map)', { user, headerCount: headers.length, error: e instanceof Error ? e.message : String(e) });
         return parseColumnMap(null, headers);
     }
 }

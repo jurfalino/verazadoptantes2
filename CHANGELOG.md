@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.24.8-1] - 2026-07-09
+
+### Changed — downgrade handled spreadsheet-import AI fallbacks from error → warn
+
+Three AI fallback paths logged at `error` even though they're handled (the import continues): `aiTransformRows batch failed` (pads + continues), `Gemini column-mapping failed` / `mapImportColumns failed` (fall back to an all-ignore map for manual mapping). Now `warn` per the repo convention (`error` = broken, `warn` = degraded), so Axiom only alerts on genuine import failures. Real per-row `/api/adopters` write failures remain `error`. The pre-existing `Gemini extraction failed` (shared with the post-import flow) is unchanged.
+
 ## [2.24.8] - 2026-07-09
 
 ### Added — spreadsheet import: AI ingests any file (CSV or Excel) + Excel support

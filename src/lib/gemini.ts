@@ -260,8 +260,8 @@ export async function mapSpreadsheetColumns(
         return parseColumnMap(raw, headers);
     } catch (error) {
         // Fall open to an all-ignore map — the user maps manually rather than the
-        // whole flow breaking. Logged (not silent) so a persistent AI outage shows.
-        logger.error('Gemini column-mapping failed', error, { headerCount: headers.length });
+        // whole flow breaking. warn (degraded), not error (broken).
+        logger.warn('Gemini column-mapping failed (fell back to all-ignore map)', { headerCount: headers.length, error: error instanceof Error ? error.message : String(error) });
         return parseColumnMap(null, headers);
     }
 }
@@ -319,8 +319,10 @@ export async function aiTransformRows(
             const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
             out.push(...parseAiRows(parsed, batch.length));
         } catch (e) {
-            logger.error('aiTransformRows batch failed', e, { batchStart: i, batchSize: batch.length });
-            out.push(...parseAiRows(null, batch.length)); // empty rows → visible as errors
+            // Handled: pad this batch with empty rows (visible as errors in the
+            // grid) and continue. warn, not error — the import isn't broken.
+            logger.warn('aiTransformRows batch failed (padded empty, continuing)', { batchStart: i, batchSize: batch.length, error: e instanceof Error ? e.message : String(e) });
+            out.push(...parseAiRows(null, batch.length));
         }
     }
     return out;
