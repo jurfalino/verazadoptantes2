@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.24.7] - 2026-07-09
+
+### Changed — spreadsheet import: records-first confirmation grid
+
+Reworked the `/import/sheet` review step around the final records instead of the column mapping. After the AI proposes a mapping, you now get a **confirmation grid** of the records that will be created: search by name/contact, filter (all / valid / with-errors), **deselect** rows you don't want, and **inline-edit** any record's name / animal / species / rating / date / type. The column mapping recedes into a collapsible "advanced" section (auto-expanded only when the AI couldn't find a name column). Import creates just the selected + valid records.
+
+Next: an AI-transform path for non-tabular / un-mappable sheets (the deterministic mapping stays the default for clean tabular data).
+
 ## [2.24.6] - 2026-07-06
 
 ### Added — spreadsheet import P2+P3: per-row cleanup + batched import
