@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseColumnMap, hasNameMapping, applyColumnMap, COMBINED_CONTACT, IGNORE } from './importFields';
+import { parseColumnMap, hasNameMapping, applyColumnMap, parseAiRows, COMBINED_CONTACT, IGNORE } from './importFields';
 
 const headers = ['Nombre', 'Tel', 'Mail', 'Contacto', 'Mascota', 'Basura'];
 
@@ -90,5 +90,31 @@ describe('applyColumnMap', () => {
         expect(m.name).toBe('Ana');
         expect(m.phones).toEqual([]);
         expect(m.animalName).toBeUndefined();
+    });
+});
+
+describe('parseAiRows', () => {
+    it('validates AI records and coerces types', () => {
+        const raw = { records: [
+            { name: 'María', phones: ['11-1', '11-2'], emails: 'm@x.com', animalName: 'Luna', species: 'perro', rating: 4, recordType: 'foster' },
+        ] };
+        const [r] = parseAiRows(raw, 1);
+        expect(r.name).toBe('María');
+        expect(r.phones).toEqual(['11-1', '11-2']);
+        expect(r.emails).toEqual(['m@x.com']);   // string coerced to array
+        expect(r.rating).toBe('4');              // kept as string (validated later)
+        expect(r.combinedContacts).toEqual([]);  // AI already split
+    });
+
+    it('aligns to the input count (pads missing, truncates extra)', () => {
+        expect(parseAiRows({ records: [{ name: 'A' }] }, 3)).toHaveLength(3);
+        expect(parseAiRows({ records: [{ name: 'A' }] }, 3)[2].name).toBe('');
+        expect(parseAiRows([{ name: 'A' }, { name: 'B' }, { name: 'C' }], 2)).toHaveLength(2);
+    });
+
+    it('tolerates garbage (bare array or nonsense)', () => {
+        expect(parseAiRows([{ name: 'A' }], 1)[0].name).toBe('A'); // bare array accepted
+        expect(parseAiRows(null, 2).every(r => r.name === '')).toBe(true);
+        expect(parseAiRows('junk', 2)).toHaveLength(2);
     });
 });

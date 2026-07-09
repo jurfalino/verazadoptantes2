@@ -9,7 +9,7 @@
 import { GoogleGenerativeAI, Part } from "@google/generative-ai";
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { logger } from '@/lib/logger';
-import { parseColumnMap, TARGET_IMPORT_FIELDS, COMBINED_CONTACT, IGNORE, type ColumnMap } from '@/domain/importFields';
+import { parseColumnMap, parseAiRows, TARGET_IMPORT_FIELDS, COMBINED_CONTACT, IGNORE, type ColumnMap, type MappedRow } from '@/domain/importFields';
 
 // Extracted adopter data from AI
 export interface ExtractedAdopterData {
@@ -264,6 +264,66 @@ export async function mapSpreadsheetColumns(
         logger.error('Gemini column-mapping failed', error, { headerCount: headers.length });
         return parseColumnMap(null, headers);
     }
+}
+
+/**
+ * AI ingestion: interpret spreadsheet rows DIRECTLY into structured records
+ * (MappedRow[]), for arbitrary/messy formats where column-mapping doesn't fit.
+ * Batched to bound cost/latency. Validated by `parseAiRows` (never trusts raw
+ * output); a failed batch pads with empty rows so alignment holds and the user
+ * sees those rows as errors in the confirmation grid rather than losing them.
+ */
+function getTransformPrompt(headers: string[], rows: string[][], language: string): string {
+    const lang = language === 'en' ? 'English' : 'Spanish';
+    const table = [headers.join(' | '), ...rows.map(r => headers.map((_, i) => (r[i] ?? '')).join(' | '))].join('\n');
+    return `You convert rows of a pet-adoption records spreadsheet into structured records for a vetting system.
+
+For EACH data row (in order), output ONE JSON object with any of these fields that are present:
+  name, phones (array), emails (array), socials (array), addresses (array), dnis (array),
+  animalName, species (dog/cat/bird/other), sex, neutered (yes/no), color, microchip, age,
+  rating (1-5), date (YYYY-MM-DD if determinable), recordType (adoption/foster/observation/adoption_request/follow_up/returned_pet),
+  details, onBehalfOf.
+
+RULES:
+- Output exactly one object per input row, in the SAME order (${rows.length} objects).
+- Extract ONLY what is present. NEVER invent, guess, or construct data.
+- Keep phone/email/ID values EXACTLY as written — do not reformat or "fix" digits.
+- Omit unknown fields. Any notes/free text in ${lang}.
+
+Headers: ${JSON.stringify(headers)}
+Rows (pipe-separated, header row first):
+${table}
+
+Return ONLY a JSON array of ${rows.length} objects (no prose, no markdown).`;
+}
+
+export async function aiTransformRows(
+    headers: string[],
+    rows: string[][],
+    modelName: string = 'gemini-2.5-flash',
+    language: string = 'es',
+): Promise<MappedRow[]> {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) throw new Error('GEMINI_API_KEY not configured');
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: modelName });
+
+    const BATCH = 15;
+    const out: MappedRow[] = [];
+    for (let i = 0; i < rows.length; i += BATCH) {
+        const batch = rows.slice(i, i + BATCH);
+        try {
+            const result = await model.generateContent(getTransformPrompt(headers, batch, language));
+            const text = (await result.response).text() || '';
+            const jsonMatch = text.match(/\[[\s\S]*\]/);
+            const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+            out.push(...parseAiRows(parsed, batch.length));
+        } catch (e) {
+            logger.error('aiTransformRows batch failed', e, { batchStart: i, batchSize: batch.length });
+            out.push(...parseAiRows(null, batch.length)); // empty rows → visible as errors
+        }
+    }
+    return out;
 }
 
 /**

@@ -4,8 +4,8 @@ import { getDb, getUser } from './_db';
 import { appConfig } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
-import { mapSpreadsheetColumns, extractAdopterData } from '@/lib/gemini';
-import { parseColumnMap, type ColumnMap } from '@/domain/importFields';
+import { mapSpreadsheetColumns, aiTransformRows, extractAdopterData } from '@/lib/gemini';
+import { parseColumnMap, type ColumnMap, type MappedRow } from '@/domain/importFields';
 import type { ExtraContacts } from '@/lib/importRow';
 
 /** Admin-configured default Gemini model (mirrors the extract-from-post route). */
@@ -46,6 +46,22 @@ export async function mapImportColumns(
         logger.error('mapImportColumns failed', e, { user, headerCount: headers.length });
         return parseColumnMap(null, headers);
     }
+}
+
+/**
+ * AI ingestion: interpret a chunk of raw spreadsheet rows directly into
+ * structured records (MappedRow[]). Auth-gated. The client calls this per chunk
+ * (~20 rows) so it can show progress and avoid one long request. Returns [] on
+ * failure so the caller can fall back to deterministic column-mapping.
+ */
+export async function interpretRows(headers: string[], rows: string[][], language: string = 'es'): Promise<MappedRow[]> {
+    const user = await getUser();
+    if (!user || user === 'anonymous') throw new Error('Not authorized');
+    if (!Array.isArray(rows) || rows.length === 0) return [];
+    const model = await getDefaultModel();
+    const out = await aiTransformRows(headers, rows, model, language);
+    logger.info('Spreadsheet rows interpreted by AI', { user, rows: rows.length });
+    return out;
 }
 
 /**

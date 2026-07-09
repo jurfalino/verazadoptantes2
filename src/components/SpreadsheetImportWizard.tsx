@@ -2,11 +2,11 @@
 
 import { useMemo, useState } from 'react';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
-import { mapImportColumns, aiCleanRowContacts } from '@/app/actions';
+import { mapImportColumns, interpretRows, aiCleanRowContacts } from '@/app/actions';
 import { buildImportBody } from '@/lib/importRow';
 import {
     TARGET_IMPORT_FIELDS, COMBINED_CONTACT, IGNORE,
-    applyColumnMap, hasNameMapping,
+    applyColumnMap, emptyMappedRow,
     type ColumnMap, type MappedRow,
 } from '@/domain/importFields';
 
@@ -31,6 +31,11 @@ export default function SpreadsheetImportWizard() {
     const [map, setMap] = useState<ColumnMap | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // Interpretation: 'ai' = AI ingested the rows directly; 'mapping' = deterministic
+    // column-mapping fallback. AI is the default.
+    const [mode, setMode] = useState<'ai' | 'mapping'>('ai');
+    const [interpreted, setInterpreted] = useState<MappedRow[]>([]);
+    const [interpretProgress, setInterpretProgress] = useState({ done: 0, total: 0 });
     // Confirmation-grid state.
     const [overrides, setOverrides] = useState<Record<number, Partial<MappedRow>>>({});
     const [deselected, setDeselected] = useState<Set<number>>(new Set());
@@ -48,13 +53,48 @@ export default function SpreadsheetImportWizard() {
         try {
             const sheet = await parseSpreadsheetFile(file);
             if (sheet.headers.length === 0) { setError('El archivo está vacío o no tiene encabezados.'); setBusy(false); return; }
-            setFileName(file.name); setParsed(sheet); setOverrides({}); setDeselected(new Set()); setStep('confirm');
-            const aiMap = await mapImportColumns(sheet.headers, sheet.rows.slice(0, 5), 'es');
-            setMap(aiMap);
-            if (!hasNameMapping(aiMap)) setAdvancedOpen(true); // nudge the user to fix mapping
+            setFileName(file.name); setParsed(sheet); setOverrides({}); setDeselected(new Set());
+            setMode('ai'); setInterpreted([]); setMap(null); setStep('confirm');
+            // AI ingests the rows directly, chunked so we can show progress and
+            // avoid one long request. Falls back to deterministic column-mapping.
+            try {
+                setInterpretProgress({ done: 0, total: sheet.rows.length });
+                const CHUNK = 20;
+                const acc: MappedRow[] = [];
+                for (let i = 0; i < sheet.rows.length; i += CHUNK) {
+                    const chunk = sheet.rows.slice(i, i + CHUNK);
+                    try {
+                        acc.push(...await interpretRows(sheet.headers, chunk, 'es'));
+                    } catch (chunkErr) {
+                        // First chunk failed → AI unavailable → fall back to mapping
+                        // (nothing interpreted yet). A LATER chunk failing keeps the
+                        // rows we already have and pads this chunk with empty rows
+                        // (visible as errors in the grid), rather than discarding.
+                        if (acc.length === 0) throw chunkErr;
+                        acc.push(...chunk.map(() => emptyMappedRow()));
+                    }
+                    setInterpreted([...acc]);
+                    setInterpretProgress({ done: Math.min(i + CHUNK, sheet.rows.length), total: sheet.rows.length });
+                }
+            } catch {
+                const aiMap = await mapImportColumns(sheet.headers, sheet.rows.slice(0, 5), 'es');
+                setMap(aiMap); setMode('mapping'); setAdvancedOpen(true);
+            }
         } catch (e) {
             setError(e instanceof Error ? e.message : 'No se pudo leer el archivo.'); setStep('upload');
         } finally { setBusy(false); }
+    };
+
+    // Manual escape hatch: switch to deterministic column-mapping (e.g. if the AI
+    // misinterpreted the sheet). Fetches a proposed mapping if we don't have one.
+    const switchToMapping = async () => {
+        if (!parsed) return;
+        setMode('mapping'); setAdvancedOpen(true); setOverrides({});
+        if (!map) {
+            setBusy(true);
+            try { setMap(await mapImportColumns(parsed.headers, parsed.rows.slice(0, 5), 'es')); }
+            finally { setBusy(false); }
+        }
     };
 
     const setAssignment = (column: string, field: string) => {
@@ -64,14 +104,17 @@ export default function SpreadsheetImportWizard() {
     const setOverride = (i: number, patch: Partial<MappedRow>) => setOverrides(o => ({ ...o, [i]: { ...o[i], ...patch } }));
     const toggle = (i: number) => setDeselected(s => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n; });
 
-    // Derive final records (mapping + per-row edits) — the confirmation grid.
+    // Derive final records (AI interpretation OR column mapping, + per-row edits).
     const records = useMemo(() => {
-        if (!parsed || !map) return [];
+        if (!parsed) return [];
         return parsed.rows.map((row, i) => {
-            const eff: MappedRow = { ...applyColumnMap(map, parsed.headers, row), ...(overrides[i] || {}) };
+            const base: MappedRow = mode === 'ai'
+                ? (interpreted[i] ?? { name: '', phones: [], emails: [], socials: [], addresses: [], dnis: [], combinedContacts: [] })
+                : (map ? applyColumnMap(map, parsed.headers, row) : { name: '', phones: [], emails: [], socials: [], addresses: [], dnis: [], combinedContacts: [] });
+            const eff: MappedRow = { ...base, ...(overrides[i] || {}) };
             return { index: i, eff, built: buildImportBody(eff), selected: !deselected.has(i) };
         });
-    }, [parsed, map, overrides, deselected]);
+    }, [parsed, mode, interpreted, map, overrides, deselected]);
 
     const filtered = useMemo(() => records.filter(r => {
         if (filter === 'valid' && r.built.errors.length) return false;
@@ -119,12 +162,12 @@ export default function SpreadsheetImportWizard() {
     };
 
     const tally = { created: results.filter(r => r.status === 'created').length, skipped: results.filter(r => r.status === 'skipped').length, failed: results.filter(r => r.status === 'failed').length };
-    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); };
+    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('ai'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); };
 
     return (
         <div className="max-w-5xl mx-auto p-4">
             <h1 className="text-2xl font-extrabold text-stone-900 mb-1">Importar adopciones desde planilla</h1>
-            <p className="text-sm text-stone-500 mb-6">Subí un CSV; la IA arma los registros y vos revisás/editás antes de importar.</p>
+            <p className="text-sm text-stone-500 mb-6">Subí una planilla (CSV o Excel) en cualquier formato; la IA la interpreta y vos validás/editás los registros antes de importar.</p>
 
             <div className="flex gap-2 mb-6 text-xs font-semibold">
                 {(['upload', 'confirm', 'import'] as Step[]).map((s, i) => (
@@ -138,10 +181,10 @@ export default function SpreadsheetImportWizard() {
 
             {step === 'upload' && (
                 <label className="block border-2 border-dashed border-stone-300 rounded-2xl p-12 text-center cursor-pointer hover:border-teal-400 transition-colors">
-                    <input type="file" accept=".csv,text/csv" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+                    <input type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
                     <div className="text-4xl mb-2" aria-hidden>📄</div>
-                    <div className="font-semibold text-stone-700">{busy ? 'Leyendo…' : 'Elegí un archivo CSV'}</div>
-                    <div className="text-xs text-stone-400 mt-1">.csv (Excel próximamente)</div>
+                    <div className="font-semibold text-stone-700">{busy ? 'Leyendo…' : 'Elegí un archivo'}</div>
+                    <div className="text-xs text-stone-400 mt-1">CSV o Excel (.xlsx)</div>
                 </label>
             )}
 
@@ -149,29 +192,43 @@ export default function SpreadsheetImportWizard() {
                 <div>
                     <div className="flex items-center justify-between mb-3 text-sm text-stone-600">
                         <span><span className="font-semibold">{fileName}</span> · {parsed.rowCount} filas</span>
-                        {busy && <span className="text-xs text-teal-600">🤖 Analizando con IA…</span>}
                     </div>
 
-                    {/* Advanced: column mapping (recedes here — the records grid is the primary review) */}
-                    <div className="border border-stone-200 rounded-xl mb-4">
-                        <button onClick={() => setAdvancedOpen(o => !o)} className="w-full text-left px-4 py-2 text-sm font-medium text-stone-600 flex items-center justify-between">
-                            <span>⚙️ Mapeo de columnas (avanzado)</span>
-                            <span className="text-stone-400">{advancedOpen ? '▲' : '▼'}</span>
-                        </button>
-                        {advancedOpen && map && (
-                            <div className="px-4 pb-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                {map.columns.map(c => (
-                                    <div key={c.column} className="flex items-center gap-2 text-sm">
-                                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${CONFIDENCE_DOT[c.confidence]}`} aria-hidden />
-                                        <span className="font-medium text-stone-700 w-28 truncate" title={c.column}>{c.column}</span>
-                                        <select value={c.field} onChange={e => setAssignment(c.column, e.target.value)} className="flex-1 text-sm border border-stone-200 rounded-lg px-2 py-1 bg-white">
-                                            {FIELD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                        </select>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
+                    {/* Interpreting progress (AI ingesting the rows, chunked). */}
+                    {busy && mode === 'ai' && interpretProgress.total > 0 && interpretProgress.done < interpretProgress.total && (
+                        <div className="mb-4">
+                            <div className="text-xs text-teal-600 mb-1">🤖 Interpretando con IA… {interpretProgress.done}/{interpretProgress.total}</div>
+                            <div className="h-2 rounded-full bg-stone-100 overflow-hidden"><div className="h-full bg-teal-500 transition-all" style={{ width: `${(interpretProgress.done / interpretProgress.total) * 100}%` }} /></div>
+                        </div>
+                    )}
+
+                    {/* Mode: AI interpretation (default) with an escape hatch, or the mapping fallback. */}
+                    {mode === 'ai' ? (
+                        <div className="mb-4 p-3 rounded-lg bg-teal-50 border border-teal-100 text-sm text-teal-800 flex items-center justify-between gap-3">
+                            <span>🤖 Registros interpretados por IA — revisá y editá lo que haga falta.</span>
+                            {!busy && <button onClick={switchToMapping} className="flex-shrink-0 text-teal-700 hover:underline">¿Mal interpretado? Mapear columnas</button>}
+                        </div>
+                    ) : (
+                        <div className="border border-stone-200 rounded-xl mb-4">
+                            <button onClick={() => setAdvancedOpen(o => !o)} className="w-full text-left px-4 py-2 text-sm font-medium text-stone-600 flex items-center justify-between">
+                                <span>⚙️ Mapeo de columnas {busy && '· cargando…'}</span>
+                                <span className="text-stone-400">{advancedOpen ? '▲' : '▼'}</span>
+                            </button>
+                            {advancedOpen && map && (
+                                <div className="px-4 pb-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {map.columns.map(c => (
+                                        <div key={c.column} className="flex items-center gap-2 text-sm">
+                                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${CONFIDENCE_DOT[c.confidence]}`} aria-hidden />
+                                            <span className="font-medium text-stone-700 w-28 truncate" title={c.column}>{c.column}</span>
+                                            <select value={c.field} onChange={e => setAssignment(c.column, e.target.value)} className="flex-1 text-sm border border-stone-200 rounded-lg px-2 py-1 bg-white">
+                                                {FIELD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                            </select>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* Toolbar: search + filter + counts */}
                     <div className="flex flex-wrap items-center gap-2 mb-3">

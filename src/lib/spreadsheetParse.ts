@@ -1,11 +1,8 @@
 /**
  * Client-side spreadsheet parsing. Runs in the browser so the raw file (PII)
  * never leaves the user's machine until they explicitly confirm an import.
- *
- * v1: CSV via papaparse. Excel (.xlsx) is a fast-follow — the npm `xlsx`
- * (SheetJS) package is frozen at an old version with advisories, so adding it
- * is a deliberate dependency decision (prefer the SheetJS CDN build or a
- * maintained alternative).
+ * CSV via papaparse; Excel (.xlsx) via read-excel-file (maintained, no SheetJS
+ * advisories). AI then interprets the parsed rows into records.
  */
 
 import Papa from 'papaparse';
@@ -52,9 +49,21 @@ export function parseCsvFile(file: File): Promise<ParsedSheet> {
     });
 }
 
-/** Route a file to the right parser by extension. CSV today; throws for others. */
+/** Parse an .xlsx File (first sheet) into headers + aligned rows. */
+export async function parseXlsxFile(file: File): Promise<ParsedSheet> {
+    const { default: readXlsxFile } = await import('read-excel-file/browser');
+    const data = (await readXlsxFile(file)) as unknown as unknown[][]; // rows of cells
+    if (!data.length) return { headers: [], rows: [], rowCount: 0 };
+    const headers = normalizeHeaders(data[0]);
+    const rows = data.slice(1).map((r) => headers.map((_, i) => (r[i] ?? '').toString()));
+    return { headers, rows, rowCount: rows.length };
+}
+
+/** Route a file to the right parser by extension/type. Supports CSV and .xlsx. */
 export function parseSpreadsheetFile(file: File): Promise<ParsedSheet> {
     const name = file.name.toLowerCase();
-    if (name.endsWith('.csv') || file.type === 'text/csv') return parseCsvFile(file);
-    return Promise.reject(new Error('Only CSV files are supported for now (.xlsx coming soon).'));
+    if (name.endsWith('.xlsx') || file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') return parseXlsxFile(file);
+    if (name.endsWith('.csv') || file.type === 'text/csv' || name.endsWith('.txt')) return parseCsvFile(file);
+    // Default to CSV parsing (handles most delimited text exports).
+    return parseCsvFile(file);
 }

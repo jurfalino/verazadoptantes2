@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.24.8] - 2026-07-09
+
+### Added — spreadsheet import: AI ingests any file (CSV or Excel) + Excel support
+
+`/import/sheet` now accepts **CSV or Excel (.xlsx)** and, by default, has the **AI interpret the rows directly** into structured records — handling arbitrary/messy formats, not just clean columns. You then validate/edit the AI's interpretation in the confirmation grid.
+
+- **AI ingestion** (`aiTransformRows` / `interpretRows`): the parsed rows are sent to Gemini in chunks (client-orchestrated with a progress bar) and returned as records; validated by the pure `parseAiRows` (aligns to the input row count — pads missing, truncates extra — and never trusts raw output). A first-chunk failure falls back to deterministic **column-mapping**; a later-chunk failure keeps interpreted rows and marks the failed chunk as errors (no silent discard).
+- **Excel** via `read-excel-file` (client-side, maintained — avoids the SheetJS advisories). CSV still via papaparse.
+- The column-mapping path remains as a one-click fallback ("¿Mal interpretado? Mapear columnas").
+
+**Status: unit-verified only (202 tests cover the pure parsers/normalizers/payload). The full chain — file → AI → grid → `/api/adopters` — has NOT executed once; it runs for the first time on staging.** Test with one small CSV *and* one small Excel before a large file.
+
 ## [2.24.7] - 2026-07-09
 
 ### Changed — spreadsheet import: records-first confirmation grid

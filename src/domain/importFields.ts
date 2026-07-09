@@ -135,6 +135,51 @@ const MULTI_CONTACT: Record<string, keyof Pick<MappedRow, 'phones' | 'emails' | 
     phone: 'phones', email: 'emails', social: 'socials', address: 'addresses', dni: 'dnis',
 };
 
+/** An empty MappedRow (used to pad AI output back to the input row count). */
+export function emptyMappedRow(): MappedRow {
+    return { name: '', phones: [], emails: [], socials: [], addresses: [], dnis: [], combinedContacts: [] };
+}
+
+function strArray(v: unknown): string[] {
+    if (Array.isArray(v)) return v.map(x => (x ?? '').toString().trim()).filter(Boolean);
+    if (typeof v === 'string' && v.trim()) return [v.trim()];
+    return [];
+}
+function strOrUndef(v: unknown): string | undefined {
+    const s = (v ?? '').toString().trim();
+    return s || undefined;
+}
+
+/**
+ * Validate a raw AI "interpret rows" response into MappedRow[], aligned to
+ * `count` input rows (missing → empty row so nothing silently disappears; extras
+ * truncated). Never trusts raw model output — coerces types, drops junk. Rating/
+ * date stay strings (validated downstream by buildImportBody). `combinedContacts`
+ * is always empty here (the AI already split contacts). Pure.
+ */
+export function parseAiRows(raw: unknown, count: number): MappedRow[] {
+    const arr = Array.isArray(raw) ? raw
+        : (raw && typeof raw === 'object' && Array.isArray((raw as { records?: unknown }).records))
+            ? (raw as { records: unknown[] }).records : [];
+    const out: MappedRow[] = [];
+    for (let i = 0; i < count; i++) {
+        const e = arr[i];
+        if (!e || typeof e !== 'object') { out.push(emptyMappedRow()); continue; }
+        const r = e as Record<string, unknown>;
+        out.push({
+            name: strOrUndef(r.name) ?? '',
+            phones: strArray(r.phones), emails: strArray(r.emails), socials: strArray(r.socials),
+            addresses: strArray(r.addresses), dnis: strArray(r.dnis), combinedContacts: [],
+            animalName: strOrUndef(r.animalName), species: strOrUndef(r.species),
+            sex: strOrUndef(r.sex), neutered: strOrUndef(r.neutered), color: strOrUndef(r.color),
+            microchip: strOrUndef(r.microchip), age: strOrUndef(r.age), rating: strOrUndef(r.rating),
+            date: strOrUndef(r.date), recordType: strOrUndef(r.recordType), details: strOrUndef(r.details),
+            onBehalfOf: strOrUndef(r.onBehalfOf),
+        });
+    }
+    return out;
+}
+
 /**
  * Project a single spreadsheet row onto our schema using the column map.
  * Deterministic — no AI. `combined_contact` cells are collected raw for later
