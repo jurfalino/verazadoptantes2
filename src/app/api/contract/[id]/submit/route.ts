@@ -183,15 +183,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             }));
         }
 
-        // 5. Link the animal to the adopter (convert to adoption)
-        await db.update(adoptions).set({
+        // 5. Link the animal to the adopter (convert to adoption). Normalized
+        //    write: opens an 'adoption' placement on the animal (`animal` is the
+        //    reconstructed row read above; it was 'available' with no placement).
+        const { updateRecord } = await import('@/app/actions/_recordWrite');
+        await updateRecord(db, {
+            id: animalId,
             adopterId,
             recordType: 'adoption',
             date: new Date(),
             status: 'active',
             rating: 5,
             comments: JSON.stringify({ contractScreenshot: contractUrl }),
-        }).where(eq(adoptions.id, animalId));
+        }, animal, 'contract');
 
         logger.info('Contract adoption submitted', { animalId, adopterId, adopterName: fullName, contractUrl });
 

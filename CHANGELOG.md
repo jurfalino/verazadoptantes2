@@ -2,6 +2,88 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.24.8-1] - 2026-07-09
+
+### Changed — downgrade handled spreadsheet-import AI fallbacks from error → warn
+
+Three AI fallback paths logged at `error` even though they're handled (the import continues): `aiTransformRows batch failed` (pads + continues), `Gemini column-mapping failed` / `mapImportColumns failed` (fall back to an all-ignore map for manual mapping). Now `warn` per the repo convention (`error` = broken, `warn` = degraded), so Axiom only alerts on genuine import failures. Real per-row `/api/adopters` write failures remain `error`. The pre-existing `Gemini extraction failed` (shared with the post-import flow) is unchanged.
+
+## [2.24.8] - 2026-07-09
+
+### Added — spreadsheet import: AI ingests any file (CSV or Excel) + Excel support
+
+`/import/sheet` now accepts **CSV or Excel (.xlsx)** and, by default, has the **AI interpret the rows directly** into structured records — handling arbitrary/messy formats, not just clean columns. You then validate/edit the AI's interpretation in the confirmation grid.
+
+- **AI ingestion** (`aiTransformRows` / `interpretRows`): the parsed rows are sent to Gemini in chunks (client-orchestrated with a progress bar) and returned as records; validated by the pure `parseAiRows` (aligns to the input row count — pads missing, truncates extra — and never trusts raw output). A first-chunk failure falls back to deterministic **column-mapping**; a later-chunk failure keeps interpreted rows and marks the failed chunk as errors (no silent discard).
+- **Excel** via `read-excel-file` (client-side, maintained — avoids the SheetJS advisories). CSV still via papaparse.
+- The column-mapping path remains as a one-click fallback ("¿Mal interpretado? Mapear columnas").
+
+**Status: unit-verified only (202 tests cover the pure parsers/normalizers/payload). The full chain — file → AI → grid → `/api/adopters` — has NOT executed once; it runs for the first time on staging.** Test with one small CSV *and* one small Excel before a large file.
+
+## [2.24.7] - 2026-07-09
+
+### Changed — spreadsheet import: records-first confirmation grid
+
+Reworked the `/import/sheet` review step around the final records instead of the column mapping. After the AI proposes a mapping, you now get a **confirmation grid** of the records that will be created: search by name/contact, filter (all / valid / with-errors), **deselect** rows you don't want, and **inline-edit** any record's name / animal / species / rating / date / type. The column mapping recedes into a collapsible "advanced" section (auto-expanded only when the AI couldn't find a name column). Import creates just the selected + valid records.
+
+Next: an AI-transform path for non-tabular / un-mappable sheets (the deterministic mapping stays the default for clean tabular data).
+
+## [2.24.6] - 2026-07-06
+
+### Added — spreadsheet import P2+P3: per-row cleanup + batched import
+
+Completes the `/import/sheet` importer. After AI mapping (P1), each row is normalized and imported:
+- **P2 — per-row cleanup + validation:** combined-contact cells are split deterministically via `categorizeContactText`, with AI escalation (`aiCleanRowContacts`) only for cells it can't structure. Rating (1–5), date (ISO + day-first → YYYY-MM-DD), species, record type, and neutered are canonicalized; a present-but-invalid rating/date is a row error (never silently dropped). Pure + unit-tested.
+- **P3 — batched import:** rows are POSTed to `/api/adopters` sequentially (respects the D1 subrequest budget + per-row tokenization) with a progress bar, live created/skipped/failed tallies, a downloadable error CSV, and one bad row never aborting the batch. Duplicates are handled import-then-flag (dedup runs inside `/api/adopters`; matches surface in each profile for later merge).
+- **Field-contract fix:** `POST /api/adopters` (and `createAdopterApiSchema`) now accept + persist `sex, neutered, color, microchip, age, details, onBehalfOf` on the adoption record — previously the importer could map these but they were silently dropped. `insertRecord` already stored them; this forwards them at the boundary. Guarded by a contract test.
+
+Verified at the unit level (199 tests); the actual import write path runs for the first time on staging. `contactInfo` is derived by the route from `contactEntries` (not sent).
+
+## [2.24.5] - 2026-07-06
+
+### Added — spreadsheet import: AI column-mapping + preview (P1, no import yet)
+
+First slice of the spreadsheet adoption importer, at `/import/sheet`. Upload a CSV → the AI proposes how to map your (arbitrary) columns to our schema → you validate/correct the mapping via dropdowns → preview the first 20 mapped rows with missing-name flagging. The actual write/import is a later phase (the "Importar" button is intentionally disabled).
+
+- `src/domain/importFields.ts` — `TARGET_IMPORT_FIELDS`, `parseColumnMap` (validates raw AI output — never drops a header, coerces invalid destinations to ignore), `applyColumnMap` (projects a row onto the schema). Pure + unit-tested (8 tests).
+- `src/lib/gemini.ts` → `mapSpreadsheetColumns(headers, sampleRows)` — one Gemini call per file; fails open to an all-ignore map so an AI outage still lets the user map manually.
+- `src/lib/spreadsheetParse.ts` — client-side CSV parsing via `papaparse` (raw file stays in the browser; Excel `.xlsx` is a fast-follow). `src/app/actions/importSheet.ts` — auth-gated server action wrapping the mapper. `SpreadsheetImportWizard` + `/import/sheet` route.
+
+## [2.24.4-2] - 2026-07-06
+
+### Changed — consistent card navigation in the /my-animals Available tab
+
+A fostered animal's card used to open the foster home's profile (it has an adopterId) while a plain available animal's card opened the edit form — two behaviors in the same tab. Foster cards now open the animal edit form like available animals; the foster home stays one tap away via the "En tránsito con {home}" badge. The Adopted tab is unchanged (cards → adopter profile).
+
+## [2.24.4-1] - 2026-07-06
+
+### Changed — unify the adoption CTA label
+
+The foster card's "Dar en adopción" button and the available card's "Registrar adopción" button open the exact same record-a-permanent-adoption flow; they now share the canonical **"Registrar adopción"** label. Removed the orphaned `myAnimals.give_for_adoption` i18n key (es/en/pt).
+
+## [2.24.4] - 2026-07-05
+
+### Fixed — fostered animals no longer vanish from /my-animals
+
+A fostered ("Tránsito") animal has an adopterId (the foster home) + recordType='foster', so it matched neither the Available nor the Adopted tab filter and disappeared from `/my-animals`. Fostered animals now stay in the **Available** tab with an indigo *"En tránsito con {foster home}"* badge.
+
+### Added — two-way next-step actions on foster cards
+
+A fostered animal can next be **given for adoption** or **moved to another foster home**, so its card shows two explicit buttons ("Dar en adopción" / "Mover a otro tránsito") instead of one. Both open the wizard pre-set to the right record type. Thanks to the normalized model, moving a foster animal to another home now **preserves custody history** — the prior placement is closed (`placements.ended_at` set) and a new active one opened, rather than overwritten.
+
+- `/api/my-animals` available query + `getAvailableAnimals` broadened to include `recordType='foster'` (so foster animals list, and remain pickable in the wizard for re-placement).
+- `PickAdopterForAnimalModal` gains a `recordType` prop; `AdoptionFormWizard` honors any `?newAdoption=<type>` (foster included). New i18n keys `dashboard.in_foster_with`, `myAnimals.give_for_adoption` / `move_to_foster` / `pick_foster_title` in es/en/pt. E2E: foster→foster move asserts the prior placement ends and a new one opens.
+
+## [2.24.3] - 2026-07-05
+
+### Changed — normalize the `adoptions` table into animals / placements / adopter_events (internal, no user-visible change)
+
+Split the overloaded `adoptions` table, which conflated three concepts (animal identity, adopter↔animal custody, and adopter-scoped events), into a clean normalized model. This is the "expand + transitional view" phase: the normalized tables are now the source of truth for all writes, while reads keep working unchanged through a compatibility view. **Behavior is externally identical** — the view reconstructs the old row shape byte-for-byte.
+
+- New tables `animals` (identity + status), `placements` (custody spans; active = `ended_at IS NULL`, ended rows are custody history), `adopter_events` (observation / adoption_request / follow_up / returned_pet). Migrations `0054` (create), `0055` (id-preserving backfill), `0056` (drop `adoptions` table → replace with a read-only reconstruction VIEW).
+- All 14 write sites cut over to the normalized tables via a single adapter `src/app/actions/_recordWrite.ts` (`insertRecord` / `updateRecord` / `deleteRecordById` / `deleteAdopterRecords` / `reassignAdopterRecords`), reusing `src/domain/placements.ts` `deriveEndedPlacement` for placement transitions. Reads are unchanged (they hit the `adoptions` view).
+- Ids preserved across the split (old `adoptions.id` → `animals.id` or `adopter_events.id`), so `contractInvitations.animalId`, `adopterImages.adoptionId`, `formSubmissions.selectedAnimalId`, and `piiAccessRequests.activityId` keep resolving. `tests/seed.sql` + the `contract-link` / `adopter` E2E specs rewritten to seed the normalized tables. Parity harness at `scripts/parity-check-normalization.sql`. Full plan: `.agents/plans/animals-placements-normalization.md`.
+
 ## [2.24.2] - 2026-07-03
 
 ### Added — degradation-aware error message on search failures

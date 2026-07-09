@@ -8,6 +8,7 @@ import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { tokenizeAdopter } from './duplicates';
 import { saveAdoptionSchema } from './validation';
+import { insertRecord, updateRecord, deleteRecordById } from './_recordWrite';
 
 export async function saveAdoption(data: typeof adoptions.$inferInsert) {
     // Validate input
@@ -41,7 +42,9 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
             }
 
             if (hasChanges) {
-                await db.update(adoptions).set(data).where(eq(adoptions.id, data.id as string));
+                // Normalized write: routes identity → animals, custody → placements
+                // (closing/opening spans on a transition). Reads still hit the view.
+                await updateRecord(db, data, existing, changedBy);
 
                 // Log to adopter history IF it is linked to an adopter
                 const targetAdopterId = data.adopterId || existing.adopterId;
@@ -79,14 +82,10 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
 
             return { success: true, id: data.id };
         } else {
-            // Create new
-            const id = crypto.randomUUID();
-            await db.insert(adoptions).values({
-                ...data,
-                id,
-                date: data.date || new Date(),
-                addedBy: changedBy
-            });
+            // Create new — normalized write routes to animals/placements/events.
+            // Returns the animal id (available/foster/adoption) or event id, which
+            // is what callers use for image uploads + contract refs.
+            const id = await insertRecord(db, { ...data, date: data.date || new Date() }, changedBy);
 
             // Log to adopter history ONLY if linked immediately
             if (data.adopterId) {
@@ -192,7 +191,7 @@ export async function deleteAdoption(adoptionId: string, adopterId: string) {
             throw new Error("Not authorized to delete this record");
         }
 
-        await db.delete(adoptions).where(eq(adoptions.id, adoptionId));
+        await deleteRecordById(db, adoptionId);
 
         // Log to adopter history
         await db.insert(adopterHistory).values({
@@ -283,9 +282,13 @@ export async function getAvailableAnimals() {
         const session = await auth();
         if (!session?.user?.email) return [];
 
+        // Unlinked inventory (adopterId IS NULL) PLUS animals currently in a
+        // foster home (recordType='foster'). Fostered animals stay "placeable" —
+        // they can still be given for adoption or moved to another foster home —
+        // so the wizard picker must list them for the animalId prefill match to
+        // resolve on a foster→adoption / foster→foster save.
         const rows = await db.select().from(adoptions)
-            .where(sql`${adoptions.addedBy} = ${session.user.email} AND ${adoptions.adopterId} IS NULL`);
-        // We could add status check, but usually available animals are just unlinked.
+            .where(sql`${adoptions.addedBy} = ${session.user.email} AND (${adoptions.adopterId} IS NULL OR ${adoptions.recordType} = 'foster')`);
         return await attachAdoptionThumbnails(db, rows);
     } catch (error) {
         logger.error('getAvailableAnimals failed', error);
@@ -310,12 +313,8 @@ export async function deleteAnimalForAdoption(adoptionId: string) {
         const { isAdminAsync } = await import('@/config/admins');
         if (existing.addedBy !== changedBy && !await isAdminAsync(changedBy)) throw new Error("Not authorized to delete this animal");
 
-        // Delete associated images first
-        const { adopterImages } = await import('@/db/schema');
-        await db.delete(adopterImages).where(eq(adopterImages.adoptionId, adoptionId));
-
-        // Delete the adoption record
-        await db.delete(adoptions).where(eq(adoptions.id, adoptionId));
+        // Delete the animal record + its placements + adoption-linked images.
+        await deleteRecordById(db, adoptionId);
 
         logAudit({ userEmail: changedBy, action: 'animal_for_adoption_deleted', target: adoptionId, details: { animalName: existing.animalName } });
         revalidatePath('/my-animals');

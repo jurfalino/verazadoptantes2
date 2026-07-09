@@ -1016,6 +1016,7 @@ export const es = {
         no_adopted_animals: 'Sin animales adoptados aún',
         no_adopted_desc: 'Los animales que hayan sido adoptados aparecerán aquí.',
         adopted_by: 'Adoptado por',
+        in_foster_with: 'En tránsito con',
         view_signed_contract: 'Ver Contrato Firmado',
         view_contract: 'Ver contrato',
         share_contract: 'Compartir contrato',
@@ -1254,7 +1255,9 @@ export const es = {
     },
     myAnimals: {
         record_adoption: 'Registrar adopción',
+        move_to_foster: 'Mover a otro tránsito',
         pick_adopter_title: 'Registrar adopción',
+        pick_foster_title: 'Mover a otro tránsito',
         pick_adopter_for: 'Para {name}',
         showcase_section_title: 'Tu catálogo público',
         showcase_section_desc: 'Compartí estos links para que las personas vean tus animales en adopción.',

@@ -199,5 +199,15 @@ export const createAdopterApiSchema = z.object({
         recordType: z.enum(['adoption', 'adoption_request', 'returned_pet', 'follow_up', 'observation', 'foster']).optional().nullable(),
         rating: z.number().int().min(1).max(5).optional().nullable(),
         date: z.string().max(50).optional().nullable(),
+        // v2.24.6: additional animal/record fields, forwarded from the
+        // spreadsheet importer (insertRecord already persists these). All
+        // optional/nullable so existing callers are unaffected.
+        sex: z.string().max(50).optional().nullable(),
+        neutered: z.number().int().min(0).max(1).optional().nullable(),
+        color: z.string().max(200).optional().nullable(),
+        microchip: z.string().max(200).optional().nullable(),
+        age: z.string().max(100).optional().nullable(),
+        details: z.string().max(10_000).optional().nullable(),
+        onBehalfOf: z.string().max(500).optional().nullable(),
     }).optional(),
 });

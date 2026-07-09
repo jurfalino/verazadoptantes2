@@ -2,7 +2,7 @@ export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { adopters, adopterImages, adoptions } from '@/db/schema';
+import { adopters, adopterImages } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
@@ -76,9 +76,8 @@ export async function POST(
         if (sourceUrl) detailsParts.push(`Source: ${sourceUrl}`);
 
         // Create the adoption/observation/follow-up record
-        const adoptionId = crypto.randomUUID();
-        await db.insert(adoptions).values({
-            id: adoptionId,
+        const { insertRecord } = await import('@/app/actions/_recordWrite');
+        const adoptionId = await insertRecord(db, {
             adopterId,
             // v2.19.52: see api/adopters/route.ts:446 — both routes had the
             // same literal-'Unknown' coercion; both pass NULL through now.
@@ -86,12 +85,11 @@ export async function POST(
             species: adoption.species || 'other',
             status: 'completed',
             rating: adoption.rating || 2,
-            addedBy: session.user.email || 'anonymous',
             recordType: adoption.recordType || 'observation',
             date: adoption.date ? new Date(adoption.date) : new Date(),
             sourceUrl: sourceUrl || null,
             details: detailsParts.length > 0 ? detailsParts.join('\n') : null
-        });
+        }, session.user.email || 'anonymous');
 
         // Save images linked to both adopter and adoption record
         let savedImageCount = 0;

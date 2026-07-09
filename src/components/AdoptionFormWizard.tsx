@@ -187,8 +187,15 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
         ? availableAnimals.find((a: { id: string }) => a?.id === prefillAnimalIdRaw)
         : null;
     const prefillAnimalId = matchedInventory ? prefillAnimalIdRaw : '';
+    // Honor the record type carried on ?newAdoption=<type> so entry points can
+    // pre-select the right chip. The /my-animals foster card uses this to open
+    // straight into 'foster' ("move to another foster home") vs 'adoption'
+    // ("give for adoption"). Unknown/absent values fall back to 'adoption'.
+    const URL_RECORD_TYPES = ['adoption', 'adoption_request', 'observation', 'follow_up', 'returned_pet', 'foster'] as const;
     const prefillRecordType = initialRecordType
-        || (newAdoptionParam === 'observation' ? 'observation' : 'adoption');
+        || (newAdoptionParam && (URL_RECORD_TYPES as readonly string[]).includes(newAdoptionParam)
+            ? newAdoptionParam
+            : 'adoption');
     const prefillRating = searchParams.get('rating');
     const prefillDetails = searchParams.get('details') || '';
     const prefillDate = searchParams.get('date') || '';

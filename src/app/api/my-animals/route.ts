@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
         }
 
         const { adoptions, adopterImages, adopters } = await import('@/db/schema');
-        const { eq, sql, and, isNull, isNotNull } = await import('drizzle-orm');
+        const { eq, sql, and, or, isNull, isNotNull } = await import('drizzle-orm');
 
         let results;
         if (view === 'adopted') {
@@ -54,12 +54,18 @@ export async function GET(request: NextRequest) {
                 .orderBy(sql`${adoptions.date} DESC`)
                 .all();
         } else {
-            // Available animals (not yet adopted)
+            // Available animals (not yet adopted) PLUS animals currently in a
+            // foster home ("Tránsito"). Foster rows have an adopterId (the foster
+            // home) + recordType='foster', so the isNull(adopterId) guard applies
+            // only to plain 'available' rows — otherwise a fostered animal falls
+            // through both /my-animals tabs and vanishes.
             results = await db.select().from(adoptions)
                 .where(and(
                     eq(adoptions.addedBy, userEmail),
-                    isNull(adoptions.adopterId),
-                    eq(adoptions.recordType, 'available')
+                    or(
+                        and(isNull(adoptions.adopterId), eq(adoptions.recordType, 'available')),
+                        eq(adoptions.recordType, 'foster')
+                    )
                 ))
                 .orderBy(sql`${adoptions.date} DESC`)
                 .all();

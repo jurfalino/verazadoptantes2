@@ -1,13 +1,14 @@
 export const runtime = 'edge';
 
 import { getDb } from "@/app/actions";
-import { adopters, adopterFlags, adopterHistory, adopterImages, adopterStats, adoptions, duplicateTokens, duplicateCandidates, formSubmissions } from "@/db/schema";
+import { adopters, adopterFlags, adopterHistory, adopterImages, adopterStats, duplicateTokens, duplicateCandidates, formSubmissions } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { auth } from "@/auth";
 import { logger } from "@/lib/logger";
 import { NextRequest, NextResponse } from "next/server";
 
 import { isAdminAsync } from "@/config/admins";
+import { deleteAdopterRecords } from "@/app/actions/_recordWrite";
 
 export async function POST(request: NextRequest) {
     let adopterId: string | undefined;
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest) {
         await db.delete(adopterFlags).where(eq(adopterFlags.adopterId, adopterId));
         await db.delete(adopterHistory).where(eq(adopterHistory.adopterId, adopterId));
         await db.delete(adopterImages).where(eq(adopterImages.adopterId, adopterId));
-        await db.delete(adoptions).where(eq(adoptions.adopterId, adopterId));
+        await deleteAdopterRecords(db, adopterId);
         await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, adopterId));
         await db.delete(duplicateCandidates).where(sql`${duplicateCandidates.adopter1Id} = ${adopterId} OR ${duplicateCandidates.adopter2Id} = ${adopterId}`);
         await db.update(formSubmissions).set({ linkedAdopterId: null }).where(eq(formSubmissions.linkedAdopterId, adopterId));

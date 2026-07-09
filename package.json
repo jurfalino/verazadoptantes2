@@ -1,6 +1,6 @@
 {
   "name": "buenadoptante",
-  "version": "2.24.2",
+  "version": "2.24.8-1",
   "private": true,
   "scripts": {
     "dev": "set NODE_OPTIONS=--max-old-space-size=2048 --expose-gc&& next dev",
@@ -15,14 +15,17 @@
     "@cloudflare/next-on-pages": "^1.13.16",
     "@google/generative-ai": "^0.24.1",
     "@markdoc/markdoc": "^0.5.4",
+    "@types/papaparse": "^5.5.2",
     "better-sqlite3": "^12.6.2",
     "driver.js": "^1.5.0",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^0.562.0",
     "next": "15.1.6",
     "next-auth": "5.0.0-beta.30",
+    "papaparse": "^5.5.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "read-excel-file": "^9.2.0",
     "resend": "^6.12.2",
     "zod": "^4.3.6"
   },

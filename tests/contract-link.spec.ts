@@ -44,9 +44,12 @@ test.describe('Contract-results merge — "Es la misma persona"', () => {
 
         // 1a. Seed an "available" animal record owned by the admin user. The contract
         // submit endpoint requires this row to exist (and to have adopter_id IS NULL).
+        // Normalized model: an "available" animal is an animals row with no active
+        // placement (adopter_id IS NULL via the adoptions compat view). The contract
+        // submit then opens an adoption placement on it.
         execD1(
-            `INSERT INTO adoptions (id, adopter_id, animal_name, species, details, record_type, date, added_by) ` +
-            `VALUES ('${animalId}', NULL, 'Test Pet for Contract', 'dog', 'E2E fixture', 'available', strftime('%s','now'), 'gatitosolivos@gmail.com')`,
+            `INSERT INTO animals (id, name, species, details, added_by, created_at, updated_at) ` +
+            `VALUES ('${animalId}', 'Test Pet for Contract', 'dog', 'E2E fixture', 'gatitosolivos@gmail.com', strftime('%s','now'), strftime('%s','now'))`,
         );
 
         // 1b. Reset the fixture adopter to a clean state. INSERT OR REPLACE ensures

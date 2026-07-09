@@ -1016,6 +1016,7 @@ export const pt = {
         no_adopted_animals: 'Ainda sem animais adotados',
         no_adopted_desc: 'Os animais que forem adotados aparecerão aqui.',
         adopted_by: 'Adotado por',
+        in_foster_with: 'Em acolhimento com',
         view_signed_contract: 'Ver Contrato Assinado',
         view_contract: 'Ver contrato',
         share_contract: 'Compartilhar contrato',
@@ -1254,7 +1255,9 @@ export const pt = {
     },
     myAnimals: {
         record_adoption: 'Registrar adoção',
+        move_to_foster: 'Mover para outro acolhimento',
         pick_adopter_title: 'Registrar adoção',
+        pick_foster_title: 'Mover para outro acolhimento',
         pick_adopter_for: 'Para {name}',
         showcase_section_title: 'Seu catálogo público',
         showcase_section_desc: 'Compartilhe estes links para que as pessoas vejam seus animais para adoção.',

@@ -10,6 +10,12 @@ interface PickAdopterForAnimalModalProps {
     animalName: string;
     open: boolean;
     onClose: () => void;
+    /**
+     * Which record the wizard should pre-select. 'adoption' (default) records a
+     * permanent adoption; 'foster' moves an in-transit animal to another foster
+     * home. Both go through the wizard on the picked adopter's profile.
+     */
+    recordType?: 'adoption' | 'foster';
 }
 
 /**
@@ -32,18 +38,20 @@ interface PickAdopterForAnimalModalProps {
  * the existing wizard on the adopter profile — that's where the user lands.
  */
 export default function PickAdopterForAnimalModal({
-    animalId, animalName, open, onClose,
+    animalId, animalName, open, onClose, recordType = 'adoption',
 }: PickAdopterForAnimalModalProps) {
     const { t } = useLanguage();
     const router = useRouter();
 
     if (!open) return null;
 
+    const isFoster = recordType === 'foster';
+
     const handleSelectExisting = (adopter: DiscoveryMatch) => {
         const adopterId = adopter.adopterId;
         if (!adopterId) return;
         const params = new URLSearchParams({
-            newAdoption: 'adoption',
+            newAdoption: recordType,
             animalId,
         });
         // Close before pushing so the overlay doesn't briefly stack on top of
@@ -55,7 +63,7 @@ export default function PickAdopterForAnimalModal({
     const handleCreateNew = (searchText: string) => {
         const params = new URLSearchParams({
             continueToAdoption: 'true',
-            newAdoption: 'adoption',
+            newAdoption: recordType,
             animalId,
         });
         // Forward whatever the user typed so the create form can prefill it
@@ -73,7 +81,7 @@ export default function PickAdopterForAnimalModal({
             onClick={onClose}
             role="dialog"
             aria-modal="true"
-            aria-label={t('myAnimals.pick_adopter_title') || 'Buscar adoptante'}
+            aria-label={(isFoster ? t('myAnimals.pick_foster_title') : t('myAnimals.pick_adopter_title')) || 'Buscar adoptante'}
         >
             <div
                 className="rounded-2xl shadow-xl w-full max-w-lg max-h-[90svh] overflow-hidden flex flex-col"
@@ -84,7 +92,7 @@ export default function PickAdopterForAnimalModal({
                     <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                             <h2 className="text-base font-bold text-stone-800">
-                                {t('myAnimals.pick_adopter_title') || 'Registrar adopción'}
+                                {(isFoster ? t('myAnimals.pick_foster_title') : t('myAnimals.pick_adopter_title')) || 'Registrar adopción'}
                             </h2>
                             <p className="text-xs text-stone-500 mt-0.5 truncate">
                                 {(t('myAnimals.pick_adopter_for') || 'Para {name}')

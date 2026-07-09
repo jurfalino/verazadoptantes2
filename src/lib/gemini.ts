@@ -9,6 +9,7 @@
 import { GoogleGenerativeAI, Part } from "@google/generative-ai";
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { logger } from '@/lib/logger';
+import { parseColumnMap, parseAiRows, TARGET_IMPORT_FIELDS, COMBINED_CONTACT, IGNORE, type ColumnMap, type MappedRow } from '@/domain/importFields';
 
 // Extracted adopter data from AI
 export interface ExtractedAdopterData {
@@ -199,6 +200,132 @@ export async function extractAdopterData(
             rawExtraction: String(error),
         };
     }
+}
+
+/**
+ * Spreadsheet column-mapper. Given the sheet's headers + a few sample rows, ask
+ * the model to classify each column into one of our target fields (see
+ * TARGET_IMPORT_FIELDS), or `combined_contact` (a messy cell holding several
+ * contact types) / `ignore`. ONE call per file — rows are then applied
+ * deterministically. Falls back to an all-`ignore` map on any failure so the
+ * user can still map manually. Response validated by `parseColumnMap` (never
+ * trusts the raw model output). See .claude plan: spreadsheet import.
+ */
+function getColumnMapPrompt(headers: string[], sampleRows: string[][], language: string): string {
+    const fieldList = TARGET_IMPORT_FIELDS.map(f => `  - "${f.key}": ${f.hint}`).join('\n');
+    // Render a compact sample table so the model sees example values per column.
+    const sample = [headers.join(' | '), ...sampleRows.slice(0, 5).map(r => headers.map((_, i) => (r[i] ?? '')).join(' | '))].join('\n');
+    const lang = language === 'en' ? 'English' : 'Spanish';
+    return `You are mapping columns of an adoption-records spreadsheet to a fixed schema for a pet-adoption vetting system.
+
+For EACH column header below, decide which target field it best represents. Valid targets:
+${fieldList}
+  - "${COMBINED_CONTACT}": the column holds SEVERAL contact types mixed together (e.g. phone + email + address in one cell). Use this so we can split it per-row later.
+  - "${IGNORE}": the column is irrelevant or has no clear target.
+
+RULES:
+- Judge by BOTH the header name and the sample values.
+- Assign each column exactly once. Never invent columns.
+- Exactly one column should map to "name" when a name column exists; if several could be the name, pick the most likely and mark the others appropriately.
+- Set confidence to "high" only when header + sample values clearly agree; "low" when guessing.
+- Any notes should be in ${lang}.
+
+Headers: ${JSON.stringify(headers)}
+
+Sample rows (pipe-separated, header row first):
+${sample}
+
+Return ONLY JSON in this exact shape (no prose, no markdown):
+{"columns":[{"column":"<exact header>","field":"<target key>","confidence":"high|medium|low"}],"notes":"<optional>"}`;
+}
+
+export async function mapSpreadsheetColumns(
+    headers: string[],
+    sampleRows: string[][],
+    modelName: string = "gemini-2.5-flash",
+    language: string = "es",
+): Promise<ColumnMap> {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) throw new Error('GEMINI_API_KEY not configured');
+    if (!headers.length) return parseColumnMap(null, headers);
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: modelName });
+
+    try {
+        const result = await model.generateContent(getColumnMapPrompt(headers, sampleRows, language));
+        const responseText = (await result.response).text() || '';
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        const raw = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+        return parseColumnMap(raw, headers);
+    } catch (error) {
+        // Fall open to an all-ignore map — the user maps manually rather than the
+        // whole flow breaking. warn (degraded), not error (broken).
+        logger.warn('Gemini column-mapping failed (fell back to all-ignore map)', { headerCount: headers.length, error: error instanceof Error ? error.message : String(error) });
+        return parseColumnMap(null, headers);
+    }
+}
+
+/**
+ * AI ingestion: interpret spreadsheet rows DIRECTLY into structured records
+ * (MappedRow[]), for arbitrary/messy formats where column-mapping doesn't fit.
+ * Batched to bound cost/latency. Validated by `parseAiRows` (never trusts raw
+ * output); a failed batch pads with empty rows so alignment holds and the user
+ * sees those rows as errors in the confirmation grid rather than losing them.
+ */
+function getTransformPrompt(headers: string[], rows: string[][], language: string): string {
+    const lang = language === 'en' ? 'English' : 'Spanish';
+    const table = [headers.join(' | '), ...rows.map(r => headers.map((_, i) => (r[i] ?? '')).join(' | '))].join('\n');
+    return `You convert rows of a pet-adoption records spreadsheet into structured records for a vetting system.
+
+For EACH data row (in order), output ONE JSON object with any of these fields that are present:
+  name, phones (array), emails (array), socials (array), addresses (array), dnis (array),
+  animalName, species (dog/cat/bird/other), sex, neutered (yes/no), color, microchip, age,
+  rating (1-5), date (YYYY-MM-DD if determinable), recordType (adoption/foster/observation/adoption_request/follow_up/returned_pet),
+  details, onBehalfOf.
+
+RULES:
+- Output exactly one object per input row, in the SAME order (${rows.length} objects).
+- Extract ONLY what is present. NEVER invent, guess, or construct data.
+- Keep phone/email/ID values EXACTLY as written — do not reformat or "fix" digits.
+- Omit unknown fields. Any notes/free text in ${lang}.
+
+Headers: ${JSON.stringify(headers)}
+Rows (pipe-separated, header row first):
+${table}
+
+Return ONLY a JSON array of ${rows.length} objects (no prose, no markdown).`;
+}
+
+export async function aiTransformRows(
+    headers: string[],
+    rows: string[][],
+    modelName: string = 'gemini-2.5-flash',
+    language: string = 'es',
+): Promise<MappedRow[]> {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) throw new Error('GEMINI_API_KEY not configured');
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: modelName });
+
+    const BATCH = 15;
+    const out: MappedRow[] = [];
+    for (let i = 0; i < rows.length; i += BATCH) {
+        const batch = rows.slice(i, i + BATCH);
+        try {
+            const result = await model.generateContent(getTransformPrompt(headers, batch, language));
+            const text = (await result.response).text() || '';
+            const jsonMatch = text.match(/\[[\s\S]*\]/);
+            const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+            out.push(...parseAiRows(parsed, batch.length));
+        } catch (e) {
+            // Handled: pad this batch with empty rows (visible as errors in the
+            // grid) and continue. warn, not error — the import isn't broken.
+            logger.warn('aiTransformRows batch failed (padded empty, continuing)', { batchStart: i, batchSize: batch.length, error: e instanceof Error ? e.message : String(e) });
+            out.push(...parseAiRows(null, batch.length));
+        }
+    }
+    return out;
 }
 
 /**
