@@ -110,33 +110,48 @@ async function extractOgTags(page: Page): Promise<{ title?: string; description?
 
 /** Fetch OG tags via HTTP with a bot User-Agent (no Playwright needed) */
 /** Stable-ish id for an Instagram CDN image URL, so size variants of the same
- *  photo dedupe to one while distinct carousel slides stay separate. */
+ *  photo dedupe to one while distinct carousel slides stay separate. Keys on the
+ *  first two id groups (`<photoId>_<mediaId>`), which are identical across the
+ *  og:image (scontent host) and the image_versions2 (fbcdn host) URLs of the same
+ *  slide — so the cover doesn't get counted twice — yet unique per slide. */
 function instagramImageId(u: string): string {
-    const m = u.match(/\/([0-9]{6,}_[0-9]{6,}_[0-9]{6,}_[a-z])\./i);
+    const m = u.match(/\/([0-9]{6,}_[0-9]{6,})_[0-9]/);
     return m ? m[1] : u.split('?')[0];
 }
 
 /**
  * Harvest ALL Instagram carousel image URLs from page HTML/JSON and append the
  * new ones to `out`. Instagram exposes only ONE `og:image` (the cover) even for
- * multi-photo carousels, but embeds every slide's URL in its hydration JSON
- * (`display_url`, media `src`). This is why posts came back with a single image.
- * Dedupes by image id; skips profile pics / thumbnails. Escaped JSON slashes are
- * unescaped. Best-effort — Instagram markup evolves.
+ * multi-photo carousels, but embeds every slide in the Relay preload JSON under
+ * `image_versions2.candidates[].url` (the first candidate is the full-res one).
+ * Only the PRIMARY post emits these blocks — suggested/related posts on the page
+ * are just references — so this stays scoped to the target post's slides.
+ *
+ * (History: Instagram retired the old `display_url` field this used to read, which
+ * is why multi-image posts silently returned only the cover. Feed images carry a
+ * `t51.<n>-15` path segment; `-19` is profile pics, which we skip.) Dedupes by
+ * image id so the cover (already in `out` from og:image) isn't double-counted.
+ * Escaped JSON slashes/ampersands are unescaped. Best-effort — markup evolves.
  */
 function harvestInstagramImages(html: string, out: string[]): void {
     const seen = new Set(out.map(instagramImageId));
     const consider = (raw: string) => {
-        const u = raw.replace(/\\u0026/gi, '&').replace(/\\\//g, '/');
+        const u = raw
+            .replace(/\\u0026/gi, '&')
+            .replace(/\\u00253D/gi, '%3D')
+            .replace(/\\\//g, '/');
         if (!/scontent|cdninstagram|fbcdn/i.test(u)) return;
-        if (/(_s\.|_t\.|s150x150|150x150|\/profile|emoji)/i.test(u)) return;
+        // Skip thumbnails, profile pics, emoji, and non-feed image classes.
+        if (/(_s\.|_t\.|s150x150|150x150|\/profile|profile_pic|emoji|t51\.[0-9]+-19)/i.test(u)) return;
         const id = instagramImageId(u);
         if (seen.has(id)) return;
         seen.add(id);
         out.push(u);
     };
+    // Primary source: the current image_versions2 structure (first candidate = full-res).
+    for (const m of html.matchAll(/"image_versions2":\{"candidates":\[\{"url":"([^"]+)"/g)) consider(m[1]);
+    // Legacy fallback for older markup that still exposes display_url.
     for (const m of html.matchAll(/"display_url":"([^"]+)"/g)) consider(m[1]);
-    for (const m of html.matchAll(/"src":"(https:[^"]*(?:scontent|cdninstagram)[^"]*\.(?:jpg|jpeg|webp)[^"]*)"/gi)) consider(m[1]);
 }
 
 async function fetchOgTagsHttp(url: string, userAgent: string): Promise<{ title?: string; description?: string; images: string[]; videos: string[]; text?: string }> {
@@ -461,7 +476,7 @@ async function scrapeInstagramPost(url: string): Promise<ScrapeResult> {
             return {
                 text: text.trim(),
                 author: author.trim() || undefined,
-                images: images.slice(0, 10),
+                images: images.slice(0, 20),
                 videos: videos.slice(0, 5),
                 platform: 'instagram',
             };
