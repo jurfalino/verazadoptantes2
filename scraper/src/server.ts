@@ -109,6 +109,36 @@ async function extractOgTags(page: Page): Promise<{ title?: string; description?
 }
 
 /** Fetch OG tags via HTTP with a bot User-Agent (no Playwright needed) */
+/** Stable-ish id for an Instagram CDN image URL, so size variants of the same
+ *  photo dedupe to one while distinct carousel slides stay separate. */
+function instagramImageId(u: string): string {
+    const m = u.match(/\/([0-9]{6,}_[0-9]{6,}_[0-9]{6,}_[a-z])\./i);
+    return m ? m[1] : u.split('?')[0];
+}
+
+/**
+ * Harvest ALL Instagram carousel image URLs from page HTML/JSON and append the
+ * new ones to `out`. Instagram exposes only ONE `og:image` (the cover) even for
+ * multi-photo carousels, but embeds every slide's URL in its hydration JSON
+ * (`display_url`, media `src`). This is why posts came back with a single image.
+ * Dedupes by image id; skips profile pics / thumbnails. Escaped JSON slashes are
+ * unescaped. Best-effort — Instagram markup evolves.
+ */
+function harvestInstagramImages(html: string, out: string[]): void {
+    const seen = new Set(out.map(instagramImageId));
+    const consider = (raw: string) => {
+        const u = raw.replace(/\\u0026/gi, '&').replace(/\\\//g, '/');
+        if (!/scontent|cdninstagram|fbcdn/i.test(u)) return;
+        if (/(_s\.|_t\.|s150x150|150x150|\/profile|emoji)/i.test(u)) return;
+        const id = instagramImageId(u);
+        if (seen.has(id)) return;
+        seen.add(id);
+        out.push(u);
+    };
+    for (const m of html.matchAll(/"display_url":"([^"]+)"/g)) consider(m[1]);
+    for (const m of html.matchAll(/"src":"(https:[^"]*(?:scontent|cdninstagram)[^"]*\.(?:jpg|jpeg|webp)[^"]*)"/gi)) consider(m[1]);
+}
+
 async function fetchOgTagsHttp(url: string, userAgent: string): Promise<{ title?: string; description?: string; images: string[]; videos: string[]; text?: string }> {
     try {
         const response = await fetch(url, {
@@ -149,11 +179,16 @@ async function fetchOgTagsHttp(url: string, userAgent: string): Promise<{ title?
             .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
             .replace(/&#x([0-9a-fA-F]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
 
+        const images = imageMatches.map(m => decodeEntities(m[1]));
+        // Instagram carousels: og:image is just the cover — harvest the rest of
+        // the slides from the embedded JSON so multi-image posts return them all.
+        if (/instagram\.com|instagr\.am/.test(url)) harvestInstagramImages(html, images);
+
         return {
             title: titleMatch ? decodeEntities(titleMatch[1]) : undefined,
             description: descMatch ? decodeEntities(descMatch[1]) : undefined,
             text: jsonLdText || undefined,
-            images: imageMatches.map(m => decodeEntities(m[1])),
+            images,
             videos: videoMatches.map(m => decodeEntities(m[1])),
         };
     } catch (e) {
@@ -509,6 +544,10 @@ async function scrapeInstagramPost(url: string): Promise<ScrapeResult> {
         for (const img of pageImages) {
             if (!images.includes(img)) images.push(img);
         }
+
+        // Carousels: only the first slide renders as an <img> (lazy-loaded), so
+        // harvest every slide's URL from the rendered page's embedded JSON.
+        try { harvestInstagramImages(await page.content(), images); } catch { /* best-effort */ }
 
         // Extract video thumbnails and video source URLs
         const videoData = await page.evaluate(() => {
