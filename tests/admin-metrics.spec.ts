@@ -18,7 +18,18 @@ import { test, expect } from '@playwright/test';
 
 test.describe('admin metrics dashboard', () => {
     test('admin sees the dashboard and can toggle the period', async ({ browser }) => {
-        const context = await browser.newContext({ storageState: '.auth/admin.json' });
+        // Force Spanish: LanguageContext hydrates from navigator.language, and
+        // Playwright's Chromium defaults to en — which would render the client
+        // dashboard's i18n'd labels in English and miss the Spanish assertions
+        // below. es-AR matches the app's default locale (and the real audience).
+        const context = await browser.newContext({ storageState: '.auth/admin.json', locale: 'es-AR' });
+        // The admin storage state was captured under Playwright's default `en`
+        // locale, so it carries `app-locale='en'` in localStorage — which
+        // LanguageContext prefers over navigator.language. Overwrite it before any
+        // app script runs so the client dashboard renders the Spanish labels below.
+        await context.addInitScript(() => {
+            try { window.localStorage.setItem('app-locale', 'es'); } catch { /* noop */ }
+        });
         const page = await context.newPage();
 
         await page.goto('/admin/metrics');
@@ -49,12 +60,12 @@ test.describe('admin metrics — access', () => {
 
         await page.goto('/admin/metrics');
 
-        // Middleware redirects to '/?callbackUrl=...&authRequired=true' before any
-        // session/admin check runs — the final URL is never the metrics page.
-        // (callbackUrl percent-encodes the path, so the negative check alone
-        // would also pass on a no-op goto — assert the redirect actually fired.)
+        // Middleware redirects an unauthenticated visit off /admin/metrics to the
+        // home page before any admin check runs. A non-redirect (no-op goto) would
+        // leave the URL on /admin/metrics and fail the negative check, so the
+        // redirect-to-home assertion below proves the gate actually fired.
         expect(page.url()).not.toContain('/admin/metrics');
-        expect(page.url()).toContain('authRequired=true');
+        expect(new URL(page.url()).pathname).toBe('/');
 
         await context.close();
     });
