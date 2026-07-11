@@ -19,6 +19,8 @@
  */
 
 import { getRequestContext } from '@cloudflare/next-on-pages';
+import { windowToBucket, bucketStartsMs, windowRangeIso, type Window } from './metricsTime';
+import { mapSeriesToPoints, type SeriesPoint } from './metricsSeries';
 
 const AXIOM_API = 'https://api.axiom.co/v1/datasets';
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -71,7 +73,7 @@ function getCurrentEnv(): string {
     return 'local';
 }
 
-interface AxiomAggregation {
+export interface AxiomAggregation {
     op: string;
     field?: string;
     argument?: number[];
@@ -96,6 +98,7 @@ interface AxiomQueryBody {
     aggregations: AxiomAggregation[];
     filter?: AxiomFilter;
     groupBy?: string[];
+    resolution?: string; // e.g. '24h' | '1h'; when set, Axiom returns buckets.series
 }
 
 interface AxiomQueryResponse {
@@ -103,6 +106,10 @@ interface AxiomQueryResponse {
         totals?: Array<{
             group: Record<string, string | null>;
             aggregations: Array<{ op: string; value: number | number[] | null }>;
+        }>;
+        series?: Array<{
+            startTime: string;
+            groups?: Array<{ aggregations?: Array<{ value: number | number[] | null }> }>;
         }>;
     };
 }
@@ -142,6 +149,74 @@ async function runQuery(body: AxiomQueryBody, config: AxiomConfig): Promise<Axio
     const data = await res.json() as AxiomQueryResponse;
     _cache.set(cacheKey, { value: data, expiresAt: Date.now() + CACHE_TTL_MS });
     return data;
+}
+
+// ── Metric registry + time series ──────────────────────────────────────────
+
+export type MetricKey = 'errors' | 'ai_failures' | 'signin_failures' | 'active_rescuers' | 'activity' | 'imports';
+
+export interface MetricDef {
+    key: MetricKey;
+    labelKey: string;
+    chart: 'line' | 'bar';
+    filter?: AxiomFilter;
+    deepLinkFilter?: string;
+    agg?: AxiomAggregation; // defaults to count(*); active_rescuers uses distinct(user)
+}
+
+export const METRICS: Record<MetricKey, MetricDef> = {
+    errors: {
+        key: 'errors', labelKey: 'admin.metric_errors', chart: 'line',
+        filter: { op: '==', field: 'level', value: 'error' },
+        deepLinkFilter: 'level=="error"',
+    },
+    ai_failures: {
+        key: 'ai_failures', labelKey: 'admin.metric_ai_failures', chart: 'bar',
+        filter: { op: '==', field: 'message', value: 'Gemini extraction failed' },
+        deepLinkFilter: 'message=="Gemini extraction failed"',
+    },
+    signin_failures: {
+        key: 'signin_failures', labelKey: 'admin.metric_signin_failures', chart: 'bar',
+        filter: { op: 'or', children: [
+            { op: '==', field: 'message', value: 'next-auth error' },
+            { op: '==', field: 'message', value: 'auth-error page hit' },
+        ] },
+        deepLinkFilter: 'message=="next-auth error" or message=="auth-error page hit"',
+    },
+    active_rescuers: {
+        key: 'active_rescuers', labelKey: 'admin.metric_active_rescuers', chart: 'line',
+        filter: { op: '!=', field: 'user', value: '' },
+        agg: { op: 'distinct', field: 'user' }, // distinct rescuers per bucket, not event volume
+        deepLinkFilter: 'isnotnull(user)',
+    },
+    activity: {
+        key: 'activity', labelKey: 'admin.metric_activity', chart: 'bar',
+        filter: { op: '!=', field: 'user', value: '' },
+    },
+    imports: {
+        key: 'imports', labelKey: 'admin.metric_imports', chart: 'line',
+        filter: { op: '==', field: 'message', value: 'AI extraction completed' },
+        deepLinkFilter: 'message=="AI extraction completed"',
+    },
+};
+
+/** Time-bucketed count for a metric over the window, gap-filled. Null when Axiom
+ *  is unavailable so the caller degrades the card to "no disponible". */
+export async function getTimeSeries(key: MetricKey, w: Window): Promise<SeriesPoint[] | null> {
+    const config = getQueryConfig();
+    if (!config) return null;
+    const def = METRICS[key];
+    const { resolution } = windowToBucket(w);
+    const { startTime, endTime } = windowRangeIso(w, Date.now());
+    const data = await runQuery({
+        startTime,
+        endTime,
+        aggregations: [def.agg ?? { op: 'count', field: '*' }],
+        filter: def.filter,
+        resolution,
+    }, config);
+    if (!data) return null;
+    return mapSeriesToPoints(data.buckets?.series, bucketStartsMs(w, Date.parse(endTime) - 1));
 }
 
 // ── Typed metric wrappers ─────────────────────────────────────────────────
