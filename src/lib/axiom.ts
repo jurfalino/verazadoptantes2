@@ -162,6 +162,11 @@ export interface MetricDef {
     filter?: AxiomFilter;
     deepLinkFilter?: string;
     agg?: AxiomAggregation; // defaults to count(*); active_rescuers uses distinct(user)
+    /** True for "higher is better" usage metrics (active_rescuers, activity,
+     *  imports) — an `up` trend should read as good (emerald), not alarming
+     *  (rose). Absent/false = "lower is better" (errors, ai_failures,
+     *  signin_failures), the default alarm polarity. */
+    higherIsBetter?: boolean;
 }
 
 export const METRICS: Record<MetricKey, MetricDef> = {
@@ -188,15 +193,18 @@ export const METRICS: Record<MetricKey, MetricDef> = {
         filter: { op: '!=', field: 'user', value: '' },
         agg: { op: 'distinct', field: 'user' }, // distinct rescuers per bucket, not event volume
         deepLinkFilter: 'isnotnull(user)',
+        higherIsBetter: true,
     },
     activity: {
         key: 'activity', labelKey: 'admin.metric_activity', chart: 'bar',
         filter: { op: '!=', field: 'user', value: '' },
+        higherIsBetter: true,
     },
     imports: {
         key: 'imports', labelKey: 'admin.metric_imports', chart: 'line',
         filter: { op: '==', field: 'message', value: 'AI extraction completed' },
         deepLinkFilter: 'message=="AI extraction completed"',
+        higherIsBetter: true,
     },
 };
 
@@ -421,6 +429,10 @@ export function getAxiomDeepLinkUrl(opts: DeepLinkOptions = {}): string | null {
     // Always env-scope the deep-link so clicking from /admin doesn't show
     // cross-env events (mirrors the auto env filter on the metric queries).
     const envFilter = `env=="${getCurrentEnv()}"`;
-    const combined = opts.filter ? `${envFilter} ${opts.filter}` : envFilter;
+    // Parenthesize the caller filter so env-scope always binds correctly.
+    // Without this, a filter containing `or` (e.g. signin_failures'
+    // `message=="A" or message=="B"`) parses as `(env AND A) OR B`, letting
+    // clause B escape the env filter entirely.
+    const combined = opts.filter ? `${envFilter} (${opts.filter})` : envFilter;
     return `${base}?_q=${encodeURIComponent(combined)}`;
 }

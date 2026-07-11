@@ -14,6 +14,7 @@ export interface MetricCardData {
     chart: 'line' | 'bar';
     labelKey: string;
     deepLink: string | null;
+    higherIsBetter: boolean;
 }
 
 export interface MetricsPayload {
@@ -56,6 +57,7 @@ export async function fetchMetrics(window: Window): Promise<MetricsPayload> {
             chart: def.chart,
             labelKey: def.labelKey,
             deepLink: def.deepLinkFilter ? getAxiomDeepLinkUrl({ filter: def.deepLinkFilter }) : getAxiomDeepLinkUrl(),
+            higherIsBetter: METRICS[key].higherIsBetter ?? false,
         };
     }));
 
