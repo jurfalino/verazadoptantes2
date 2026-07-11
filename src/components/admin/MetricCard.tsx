@@ -6,7 +6,7 @@ import type { MetricCardData } from '@/app/actions/metrics';
 
 export function MetricCard({ card, loading }: { card: MetricCardData; loading: boolean }) {
     const { t } = useLanguage();
-    const trendColor = card.trend.dir === 'up' ? 'text-red-600' : card.trend.dir === 'down' ? 'text-emerald-600' : 'text-stone-500';
+    const trendColor = card.trend.dir === 'up' ? 'text-rose-600' : card.trend.dir === 'down' ? 'text-emerald-600' : 'text-stone-500';
     const arrow = card.trend.dir === 'up' ? '▲' : card.trend.dir === 'down' ? '▼' : '—';
     const unavailable = card.series === null;
     return (

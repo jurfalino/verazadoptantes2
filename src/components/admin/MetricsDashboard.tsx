@@ -1,5 +1,5 @@
 'use client';
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useRef } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { fetchMetrics, type MetricsPayload } from '@/app/actions/metrics';
 import type { Window } from '@/lib/metricsTime';
@@ -11,12 +11,17 @@ const WINDOWS: Window[] = ['24h', '7d', '30d'];
 export function MetricsDashboard({ initial }: { initial: MetricsPayload }) {
     const { t } = useLanguage();
     const [data, setData] = useState(initial);
-    const [window, setWindow] = useState<Window>(initial.window);
+    const [period, setPeriod] = useState<Window>(initial.window);
     const [pending, start] = useTransition();
+    const reqIdRef = useRef(0);
 
     const pick = (w: Window) => {
-        setWindow(w);
-        start(async () => { setData(await fetchMetrics(w)); });
+        setPeriod(w);
+        const id = ++reqIdRef.current;
+        start(async () => {
+            const payload = await fetchMetrics(w);
+            if (reqIdRef.current === id) setData(payload);
+        });
     };
 
     const ops = data.cards.filter(c => OPS.includes(c.key));
@@ -27,7 +32,7 @@ export function MetricsDashboard({ initial }: { initial: MetricsPayload }) {
             <div className="flex items-center justify-end gap-1.5 mb-5">
                 {WINDOWS.map(w => (
                     <button key={w} onClick={() => pick(w)}
-                        className={`px-3 py-1 rounded-full text-xs border ${window === w ? 'bg-teal-700 border-teal-700 text-white' : 'bg-white border-stone-300 text-stone-700'}`}>
+                        className={`px-3 py-1 rounded-full text-xs border ${period === w ? 'bg-teal-700 border-teal-700 text-white' : 'bg-white border-stone-300 text-stone-700'}`}>
                         {w}
                     </button>
                 ))}
