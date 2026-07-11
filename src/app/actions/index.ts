@@ -50,3 +50,7 @@ export { enrichAdopters } from './enrichAdopters';
 export type { EnrichmentResult } from './enrichAdopters';
 
 // Notifications — import directly from '@/app/actions/notifications' (server-side only)
+
+// Admin metrics
+export { fetchMetrics } from './metrics';
+export type { MetricsPayload, MetricCardData } from './metrics';

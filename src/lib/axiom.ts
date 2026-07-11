@@ -219,6 +219,28 @@ export async function getTimeSeries(key: MetricKey, w: Window): Promise<SeriesPo
     return mapSeriesToPoints(data.buckets?.series, bucketStartsMs(w, Date.parse(endTime) - 1));
 }
 
+/** ISO range for the CURRENT window — for callers needing {startTime,endTime}. */
+export function windowIso(w: Window): { startTime: string; endTime: string } {
+    return windowRangeIso(w, Date.now());
+}
+
+/** Total for the metric over the IMMEDIATELY-PRIOR equal-length window (for trend). */
+export async function getPriorTotal(key: MetricKey, w: Window): Promise<number> {
+    const config = getQueryConfig();
+    if (!config) return 0;
+    const span = { '24h': 24 * 3_600_000, '7d': 7 * 86_400_000, '30d': 30 * 86_400_000 }[w];
+    const { startTime: curStart } = windowRangeIso(w, Date.now());
+    const priorStart = new Date(Date.parse(curStart) - span).toISOString();
+    const data = await runQuery({
+        startTime: priorStart,
+        endTime: curStart,
+        aggregations: [METRICS[key].agg ?? { op: 'count', field: '*' }],
+        filter: METRICS[key].filter,
+    }, config);
+    const total = data?.buckets?.totals?.[0]?.aggregations?.[0]?.value;
+    return typeof total === 'number' ? total : 0;
+}
+
 // ── Typed metric wrappers ─────────────────────────────────────────────────
 
 interface TimeWindow {
