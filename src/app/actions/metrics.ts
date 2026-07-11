@@ -1,9 +1,10 @@
 'use server';
 
-import { getTimeSeries, getPriorTotal, windowIso, getTraceLatencies, getAxiomDeepLinkUrl, METRICS, type MetricKey, type TraceLatency } from '@/lib/axiom';
+import { getTimeSeries, getPriorTotal, getWindowTotal, windowIso, getTraceLatencies, getAxiomDeepLinkUrl, METRICS, type MetricKey, type TraceLatency } from '@/lib/axiom';
 import { computeTrend, type Window } from '@/lib/metricsTime';
 import { sumSeries } from '@/lib/metricsShape';
 import type { SeriesPoint } from '@/lib/metricsSeries';
+import { logger } from '@/lib/logger';
 
 export interface MetricCardData {
     key: MetricKey;
@@ -28,10 +29,25 @@ export async function fetchMetrics(window: Window): Promise<MetricsPayload> {
     const cards = await Promise.all(keys.map(async (key): Promise<MetricCardData> => {
         const def = METRICS[key];
         const [series, priorTotal] = await Promise.all([
-            getTimeSeries(key, window).catch(() => null),
-            getPriorTotal(key, window).catch(() => 0),
+            getTimeSeries(key, window).catch((e) => {
+                logger.warn('fetchMetrics: getTimeSeries failed', { key, window, error: e instanceof Error ? e.message : String(e) });
+                return null;
+            }),
+            getPriorTotal(key, window).catch((e) => {
+                logger.warn('fetchMetrics: getPriorTotal failed', { key, window, error: e instanceof Error ? e.message : String(e) });
+                return 0;
+            }),
         ]);
-        const total = sumSeries(series);
+        // `distinct`-agg metrics (e.g. active_rescuers) must use a whole-window
+        // total — summing the per-bucket distinct series over-counts a rescuer
+        // active across multiple buckets. Count metrics keep the cheap summed
+        // series total. The chart `series` itself is unaffected either way.
+        const total = def.agg
+            ? await getWindowTotal(key, window).catch((e) => {
+                logger.warn('fetchMetrics: getWindowTotal failed', { key, window, error: e instanceof Error ? e.message : String(e) });
+                return 0;
+            })
+            : sumSeries(series);
         return {
             key,
             total,
@@ -43,7 +59,10 @@ export async function fetchMetrics(window: Window): Promise<MetricsPayload> {
         };
     }));
 
-    const latencies = await getTraceLatencies(windowIso(window)).catch(() => null);
+    const latencies = await getTraceLatencies(windowIso(window)).catch((e) => {
+        logger.warn('fetchMetrics: getTraceLatencies failed', { window, error: e instanceof Error ? e.message : String(e) });
+        return null;
+    });
 
     return { window, cards, latencies, latencyDeepLink: getAxiomDeepLinkUrl() };
 }

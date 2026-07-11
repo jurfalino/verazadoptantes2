@@ -224,6 +224,21 @@ export function windowIso(w: Window): { startTime: string; endTime: string } {
     return windowRangeIso(w, Date.now());
 }
 
+/** Shared single-range (non-bucketed) aggregation for a metric. Used by both
+ *  `getPriorTotal` (prior window) and `getWindowTotal` (current window) so a
+ *  `distinct(user)`-style agg is computed once over the whole range instead
+ *  of being summed across per-bucket series (which over-counts). */
+async function aggregateTotal(key: MetricKey, startTime: string, endTime: string, config: AxiomConfig): Promise<number> {
+    const data = await runQuery({
+        startTime,
+        endTime,
+        aggregations: [METRICS[key].agg ?? { op: 'count', field: '*' }],
+        filter: METRICS[key].filter,
+    }, config);
+    const total = data?.buckets?.totals?.[0]?.aggregations?.[0]?.value;
+    return typeof total === 'number' ? total : 0;
+}
+
 /** Total for the metric over the IMMEDIATELY-PRIOR equal-length window (for trend). */
 export async function getPriorTotal(key: MetricKey, w: Window): Promise<number> {
     const config = getQueryConfig();
@@ -231,14 +246,18 @@ export async function getPriorTotal(key: MetricKey, w: Window): Promise<number> 
     const span = { '24h': 24 * 3_600_000, '7d': 7 * 86_400_000, '30d': 30 * 86_400_000 }[w];
     const { startTime: curStart } = windowRangeIso(w, Date.now());
     const priorStart = new Date(Date.parse(curStart) - span).toISOString();
-    const data = await runQuery({
-        startTime: priorStart,
-        endTime: curStart,
-        aggregations: [METRICS[key].agg ?? { op: 'count', field: '*' }],
-        filter: METRICS[key].filter,
-    }, config);
-    const total = data?.buckets?.totals?.[0]?.aggregations?.[0]?.value;
-    return typeof total === 'number' ? total : 0;
+    return aggregateTotal(key, priorStart, curStart, config);
+}
+
+/** Total for the metric over the CURRENT window, aggregated once over the
+ *  whole range (not summed from per-bucket series). Required for `distinct`
+ *  aggregations (e.g. `active_rescuers`), where summing per-bucket distinct
+ *  counts over-counts a rescuer active across multiple buckets. */
+export async function getWindowTotal(key: MetricKey, w: Window): Promise<number> {
+    const config = getQueryConfig();
+    if (!config) return 0;
+    const { startTime, endTime } = windowRangeIso(w, Date.now());
+    return aggregateTotal(key, startTime, endTime, config);
 }
 
 // ── Typed metric wrappers ─────────────────────────────────────────────────
