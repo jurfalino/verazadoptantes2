@@ -1,11 +1,21 @@
 import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
 
-// Scoped to src/**/*.test.ts so Vitest never picks up the Playwright e2e
+// Scoped to src/**/*.test.{ts,tsx} so Vitest never picks up the Playwright e2e
 // specs in tests/ (which import @playwright/test and must not run here).
 export default defineConfig({
+    // Vite 8's default transform (oxc) parses .tsx type annotations fine, but
+    // its SSR import-rewrite pass (used when a test does `renderToStaticMarkup`)
+    // fails on raw JSX unless the JSX runtime is configured explicitly. Without
+    // this, any .test.tsx file that renders JSX throws "Unexpected JSX
+    // expression" from vite's ssrTransformScript. (`esbuild.jsx` is a no-op
+    // here since Vite 8 auto-converts it to `oxc` only when `oxc` is unset —
+    // setting `oxc` directly is clearer.)
+    oxc: {
+        jsx: { runtime: 'automatic' },
+    },
     test: {
-        include: ['src/**/*.test.ts'],
+        include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     },
     resolve: {
         alias: {
