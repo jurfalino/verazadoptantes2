@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.25.1] - 2026-07-12
+
+### Fixed — legitimate users no longer get the deceptive auth-error page
+
+- The `/auth-error` page is intentionally deceptive ("looks broken") to stonewall flagged adopters the login gate blocks — but it was also the catch-all for **every** auth failure. ~13 real users/month (almost all mobile Android) hit a transient OAuth/PKCE failure (`?error=Configuration` = Auth.js `InvalidCheck` / `pkceCodeVerifier`) and got that same stonewall, concluding the site was broken.
+- `/auth-error` now **routes by error code, safe-by-default**: the pre-callback OAuth codes (`Configuration`, `Verification`, `OAuthCallbackError`, `OAuthSignin`, `OAuthCallback`) render an honest recovery page with a working "Iniciar sesión con Google" button; everything else — `AccessDenied`, `Default`, unknown, or anything the gate emits — still falls through to the deceptive page. The gate runs *after* OAuth succeeds, so it can't produce the allowlisted codes: a blocked adopter can never reach the recovery page. No auto-retry (some mobile cookie failures are systematic and would loop).
+- **Note:** this cures the dead-end UX; it does not by itself eliminate the underlying mobile PKCE-cookie failures. Follow-up: callback-time instrumentation to pin the mechanism.
+
 ## [2.25.0] - 2026-07-11
 
 ### Added — Admin metrics dashboard (`/admin/metrics`)
