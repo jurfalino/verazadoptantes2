@@ -63,3 +63,6 @@ docs/code_quality_audit.md
 *.sqlite
 .wrangler/state/
 .claude/settings.local.json
+
+# Superpowers brainstorm mockups
+.superpowers/

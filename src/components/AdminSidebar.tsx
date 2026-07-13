@@ -7,6 +7,7 @@ import { useLanguage } from '@/context/LanguageContext';
 
 const NAV_ITEMS: Array<{ href: string; labelKey: string; icon: string; special?: boolean }> = [
     { href: '/admin', labelKey: 'nav_overview', icon: '📊' },
+    { href: '/admin/metrics', labelKey: 'nav_metrics', icon: '📈' },
     { href: '/admin/flags', labelKey: 'nav_flagged', icon: '🚩' },
     { href: '/admin/duplicates', labelKey: 'nav_duplicates', icon: '🔍' },
     { href: '/admin/adopters', labelKey: 'nav_adopters_list', icon: '👤' },

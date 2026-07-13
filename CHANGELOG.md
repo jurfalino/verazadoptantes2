@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.25.0] - 2026-07-11
+
+### Added — Admin metrics dashboard (`/admin/metrics`)
+
+- **Axiom time-series dashboard for admins.** A new `/admin/metrics` page visualizes operational health and product usage sourced from the same Axiom logs the app already writes. Seven cards — Errors, AI failures, sign-in failures, and latency p95 (ops); active rescuers, recorded activity, and imports (usage) — each with a total, a period-over-period trend (colored by whether higher is better/worse), a hand-rolled SVG chart, and an env-scoped "Ver en Axiom" deep-link.
+- **Interactive 24h / 7d / 30d selector** re-fetches per window (request-id–guarded against out-of-order responses), with SSR for the default 7d view.
+- Extends `src/lib/axiom.ts` with `getTimeSeries` (gap-filled, resolution-bucketed) plus whole-window / prior-period totals so trends compare like-for-like (notably distinct-count metrics like active rescuers). Every query stays env-scoped; a single metric's failure degrades that card to "no disponible" without blanking the page. Fully i18n'd across es/en/pt.
+
+## [2.24.9] - 2026-07-09
+
+### Fixed — AI extraction broken (retired model), post-import wizard reopen, single-image carousels
+
+- **AI extraction 404'd on every call** — Google retired `gemini-2.5-flash`, so post-import *and* the new spreadsheet import failed (`[404] models/gemini-2.5-flash is no longer available`, seen in Axiom on staging + prod). The baked-in default is now the version-agnostic **`gemini-flash-latest`** alias (tracks the current stable flash, won't 404 on the next retirement); `/admin/config` can still pin a specific model without a deploy. The model-list fallback in `/api/ai/models` now lists the `-latest` aliases too.
+- **Post-import wizard reopened at step 2 with stale data** — the ImportWizard cleared its `sessionStorage` snapshot only on `step===4`, but completion happens via the confirm modal at step 3, so the stale snapshot survived and rehydrated on reopen. Now cleared on successful create + add-record.
+- **Instagram carousels returned only 1 image** — the scraper's fast OG path returned early with just the single `og:image` cover. It now harvests every carousel slide's URL from Instagram's embedded hydration JSON (`display_url` / media `src`), deduped, in both the fast and Playwright paths. *(Scraper change — deploys separately via Fly, not the app pipeline.)*
+
 ## [2.24.8-1] - 2026-07-09
 
 ### Changed — downgrade handled spreadsheet-import AI fallbacks from error → warn

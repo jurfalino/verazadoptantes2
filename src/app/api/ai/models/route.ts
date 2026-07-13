@@ -20,9 +20,12 @@ export async function GET() {
         // when that happens.
         return NextResponse.json({
             models: [
-                { name: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash (Default)' },
-                { name: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro' },
-                { name: 'gemini-2.5-flash-lite', displayName: 'Gemini 2.5 Flash Lite' }
+                // v2.24.9: '-latest' aliases track the current stable model, so
+                // they don't 404 when Google retires a pinned version (which is
+                // exactly what happened to gemini-2.5-flash).
+                { name: 'gemini-flash-latest', displayName: 'Gemini Flash (latest, default)' },
+                { name: 'gemini-pro-latest', displayName: 'Gemini Pro (latest)' },
+                { name: 'gemini-flash-lite-latest', displayName: 'Gemini Flash Lite (latest)' }
             ]
         });
     }

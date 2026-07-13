@@ -126,13 +126,15 @@ If you cannot extract any relevant information, return:
 export async function extractAdopterData(
     text?: string,
     images?: Array<{ data: string; mimeType: string }>, // base64 data and mime type
-    // gemini-2.0-flash was retired in 2026 and now 404s. Default updated to
-    // gemini-2.5-flash (v2.16.0-41). The /api/ai/extract-from-post route
-    // looks up the `GEMINI_DEFAULT_MODEL` admin setting first; this baked-in
-    // default only fires if (a) no body.model passed AND (b) no admin
-    // override is set. Admins can override via /admin/config without a
-    // deploy when the next model is retired.
-    modelName: string = "gemini-2.5-flash",
+    // Model retirement history: gemini-2.0-flash (retired 2026) → gemini-2.5-flash
+    // (retired mid-2026, 404'd every call — post-import AND spreadsheet import).
+    // v2.24.9: default is now the version-agnostic `gemini-flash-latest` ALIAS,
+    // which tracks the current stable flash model so a future retirement doesn't
+    // 404 us again. The /api/ai/extract-from-post route still looks up the
+    // `GEMINI_DEFAULT_MODEL` admin setting first; this baked-in default only
+    // fires if (a) no body.model passed AND (b) no admin override is set. Admins
+    // can still pin a specific model via /admin/config without a deploy.
+    modelName: string = "gemini-flash-latest",
     language: string = "es"
 ): Promise<ExtractedAdopterData> {
     const apiKey = getGeminiApiKey();
@@ -242,7 +244,7 @@ Return ONLY JSON in this exact shape (no prose, no markdown):
 export async function mapSpreadsheetColumns(
     headers: string[],
     sampleRows: string[][],
-    modelName: string = "gemini-2.5-flash",
+    modelName: string = "gemini-flash-latest",
     language: string = "es",
 ): Promise<ColumnMap> {
     const apiKey = getGeminiApiKey();
@@ -300,7 +302,7 @@ Return ONLY a JSON array of ${rows.length} objects (no prose, no markdown).`;
 export async function aiTransformRows(
     headers: string[],
     rows: string[][],
-    modelName: string = 'gemini-2.5-flash',
+    modelName: string = 'gemini-flash-latest',
     language: string = 'es',
 ): Promise<MappedRow[]> {
     const apiKey = getGeminiApiKey();

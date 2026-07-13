@@ -875,6 +875,13 @@ export default function ImportWizard() {
                 });
             }
 
+            // Clear persisted wizard state on completion so reopening starts
+            // fresh at step 1. The step===4 clear in the persist effect never
+            // fires — completion happens via the confirm modal at step 3, which
+            // left the stale step-2 snapshot in sessionStorage (reopen rehydrated
+            // it → the "reopens at step 2 with old data" bug).
+            sessionStorage.removeItem('import_wizard_state');
+
             // Track import event in Amplitude via Zaraz
             zarazTrack('import_completed', {
                 source: sourceUrl ? 'url' : (fromContacts ? 'contacts' : 'text'),
@@ -1031,6 +1038,10 @@ export default function ImportWizard() {
                 label: t('import.go_to_profile_link') || '→ Ver perfil',
                 href: `/adopter/${adopterId}`,
             });
+
+            // Clear persisted wizard state on completion (see create path) so
+            // reopening starts fresh instead of rehydrating the stale snapshot.
+            sessionStorage.removeItem('import_wizard_state');
 
             // Track merge event in Amplitude via Zaraz
             zarazTrack('import_merged', {
