@@ -1,7 +1,30 @@
 export const runtime = 'edge';
 import AuthErrorReportForm from '@/components/AuthErrorReportForm';
+import AuthErrorRecovery from '@/components/AuthErrorRecovery';
 import { logger } from '@/lib/logger';
 import { headers } from 'next/headers';
+
+/**
+ * Error codes that a LEGITIMATE user can hit — all pre-callback OAuth failures
+ * (stale/dropped PKCE cookie, provider round-trip issues). The adopter-login
+ * gate can NOT produce these: it runs in the signIn callback, AFTER OAuth has
+ * succeeded, so its rejection surfaces as AccessDenied/Default — never as
+ * Configuration/Verification/OAuth*. Allowlisting (rather than
+ * "AccessDenied → deceptive, else → recovery") is deliberate and safe-by-default:
+ * any unknown or gate-emitted code falls through to the deceptive stonewall, so
+ * a blocked adopter can never be routed to the helpful recovery page — even if
+ * Auth.js changes what code the gate emits. `Configuration` is Auth.js v5's
+ * mapping for the `InvalidCheck` / pkceCodeVerifier failure (the real-user case
+ * that motivated this split — ~13 legit users/month were seeing the deceptive
+ * "app looks broken" page meant only for flagged adopters).
+ */
+const RECOVERABLE_ERROR_CODES = new Set([
+    'Configuration',
+    'Verification',
+    'OAuthCallbackError',
+    'OAuthSignin',
+    'OAuthCallback',
+]);
 
 /**
  * Generic auth-error page. NextAuth redirects here whenever the signIn
@@ -48,6 +71,14 @@ export default async function AuthErrorPage({
         });
     } catch {
         // Headers / logger unavailable — page still renders. Diagnostic only.
+    }
+
+    // Route legitimate OAuth failures (pre-callback, e.g. pkce/Configuration) to
+    // the honest recovery page. Everything else — AccessDenied, Default, null, or
+    // any code the login gate might emit — falls through to the intentional
+    // "looks broken" stonewall below (safe-by-default; see RECOVERABLE_ERROR_CODES).
+    if (error && RECOVERABLE_ERROR_CODES.has(error)) {
+        return <AuthErrorRecovery />;
     }
 
     return (
