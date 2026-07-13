@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.25.0] - 2026-07-11
+
+### Added — Admin metrics dashboard (`/admin/metrics`)
+
+- **Axiom time-series dashboard for admins.** A new `/admin/metrics` page visualizes operational health and product usage sourced from the same Axiom logs the app already writes. Seven cards — Errors, AI failures, sign-in failures, and latency p95 (ops); active rescuers, recorded activity, and imports (usage) — each with a total, a period-over-period trend (colored by whether higher is better/worse), a hand-rolled SVG chart, and an env-scoped "Ver en Axiom" deep-link.
+- **Interactive 24h / 7d / 30d selector** re-fetches per window (request-id–guarded against out-of-order responses), with SSR for the default 7d view.
+- Extends `src/lib/axiom.ts` with `getTimeSeries` (gap-filled, resolution-bucketed) plus whole-window / prior-period totals so trends compare like-for-like (notably distinct-count metrics like active rescuers). Every query stays env-scoped; a single metric's failure degrades that card to "no disponible" without blanking the page. Fully i18n'd across es/en/pt.
+
 ## [2.24.9] - 2026-07-09
 
 ### Fixed — AI extraction broken (retired model), post-import wizard reopen, single-image carousels
