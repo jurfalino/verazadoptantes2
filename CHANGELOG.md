@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.26.0] - 2026-07-22
+
+### Added — set an existing photo as the adopter profile picture
+
+- Tapping the adopter avatar now opens a **photo chooser**: pick any of the profile's existing photos to make it the avatar, or upload a new one. Previously the avatar click only ever opened the file picker, so users couldn't promote a photo they already had (e.g. a scraped Instagram image) to the profile picture from there.
+- The Photos-section **"Set Profile" button is now always visible** (was hover-only on desktop), so the same action is discoverable from the gallery too.
+- Reuses the existing `setProfilePicture` server action — no schema change. New `ProfilePhotoChooser` component + render-contract unit test; i18n across es/en/pt.
+- Full-size viewing of the avatar now lives in the Photos gallery (the avatar tap manages the photo rather than opening a viewer).
+
 ## [2.25.2] - 2026-07-22
 
 ### Fixed — `/my-adopters` showed an empty list for large accounts (D1 100-param overflow)

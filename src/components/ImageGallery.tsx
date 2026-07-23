@@ -265,7 +265,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                                             if (img.id) await handleSetProfilePicture(img.id);
                                         }}
                                         disabled={settingProfile === img.id}
-                                        className="absolute top-0 left-0 m-2 px-2 py-1 bg-white/90 hover:bg-teal-500 hover:text-white text-teal-700 text-xs font-semibold rounded-lg shadow-md md:opacity-0 md:group-hover:opacity-100 transition-all flex items-center gap-1 backdrop-blur-sm"
+                                        className="absolute top-0 left-0 m-2 px-2 py-1 bg-white/90 hover:bg-teal-500 hover:text-white text-teal-700 text-xs font-semibold rounded-lg shadow-md transition-all flex items-center gap-1 backdrop-blur-sm"
                                         title={t('adopter.set_as_profile') || 'Set as Profile Picture'}
                                     >
                                         {settingProfile === img.id ? (
