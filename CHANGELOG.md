@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.25.2] - 2026-07-22
+
+### Fixed — `/my-adopters` showed an empty list for large accounts (D1 100-param overflow)
+
+- A rescuer with 50+ adopter records saw an **empty `/my-adopters`** — no records, no error — despite having dozens. `getMyAdopters` enriches the list with several `IN (…)` batch queries; the pending-duplicate query binds the id list twice (`adopter1_id IN (N) OR adopter2_id IN (N)`) plus a status param = `1 + 2N` parameters, which crosses **D1's hard 100-bound-parameter limit at N ≥ 50**. The query threw, the function swallowed it into `[]`, and the API returned that as `200 OK` — a crash indistinguishable from "you have no adopters" (dangerous on a vetting tool: reads as data loss). Confirmed in Axiom, tied to the affected user.
+- **Chunked** every per-adopter enrichment query (D1-safe `IN (?, …)` via `sql.join`; `D1_IN_CHUNK = 40` so the doubled dup query peaks at 81 params), mirroring the existing `enrichAdopters.ts` pattern. New `src/lib/chunk.ts` + unit test guard the `D1_IN_CHUNK*2 + 1 ≤ 100` invariant. The list now scales past the 50-adopter cliff.
+- **Stopped the silent-empty:** a genuinely failed load now rethrows → the API returns `500` + errorId → the UI shows an error toast instead of a fake-empty list. Legitimate empty states (not signed in, no records) still render empty.
+- **Excluded soft-deleted** (merged/removed) adopters from the list — they were being included, both a display bug and part of what tipped the param count over.
+- Follow-up (not in this release): paginate the list so only the visible page is enriched — the durable scale fix.
+
 ## [2.25.1] - 2026-07-12
 
 ### Fixed — legitimate users no longer get the deceptive auth-error page

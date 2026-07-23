@@ -66,3 +66,8 @@ docs/code_quality_audit.md
 
 # Superpowers brainstorm mockups
 .superpowers/
+
+# Cloudflare local secrets + sqlite WAL sidecars (never commit)
+.dev.vars
+local.db-shm
+local.db-wal
