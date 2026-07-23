@@ -117,7 +117,12 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         const imageRows = await db
             .select({ adopterId: adopterImages.adopterId, url: adopterImages.url, isProfilePicture: adopterImages.isProfilePicture })
             .from(adopterImages)
-            .where(and(inArray(adopterImages.adopterId, adopterIds), isNull(adopterImages.adoptionId)))
+            // v2.26.1: profile-level OR the flagged profile picture (an activity/
+            // observation photo can be the avatar); isProfilePicture DESC wins.
+            .where(and(
+                inArray(adopterImages.adopterId, adopterIds),
+                or(isNull(adopterImages.adoptionId), eq(adopterImages.isProfilePicture, 1)),
+            ))
             .orderBy(sql`${adopterImages.isProfilePicture} DESC`, sql`${adopterImages.uploadedAt} DESC`);
         const imageByAdopter = new Map<string, string>();
         for (const row of imageRows) {

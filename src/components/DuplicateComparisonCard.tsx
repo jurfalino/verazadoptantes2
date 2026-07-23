@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { getAdopter } from '@/app/actions';
-import { getImages } from '@/app/actions/images';
+import { getAllAdopterImages } from '@/app/actions/images';
 import type { Adopter } from '@/types/adopter';
 
 interface DuplicateComparisonCardProps {
@@ -41,7 +41,7 @@ export default function DuplicateComparisonCard({ currentAdopter, currentImages,
                 setLoading(true);
                 const [adopterData, imagesData] = await Promise.all([
                     getAdopter(otherAdopterId),
-                    getImages(otherAdopterId)
+                    getAllAdopterImages(otherAdopterId)
                 ]);
                 
                 if (isMounted) {

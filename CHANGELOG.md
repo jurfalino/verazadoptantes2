@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.26.1] - 2026-07-23
+
+### Fixed — observation/activity photos can now be set as the profile avatar
+
+- The profile-photo chooser (v2.26.0) only listed profile-level photos, so an adopter whose photos live on **observation/activity records** had an empty chooser — you couldn't promote one to the avatar. The chooser now shows **all** the adopter's photos (new `getAllAdopterImages`).
+- Profile-picture **resolution is now activity-aware everywhere it's displayed** — the profile avatar, `/my-adopters` thumbnail, search results, admin adopter list, form-results match cards, and the `/api/adopters` preview: the image flagged `is_profile_picture=1` wins regardless of which record it hangs off (`adoption_id IS NULL OR is_profile_picture=1`, ordered so the flag wins). An activity photo never becomes the avatar unless it was explicitly set.
+- The **Photos gallery stays profile-level** — an observation photo you promote to the avatar isn't duplicated into the gallery (with its own delete/edit actions); it still lives on its observation record.
+
 ## [2.26.0] - 2026-07-22
 
 ### Added — set an existing photo as the adopter profile picture

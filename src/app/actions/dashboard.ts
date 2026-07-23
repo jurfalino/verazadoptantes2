@@ -1,7 +1,7 @@
 'use server';
 
 import { adopters, adoptions, adopterImages, adopterFlags, adopterStats, formSubmissions, duplicateCandidates, contractInvitations, adopterHistory } from '@/db/schema';
-import { eq, sql, and, isNull, isNotNull } from 'drizzle-orm';
+import { eq, sql, and, isNull, isNotNull, or } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { chunk, D1_IN_CHUNK } from '@/lib/chunk';
@@ -106,7 +106,13 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                     isProfilePicture: adopterImages.isProfilePicture,
                     uploadedAt: adopterImages.uploadedAt,
                 }).from(adopterImages)
-                    .where(and(sql`${adopterImages.adopterId} IN (${inList})`, isNull(adopterImages.adoptionId)))
+                    // v2.26.1: profile-level images OR the explicitly-flagged profile
+                    // picture wherever it lives (an activity/observation photo can be
+                    // the avatar). Ordered isProfilePicture DESC so the flag wins.
+                    .where(and(
+                        sql`${adopterImages.adopterId} IN (${inList})`,
+                        or(isNull(adopterImages.adoptionId), eq(adopterImages.isProfilePicture, 1)),
+                    ))
                     .orderBy(sql`${adopterImages.isProfilePicture} DESC, ${adopterImages.uploadedAt} DESC`)
                     .all(),
                 db.select({ adopterId: adopterFlags.adopterId, reason: adopterFlags.reason })

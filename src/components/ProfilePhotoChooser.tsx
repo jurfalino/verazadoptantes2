@@ -16,7 +16,8 @@ function displaySrc(url: string): string {
 interface ProfilePhotoChooserProps {
     isOpen: boolean;
     onClose: () => void;
-    /** Profile-level images (adoptionId IS NULL) — the same list AdopterForm holds. */
+    /** All adopter images (profile-level + activity-linked) — so an observation
+     *  photo can be picked as the avatar, not just profile-level ones. */
     images: AdopterImage[];
     adopterId: string;
     /** Triggers the parent's hidden file input for the upload path. */

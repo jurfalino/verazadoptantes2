@@ -87,6 +87,30 @@ export async function getImages(adopterId: string) {
     }
 }
 
+/**
+ * v2.26.1: ALL images for an adopter — profile-level AND activity-linked
+ * (attached to an adoption/observation record). Ordered so the profile picture
+ * (is_profile_picture=1, wherever it's attached) sorts first.
+ *
+ * Feeds the profile-page avatar + the profile-photo chooser, so an observation
+ * photo can be promoted to the avatar. The Photos GALLERY keeps using getImages
+ * (profile-level only) — this must NOT replace it there, or activity photos
+ * would be duplicated into the gallery with its own delete/edit actions.
+ */
+export async function getAllAdopterImages(adopterId: string) {
+    try {
+        const db = await getDb();
+        if (!db) return [];
+        return await db.select().from(adopterImages)
+            .where(eq(adopterImages.adopterId, adopterId))
+            .orderBy(sql`${adopterImages.isProfilePicture} DESC, ${adopterImages.uploadedAt} DESC`)
+            .all();
+    } catch (error) {
+        logger.error('Get all adopter images failed', error, { adopterId });
+        return [];
+    }
+}
+
 export async function setProfilePicture(adopterId: string, imageId: string) {
     try {
         const db = await getDb();

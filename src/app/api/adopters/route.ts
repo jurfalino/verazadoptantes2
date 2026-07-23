@@ -155,10 +155,12 @@ export async function GET(request: Request) {
             try {
                 const imgs = await db.select({ url: adopterImages.url })
                     .from(adopterImages)
+                    // v2.26.1: the flagged profile picture wherever it lives — an
+                    // activity/observation photo can be the avatar. (Dropped the
+                    // adoptionId IS NULL filter that hid such a pick.)
                     .where(and(
                         eq(adopterImages.adopterId, match.id),
-                        eq(adopterImages.isProfilePicture, 1),
-                        isNull(adopterImages.adoptionId)
+                        eq(adopterImages.isProfilePicture, 1)
                     ))
                     .limit(1);
                 if (imgs.length > 0) thumbnail = imgs[0].url;

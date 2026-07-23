@@ -1,6 +1,6 @@
 export const runtime = 'edge';
 import { redirect } from 'next/navigation';
-import { getAdopter, getHistory, getAdoptions, getImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getIsModeratorOrAdmin, getAdoptionConfig, getDuplicateCandidates } from '@/app/actions';
+import { getAdopter, getHistory, getAdoptions, getImages, getAllAdopterImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getIsModeratorOrAdmin, getAdoptionConfig, getDuplicateCandidates } from '@/app/actions';
 import { resolveUserNames } from '@/app/actions/userNames';
 import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
 import { getAdopterPiiContext } from '@/app/actions/piiAccess';
@@ -64,6 +64,9 @@ export default async function AdopterPage({
     let history: any[] = [];
     let adoptions: any[] = [];
     let images: any[] = [];
+    // v2.26.1: all images (profile-level + activity-linked) for the avatar +
+    // profile-photo chooser; `images` above stays profile-level for the gallery.
+    let allImages: any[] = [];
     let flags: any[] = [];
     let availableAnimals: any[] = [];
     let stats = null;
@@ -84,11 +87,12 @@ export default async function AdopterPage({
             });
             return def;
         };
-        [adopter, history, adoptions, images, flags, stats, avgRating, availableAnimals, dupCandidates, piiContext] = await Promise.all([
+        [adopter, history, adoptions, images, allImages, flags, stats, avgRating, availableAnimals, dupCandidates, piiContext] = await Promise.all([
             getAdopter(id).catch(fallback('getAdopter', null)),
             getHistory(id).catch(fallback<any[]>('getHistory', [])),
             getAdoptions(id).catch(fallback<any[]>('getAdoptions', [])),
             getImages(id).catch(fallback<any[]>('getImages', [])),
+            getAllAdopterImages(id).catch(fallback<any[]>('getAllAdopterImages', [])),
             getFlags(id).catch(fallback<any[]>('getFlags', [])),
             getAdopterStats(id).catch(fallback('getAdopterStats', null)),
             getAverageRating(id).catch(fallback<number | null>('getAverageRating', null)),
@@ -158,6 +162,7 @@ export default async function AdopterPage({
             history={history}
             adoptions={adoptions}
             images={images}
+            allImages={allImages}
             flags={flags}
             currentUser={currentUser}
             availableAnimals={availableAnimals}

@@ -33,6 +33,9 @@ import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 interface AdopterFormProps {
     initialData?: Adopter | null;
     currentUser?: string;
+    /** v2.26.1: ALL adopter images (profile-level + activity-linked) — used for
+     *  avatar resolution and the profile-photo chooser. The Photos gallery uses
+     *  the profile-level list separately (ImageGallery in AdopterProfileV2). */
     images?: AdopterImage[];
     adopterId?: string;
     avgRating?: number | null;
@@ -707,9 +710,14 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                 />
                             </div>
                         ) : !isNew && (() => {
-                            const profilePic = images.length > 0
-                                ? (images.find(img => img.isProfilePicture === 1) || images[0])
-                                : null;
+                            // v2.26.1: `images` is now ALL images (profile-level +
+                            // activity-linked). The avatar is the explicitly-flagged
+                            // profile picture wherever it lives, else the newest
+                            // profile-level photo — an activity photo never becomes
+                            // the avatar unless it was set as the profile picture.
+                            const profilePic = images.find(img => img.isProfilePicture === 1)
+                                || images.filter(img => !img.adoptionId)[0]
+                                || null;
                             if (profilePic) {
                                 const displayUrl = profilePic.url.includes('r2.dev') ? `/api/proxy-image?url=${encodeURIComponent(profilePic.url)}` : profilePic.url;
                                 const photoEl = (
