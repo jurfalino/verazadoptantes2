@@ -1,9 +1,10 @@
 'use server';
 
 import { adopters, adoptions, adopterImages, adopterFlags, adopterStats, formSubmissions, duplicateCandidates, contractInvitations, adopterHistory } from '@/db/schema';
-import { eq, sql, and, inArray, isNull, isNotNull, or } from 'drizzle-orm';
+import { eq, sql, and, isNull, isNotNull } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
+import { chunk, D1_IN_CHUNK } from '@/lib/chunk';
 import { getDb } from './_db';
 import { getAdoptionConfig } from './config';
 import { getOrgMemberEmails } from './organizations';
@@ -27,8 +28,17 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         // Scope by org membership: show records from all org members
         const memberEmails = await getOrgMemberEmails();
 
+        // v2.25.2: exclude soft-deleted (merged/removed) adopters — they should
+        // not appear on /my-adopters. Also drops them from adopterIds below,
+        // which keeps the enrichment param-count honest.
+        // memberEmails is always non-empty (getOrgMemberEmails includes self),
+        // so the IN list is safe. D1-safe sql.join rather than inArray().
+        const memberList = sql.join(memberEmails.map((e) => sql`${e}`), sql`, `);
         const query = db.select().from(adopters)
-            .where(inArray(adopters.addedBy, memberEmails));
+            .where(and(
+                sql`${adopters.addedBy} IN (${memberList})`,
+                isNull(adopters.deletedAt),
+            ));
 
         if (sort === 'name') {
             query.orderBy(adopters.name);
@@ -50,110 +60,127 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
 
         if (adoptersList.length === 0) return [];
 
-        // Batch queries: form submission counts + existing
-        // Running sequentially to prevent local D1 miniflare deadlocks
         const adoptionConfig = await getAdoptionConfig();
-        const allImages = await db.select({
-            adopterId: adopterImages.adopterId,
-            url: adopterImages.url,
-            isProfilePicture: adopterImages.isProfilePicture,
-            uploadedAt: adopterImages.uploadedAt
-        }).from(adopterImages)
-            .where(and(inArray(adopterImages.adopterId, adopterIds), isNull(adopterImages.adoptionId)))
-            .orderBy(sql`${adopterImages.isProfilePicture} DESC, ${adopterImages.uploadedAt} DESC`)
-            .all();
-        const allFlags = await db.select({
-            adopterId: adopterFlags.adopterId,
-            reason: adopterFlags.reason
-        }).from(adopterFlags)
-            .where(inArray(adopterFlags.adopterId, adopterIds))
-            .all();
-        const allAdoptionCounts = await db.select({
-            adopterId: adoptions.adopterId,
-            recordType: adoptions.recordType,
-            count: sql<number>`COUNT(*)`
-        }).from(adoptions)
-            .where(inArray(adoptions.adopterId, adopterIds))
-            .groupBy(adoptions.adopterId, adoptions.recordType)
-            .all();
-        const allStats = await db.select({
-            adopterId: adopterStats.adopterId,
-            eventType: adopterStats.eventType,
-            count: sql<number>`COUNT(*)`
-        }).from(adopterStats)
-            .where(and(
-                inArray(adopterStats.adopterId, adopterIds),
-                sql`(${adopterStats.userId} IS NULL OR ${adopterStats.userId} NOT IN (${sql.raw(ADMIN_STATS_EXCLUSION_SQL)}))`
-            ))
-            .groupBy(adopterStats.adopterId, adopterStats.eventType)
-            .all();
-        const allAdoptionRecords = await db.select({
-            adopterId: adoptions.adopterId,
-            recordType: adoptions.recordType,
-            date: adoptions.date,
-            // v37: rating MUST be in the projection — without it computeAvgRating
-            // sees r.rating === undefined, passes the `!== null` filter, then
-            // sums to NaN → JSON-serializes to null → every /my-adopters row
-            // rendered "—" regardless of actual rated activity.
-            rating: adoptions.rating,
-        }).from(adoptions)
-            .where(inArray(adoptions.adopterId, adopterIds))
-            .all();
-        const allFormCounts = await db.select({
-            linkedAdopterId: formSubmissions.linkedAdopterId,
-            count: sql<number>`COUNT(*)`
-        }).from(formSubmissions)
-            .where(inArray(formSubmissions.linkedAdopterId, adopterIds))
-            .groupBy(formSubmissions.linkedAdopterId)
-            .all();
-        // v2.19.10: count of signed contracts per adopter. Modern token-
-        // invitation flow stamps contract_invitations.used_at on a successful
-        // sign; the legacy open path that creates a new adopter via
-        // _adopterFactory already shows up via `source='contract'` in the
-        // Origin column, but doesn't get counted here either (no invitation
-        // row). Net effect: this counter reflects "contracts signed against
-        // this profile via the modern flow" — same shape as formCount.
-        const allContractCounts = await db.select({
-            adopterId: contractInvitations.adopterId,
-            count: sql<number>`COUNT(*)`
-        }).from(contractInvitations)
-            .where(and(
-                inArray(contractInvitations.adopterId, adopterIds),
-                isNotNull(contractInvitations.usedAt),
-            ))
-            .groupBy(contractInvitations.adopterId)
-            .all();
-        // v2.19.13: last editor per adopter for the new provenance cell.
-        // Fetch all kind='edit' history rows in adopterIds, ordered DESC by
-        // changedAt; pick the first one per adopter in JS. kind='contribution'
-        // rows (open-add path) are excluded — those don't count as editing
-        // the record. Bounded cost: ~30 adopters × handful of edits each.
-        const allEditRows = await db.select({
-            adopterId: adopterHistory.adopterId,
-            changedBy: adopterHistory.changedBy,
-            changedAt: adopterHistory.changedAt,
-        }).from(adopterHistory)
-            .where(and(
-                inArray(adopterHistory.adopterId, adopterIds),
-                eq(adopterHistory.kind, 'edit'),
-            ))
-            .orderBy(sql`${adopterHistory.changedAt} DESC`)
-            .all();
-        // v38: per-row "Posible duplicado" indicator. One query gets every
-        // pending dedup pair where either side is in the user's adopter list;
-        // the Set is consulted at render time below.
-        const dupPairs = await db.select({
-            a1: duplicateCandidates.adopter1Id,
-            a2: duplicateCandidates.adopter2Id,
-        }).from(duplicateCandidates)
-            .where(and(
-                eq(duplicateCandidates.status, 'pending'),
-                or(
-                    inArray(duplicateCandidates.adopter1Id, adopterIds),
-                    inArray(duplicateCandidates.adopter2Id, adopterIds),
-                ),
-            ))
-            .all() as Array<{ a1: string; a2: string }>;
+
+        // v2.25.2: enrichment batch queries, chunked to stay under D1's 100
+        // bound-parameter cap. These previously ran as single
+        // inArray(adopterIds) queries; a user with ≥50 adopters overflowed the
+        // dup-candidates query below (status + adopter1_id IN(N) + adopter2_id
+        // IN(N) = 1 + 2N params, > 100 at N≥50), getMyAdopters threw, and the
+        // whole list came back empty. Same D1-safe IN(?, ?, …) + chunk pattern
+        // as enrichAdopters.ts — each id is its own bound param via sql.join,
+        // and the doubled dup query is why D1_IN_CHUNK*2 + 1 must stay ≤ 100.
+        // This is a correctness stopgap; the real scale fix is paginating the
+        // list so only the visible page is enriched.
+        //
+        // Chunking is safe for the GROUP BY / ORDER BY queries because chunks
+        // partition adopterIds and every query filters by adopterId, so an
+        // adopter's rows are wholly within one chunk — per-adopter counts and
+        // first-seen (thumbnail, last edit) stay correct across the concat.
+        type ImageRow = { adopterId: string; url: string; isProfilePicture: number | null; uploadedAt: number | null };
+        type FlagRow = { adopterId: string; reason: string };
+        type CountRow = { adopterId: string; recordType: string | null; count: number };
+        type StatRow = { adopterId: string; eventType: string; count: number };
+        type RecordRow = { adopterId: string; recordType: string | null; date: number | null; rating: number | null };
+        type FormCountRow = { linkedAdopterId: string; count: number };
+        type ContractCountRow = { adopterId: string; count: number };
+        type EditRow = { adopterId: string; changedBy: string | null; changedAt: number | Date | null };
+        type DupRow = { a1: string; a2: string };
+
+        const allImages: ImageRow[] = [];
+        const allFlags: FlagRow[] = [];
+        const allAdoptionCounts: CountRow[] = [];
+        const allStats: StatRow[] = [];
+        const allAdoptionRecords: RecordRow[] = [];
+        const allFormCounts: FormCountRow[] = [];
+        const allContractCounts: ContractCountRow[] = [];
+        const allEditRows: EditRow[] = [];
+        const dupPairs: DupRow[] = [];
+
+        for (const idChunk of chunk(adopterIds, D1_IN_CHUNK)) {
+            const inList = sql.join(idChunk.map((id) => sql`${id}`), sql`, `);
+            const [imgs, flags, counts, stats, records, forms, contracts, edits, dups] = await Promise.all([
+                db.select({
+                    adopterId: adopterImages.adopterId,
+                    url: adopterImages.url,
+                    isProfilePicture: adopterImages.isProfilePicture,
+                    uploadedAt: adopterImages.uploadedAt,
+                }).from(adopterImages)
+                    .where(and(sql`${adopterImages.adopterId} IN (${inList})`, isNull(adopterImages.adoptionId)))
+                    .orderBy(sql`${adopterImages.isProfilePicture} DESC, ${adopterImages.uploadedAt} DESC`)
+                    .all(),
+                db.select({ adopterId: adopterFlags.adopterId, reason: adopterFlags.reason })
+                    .from(adopterFlags)
+                    .where(sql`${adopterFlags.adopterId} IN (${inList})`)
+                    .all(),
+                db.select({ adopterId: adoptions.adopterId, recordType: adoptions.recordType, count: sql<number>`COUNT(*)` })
+                    .from(adoptions)
+                    .where(sql`${adoptions.adopterId} IN (${inList})`)
+                    .groupBy(adoptions.adopterId, adoptions.recordType)
+                    .all(),
+                db.select({ adopterId: adopterStats.adopterId, eventType: adopterStats.eventType, count: sql<number>`COUNT(*)` })
+                    .from(adopterStats)
+                    .where(and(
+                        sql`${adopterStats.adopterId} IN (${inList})`,
+                        sql`(${adopterStats.userId} IS NULL OR ${adopterStats.userId} NOT IN (${sql.raw(ADMIN_STATS_EXCLUSION_SQL)}))`,
+                    ))
+                    .groupBy(adopterStats.adopterId, adopterStats.eventType)
+                    .all(),
+                // v37: rating MUST be in the projection — without it computeAvgRating
+                // sees r.rating === undefined, passes the `!== null` filter, then
+                // sums to NaN → JSON-serializes to null → every /my-adopters row
+                // rendered "—" regardless of actual rated activity.
+                db.select({ adopterId: adoptions.adopterId, recordType: adoptions.recordType, date: adoptions.date, rating: adoptions.rating })
+                    .from(adoptions)
+                    .where(sql`${adoptions.adopterId} IN (${inList})`)
+                    .all(),
+                db.select({ linkedAdopterId: formSubmissions.linkedAdopterId, count: sql<number>`COUNT(*)` })
+                    .from(formSubmissions)
+                    .where(sql`${formSubmissions.linkedAdopterId} IN (${inList})`)
+                    .groupBy(formSubmissions.linkedAdopterId)
+                    .all(),
+                // v2.19.10: signed-contract count per adopter via the modern
+                // token-invitation flow (used_at stamped on sign).
+                db.select({ adopterId: contractInvitations.adopterId, count: sql<number>`COUNT(*)` })
+                    .from(contractInvitations)
+                    .where(and(
+                        sql`${contractInvitations.adopterId} IN (${inList})`,
+                        isNotNull(contractInvitations.usedAt),
+                    ))
+                    .groupBy(contractInvitations.adopterId)
+                    .all(),
+                // v2.19.13: last editor per adopter (kind='edit', newest first);
+                // first-per-adopter is picked in JS below.
+                db.select({ adopterId: adopterHistory.adopterId, changedBy: adopterHistory.changedBy, changedAt: adopterHistory.changedAt })
+                    .from(adopterHistory)
+                    .where(and(
+                        sql`${adopterHistory.adopterId} IN (${inList})`,
+                        eq(adopterHistory.kind, 'edit'),
+                    ))
+                    .orderBy(sql`${adopterHistory.changedAt} DESC`)
+                    .all(),
+                // v38: pending dedup pairs where either side is in this chunk —
+                // drives the per-row "Posible duplicado" indicator. This is the
+                // query that binds the id list TWICE (see D1_IN_CHUNK note).
+                db.select({ a1: duplicateCandidates.adopter1Id, a2: duplicateCandidates.adopter2Id })
+                    .from(duplicateCandidates)
+                    .where(and(
+                        eq(duplicateCandidates.status, 'pending'),
+                        sql`(${duplicateCandidates.adopter1Id} IN (${inList}) OR ${duplicateCandidates.adopter2Id} IN (${inList}))`,
+                    ))
+                    .all(),
+            ]);
+            allImages.push(...(imgs as ImageRow[]));
+            allFlags.push(...(flags as FlagRow[]));
+            allAdoptionCounts.push(...(counts as CountRow[]));
+            allStats.push(...(stats as StatRow[]));
+            allAdoptionRecords.push(...(records as RecordRow[]));
+            allFormCounts.push(...(forms as FormCountRow[]));
+            allContractCounts.push(...(contracts as ContractCountRow[]));
+            allEditRows.push(...(edits as EditRow[]));
+            dupPairs.push(...(dups as DupRow[]));
+        }
+
         const adoptersWithPendingDup = new Set<string>();
         for (const p of dupPairs) {
             adoptersWithPendingDup.add(p.a1);
@@ -369,8 +396,15 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
 
         return enrichedAdopters;
     } catch (error) {
+        // v2.25.2: rethrow (was `return []`). A thrown enrichment query used to
+        // be swallowed into an empty list that the API returned as 200 OK — a
+        // crash was indistinguishable from "you have no adopters", which on a
+        // vetting tool reads as data loss. The sole caller (/api/my-adopters)
+        // turns this throw into a 500 + errorId so the UI shows an error toast.
+        // The legit "empty" early-returns above (no db / no session / no rows)
+        // stay as [] — only a real failure surfaces here.
         logger.error('getMyAdopters failed', error, { userEmail, sort });
-        return [];
+        throw error;
     }
 }
 
