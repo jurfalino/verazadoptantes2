@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.26.2] - 2026-07-23
+
+### Fixed — changing the profile photo now requires record-edit access (was open to any user)
+
+- Setting an adopter's profile photo was unguarded: `setProfilePicture` had **no authorization check at all**, and the avatar-*upload* path (`saveImage` with `isProfilePicture`) checked only for a logged-in session — so any authenticated user could change any adopter's avatar.
+- It's now gated the **same as editing the record's contact info** — `owner ∨ admin ∨ org-mate` — via `canEditAdopterRecord({ gatingEnabled: true, … })`, always enforced (independent of the PII feature flag), mirroring `saveAdopter`. Both server paths (`setProfilePicture`, `saveImage`-as-avatar) enforce it; the auth check runs before the write so a denial surfaces cleanly instead of as a generic failure.
+- **Contributing a gallery photo stays open** — that's a contribution, not a record-identity change. Only *setting the avatar* is gated.
+- UI mirrors the gate: the avatar chooser/upload affordance and the Photos-section "Set Profile" button now appear only for owner/admin/org-mate (computed from the real record-edit permission, not the PII-flag-based `canEdit` which is permissive in prod).
+
 ## [2.26.1] - 2026-07-23
 
 ### Fixed — observation/activity photos can now be set as the profile avatar

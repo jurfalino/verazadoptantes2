@@ -120,6 +120,14 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         [currentUser, session]
     );
 
+    // v2.26.2: changing the profile photo (pick existing OR upload-as-avatar) is
+    // gated the same as editing the record's contact info — owner ∨ admin ∨
+    // org-mate — mirroring the server gate in setProfilePicture / saveImage.
+    // NOT reusing `canEdit` (it's PII-flag-based and true for everyone in prod);
+    // this computes the real record-edit permission the server enforces.
+    const canChangeProfilePhoto = !isNew && isAuthenticated
+        && (isAdmin || isOrgMateOfOwner || (!!currentUser && currentUser === (initialData?.addedBy ?? '')));
+
     // Sliding window logic strictly memoized to avoid expensive sorting on every render
     const periodDays = adoptionConfig?.periodDays || 90;
     const threshold = adoptionConfig?.threshold || 5;
@@ -650,8 +658,8 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
 
             {/* Hoisted hidden file input — triggered by both the empty-state camera button
                 AND the "Cambiar foto" action inside the profile-photo lightbox. Single ref,
-                single handler, two callers. */}
-            {isAuthenticated && !isNew && (
+                single handler, two callers. Gated to those who may change the profile photo. */}
+            {canChangeProfilePhoto && (
                 <input
                     ref={avatarFileInputRef}
                     type="file"
@@ -661,10 +669,10 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                 />
             )}
 
-            {/* Profile-photo chooser — opens when an authenticated user taps the
-                avatar/camera. Lets them set one of the profile's existing photos as
-                the avatar, or upload a new one (which triggers the hidden input). */}
-            {isAuthenticated && !isNew && id && (
+            {/* Profile-photo chooser — opens when an editor taps the avatar/camera.
+                Lets them set one of the profile's existing photos as the avatar, or
+                upload a new one (which triggers the hidden input). */}
+            {canChangeProfilePhoto && id && (
                 <ProfilePhotoChooser
                     isOpen={chooserOpen}
                     onClose={() => setChooserOpen(false)}
@@ -729,17 +737,17 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                     <div className="relative flex-shrink-0">
                                         <button
                                             type="button"
-                                            onClick={isAuthenticated ? openAvatarEditor : undefined}
+                                            onClick={canChangeProfilePhoto ? openAvatarEditor : undefined}
                                             disabled={avatarUploading}
-                                            aria-label={isAuthenticated ? (t('adopter.change_profile_photo') || 'Change photo') : undefined}
-                                            title={isAuthenticated ? (t('adopter.change_profile_photo') || 'Change photo') : undefined}
-                                            className={`block rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 transition-opacity ${isAuthenticated ? 'hover:opacity-90 cursor-pointer' : 'cursor-default'}`}
+                                            aria-label={canChangeProfilePhoto ? (t('adopter.change_profile_photo') || 'Change photo') : undefined}
+                                            title={canChangeProfilePhoto ? (t('adopter.change_profile_photo') || 'Change photo') : undefined}
+                                            className={`block rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 transition-opacity ${canChangeProfilePhoto ? 'hover:opacity-90 cursor-pointer' : 'cursor-default'}`}
                                         >
                                             {photoEl}
                                         </button>
                                         {/* Camera badge — same affordance as the empty state, so the
-                                            "you can change this" cue is present whether or not a photo exists. */}
-                                        {isAuthenticated && !avatarUploading && (
+                                            "you can change this" cue is present only for those who may. */}
+                                        {canChangeProfilePhoto && !avatarUploading && (
                                             <span
                                                 className="pointer-events-none absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-white border border-stone-200 flex items-center justify-center shadow-sm text-stone-600"
                                                 aria-hidden="true"
@@ -767,9 +775,10 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                     )}
                                 </div>
                             );
-                            // Only authenticated users see the upload affordance.
-                            // Anonymous viewers get a non-interactive placeholder.
-                            if (!isAuthenticated) {
+                            // Only those who may change the profile photo (owner ∨
+                            // admin ∨ org-mate) see the add affordance. Everyone else
+                            // — anonymous or non-editor — gets a static placeholder.
+                            if (!canChangeProfilePhoto) {
                                 return <div className="flex-shrink-0">{placeholder}</div>;
                             }
                             return (

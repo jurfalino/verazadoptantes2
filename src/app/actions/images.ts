@@ -1,6 +1,6 @@
 'use server';
 
-import { adopterImages, adopterHistory } from '@/db/schema';
+import { adopterImages, adopterHistory, adopters } from '@/db/schema';
 import { eq, sql, and, isNull } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { logger } from '@/lib/logger';
@@ -8,12 +8,45 @@ import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { processImageForStorage } from '@/lib/r2';
 
-export async function saveImage(adopterId: string, url: string, caption?: string, adoptionId?: string, mediaType?: string, isProfilePicture?: boolean) {
-    try {
-        const db = await getDb();
-        if (!db) throw new Error("No database");
-        const addedBy = await getUser();
+/**
+ * v2.26.2: changing an adopter's PROFILE PHOTO (setting an existing image as the
+ * avatar, or uploading a new one AS the avatar) is gated the same as editing the
+ * record's contact info: owner ∨ admin ∨ org-mate. This mirrors saveAdopter's
+ * `canEditAdopterRecord({ gatingEnabled: true, ... })` call — the gate is always
+ * enforced, independent of the PII feature flag. Contributing a gallery photo
+ * (isProfilePicture false) stays OPEN; only the record-identity change is gated.
+ * Throws with a clear message when the actor isn't permitted.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function assertCanChangeProfilePhoto(db: any, adopterId: string, actor: string): Promise<void> {
+    const ownerRow = await db.select({ addedBy: adopters.addedBy })
+        .from(adopters).where(eq(adopters.id, adopterId)).get();
+    const ownerEmail: string | null = ownerRow?.addedBy ?? null;
+    const [{ canEditAdopterRecord }, { isAdminAsync }, { isOrgMate }] = await Promise.all([
+        import('@/lib/piiAccess'),
+        import('@/config/admins'),
+        import('@/lib/orgMembership'),
+    ]);
+    const [actorIsAdmin, actorIsOrgMate] = await Promise.all([
+        isAdminAsync(actor),
+        isOrgMate(actor, ownerEmail),
+    ]);
+    if (!canEditAdopterRecord({ gatingEnabled: true, actorEmail: actor, ownerEmail, actorIsAdmin, actorIsOrgMate })) {
+        logger.warn('changeProfilePhoto: blocked — not owner/admin/org-mate', { adopterId, actor });
+        throw new Error('Not authorized to change this adopter\'s profile photo.');
+    }
+}
 
+export async function saveImage(adopterId: string, url: string, caption?: string, adoptionId?: string, mediaType?: string, isProfilePicture?: boolean) {
+    const db = await getDb();
+    if (!db) throw new Error("No database");
+    const addedBy = await getUser();
+    // v2.26.2: uploading a NEW image AS the avatar is a profile-photo change —
+    // gate it (owner ∨ admin ∨ org-mate). Plain gallery uploads stay open.
+    if (isProfilePicture) {
+        await assertCanChangeProfilePhoto(db, adopterId, addedBy);
+    }
+    try {
         const id = crypto.randomUUID();
 
         // Persist external URLs (Facebook CDN etc.) to R2 for permanent storage
@@ -112,10 +145,14 @@ export async function getAllAdopterImages(adopterId: string) {
 }
 
 export async function setProfilePicture(adopterId: string, imageId: string) {
+    const db = await getDb();
+    if (!db) throw new Error("No database");
+    // v2.26.2: gate profile-photo change (owner ∨ admin ∨ org-mate). getUser
+    // throws for anonymous; the assert throws for a non-editor. Both propagate
+    // cleanly (outside the try) rather than being masked as a generic failure.
+    const actor = await getUser();
+    await assertCanChangeProfilePhoto(db, adopterId, actor);
     try {
-        const db = await getDb();
-        if (!db) throw new Error("No database");
-
         // First, unset any existing profile picture for this adopter
         await db.update(adopterImages)
             .set({ isProfilePicture: 0 })
@@ -133,8 +170,8 @@ export async function setProfilePicture(adopterId: string, imageId: string) {
 
         // v2.19.5: audit row — companion to image_uploaded so the timeline
         // shows "X set Y as profile picture" separately from initial upload.
+        // Reuses the `actor` resolved for the auth gate above.
         try {
-            const actor = await getUser();
             logAudit({
                 userEmail: actor,
                 action: 'profile_picture_set',

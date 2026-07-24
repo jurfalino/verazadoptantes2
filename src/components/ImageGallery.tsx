@@ -32,7 +32,7 @@ interface ImageItem {
     thumbnailUrl?: string;
 }
 
-export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, isAdmin = false, userNameMap = {} }: { adopterId: string, initialImages: ImageItem[], onUpload: (id: string, url: string, caption: string, mediaType?: string) => Promise<void | { id?: string }>, currentUser: string, isAdmin?: boolean, userNameMap?: Record<string, string> }) {
+export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, isAdmin = false, canSetProfile = false, userNameMap = {} }: { adopterId: string, initialImages: ImageItem[], onUpload: (id: string, url: string, caption: string, mediaType?: string) => Promise<void | { id?: string }>, currentUser: string, isAdmin?: boolean, canSetProfile?: boolean, userNameMap?: Record<string, string> }) {
     const { t } = useLanguage();
     const { data: session } = useSession();
     const { openLogin } = useAuthContext();
@@ -256,8 +256,9 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                                     {t('adopter.profile_picture') || 'Profile'}
                                 </div>
                             ) : (
-                                /* Set as Profile Button - Top Left - Show on Hover */
-                                img.id && !img.id.startsWith('temp-') && (
+                                /* Set as Profile Button — only for those who may change
+                                   the profile photo (owner ∨ admin ∨ org-mate); v2.26.2. */
+                                img.id && !img.id.startsWith('temp-') && canSetProfile && (
                                     <button
                                         onClick={async (e) => {
                                             e.preventDefault();

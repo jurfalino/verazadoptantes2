@@ -511,6 +511,10 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                 currentUser={currentUser}
                                 userNameMap={userNameMap}
                                 isAdmin={isAdmin}
+                                // v2.26.2: setting a gallery photo as the avatar is a
+                                // profile-photo change — gate to owner ∨ admin ∨ org-mate
+                                // (mirrors the server gate). Uploading a photo stays open.
+                                canSetProfile={isAdmin || isOrgMateOfOwner || (!!currentUser && currentUser === (adopter?.addedBy ?? ''))}
                             />
                         </div>
                     </CollapsibleSection>
