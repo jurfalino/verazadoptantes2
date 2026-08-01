@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.26.3] - 2026-07-31
+
+### Changed — one consistent public/private visual language (👁 eye ↔ 🔒 padlock)
+
+- The "public" state was drawn three different ways: a **closed padlock** on search-result cards (semantically backwards — a lock reads as *private*), a **globe** on the profile, and **🌐** in the admin toggle. Unified everywhere on one system: **👁 eye = public** (visible to everyone), **🔒 closed padlock = private/protected** — search card, profile microcopy, admin per-row toggle + toast, and the `flag_desc_public_profiles` copy in es/en/pt.
+- Chose the eye over an *open* padlock: at the 12px card size open-vs-closed padlock is indistinguishable at a glance, and "visible" is a clearer, more conventional framing than "unlocked."
+- The card badge now uses the themed `--status-sky-*` tokens (dark-mode-safe) instead of raw Tailwind `sky` classes, and the profile microcopy adopts the same sky token so the two match.
+- Deferred (follow-up pass): consolidating the profile's two stacked public notices into one banner, an owner-actionable "Hacer privado" control, and extracting a shared indicator component.
+
 ## [2.26.2] - 2026-07-23
 
 ### Fixed — changing the profile photo now requires record-edit access (was open to any user)

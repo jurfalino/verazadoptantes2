@@ -130,7 +130,7 @@ export const en = {
         flag_label_pii_access_gating: 'Protect adopter contact info',
         flag_desc_pii_access_gating: 'When on, a viewer sees only the contact details they searched for or were granted; the rest is masked behind approvable access requests, and editing the core record is restricted to its owner or an admin. Significant behavior change — roll out deliberately. Default OFF.',
         flag_label_public_profiles: 'Public profiles',
-        flag_desc_public_profiles: 'When on, contact entries imported from public social posts render unmasked to any authenticated viewer (they were public to begin with). Admins can also mark a whole profile public from /admin/adopters (🌐/🔒 toggle) to expose contributor-added entries too. Requires PII gating to be enabled. Default OFF.',
+        flag_desc_public_profiles: 'When on, contact entries imported from public social posts render unmasked to any authenticated viewer (they were public to begin with). Admins can also mark a whole profile public from /admin/adopters (👁️/🔒 toggle) to expose contributor-added entries too. Requires PII gating to be enabled. Default OFF.',
         flag_label_clean_homepage: 'Minimal homepage',
         flag_desc_clean_homepage: 'When on, hides the two activity cards on the homepage ("Register an adoption" and "Leave an observation"). Search becomes the sole primary action; the import-from-social affordance stays accessible as a secondary link below the search. Useful to focus the homepage on adopter lookup. Default OFF.',
         flag_label_contact_import: 'Import from contacts',
