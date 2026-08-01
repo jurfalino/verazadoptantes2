@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.26.4] - 2026-07-31
+
+### Changed — "Protegido" replaces "Privado" for masked records, with honest microcopy
+
+- Renamed the non-public state from **Privado/Private → Protegido/Protected** (admin per-row pill + toast + tooltip; edit-toggle copy in es/en/pt). These records aren't secret: they're discoverable-but-masked, and a viewer can **confirm a value they already know** via the verify flow — so "protected" is the honest word (and it pairs with the padlock).
+- Rewrote the owner-facing protected-state microcopy, which overstated concealment. Was *"Solo visible para vos y tus organizaciones"* (implies others can't see it at all) → now *"Datos protegidos: otros solo pueden confirmarlos si ya los conocen"* — matching the actual protect-but-verifiable model. es/en/pt.
+
 ## [2.26.3] - 2026-07-31
 
 ### Changed — one consistent public/private visual language (👁 eye ↔ 🔒 padlock)
