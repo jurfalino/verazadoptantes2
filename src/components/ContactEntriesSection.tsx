@@ -539,11 +539,14 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
     return (
         <div className="space-y-3">
             {showMicrocopy && (
-                <p className="flex items-start gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                <p className="flex items-start gap-1.5 text-xs" style={{ color: profileEffectivelyPublic ? 'var(--status-sky-text)' : 'var(--text-muted)' }}>
                     {profileEffectivelyPublic ? (
+                        // v2.26.3: eye = public (visible to everyone), matching the search-result
+                        // badge. Was a globe (overloaded: language/web). The private/masked state
+                        // below keeps the closed padlock — visible ↔ protected.
                         <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
-                            <circle cx="12" cy="12" r="9" />
-                            <path strokeLinecap="round" d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.5 12S6 5.5 12 5.5s9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" />
+                            <circle cx="12" cy="12" r="3" />
                         </svg>
                     ) : (
                         <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">

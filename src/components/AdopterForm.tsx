@@ -16,7 +16,7 @@ import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToB
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { RatingBadge } from '@/components/RatingBadge';
-import { MediaLightbox, type MediaItem } from '@/components/ui/MediaLightbox';
+import ProfilePhotoChooser from '@/components/ProfilePhotoChooser';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { reportClientError } from '@/lib/clientErrorReporter';
@@ -33,6 +33,9 @@ import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 interface AdopterFormProps {
     initialData?: Adopter | null;
     currentUser?: string;
+    /** v2.26.1: ALL adopter images (profile-level + activity-linked) — used for
+     *  avatar resolution and the profile-photo chooser. The Photos gallery uses
+     *  the profile-level list separately (ImageGallery in AdopterProfileV2). */
     images?: AdopterImage[];
     adopterId?: string;
     avgRating?: number | null;
@@ -117,6 +120,14 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         [currentUser, session]
     );
 
+    // v2.26.2: changing the profile photo (pick existing OR upload-as-avatar) is
+    // gated the same as editing the record's contact info — owner ∨ admin ∨
+    // org-mate — mirroring the server gate in setProfilePicture / saveImage.
+    // NOT reusing `canEdit` (it's PII-flag-based and true for everyone in prod);
+    // this computes the real record-edit permission the server enforces.
+    const canChangeProfilePhoto = !isNew && isAuthenticated
+        && (isAdmin || isOrgMateOfOwner || (!!currentUser && currentUser === (initialData?.addedBy ?? '')));
+
     // Sliding window logic strictly memoized to avoid expensive sorting on every render
     const periodDays = adoptionConfig?.periodDays || 90;
     const threshold = adoptionConfig?.threshold || 5;
@@ -196,8 +207,17 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     // by ImageGallery; flagged isProfilePicture so the avatar fills immediately.
     const avatarFileInputRef = useRef<HTMLInputElement>(null);
     const [avatarUploading, setAvatarUploading] = useState(false);
-    // Lightbox for the filled-state profile photo (tap to view; "Cambiar" inside replaces).
-    const [profilePhotoLightboxItem, setProfilePhotoLightboxItem] = useState<MediaItem | null>(null);
+    // Chooser for setting the avatar to one of the profile's existing photos
+    // (or uploading a new one). Opened from the avatar / camera affordance.
+    const [chooserOpen, setChooserOpen] = useState(false);
+    // Real (persisted) profile photos that can be picked as the avatar.
+    const pickableImages = images.filter((img) => img.id && !img.id.startsWith('temp-'));
+    // Avatar entry point: offer the existing-photo chooser when there's something
+    // to pick; otherwise (no photos yet) go straight to the file picker to upload.
+    const openAvatarEditor = () => {
+        if (pickableImages.length > 0) setChooserOpen(true);
+        else avatarFileInputRef.current?.click();
+    };
 
     const compressAvatar = (file: File): Promise<string> => new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -638,8 +658,8 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
 
             {/* Hoisted hidden file input — triggered by both the empty-state camera button
                 AND the "Cambiar foto" action inside the profile-photo lightbox. Single ref,
-                single handler, two callers. */}
-            {isAuthenticated && !isNew && (
+                single handler, two callers. Gated to those who may change the profile photo. */}
+            {canChangeProfilePhoto && (
                 <input
                     ref={avatarFileInputRef}
                     type="file"
@@ -649,29 +669,18 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                 />
             )}
 
-            {/* Profile photo lightbox — opens when user taps the filled avatar.
-                Header injects "Cambiar foto" for authenticated users. */}
-            <MediaLightbox
-                item={profilePhotoLightboxItem}
-                onClose={() => setProfilePhotoLightboxItem(null)}
-                actions={isAuthenticated && !isNew ? (
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setProfilePhotoLightboxItem(null);
-                            avatarFileInputRef.current?.click();
-                        }}
-                        disabled={avatarUploading}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-white/15 text-white hover:bg-white/25 transition-colors backdrop-blur-sm"
-                    >
-                        <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <path d="M3 7a1 1 0 0 1 1-1h2.5l1-1.5h5l1 1.5H16a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7Z" />
-                            <circle cx="10" cy="11" r="2.5" />
-                        </svg>
-                        {t('adopter.change_profile_photo') || 'Change photo'}
-                    </button>
-                ) : undefined}
-            />
+            {/* Profile-photo chooser — opens when an editor taps the avatar/camera.
+                Lets them set one of the profile's existing photos as the avatar, or
+                upload a new one (which triggers the hidden input). */}
+            {canChangeProfilePhoto && id && (
+                <ProfilePhotoChooser
+                    isOpen={chooserOpen}
+                    onClose={() => setChooserOpen(false)}
+                    images={images}
+                    adopterId={id}
+                    onUploadNew={() => avatarFileInputRef.current?.click()}
+                />
+            )}
 
             <form onSubmit={handleSave} className="p-5">
                 {isNew && isEditing && (
@@ -709,9 +718,14 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                 />
                             </div>
                         ) : !isNew && (() => {
-                            const profilePic = images.length > 0
-                                ? (images.find(img => img.isProfilePicture === 1) || images[0])
-                                : null;
+                            // v2.26.1: `images` is now ALL images (profile-level +
+                            // activity-linked). The avatar is the explicitly-flagged
+                            // profile picture wherever it lives, else the newest
+                            // profile-level photo — an activity photo never becomes
+                            // the avatar unless it was set as the profile picture.
+                            const profilePic = images.find(img => img.isProfilePicture === 1)
+                                || images.filter(img => !img.adoptionId)[0]
+                                || null;
                             if (profilePic) {
                                 const displayUrl = profilePic.url.includes('r2.dev') ? `/api/proxy-image?url=${encodeURIComponent(profilePic.url)}` : profilePic.url;
                                 const photoEl = (
@@ -720,15 +734,31 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                     </div>
                                 );
                                 return (
-                                    <button
-                                        type="button"
-                                        onClick={() => setProfilePhotoLightboxItem({ url: displayUrl, mediaType: 'image' })}
-                                        aria-label={t('adopter.view_profile_photo') || 'View profile photo'}
-                                        title={t('adopter.view_profile_photo') || 'View profile photo'}
-                                        className="flex-shrink-0 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 hover:opacity-90 transition-opacity"
-                                    >
-                                        {photoEl}
-                                    </button>
+                                    <div className="relative flex-shrink-0">
+                                        <button
+                                            type="button"
+                                            onClick={canChangeProfilePhoto ? openAvatarEditor : undefined}
+                                            disabled={avatarUploading}
+                                            aria-label={canChangeProfilePhoto ? (t('adopter.change_profile_photo') || 'Change photo') : undefined}
+                                            title={canChangeProfilePhoto ? (t('adopter.change_profile_photo') || 'Change photo') : undefined}
+                                            className={`block rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 transition-opacity ${canChangeProfilePhoto ? 'hover:opacity-90 cursor-pointer' : 'cursor-default'}`}
+                                        >
+                                            {photoEl}
+                                        </button>
+                                        {/* Camera badge — same affordance as the empty state, so the
+                                            "you can change this" cue is present only for those who may. */}
+                                        {canChangeProfilePhoto && !avatarUploading && (
+                                            <span
+                                                className="pointer-events-none absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-white border border-stone-200 flex items-center justify-center shadow-sm text-stone-600"
+                                                aria-hidden="true"
+                                            >
+                                                <svg className="w-3 h-3" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M3 7a1 1 0 0 1 1-1h2.5l1-1.5h5l1 1.5H16a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7Z" />
+                                                    <circle cx="10" cy="11" r="2.5" />
+                                                </svg>
+                                            </span>
+                                        )}
+                                    </div>
                                 );
                             }
                             const name = initialData?.name || '';
@@ -745,16 +775,17 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                     )}
                                 </div>
                             );
-                            // Only authenticated users see the upload affordance.
-                            // Anonymous viewers get a non-interactive placeholder.
-                            if (!isAuthenticated) {
+                            // Only those who may change the profile photo (owner ∨
+                            // admin ∨ org-mate) see the add affordance. Everyone else
+                            // — anonymous or non-editor — gets a static placeholder.
+                            if (!canChangeProfilePhoto) {
                                 return <div className="flex-shrink-0">{placeholder}</div>;
                             }
                             return (
                                 <div className="relative flex-shrink-0">
                                     <button
                                         type="button"
-                                        onClick={() => avatarFileInputRef.current?.click()}
+                                        onClick={openAvatarEditor}
                                         disabled={avatarUploading}
                                         aria-label={t('adopter.add_profile_photo') || 'Add profile photo'}
                                         title={t('adopter.add_profile_photo') || 'Add profile photo'}

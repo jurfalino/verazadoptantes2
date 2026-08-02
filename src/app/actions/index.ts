@@ -23,7 +23,7 @@ export { removeContactEntry } from './removeContactEntry';
 export { grantSearchMatchAccess } from './grantSearchMatchAccess';
 
 // Images
-export { saveImage, getImages, setProfilePicture, getAdoptionImages, deleteImage } from './images';
+export { saveImage, getImages, getAllAdopterImages, setProfilePicture, getAdoptionImages, deleteImage } from './images';
 
 // Adoptions
 export { saveAdoption, deleteAdoption, getAdoptions, getAvailableAnimals, deleteAnimalForAdoption, deleteAnimalImage } from './adoptions';

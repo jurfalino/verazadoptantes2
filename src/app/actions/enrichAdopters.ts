@@ -1,7 +1,7 @@
 'use server';
 
 import { adoptions, adopterFlags, adopterStats, adopterImages, duplicateCandidates } from '@/db/schema';
-import { eq, sql, and, isNull, ne } from 'drizzle-orm';
+import { eq, sql, and, isNull, ne, or } from 'drizzle-orm';
 import { ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
 import type { AdopterFlags } from '@/types/adopter';
 import { getAdoptionConfig } from './config';
@@ -82,10 +82,12 @@ async function _enrichAdoptersImpl(
                     sql`(${adopterStats.userId} IS NULL OR ${adopterStats.userId} NOT IN (${sql.raw(ADMIN_STATS_EXCLUSION_SQL)}))`
                 )).catch(logBatchFallback('stats', chunk.length)),
             // Ordered so the first row per adopter is the chosen thumbnail.
+            // v2.26.1: profile-level OR the flagged profile picture (an activity/
+            // observation photo can be the avatar); isProfilePicture DESC wins.
             db.select({ adopterId: adopterImages.adopterId, url: adopterImages.url, isProfilePicture: adopterImages.isProfilePicture })
                 .from(adopterImages).where(and(
                     sql`${adopterImages.adopterId} IN (${inList})`,
-                    isNull(adopterImages.adoptionId)
+                    or(isNull(adopterImages.adoptionId), eq(adopterImages.isProfilePicture, 1))
                 )).orderBy(sql`${adopterImages.adopterId}, ${adopterImages.isProfilePicture} DESC, ${adopterImages.uploadedAt} DESC`)
                 .catch(logBatchFallback('images', chunk.length)),
             db.select({ adopter1Id: duplicateCandidates.adopter1Id, adopter2Id: duplicateCandidates.adopter2Id })

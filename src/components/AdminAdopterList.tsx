@@ -38,7 +38,7 @@ interface CountrySummary {
 interface Props {
     adopters: EnrichedAdopter[];
     countries: CountrySummary[];
-    /** When true, render the per-row "🌐 Público / 🔒 Privado" toggle and
+    /** When true, render the per-row "👁️ Público / 🔒 Protegido" toggle and
      *  honor the row's isPublic field. When false, the column is ignored. */
     publicProfilesFlag?: boolean;
 }
@@ -94,7 +94,7 @@ export default function AdminAdopterList({ adopters, countries: _countries, publ
             const { setAdopterPublic } = await import('@/app/actions/admin');
             const res = await setAdopterPublic(adopterId, nextValue);
             if (res.ok) {
-                toast.success(nextValue ? '🌐' : '🔒', nextValue ? 'Perfil marcado público' : 'Perfil marcado privado');
+                toast.success(nextValue ? '👁️' : '🔒', nextValue ? 'Perfil marcado público' : 'Perfil marcado protegido');
                 router.refresh();
             } else {
                 // Roll back the optimistic update.
@@ -275,14 +275,14 @@ export default function AdminAdopterList({ adopters, countries: _countries, publ
                                             onClick={() => togglePublic(adopter.id, !effective)}
                                             disabled={busy}
                                             aria-pressed={effective}
-                                            title={effective ? 'Marcar como privado (PII gating activo)' : 'Marcar como público (bypass PII gating)'}
+                                            title={effective ? 'Marcar como protegido (PII gating activo)' : 'Marcar como público (bypass PII gating)'}
                                             className={`text-xs px-2 py-0.5 rounded-full font-medium transition-colors disabled:opacity-60 ${
                                                 effective
                                                     ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
                                                     : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
                                             }`}
                                         >
-                                            {effective ? '🌐 Público' : '🔒 Privado'}
+                                            {effective ? '👁️ Público' : '🔒 Protegido'}
                                         </button>
                                     );
                                 })()}

@@ -2,6 +2,48 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.26.4] - 2026-07-31
+
+### Changed — "Protegido" replaces "Privado" for masked records, with honest microcopy
+
+- Renamed the non-public state from **Privado/Private → Protegido/Protected** (admin per-row pill + toast + tooltip; edit-toggle copy in es/en/pt). These records aren't secret: they're discoverable-but-masked, and a viewer can **confirm a value they already know** via the verify flow — so "protected" is the honest word (and it pairs with the padlock).
+- Rewrote the owner-facing protected-state microcopy, which overstated concealment. Was *"Solo visible para vos y tus organizaciones"* (implies others can't see it at all) → now *"Datos protegidos: otros solo pueden confirmarlos si ya los conocen"* — matching the actual protect-but-verifiable model. es/en/pt.
+
+## [2.26.3] - 2026-07-31
+
+### Changed — one consistent public/private visual language (👁 eye ↔ 🔒 padlock)
+
+- The "public" state was drawn three different ways: a **closed padlock** on search-result cards (semantically backwards — a lock reads as *private*), a **globe** on the profile, and **🌐** in the admin toggle. Unified everywhere on one system: **👁 eye = public** (visible to everyone), **🔒 closed padlock = private/protected** — search card, profile microcopy, admin per-row toggle + toast, and the `flag_desc_public_profiles` copy in es/en/pt.
+- Chose the eye over an *open* padlock: at the 12px card size open-vs-closed padlock is indistinguishable at a glance, and "visible" is a clearer, more conventional framing than "unlocked."
+- The card badge now uses the themed `--status-sky-*` tokens (dark-mode-safe) instead of raw Tailwind `sky` classes, and the profile microcopy adopts the same sky token so the two match.
+- Deferred (follow-up pass): consolidating the profile's two stacked public notices into one banner, an owner-actionable "Hacer privado" control, and extracting a shared indicator component.
+
+## [2.26.2] - 2026-07-23
+
+### Fixed — changing the profile photo now requires record-edit access (was open to any user)
+
+- Setting an adopter's profile photo was unguarded: `setProfilePicture` had **no authorization check at all**, and the avatar-*upload* path (`saveImage` with `isProfilePicture`) checked only for a logged-in session — so any authenticated user could change any adopter's avatar.
+- It's now gated the **same as editing the record's contact info** — `owner ∨ admin ∨ org-mate` — via `canEditAdopterRecord({ gatingEnabled: true, … })`, always enforced (independent of the PII feature flag), mirroring `saveAdopter`. Both server paths (`setProfilePicture`, `saveImage`-as-avatar) enforce it; the auth check runs before the write so a denial surfaces cleanly instead of as a generic failure.
+- **Contributing a gallery photo stays open** — that's a contribution, not a record-identity change. Only *setting the avatar* is gated.
+- UI mirrors the gate: the avatar chooser/upload affordance and the Photos-section "Set Profile" button now appear only for owner/admin/org-mate (computed from the real record-edit permission, not the PII-flag-based `canEdit` which is permissive in prod).
+
+## [2.26.1] - 2026-07-23
+
+### Fixed — observation/activity photos can now be set as the profile avatar
+
+- The profile-photo chooser (v2.26.0) only listed profile-level photos, so an adopter whose photos live on **observation/activity records** had an empty chooser — you couldn't promote one to the avatar. The chooser now shows **all** the adopter's photos (new `getAllAdopterImages`).
+- Profile-picture **resolution is now activity-aware everywhere it's displayed** — the profile avatar, `/my-adopters` thumbnail, search results, admin adopter list, form-results match cards, and the `/api/adopters` preview: the image flagged `is_profile_picture=1` wins regardless of which record it hangs off (`adoption_id IS NULL OR is_profile_picture=1`, ordered so the flag wins). An activity photo never becomes the avatar unless it was explicitly set.
+- The **Photos gallery stays profile-level** — an observation photo you promote to the avatar isn't duplicated into the gallery (with its own delete/edit actions); it still lives on its observation record.
+
+## [2.26.0] - 2026-07-22
+
+### Added — set an existing photo as the adopter profile picture
+
+- Tapping the adopter avatar now opens a **photo chooser**: pick any of the profile's existing photos to make it the avatar, or upload a new one. Previously the avatar click only ever opened the file picker, so users couldn't promote a photo they already had (e.g. a scraped Instagram image) to the profile picture from there.
+- The Photos-section **"Set Profile" button is now always visible** (was hover-only on desktop), so the same action is discoverable from the gallery too.
+- Reuses the existing `setProfilePicture` server action — no schema change. New `ProfilePhotoChooser` component + render-contract unit test; i18n across es/en/pt.
+- Full-size viewing of the avatar now lives in the Photos gallery (the avatar tap manages the photo rather than opening a viewer).
+
 ## [2.25.2] - 2026-07-22
 
 ### Fixed — `/my-adopters` showed an empty list for large accounts (D1 100-param overflow)

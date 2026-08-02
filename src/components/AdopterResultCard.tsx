@@ -75,10 +75,17 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                                 : res.adopter.name}
                         </span>
                         {res.adopter.isPublic === 1 && (
-                            <span className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-sky-100 text-sky-700" title={t('search.public_title')}>
+                            <span
+                                className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded"
+                                style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }}
+                                title={t('search.public_title')}
+                            >
+                                {/* v2.26.3: eye = public (visible to everyone). The private/masked
+                                    state uses a closed padlock (ContactEntriesSection): visible ↔ protected.
+                                    Eye reads clearly at this 12px size where open-vs-closed lock does not. */}
                                 <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                                    <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+                                    <path d="M2.5 12S6 5.5 12 5.5s9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" />
+                                    <circle cx="12" cy="12" r="3" />
                                 </svg>
                                 {/* Mobile: icon-only (keeps room for the name); ≥sm: icon + label. */}
                                 <span className="hidden sm:inline">{t('search.public_label')}</span>

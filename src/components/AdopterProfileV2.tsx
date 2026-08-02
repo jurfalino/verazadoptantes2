@@ -35,7 +35,11 @@ interface AdopterProfileV2Props {
     adopter: Adopter | null;
     history: HistoryEntry[];
     adoptions: AdoptionRecord[];
+    /** Profile-level images (adoptionId IS NULL) — the Photos gallery. */
     images: AdopterImage[];
+    /** All images incl. activity-linked — feeds the avatar + profile-photo
+     *  chooser so an observation photo can be promoted to the avatar. */
+    allImages: AdopterImage[];
     flags: AdopterFlag[];
     currentUser: string;
     availableAnimals: { id: string; animalName: string; species: string }[];
@@ -65,7 +69,7 @@ interface AdopterProfileV2Props {
     piiContext?: AdopterPiiContext | null;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null }: AdopterProfileV2Props) {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const toast = useShowToast();
@@ -418,7 +422,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                 <AdopterForm
                     initialData={displayedAdopter}
                     currentUser={currentUser}
-                    images={images}
+                    images={allImages}
                     adopterId={id}
                     avgRating={avgRating}
                     profileViews={stats?.profileViews}
@@ -507,6 +511,10 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                 currentUser={currentUser}
                                 userNameMap={userNameMap}
                                 isAdmin={isAdmin}
+                                // v2.26.2: setting a gallery photo as the avatar is a
+                                // profile-photo change — gate to owner ∨ admin ∨ org-mate
+                                // (mirrors the server gate). Uploading a photo stays open.
+                                canSetProfile={isAdmin || isOrgMateOfOwner || (!!currentUser && currentUser === (adopter?.addedBy ?? ''))}
                             />
                         </div>
                     </CollapsibleSection>
