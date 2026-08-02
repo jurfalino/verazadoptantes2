@@ -5,7 +5,17 @@
       "Bash(npx tsc --noEmit *)",
       "Bash(npm run lint)",
       "Bash(npx next lint)",
-      "Bash(gh run watch *)"
+      "Bash(gh run watch *)",
+      "mcp__axiom__queryDataset",
+      "mcp__cloudflare-docs__search_cloudflare_documentation",
+      "mcp__axiom__listDatasets",
+      "mcp__axiom__getDatasetFields",
+      "Bash(npx vitest *)",
+      "Bash(npx tsc *)",
+      "Bash(npx eslint *)",
+      "Bash(npx next *)",
+      "Bash(npx playwright *)",
+      "Bash(npm run *)"
     ]
   }
 }
