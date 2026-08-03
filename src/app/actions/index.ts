@@ -13,6 +13,7 @@ export { getAdoptionConfig } from './config';
 
 // Unified search engine
 export { findAdopters } from './findAdopters';
+export { findFormDuplicates } from './findFormDuplicates';
 export type { FindAdoptersInput, FindAdoptersOptions, FindAdoptersResponse, DuplicateMatch, DiscoveryMatch, AdopterMatch, SearchMode } from './types';
 
 // Adopters

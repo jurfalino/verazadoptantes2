@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.26.5] - 2026-08-02
+
+### Fixed — create-form duplicate detection missed real matches, surfaced unrelated profiles
+
+- Creating "Jonathan Urfalino / 1165851333" did **not** suggest the existing "Jonatan Urfalino / +5491165851333" — instead it showed unrelated same-first-name profiles. Root cause: the create form's live duplicate suggestion (and its save-time gate) called the general **`mode: 'discovery'`** LIKE search on a `name + contactInfo` blob. Discovery has **no Levenshtein fuzzy** (so `jonathan` ≠ `jonatan`) and **no phone-suffix normalization** (so `1165851333` ≠ `+5491165851333`), and the phone lived in structured `contactEntries`, not the blob — so detection rode on the name alone and collided on `%jonathan%`.
+- Both call sites now use a new `findFormDuplicates` server action that routes detection through the purpose-built **`mode: 'duplicate'`** engine (fuzzy + phone-suffix) with **structured `{ name, phones, emails, socials }`** pulled from `contactEntries`, then re-hydrates the matched IDs into the enriched card shape the dedup UI renders — reusing the same `enrichAdopters` + `assembleDiscoveryMatch` PII-masking tail as discovery. **Scoring (weights, thresholds, normalization) is untouched** — the shared engine's contract is unchanged.
+- Verified: the reported pair now scores 30% (≥ the 15% surface gate) with a strong phone-suffix signal, so it appears in both the live suggestion and the save-confirm modal.
+
 ## [2.26.4] - 2026-07-31
 
 ### Changed — "Protegido" replaces "Privado" for masked records, with honest microcopy

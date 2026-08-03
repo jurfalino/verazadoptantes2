@@ -2,7 +2,7 @@
 
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { saveAdopter, saveImage, findAdopters, appendToExistingAdopter } from "@/app/actions";
+import { saveAdopter, saveImage, findFormDuplicates, appendToExistingAdopter } from "@/app/actions";
 import { buildMatchChips, hasStrongMatch, type MatchChip } from "@/lib/matchChips";
 import DuplicatePeek from "@/components/DuplicatePeek";
 import StrongMatchStrip from "@/components/StrongMatchStrip";
@@ -368,6 +368,22 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         return parts.join(' ').trim();
     }, [data.name, data.contactInfo]);
 
+    // Structured input for the duplicate engine (findFormDuplicates). Pulling
+    // phone/email/social from the STRUCTURED contactEntries — not the free-text
+    // blob — is what lets phone-suffix normalization fire (e.g. "1165851333"
+    // matching a stored "+5491165851333"). The blob path frequently omitted the
+    // phone entirely, so detection rode on the name alone. v2.26.5.
+    const getDuplicateInput = useCallback(() => {
+        const pick = (t: ContactEntryType) =>
+            contactEntries.filter(e => e.type === t).map(e => e.value.trim()).filter(Boolean);
+        return {
+            name: data.name.trim(),
+            phones: pick('phone'),
+            emails: pick('email'),
+            socials: pick('social'),
+        };
+    }, [data.name, contactEntries]);
+
     // "Continuar con este perfil" — open the confirmation modal first so the
     // user knows their in-progress data will be merged into the existing record.
     // The actual append fires only from confirmMerge() below.
@@ -430,12 +446,9 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             duplicateDebounceRef.current = null;
             setDuplicateSearching(true);
             try {
-                const response = await findAdopters(
-                    { raw: query || data.name.trim() },
-                    { mode: 'discovery', enrich: true, minRelevance: 15 },
-                );
+                const response = await findFormDuplicates(getDuplicateInput(), { minRelevance: 15 });
                 const confident = (response.results as DiscoveryMatch[]);
-                if (response.validationError || !confident.length) {
+                if (!confident.length) {
                     setDuplicateResults(null);
                 } else {
                     setDuplicateResults(confident.slice(0, MAX_DUPLICATE_CARD_RESULTS));
@@ -449,7 +462,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         return () => {
             if (duplicateDebounceRef.current) clearTimeout(duplicateDebounceRef.current);
         };
-    }, [isNew, data.name, data.contactInfo, getDuplicateSearchQuery, normalizeDetectionQuery]);
+    }, [isNew, data.name, data.contactInfo, getDuplicateSearchQuery, getDuplicateInput, normalizeDetectionQuery]);
 
     // Perform the actual save (used after "Create new anyway" or when no duplicates)
     const performActualSave = useCallback(async () => {
@@ -613,10 +626,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                 && currentNorm === initialDetectedQuery.current;
             if (!queryUnchanged && query.length >= MIN_NAME_LENGTH_FOR_SEARCH) {
                 try {
-                    const response = await findAdopters(
-                        { raw: query },
-                        { mode: 'discovery', enrich: true, minRelevance: 15 },
-                    );
+                    const response = await findFormDuplicates(getDuplicateInput(), { minRelevance: 15 });
                     const confident = response.results as DiscoveryMatch[];
                     // Gate: only fire the modal for STRONG matches the user hasn't already
                     // dismissed from the strong strip. Weak-only result sets save silently
@@ -624,7 +634,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                     const strongUndismissed = confident.filter(m =>
                         hasStrongMatch(m.matchValues) && !dismissedStrongIds.has(m.adopter.id),
                     );
-                    if (!response.validationError && strongUndismissed.length > 0) {
+                    if (strongUndismissed.length > 0) {
                         setSaveDuplicateModal({ matches: strongUndismissed });
                         return;
                     }
