@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.6] - 2026-08-06
+
+### Changed — mobile search card: rating promoted beside the photo
+
+- On phones the small rating pill sat alone to the right of the 48px photo, leaving the right side empty while the name/contact wrapped awkwardly. The mobile card is now **[photo · name/rating]** on top — the name fills the photo height with the rating pill tucked directly under it — then the **risk flags** (too-many-adoptions/requests) and the **full contact** span the width below, in that order (verdict → risk → contact).
+- **Desktop is byte-for-byte unchanged**: `[photo][name/contact][rating]` with the risk chips inline in the stats band. Only placement differs by breakpoint (each element has a single source of truth, rendered into a `md:hidden` / `hidden md:…` slot); the `RatingBadge` component itself is untouched.
+
 ## [2.27.5] - 2026-08-06
 
 ### Changed — masked matches name the precise field ("Coincide en Dirección")

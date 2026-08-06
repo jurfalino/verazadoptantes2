@@ -97,9 +97,48 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
     const addedDate = res.adopter.createdAt ? formatShortDate(res.adopter.createdAt) : null;
     const updatedDate = res.adopter.updatedAt ? formatShortDate(res.adopter.updatedAt) : null;
 
+    // Extracted so each element renders in ONE source of truth but lands in a
+    // different slot per breakpoint (desktop = today's [name/contact][rating];
+    // mobile = [name/rating] with risk flags + contact promoted full-width below).
+    const ratingBadge = res.avgRating !== null ? (
+        <RatingExplainer rating={res.avgRating}>
+            <RatingBadge rating={res.avgRating} size="sm" label="search" />
+        </RatingExplainer>
+    ) : null;
+
+    // Contact line content (highlighted contactInfo + login nudge), reused in the
+    // desktop middle-column slot and the mobile full-width slot.
+    const contactNode = (
+        <>
+            {res.adopter.contactInfo
+                ? (contactRanges.length > 0
+                    ? (renderHighlightedSnippet(res.adopter.contactInfo, contactRanges) || res.adopter.contactInfo)
+                    : res.adopter.contactInfo)
+                : t('common.no_contact')}
+            {!isAuthenticated && res.adopter.contactInfo && (
+                <span className="ml-1 text-teal-700 font-medium">• {t('search.login_to_view')}</span>
+            )}
+        </>
+    );
+
+    // The two "too many …" risk chips. Promoted on mobile to sit right under the
+    // rating (C layout); on desktop they stay inline in the stats band below.
+    const riskFlagChips = (
+        <>
+            {res.flags.tooManyAdoptions && (
+                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">⚠ {t('flags.too_many_adoptions').replace('{count}', res.flags.tooManyAdoptions.count.toString()).replace('{days}', Math.round(res.flags.tooManyAdoptions.actualSpanDays || res.flags.tooManyAdoptions.periodDays).toString())}</span>
+            )}
+            {res.flags.tooManyRequests && (
+                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">⚠ {t('flags.too_many_requests').replace('{count}', res.flags.tooManyRequests.count.toString()).replace('{days}', Math.round(res.flags.tooManyRequests.actualSpanDays || res.flags.tooManyRequests.periodDays).toString())}</span>
+            )}
+        </>
+    );
+    const hasRiskFlags = Boolean(res.flags.tooManyAdoptions || res.flags.tooManyRequests);
+
     const inner = (
         <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-200 group-hover:border-teal-300 group-hover:shadow-md transition-all">
-            {/* Top Row: Avatar + Name/Contact + Rating */}
+            {/* Top Row. Desktop = [avatar][name/contact][rating] (unchanged);
+                mobile = [avatar][name/rating], with contact promoted full-width below. */}
             <div className="flex items-start gap-3 mb-3">
                 <div className="w-12 h-12 rounded-full bg-stone-100 flex-shrink-0 overflow-hidden ring-2 ring-white shadow-sm">
                     {res.thumbnail ? (
@@ -138,27 +177,28 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                             </span>
                         )}
                     </div>
-                    {/* Full contact string, always wrapped (never truncated), with the
-                        matched query tokens highlighted in place — no snippet-window
-                        trimming, so nothing the record shows is hidden behind a "…". */}
-                    <div className="text-xs text-stone-500 break-words" title={res.adopter.contactInfo || undefined}>
-                        {res.adopter.contactInfo
-                            ? (contactRanges.length > 0
-                                ? (renderHighlightedSnippet(res.adopter.contactInfo, contactRanges) || res.adopter.contactInfo)
-                                : res.adopter.contactInfo)
-                            : t('common.no_contact')}
-                        {!isAuthenticated && res.adopter.contactInfo && (
-                            <span className="ml-1 text-teal-700 font-medium">• {t('search.login_to_view')}</span>
-                        )}
+                    {/* Mobile: rating sits directly under the name — it fills the photo
+                        height beside the avatar instead of leaving the right side empty. */}
+                    {ratingBadge && <div className="md:hidden mt-1.5">{ratingBadge}</div>}
+                    {/* Desktop: contact stays in the middle column under the name.
+                        Full string, always wrapped (never truncated), matched tokens
+                        highlighted in place — nothing hidden behind a "…". */}
+                    <div className="hidden md:block text-xs text-stone-500 break-words" title={res.adopter.contactInfo || undefined}>
+                        {contactNode}
                     </div>
                 </div>
-                {res.avgRating !== null && (
-                    <div className="flex-shrink-0">
-                        <RatingExplainer rating={res.avgRating}>
-                            <RatingBadge rating={res.avgRating} size="sm" label="search" />
-                        </RatingExplainer>
-                    </div>
-                )}
+                {/* Desktop: rating pinned to the right. */}
+                {ratingBadge && <div className="hidden md:block flex-shrink-0">{ratingBadge}</div>}
+            </div>
+
+            {/* Mobile C layout: risk flags right after the rating, then contact
+                full-width. Both hidden on desktop (rating flags live in the stats
+                band; contact lives in the middle column). */}
+            {hasRiskFlags && (
+                <div className="md:hidden flex flex-wrap gap-1.5 mb-2">{riskFlagChips}</div>
+            )}
+            <div className="md:hidden text-xs text-stone-500 break-words mb-3" title={res.adopter.contactInfo || undefined}>
+                {contactNode}
             </div>
 
             {/* Stats Row */}
@@ -189,12 +229,10 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                     {res.flags.verified_address && (
                         <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">✓ {t('flags.verified_address') || 'Verified address'}</span>
                     )}
-                    {res.flags.tooManyAdoptions && (
-                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">⚠ {t('flags.too_many_adoptions').replace('{count}', res.flags.tooManyAdoptions.count.toString()).replace('{days}', Math.round(res.flags.tooManyAdoptions.actualSpanDays || res.flags.tooManyAdoptions.periodDays).toString())}</span>
-                    )}
-                    {res.flags.tooManyRequests && (
-                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">⚠ {t('flags.too_many_requests').replace('{count}', res.flags.tooManyRequests.count.toString()).replace('{days}', Math.round(res.flags.tooManyRequests.actualSpanDays || res.flags.tooManyRequests.periodDays).toString())}</span>
-                    )}
+                    {/* Desktop: risk chips inline in the stats band. On mobile they're
+                        promoted above (right after the rating), so hide them here —
+                        `md:contents` lets them flow into this flex cluster on ≥md. */}
+                    <span className="hidden md:contents">{riskFlagChips}</span>
                 </div>
             </div>
 
