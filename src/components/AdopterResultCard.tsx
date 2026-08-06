@@ -79,14 +79,11 @@ export interface AdopterResultCardProps {
     /** Profile link target. When omitted the card is inert (walkthrough demo). */
     href?: string;
     onClick?: (e: React.MouseEvent) => void;
-    /** Wrap the contact line instead of truncating it — the walkthrough demo needs
-     *  the (revealed) phone visible on mobile, where truncation would hide it. */
-    wrapContact?: boolean;
     /** The search query — used to highlight matched tokens in the name. */
     query?: string;
 }
 
-export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = true, href, onClick, wrapContact = false, query = '' }: AdopterResultCardProps) {
+export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = true, href, onClick, query = '' }: AdopterResultCardProps) {
     const { t } = useLanguage();
     const nameRanges = nameHighlightRanges(res.adopter.name, query);
 
@@ -135,17 +132,18 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                         )}
                     </div>
                     {(() => {
-                        // When the query matched the contact BLOB, the matched text can sit
-                        // at the end of a long "Tel:… Email:… Dirección:…" string and get cut
-                        // by `truncate` (e.g. searching an address stored in contactInfo).
-                        // Show the match SNIPPET WINDOW (centred on the hit, highlighted) and
-                        // let it wrap, so the matched text is always visible — instead of the
-                        // raw blob truncated from the start. Falls back to the plain contact
-                        // line (truncated) when there's no visible contact match.
+                        // The contact detail can be a long "Documento:… Email:… Tel:…
+                        // Dirección: Av. Maipu 1955" blob. It used to render on a single
+                        // `truncate` line, so a match at the END (e.g. an address inside the
+                        // blob) was cut off screen. Now the line ALWAYS wraps — never
+                        // truncates — so the full contact (address included) is visible.
+                        // When the query matched the contact field and the value is visible
+                        // (not PII-scrubbed), show the highlighted match snippet window so the
+                        // hit is obvious; otherwise show the full contact string, wrapped.
                         const contactSnip = isAuthenticated && res.matchSnippet?.field === 'contact' && res.matchSnippet.snippet
                             ? res.matchSnippet : null;
                         return (
-                            <div className={`text-xs text-stone-500 ${wrapContact || contactSnip ? 'break-words' : 'truncate'}`} title={res.adopter.contactInfo || undefined}>
+                            <div className="text-xs text-stone-500 break-words" title={res.adopter.contactInfo || undefined}>
                                 {contactSnip
                                     ? (renderHighlightedSnippet(contactSnip.snippet, contactSnip.highlights) || contactSnip.snippet)
                                     : (res.adopter.contactInfo || t('common.no_contact'))}

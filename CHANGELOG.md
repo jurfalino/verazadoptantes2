@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.26.11] - 2026-08-06
+
+### Fixed — contact line still truncated (v2.26.10 was a half-fix)
+
+- v2.26.10 only wrapped the contact line when a contact match *snippet* was present, so for a masked record (snippet scrubbed) — or any case the snippet path didn't fire — it fell straight back to the truncated single line, and a match at the end of the contact blob (e.g. `Dirección: Av. Maipu 1955`) was still cut off.
+- The search-result contact line now **always wraps and never truncates**. The full contact string is visible; when the query matched the contact field and the value is unmasked, the highlighted match snippet is shown. (For a record you don't own, the street part of an address stays PII-masked — but it's no longer truncated.)
+- Removed the now-dead `wrapContact` prop.
+
 ## [2.26.10] - 2026-08-05
 
 ### Fixed — a search match buried in the contact blob was truncated off-screen
