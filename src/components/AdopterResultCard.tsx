@@ -138,9 +138,12 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
     const inner = (
         <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-200 group-hover:border-teal-300 group-hover:shadow-md transition-all">
             {/* Top Row. Desktop = [avatar][name/contact][rating] (unchanged);
-                mobile = [avatar][name/rating], with contact promoted full-width below. */}
-            <div className="flex items-start gap-3 mb-3">
-                <div className="w-12 h-12 rounded-full bg-stone-100 flex-shrink-0 overflow-hidden ring-2 ring-white shadow-sm">
+                mobile = [avatar][name] with the rating wrapping to its own line under
+                the name (flex-wrap + basis-full), and contact promoted full-width below.
+                The rating is a SINGLE DOM instance repositioned by CSS — not duplicated —
+                so a test selecting the ⭐ never resolves to a hidden copy. */}
+            <div className="flex flex-wrap items-start gap-x-3 gap-y-1.5 mb-3">
+                <div className="w-12 h-12 rounded-full bg-stone-100 flex-none overflow-hidden ring-2 ring-white shadow-sm">
                     {res.thumbnail ? (
                         <img src={res.thumbnail} alt="" className="w-full h-full object-cover" />
                     ) : (
@@ -177,9 +180,6 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                             </span>
                         )}
                     </div>
-                    {/* Mobile: rating sits directly under the name — it fills the photo
-                        height beside the avatar instead of leaving the right side empty. */}
-                    {ratingBadge && <div className="md:hidden mt-1.5">{ratingBadge}</div>}
                     {/* Desktop: contact stays in the middle column under the name.
                         Full string, always wrapped (never truncated), matched tokens
                         highlighted in place — nothing hidden behind a "…". */}
@@ -187,8 +187,14 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                         {contactNode}
                     </div>
                 </div>
-                {/* Desktop: rating pinned to the right. */}
-                {ratingBadge && <div className="hidden md:block flex-shrink-0">{ratingBadge}</div>}
+                {/* Rating — one instance, repositioned by CSS. Desktop: pinned right in
+                    natural order. Mobile: basis-full forces it onto its own line under the
+                    name, pl indents it past the 48px avatar so it sits under the name. */}
+                {ratingBadge && (
+                    <div className="flex-none basis-full md:basis-auto pl-[3.75rem] md:pl-0">
+                        {ratingBadge}
+                    </div>
+                )}
             </div>
 
             {/* Mobile C layout: risk flags right after the rating, then contact

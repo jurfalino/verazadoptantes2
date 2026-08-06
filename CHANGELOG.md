@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.7] - 2026-08-06
+
+### Fixed — search no longer matches field-label words; mobile card badge is a single instance
+
+- **Field-label words don't match anymore.** The stored `contactInfo` blob prefixes every entry with its label (`Dirección: …`, `Tel: …`, `Email: …`, `Documento: …`, `Redes: …`, `Conocido/a como: …`), and discovery does a substring `LIKE` over that blob — so searching the bare word **"Dirección"** matched *every* record with an address, "Tel" every phone record, etc. Query tokens are now filtered against a label stopword set derived from `TYPE_LABEL` (normalized, so accented `Dirección` and plain `direccion` are both dropped). A query that is *only* label words returns no results instead of matching everything. Actual field *values* (e.g. an address "Corrientes 1234") are unaffected. Custom `id` labels (e.g. "DNI") aren't covered — only the six built-in labels.
+- **Mobile card rating is a single DOM instance.** v2.27.6 rendered the badge twice (mobile + desktop breakpoint slots); the `md:hidden` mobile copy came first in the DOM, so `getByText('⭐').first()` in the desktop e2e resolved to the hidden copy and the search e2e failed (blocking the deploy). The badge is now rendered once and repositioned with `flex-wrap` — desktop pins it right (unchanged); mobile wraps it onto its own line under the name.
+
 ## [2.27.6] - 2026-08-06
 
 ### Changed — mobile search card: rating promoted beside the photo

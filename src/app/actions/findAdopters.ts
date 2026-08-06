@@ -34,7 +34,7 @@ import { count } from 'drizzle-orm';
 import { matchSearchEntries, matchSearchNameTokens, hashNameToken, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
 import { assembleDiscoveryMatch } from '@/lib/discoveryMatch';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
-import { deserializeContactEntries } from '@/lib/contactEntries';
+import { deserializeContactEntries, TYPE_LABEL } from '@/lib/contactEntries';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -56,6 +56,20 @@ function tokenize(q: string): string[] {
     const t = q.split(/\s+/).filter(x => x.length >= 2);
     return t.length > 0 ? t : [q];
 }
+
+/**
+ * Field-label words derived from the contactInfo blob's `TYPE_LABEL` (Dirección,
+ * Tel, Email, Documento, Redes, "Conocido/a como"). The stored blob prefixes every
+ * entry with its label, and discovery does a substring LIKE over that blob — so a
+ * bare label word matches EVERY record that has that field (e.g. "Dirección" hits
+ * every address-bearing record). Normalized (accent-stripped, lowercased) so both
+ * "Dirección" and "direccion" are recognized. Filtered out of query tokens below.
+ */
+const SEARCH_LABEL_STOPWORDS: Set<string> = new Set(
+    Object.values(TYPE_LABEL)
+        .flatMap(label => normalizeText(label).split(/[^a-z0-9]+/))
+        .filter(w => w.length >= 2)
+);
 
 function allTokensMatch(text: string | null | undefined, tokens: string[]): boolean {
     if (!text) return false;
@@ -659,7 +673,12 @@ async function runDiscoveryMode(
             return { results: [], validationError: 'login_required' };
     }
 
-    const tokens = tokenize(normalizedQuery);
+    // Drop field-label words so a bare "Dirección"/"Tel"/"Email"/… doesn't
+    // substring-match the label line present on every record with that field
+    // (see SEARCH_LABEL_STOPWORDS). If the query is nothing BUT label words, it's
+    // not a meaningful search → return no results rather than matching everything.
+    const tokens = tokenize(normalizedQuery).filter(tk => !SEARCH_LABEL_STOPWORDS.has(normalizeText(tk)));
+    if (tokens.length === 0) return { results: [] };
     const isMultiToken = tokens.length > 1;
 
     // Geo-filtering
