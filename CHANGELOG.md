@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.0] - 2026-08-06
+
+### Changed — multi-token search demotes partial matches; masked matches now explain themselves
+
+Follow-up to the search-recall work: a `maipu 1955` search was surfacing unrelated `maipu 888` records in the main list with no visible reason.
+
+- **Partial matches demoted.** On a multi-token query, only results that cover **all** query tokens stay in the main list. A result matching just one token (e.g. `maipu` but not `1955`) drops into the "Otras posibles coincidencias" weak tier. **Strong digit-identifier matches (phone/DNI) are exempt** — a phone match with a non-matching name stays in the main list (preserves the v2.26.6 fix). The weak section now shows these demoted partials eagerly, alongside the lazy fuzzy-name matches, deduped.
+- **Masked matches explain themselves.** A result that matched only on a PII-masked field (e.g. an address inside the contact blob you can't see) used to appear with nothing highlighted — an unexplained result. It now shows a "matched on a protected field · Información protegida" chip, so you always know why a record surfaced even when the value stays hidden.
+
 ## [2.26.11] - 2026-08-06
 
 ### Fixed — contact line still truncated (v2.26.10 was a half-fix)

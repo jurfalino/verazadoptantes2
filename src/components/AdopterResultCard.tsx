@@ -203,7 +203,13 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
             {/* Match Snippet — shows why this result appeared */}
             {res.matchSnippet && (() => {
                 const s = res.matchSnippet;
-                if (s.field === 'name' || s.field === 'contact') return null;
+                // Name is highlighted inline in the name. A VISIBLE contact match is
+                // shown on the contact line above — but a MASKED contact match (empty
+                // snippet) has no visible cue, so still surface a "matched on a
+                // protected field" chip below so the result is never unexplained
+                // (e.g. an address stored in the contact blob that you can't see).
+                if (s.field === 'name') return null;
+                if (s.field === 'contact' && s.snippet) return null;
                 const icon = SNIPPET_ICONS[s.field];
                 const label = t(`search.snippet_${s.field}`);
                 return (

@@ -44,10 +44,16 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
     const [weakResults, setWeakResults] = useState<DiscoveryMatch[] | null>(null);
     const [weakLoading, setWeakLoading] = useState(false);
     const weakForRef = useRef<string | null>(null);
+    // Partial-coverage matches the backend demoted from the main list (e.g.
+    // "maipu 888" for a "maipu 1955" search). Eager — arrives with the response —
+    // and shown inside the same "Otras posibles coincidencias" section as the
+    // (lazy) fuzzy name matches.
+    const [lowRelevanceResults, setLowRelevanceResults] = useState<DiscoveryMatch[]>([]);
 
     const resetWeak = useCallback(() => {
         setWeakResults(null);
         setWeakLoading(false);
+        setLowRelevanceResults([]);
         weakForRef.current = null;
     }, []);
 
@@ -89,6 +95,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                 setResults([]);
             } else {
                 setResults(response.results as DiscoveryMatch[]);
+                setLowRelevanceResults((response.lowRelevanceResults as DiscoveryMatch[]) ?? []);
                 setSingleTokenResultCount(response.singleTokenResultCount);
                 if (response.truncated && response.totalCount) {
                     setTruncatedInfo({ truncated: true, totalCount: response.totalCount });
@@ -218,6 +225,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                 setResults([]);
             } else {
                 setResults(response.results as DiscoveryMatch[]);
+                setLowRelevanceResults((response.lowRelevanceResults as DiscoveryMatch[]) ?? []);
                 setSingleTokenResultCount(response.singleTokenResultCount);
                 if (response.truncated && response.totalCount) {
                     setTruncatedInfo({ truncated: true, totalCount: response.totalCount });
@@ -471,53 +479,59 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                         a rescuer never concludes "not here" without the recall net. Keyed by
                         query so it remounts (and re-applies defaultOpen) per search. Hidden
                         during the walkthrough and on validation errors. */}
-                    {!demoActive && !validationError && query.trim().length >= 2 && (
-                        <CollapsibleSection
-                            key={query.trim()}
-                            title={t('search.more_matches_title')}
-                            subtitle={t('search.more_matches_subtitle')}
-                            defaultOpen={results.length === 0}
-                            onToggle={(e) => {
-                                if (e.currentTarget.open) {
-                                    loadWeakMatches(query, results.map(r => r.adopter.id));
-                                }
-                            }}
-                        >
-                            {weakLoading ? (
-                                <div className="py-6 flex items-center justify-center gap-2 text-stone-500 text-sm">
-                                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" />
-                                        <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                                    </svg>
-                                    {t('search.more_matches_loading')}
-                                </div>
-                            ) : weakResults === null ? null : weakResults.length === 0 ? (
-                                <div className="py-6 text-center text-stone-400 text-sm">{t('search.more_matches_empty')}</div>
-                            ) : (
-                                <div className="space-y-3">
-                                    {weakResults.map((res) => {
-                                        const isAuthenticated = !!session?.user;
-                                        const qParam = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : '';
-                                        const profileHref = `/adopter/${res.adopter.id}${qParam}`;
-                                        const handleCardClick = (e: React.MouseEvent) => {
-                                            if (!isAuthenticated) { e.preventDefault(); openLogin(profileHref); }
-                                        };
-                                        return (
-                                            <AdopterResultCard
-                                                key={res.adopter.id}
-                                                match={res}
-                                                isAuthenticated={isAuthenticated}
-                                                showMetadata={showCardMetadata}
-                                                href={profileHref}
-                                                onClick={handleCardClick}
-                                                query={query}
-                                            />
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </CollapsibleSection>
-                    )}
+                    {!demoActive && !validationError && query.trim().length >= 2 && (() => {
+                        // Combine the eager demoted partial matches (lowRelevanceResults)
+                        // with the lazy fuzzy name matches (weakResults), deduped. Fuzzy is
+                        // fetched on expand, excluding what's already shown (strong + partials).
+                        const strongIds = results.map(r => r.adopter.id);
+                        const shownIds = new Set([...strongIds, ...lowRelevanceResults.map(r => r.adopter.id)]);
+                        const combined = [
+                            ...lowRelevanceResults,
+                            ...((weakResults ?? []).filter(r => !shownIds.has(r.adopter.id))),
+                        ];
+                        const isAuthenticated = !!session?.user;
+                        const renderCard = (res: DiscoveryMatch) => {
+                            const qParam = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : '';
+                            const profileHref = `/adopter/${res.adopter.id}${qParam}`;
+                            return (
+                                <AdopterResultCard
+                                    key={res.adopter.id}
+                                    match={res}
+                                    isAuthenticated={isAuthenticated}
+                                    showMetadata={showCardMetadata}
+                                    href={profileHref}
+                                    onClick={(e) => { if (!isAuthenticated) { e.preventDefault(); openLogin(profileHref); } }}
+                                    query={query}
+                                />
+                            );
+                        };
+                        return (
+                            <CollapsibleSection
+                                key={query.trim()}
+                                title={t('search.more_matches_title')}
+                                subtitle={t('search.more_matches_subtitle')}
+                                count={combined.length > 0 ? combined.length : undefined}
+                                defaultOpen={results.length === 0}
+                                onToggle={(e) => {
+                                    if (e.currentTarget.open) loadWeakMatches(query, [...shownIds]);
+                                }}
+                            >
+                                {combined.length > 0 && <div className="space-y-3">{combined.map(renderCard)}</div>}
+                                {weakLoading && (
+                                    <div className="py-6 flex items-center justify-center gap-2 text-stone-500 text-sm">
+                                        <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" />
+                                            <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                                        </svg>
+                                        {t('search.more_matches_loading')}
+                                    </div>
+                                )}
+                                {!weakLoading && weakResults !== null && combined.length === 0 && (
+                                    <div className="py-6 text-center text-stone-400 text-sm">{t('search.more_matches_empty')}</div>
+                                )}
+                            </CollapsibleSection>
+                        );
+                    })()}
 
                     {/* End-of-results "none match" CTA — appears under the last card so the
                         natural decision moment (user finished reading) has a one-tap exit

@@ -790,6 +790,9 @@ async function runDiscoveryMode(
     // mostly digits/handles and address accent-folding can wait.
     const qNorm = normalizeText(normalizedQuery);
     const tokensNorm = tokens.map(t => normalizeText(t));
+    // v2.27.0: per-result token coverage (fraction of query tokens matched), used
+    // to demote partial matches on multi-token queries into the weak tier.
+    const coverageById = new Map<string, number>();
     const defaultStats = { searchHits: 0, profileViews: 0, requests: 0, adoptions: 0 };
     const defaultFlags = {
         inaccurate: false, duplicate: false, systemDuplicate: false,
@@ -883,6 +886,7 @@ async function runDiscoveryMode(
         if (isMultiToken) {
             const allText = [a.name, a.contactInfo, a.addressInfo, a.familyMembers, adoptionTextMap.get(a.id), historyTextMap.get(a.id)].filter(Boolean).join(' ');
             const covered = countTokenMatches(allText, tokens) / tokens.length;
+            coverageById.set(a.id, covered); // v2.27.0: drives partial-match demotion below
             score += covered >= 1 ? WEIGHTS.query_coverage_full : Math.round(WEIGHTS.query_coverage_full * covered * 0.5);
         }
 
@@ -973,12 +977,21 @@ async function runDiscoveryMode(
 
     allResults.sort((a, b) => b.relevancePercent - a.relevancePercent);
 
-    // Low-relevance bucketing
+    // Low-relevance bucketing. v2.27.0: a multi-token query keeps in the MAIN
+    // list only results that cover ALL query tokens (or matched a strong digit
+    // identifier — phone/DNI — which must stay strong per the v2.26.6 fix, even
+    // if the name half of the query didn't match). Partial-coverage matches
+    // (e.g. "maipu 888" for a "maipu 1955" search) drop to the weak tier so the
+    // top list stays high-signal. Very-low-relevance results also drop.
     let mainResults = allResults;
     let lowRelevanceResults: DiscoveryMatch[] = [];
     if (isMultiToken) {
-        mainResults = allResults.filter(r => r.relevancePercent >= LOW_RELEVANCE_PERCENT_THRESHOLD);
-        lowRelevanceResults = allResults.filter(r => r.relevancePercent < LOW_RELEVANCE_PERCENT_THRESHOLD);
+        const strongIdMatch = new Set<string>(phoneTokenIds);
+        const isStrong = (r: DiscoveryMatch) =>
+            r.relevancePercent >= LOW_RELEVANCE_PERCENT_THRESHOLD
+            && ((coverageById.get(r.adopterId) ?? 1) >= 1 || strongIdMatch.has(r.adopterId));
+        mainResults = allResults.filter(isStrong);
+        lowRelevanceResults = allResults.filter(r => !isStrong(r));
     }
 
     const singleTokenResultCount = (!isMultiToken && allResults.length > REFINEMENT_NUDGE_THRESHOLD)
