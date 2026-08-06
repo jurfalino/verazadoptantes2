@@ -18,6 +18,42 @@ const SNIPPET_ICONS: Record<SnippetField, string> = {
     family: '👨‍👩‍👧', adoption: '🐾', history: '📝',
 };
 
+/**
+ * Highlight ranges for the query's tokens within the (always-visible, never-masked)
+ * name — computed client-side, independent of `matchSnippet`. Fixes the case where a
+ * multi-field query (e.g. "jonatan 65851333") picks the phone as the "best" snippet,
+ * that snippet gets PII-scrubbed, and the matched name ends up un-highlighted.
+ * Accent/case-insensitive: `normalizeText` NFD-strips 1:1 (é→e) so offsets computed on
+ * the normalized string map back onto the original name. No trim (would shift offsets).
+ */
+function normForOffsets(s: string): string {
+    return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+function nameHighlightRanges(name: string, query: string): { start: number; end: number }[] {
+    if (!name || !query) return [];
+    const normName = normForOffsets(name);
+    const tokens = [...new Set(query.trim().split(/\s+/).map(normForOffsets).filter(t => t.length >= 2))];
+    const ranges: { start: number; end: number }[] = [];
+    for (const tok of tokens) {
+        let idx = normName.indexOf(tok);
+        while (idx !== -1) {
+            ranges.push({ start: idx, end: idx + tok.length });
+            idx = normName.indexOf(tok, idx + tok.length);
+        }
+    }
+    if (ranges.length === 0) return [];
+    // Sort + merge overlaps so renderHighlightedSnippet's ascending, non-overlapping
+    // contract holds (e.g. query "ana anabel" over "Ana Anabela").
+    ranges.sort((a, b) => a.start - b.start);
+    const merged: { start: number; end: number }[] = [ranges[0]];
+    for (let i = 1; i < ranges.length; i++) {
+        const last = merged[merged.length - 1];
+        if (ranges[i].start <= last.end) last.end = Math.max(last.end, ranges[i].end);
+        else merged.push(ranges[i]);
+    }
+    return merged;
+}
+
 function renderHighlightedSnippet(snippet: string, highlights: { start: number; end: number }[]) {
     if (highlights.length === 0) return null;
     const parts: React.ReactNode[] = [];
@@ -46,10 +82,13 @@ export interface AdopterResultCardProps {
     /** Wrap the contact line instead of truncating it — the walkthrough demo needs
      *  the (revealed) phone visible on mobile, where truncation would hide it. */
     wrapContact?: boolean;
+    /** The search query — used to highlight matched tokens in the name. */
+    query?: string;
 }
 
-export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = true, href, onClick, wrapContact = false }: AdopterResultCardProps) {
+export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = true, href, onClick, wrapContact = false, query = '' }: AdopterResultCardProps) {
     const { t } = useLanguage();
+    const nameRanges = nameHighlightRanges(res.adopter.name, query);
 
     const addedDate = res.adopter.createdAt ? formatShortDate(res.adopter.createdAt) : null;
     const updatedDate = res.adopter.updatedAt ? formatShortDate(res.adopter.updatedAt) : null;
@@ -70,8 +109,11 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 min-w-0">
                         <span className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate" title={res.adopter.name}>
-                            {isAuthenticated && res.matchSnippet?.field === 'name' && res.matchSnippet.snippet === res.adopter.name
-                                ? (renderHighlightedSnippet(res.adopter.name, res.matchSnippet.highlights) || res.adopter.name)
+                            {/* Highlight matched query tokens directly in the visible name —
+                                works regardless of which field won matchSnippet (and even when
+                                that field was masked/scrubbed). Name is never PII-masked. */}
+                            {nameRanges.length > 0
+                                ? (renderHighlightedSnippet(res.adopter.name, nameRanges) || res.adopter.name)
                                 : res.adopter.name}
                         </span>
                         {res.adopter.isPublic === 1 && (

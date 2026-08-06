@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.26.8] - 2026-08-05
+
+### Fixed — search results didn't highlight the matched name on multi-field queries
+
+- Searching e.g. `"jonatan 65851333"` (name + phone) returned the right record but highlighted nothing. The card highlights a single "best" snippet; the phone match (`contact_partial`, weight 25) outranked the name match (`name_partial`, 20), so the snippet's field was `contact` — which then got PII-scrubbed for a non-owned record (masked contact can't be highlighted), leaving the visible, matched name un-highlighted.
+- The result card now highlights the query's matched tokens **directly in the name** (always visible, never masked), computed client-side and independent of which field won the snippet. Accent/case-insensitive (`jose` highlights `José`), with overlapping/duplicate token ranges merged. Fixes the reported case and every multi-field query where the winning snippet is masked.
+
 ## [2.26.7] - 2026-08-05
 
 ### Added — accent-insensitive search + a lazy "other possible matches" tier

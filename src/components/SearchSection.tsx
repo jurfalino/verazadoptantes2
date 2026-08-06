@@ -461,6 +461,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                                 href={profileHref}
                                 onClick={handleCardClick}
                                 wrapContact={demoActive}
+                                query={query}
                             />
                         );
                     })}
@@ -510,6 +511,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                                                 showMetadata={showCardMetadata}
                                                 href={profileHref}
                                                 onClick={handleCardClick}
+                                                query={query}
                                             />
                                         );
                                     })}
