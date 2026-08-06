@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.26.6] - 2026-08-05
+
+### Fixed — search by name + phone missed the record even when the phone matched
+
+- Searching `"jonathan urfalino 1165851333"` (name + phone) failed to find `Jonatan Urfalino / +5491165851333` **despite the exact phone match**. The format-agnostic phone lookup (`searchPhoneTokenMatches`) was gated on the *whole query* being phone-shaped; a mostly-letters query skipped it, leaving only a raw `contactInfo` substring LIKE that breaks on `+549`/formatting — a silent miss on the one identifier the searcher actually typed.
+- The phone lookup now also fires on a phone number embedded in a mixed query: it gathers candidate digit-strings two ways — whole-query concatenation for formatted pure-phone queries (unchanged), **plus** each contiguous digit run of ≥6 digits anywhere in the query — and matches them against the normalized `duplicate_tokens` phone index. Address numbers (`calle 6462`) stay below the 6-digit floor, so no new false positives.
+- Verified against staging: the mixed query now returns the target record via its phone token; edge cases (`6462-2274`, `calle 6462 depto 2274`, `María González`) behave correctly.
+
 ## [2.26.5] - 2026-08-02
 
 ### Fixed — create-form duplicate detection missed real matches, surfaced unrelated profiles

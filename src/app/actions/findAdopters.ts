@@ -204,23 +204,43 @@ async function searchAdoptionMatches(db: any, tokens: string[]): Promise<DeepMat
 }
 
 /**
- * Phone-token lookup against `duplicate_tokens` for phone-shaped queries
- * (v2.16.0-17). The discovery LIKE path runs on `adopters.contactInfo`
- * which stores the user's verbatim phone formatting ("Tel: 6462-2274"),
- * so a digit-only query ("64622274") slides past the LIKE substring.
- * The tokenizer canonicalizes phones to digits-only when populating
- * duplicate_tokens, so the same digit-only query matches there.
+ * Phone-token lookup against `duplicate_tokens` (v2.16.0-17). The discovery LIKE
+ * path runs on `adopters.contactInfo` which stores the user's verbatim phone
+ * formatting ("Tel: 6462-2274"), so a digit-only query ("64622274") slides past
+ * the LIKE substring. The tokenizer canonicalizes phones to digits-only when
+ * populating duplicate_tokens, so the same digit-only query matches there.
  *
- * This is purely additive — IDs found here are unioned into the existing
- * extras set and flow through the same enrichment + scoring + masking
- * pipeline that history/adoption matches already use. Same min-digits
- * floor (PHONE_SEARCH_MIN_DIGITS) keeps the anti-fishing posture.
+ * v2.26.6: also fire on a phone number typed INSIDE a mixed "name + phone" query
+ * (e.g. "jonathan urfalino 1165851333"). Previously this whole function was
+ * gated on `isPhoneLikeQuery(WHOLE query)`, which is false when letters dominate,
+ * so the format-agnostic phone match was skipped and the only phone matching left
+ * was a raw contactInfo LIKE that breaks on "+549"/formatting — the record was
+ * silently missed even though the searcher typed the exact number. We now gather
+ * candidate digit-strings two ways and union the lookups:
+ *   1. whole-query concatenation when the query is phone-shaped (formatted pure-
+ *      phone queries like "6462-2274" / "11 6585 1333") — the original behaviour.
+ *   2. each contiguous digit run of >= PHONE_SEARCH_MIN_DIGITS anywhere in the
+ *      query — catches an unformatted phone token embedded in a name query.
+ * The min-digits floor keeps the anti-fishing posture; short address numbers
+ * ("calle 6462") don't qualify. Additive — IDs flow through the same extras
+ * union + enrichment + masking pipeline as history/adoption matches.
  */
 async function searchPhoneTokenMatches(db: any, normalizedQuery: string): Promise<string[]> {
     try {
-        if (!isPhoneLikeQuery(normalizedQuery)) return [];
-        const qDigits = normalizedQuery.replace(/\D/g, '');
-        if (qDigits.length < PHONE_SEARCH_MIN_DIGITS) return [];
+        const candidates = new Set<string>();
+        // (1) formatted pure-phone queries: concatenate all digits.
+        if (isPhoneLikeQuery(normalizedQuery)) {
+            const allDigits = normalizedQuery.replace(/\D/g, '');
+            if (allDigits.length >= PHONE_SEARCH_MIN_DIGITS) candidates.add(allDigits);
+        }
+        // (2) an unformatted phone token embedded in a mixed query.
+        for (const run of normalizedQuery.match(new RegExp(`\\d{${PHONE_SEARCH_MIN_DIGITS},}`, 'g')) ?? []) {
+            candidates.add(run);
+        }
+        if (candidates.size === 0) return [];
+
+        const digitConds = Array.from(candidates).map(d =>
+            like(duplicateTokens.tokenValue, `%${escapeLike(d)}%`));
         const rows = await db.select({ adopterId: duplicateTokens.adopterId })
             .from(duplicateTokens)
             .where(and(
@@ -228,7 +248,7 @@ async function searchPhoneTokenMatches(db: any, normalizedQuery: string): Promis
                     eq(duplicateTokens.tokenType, 'phone'),
                     eq(duplicateTokens.tokenType, 'phone_suffix'),
                 ),
-                like(duplicateTokens.tokenValue, `%${escapeLike(qDigits)}%`),
+                or(...digitConds),
             ))
             .limit(SEARCH_RESULT_LIMIT);
         return rows.map((r: { adopterId: string }) => r.adopterId);
