@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.9] - 2026-08-06
+
+### Fixed — short-token substring noise in "more results" (e.g. "Av" matching "GustAVo")
+
+- A short query token like **"Av"** was matched as a bare substring, so it hit "av" *inside* words — Gust**av**o, por f**av**or — and those partial matches leaked into the "more results" (weak) tier. Now short tokens (≤3 chars) only count when they **start a word** (preceded by start-of-string or a non-alphanumeric char): "Av" still matches "Av. Maipú" and "Avenida", but no longer "Gustavo"/"favor"/"Javier". Longer tokens (`maipu`, phone digits, …) keep substring matching, so no recall loss there.
+- Applied to the multi-token partial/coverage matchers **and** the deep search — an adoption note containing "por favor" no longer earns deep-match credit for "av" via a mid-word `LIKE` hit. Only affects discovery (the eager search path); the fuzzy lazy tier is word-based already. No recall change for legitimate matches (e.g. `Av. Maipú` still matches "av" at the word start exactly as before).
+
 ## [2.27.8] - 2026-08-06
 
 ### Fixed — "Público" badge hugs the name instead of floating to the far right

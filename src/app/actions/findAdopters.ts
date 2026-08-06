@@ -71,22 +71,38 @@ const SEARCH_LABEL_STOPWORDS: Set<string> = new Set(
         .filter(w => w.length >= 2)
 );
 
+// Short query tokens (≤3 chars, e.g. "av") match at a WORD START only — preceded
+// by start-of-string or a non-alphanumeric char — so they don't hit mid-word noise
+// ("av" inside "GustAVo" / "por faVor"). Longer tokens keep plain substring matching
+// (phones, "maipu", … — mid-word coincidences are rare and their recall matters).
+// `lowercasedText` is expected already lowercased by the caller.
+const SHORT_TOKEN_MAX = 3;
+function escapeRegExp(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+function tokenInText(lowercasedText: string, token: string): boolean {
+    const t = token.toLowerCase();
+    if (!t) return false;
+    if (t.length > SHORT_TOKEN_MAX) return lowercasedText.includes(t);
+    return new RegExp(`(?:^|[^a-z0-9])${escapeRegExp(t)}`).test(lowercasedText);
+}
+
 function allTokensMatch(text: string | null | undefined, tokens: string[]): boolean {
     if (!text) return false;
     const l = text.toLowerCase();
-    return tokens.every(t => l.includes(t.toLowerCase()));
+    return tokens.every(t => tokenInText(l, t));
 }
 
 function anyTokenMatch(text: string | null | undefined, tokens: string[]): boolean {
     if (!text) return false;
     const l = text.toLowerCase();
-    return tokens.some(t => l.includes(t.toLowerCase()));
+    return tokens.some(t => tokenInText(l, t));
 }
 
 function countTokenMatches(text: string | null | undefined, tokens: string[]): number {
     if (!text) return 0;
     const l = text.toLowerCase();
-    return tokens.filter(t => l.includes(t.toLowerCase())).length;
+    return tokens.filter(t => tokenInText(l, t)).length;
 }
 
 // ── Snippet extraction ────────────────────────────────────────────────────────
@@ -901,16 +917,19 @@ async function runDiscoveryMode(
             if (s && WEIGHTS.family_partial > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.family_partial; }
         }
 
-        // Deep search
-        if (adoptionIds.includes(a.id)) {
+        // Deep search — re-verify the SQL LIKE hit with word-boundary token matching
+        // so a mid-word substring (e.g. "av" inside "por favor" in an adoption's notes)
+        // doesn't earn deep-match credit and leak a spurious record into results.
+        const adoptionText = adoptionTextMap.get(a.id);
+        if (adoptionIds.includes(a.id) && anyTokenMatch(adoptionText, tokens)) {
             score += WEIGHTS.adoption; matchTypes.push('adoption');
-            const matchedText = adoptionTextMap.get(a.id);
-            if (matchedText && WEIGHTS.adoption > bestSnippetWeight) {
-                const s = buildSnippet('adoption', matchedText, normalizedQuery, tokens);
+            if (adoptionText && WEIGHTS.adoption > bestSnippetWeight) {
+                const s = buildSnippet('adoption', adoptionText, normalizedQuery, tokens);
                 if (s) { bestSnippet = s; bestSnippetWeight = WEIGHTS.adoption; }
             }
         }
-        if (historyIds.includes(a.id)) {
+        const historyText = historyTextMap.get(a.id);
+        if (historyIds.includes(a.id) && anyTokenMatch(historyText, tokens)) {
             score += WEIGHTS.history; matchTypes.push('history');
             if (WEIGHTS.history > bestSnippetWeight) {
                 bestSnippet = { field: 'history', snippet: '', highlights: [] };
