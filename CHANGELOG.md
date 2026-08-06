@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.2] - 2026-08-06
+
+### Fixed — "Contacto: Información protegida" chip showed on records whose contact IS visible
+
+- A record revealed by a search-match grant (you searched its address, so it's shown to you) displayed the full contact on the line but *also* a contradictory "Contacto: Información protegida" chip. Cause: the v2.27.0 chip keyed off an empty match snippet, but the snippet is scrubbed to empty for *any* partially-masked record — even when the value is granted/visible — so "empty snippet" didn't mean "hidden."
+- The chip now keys off whether the query tokens actually appear in the (possibly partially-revealed) contact string. It shows only when the matched value is genuinely hidden, and stays away when the contact is visible on the line.
+
 ## [2.27.1] - 2026-08-06
 
 ### Changed — lighter, action-framed "broaden the search" disclosure

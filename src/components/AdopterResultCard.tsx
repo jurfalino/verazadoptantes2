@@ -203,13 +203,23 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
             {/* Match Snippet — shows why this result appeared */}
             {res.matchSnippet && (() => {
                 const s = res.matchSnippet;
-                // Name is highlighted inline in the name. A VISIBLE contact match is
-                // shown on the contact line above — but a MASKED contact match (empty
-                // snippet) has no visible cue, so still surface a "matched on a
-                // protected field" chip below so the result is never unexplained
-                // (e.g. an address stored in the contact blob that you can't see).
+                // Name is highlighted inline in the name.
                 if (s.field === 'name') return null;
-                if (s.field === 'contact' && s.snippet) return null;
+                // A contact match is shown on the contact line above. Only surface a
+                // "matched on a protected field" chip when the matched value is
+                // GENUINELY hidden — i.e. the query tokens don't appear in the
+                // (possibly partially-revealed) contact string. Checking token
+                // visibility, not the snippet: the snippet is scrubbed to empty for
+                // any partially-masked record even when a search-match grant reveals
+                // the value on the line, so "empty snippet" alone would wrongly show
+                // "protegida" on a record whose contact you can actually see.
+                if (s.field === 'contact') {
+                    const cinfo = normForOffsets(res.adopter.contactInfo || '');
+                    const matchVisible = query.trim().split(/\s+/)
+                        .map(normForOffsets).filter(tk => tk.length >= 2)
+                        .some(tk => cinfo.includes(tk));
+                    if (s.snippet || matchVisible) return null;
+                }
                 const icon = SNIPPET_ICONS[s.field];
                 const label = t(`search.snippet_${s.field}`);
                 return (
