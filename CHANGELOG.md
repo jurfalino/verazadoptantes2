@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.3] - 2026-08-06
+
+### Fixed — mobile search field & result card
+
+- **Search field was unusable on mobile after a search.** It shared a row with the long "Buscar Registros" button (squeezing it to a strip) and used a 14px font, which makes iOS Safari auto-zoom on focus. The input is now **16px in every state** (no more zoom) and, after a search on mobile, the wide labeled button is replaced by a **compact magnifier icon** so the field stays full-width. Desktop and the initial state keep the labeled button.
+- **Result card gives the name room.** The name used to hard-truncate because the rating badge pinned the row; it now wraps to two lines (`line-clamp-2`). The rating badge and (flag-gated) stats are unchanged.
+- **Contact no longer trimmed.** The contact line rendered a match-centered "…" snippet window; it now shows the **full contact string, wrapped, with the matched tokens highlighted** in place — nothing hidden behind an ellipsis.
+
 ## [2.27.2] - 2026-08-06
 
 ### Fixed — "Contacto: Información protegida" chip showed on records whose contact IS visible

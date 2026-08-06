@@ -289,16 +289,18 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
             {/* Search card — just the search tool */}
             <div className={`bg-white rounded-3xl p-5 md:p-6 shadow-sm border border-stone-200 transition-all ${hasResults && !demoActive ? 'md:static sticky top-16 z-30 rounded-b-xl md:rounded-3xl shadow-md md:shadow-sm' : ''
                 }`}>
-                <form onSubmit={handleSearch} className={hasResults ? 'flex gap-2 items-center md:block md:space-y-4' : 'space-y-3'}>
-                    <div className="relative flex-1">
+                <form onSubmit={handleSearch} className={hasResults ? 'flex gap-2 items-stretch md:block md:space-y-4' : 'space-y-3'}>
+                    <div className="relative flex-1 min-w-0">
                         <label htmlFor="search" className="sr-only">{t('common.search')}</label>
+                        {/* text-base (16px) in EVERY state: below 16px, iOS Safari auto-
+                            zooms on focus, which was making the field impossible to type
+                            in on mobile after a search. */}
                         <input
                             type="text"
                             id="search"
-
                             placeholder={t('search.placeholder')}
-                            className={`w-full border border-stone-200 focus:border-teal-400 focus:ring-4 focus:ring-teal-100 transition-all outline-none text-stone-900 placeholder:text-stone-500 font-medium bg-stone-50 ${hasResults
-                                ? 'px-4 py-3 pr-10 rounded-xl text-sm md:px-5 md:py-4 md:pr-12 md:rounded-2xl md:text-base'
+                            className={`w-full border border-stone-200 focus:border-teal-400 focus:ring-4 focus:ring-teal-100 transition-all outline-none text-stone-900 placeholder:text-stone-500 font-medium bg-stone-50 text-base ${hasResults
+                                ? 'px-4 py-3 pr-10 rounded-xl md:px-5 md:py-4 md:pr-12 md:rounded-2xl'
                                 : 'px-4 py-3.5 pr-12 rounded-2xl'
                                 }`}
                             value={query}
@@ -308,7 +310,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                             <button
                                 type="button"
                                 onClick={handleClear}
-                                className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-600 transition-colors p-1"
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-600 transition-colors p-1"
                                 aria-label={t('search.clear')}
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -318,16 +320,30 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                             </button>
                         )}
                     </div>
+                    {/* After results, mobile uses a compact magnifier so the input stays
+                        wide (the long labeled button used to squeeze it to a strip);
+                        desktop and the initial state keep the full labeled button. */}
                     <button
                         type="submit"
-
                         disabled={loading}
-                        className={`bg-teal-200 text-teal-900 font-semibold shadow-sm hover:bg-teal-300 hover:shadow-md transition-all disabled:opacity-70 transform active:scale-[0.98] ${hasResults
-                            ? 'px-4 py-3 rounded-xl text-sm md:w-full md:py-4 md:px-6 md:rounded-2xl md:text-lg'
+                        aria-label={hasResults ? t('search.button') : undefined}
+                        className={`bg-teal-200 text-teal-900 font-semibold shadow-sm hover:bg-teal-300 hover:shadow-md transition-all disabled:opacity-70 transform active:scale-[0.98] flex items-center justify-center ${hasResults
+                            ? 'flex-none w-12 rounded-xl md:w-full md:py-4 md:px-6 md:rounded-2xl md:text-lg'
                             : 'w-full py-3.5 px-6 rounded-2xl text-base'
                             }`}
                     >
-                        {loading ? t('search.searching') : t('search.button')}
+                        {hasResults ? (
+                            <>
+                                <span className="md:hidden" aria-hidden="true">
+                                    {loading ? (
+                                        <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
+                                    ) : (
+                                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" strokeLinecap="round" /></svg>
+                                    )}
+                                </span>
+                                <span className="hidden md:inline">{loading ? t('search.searching') : t('search.button')}</span>
+                            </>
+                        ) : (loading ? t('search.searching') : t('search.button'))}
                     </button>
                 </form>
 

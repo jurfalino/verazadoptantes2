@@ -29,7 +29,7 @@ const SNIPPET_ICONS: Record<SnippetField, string> = {
 function normForOffsets(s: string): string {
     return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
-function nameHighlightRanges(name: string, query: string): { start: number; end: number }[] {
+function tokenHighlightRanges(name: string, query: string): { start: number; end: number }[] {
     if (!name || !query) return [];
     const normName = normForOffsets(name);
     const tokens = [...new Set(query.trim().split(/\s+/).map(normForOffsets).filter(t => t.length >= 2))];
@@ -85,7 +85,8 @@ export interface AdopterResultCardProps {
 
 export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = true, href, onClick, query = '' }: AdopterResultCardProps) {
     const { t } = useLanguage();
-    const nameRanges = nameHighlightRanges(res.adopter.name, query);
+    const nameRanges = tokenHighlightRanges(res.adopter.name, query);
+    const contactRanges = tokenHighlightRanges(res.adopter.contactInfo || '', query);
 
     const addedDate = res.adopter.createdAt ? formatShortDate(res.adopter.createdAt) : null;
     const updatedDate = res.adopter.updatedAt ? formatShortDate(res.adopter.updatedAt) : null;
@@ -93,7 +94,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
     const inner = (
         <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-200 group-hover:border-teal-300 group-hover:shadow-md transition-all">
             {/* Top Row: Avatar + Name/Contact + Rating */}
-            <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-start gap-3 mb-3">
                 <div className="w-12 h-12 rounded-full bg-stone-100 flex-shrink-0 overflow-hidden ring-2 ring-white shadow-sm">
                     {res.thumbnail ? (
                         <img src={res.thumbnail} alt="" className="w-full h-full object-cover" />
@@ -104,8 +105,8 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                     )}
                 </div>
                 <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate" title={res.adopter.name}>
+                    <div className="flex items-start gap-1.5 min-w-0">
+                        <span className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors line-clamp-2 flex-1 min-w-0" title={res.adopter.name}>
                             {/* Highlight matched query tokens directly in the visible name —
                                 works regardless of which field won matchSnippet (and even when
                                 that field was masked/scrubbed). Name is never PII-masked. */}
@@ -131,28 +132,19 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                             </span>
                         )}
                     </div>
-                    {(() => {
-                        // The contact detail can be a long "Documento:… Email:… Tel:…
-                        // Dirección: Av. Maipu 1955" blob. It used to render on a single
-                        // `truncate` line, so a match at the END (e.g. an address inside the
-                        // blob) was cut off screen. Now the line ALWAYS wraps — never
-                        // truncates — so the full contact (address included) is visible.
-                        // When the query matched the contact field and the value is visible
-                        // (not PII-scrubbed), show the highlighted match snippet window so the
-                        // hit is obvious; otherwise show the full contact string, wrapped.
-                        const contactSnip = isAuthenticated && res.matchSnippet?.field === 'contact' && res.matchSnippet.snippet
-                            ? res.matchSnippet : null;
-                        return (
-                            <div className="text-xs text-stone-500 break-words" title={res.adopter.contactInfo || undefined}>
-                                {contactSnip
-                                    ? (renderHighlightedSnippet(contactSnip.snippet, contactSnip.highlights) || contactSnip.snippet)
-                                    : (res.adopter.contactInfo || t('common.no_contact'))}
-                                {!isAuthenticated && res.adopter.contactInfo && (
-                                    <span className="ml-1 text-teal-700 font-medium">• {t('search.login_to_view')}</span>
-                                )}
-                            </div>
-                        );
-                    })()}
+                    {/* Full contact string, always wrapped (never truncated), with the
+                        matched query tokens highlighted in place — no snippet-window
+                        trimming, so nothing the record shows is hidden behind a "…". */}
+                    <div className="text-xs text-stone-500 break-words" title={res.adopter.contactInfo || undefined}>
+                        {res.adopter.contactInfo
+                            ? (contactRanges.length > 0
+                                ? (renderHighlightedSnippet(res.adopter.contactInfo, contactRanges) || res.adopter.contactInfo)
+                                : res.adopter.contactInfo)
+                            : t('common.no_contact')}
+                        {!isAuthenticated && res.adopter.contactInfo && (
+                            <span className="ml-1 text-teal-700 font-medium">• {t('search.login_to_view')}</span>
+                        )}
+                    </div>
                 </div>
                 {res.avgRating !== null && (
                     <div className="flex-shrink-0">
