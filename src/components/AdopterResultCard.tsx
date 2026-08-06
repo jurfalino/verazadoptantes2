@@ -153,8 +153,12 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                     )}
                 </div>
                 <div className="flex-1 min-w-0">
+                    {/* Name + public badge. The name is content-width (NOT flex-1) so
+                        the "Público" badge hugs it inline instead of being shoved to the
+                        far-right edge of the column. min-w-0 still lets a long name shrink
+                        and line-clamp; the badge is flex-shrink-0 so it never collapses. */}
                     <div className="flex items-start gap-1.5 min-w-0">
-                        <span className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors line-clamp-2 flex-1 min-w-0" title={res.adopter.name}>
+                        <span className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors line-clamp-2 min-w-0" title={res.adopter.name}>
                             {/* Highlight matched query tokens directly in the visible name —
                                 works regardless of which field won matchSnippet (and even when
                                 that field was masked/scrubbed). Name is never PII-masked. */}

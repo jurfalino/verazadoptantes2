@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.8] - 2026-08-06
+
+### Fixed — "Público" badge hugs the name instead of floating to the far right
+
+- The public-visibility badge sat in a flex row where the name was `flex-1`, so the name grew to fill the column and shoved the badge to the far-right edge — detached from the name (and on desktop, floating just left of the rating). The name is now content-width (`flex-1` dropped, `min-w-0` kept so long names still shrink + line-clamp), so the badge sits right after the name inline, matching the approved card design. Desktop and mobile both.
+
 ## [2.27.7] - 2026-08-06
 
 ### Fixed — search no longer matches field-label words; mobile card badge is a single instance
