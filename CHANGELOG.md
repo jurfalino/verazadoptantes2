@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.26.10] - 2026-08-05
+
+### Fixed — a search match buried in the contact blob was truncated off-screen
+
+- Searching `"maipu 1955"` surfaced the right record but the matched text wasn't visible: the address is stored inside the free-text `contactInfo` blob (`Documento:… Email:… Tel:… Dirección: Av. Maipu 1955 5B`), the card shows that blob on a single `truncate`d line, and the match at the end got cut off. Contact matches also don't get a "why matched" chip, so nothing surfaced it.
+- The contact line now renders the **match snippet window** (the ~80 chars centered on the hit, highlighted) and **wraps** instead of truncating from the start, whenever the query matched the contact field — so the matched text is always in view. Non-matching results still show the plain truncated contact line.
+
 ## [2.26.9] - 2026-08-05
 
 ### Fixed — "why matched" chip was blank when the matched field was protected

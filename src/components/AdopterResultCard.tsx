@@ -134,14 +134,27 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                             </span>
                         )}
                     </div>
-                    <div className={`text-xs text-stone-500 ${wrapContact ? 'break-words' : 'truncate'}`} title={res.adopter.contactInfo || undefined}>
-                        {isAuthenticated && res.matchSnippet?.field === 'contact' && res.matchSnippet.snippet === res.adopter.contactInfo
-                            ? (renderHighlightedSnippet(res.adopter.contactInfo, res.matchSnippet.highlights) || res.adopter.contactInfo)
-                            : (res.adopter.contactInfo || t('common.no_contact'))}
-                        {!isAuthenticated && res.adopter.contactInfo && (
-                            <span className="ml-1 text-teal-700 font-medium">• {t('search.login_to_view')}</span>
-                        )}
-                    </div>
+                    {(() => {
+                        // When the query matched the contact BLOB, the matched text can sit
+                        // at the end of a long "Tel:… Email:… Dirección:…" string and get cut
+                        // by `truncate` (e.g. searching an address stored in contactInfo).
+                        // Show the match SNIPPET WINDOW (centred on the hit, highlighted) and
+                        // let it wrap, so the matched text is always visible — instead of the
+                        // raw blob truncated from the start. Falls back to the plain contact
+                        // line (truncated) when there's no visible contact match.
+                        const contactSnip = isAuthenticated && res.matchSnippet?.field === 'contact' && res.matchSnippet.snippet
+                            ? res.matchSnippet : null;
+                        return (
+                            <div className={`text-xs text-stone-500 ${wrapContact || contactSnip ? 'break-words' : 'truncate'}`} title={res.adopter.contactInfo || undefined}>
+                                {contactSnip
+                                    ? (renderHighlightedSnippet(contactSnip.snippet, contactSnip.highlights) || contactSnip.snippet)
+                                    : (res.adopter.contactInfo || t('common.no_contact'))}
+                                {!isAuthenticated && res.adopter.contactInfo && (
+                                    <span className="ml-1 text-teal-700 font-medium">• {t('search.login_to_view')}</span>
+                                )}
+                            </div>
+                        );
+                    })()}
                 </div>
                 {res.avgRating !== null && (
                     <div className="flex-shrink-0">
