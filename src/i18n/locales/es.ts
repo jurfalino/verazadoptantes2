@@ -397,7 +397,7 @@ export const es = {
         no_history_cta: 'Sé el primero en registrarlo',
         create_new: 'Crear Nuevo Registro',
         more_matches_title: 'Ampliar la búsqueda',
-        more_matches_subtitle: 'incluir nombres parecidos, parciales o con acentos',
+        more_matches_subtitle: 'incluir coincidencias parciales o aproximadas',
         more_matches_loading: 'Buscando coincidencias parecidas…',
         more_matches_empty: 'No encontramos otras coincidencias parecidas.',
         none_match_heading: '¿Ninguna persona coincide?',

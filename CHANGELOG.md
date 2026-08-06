@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.4] - 2026-08-06
+
+### Changed — accurate copy for the "broaden the search" section
+
+- The subtitle said "incluir nombres parecidos, parciales o con acentos" (similar/partial/accented *names*), but the section actually holds **partial matches on any field** (e.g. an address that matched only one search term) as well as fuzzy name matches. Recopy to the field-agnostic **"incluir coincidencias parciales o aproximadas"** (es) / "include partial or approximate matches" (en) / "incluir correspondências parciais ou aproximadas" (pt).
+
 ## [2.27.3] - 2026-08-06
 
 ### Fixed — mobile search field & result card

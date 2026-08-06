@@ -398,7 +398,7 @@ export const en = {
         no_history_cta: 'Be the first to register them',
         create_new: 'Create New Record',
         more_matches_title: 'Broaden the search',
-        more_matches_subtitle: 'include similar, partial, or accented names',
+        more_matches_subtitle: 'include partial or approximate matches',
         more_matches_loading: 'Looking for similar matches…',
         more_matches_empty: 'No other similar matches found.',
         none_match_heading: 'None of these match?',
