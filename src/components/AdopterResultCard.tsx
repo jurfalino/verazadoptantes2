@@ -288,11 +288,18 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                     const type = s.matchedEntryType;
                     const fieldLabel = type ? t(`adopter.ce_type_${type}`) : t(`search.snippet_${s.field}`);
                     const icon = (type && ENTRY_ICONS[type]) || SNIPPET_ICONS[s.field];
+                    // When this field matched only PARTIALLY (not all query tokens landed
+                    // in it — `${field}_partial` in matchTypes), say so, so a weak/partial
+                    // masked hit reads as tentative ("Coincidencia parcial en …") rather
+                    // than asserting a full match on a value you can't see. Reveal logic is
+                    // unchanged — this only affects the wording of the masked chip.
+                    const fieldPartial = res.matchTypes?.includes(`${s.field}_partial`) ?? false;
+                    const key = fieldPartial ? 'search.protected_match_partial' : 'search.protected_match';
                     return (
                         <div className="mt-2 flex items-start gap-2 text-xs text-stone-500 bg-stone-50 px-3 py-2 rounded-lg border border-stone-100 italic">
                             <span className="flex-shrink-0 mt-0.5 not-italic">{icon}</span>
                             <span className="min-w-0 break-words">
-                                {t('search.protected_match').replace('{field}', fieldLabel)}
+                                {t(key).replace('{field}', fieldLabel)}
                             </span>
                         </div>
                     );

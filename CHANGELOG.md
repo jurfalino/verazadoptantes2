@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.10] - 2026-08-06
+
+### Changed — a partial masked match reads "Coincidencia parcial", not "Coincide"
+
+- The masked-match chip ("Coincide en Dirección · dato protegido") asserted a full match even when the field matched only *partially* (not all query tokens landed in it) — overstating confidence on a value you can't see. When the matched field is partial (`${field}_partial` in `matchTypes`), the chip now reads **"Coincidencia parcial en Dirección · dato protegido"** (en: "Partial match in Address · protected"; pt equivalent). Full matches keep "Coincide en…". Wording only — the reveal/masking (authorization) logic is unchanged.
+
 ## [2.27.9] - 2026-08-06
 
 ### Fixed — short-token substring noise in "more results" (e.g. "Av" matching "GustAVo")

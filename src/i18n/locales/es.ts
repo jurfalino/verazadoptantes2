@@ -408,6 +408,7 @@ export const es = {
         public_title: 'Registro público: datos de contacto a la vista',
         protected_info: 'Información protegida.',
         protected_match: 'Coincide en {field} · dato protegido',
+        protected_match_partial: 'Coincidencia parcial en {field} · dato protegido',
         min_digits: 'Ingresa al menos 6 dígitos para buscar por teléfono',
         login_required: 'Debés iniciar sesión para buscar un número de teléfono o email exacto.',
         too_many_results: 'Demasiados resultados ({count}). Mostrando los primeros 50. Por favor, refina tu búsqueda.',
