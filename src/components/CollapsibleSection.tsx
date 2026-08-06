@@ -9,11 +9,14 @@ interface CollapsibleSectionProps {
     defaultOpen?: boolean;
     children: ReactNode;
     className?: string;
+    /** Fires on the native <details> toggle — use to lazy-load body content on
+     *  first expand. `e.currentTarget.open` is the new state. */
+    onToggle?: (e: React.SyntheticEvent<HTMLDetailsElement>) => void;
 }
 
-export function CollapsibleSection({ title, count, subtitle, defaultOpen = true, children, className = "" }: CollapsibleSectionProps) {
+export function CollapsibleSection({ title, count, subtitle, defaultOpen = true, children, className = "", onToggle }: CollapsibleSectionProps) {
     return (
-        <details className={`bg-white rounded-2xl shadow-sm border border-teal-100 group ${className}`} open={defaultOpen}>
+        <details className={`bg-white rounded-2xl shadow-sm border border-teal-100 group ${className}`} open={defaultOpen} onToggle={onToggle}>
             <summary className="p-5 cursor-pointer list-none flex justify-between items-center hover:bg-teal-50 transition-colors rounded-2xl group-open:rounded-t-2xl group-open:rounded-b-none">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 flex-1 min-w-0">
                     <h3 className="text-xl font-semibold text-teal-900 tracking-tight">{title}</h3>

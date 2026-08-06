@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { findAdopters } from '@/app/actions';
+import { findAdopters, findWeakNameMatches } from '@/app/actions';
 import type { DiscoveryMatch } from '@/app/actions';
 import { AdopterResultCard } from './AdopterResultCard';
+import { CollapsibleSection } from './CollapsibleSection';
 import { useWalkthrough } from './walkthrough/WalkthroughProvider';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
@@ -36,6 +37,38 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
     const [validationError, setValidationError] = useState<string | null>(null);
     const [singleTokenResultCount, setSingleTokenResultCount] = useState<number | undefined>(undefined);
     const resultsRef = useRef<HTMLDivElement>(null);
+    // Lazy "weak tier" — fuzzy/partial name matches, loaded only when the user
+    // expands "Otras posibles coincidencias" (the duplicate engine's ~3s cost is
+    // paid on demand, not on every search). `weakFor` caches which query the
+    // results belong to so a re-expand doesn't re-fetch.
+    const [weakResults, setWeakResults] = useState<DiscoveryMatch[] | null>(null);
+    const [weakLoading, setWeakLoading] = useState(false);
+    const weakForRef = useRef<string | null>(null);
+
+    const resetWeak = useCallback(() => {
+        setWeakResults(null);
+        setWeakLoading(false);
+        weakForRef.current = null;
+    }, []);
+
+    // Fired on weak-section expand. Loads once per query; the strong-tier ids are
+    // excluded so the weak list only holds what the eager search didn't already show.
+    const loadWeakMatches = useCallback(async (q: string, strongIds: string[]) => {
+        const key = q.trim();
+        if (!key || weakForRef.current === key) return;
+        weakForRef.current = key;
+        setWeakLoading(true);
+        try {
+            const res = await findWeakNameMatches(key, strongIds);
+            setWeakResults((res?.results as DiscoveryMatch[]) ?? []);
+        } catch (err) {
+            console.error(err);
+            weakForRef.current = null; // allow retry on next expand
+            setWeakResults([]);
+        } finally {
+            setWeakLoading(false);
+        }
+    }, []);
 
     // Re-run search when returning to page with query in URL
     const runSearch = useCallback(async (searchQuery: string) => {
@@ -44,6 +77,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
         setValidationError(null);
         setTruncatedInfo(null);
         setSingleTokenResultCount(undefined);
+        resetWeak();
         try {
             const response = await findAdopters(
                 { raw: searchQuery },
@@ -71,6 +105,9 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
         } finally {
             setLoading(false);
         }
+        // t / toast / resetWeak are stable for this page; runSearch is a one-shot
+        // ?q= replay, intentionally not re-created on their identity.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
@@ -169,6 +206,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
         setLoading(true);
         setValidationError(null);
         setTruncatedInfo(null);
+        resetWeak();
         try {
             const response = await findAdopters(
                 { raw: query },
@@ -426,6 +464,60 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                             />
                         );
                     })}
+
+                    {/* Weak tier — fuzzy / partial / accent-variant name matches, lazy-
+                        loaded on expand (the duplicate engine's ~3s cost is paid only here,
+                        not on every search). Auto-opens when there are no strong results so
+                        a rescuer never concludes "not here" without the recall net. Keyed by
+                        query so it remounts (and re-applies defaultOpen) per search. Hidden
+                        during the walkthrough and on validation errors. */}
+                    {!demoActive && !validationError && query.trim().length >= 2 && (
+                        <CollapsibleSection
+                            key={query.trim()}
+                            title={t('search.more_matches_title')}
+                            subtitle={t('search.more_matches_subtitle')}
+                            defaultOpen={results.length === 0}
+                            onToggle={(e) => {
+                                if (e.currentTarget.open) {
+                                    loadWeakMatches(query, results.map(r => r.adopter.id));
+                                }
+                            }}
+                        >
+                            {weakLoading ? (
+                                <div className="py-6 flex items-center justify-center gap-2 text-stone-500 text-sm">
+                                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" />
+                                        <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                                    </svg>
+                                    {t('search.more_matches_loading')}
+                                </div>
+                            ) : weakResults === null ? null : weakResults.length === 0 ? (
+                                <div className="py-6 text-center text-stone-400 text-sm">{t('search.more_matches_empty')}</div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {weakResults.map((res) => {
+                                        const isAuthenticated = !!session?.user;
+                                        const qParam = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : '';
+                                        const profileHref = `/adopter/${res.adopter.id}${qParam}`;
+                                        const handleCardClick = (e: React.MouseEvent) => {
+                                            if (!isAuthenticated) { e.preventDefault(); openLogin(profileHref); }
+                                        };
+                                        return (
+                                            <AdopterResultCard
+                                                key={res.adopter.id}
+                                                match={res}
+                                                isAuthenticated={isAuthenticated}
+                                                showMetadata={showCardMetadata}
+                                                href={profileHref}
+                                                onClick={handleCardClick}
+                                            />
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </CollapsibleSection>
+                    )}
+
                     {/* End-of-results "none match" CTA — appears under the last card so the
                         natural decision moment (user finished reading) has a one-tap exit
                         without scrolling back to the small top-of-list chip. Empty-state

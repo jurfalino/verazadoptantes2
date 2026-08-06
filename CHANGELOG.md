@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.26.7] - 2026-08-05
+
+### Added — accent-insensitive search + a lazy "other possible matches" tier
+
+Two-part recall improvement so the search box never silently misses a record, without slowing the common case or flooding it with noise.
+
+- **Eager (fast, default):** accent-insensitive name search. `jose` now finds `José` — the record is surfaced via the NFD-normalized `name_word`/`name_full` token index (the direct SQL LIKE is accent-sensitive) and the name scoring compares accent-stripped strings so it ranks as a real name match. A handful of extra indexed lookups; eager latency stays near today's ~1.1s.
+- **Lazy (on demand):** a collapsed **"Otras posibles coincidencias"** section holding fuzzy / partial-name matches. It loads only when the user expands it (auto-opens when there are no strong results), so the slower duplicate engine (~3s p95) is never paid on every search. Matches already shown above are excluded; results are hydrated and PII-masked through the same pipeline as the main list (logged-out searchers see masked contact), and a cross-country record can't leak in.
+- Extracted a shared `hydrateDuplicateMatches` bridge (duplicate-match → enriched, masked `DiscoveryMatch`) now reused by both the search weak tier and the create-form dedup peek. The shared scoring engine is untouched.
+- Known limitation: a lone typo'd first name (`jonathan` alone → `jonatan`) still won't match — a shared token (surname/phone) or a multi-token query is needed. A bare first-name search is inherently broad.
+
 ## [2.26.6] - 2026-08-05
 
 ### Fixed — search by name + phone missed the record even when the phone matched

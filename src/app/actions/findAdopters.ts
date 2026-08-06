@@ -258,6 +258,40 @@ async function searchPhoneTokenMatches(db: any, normalizedQuery: string): Promis
     }
 }
 
+/**
+ * Accent-insensitive name recall (v2.26.7). Discovery's SQL name LIKE runs on the
+ * verbatim `adopters.name` column, which is accent-SENSITIVE in SQLite — so a
+ * query "jose" never fetches a stored "José", and the record can't even be scored.
+ * The tokenizer writes `duplicate_tokens` name_word/name_full values NFD-stripped
+ * (tokenizer.ts:25-31), so we normalize the query tokens and EXACT-match them
+ * against that index to surface the accent variants. Exact (not prefix) keeps it
+ * tight — "jose" surfaces "José"/"Jose", not "Josefina"; loose prefix/fuzzy name
+ * recall belongs to the lazy weak tier (duplicate engine), not the eager path.
+ * Additive: IDs flow through the same extras union + enrichment + masking as the
+ * phone-token path.
+ */
+async function searchNameTokenMatches(db: any, tokens: string[]): Promise<string[]> {
+    try {
+        const normTokens = [...new Set(tokens.map(t => normalizeText(t)).filter(t => t.length >= 2))];
+        if (normTokens.length === 0) return [];
+        const valueConds = normTokens.map(t => eq(duplicateTokens.tokenValue, t));
+        const rows = await db.select({ adopterId: duplicateTokens.adopterId })
+            .from(duplicateTokens)
+            .where(and(
+                or(
+                    eq(duplicateTokens.tokenType, 'name_word'),
+                    eq(duplicateTokens.tokenType, 'name_full'),
+                ),
+                or(...valueConds),
+            ))
+            .limit(SEARCH_RESULT_LIMIT);
+        return rows.map((r: { adopterId: string }) => r.adopterId);
+    } catch (e) {
+        logger.warn('Name-token search error', { error: e instanceof Error ? e.message : String(e) });
+        return [];
+    }
+}
+
 // ── Discovery scoring weights ─────────────────────────────────────────────────
 
 const WEIGHTS = {
@@ -653,7 +687,7 @@ async function runDiscoveryMode(
         );
     }
 
-    const [directResults, historyMatches, adoptionMatches, phoneTokenIds] = await Promise.all([
+    const [directResults, historyMatches, adoptionMatches, phoneTokenIds, nameTokenIds] = await Promise.all([
         db.select().from(adopters).where(and(...profileConds)).limit(SEARCH_ENRICHMENT_LIMIT),
         searchHistoryMatches(db, tokens),
         searchAdoptionMatches(db, tokens),
@@ -661,6 +695,9 @@ async function runDiscoveryMode(
         // the LIKE search above misses because the stored contactInfo blob
         // keeps the user's verbatim formatting ("Tel: 6462-2274").
         searchPhoneTokenMatches(db, normalizedQuery),
+        // v2.26.7: accent-insensitive name recall — surfaces "José" for "jose"
+        // via the NFD-stripped name-token index (the direct LIKE is accent-sensitive).
+        searchNameTokenMatches(db, tokens),
     ]);
 
     const historyTextMap = new Map<string, string>();
@@ -677,7 +714,7 @@ async function runDiscoveryMode(
         if (!adoptionTextMap.has(m.adopterId)) adoptionTextMap.set(m.adopterId, m.matchedText);
     }
 
-    const extraIds = new Set([...historyIds, ...adoptionIds, ...phoneTokenIds]);
+    const extraIds = new Set([...historyIds, ...adoptionIds, ...phoneTokenIds, ...nameTokenIds]);
     directResults.forEach((r: any) => extraIds.delete(r.id));
 
     // D1-compatible: fan out with eq() per ID instead of inArray() which silently breaks on D1
@@ -747,6 +784,12 @@ async function runDiscoveryMode(
     })();
 
     const qLower = normalizedQuery.toLowerCase();
+    // v2.26.7: accent-normalized query for the NAME cascade so "jose" scores as a
+    // name match against a stored "José" (the record is now fetched via the
+    // name-token recall path above). Contact/address stay on qLower — they're
+    // mostly digits/handles and address accent-folding can wait.
+    const qNorm = normalizeText(normalizedQuery);
+    const tokensNorm = tokens.map(t => normalizeText(t));
     const defaultStats = { searchHits: 0, profileViews: 0, requests: 0, adoptions: 0 };
     const defaultFlags = {
         inaccurate: false, duplicate: false, systemDuplicate: false,
@@ -761,22 +804,23 @@ async function runDiscoveryMode(
         let bestSnippetWeight = 0;
         const matchTypes: string[] = [];
 
-        // Name
-        const nl = a.name?.toLowerCase() || '';
-        if (nl === qLower) {
+        // Name (accent-insensitive — v2.26.7). Comparisons run on NFD-stripped
+        // strings so "jose"/"José" match; snippets keep the original text.
+        const nlNorm = normalizeText(a.name || '');
+        if (nlNorm === qNorm) {
             score += WEIGHTS.name_exact; matchTypes.push('name_exact');
             const s = buildSnippet('name', a.name, normalizedQuery, tokens);
             if (s && WEIGHTS.name_exact > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.name_exact; }
-        } else if (nl.includes(qLower)) {
+        } else if (nlNorm.includes(qNorm)) {
             score += WEIGHTS.name_contains; matchTypes.push('name_contains');
             const s = buildSnippet('name', a.name, normalizedQuery, tokens);
             if (s && WEIGHTS.name_contains > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.name_contains; }
-        } else if (isMultiToken && allTokensMatch(a.name, tokens)) {
+        } else if (isMultiToken && allTokensMatch(nlNorm, tokensNorm)) {
             score += WEIGHTS.name_tokens; matchTypes.push('name_tokens');
             const s = buildSnippet('name', a.name, normalizedQuery, tokens);
             if (s && WEIGHTS.name_tokens > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.name_tokens; }
-        } else if (isMultiToken && anyTokenMatch(a.name, tokens)) {
-            const m = countTokenMatches(a.name, tokens);
+        } else if (isMultiToken && anyTokenMatch(nlNorm, tokensNorm)) {
+            const m = countTokenMatches(nlNorm, tokensNorm);
             score += Math.round(WEIGHTS.name_partial * (m / tokens.length)); matchTypes.push('name_partial');
             const s = buildSnippet('name', a.name, normalizedQuery, tokens);
             if (s && WEIGHTS.name_partial > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.name_partial; }

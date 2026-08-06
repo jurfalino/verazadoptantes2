@@ -22,13 +22,9 @@
  * Scoring (`weights`, `PERSIST_THRESHOLD`, `normalizeConfidence`) is untouched.
  */
 
-import { adopters } from '@/db/schema';
-import { eq, isNull, and } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { findAdopters } from './findAdopters';
-import { enrichAdopters } from './enrichAdopters';
-import { assembleDiscoveryMatch } from '@/lib/discoveryMatch';
-import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
+import { hydrateDuplicateMatches } from './hydrateDuplicateMatches';
 import { logger } from '@/lib/logger';
 import type { DiscoveryMatch, DuplicateMatch } from './types';
 
@@ -39,13 +35,6 @@ interface FormDuplicateInput {
     socials?: string[];
     excludeAdopterId?: string;
 }
-
-const DEFAULT_STATS = { searchHits: 0, profileViews: 0, requests: 0, adoptions: 0 };
-const DEFAULT_FLAGS = {
-    inaccurate: false, duplicate: false, systemDuplicate: false,
-    verified_identity: false, verified_address: false,
-    tooManyAdoptions: null, tooManyRequests: null,
-};
 
 export async function findFormDuplicates(
     input: FormDuplicateInput,
@@ -72,58 +61,14 @@ export async function findFormDuplicates(
         const matches = dup.results as DuplicateMatch[];
         if (matches.length === 0) return { results: [] };
 
-        // 2. Re-hydrate matched IDs into card-ready enriched rows.
-        const ids = matches.map(m => m.adopterId);
-        const rows = (await Promise.all(ids.map(id =>
-            db.select().from(adopters)
-                .where(and(eq(adopters.id, id), isNull(adopters.deletedAt)))
-                .get()
-                .catch((e: unknown) => {
-                    logger.warn('findFormDuplicates: adopter row lookup fallback', {
-                        adopterId: id, error: e instanceof Error ? e.message : String(e),
-                    });
-                    return null;
-                }),
-        ))).filter((r): r is typeof adopters.$inferSelect => !!r);
-        if (rows.length === 0) return { results: [] };
-
-        const enrichmentMap = await enrichAdopters(db, rows.map(r => r.id));
-
-        // 3. Same PII-masking tail discovery uses. The form user is authed;
-        //    resolve their per-row visibility so an unrelated existing record's
-        //    contact isn't over-exposed in the peek.
+        // 2. Re-hydrate matched IDs into card-ready enriched rows via the shared
+        //    bridge. The form user is authed; no geo re-check (the form already
+        //    scopes to what the rescuer is entering).
         const user = await getUser();
-        const piiGatingOn = await isPiiGatingEnabled();
-        const visibilityMap = piiGatingOn
-            ? await resolveAdoptersVisibility(user, rows.map(r => ({ id: r.id, addedBy: r.addedBy })))
-            : null;
-        const publicProfilesFlag = piiGatingOn && await isPublicProfilesEnabled();
-
-        const byId = new Map(rows.map(r => [r.id, r]));
-        const results: DiscoveryMatch[] = [];
-        for (const m of matches) {
-            const row = byId.get(m.adopterId);
-            if (!row) continue;
-            const enrichment = enrichmentMap.get(row.id);
-            const enrichmentVals = {
-                avgRating: enrichment?.avgRating ?? null,
-                thumbnail: enrichment?.thumbnail ?? null,
-                stats: enrichment?.stats ?? DEFAULT_STATS,
-                flags: enrichment?.flags ?? DEFAULT_FLAGS,
-            };
-            const meta = {
-                relevancePercent: m.relevancePercent,
-                matchTypes: m.matchTypes,
-                matchValues: m.matchValues, // the fuzzy/phone chips from duplicate mode
-                source: m.source,
-                matchSnippet: null,
-            };
-            const vis = visibilityMap?.get(row.id);
-            const maskOpts = maskOptionsFor(publicProfilesFlag, row);
-            results.push(assembleDiscoveryMatch({ ...row }, enrichmentVals, meta, vis, undefined, maskOpts));
-        }
-
-        results.sort((a, b) => b.relevancePercent - a.relevancePercent);
+        const results = await hydrateDuplicateMatches(db, matches, {
+            viewer: user,
+            isUnauthenticated: false,
+        });
         return { results };
     } catch (e) {
         logger.warn('findFormDuplicates failed — form falls back to no-suggestion', {
