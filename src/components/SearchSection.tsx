@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { findAdopters, findWeakNameMatches } from '@/app/actions';
 import type { DiscoveryMatch } from '@/app/actions';
 import { AdopterResultCard } from './AdopterResultCard';
-import { CollapsibleSection } from './CollapsibleSection';
 import { useWalkthrough } from './walkthrough/WalkthroughProvider';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
@@ -506,30 +505,41 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                             );
                         };
                         return (
-                            <CollapsibleSection
+                            // Lightweight, muted disclosure — a secondary "broaden the
+                            // search" affordance, deliberately quieter than the result
+                            // cards so it doesn't compete with the real matches.
+                            <details
                                 key={query.trim()}
-                                title={t('search.more_matches_title')}
-                                subtitle={t('search.more_matches_subtitle')}
-                                count={combined.length > 0 ? combined.length : undefined}
-                                defaultOpen={results.length === 0}
-                                onToggle={(e) => {
-                                    if (e.currentTarget.open) loadWeakMatches(query, [...shownIds]);
-                                }}
+                                className="group mt-3 border-t border-stone-100 pt-3"
+                                open={results.length === 0}
+                                onToggle={(e) => { if (e.currentTarget.open) loadWeakMatches(query, [...shownIds]); }}
                             >
-                                {combined.length > 0 && <div className="space-y-3">{combined.map(renderCard)}</div>}
-                                {weakLoading && (
-                                    <div className="py-6 flex items-center justify-center gap-2 text-stone-500 text-sm">
-                                        <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" />
-                                            <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                                        </svg>
-                                        {t('search.more_matches_loading')}
-                                    </div>
-                                )}
-                                {!weakLoading && weakResults !== null && combined.length === 0 && (
-                                    <div className="py-6 text-center text-stone-400 text-sm">{t('search.more_matches_empty')}</div>
-                                )}
-                            </CollapsibleSection>
+                                <summary className="flex flex-wrap items-center gap-x-2 gap-y-0.5 cursor-pointer list-none select-none rounded text-sm text-stone-500 hover:text-stone-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300">
+                                    <svg className="w-3.5 h-3.5 flex-shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                    </svg>
+                                    <span className="font-medium">{t('search.more_matches_title')}</span>
+                                    {combined.length > 0 && (
+                                        <span className="text-[11px] font-semibold bg-stone-100 text-stone-500 px-1.5 py-0.5 rounded-full">{combined.length}</span>
+                                    )}
+                                    <span className="text-xs text-stone-400">{t('search.more_matches_subtitle')}</span>
+                                </summary>
+                                <div className="mt-3 space-y-3">
+                                    {combined.length > 0 && combined.map(renderCard)}
+                                    {weakLoading && (
+                                        <div className="py-4 flex items-center justify-center gap-2 text-stone-400 text-sm">
+                                            <svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" />
+                                                <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                                            </svg>
+                                            {t('search.more_matches_loading')}
+                                        </div>
+                                    )}
+                                    {!weakLoading && weakResults !== null && combined.length === 0 && (
+                                        <div className="py-4 text-center text-stone-400 text-sm">{t('search.more_matches_empty')}</div>
+                                    )}
+                                </div>
+                            </details>
                         );
                     })()}
 

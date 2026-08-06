@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.1] - 2026-08-06
+
+### Changed — lighter, action-framed "broaden the search" disclosure
+
+- The weak-matches section used the heavy teal `CollapsibleSection` card, which competed visually with the real result cards. Replaced it with a **lightweight, muted disclosure** — a small stone-toned toggle with a chevron and a subtle top divider — so it reads clearly as a secondary affordance.
+- Recopy from the label-y "Otras posibles coincidencias" to the action-framed **"Ampliar la búsqueda · incluir nombres parecidos, parciales o con acentos"** (es/en/pt), so it says what expanding does. Added `focus-visible` ring and `motion-reduce` handling.
+
 ## [2.27.0] - 2026-08-06
 
 ### Changed — multi-token search demotes partial matches; masked matches now explain themselves
