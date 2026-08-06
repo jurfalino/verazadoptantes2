@@ -18,6 +18,12 @@ const SNIPPET_ICONS: Record<SnippetField, string> = {
     family: '👨‍👩‍👧', adoption: '🐾', history: '📝',
 };
 
+// Icons for the specific structured contact-entry type of a masked match, so a
+// protected address match reads "📍 …dirección" rather than the generic "📞".
+const ENTRY_ICONS: Record<string, string> = {
+    phone: '📞', email: '✉️', social: '🔗', id: '🪪', address: '📍', alias: '👤', other: '📇',
+};
+
 /**
  * Highlight ranges for the query's tokens within the (always-visible, never-masked)
  * name — computed client-side, independent of `matchSnippet`. Fixes the case where a
@@ -212,24 +218,45 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                         .some(tk => cinfo.includes(tk));
                     if (s.snippet || matchVisible) return null;
                 }
-                const icon = SNIPPET_ICONS[s.field];
-                const label = t(`search.snippet_${s.field}`);
+
+                // History: no value to show, generic cue.
+                if (s.field === 'history') {
+                    return (
+                        <div className="mt-2 flex items-start gap-2 text-xs text-stone-600 bg-stone-50 px-3 py-2 rounded-lg border border-stone-100">
+                            <span className="flex-shrink-0 mt-0.5">{SNIPPET_ICONS.history}</span>
+                            <span className="min-w-0 break-words">
+                                <span className="font-semibold text-stone-500">{t('search.snippet_history')}:</span>{' '}
+                                <span className="italic">{t('search.snippet_history_generic')}</span>
+                            </span>
+                        </div>
+                    );
+                }
+
+                // Masked field (empty snippet, or unauthenticated): name the PRECISE
+                // field that matched instead of a blank/generic chip — for a contact
+                // blob, the specific entry type (address/phone/email/…); otherwise the
+                // field itself. e.g. "📍 Coincide en Dirección · dato protegido".
+                if (!isAuthenticated || !s.snippet) {
+                    const type = s.matchedEntryType;
+                    const fieldLabel = type ? t(`adopter.ce_type_${type}`) : t(`search.snippet_${s.field}`);
+                    const icon = (type && ENTRY_ICONS[type]) || SNIPPET_ICONS[s.field];
+                    return (
+                        <div className="mt-2 flex items-start gap-2 text-xs text-stone-500 bg-stone-50 px-3 py-2 rounded-lg border border-stone-100 italic">
+                            <span className="flex-shrink-0 mt-0.5 not-italic">{icon}</span>
+                            <span className="min-w-0 break-words">
+                                {t('search.protected_match').replace('{field}', fieldLabel)}
+                            </span>
+                        </div>
+                    );
+                }
+
+                // Visible field match (address / family / adoption): show the value.
                 return (
                     <div className="mt-2 flex items-start gap-2 text-xs text-stone-600 bg-stone-50 px-3 py-2 rounded-lg border border-stone-100">
-                        <span className="flex-shrink-0 mt-0.5">{icon}</span>
+                        <span className="flex-shrink-0 mt-0.5">{SNIPPET_ICONS[s.field]}</span>
                         <span className="min-w-0 break-words">
-                            <span className="font-semibold text-stone-500">{label}:</span>{' '}
-                            {s.field === 'history' ? (
-                                <span className="italic">{t('search.snippet_history_generic')}</span>
-                            ) : (!isAuthenticated || !s.snippet) ? (
-                                // Empty snippet ⇒ PII-masked & scrubbed for this viewer (auth
-                                // but not owner/org-mate). Say it's protected instead of
-                                // rendering a blank chip — the field still explains WHY this
-                                // record matched (e.g. "Dirección: Información protegida").
-                                <span className="italic">{t('search.protected_info') || 'Información protegida'}</span>
-                            ) : (
-                                renderHighlightedSnippet(s.snippet, s.highlights) || s.snippet
-                            )}
+                            <span className="font-semibold text-stone-500">{t(`search.snippet_${s.field}`)}:</span>{' '}
+                            {renderHighlightedSnippet(s.snippet, s.highlights) || s.snippet}
                         </span>
                     </div>
                 );

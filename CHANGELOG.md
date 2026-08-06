@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.5] - 2026-08-06
+
+### Changed — masked matches name the precise field ("Coincide en Dirección")
+
+- A result that matched only on a masked field showed a generic "Contacto: Información protegida" — imprecise, because the matched value (e.g. an address) lives inside the contact blob. The chip now names the **specific field that matched**: **"📍 Coincide en Dirección · dato protegido"** (en: "Matched on Address · protected"), and likewise for phone/email/document/social.
+- The server detects which structured contact-entry type matched (accent-insensitive) and exposes just the *type* on the match snippet (never the value); the card renders it with the matching icon, reusing the existing `ce_type_*` labels. Falls back to the generic field label for legacy rows without structured entries.
+
 ## [2.27.4] - 2026-08-06
 
 ### Changed — accurate copy for the "broaden the search" section

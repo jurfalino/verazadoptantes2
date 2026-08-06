@@ -306,6 +306,23 @@ const WEIGHTS = {
 
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
 
+/**
+ * v2.27.5: which structured contact-entry type (phone/email/address/id/social/…)
+ * matched the query — so a masked contact match can name the precise field. NFD-
+ * normalized comparison to match accent-insensitively. Returns the first entry
+ * whose value contains any query token, else null (legacy blob-only rows).
+ */
+function detectMatchedEntryType(contactEntriesJson: string | null | undefined, tokensNorm: string[]): string | null {
+    try {
+        const entries = deserializeContactEntries(contactEntriesJson);
+        for (const e of entries) {
+            const v = normalizeText(e.value || '');
+            if (tokensNorm.some(t => t.length >= 2 && v.includes(t))) return e.type;
+        }
+    } catch { /* malformed entries — fall back to the generic field label */ }
+    return null;
+}
+
 function buildProfileSearchConditions(tokens: string[]) {
     const fields = [adopters.name, adopters.contactInfo, adopters.addressInfo, adopters.familyMembers];
     if (tokens.length === 1) return or(...fields.map(f => like(f, `%${escapeLike(tokens[0])}%`)));
@@ -907,12 +924,21 @@ async function runDiscoveryMode(
             stats: enrichment?.stats ?? defaultStats,
             flags: enrichment?.flags ?? defaultFlags,
         };
+        // For a contact-blob match, pin down WHICH structured entry matched so a
+        // masked result can name the precise field ("matched on the address")
+        // instead of the generic "contact". Uses the unmasked contactEntries here
+        // (pre-scrub); the value never reaches the client, only the entry type.
+        let snippetForMeta = bestSnippet ? { ...bestSnippet } : null;
+        if (snippetForMeta && snippetForMeta.field === 'contact') {
+            const et = detectMatchedEntryType(a.contactEntries, tokensNorm);
+            if (et) snippetForMeta = { ...snippetForMeta, matchedEntryType: et };
+        }
         const meta = {
             relevancePercent,
             matchTypes,
             matchValues: [] as Array<{ type: string; value: string }>, // discovery mode doesn't track per-token values
             source: 'like' as const, // LIKE-based discovery (token index not used in this mode)
-            matchSnippet: bestSnippet ? { ...bestSnippet } : null,
+            matchSnippet: snippetForMeta,
         };
 
         // Unified mask for any non-privileged viewer (unauth — always — and

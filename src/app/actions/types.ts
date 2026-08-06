@@ -7,6 +7,12 @@ export interface MatchSnippet {
     field: SnippetField;
     snippet: string;     // raw text window around the match (empty for history)
     highlights: { start: number; end: number }[]; // multiple highlights for multi-token
+    /** For a `contact`-blob match: the specific structured entry type that matched
+     *  (phone / email / social / id / address / …), so a masked match can name the
+     *  precise field ("matched on the address") instead of the generic "contact".
+     *  Survives the PII-mask scrub in assembleDiscoveryMatch (which only blanks
+     *  snippet + highlights). */
+    matchedEntryType?: string;
 }
 
 export interface SearchResult {

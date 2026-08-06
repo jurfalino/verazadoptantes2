@@ -407,6 +407,7 @@ export const pt = {
         public_label: 'Público',
         public_title: 'Registro público: dados de contato à vista',
         protected_info: 'Informação protegida.',
+        protected_match: 'Correspondência em {field} · dado protegido',
         min_digits: 'Digite pelo menos 6 dígitos para buscar por telefone',
         login_required: 'Você precisa fazer login para buscar um número de telefone ou email exato.',
         too_many_results: 'Resultados demais ({count}). Mostrando os primeiros 50. Por favor, refine sua busca.',

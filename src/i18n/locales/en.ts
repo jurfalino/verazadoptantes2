@@ -408,6 +408,7 @@ export const en = {
         public_label: 'Public',
         public_title: 'Public record: contact details shown',
         protected_info: 'Protected info.',
+        protected_match: 'Matched on {field} · protected',
         min_digits: 'Enter at least 6 digits to search by phone',
         login_required: 'You must log in to search by exact phone number or email.',
         too_many_results: 'Too many results ({count}). Showing first 50. Please refine your search.',
