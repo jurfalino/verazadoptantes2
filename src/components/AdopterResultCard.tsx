@@ -202,7 +202,11 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                             <span className="font-semibold text-stone-500">{label}:</span>{' '}
                             {s.field === 'history' ? (
                                 <span className="italic">{t('search.snippet_history_generic')}</span>
-                            ) : !isAuthenticated ? (
+                            ) : (!isAuthenticated || !s.snippet) ? (
+                                // Empty snippet ⇒ PII-masked & scrubbed for this viewer (auth
+                                // but not owner/org-mate). Say it's protected instead of
+                                // rendering a blank chip — the field still explains WHY this
+                                // record matched (e.g. "Dirección: Información protegida").
                                 <span className="italic">{t('search.protected_info') || 'Información protegida'}</span>
                             ) : (
                                 renderHighlightedSnippet(s.snippet, s.highlights) || s.snippet

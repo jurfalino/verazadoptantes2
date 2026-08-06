@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.26.9] - 2026-08-05
+
+### Fixed — "why matched" chip was blank when the matched field was protected
+
+- Searching e.g. `"maipu 1955"` surfaced the right record (address match) but the "why matched" chip rendered `📍 Dirección:` with nothing after it. The address is PII-masked for a non-owner viewer, so its snippet is scrubbed to empty — but the chip only showed "Información protegida" for *unauthenticated* viewers, so an authenticated-but-not-privileged searcher fell through to rendering the empty snippet (a blank chip that reads as a missing/truncated address).
+- The chip now shows **"Información protegida"** whenever the matched field's snippet is masked (empty), not only when logged out. The searcher sees *why* the record is a top result (it matched their address search) while the value stays protected; owned/org-mate records still show the highlighted address.
+
 ## [2.26.8] - 2026-08-05
 
 ### Fixed — search results didn't highlight the matched name on multi-field queries
