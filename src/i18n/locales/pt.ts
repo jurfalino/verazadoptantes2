@@ -406,6 +406,8 @@ export const pt = {
         login_to_view: '(faça login para ver)',
         public_label: 'Público',
         public_title: 'Registro público: dados de contato à vista',
+        protected_label: 'Protegido',
+        protected_title: 'Dados de contato protegidos',
         protected_info: 'Informação protegida.',
         protected_match: 'Correspondência em {field} · dado protegido',
         protected_match_partial: 'Correspondência parcial em {field} · dado protegido',

@@ -51,7 +51,11 @@ export function assembleDiscoveryMatch(
     let finalAdopter = adopter;
     let snippet = meta.matchSnippet;
 
-    if (visibility && !visibility.nothingMasked && !maskOpts.adopterIsPublic) {
+    // The viewer has no access to this contact exactly when we mask it. Compute once
+    // so the "Protegido" badge can't drift from what's actually hidden.
+    const contactProtected = !!(visibility && !visibility.nothingMasked && !maskOpts.adopterIsPublic);
+
+    if (contactProtected) {
         const masked = maskAdopterContact(adopter, visibility, maskOpts);
         finalAdopter = {
             ...adopter,
@@ -75,6 +79,7 @@ export function assembleDiscoveryMatch(
         source: meta.source,
         adopter: finalAdopter,
         matchSnippet: snippet,
+        contactProtected,
         avgRating: enrichment.avgRating,
         thumbnail: enrichment.thumbnail,
         stats: enrichment.stats,

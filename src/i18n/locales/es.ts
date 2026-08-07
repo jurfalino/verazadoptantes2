@@ -406,6 +406,8 @@ export const es = {
         login_to_view: '(iniciá sesión para ver)',
         public_label: 'Público',
         public_title: 'Registro público: datos de contacto a la vista',
+        protected_label: 'Protegido',
+        protected_title: 'Datos de contacto protegidos',
         protected_info: 'Información protegida.',
         protected_match: 'Coincide en {field} · dato protegido',
         protected_match_partial: 'Coincidencia parcial en {field} · dato protegido',

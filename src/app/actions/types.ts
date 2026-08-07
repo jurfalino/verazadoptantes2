@@ -88,6 +88,9 @@ export interface DiscoveryMatch {
     /** Full adopter row — always populated in discovery mode. */
     adopter: typeof adopters.$inferSelect;
     matchSnippet: MatchSnippet | null;
+    /** True when the viewer has NO access to this record's contact (it was masked
+     * for them). Drives the "Protegido" card badge — the mirror of the public one. */
+    contactProtected: boolean;
     avgRating: number | null;
     thumbnail: string | null;
     /** Always populated. Defaults to all-zero when enrich=false. */

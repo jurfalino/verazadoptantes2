@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.13] - 2026-08-07
+
+### Added — "Protegido" badge on search cards (mirror of the public badge)
+
+- Search result cards showed a "Público" (eye) badge for public records but nothing for protected ones — asymmetric. They now show a neutral-stone **"Protegido"** (closed-padlock) badge on records whose contact **the viewer can't see** — the mirror of the public one, honoring the eye=public / padlock=protected metaphor agreed for the other surfaces. Owner/admin viewers who *can* see the contact get neither badge.
+- The flag is computed server-side in `assembleDiscoveryMatch`, reusing the *exact* condition that masks the contact (`visibility && !nothingMasked && !adopterIsPublic`), so the badge can never disagree with what's actually hidden. New `search.protected_label` / `protected_title` in es/en/pt.
+
 ## [2.27.12] - 2026-08-07
 
 ### Changed — short (≤2-char) tokens can refine a match but can't anchor one

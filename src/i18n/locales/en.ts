@@ -407,6 +407,8 @@ export const en = {
         login_to_view: '(login to view)',
         public_label: 'Public',
         public_title: 'Public record: contact details shown',
+        protected_label: 'Protected',
+        protected_title: 'Contact details are protected',
         protected_info: 'Protected info.',
         protected_match: 'Matched on {field} · protected',
         protected_match_partial: 'Partial match in {field} · protected',

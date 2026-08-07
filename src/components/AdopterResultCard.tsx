@@ -166,15 +166,18 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                                 ? (renderHighlightedSnippet(res.adopter.name, nameRanges) || res.adopter.name)
                                 : res.adopter.name}
                         </span>
-                        {res.adopter.isPublic === 1 && (
+                        {/* Visibility badge — mirror pair. Public (eye) when the record is
+                            public; else a neutral-stone "Protegido" (padlock) when the viewer
+                            has NO access to the contact (server-computed `contactProtected`).
+                            Owner/admin viewers who CAN see the contact get neither.
+                            v2.26.3: eye reads clearly at 12px where open-vs-closed lock does not,
+                            so public=eye and protected=closed-padlock. */}
+                        {res.adopter.isPublic === 1 ? (
                             <span
                                 className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded"
                                 style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }}
                                 title={t('search.public_title')}
                             >
-                                {/* v2.26.3: eye = public (visible to everyone). The private/masked
-                                    state uses a closed padlock (ContactEntriesSection): visible ↔ protected.
-                                    Eye reads clearly at this 12px size where open-vs-closed lock does not. */}
                                 <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                                     <path d="M2.5 12S6 5.5 12 5.5s9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" />
                                     <circle cx="12" cy="12" r="3" />
@@ -182,7 +185,18 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                                 {/* Mobile: icon-only (keeps room for the name); ≥sm: icon + label. */}
                                 <span className="hidden sm:inline">{t('search.public_label')}</span>
                             </span>
-                        )}
+                        ) : res.contactProtected ? (
+                            <span
+                                className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-stone-100 text-stone-500"
+                                title={t('search.protected_title')}
+                            >
+                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                    <rect x="3.5" y="11" width="17" height="10" rx="2" />
+                                    <path d="M7.5 11V7.5a4.5 4.5 0 0 1 9 0V11" />
+                                </svg>
+                                <span className="hidden sm:inline">{t('search.protected_label')}</span>
+                            </span>
+                        ) : null}
                     </div>
                     {/* Desktop: contact stays in the middle column under the name.
                         Full string, always wrapped (never truncated), matched tokens
