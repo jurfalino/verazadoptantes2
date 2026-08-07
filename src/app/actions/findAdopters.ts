@@ -842,6 +842,12 @@ async function runDiscoveryMode(
     // mostly digits/handles and address accent-folding can wait.
     const qNorm = normalizeText(normalizedQuery);
     const tokensNorm = tokens.map(t => normalizeText(t));
+    // v2.27.12 anchor rule: a token of ≤2 chars ("av") is too short to identify
+    // anyone on its own — it can refine/rank a match but can't be the SOLE reason a
+    // record appears. A record must match at least one "anchor" token (≥3 chars) —
+    // recorded per record below (accent-insensitive, so "jose" still anchors "José").
+    const anchorTokensNorm = tokensNorm.filter(t => t.length >= 3);
+    const anchorHitById = new Map<string, boolean>();
     // v2.27.0: per-result token coverage (fraction of query tokens matched), used
     // to demote partial matches on multi-token queries into the weak tier.
     const coverageById = new Map<string, number>();
@@ -937,9 +943,15 @@ async function runDiscoveryMode(
             }
         }
 
+        // Cross-field text, reused for the anchor gate and the coverage bonus.
+        const allText = [a.name, a.contactInfo, a.addressInfo, a.familyMembers, adoptionTextMap.get(a.id), historyTextMap.get(a.id)].filter(Boolean).join(' ');
+        // Anchor gate (v2.27.12): did any ≥3-char token match this record? Normalized
+        // so an accent-name anchor ("josé") counts. false when the query has no anchor
+        // tokens at all (e.g. bare "av") — such a query surfaces nothing. Enforced in
+        // the post-loop filter; supporting (≤2-char) tokens still add to coverage below.
+        anchorHitById.set(a.id, anchorTokensNorm.length > 0 && anyTokenMatch(normalizeText(allText), anchorTokensNorm));
         // Cross-field coverage bonus
         if (isMultiToken) {
-            const allText = [a.name, a.contactInfo, a.addressInfo, a.familyMembers, adoptionTextMap.get(a.id), historyTextMap.get(a.id)].filter(Boolean).join(' ');
             const covered = countTokenMatches(allText, tokens) / tokens.length;
             coverageById.set(a.id, covered); // v2.27.0: drives partial-match demotion below
             score += covered >= 1 ? WEIGHTS.query_coverage_full : Math.round(WEIGHTS.query_coverage_full * covered * 0.5);
@@ -1039,14 +1051,18 @@ async function runDiscoveryMode(
         return assembleDiscoveryMatch({ ...a }, enrichmentVals, meta, vis, normalizedQuery, maskOpts);
     });
 
-    // v2.27.11: drop candidates the SQL LIKE prefilter returned that matched NOTHING
-    // real. A substring like "av" inside "GustAVo"/"por faVor" earns ZERO match score
-    // under word-boundary matching (v2.27.9), but bonus signals (photo/rating/recency)
-    // gave the row a nonzero relevance and no coverage, so it leaked into "more
-    // results". Require a real match type — OR a genuine strong-signal recall
-    // (phone-digit / accent-name token) that the LIKE-based scoring can't re-detect.
+    // v2.27.11 + v2.27.12 anchor rule: a result must be justified by a REAL match
+    // that is ANCHORED by a ≥3-char token — OR be a genuine strong-signal recall
+    // (phone-digit / accent-name token) the LIKE-based scoring can't re-detect. This
+    // drops (a) zero-match candidates the SQL LIKE prefilter returned but nothing
+    // scored ("av" inside "GustAVo"/"por faVor"), and (b) records matched ONLY by a
+    // ≤2-char supporting token ("av" starting "Avellaneda") with no anchor. Supporting
+    // tokens still refine coverage/ranking above (Av. Maipú full vs Calle Maipú partial).
     const strongSignalIds = new Set<string>([...phoneTokenIds, ...nameTokenIds]);
-    allResults = allResults.filter(r => r.matchTypes.length > 0 || strongSignalIds.has(r.adopterId));
+    allResults = allResults.filter(r =>
+        strongSignalIds.has(r.adopterId)
+        || (r.matchTypes.length > 0 && (anchorHitById.get(r.adopterId) ?? false))
+    );
 
     allResults.sort((a, b) => b.relevancePercent - a.relevancePercent);
 

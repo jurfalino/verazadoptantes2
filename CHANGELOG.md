@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.12] - 2026-08-07
+
+### Changed — short (≤2-char) tokens can refine a match but can't anchor one
+
+- A 2-char token like **"av"** is too short to identify anyone — it collides with many words ("**Av**ellaneda", "gust**av**o", "f**av**or"). Discovery now treats tokens ≤2 chars as **supporting-only**: they still add to coverage/ranking (so `Av. Maipú` still ranks above `Calle Maipú`), but a record must be matched by at least one **anchor** token (≥3 chars) — or a strong-signal recall (phone-digit / accent-name token) — to appear at all.
+- Effect on `Av Maipú`: `Av. Maipú` and `Calle Maipú` both surface (anchored on "Maipú", Av. ranked higher via full coverage); `Avellaneda` (only "av" matched, no anchor) is **dropped**; a bare `av` search returns nothing. Anchor check is accent-insensitive, so `jose` still anchors `José`. Preserves the Av/Calle distinction while removing 2-char noise.
+
 ## [2.27.11] - 2026-08-07
 
 ### Fixed — zero-match candidates no longer leak into "more results"
