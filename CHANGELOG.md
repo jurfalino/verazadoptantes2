@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.14] - 2026-08-07
+
+### Changed — unify the visibility badge across the profile and the search card (Nielsen #4)
+
+- The profile now shows the **same Público/Protegido pill** as the search card, just under the name. It's keyed on the *same* piiAccess masking signal (`piiContext.masked` / `isPublic`), computed in `AdopterProfileV2` and passed to `AdopterForm`, so the two surfaces can't disagree. This fills the real gap: a **stranger** on a protected profile previously saw *no* visibility signal at all (the protected microcopy is deliberately owner-only) — they now see the "Protegido" pill that the card showed them.
+- **Owner/admin unchanged** — they can see the contact, so no "Protegido" pill (matching the card), and their owner-facing "Solo visible para vos y tus organizaciones" line stays. To avoid signalling the same thing twice, the redundant public "eye" microcopy in `ContactEntriesSection` is suppressed in the read view when the header pill already shows "Público" (the edit/new views keep it). No new i18n — reuses `search.public_label` / `protected_label`.
+
 ## [2.27.13] - 2026-08-07
 
 ### Added — "Protegido" badge on search cards (mirror of the public badge)

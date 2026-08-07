@@ -136,6 +136,17 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
         ? { ...piiContext, privileged: false, masked: true }
         : piiContext;
 
+    // Visibility verdict for the header badge — the mirror of the search card's
+    // Público/Protegido pill. Keyed on the SAME piiAccess signal the masking uses
+    // (`masked`), so the two surfaces can't disagree: public record → 'public';
+    // viewer sees masked (no access) → 'protected'; a privileged viewer who CAN
+    // see the contact → null (no badge, matching the card).
+    const visibilityBadge: 'public' | 'protected' | null =
+        isNew ? null
+        : displayedAdopter?.isPublic ? 'public'
+        : effectivePiiContext?.masked ? 'protected'
+        : null;
+
     // PII opt-in is offered to a masked viewer with no request already in flight.
     // v2.19.39: uses `effectivePiiContext` so the preview-as-stranger toggle
     // also surfaces the request-access CTA on the verify popover — without
@@ -435,6 +446,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     attribution={attribution}
                     isOrgMateOfOwner={isOrgMateOfOwner && !previewAsStranger}
                     isPrivileged={!!effectivePiiContext?.privileged}
+                    visibilityBadge={visibilityBadge}
                     canEdit={!effectivePiiContext?.gatingOn || !!effectivePiiContext?.privileged}
                     onMaskedContactClick={
                         effectivePiiContext?.masked

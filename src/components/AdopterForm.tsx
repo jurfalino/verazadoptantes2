@@ -77,6 +77,11 @@ interface AdopterFormProps {
      * when gating is off or the viewer is privileged.
      */
     onMaskedNameClick?: () => void;
+    /** Visibility verdict for the profile header pill — mirror of the search card's
+     *  Público/Protegido badge. Computed by the parent from the SAME piiAccess
+     *  masking signal. Null (default) = no pill (new/edit form, or a privileged
+     *  viewer who can see the contact). Only rendered in the read (non-editing) view. */
+    visibilityBadge?: 'public' | 'protected' | null;
 }
 
 function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
@@ -101,7 +106,7 @@ function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
     );
 }
 
-export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick }: AdopterFormProps) {
+export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -863,6 +868,36 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                             </h1>
                                         );
                                     })()}
+                                    {/* Visibility pill — mirror of the search card's Público/Protegido
+                                        badge, so the same concept reads the same on both surfaces
+                                        (Nielsen #4). Read view only; keyed on the parent's masking
+                                        signal. 'protected' = viewer can't see the contact. */}
+                                    {!isEditing && visibilityBadge && (
+                                        visibilityBadge === 'public' ? (
+                                            <span
+                                                className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded"
+                                                style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }}
+                                                title={t('search.public_title')}
+                                            >
+                                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                                    <path d="M2.5 12S6 5.5 12 5.5s9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" />
+                                                    <circle cx="12" cy="12" r="3" />
+                                                </svg>
+                                                {t('search.public_label')}
+                                            </span>
+                                        ) : (
+                                            <span
+                                                className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-stone-100 text-stone-500"
+                                                title={t('search.protected_title')}
+                                            >
+                                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                                    <rect x="3.5" y="11" width="17" height="10" rx="2" />
+                                                    <path d="M7.5 11V7.5a4.5 4.5 0 0 1 9 0V11" />
+                                                </svg>
+                                                {t('search.protected_label')}
+                                            </span>
+                                        )
+                                    )}
                                 </div>
                                 {/* Actions (right-aligned inline) */}
                                 <div className="flex items-center justify-end gap-2 flex-shrink-0">
@@ -1105,6 +1140,10 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                     currentUser={currentUser}
                                     onMaskedClick={onMaskedContactClick}
                                     adopterIsPublic={!!initialData.isPublic}
+                                    // The header pill already carries the "público" signal in the
+                                    // read view, so suppress the now-duplicate eye line here. The
+                                    // owner-only "solo visible para vos" (padlock) line is untouched.
+                                    hidePublicMicrocopy={!isEditing && visibilityBadge === 'public'}
                                 />
                             );
                         })()}
