@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.15] - 2026-08-07
+
+### Changed — profile header: rating promoted, visibility inline with the name, usable mobile edit
+
+- **Rating is now the verdict, not a footnote.** It was a small `sm` chip buried at the end of the meta row (byline · country · views · *rating*). It's promoted to a **prominent `md` badge with its label** ("⭐ 1.0 · Peligroso"), on its own row right under the name — the most important at-a-glance signal on a vetting tool leads the header now.
+- **Visibility badge moved inline with the name** (was on its own line below it), matching the search card exactly (Nielsen #4). The verified/risk flags band stays right below.
+- **Editing on mobile is usable again.** The name `input` shared its row with Cancelar + Guardar, collapsing it to ~1–2 characters. On mobile the header buttons are now hidden and the input takes the full width; **Cancelar/Guardar move to a sticky bottom bar** (safe-area aware) so they're reachable at any scroll. Desktop keeps the inline header buttons.
+
 ## [2.27.14] - 2026-08-07
 
 ### Changed — unify the visibility badge across the profile and the search card (Nielsen #4)

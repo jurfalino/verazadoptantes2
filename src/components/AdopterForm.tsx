@@ -838,7 +838,9 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                             placeholder={t('adopter.placeholder_name_aliases')}
                                             autoFocus
                                         />
-                                    ) : (() => {
+                                    ) : (
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        {(() => {
                                         const displayName = !isNew && initialData ? initialData.name : t('adopter.title_new');
                                         // Initial-only tokens (1-char words separated by whitespace) are
                                         // the visual signature of `partialRevealName` — when present the
@@ -856,53 +858,56 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                     onClick={onMaskedNameClick}
                                                     aria-label={t('adopter.pii_masked_name_aria') || displayName}
                                                     title={t('adopter.pii_masked_name_title') || ''}
-                                                    className="text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate text-left hover:underline underline-offset-4 decoration-teal-400 transition-colors cursor-pointer"
+                                                    className="min-w-0 text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate text-left hover:underline underline-offset-4 decoration-teal-400 transition-colors cursor-pointer"
                                                 >
                                                     {displayName}
                                                 </button>
                                             );
                                         }
                                         return (
-                                            <h1 className="text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate">
+                                            <h1 className="min-w-0 text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate">
                                                 {displayName}
                                             </h1>
                                         );
-                                    })()}
-                                    {/* Visibility pill — mirror of the search card's Público/Protegido
-                                        badge, so the same concept reads the same on both surfaces
-                                        (Nielsen #4). Read view only; keyed on the parent's masking
-                                        signal. 'protected' = viewer can't see the contact. */}
-                                    {!isEditing && visibilityBadge && (
-                                        visibilityBadge === 'public' ? (
-                                            <span
-                                                className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded"
-                                                style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }}
-                                                title={t('search.public_title')}
-                                            >
-                                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                                                    <path d="M2.5 12S6 5.5 12 5.5s9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" />
-                                                    <circle cx="12" cy="12" r="3" />
-                                                </svg>
-                                                {t('search.public_label')}
-                                            </span>
-                                        ) : (
-                                            <span
-                                                className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-stone-100 text-stone-500"
-                                                title={t('search.protected_title')}
-                                            >
-                                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                                                    <rect x="3.5" y="11" width="17" height="10" rx="2" />
-                                                    <path d="M7.5 11V7.5a4.5 4.5 0 0 1 9 0V11" />
-                                                </svg>
-                                                {t('search.protected_label')}
-                                            </span>
-                                        )
+                                        })()}
+                                        {/* Visibility pill — INLINE with the name, mirroring the search
+                                            card (Nielsen #4). 'protected' = viewer can't see the contact. */}
+                                        {visibilityBadge && (
+                                            visibilityBadge === 'public' ? (
+                                                <span
+                                                    className="flex-none inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded"
+                                                    style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }}
+                                                    title={t('search.public_title')}
+                                                >
+                                                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                                        <path d="M2.5 12S6 5.5 12 5.5s9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" />
+                                                        <circle cx="12" cy="12" r="3" />
+                                                    </svg>
+                                                    {t('search.public_label')}
+                                                </span>
+                                            ) : (
+                                                <span
+                                                    className="flex-none inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-stone-100 text-stone-500"
+                                                    title={t('search.protected_title')}
+                                                >
+                                                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                                        <rect x="3.5" y="11" width="17" height="10" rx="2" />
+                                                        <path d="M7.5 11V7.5a4.5 4.5 0 0 1 9 0V11" />
+                                                    </svg>
+                                                    {t('search.protected_label')}
+                                                </span>
+                                            )
+                                        )}
+                                      </div>
                                     )}
                                 </div>
                                 {/* Actions (right-aligned inline) */}
                                 <div className="flex items-center justify-end gap-2 flex-shrink-0">
                                     {isEditing ? (
-                                        <>
+                                        // Desktop: inline Cancel/Save in the header. On mobile these
+                                        // are hidden so the name input gets the full row width; the
+                                        // sticky bottom bar (below, md:hidden) carries the actions there.
+                                        <div className="hidden md:flex items-center gap-2">
                                             <button
                                                 type="button"
                                                 onClick={handleCancel}
@@ -918,7 +923,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                             >
                                                 {loading ? t('common.loading') : t('common.save')}
                                             </button>
-                                        </>
+                                        </div>
                                     ) : (
                                         <>
                                             {canEdit && (
@@ -1021,6 +1026,22 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                     )}
                                 </div>
                             </div>
+                            {/* Verdict — the rating is the single most important at-a-glance
+                                signal on a vetting tool, so it's promoted (md, with label) to its
+                                own prominent row right under the name, not buried in the meta row. */}
+                            {!isNew && avgRating !== null && avgRating !== undefined && (
+                                <div className="mt-2">
+                                    <div
+                                        role="button"
+                                        tabIndex={0}
+                                        data-testid="rating-badge"
+                                        onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
+                                        className="inline-block cursor-pointer hover:shadow-md transition-shadow rounded-full"
+                                    >
+                                        <RatingBadge rating={avgRating} size="md" label="short" />
+                                    </div>
+                                </div>
+                            )}
                             {/* Metadata row */}
                             {!isNew && (
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-xs">
@@ -1056,18 +1077,6 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                             {getSourceIcon(initialData.sourceUrl, 'w-3 h-3')}
                                             <span>{t('adopter.view_source') || 'Source'}</span>
                                         </a>
-                                    )}
-                                    {/* Rating badge — colored pill for severity visibility */}
-                                    {avgRating !== null && avgRating !== undefined && (
-                                        <div
-                                            role="button"
-                                            tabIndex={0}
-                                            data-testid="rating-badge"
-                                            onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
-                                            className="cursor-pointer hover:shadow-md transition-shadow"
-                                        >
-                                            <RatingBadge rating={avgRating} size="sm" />
-                                        </div>
                                     )}
                                 </div>
                             )}
@@ -1182,6 +1191,35 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                             )
                         )}
                     </div>
+
+                    {/* Mobile-only sticky action bar (edit mode). Keeps Cancelar/Guardar
+                        reachable at any scroll and lets the name input use the full row
+                        width up top (the header buttons are hidden on mobile). Inside the
+                        <form> so the submit still works; no `adopter-form-submit` testid
+                        here — that stays on the single desktop header button. */}
+                    {isEditing && (
+                        <div
+                            className="md:hidden fixed inset-x-0 bottom-0 z-40 flex gap-3 border-t border-stone-200 bg-white/95 px-4 py-3 backdrop-blur"
+                            style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
+                        >
+                            <button
+                                type="button"
+                                onClick={handleCancel}
+                                className="px-5 py-2.5 text-sm font-semibold text-teal-700 rounded-xl hover:bg-teal-50 transition-colors"
+                            >
+                                {t('common.cancel')}
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="flex-1 px-5 py-2.5 text-sm font-semibold text-white bg-teal-700 rounded-xl hover:bg-teal-600 focus:ring-4 focus:ring-teal-200 disabled:opacity-70 disabled:cursor-not-allowed transition-all shadow-lg shadow-teal-700/30"
+                            >
+                                {loading ? t('common.loading') : t('common.save')}
+                            </button>
+                        </div>
+                    )}
+                    {/* Spacer so the sticky bar doesn't cover the last field on mobile. */}
+                    {isEditing && <div className="md:hidden h-24" aria-hidden="true" />}
 
                 </div>
             </form>
