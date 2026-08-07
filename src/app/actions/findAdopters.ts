@@ -852,7 +852,7 @@ async function runDiscoveryMode(
         tooManyAdoptions: null, tooManyRequests: null,
     };
 
-    const allResults: DiscoveryMatch[] = allProfiles.map((a: any) => {
+    let allResults: DiscoveryMatch[] = allProfiles.map((a: any) => {
         const enrichment = enrichmentMap.get(a.id);
         let score = 0;
         let bestSnippet: MatchSnippet | null = null;
@@ -1038,6 +1038,15 @@ async function runDiscoveryMode(
         // demo, so the two can't drift). `vis` undefined ⇒ no masking.
         return assembleDiscoveryMatch({ ...a }, enrichmentVals, meta, vis, normalizedQuery, maskOpts);
     });
+
+    // v2.27.11: drop candidates the SQL LIKE prefilter returned that matched NOTHING
+    // real. A substring like "av" inside "GustAVo"/"por faVor" earns ZERO match score
+    // under word-boundary matching (v2.27.9), but bonus signals (photo/rating/recency)
+    // gave the row a nonzero relevance and no coverage, so it leaked into "more
+    // results". Require a real match type — OR a genuine strong-signal recall
+    // (phone-digit / accent-name token) that the LIKE-based scoring can't re-detect.
+    const strongSignalIds = new Set<string>([...phoneTokenIds, ...nameTokenIds]);
+    allResults = allResults.filter(r => r.matchTypes.length > 0 || strongSignalIds.has(r.adopterId));
 
     allResults.sort((a, b) => b.relevancePercent - a.relevancePercent);
 

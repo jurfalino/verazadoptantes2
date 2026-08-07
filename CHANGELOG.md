@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.11] - 2026-08-07
+
+### Fixed — zero-match candidates no longer leak into "more results"
+
+- A record could appear in the weak "more results" tier despite matching **nothing** in the query. The SQL prefilter returns any row containing a query substring (e.g. "av" inside "Gustavo" / "por favor"); under word-boundary matching (v2.27.9) those earn a **zero match score**, but bonus signals (has-photo/has-rating/recently-updated) gave the row a small relevance and zero coverage — so it slipped into the low-relevance bucket. Discovery now **drops any result with no real match type**, unless it's a genuine strong-signal recall (phone-digit or accent-name token) the LIKE-based scoring can't re-detect. This makes the v2.27.9 word-boundary fix actually take effect for `gustAVo`/`por faVor`-type noise. (Word-start matches like "Avellaneda" are a separate, by-design behavior — not addressed here.)
+
 ## [2.27.10] - 2026-08-06
 
 ### Changed — a partial masked match reads "Coincidencia parcial", not "Coincide"
