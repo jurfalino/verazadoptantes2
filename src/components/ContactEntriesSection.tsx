@@ -72,6 +72,10 @@ interface Props {
      *  visibility at the PROFILE level in this surface; per-field
      *  visibility is left for a future change. */
     adopterIsPublic?: boolean;
+    /** When the profile header already shows the "Público" pill (read view), hide
+     *  the redundant public eye line here — one signal, not two (Nielsen #8). The
+     *  owner-only "solo visible para vos" (padlock) line is unaffected. */
+    hidePublicMicrocopy?: boolean;
 }
 
 interface EditDraft {
@@ -88,7 +92,7 @@ function socialHref(value: string): string | null {
     return null;
 }
 
-export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick, adopterIsPublic = false }: Props) {
+export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick, adopterIsPublic = false, hidePublicMicrocopy = false }: Props) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
@@ -531,16 +535,21 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
     // — hide the line. Public profiles still show the "público" copy
     // regardless, since that statement is true for any viewer.
     const viewerIsPrivileged = !onMaskedClick;
-    const showMicrocopy = profileEffectivelyPublic || viewerIsPrivileged;
-    const microcopyKey = profileEffectivelyPublic
+    // Public eye line — shown to everyone, UNLESS the profile header already shows
+    // the "Público" pill (then it's a duplicate signal, Nielsen #8). The private
+    // padlock line ("solo visible para vos") is owner-facing and always stays.
+    const showPublicLine = profileEffectivelyPublic && !hidePublicMicrocopy;
+    const showPrivateLine = !profileEffectivelyPublic && viewerIsPrivileged;
+    const showMicrocopy = showPublicLine || showPrivateLine;
+    const microcopyKey = showPublicLine
         ? 'adopter.ce_visibility_profile_public'
         : 'adopter.ce_visibility_microcopy';
 
     return (
         <div className="space-y-3">
             {showMicrocopy && (
-                <p className="flex items-start gap-1.5 text-xs" style={{ color: profileEffectivelyPublic ? 'var(--status-sky-text)' : 'var(--text-muted)' }}>
-                    {profileEffectivelyPublic ? (
+                <p className="flex items-start gap-1.5 text-xs" style={{ color: showPublicLine ? 'var(--status-sky-text)' : 'var(--text-muted)' }}>
+                    {showPublicLine ? (
                         // v2.26.3: eye = public (visible to everyone), matching the search-result
                         // badge. Was a globe (overloaded: language/web). The private/masked state
                         // below keeps the closed padlock — visible ↔ protected.

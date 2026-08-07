@@ -2,6 +2,193 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.18] - 2026-08-07
+
+### Changed — search card visibility badge shows its label on mobile too
+
+- The "Público"/"Protegido" badge on search result cards hid its text below `sm` (icon-only on mobile), which left just an eye/padlock icon that's easy to misread. The label now shows at every breakpoint, so the badge always reads as words + icon. (The profile badge already showed its label.)
+
+## [2.27.17] - 2026-08-07
+
+### Fixed — revert the "Protegido" badge color change (it was already themed)
+
+- v2.27.16 also swapped the "Protegido" badge from `bg-stone-100`/`text-stone-500` to `--surface-muted`/`--text-muted`, assuming those stone classes weren't theme-safe. They **are** remapped in `globals.css`, so the swap was unnecessary and made the chip a heavier gray that no longer balanced the light-sky "Público" pill. Reverted to the (themed) stone on both the card and the profile. The sticky-bar theming from 2.27.16 stands — that was the real fix (`bg-white/95` isn't remapped; `/90`,`/80`,`/20` are).
+
+## [2.27.16] - 2026-08-07
+
+### Fixed — theme the mobile edit sticky bar & the "Protegido" badge
+
+- The v2.27.15 mobile edit **sticky bar** used literal `bg-white/95`, which renders raw in the Azul Noche (dark) theme. It now uses the app's themed tokens (`--surface-card`, `--border-default`, `--btn-primary-*`), matching how the modals are themed.
+- Also swapped the "Protegido" badge to `--surface-muted`/`--text-muted` (reverted in 2.27.17 — see above).
+
+## [2.27.15] - 2026-08-07
+
+### Changed — profile header: rating promoted, visibility inline with the name, usable mobile edit
+
+- **Rating is now the verdict, not a footnote.** It was a small `sm` chip buried at the end of the meta row (byline · country · views · *rating*). It's promoted to a **prominent `md` badge with its label** ("⭐ 1.0 · Peligroso"), on its own row right under the name — the most important at-a-glance signal on a vetting tool leads the header now.
+- **Visibility badge moved inline with the name** (was on its own line below it), matching the search card exactly (Nielsen #4). The verified/risk flags band stays right below.
+- **Editing on mobile is usable again.** The name `input` shared its row with Cancelar + Guardar, collapsing it to ~1–2 characters. On mobile the header buttons are now hidden and the input takes the full width; **Cancelar/Guardar move to a sticky bottom bar** (safe-area aware) so they're reachable at any scroll. Desktop keeps the inline header buttons.
+
+## [2.27.14] - 2026-08-07
+
+### Changed — unify the visibility badge across the profile and the search card (Nielsen #4)
+
+- The profile now shows the **same Público/Protegido pill** as the search card, just under the name. It's keyed on the *same* piiAccess masking signal (`piiContext.masked` / `isPublic`), computed in `AdopterProfileV2` and passed to `AdopterForm`, so the two surfaces can't disagree. This fills the real gap: a **stranger** on a protected profile previously saw *no* visibility signal at all (the protected microcopy is deliberately owner-only) — they now see the "Protegido" pill that the card showed them.
+- **Owner/admin unchanged** — they can see the contact, so no "Protegido" pill (matching the card), and their owner-facing "Solo visible para vos y tus organizaciones" line stays. To avoid signalling the same thing twice, the redundant public "eye" microcopy in `ContactEntriesSection` is suppressed in the read view when the header pill already shows "Público" (the edit/new views keep it). No new i18n — reuses `search.public_label` / `protected_label`.
+
+## [2.27.13] - 2026-08-07
+
+### Added — "Protegido" badge on search cards (mirror of the public badge)
+
+- Search result cards showed a "Público" (eye) badge for public records but nothing for protected ones — asymmetric. They now show a neutral-stone **"Protegido"** (closed-padlock) badge on records whose contact **the viewer can't see** — the mirror of the public one, honoring the eye=public / padlock=protected metaphor agreed for the other surfaces. Owner/admin viewers who *can* see the contact get neither badge.
+- The flag is computed server-side in `assembleDiscoveryMatch`, reusing the *exact* condition that masks the contact (`visibility && !nothingMasked && !adopterIsPublic`), so the badge can never disagree with what's actually hidden. New `search.protected_label` / `protected_title` in es/en/pt.
+
+## [2.27.12] - 2026-08-07
+
+### Changed — short (≤2-char) tokens can refine a match but can't anchor one
+
+- A 2-char token like **"av"** is too short to identify anyone — it collides with many words ("**Av**ellaneda", "gust**av**o", "f**av**or"). Discovery now treats tokens ≤2 chars as **supporting-only**: they still add to coverage/ranking (so `Av. Maipú` still ranks above `Calle Maipú`), but a record must be matched by at least one **anchor** token (≥3 chars) — or a strong-signal recall (phone-digit / accent-name token) — to appear at all.
+- Effect on `Av Maipú`: `Av. Maipú` and `Calle Maipú` both surface (anchored on "Maipú", Av. ranked higher via full coverage); `Avellaneda` (only "av" matched, no anchor) is **dropped**; a bare `av` search returns nothing. Anchor check is accent-insensitive, so `jose` still anchors `José`. Preserves the Av/Calle distinction while removing 2-char noise.
+
+## [2.27.11] - 2026-08-07
+
+### Fixed — zero-match candidates no longer leak into "more results"
+
+- A record could appear in the weak "more results" tier despite matching **nothing** in the query. The SQL prefilter returns any row containing a query substring (e.g. "av" inside "Gustavo" / "por favor"); under word-boundary matching (v2.27.9) those earn a **zero match score**, but bonus signals (has-photo/has-rating/recently-updated) gave the row a small relevance and zero coverage — so it slipped into the low-relevance bucket. Discovery now **drops any result with no real match type**, unless it's a genuine strong-signal recall (phone-digit or accent-name token) the LIKE-based scoring can't re-detect. This makes the v2.27.9 word-boundary fix actually take effect for `gustAVo`/`por faVor`-type noise. (Word-start matches like "Avellaneda" are a separate, by-design behavior — not addressed here.)
+
+## [2.27.10] - 2026-08-06
+
+### Changed — a partial masked match reads "Coincidencia parcial", not "Coincide"
+
+- The masked-match chip ("Coincide en Dirección · dato protegido") asserted a full match even when the field matched only *partially* (not all query tokens landed in it) — overstating confidence on a value you can't see. When the matched field is partial (`${field}_partial` in `matchTypes`), the chip now reads **"Coincidencia parcial en Dirección · dato protegido"** (en: "Partial match in Address · protected"; pt equivalent). Full matches keep "Coincide en…". Wording only — the reveal/masking (authorization) logic is unchanged.
+
+## [2.27.9] - 2026-08-06
+
+### Fixed — short-token substring noise in "more results" (e.g. "Av" matching "GustAVo")
+
+- A short query token like **"Av"** was matched as a bare substring, so it hit "av" *inside* words — Gust**av**o, por f**av**or — and those partial matches leaked into the "more results" (weak) tier. Now short tokens (≤3 chars) only count when they **start a word** (preceded by start-of-string or a non-alphanumeric char): "Av" still matches "Av. Maipú" and "Avenida", but no longer "Gustavo"/"favor"/"Javier". Longer tokens (`maipu`, phone digits, …) keep substring matching, so no recall loss there.
+- Applied to the multi-token partial/coverage matchers **and** the deep search — an adoption note containing "por favor" no longer earns deep-match credit for "av" via a mid-word `LIKE` hit. Only affects discovery (the eager search path); the fuzzy lazy tier is word-based already. No recall change for legitimate matches (e.g. `Av. Maipú` still matches "av" at the word start exactly as before).
+
+## [2.27.8] - 2026-08-06
+
+### Fixed — "Público" badge hugs the name instead of floating to the far right
+
+- The public-visibility badge sat in a flex row where the name was `flex-1`, so the name grew to fill the column and shoved the badge to the far-right edge — detached from the name (and on desktop, floating just left of the rating). The name is now content-width (`flex-1` dropped, `min-w-0` kept so long names still shrink + line-clamp), so the badge sits right after the name inline, matching the approved card design. Desktop and mobile both.
+
+## [2.27.7] - 2026-08-06
+
+### Fixed — search no longer matches field-label words; mobile card badge is a single instance
+
+- **Field-label words don't match anymore.** The stored `contactInfo` blob prefixes every entry with its label (`Dirección: …`, `Tel: …`, `Email: …`, `Documento: …`, `Redes: …`, `Conocido/a como: …`), and discovery does a substring `LIKE` over that blob — so searching the bare word **"Dirección"** matched *every* record with an address, "Tel" every phone record, etc. Query tokens are now filtered against a label stopword set derived from `TYPE_LABEL` (normalized, so accented `Dirección` and plain `direccion` are both dropped). A query that is *only* label words returns no results instead of matching everything. Actual field *values* (e.g. an address "Corrientes 1234") are unaffected. Custom `id` labels (e.g. "DNI") aren't covered — only the six built-in labels.
+- **Mobile card rating is a single DOM instance.** v2.27.6 rendered the badge twice (mobile + desktop breakpoint slots); the `md:hidden` mobile copy came first in the DOM, so `getByText('⭐').first()` in the desktop e2e resolved to the hidden copy and the search e2e failed (blocking the deploy). The badge is now rendered once and repositioned with `flex-wrap` — desktop pins it right (unchanged); mobile wraps it onto its own line under the name.
+
+## [2.27.6] - 2026-08-06
+
+### Changed — mobile search card: rating promoted beside the photo
+
+- On phones the small rating pill sat alone to the right of the 48px photo, leaving the right side empty while the name/contact wrapped awkwardly. The mobile card is now **[photo · name/rating]** on top — the name fills the photo height with the rating pill tucked directly under it — then the **risk flags** (too-many-adoptions/requests) and the **full contact** span the width below, in that order (verdict → risk → contact).
+- **Desktop is byte-for-byte unchanged**: `[photo][name/contact][rating]` with the risk chips inline in the stats band. Only placement differs by breakpoint (each element has a single source of truth, rendered into a `md:hidden` / `hidden md:…` slot); the `RatingBadge` component itself is untouched.
+
+## [2.27.5] - 2026-08-06
+
+### Changed — masked matches name the precise field ("Coincide en Dirección")
+
+- A result that matched only on a masked field showed a generic "Contacto: Información protegida" — imprecise, because the matched value (e.g. an address) lives inside the contact blob. The chip now names the **specific field that matched**: **"📍 Coincide en Dirección · dato protegido"** (en: "Matched on Address · protected"), and likewise for phone/email/document/social.
+- The server detects which structured contact-entry type matched (accent-insensitive) and exposes just the *type* on the match snippet (never the value); the card renders it with the matching icon, reusing the existing `ce_type_*` labels. Falls back to the generic field label for legacy rows without structured entries.
+
+## [2.27.4] - 2026-08-06
+
+### Changed — accurate copy for the "broaden the search" section
+
+- The subtitle said "incluir nombres parecidos, parciales o con acentos" (similar/partial/accented *names*), but the section actually holds **partial matches on any field** (e.g. an address that matched only one search term) as well as fuzzy name matches. Recopy to the field-agnostic **"incluir coincidencias parciales o aproximadas"** (es) / "include partial or approximate matches" (en) / "incluir correspondências parciais ou aproximadas" (pt).
+
+## [2.27.3] - 2026-08-06
+
+### Fixed — mobile search field & result card
+
+- **Search field was unusable on mobile after a search.** It shared a row with the long "Buscar Registros" button (squeezing it to a strip) and used a 14px font, which makes iOS Safari auto-zoom on focus. The input is now **16px in every state** (no more zoom) and, after a search on mobile, the wide labeled button is replaced by a **compact magnifier icon** so the field stays full-width. Desktop and the initial state keep the labeled button.
+- **Result card gives the name room.** The name used to hard-truncate because the rating badge pinned the row; it now wraps to two lines (`line-clamp-2`). The rating badge and (flag-gated) stats are unchanged.
+- **Contact no longer trimmed.** The contact line rendered a match-centered "…" snippet window; it now shows the **full contact string, wrapped, with the matched tokens highlighted** in place — nothing hidden behind an ellipsis.
+
+## [2.27.2] - 2026-08-06
+
+### Fixed — "Contacto: Información protegida" chip showed on records whose contact IS visible
+
+- A record revealed by a search-match grant (you searched its address, so it's shown to you) displayed the full contact on the line but *also* a contradictory "Contacto: Información protegida" chip. Cause: the v2.27.0 chip keyed off an empty match snippet, but the snippet is scrubbed to empty for *any* partially-masked record — even when the value is granted/visible — so "empty snippet" didn't mean "hidden."
+- The chip now keys off whether the query tokens actually appear in the (possibly partially-revealed) contact string. It shows only when the matched value is genuinely hidden, and stays away when the contact is visible on the line.
+
+## [2.27.1] - 2026-08-06
+
+### Changed — lighter, action-framed "broaden the search" disclosure
+
+- The weak-matches section used the heavy teal `CollapsibleSection` card, which competed visually with the real result cards. Replaced it with a **lightweight, muted disclosure** — a small stone-toned toggle with a chevron and a subtle top divider — so it reads clearly as a secondary affordance.
+- Recopy from the label-y "Otras posibles coincidencias" to the action-framed **"Ampliar la búsqueda · incluir nombres parecidos, parciales o con acentos"** (es/en/pt), so it says what expanding does. Added `focus-visible` ring and `motion-reduce` handling.
+
+## [2.27.0] - 2026-08-06
+
+### Changed — multi-token search demotes partial matches; masked matches now explain themselves
+
+Follow-up to the search-recall work: a `maipu 1955` search was surfacing unrelated `maipu 888` records in the main list with no visible reason.
+
+- **Partial matches demoted.** On a multi-token query, only results that cover **all** query tokens stay in the main list. A result matching just one token (e.g. `maipu` but not `1955`) drops into the "Otras posibles coincidencias" weak tier. **Strong digit-identifier matches (phone/DNI) are exempt** — a phone match with a non-matching name stays in the main list (preserves the v2.26.6 fix). The weak section now shows these demoted partials eagerly, alongside the lazy fuzzy-name matches, deduped.
+- **Masked matches explain themselves.** A result that matched only on a PII-masked field (e.g. an address inside the contact blob you can't see) used to appear with nothing highlighted — an unexplained result. It now shows a "matched on a protected field · Información protegida" chip, so you always know why a record surfaced even when the value stays hidden.
+
+## [2.26.11] - 2026-08-06
+
+### Fixed — contact line still truncated (v2.26.10 was a half-fix)
+
+- v2.26.10 only wrapped the contact line when a contact match *snippet* was present, so for a masked record (snippet scrubbed) — or any case the snippet path didn't fire — it fell straight back to the truncated single line, and a match at the end of the contact blob (e.g. `Dirección: Av. Maipu 1955`) was still cut off.
+- The search-result contact line now **always wraps and never truncates**. The full contact string is visible; when the query matched the contact field and the value is unmasked, the highlighted match snippet is shown. (For a record you don't own, the street part of an address stays PII-masked — but it's no longer truncated.)
+- Removed the now-dead `wrapContact` prop.
+
+## [2.26.10] - 2026-08-05
+
+### Fixed — a search match buried in the contact blob was truncated off-screen
+
+- Searching `"maipu 1955"` surfaced the right record but the matched text wasn't visible: the address is stored inside the free-text `contactInfo` blob (`Documento:… Email:… Tel:… Dirección: Av. Maipu 1955 5B`), the card shows that blob on a single `truncate`d line, and the match at the end got cut off. Contact matches also don't get a "why matched" chip, so nothing surfaced it.
+- The contact line now renders the **match snippet window** (the ~80 chars centered on the hit, highlighted) and **wraps** instead of truncating from the start, whenever the query matched the contact field — so the matched text is always in view. Non-matching results still show the plain truncated contact line.
+
+## [2.26.9] - 2026-08-05
+
+### Fixed — "why matched" chip was blank when the matched field was protected
+
+- Searching e.g. `"maipu 1955"` surfaced the right record (address match) but the "why matched" chip rendered `📍 Dirección:` with nothing after it. The address is PII-masked for a non-owner viewer, so its snippet is scrubbed to empty — but the chip only showed "Información protegida" for *unauthenticated* viewers, so an authenticated-but-not-privileged searcher fell through to rendering the empty snippet (a blank chip that reads as a missing/truncated address).
+- The chip now shows **"Información protegida"** whenever the matched field's snippet is masked (empty), not only when logged out. The searcher sees *why* the record is a top result (it matched their address search) while the value stays protected; owned/org-mate records still show the highlighted address.
+
+## [2.26.8] - 2026-08-05
+
+### Fixed — search results didn't highlight the matched name on multi-field queries
+
+- Searching e.g. `"jonatan 65851333"` (name + phone) returned the right record but highlighted nothing. The card highlights a single "best" snippet; the phone match (`contact_partial`, weight 25) outranked the name match (`name_partial`, 20), so the snippet's field was `contact` — which then got PII-scrubbed for a non-owned record (masked contact can't be highlighted), leaving the visible, matched name un-highlighted.
+- The result card now highlights the query's matched tokens **directly in the name** (always visible, never masked), computed client-side and independent of which field won the snippet. Accent/case-insensitive (`jose` highlights `José`), with overlapping/duplicate token ranges merged. Fixes the reported case and every multi-field query where the winning snippet is masked.
+
+## [2.26.7] - 2026-08-05
+
+### Added — accent-insensitive search + a lazy "other possible matches" tier
+
+Two-part recall improvement so the search box never silently misses a record, without slowing the common case or flooding it with noise.
+
+- **Eager (fast, default):** accent-insensitive name search. `jose` now finds `José` — the record is surfaced via the NFD-normalized `name_word`/`name_full` token index (the direct SQL LIKE is accent-sensitive) and the name scoring compares accent-stripped strings so it ranks as a real name match. A handful of extra indexed lookups; eager latency stays near today's ~1.1s.
+- **Lazy (on demand):** a collapsed **"Otras posibles coincidencias"** section holding fuzzy / partial-name matches. It loads only when the user expands it (auto-opens when there are no strong results), so the slower duplicate engine (~3s p95) is never paid on every search. Matches already shown above are excluded; results are hydrated and PII-masked through the same pipeline as the main list (logged-out searchers see masked contact), and a cross-country record can't leak in.
+- Extracted a shared `hydrateDuplicateMatches` bridge (duplicate-match → enriched, masked `DiscoveryMatch`) now reused by both the search weak tier and the create-form dedup peek. The shared scoring engine is untouched.
+- Known limitation: a lone typo'd first name (`jonathan` alone → `jonatan`) still won't match — a shared token (surname/phone) or a multi-token query is needed. A bare first-name search is inherently broad.
+
+## [2.26.6] - 2026-08-05
+
+### Fixed — search by name + phone missed the record even when the phone matched
+
+- Searching `"jonathan urfalino 1165851333"` (name + phone) failed to find `Jonatan Urfalino / +5491165851333` **despite the exact phone match**. The format-agnostic phone lookup (`searchPhoneTokenMatches`) was gated on the *whole query* being phone-shaped; a mostly-letters query skipped it, leaving only a raw `contactInfo` substring LIKE that breaks on `+549`/formatting — a silent miss on the one identifier the searcher actually typed.
+- The phone lookup now also fires on a phone number embedded in a mixed query: it gathers candidate digit-strings two ways — whole-query concatenation for formatted pure-phone queries (unchanged), **plus** each contiguous digit run of ≥6 digits anywhere in the query — and matches them against the normalized `duplicate_tokens` phone index. Address numbers (`calle 6462`) stay below the 6-digit floor, so no new false positives.
+- Verified against staging: the mixed query now returns the target record via its phone token; edge cases (`6462-2274`, `calle 6462 depto 2274`, `María González`) behave correctly.
+
+## [2.26.5] - 2026-08-02
+
+### Fixed — create-form duplicate detection missed real matches, surfaced unrelated profiles
+
+- Creating "Jonathan Urfalino / 1165851333" did **not** suggest the existing "Jonatan Urfalino / +5491165851333" — instead it showed unrelated same-first-name profiles. Root cause: the create form's live duplicate suggestion (and its save-time gate) called the general **`mode: 'discovery'`** LIKE search on a `name + contactInfo` blob. Discovery has **no Levenshtein fuzzy** (so `jonathan` ≠ `jonatan`) and **no phone-suffix normalization** (so `1165851333` ≠ `+5491165851333`), and the phone lived in structured `contactEntries`, not the blob — so detection rode on the name alone and collided on `%jonathan%`.
+- Both call sites now use a new `findFormDuplicates` server action that routes detection through the purpose-built **`mode: 'duplicate'`** engine (fuzzy + phone-suffix) with **structured `{ name, phones, emails, socials }`** pulled from `contactEntries`, then re-hydrates the matched IDs into the enriched card shape the dedup UI renders — reusing the same `enrichAdopters` + `assembleDiscoveryMatch` PII-masking tail as discovery. **Scoring (weights, thresholds, normalization) is untouched** — the shared engine's contract is unchanged.
+- Verified: the reported pair now scores 30% (≥ the 15% surface gate) with a strong phone-suffix signal, so it appears in both the live suggestion and the save-confirm modal.
+
 ## [2.26.4] - 2026-07-31
 
 ### Changed — "Protegido" replaces "Privado" for masked records, with honest microcopy

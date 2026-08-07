@@ -18,6 +18,48 @@ const SNIPPET_ICONS: Record<SnippetField, string> = {
     family: '👨‍👩‍👧', adoption: '🐾', history: '📝',
 };
 
+// Icons for the specific structured contact-entry type of a masked match, so a
+// protected address match reads "📍 …dirección" rather than the generic "📞".
+const ENTRY_ICONS: Record<string, string> = {
+    phone: '📞', email: '✉️', social: '🔗', id: '🪪', address: '📍', alias: '👤', other: '📇',
+};
+
+/**
+ * Highlight ranges for the query's tokens within the (always-visible, never-masked)
+ * name — computed client-side, independent of `matchSnippet`. Fixes the case where a
+ * multi-field query (e.g. "jonatan 65851333") picks the phone as the "best" snippet,
+ * that snippet gets PII-scrubbed, and the matched name ends up un-highlighted.
+ * Accent/case-insensitive: `normalizeText` NFD-strips 1:1 (é→e) so offsets computed on
+ * the normalized string map back onto the original name. No trim (would shift offsets).
+ */
+function normForOffsets(s: string): string {
+    return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+function tokenHighlightRanges(name: string, query: string): { start: number; end: number }[] {
+    if (!name || !query) return [];
+    const normName = normForOffsets(name);
+    const tokens = [...new Set(query.trim().split(/\s+/).map(normForOffsets).filter(t => t.length >= 2))];
+    const ranges: { start: number; end: number }[] = [];
+    for (const tok of tokens) {
+        let idx = normName.indexOf(tok);
+        while (idx !== -1) {
+            ranges.push({ start: idx, end: idx + tok.length });
+            idx = normName.indexOf(tok, idx + tok.length);
+        }
+    }
+    if (ranges.length === 0) return [];
+    // Sort + merge overlaps so renderHighlightedSnippet's ascending, non-overlapping
+    // contract holds (e.g. query "ana anabel" over "Ana Anabela").
+    ranges.sort((a, b) => a.start - b.start);
+    const merged: { start: number; end: number }[] = [ranges[0]];
+    for (let i = 1; i < ranges.length; i++) {
+        const last = merged[merged.length - 1];
+        if (ranges[i].start <= last.end) last.end = Math.max(last.end, ranges[i].end);
+        else merged.push(ranges[i]);
+    }
+    return merged;
+}
+
 function renderHighlightedSnippet(snippet: string, highlights: { start: number; end: number }[]) {
     if (highlights.length === 0) return null;
     const parts: React.ReactNode[] = [];
@@ -43,22 +85,65 @@ export interface AdopterResultCardProps {
     /** Profile link target. When omitted the card is inert (walkthrough demo). */
     href?: string;
     onClick?: (e: React.MouseEvent) => void;
-    /** Wrap the contact line instead of truncating it — the walkthrough demo needs
-     *  the (revealed) phone visible on mobile, where truncation would hide it. */
-    wrapContact?: boolean;
+    /** The search query — used to highlight matched tokens in the name. */
+    query?: string;
 }
 
-export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = true, href, onClick, wrapContact = false }: AdopterResultCardProps) {
+export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = true, href, onClick, query = '' }: AdopterResultCardProps) {
     const { t } = useLanguage();
+    const nameRanges = tokenHighlightRanges(res.adopter.name, query);
+    const contactRanges = tokenHighlightRanges(res.adopter.contactInfo || '', query);
 
     const addedDate = res.adopter.createdAt ? formatShortDate(res.adopter.createdAt) : null;
     const updatedDate = res.adopter.updatedAt ? formatShortDate(res.adopter.updatedAt) : null;
 
+    // Extracted so each element renders in ONE source of truth but lands in a
+    // different slot per breakpoint (desktop = today's [name/contact][rating];
+    // mobile = [name/rating] with risk flags + contact promoted full-width below).
+    const ratingBadge = res.avgRating !== null ? (
+        <RatingExplainer rating={res.avgRating}>
+            <RatingBadge rating={res.avgRating} size="sm" label="search" />
+        </RatingExplainer>
+    ) : null;
+
+    // Contact line content (highlighted contactInfo + login nudge), reused in the
+    // desktop middle-column slot and the mobile full-width slot.
+    const contactNode = (
+        <>
+            {res.adopter.contactInfo
+                ? (contactRanges.length > 0
+                    ? (renderHighlightedSnippet(res.adopter.contactInfo, contactRanges) || res.adopter.contactInfo)
+                    : res.adopter.contactInfo)
+                : t('common.no_contact')}
+            {!isAuthenticated && res.adopter.contactInfo && (
+                <span className="ml-1 text-teal-700 font-medium">• {t('search.login_to_view')}</span>
+            )}
+        </>
+    );
+
+    // The two "too many …" risk chips. Promoted on mobile to sit right under the
+    // rating (C layout); on desktop they stay inline in the stats band below.
+    const riskFlagChips = (
+        <>
+            {res.flags.tooManyAdoptions && (
+                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">⚠ {t('flags.too_many_adoptions').replace('{count}', res.flags.tooManyAdoptions.count.toString()).replace('{days}', Math.round(res.flags.tooManyAdoptions.actualSpanDays || res.flags.tooManyAdoptions.periodDays).toString())}</span>
+            )}
+            {res.flags.tooManyRequests && (
+                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">⚠ {t('flags.too_many_requests').replace('{count}', res.flags.tooManyRequests.count.toString()).replace('{days}', Math.round(res.flags.tooManyRequests.actualSpanDays || res.flags.tooManyRequests.periodDays).toString())}</span>
+            )}
+        </>
+    );
+    const hasRiskFlags = Boolean(res.flags.tooManyAdoptions || res.flags.tooManyRequests);
+
     const inner = (
         <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-200 group-hover:border-teal-300 group-hover:shadow-md transition-all">
-            {/* Top Row: Avatar + Name/Contact + Rating */}
-            <div className="flex items-center gap-3 mb-3">
-                <div className="w-12 h-12 rounded-full bg-stone-100 flex-shrink-0 overflow-hidden ring-2 ring-white shadow-sm">
+            {/* Top Row. Desktop = [avatar][name/contact][rating] (unchanged);
+                mobile = [avatar][name] with the rating wrapping to its own line under
+                the name (flex-wrap + basis-full), and contact promoted full-width below.
+                The rating is a SINGLE DOM instance repositioned by CSS — not duplicated —
+                so a test selecting the ⭐ never resolves to a hidden copy. */}
+            <div className="flex flex-wrap items-start gap-x-3 gap-y-1.5 mb-3">
+                <div className="w-12 h-12 rounded-full bg-stone-100 flex-none overflow-hidden ring-2 ring-white shadow-sm">
                     {res.thumbnail ? (
                         <img src={res.thumbnail} alt="" className="w-full h-full object-cover" />
                     ) : (
@@ -68,46 +153,75 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                     )}
                 </div>
                 <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate" title={res.adopter.name}>
-                            {isAuthenticated && res.matchSnippet?.field === 'name' && res.matchSnippet.snippet === res.adopter.name
-                                ? (renderHighlightedSnippet(res.adopter.name, res.matchSnippet.highlights) || res.adopter.name)
+                    {/* Name + public badge. The name is content-width (NOT flex-1) so
+                        the "Público" badge hugs it inline instead of being shoved to the
+                        far-right edge of the column. min-w-0 still lets a long name shrink
+                        and line-clamp; the badge is flex-shrink-0 so it never collapses. */}
+                    <div className="flex items-start gap-1.5 min-w-0">
+                        <span className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors line-clamp-2 min-w-0" title={res.adopter.name}>
+                            {/* Highlight matched query tokens directly in the visible name —
+                                works regardless of which field won matchSnippet (and even when
+                                that field was masked/scrubbed). Name is never PII-masked. */}
+                            {nameRanges.length > 0
+                                ? (renderHighlightedSnippet(res.adopter.name, nameRanges) || res.adopter.name)
                                 : res.adopter.name}
                         </span>
-                        {res.adopter.isPublic === 1 && (
+                        {/* Visibility badge — mirror pair. Public (eye) when the record is
+                            public; else a neutral-stone "Protegido" (padlock) when the viewer
+                            has NO access to the contact (server-computed `contactProtected`).
+                            Owner/admin viewers who CAN see the contact get neither.
+                            v2.26.3: eye reads clearly at 12px where open-vs-closed lock does not,
+                            so public=eye and protected=closed-padlock. */}
+                        {res.adopter.isPublic === 1 ? (
                             <span
                                 className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded"
                                 style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }}
                                 title={t('search.public_title')}
                             >
-                                {/* v2.26.3: eye = public (visible to everyone). The private/masked
-                                    state uses a closed padlock (ContactEntriesSection): visible ↔ protected.
-                                    Eye reads clearly at this 12px size where open-vs-closed lock does not. */}
                                 <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                                     <path d="M2.5 12S6 5.5 12 5.5s9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" />
                                     <circle cx="12" cy="12" r="3" />
                                 </svg>
-                                {/* Mobile: icon-only (keeps room for the name); ≥sm: icon + label. */}
-                                <span className="hidden sm:inline">{t('search.public_label')}</span>
+                                {t('search.public_label')}
                             </span>
-                        )}
+                        ) : res.contactProtected ? (
+                            <span
+                                className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-stone-100 text-stone-500"
+                                title={t('search.protected_title')}
+                            >
+                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                    <rect x="3.5" y="11" width="17" height="10" rx="2" />
+                                    <path d="M7.5 11V7.5a4.5 4.5 0 0 1 9 0V11" />
+                                </svg>
+                                {t('search.protected_label')}
+                            </span>
+                        ) : null}
                     </div>
-                    <div className={`text-xs text-stone-500 ${wrapContact ? 'break-words' : 'truncate'}`} title={res.adopter.contactInfo || undefined}>
-                        {isAuthenticated && res.matchSnippet?.field === 'contact' && res.matchSnippet.snippet === res.adopter.contactInfo
-                            ? (renderHighlightedSnippet(res.adopter.contactInfo, res.matchSnippet.highlights) || res.adopter.contactInfo)
-                            : (res.adopter.contactInfo || t('common.no_contact'))}
-                        {!isAuthenticated && res.adopter.contactInfo && (
-                            <span className="ml-1 text-teal-700 font-medium">• {t('search.login_to_view')}</span>
-                        )}
+                    {/* Desktop: contact stays in the middle column under the name.
+                        Full string, always wrapped (never truncated), matched tokens
+                        highlighted in place — nothing hidden behind a "…". */}
+                    <div className="hidden md:block text-xs text-stone-500 break-words" title={res.adopter.contactInfo || undefined}>
+                        {contactNode}
                     </div>
                 </div>
-                {res.avgRating !== null && (
-                    <div className="flex-shrink-0">
-                        <RatingExplainer rating={res.avgRating}>
-                            <RatingBadge rating={res.avgRating} size="sm" label="search" />
-                        </RatingExplainer>
+                {/* Rating — one instance, repositioned by CSS. Desktop: pinned right in
+                    natural order. Mobile: basis-full forces it onto its own line under the
+                    name, pl indents it past the 48px avatar so it sits under the name. */}
+                {ratingBadge && (
+                    <div className="flex-none basis-full md:basis-auto pl-[3.75rem] md:pl-0">
+                        {ratingBadge}
                     </div>
                 )}
+            </div>
+
+            {/* Mobile C layout: risk flags right after the rating, then contact
+                full-width. Both hidden on desktop (rating flags live in the stats
+                band; contact lives in the middle column). */}
+            {hasRiskFlags && (
+                <div className="md:hidden flex flex-wrap gap-1.5 mb-2">{riskFlagChips}</div>
+            )}
+            <div className="md:hidden text-xs text-stone-500 break-words mb-3" title={res.adopter.contactInfo || undefined}>
+                {contactNode}
             </div>
 
             {/* Stats Row */}
@@ -138,33 +252,79 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                     {res.flags.verified_address && (
                         <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">✓ {t('flags.verified_address') || 'Verified address'}</span>
                     )}
-                    {res.flags.tooManyAdoptions && (
-                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">⚠ {t('flags.too_many_adoptions').replace('{count}', res.flags.tooManyAdoptions.count.toString()).replace('{days}', Math.round(res.flags.tooManyAdoptions.actualSpanDays || res.flags.tooManyAdoptions.periodDays).toString())}</span>
-                    )}
-                    {res.flags.tooManyRequests && (
-                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">⚠ {t('flags.too_many_requests').replace('{count}', res.flags.tooManyRequests.count.toString()).replace('{days}', Math.round(res.flags.tooManyRequests.actualSpanDays || res.flags.tooManyRequests.periodDays).toString())}</span>
-                    )}
+                    {/* Desktop: risk chips inline in the stats band. On mobile they're
+                        promoted above (right after the rating), so hide them here —
+                        `md:contents` lets them flow into this flex cluster on ≥md. */}
+                    <span className="hidden md:contents">{riskFlagChips}</span>
                 </div>
             </div>
 
             {/* Match Snippet — shows why this result appeared */}
             {res.matchSnippet && (() => {
                 const s = res.matchSnippet;
-                if (s.field === 'name' || s.field === 'contact') return null;
-                const icon = SNIPPET_ICONS[s.field];
-                const label = t(`search.snippet_${s.field}`);
+                // Name is highlighted inline in the name.
+                if (s.field === 'name') return null;
+                // A contact match is shown on the contact line above. Only surface a
+                // "matched on a protected field" chip when the matched value is
+                // GENUINELY hidden — i.e. the query tokens don't appear in the
+                // (possibly partially-revealed) contact string. Checking token
+                // visibility, not the snippet: the snippet is scrubbed to empty for
+                // any partially-masked record even when a search-match grant reveals
+                // the value on the line, so "empty snippet" alone would wrongly show
+                // "protegida" on a record whose contact you can actually see.
+                if (s.field === 'contact') {
+                    const cinfo = normForOffsets(res.adopter.contactInfo || '');
+                    const matchVisible = query.trim().split(/\s+/)
+                        .map(normForOffsets).filter(tk => tk.length >= 2)
+                        .some(tk => cinfo.includes(tk));
+                    if (s.snippet || matchVisible) return null;
+                }
+
+                // History: no value to show, generic cue.
+                if (s.field === 'history') {
+                    return (
+                        <div className="mt-2 flex items-start gap-2 text-xs text-stone-600 bg-stone-50 px-3 py-2 rounded-lg border border-stone-100">
+                            <span className="flex-shrink-0 mt-0.5">{SNIPPET_ICONS.history}</span>
+                            <span className="min-w-0 break-words">
+                                <span className="font-semibold text-stone-500">{t('search.snippet_history')}:</span>{' '}
+                                <span className="italic">{t('search.snippet_history_generic')}</span>
+                            </span>
+                        </div>
+                    );
+                }
+
+                // Masked field (empty snippet, or unauthenticated): name the PRECISE
+                // field that matched instead of a blank/generic chip — for a contact
+                // blob, the specific entry type (address/phone/email/…); otherwise the
+                // field itself. e.g. "📍 Coincide en Dirección · dato protegido".
+                if (!isAuthenticated || !s.snippet) {
+                    const type = s.matchedEntryType;
+                    const fieldLabel = type ? t(`adopter.ce_type_${type}`) : t(`search.snippet_${s.field}`);
+                    const icon = (type && ENTRY_ICONS[type]) || SNIPPET_ICONS[s.field];
+                    // When this field matched only PARTIALLY (not all query tokens landed
+                    // in it — `${field}_partial` in matchTypes), say so, so a weak/partial
+                    // masked hit reads as tentative ("Coincidencia parcial en …") rather
+                    // than asserting a full match on a value you can't see. Reveal logic is
+                    // unchanged — this only affects the wording of the masked chip.
+                    const fieldPartial = res.matchTypes?.includes(`${s.field}_partial`) ?? false;
+                    const key = fieldPartial ? 'search.protected_match_partial' : 'search.protected_match';
+                    return (
+                        <div className="mt-2 flex items-start gap-2 text-xs text-stone-500 bg-stone-50 px-3 py-2 rounded-lg border border-stone-100 italic">
+                            <span className="flex-shrink-0 mt-0.5 not-italic">{icon}</span>
+                            <span className="min-w-0 break-words">
+                                {t(key).replace('{field}', fieldLabel)}
+                            </span>
+                        </div>
+                    );
+                }
+
+                // Visible field match (address / family / adoption): show the value.
                 return (
                     <div className="mt-2 flex items-start gap-2 text-xs text-stone-600 bg-stone-50 px-3 py-2 rounded-lg border border-stone-100">
-                        <span className="flex-shrink-0 mt-0.5">{icon}</span>
+                        <span className="flex-shrink-0 mt-0.5">{SNIPPET_ICONS[s.field]}</span>
                         <span className="min-w-0 break-words">
-                            <span className="font-semibold text-stone-500">{label}:</span>{' '}
-                            {s.field === 'history' ? (
-                                <span className="italic">{t('search.snippet_history_generic')}</span>
-                            ) : !isAuthenticated ? (
-                                <span className="italic">{t('search.protected_info') || 'Información protegida'}</span>
-                            ) : (
-                                renderHighlightedSnippet(s.snippet, s.highlights) || s.snippet
-                            )}
+                            <span className="font-semibold text-stone-500">{t(`search.snippet_${s.field}`)}:</span>{' '}
+                            {renderHighlightedSnippet(s.snippet, s.highlights) || s.snippet}
                         </span>
                     </div>
                 );

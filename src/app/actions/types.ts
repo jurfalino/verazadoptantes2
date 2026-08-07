@@ -7,6 +7,12 @@ export interface MatchSnippet {
     field: SnippetField;
     snippet: string;     // raw text window around the match (empty for history)
     highlights: { start: number; end: number }[]; // multiple highlights for multi-token
+    /** For a `contact`-blob match: the specific structured entry type that matched
+     *  (phone / email / social / id / address / …), so a masked match can name the
+     *  precise field ("matched on the address") instead of the generic "contact".
+     *  Survives the PII-mask scrub in assembleDiscoveryMatch (which only blanks
+     *  snippet + highlights). */
+    matchedEntryType?: string;
 }
 
 export interface SearchResult {
@@ -82,6 +88,9 @@ export interface DiscoveryMatch {
     /** Full adopter row — always populated in discovery mode. */
     adopter: typeof adopters.$inferSelect;
     matchSnippet: MatchSnippet | null;
+    /** True when the viewer has NO access to this record's contact (it was masked
+     * for them). Drives the "Protegido" card badge — the mirror of the public one. */
+    contactProtected: boolean;
     avgRating: number | null;
     thumbnail: string | null;
     /** Always populated. Defaults to all-zero when enrich=false. */

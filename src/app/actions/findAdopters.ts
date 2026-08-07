@@ -34,7 +34,7 @@ import { count } from 'drizzle-orm';
 import { matchSearchEntries, matchSearchNameTokens, hashNameToken, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
 import { assembleDiscoveryMatch } from '@/lib/discoveryMatch';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
-import { deserializeContactEntries } from '@/lib/contactEntries';
+import { deserializeContactEntries, TYPE_LABEL } from '@/lib/contactEntries';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -57,22 +57,52 @@ function tokenize(q: string): string[] {
     return t.length > 0 ? t : [q];
 }
 
+/**
+ * Field-label words derived from the contactInfo blob's `TYPE_LABEL` (Dirección,
+ * Tel, Email, Documento, Redes, "Conocido/a como"). The stored blob prefixes every
+ * entry with its label, and discovery does a substring LIKE over that blob — so a
+ * bare label word matches EVERY record that has that field (e.g. "Dirección" hits
+ * every address-bearing record). Normalized (accent-stripped, lowercased) so both
+ * "Dirección" and "direccion" are recognized. Filtered out of query tokens below.
+ */
+const SEARCH_LABEL_STOPWORDS: Set<string> = new Set(
+    Object.values(TYPE_LABEL)
+        .flatMap(label => normalizeText(label).split(/[^a-z0-9]+/))
+        .filter(w => w.length >= 2)
+);
+
+// Short query tokens (≤3 chars, e.g. "av") match at a WORD START only — preceded
+// by start-of-string or a non-alphanumeric char — so they don't hit mid-word noise
+// ("av" inside "GustAVo" / "por faVor"). Longer tokens keep plain substring matching
+// (phones, "maipu", … — mid-word coincidences are rare and their recall matters).
+// `lowercasedText` is expected already lowercased by the caller.
+const SHORT_TOKEN_MAX = 3;
+function escapeRegExp(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+function tokenInText(lowercasedText: string, token: string): boolean {
+    const t = token.toLowerCase();
+    if (!t) return false;
+    if (t.length > SHORT_TOKEN_MAX) return lowercasedText.includes(t);
+    return new RegExp(`(?:^|[^a-z0-9])${escapeRegExp(t)}`).test(lowercasedText);
+}
+
 function allTokensMatch(text: string | null | undefined, tokens: string[]): boolean {
     if (!text) return false;
     const l = text.toLowerCase();
-    return tokens.every(t => l.includes(t.toLowerCase()));
+    return tokens.every(t => tokenInText(l, t));
 }
 
 function anyTokenMatch(text: string | null | undefined, tokens: string[]): boolean {
     if (!text) return false;
     const l = text.toLowerCase();
-    return tokens.some(t => l.includes(t.toLowerCase()));
+    return tokens.some(t => tokenInText(l, t));
 }
 
 function countTokenMatches(text: string | null | undefined, tokens: string[]): number {
     if (!text) return 0;
     const l = text.toLowerCase();
-    return tokens.filter(t => l.includes(t.toLowerCase())).length;
+    return tokens.filter(t => tokenInText(l, t)).length;
 }
 
 // ── Snippet extraction ────────────────────────────────────────────────────────
@@ -204,23 +234,43 @@ async function searchAdoptionMatches(db: any, tokens: string[]): Promise<DeepMat
 }
 
 /**
- * Phone-token lookup against `duplicate_tokens` for phone-shaped queries
- * (v2.16.0-17). The discovery LIKE path runs on `adopters.contactInfo`
- * which stores the user's verbatim phone formatting ("Tel: 6462-2274"),
- * so a digit-only query ("64622274") slides past the LIKE substring.
- * The tokenizer canonicalizes phones to digits-only when populating
- * duplicate_tokens, so the same digit-only query matches there.
+ * Phone-token lookup against `duplicate_tokens` (v2.16.0-17). The discovery LIKE
+ * path runs on `adopters.contactInfo` which stores the user's verbatim phone
+ * formatting ("Tel: 6462-2274"), so a digit-only query ("64622274") slides past
+ * the LIKE substring. The tokenizer canonicalizes phones to digits-only when
+ * populating duplicate_tokens, so the same digit-only query matches there.
  *
- * This is purely additive — IDs found here are unioned into the existing
- * extras set and flow through the same enrichment + scoring + masking
- * pipeline that history/adoption matches already use. Same min-digits
- * floor (PHONE_SEARCH_MIN_DIGITS) keeps the anti-fishing posture.
+ * v2.26.6: also fire on a phone number typed INSIDE a mixed "name + phone" query
+ * (e.g. "jonathan urfalino 1165851333"). Previously this whole function was
+ * gated on `isPhoneLikeQuery(WHOLE query)`, which is false when letters dominate,
+ * so the format-agnostic phone match was skipped and the only phone matching left
+ * was a raw contactInfo LIKE that breaks on "+549"/formatting — the record was
+ * silently missed even though the searcher typed the exact number. We now gather
+ * candidate digit-strings two ways and union the lookups:
+ *   1. whole-query concatenation when the query is phone-shaped (formatted pure-
+ *      phone queries like "6462-2274" / "11 6585 1333") — the original behaviour.
+ *   2. each contiguous digit run of >= PHONE_SEARCH_MIN_DIGITS anywhere in the
+ *      query — catches an unformatted phone token embedded in a name query.
+ * The min-digits floor keeps the anti-fishing posture; short address numbers
+ * ("calle 6462") don't qualify. Additive — IDs flow through the same extras
+ * union + enrichment + masking pipeline as history/adoption matches.
  */
 async function searchPhoneTokenMatches(db: any, normalizedQuery: string): Promise<string[]> {
     try {
-        if (!isPhoneLikeQuery(normalizedQuery)) return [];
-        const qDigits = normalizedQuery.replace(/\D/g, '');
-        if (qDigits.length < PHONE_SEARCH_MIN_DIGITS) return [];
+        const candidates = new Set<string>();
+        // (1) formatted pure-phone queries: concatenate all digits.
+        if (isPhoneLikeQuery(normalizedQuery)) {
+            const allDigits = normalizedQuery.replace(/\D/g, '');
+            if (allDigits.length >= PHONE_SEARCH_MIN_DIGITS) candidates.add(allDigits);
+        }
+        // (2) an unformatted phone token embedded in a mixed query.
+        for (const run of normalizedQuery.match(new RegExp(`\\d{${PHONE_SEARCH_MIN_DIGITS},}`, 'g')) ?? []) {
+            candidates.add(run);
+        }
+        if (candidates.size === 0) return [];
+
+        const digitConds = Array.from(candidates).map(d =>
+            like(duplicateTokens.tokenValue, `%${escapeLike(d)}%`));
         const rows = await db.select({ adopterId: duplicateTokens.adopterId })
             .from(duplicateTokens)
             .where(and(
@@ -228,12 +278,46 @@ async function searchPhoneTokenMatches(db: any, normalizedQuery: string): Promis
                     eq(duplicateTokens.tokenType, 'phone'),
                     eq(duplicateTokens.tokenType, 'phone_suffix'),
                 ),
-                like(duplicateTokens.tokenValue, `%${escapeLike(qDigits)}%`),
+                or(...digitConds),
             ))
             .limit(SEARCH_RESULT_LIMIT);
         return rows.map((r: { adopterId: string }) => r.adopterId);
     } catch (e) {
         logger.warn('Phone-token search error', { error: e instanceof Error ? e.message : String(e) });
+        return [];
+    }
+}
+
+/**
+ * Accent-insensitive name recall (v2.26.7). Discovery's SQL name LIKE runs on the
+ * verbatim `adopters.name` column, which is accent-SENSITIVE in SQLite — so a
+ * query "jose" never fetches a stored "José", and the record can't even be scored.
+ * The tokenizer writes `duplicate_tokens` name_word/name_full values NFD-stripped
+ * (tokenizer.ts:25-31), so we normalize the query tokens and EXACT-match them
+ * against that index to surface the accent variants. Exact (not prefix) keeps it
+ * tight — "jose" surfaces "José"/"Jose", not "Josefina"; loose prefix/fuzzy name
+ * recall belongs to the lazy weak tier (duplicate engine), not the eager path.
+ * Additive: IDs flow through the same extras union + enrichment + masking as the
+ * phone-token path.
+ */
+async function searchNameTokenMatches(db: any, tokens: string[]): Promise<string[]> {
+    try {
+        const normTokens = [...new Set(tokens.map(t => normalizeText(t)).filter(t => t.length >= 2))];
+        if (normTokens.length === 0) return [];
+        const valueConds = normTokens.map(t => eq(duplicateTokens.tokenValue, t));
+        const rows = await db.select({ adopterId: duplicateTokens.adopterId })
+            .from(duplicateTokens)
+            .where(and(
+                or(
+                    eq(duplicateTokens.tokenType, 'name_word'),
+                    eq(duplicateTokens.tokenType, 'name_full'),
+                ),
+                or(...valueConds),
+            ))
+            .limit(SEARCH_RESULT_LIMIT);
+        return rows.map((r: { adopterId: string }) => r.adopterId);
+    } catch (e) {
+        logger.warn('Name-token search error', { error: e instanceof Error ? e.message : String(e) });
         return [];
     }
 }
@@ -251,6 +335,23 @@ const WEIGHTS = {
 } as const;
 
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+
+/**
+ * v2.27.5: which structured contact-entry type (phone/email/address/id/social/…)
+ * matched the query — so a masked contact match can name the precise field. NFD-
+ * normalized comparison to match accent-insensitively. Returns the first entry
+ * whose value contains any query token, else null (legacy blob-only rows).
+ */
+function detectMatchedEntryType(contactEntriesJson: string | null | undefined, tokensNorm: string[]): string | null {
+    try {
+        const entries = deserializeContactEntries(contactEntriesJson);
+        for (const e of entries) {
+            const v = normalizeText(e.value || '');
+            if (tokensNorm.some(t => t.length >= 2 && v.includes(t))) return e.type;
+        }
+    } catch { /* malformed entries — fall back to the generic field label */ }
+    return null;
+}
 
 function buildProfileSearchConditions(tokens: string[]) {
     const fields = [adopters.name, adopters.contactInfo, adopters.addressInfo, adopters.familyMembers];
@@ -588,7 +689,12 @@ async function runDiscoveryMode(
             return { results: [], validationError: 'login_required' };
     }
 
-    const tokens = tokenize(normalizedQuery);
+    // Drop field-label words so a bare "Dirección"/"Tel"/"Email"/… doesn't
+    // substring-match the label line present on every record with that field
+    // (see SEARCH_LABEL_STOPWORDS). If the query is nothing BUT label words, it's
+    // not a meaningful search → return no results rather than matching everything.
+    const tokens = tokenize(normalizedQuery).filter(tk => !SEARCH_LABEL_STOPWORDS.has(normalizeText(tk)));
+    if (tokens.length === 0) return { results: [] };
     const isMultiToken = tokens.length > 1;
 
     // Geo-filtering
@@ -633,7 +739,7 @@ async function runDiscoveryMode(
         );
     }
 
-    const [directResults, historyMatches, adoptionMatches, phoneTokenIds] = await Promise.all([
+    const [directResults, historyMatches, adoptionMatches, phoneTokenIds, nameTokenIds] = await Promise.all([
         db.select().from(adopters).where(and(...profileConds)).limit(SEARCH_ENRICHMENT_LIMIT),
         searchHistoryMatches(db, tokens),
         searchAdoptionMatches(db, tokens),
@@ -641,6 +747,9 @@ async function runDiscoveryMode(
         // the LIKE search above misses because the stored contactInfo blob
         // keeps the user's verbatim formatting ("Tel: 6462-2274").
         searchPhoneTokenMatches(db, normalizedQuery),
+        // v2.26.7: accent-insensitive name recall — surfaces "José" for "jose"
+        // via the NFD-stripped name-token index (the direct LIKE is accent-sensitive).
+        searchNameTokenMatches(db, tokens),
     ]);
 
     const historyTextMap = new Map<string, string>();
@@ -657,7 +766,7 @@ async function runDiscoveryMode(
         if (!adoptionTextMap.has(m.adopterId)) adoptionTextMap.set(m.adopterId, m.matchedText);
     }
 
-    const extraIds = new Set([...historyIds, ...adoptionIds, ...phoneTokenIds]);
+    const extraIds = new Set([...historyIds, ...adoptionIds, ...phoneTokenIds, ...nameTokenIds]);
     directResults.forEach((r: any) => extraIds.delete(r.id));
 
     // D1-compatible: fan out with eq() per ID instead of inArray() which silently breaks on D1
@@ -727,6 +836,21 @@ async function runDiscoveryMode(
     })();
 
     const qLower = normalizedQuery.toLowerCase();
+    // v2.26.7: accent-normalized query for the NAME cascade so "jose" scores as a
+    // name match against a stored "José" (the record is now fetched via the
+    // name-token recall path above). Contact/address stay on qLower — they're
+    // mostly digits/handles and address accent-folding can wait.
+    const qNorm = normalizeText(normalizedQuery);
+    const tokensNorm = tokens.map(t => normalizeText(t));
+    // v2.27.12 anchor rule: a token of ≤2 chars ("av") is too short to identify
+    // anyone on its own — it can refine/rank a match but can't be the SOLE reason a
+    // record appears. A record must match at least one "anchor" token (≥3 chars) —
+    // recorded per record below (accent-insensitive, so "jose" still anchors "José").
+    const anchorTokensNorm = tokensNorm.filter(t => t.length >= 3);
+    const anchorHitById = new Map<string, boolean>();
+    // v2.27.0: per-result token coverage (fraction of query tokens matched), used
+    // to demote partial matches on multi-token queries into the weak tier.
+    const coverageById = new Map<string, number>();
     const defaultStats = { searchHits: 0, profileViews: 0, requests: 0, adoptions: 0 };
     const defaultFlags = {
         inaccurate: false, duplicate: false, systemDuplicate: false,
@@ -734,29 +858,30 @@ async function runDiscoveryMode(
         tooManyAdoptions: null, tooManyRequests: null,
     };
 
-    const allResults: DiscoveryMatch[] = allProfiles.map((a: any) => {
+    let allResults: DiscoveryMatch[] = allProfiles.map((a: any) => {
         const enrichment = enrichmentMap.get(a.id);
         let score = 0;
         let bestSnippet: MatchSnippet | null = null;
         let bestSnippetWeight = 0;
         const matchTypes: string[] = [];
 
-        // Name
-        const nl = a.name?.toLowerCase() || '';
-        if (nl === qLower) {
+        // Name (accent-insensitive — v2.26.7). Comparisons run on NFD-stripped
+        // strings so "jose"/"José" match; snippets keep the original text.
+        const nlNorm = normalizeText(a.name || '');
+        if (nlNorm === qNorm) {
             score += WEIGHTS.name_exact; matchTypes.push('name_exact');
             const s = buildSnippet('name', a.name, normalizedQuery, tokens);
             if (s && WEIGHTS.name_exact > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.name_exact; }
-        } else if (nl.includes(qLower)) {
+        } else if (nlNorm.includes(qNorm)) {
             score += WEIGHTS.name_contains; matchTypes.push('name_contains');
             const s = buildSnippet('name', a.name, normalizedQuery, tokens);
             if (s && WEIGHTS.name_contains > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.name_contains; }
-        } else if (isMultiToken && allTokensMatch(a.name, tokens)) {
+        } else if (isMultiToken && allTokensMatch(nlNorm, tokensNorm)) {
             score += WEIGHTS.name_tokens; matchTypes.push('name_tokens');
             const s = buildSnippet('name', a.name, normalizedQuery, tokens);
             if (s && WEIGHTS.name_tokens > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.name_tokens; }
-        } else if (isMultiToken && anyTokenMatch(a.name, tokens)) {
-            const m = countTokenMatches(a.name, tokens);
+        } else if (isMultiToken && anyTokenMatch(nlNorm, tokensNorm)) {
+            const m = countTokenMatches(nlNorm, tokensNorm);
             score += Math.round(WEIGHTS.name_partial * (m / tokens.length)); matchTypes.push('name_partial');
             const s = buildSnippet('name', a.name, normalizedQuery, tokens);
             if (s && WEIGHTS.name_partial > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.name_partial; }
@@ -798,16 +923,19 @@ async function runDiscoveryMode(
             if (s && WEIGHTS.family_partial > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.family_partial; }
         }
 
-        // Deep search
-        if (adoptionIds.includes(a.id)) {
+        // Deep search — re-verify the SQL LIKE hit with word-boundary token matching
+        // so a mid-word substring (e.g. "av" inside "por favor" in an adoption's notes)
+        // doesn't earn deep-match credit and leak a spurious record into results.
+        const adoptionText = adoptionTextMap.get(a.id);
+        if (adoptionIds.includes(a.id) && anyTokenMatch(adoptionText, tokens)) {
             score += WEIGHTS.adoption; matchTypes.push('adoption');
-            const matchedText = adoptionTextMap.get(a.id);
-            if (matchedText && WEIGHTS.adoption > bestSnippetWeight) {
-                const s = buildSnippet('adoption', matchedText, normalizedQuery, tokens);
+            if (adoptionText && WEIGHTS.adoption > bestSnippetWeight) {
+                const s = buildSnippet('adoption', adoptionText, normalizedQuery, tokens);
                 if (s) { bestSnippet = s; bestSnippetWeight = WEIGHTS.adoption; }
             }
         }
-        if (historyIds.includes(a.id)) {
+        const historyText = historyTextMap.get(a.id);
+        if (historyIds.includes(a.id) && anyTokenMatch(historyText, tokens)) {
             score += WEIGHTS.history; matchTypes.push('history');
             if (WEIGHTS.history > bestSnippetWeight) {
                 bestSnippet = { field: 'history', snippet: '', highlights: [] };
@@ -815,10 +943,17 @@ async function runDiscoveryMode(
             }
         }
 
+        // Cross-field text, reused for the anchor gate and the coverage bonus.
+        const allText = [a.name, a.contactInfo, a.addressInfo, a.familyMembers, adoptionTextMap.get(a.id), historyTextMap.get(a.id)].filter(Boolean).join(' ');
+        // Anchor gate (v2.27.12): did any ≥3-char token match this record? Normalized
+        // so an accent-name anchor ("josé") counts. false when the query has no anchor
+        // tokens at all (e.g. bare "av") — such a query surfaces nothing. Enforced in
+        // the post-loop filter; supporting (≤2-char) tokens still add to coverage below.
+        anchorHitById.set(a.id, anchorTokensNorm.length > 0 && anyTokenMatch(normalizeText(allText), anchorTokensNorm));
         // Cross-field coverage bonus
         if (isMultiToken) {
-            const allText = [a.name, a.contactInfo, a.addressInfo, a.familyMembers, adoptionTextMap.get(a.id), historyTextMap.get(a.id)].filter(Boolean).join(' ');
             const covered = countTokenMatches(allText, tokens) / tokens.length;
+            coverageById.set(a.id, covered); // v2.27.0: drives partial-match demotion below
             score += covered >= 1 ? WEIGHTS.query_coverage_full : Math.round(WEIGHTS.query_coverage_full * covered * 0.5);
         }
 
@@ -839,12 +974,21 @@ async function runDiscoveryMode(
             stats: enrichment?.stats ?? defaultStats,
             flags: enrichment?.flags ?? defaultFlags,
         };
+        // For a contact-blob match, pin down WHICH structured entry matched so a
+        // masked result can name the precise field ("matched on the address")
+        // instead of the generic "contact". Uses the unmasked contactEntries here
+        // (pre-scrub); the value never reaches the client, only the entry type.
+        let snippetForMeta = bestSnippet ? { ...bestSnippet } : null;
+        if (snippetForMeta && snippetForMeta.field === 'contact') {
+            const et = detectMatchedEntryType(a.contactEntries, tokensNorm);
+            if (et) snippetForMeta = { ...snippetForMeta, matchedEntryType: et };
+        }
         const meta = {
             relevancePercent,
             matchTypes,
             matchValues: [] as Array<{ type: string; value: string }>, // discovery mode doesn't track per-token values
             source: 'like' as const, // LIKE-based discovery (token index not used in this mode)
-            matchSnippet: bestSnippet ? { ...bestSnippet } : null,
+            matchSnippet: snippetForMeta,
         };
 
         // Unified mask for any non-privileged viewer (unauth — always — and
@@ -907,14 +1051,36 @@ async function runDiscoveryMode(
         return assembleDiscoveryMatch({ ...a }, enrichmentVals, meta, vis, normalizedQuery, maskOpts);
     });
 
+    // v2.27.11 + v2.27.12 anchor rule: a result must be justified by a REAL match
+    // that is ANCHORED by a ≥3-char token — OR be a genuine strong-signal recall
+    // (phone-digit / accent-name token) the LIKE-based scoring can't re-detect. This
+    // drops (a) zero-match candidates the SQL LIKE prefilter returned but nothing
+    // scored ("av" inside "GustAVo"/"por faVor"), and (b) records matched ONLY by a
+    // ≤2-char supporting token ("av" starting "Avellaneda") with no anchor. Supporting
+    // tokens still refine coverage/ranking above (Av. Maipú full vs Calle Maipú partial).
+    const strongSignalIds = new Set<string>([...phoneTokenIds, ...nameTokenIds]);
+    allResults = allResults.filter(r =>
+        strongSignalIds.has(r.adopterId)
+        || (r.matchTypes.length > 0 && (anchorHitById.get(r.adopterId) ?? false))
+    );
+
     allResults.sort((a, b) => b.relevancePercent - a.relevancePercent);
 
-    // Low-relevance bucketing
+    // Low-relevance bucketing. v2.27.0: a multi-token query keeps in the MAIN
+    // list only results that cover ALL query tokens (or matched a strong digit
+    // identifier — phone/DNI — which must stay strong per the v2.26.6 fix, even
+    // if the name half of the query didn't match). Partial-coverage matches
+    // (e.g. "maipu 888" for a "maipu 1955" search) drop to the weak tier so the
+    // top list stays high-signal. Very-low-relevance results also drop.
     let mainResults = allResults;
     let lowRelevanceResults: DiscoveryMatch[] = [];
     if (isMultiToken) {
-        mainResults = allResults.filter(r => r.relevancePercent >= LOW_RELEVANCE_PERCENT_THRESHOLD);
-        lowRelevanceResults = allResults.filter(r => r.relevancePercent < LOW_RELEVANCE_PERCENT_THRESHOLD);
+        const strongIdMatch = new Set<string>(phoneTokenIds);
+        const isStrong = (r: DiscoveryMatch) =>
+            r.relevancePercent >= LOW_RELEVANCE_PERCENT_THRESHOLD
+            && ((coverageById.get(r.adopterId) ?? 1) >= 1 || strongIdMatch.has(r.adopterId));
+        mainResults = allResults.filter(isStrong);
+        lowRelevanceResults = allResults.filter(r => !isStrong(r));
     }
 
     const singleTokenResultCount = (!isMultiToken && allResults.length > REFINEMENT_NUDGE_THRESHOLD)

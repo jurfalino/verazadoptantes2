@@ -95,7 +95,7 @@ export function isRawAddress(entry: ContactEntry): boolean {
 }
 
 /** Labels written into the derived contactInfo blob — one line per entry. */
-const TYPE_LABEL: Record<Exclude<ContactEntryType, 'other'>, string> = {
+export const TYPE_LABEL: Record<Exclude<ContactEntryType, 'other'>, string> = {
     phone: 'Tel',
     email: 'Email',
     social: 'Redes',

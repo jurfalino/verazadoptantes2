@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { findAdopters } from '@/app/actions';
+import { findAdopters, findWeakNameMatches } from '@/app/actions';
 import type { DiscoveryMatch } from '@/app/actions';
 import { AdopterResultCard } from './AdopterResultCard';
 import { useWalkthrough } from './walkthrough/WalkthroughProvider';
@@ -36,6 +36,44 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
     const [validationError, setValidationError] = useState<string | null>(null);
     const [singleTokenResultCount, setSingleTokenResultCount] = useState<number | undefined>(undefined);
     const resultsRef = useRef<HTMLDivElement>(null);
+    // Lazy "weak tier" — fuzzy/partial name matches, loaded only when the user
+    // expands "Otras posibles coincidencias" (the duplicate engine's ~3s cost is
+    // paid on demand, not on every search). `weakFor` caches which query the
+    // results belong to so a re-expand doesn't re-fetch.
+    const [weakResults, setWeakResults] = useState<DiscoveryMatch[] | null>(null);
+    const [weakLoading, setWeakLoading] = useState(false);
+    const weakForRef = useRef<string | null>(null);
+    // Partial-coverage matches the backend demoted from the main list (e.g.
+    // "maipu 888" for a "maipu 1955" search). Eager — arrives with the response —
+    // and shown inside the same "Otras posibles coincidencias" section as the
+    // (lazy) fuzzy name matches.
+    const [lowRelevanceResults, setLowRelevanceResults] = useState<DiscoveryMatch[]>([]);
+
+    const resetWeak = useCallback(() => {
+        setWeakResults(null);
+        setWeakLoading(false);
+        setLowRelevanceResults([]);
+        weakForRef.current = null;
+    }, []);
+
+    // Fired on weak-section expand. Loads once per query; the strong-tier ids are
+    // excluded so the weak list only holds what the eager search didn't already show.
+    const loadWeakMatches = useCallback(async (q: string, strongIds: string[]) => {
+        const key = q.trim();
+        if (!key || weakForRef.current === key) return;
+        weakForRef.current = key;
+        setWeakLoading(true);
+        try {
+            const res = await findWeakNameMatches(key, strongIds);
+            setWeakResults((res?.results as DiscoveryMatch[]) ?? []);
+        } catch (err) {
+            console.error(err);
+            weakForRef.current = null; // allow retry on next expand
+            setWeakResults([]);
+        } finally {
+            setWeakLoading(false);
+        }
+    }, []);
 
     // Re-run search when returning to page with query in URL
     const runSearch = useCallback(async (searchQuery: string) => {
@@ -44,6 +82,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
         setValidationError(null);
         setTruncatedInfo(null);
         setSingleTokenResultCount(undefined);
+        resetWeak();
         try {
             const response = await findAdopters(
                 { raw: searchQuery },
@@ -55,6 +94,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                 setResults([]);
             } else {
                 setResults(response.results as DiscoveryMatch[]);
+                setLowRelevanceResults((response.lowRelevanceResults as DiscoveryMatch[]) ?? []);
                 setSingleTokenResultCount(response.singleTokenResultCount);
                 if (response.truncated && response.totalCount) {
                     setTruncatedInfo({ truncated: true, totalCount: response.totalCount });
@@ -71,6 +111,9 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
         } finally {
             setLoading(false);
         }
+        // t / toast / resetWeak are stable for this page; runSearch is a one-shot
+        // ?q= replay, intentionally not re-created on their identity.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
@@ -169,6 +212,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
         setLoading(true);
         setValidationError(null);
         setTruncatedInfo(null);
+        resetWeak();
         try {
             const response = await findAdopters(
                 { raw: query },
@@ -180,6 +224,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                 setResults([]);
             } else {
                 setResults(response.results as DiscoveryMatch[]);
+                setLowRelevanceResults((response.lowRelevanceResults as DiscoveryMatch[]) ?? []);
                 setSingleTokenResultCount(response.singleTokenResultCount);
                 if (response.truncated && response.totalCount) {
                     setTruncatedInfo({ truncated: true, totalCount: response.totalCount });
@@ -244,16 +289,18 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
             {/* Search card — just the search tool */}
             <div className={`bg-white rounded-3xl p-5 md:p-6 shadow-sm border border-stone-200 transition-all ${hasResults && !demoActive ? 'md:static sticky top-16 z-30 rounded-b-xl md:rounded-3xl shadow-md md:shadow-sm' : ''
                 }`}>
-                <form onSubmit={handleSearch} className={hasResults ? 'flex gap-2 items-center md:block md:space-y-4' : 'space-y-3'}>
-                    <div className="relative flex-1">
+                <form onSubmit={handleSearch} className={hasResults ? 'flex gap-2 items-stretch md:block md:space-y-4' : 'space-y-3'}>
+                    <div className="relative flex-1 min-w-0">
                         <label htmlFor="search" className="sr-only">{t('common.search')}</label>
+                        {/* text-base (16px) in EVERY state: below 16px, iOS Safari auto-
+                            zooms on focus, which was making the field impossible to type
+                            in on mobile after a search. */}
                         <input
                             type="text"
                             id="search"
-
                             placeholder={t('search.placeholder')}
-                            className={`w-full border border-stone-200 focus:border-teal-400 focus:ring-4 focus:ring-teal-100 transition-all outline-none text-stone-900 placeholder:text-stone-500 font-medium bg-stone-50 ${hasResults
-                                ? 'px-4 py-3 pr-10 rounded-xl text-sm md:px-5 md:py-4 md:pr-12 md:rounded-2xl md:text-base'
+                            className={`w-full border border-stone-200 focus:border-teal-400 focus:ring-4 focus:ring-teal-100 transition-all outline-none text-stone-900 placeholder:text-stone-500 font-medium bg-stone-50 text-base ${hasResults
+                                ? 'px-4 py-3 pr-10 rounded-xl md:px-5 md:py-4 md:pr-12 md:rounded-2xl'
                                 : 'px-4 py-3.5 pr-12 rounded-2xl'
                                 }`}
                             value={query}
@@ -263,7 +310,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                             <button
                                 type="button"
                                 onClick={handleClear}
-                                className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-600 transition-colors p-1"
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-600 transition-colors p-1"
                                 aria-label={t('search.clear')}
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -273,16 +320,30 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                             </button>
                         )}
                     </div>
+                    {/* After results, mobile uses a compact magnifier so the input stays
+                        wide (the long labeled button used to squeeze it to a strip);
+                        desktop and the initial state keep the full labeled button. */}
                     <button
                         type="submit"
-
                         disabled={loading}
-                        className={`bg-teal-200 text-teal-900 font-semibold shadow-sm hover:bg-teal-300 hover:shadow-md transition-all disabled:opacity-70 transform active:scale-[0.98] ${hasResults
-                            ? 'px-4 py-3 rounded-xl text-sm md:w-full md:py-4 md:px-6 md:rounded-2xl md:text-lg'
+                        aria-label={hasResults ? t('search.button') : undefined}
+                        className={`bg-teal-200 text-teal-900 font-semibold shadow-sm hover:bg-teal-300 hover:shadow-md transition-all disabled:opacity-70 transform active:scale-[0.98] flex items-center justify-center ${hasResults
+                            ? 'flex-none w-12 rounded-xl md:w-full md:py-4 md:px-6 md:rounded-2xl md:text-lg'
                             : 'w-full py-3.5 px-6 rounded-2xl text-base'
                             }`}
                     >
-                        {loading ? t('search.searching') : t('search.button')}
+                        {hasResults ? (
+                            <>
+                                <span className="md:hidden" aria-hidden="true">
+                                    {loading ? (
+                                        <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
+                                    ) : (
+                                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" strokeLinecap="round" /></svg>
+                                    )}
+                                </span>
+                                <span className="hidden md:inline">{loading ? t('search.searching') : t('search.button')}</span>
+                            </>
+                        ) : (loading ? t('search.searching') : t('search.button'))}
                     </button>
                 </form>
 
@@ -422,10 +483,82 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                                 showMetadata={showCardMetadata}
                                 href={profileHref}
                                 onClick={handleCardClick}
-                                wrapContact={demoActive}
+                                query={query}
                             />
                         );
                     })}
+
+                    {/* Weak tier — fuzzy / partial / accent-variant name matches, lazy-
+                        loaded on expand (the duplicate engine's ~3s cost is paid only here,
+                        not on every search). Auto-opens when there are no strong results so
+                        a rescuer never concludes "not here" without the recall net. Keyed by
+                        query so it remounts (and re-applies defaultOpen) per search. Hidden
+                        during the walkthrough and on validation errors. */}
+                    {!demoActive && !validationError && query.trim().length >= 2 && (() => {
+                        // Combine the eager demoted partial matches (lowRelevanceResults)
+                        // with the lazy fuzzy name matches (weakResults), deduped. Fuzzy is
+                        // fetched on expand, excluding what's already shown (strong + partials).
+                        const strongIds = results.map(r => r.adopter.id);
+                        const shownIds = new Set([...strongIds, ...lowRelevanceResults.map(r => r.adopter.id)]);
+                        const combined = [
+                            ...lowRelevanceResults,
+                            ...((weakResults ?? []).filter(r => !shownIds.has(r.adopter.id))),
+                        ];
+                        const isAuthenticated = !!session?.user;
+                        const renderCard = (res: DiscoveryMatch) => {
+                            const qParam = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : '';
+                            const profileHref = `/adopter/${res.adopter.id}${qParam}`;
+                            return (
+                                <AdopterResultCard
+                                    key={res.adopter.id}
+                                    match={res}
+                                    isAuthenticated={isAuthenticated}
+                                    showMetadata={showCardMetadata}
+                                    href={profileHref}
+                                    onClick={(e) => { if (!isAuthenticated) { e.preventDefault(); openLogin(profileHref); } }}
+                                    query={query}
+                                />
+                            );
+                        };
+                        return (
+                            // Lightweight, muted disclosure — a secondary "broaden the
+                            // search" affordance, deliberately quieter than the result
+                            // cards so it doesn't compete with the real matches.
+                            <details
+                                key={query.trim()}
+                                className="group mt-3 border-t border-stone-100 pt-3"
+                                open={results.length === 0}
+                                onToggle={(e) => { if (e.currentTarget.open) loadWeakMatches(query, [...shownIds]); }}
+                            >
+                                <summary className="flex flex-wrap items-center gap-x-2 gap-y-0.5 cursor-pointer list-none select-none rounded text-sm text-stone-500 hover:text-stone-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300">
+                                    <svg className="w-3.5 h-3.5 flex-shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                    </svg>
+                                    <span className="font-medium">{t('search.more_matches_title')}</span>
+                                    {combined.length > 0 && (
+                                        <span className="text-[11px] font-semibold bg-stone-100 text-stone-500 px-1.5 py-0.5 rounded-full">{combined.length}</span>
+                                    )}
+                                    <span className="text-xs text-stone-400">{t('search.more_matches_subtitle')}</span>
+                                </summary>
+                                <div className="mt-3 space-y-3">
+                                    {combined.length > 0 && combined.map(renderCard)}
+                                    {weakLoading && (
+                                        <div className="py-4 flex items-center justify-center gap-2 text-stone-400 text-sm">
+                                            <svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" />
+                                                <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                                            </svg>
+                                            {t('search.more_matches_loading')}
+                                        </div>
+                                    )}
+                                    {!weakLoading && weakResults !== null && combined.length === 0 && (
+                                        <div className="py-4 text-center text-stone-400 text-sm">{t('search.more_matches_empty')}</div>
+                                    )}
+                                </div>
+                            </details>
+                        );
+                    })()}
+
                     {/* End-of-results "none match" CTA — appears under the last card so the
                         natural decision moment (user finished reading) has a one-tap exit
                         without scrolling back to the small top-of-list chip. Empty-state

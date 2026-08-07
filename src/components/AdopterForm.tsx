@@ -2,7 +2,7 @@
 
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { saveAdopter, saveImage, findAdopters, appendToExistingAdopter } from "@/app/actions";
+import { saveAdopter, saveImage, findFormDuplicates, appendToExistingAdopter } from "@/app/actions";
 import { buildMatchChips, hasStrongMatch, type MatchChip } from "@/lib/matchChips";
 import DuplicatePeek from "@/components/DuplicatePeek";
 import StrongMatchStrip from "@/components/StrongMatchStrip";
@@ -77,6 +77,11 @@ interface AdopterFormProps {
      * when gating is off or the viewer is privileged.
      */
     onMaskedNameClick?: () => void;
+    /** Visibility verdict for the profile header pill — mirror of the search card's
+     *  Público/Protegido badge. Computed by the parent from the SAME piiAccess
+     *  masking signal. Null (default) = no pill (new/edit form, or a privileged
+     *  viewer who can see the contact). Only rendered in the read (non-editing) view. */
+    visibilityBadge?: 'public' | 'protected' | null;
 }
 
 function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
@@ -101,7 +106,7 @@ function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
     );
 }
 
-export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick }: AdopterFormProps) {
+export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -368,6 +373,22 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         return parts.join(' ').trim();
     }, [data.name, data.contactInfo]);
 
+    // Structured input for the duplicate engine (findFormDuplicates). Pulling
+    // phone/email/social from the STRUCTURED contactEntries — not the free-text
+    // blob — is what lets phone-suffix normalization fire (e.g. "1165851333"
+    // matching a stored "+5491165851333"). The blob path frequently omitted the
+    // phone entirely, so detection rode on the name alone. v2.26.5.
+    const getDuplicateInput = useCallback(() => {
+        const pick = (t: ContactEntryType) =>
+            contactEntries.filter(e => e.type === t).map(e => e.value.trim()).filter(Boolean);
+        return {
+            name: data.name.trim(),
+            phones: pick('phone'),
+            emails: pick('email'),
+            socials: pick('social'),
+        };
+    }, [data.name, contactEntries]);
+
     // "Continuar con este perfil" — open the confirmation modal first so the
     // user knows their in-progress data will be merged into the existing record.
     // The actual append fires only from confirmMerge() below.
@@ -430,12 +451,9 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             duplicateDebounceRef.current = null;
             setDuplicateSearching(true);
             try {
-                const response = await findAdopters(
-                    { raw: query || data.name.trim() },
-                    { mode: 'discovery', enrich: true, minRelevance: 15 },
-                );
+                const response = await findFormDuplicates(getDuplicateInput(), { minRelevance: 15 });
                 const confident = (response.results as DiscoveryMatch[]);
-                if (response.validationError || !confident.length) {
+                if (!confident.length) {
                     setDuplicateResults(null);
                 } else {
                     setDuplicateResults(confident.slice(0, MAX_DUPLICATE_CARD_RESULTS));
@@ -449,7 +467,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         return () => {
             if (duplicateDebounceRef.current) clearTimeout(duplicateDebounceRef.current);
         };
-    }, [isNew, data.name, data.contactInfo, getDuplicateSearchQuery, normalizeDetectionQuery]);
+    }, [isNew, data.name, data.contactInfo, getDuplicateSearchQuery, getDuplicateInput, normalizeDetectionQuery]);
 
     // Perform the actual save (used after "Create new anyway" or when no duplicates)
     const performActualSave = useCallback(async () => {
@@ -613,10 +631,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                 && currentNorm === initialDetectedQuery.current;
             if (!queryUnchanged && query.length >= MIN_NAME_LENGTH_FOR_SEARCH) {
                 try {
-                    const response = await findAdopters(
-                        { raw: query },
-                        { mode: 'discovery', enrich: true, minRelevance: 15 },
-                    );
+                    const response = await findFormDuplicates(getDuplicateInput(), { minRelevance: 15 });
                     const confident = response.results as DiscoveryMatch[];
                     // Gate: only fire the modal for STRONG matches the user hasn't already
                     // dismissed from the strong strip. Weak-only result sets save silently
@@ -624,7 +639,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                     const strongUndismissed = confident.filter(m =>
                         hasStrongMatch(m.matchValues) && !dismissedStrongIds.has(m.adopter.id),
                     );
-                    if (!response.validationError && strongUndismissed.length > 0) {
+                    if (strongUndismissed.length > 0) {
                         setSaveDuplicateModal({ matches: strongUndismissed });
                         return;
                     }
@@ -823,7 +838,9 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                             placeholder={t('adopter.placeholder_name_aliases')}
                                             autoFocus
                                         />
-                                    ) : (() => {
+                                    ) : (
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        {(() => {
                                         const displayName = !isNew && initialData ? initialData.name : t('adopter.title_new');
                                         // Initial-only tokens (1-char words separated by whitespace) are
                                         // the visual signature of `partialRevealName` — when present the
@@ -841,23 +858,56 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                     onClick={onMaskedNameClick}
                                                     aria-label={t('adopter.pii_masked_name_aria') || displayName}
                                                     title={t('adopter.pii_masked_name_title') || ''}
-                                                    className="text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate text-left hover:underline underline-offset-4 decoration-teal-400 transition-colors cursor-pointer"
+                                                    className="min-w-0 text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate text-left hover:underline underline-offset-4 decoration-teal-400 transition-colors cursor-pointer"
                                                 >
                                                     {displayName}
                                                 </button>
                                             );
                                         }
                                         return (
-                                            <h1 className="text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate">
+                                            <h1 className="min-w-0 text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate">
                                                 {displayName}
                                             </h1>
                                         );
-                                    })()}
+                                        })()}
+                                        {/* Visibility pill — INLINE with the name, mirroring the search
+                                            card (Nielsen #4). 'protected' = viewer can't see the contact. */}
+                                        {visibilityBadge && (
+                                            visibilityBadge === 'public' ? (
+                                                <span
+                                                    className="flex-none inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded"
+                                                    style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }}
+                                                    title={t('search.public_title')}
+                                                >
+                                                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                                        <path d="M2.5 12S6 5.5 12 5.5s9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" />
+                                                        <circle cx="12" cy="12" r="3" />
+                                                    </svg>
+                                                    {t('search.public_label')}
+                                                </span>
+                                            ) : (
+                                                <span
+                                                    className="flex-none inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-stone-100 text-stone-500"
+                                                    title={t('search.protected_title')}
+                                                >
+                                                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                                        <rect x="3.5" y="11" width="17" height="10" rx="2" />
+                                                        <path d="M7.5 11V7.5a4.5 4.5 0 0 1 9 0V11" />
+                                                    </svg>
+                                                    {t('search.protected_label')}
+                                                </span>
+                                            )
+                                        )}
+                                      </div>
+                                    )}
                                 </div>
                                 {/* Actions (right-aligned inline) */}
                                 <div className="flex items-center justify-end gap-2 flex-shrink-0">
                                     {isEditing ? (
-                                        <>
+                                        // Desktop: inline Cancel/Save in the header. On mobile these
+                                        // are hidden so the name input gets the full row width; the
+                                        // sticky bottom bar (below, md:hidden) carries the actions there.
+                                        <div className="hidden md:flex items-center gap-2">
                                             <button
                                                 type="button"
                                                 onClick={handleCancel}
@@ -873,7 +923,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                             >
                                                 {loading ? t('common.loading') : t('common.save')}
                                             </button>
-                                        </>
+                                        </div>
                                     ) : (
                                         <>
                                             {canEdit && (
@@ -976,6 +1026,22 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                     )}
                                 </div>
                             </div>
+                            {/* Verdict — the rating is the single most important at-a-glance
+                                signal on a vetting tool, so it's promoted (md, with label) to its
+                                own prominent row right under the name, not buried in the meta row. */}
+                            {!isNew && avgRating !== null && avgRating !== undefined && (
+                                <div className="mt-2">
+                                    <div
+                                        role="button"
+                                        tabIndex={0}
+                                        data-testid="rating-badge"
+                                        onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
+                                        className="inline-block cursor-pointer hover:shadow-md transition-shadow rounded-full"
+                                    >
+                                        <RatingBadge rating={avgRating} size="md" label="short" />
+                                    </div>
+                                </div>
+                            )}
                             {/* Metadata row */}
                             {!isNew && (
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-xs">
@@ -1011,18 +1077,6 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                             {getSourceIcon(initialData.sourceUrl, 'w-3 h-3')}
                                             <span>{t('adopter.view_source') || 'Source'}</span>
                                         </a>
-                                    )}
-                                    {/* Rating badge — colored pill for severity visibility */}
-                                    {avgRating !== null && avgRating !== undefined && (
-                                        <div
-                                            role="button"
-                                            tabIndex={0}
-                                            data-testid="rating-badge"
-                                            onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
-                                            className="cursor-pointer hover:shadow-md transition-shadow"
-                                        >
-                                            <RatingBadge rating={avgRating} size="sm" />
-                                        </div>
                                     )}
                                 </div>
                             )}
@@ -1095,6 +1149,10 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                     currentUser={currentUser}
                                     onMaskedClick={onMaskedContactClick}
                                     adopterIsPublic={!!initialData.isPublic}
+                                    // The header pill already carries the "público" signal in the
+                                    // read view, so suppress the now-duplicate eye line here. The
+                                    // owner-only "solo visible para vos" (padlock) line is untouched.
+                                    hidePublicMicrocopy={!isEditing && visibilityBadge === 'public'}
                                 />
                             );
                         })()}
@@ -1133,6 +1191,45 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                             )
                         )}
                     </div>
+
+                    {/* Mobile-only sticky action bar (edit mode). Keeps Cancelar/Guardar
+                        reachable at any scroll and lets the name input use the full row
+                        width up top (the header buttons are hidden on mobile). Inside the
+                        <form> so the submit still works; no `adopter-form-submit` testid
+                        here — that stays on the single desktop header button. */}
+                    {isEditing && (
+                        <div
+                            className="md:hidden fixed inset-x-0 bottom-0 z-40 flex gap-3 px-4 py-3"
+                            style={{
+                                background: 'var(--surface-card)',
+                                borderTop: '1px solid var(--border-default)',
+                                paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
+                            }}
+                        >
+                            <button
+                                type="button"
+                                onClick={handleCancel}
+                                className="px-5 py-2.5 text-sm font-semibold rounded-xl transition-colors"
+                                style={{ color: 'var(--btn-primary-bg)' }}
+                            >
+                                {t('common.cancel')}
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="flex-1 px-5 py-2.5 text-sm font-semibold rounded-xl transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                                style={{
+                                    background: 'var(--btn-primary-bg)',
+                                    color: 'var(--btn-primary-text)',
+                                    boxShadow: '0 8px 16px -4px var(--btn-primary-shadow)',
+                                }}
+                            >
+                                {loading ? t('common.loading') : t('common.save')}
+                            </button>
+                        </div>
+                    )}
+                    {/* Spacer so the sticky bar doesn't cover the last field on mobile. */}
+                    {isEditing && <div className="md:hidden h-24" aria-hidden="true" />}
 
                 </div>
             </form>
