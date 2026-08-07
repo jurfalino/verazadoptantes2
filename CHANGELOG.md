@@ -2,12 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.17] - 2026-08-07
+
+### Fixed — revert the "Protegido" badge color change (it was already themed)
+
+- v2.27.16 also swapped the "Protegido" badge from `bg-stone-100`/`text-stone-500` to `--surface-muted`/`--text-muted`, assuming those stone classes weren't theme-safe. They **are** remapped in `globals.css`, so the swap was unnecessary and made the chip a heavier gray that no longer balanced the light-sky "Público" pill. Reverted to the (themed) stone on both the card and the profile. The sticky-bar theming from 2.27.16 stands — that was the real fix (`bg-white/95` isn't remapped; `/90`,`/80`,`/20` are).
+
 ## [2.27.16] - 2026-08-07
 
-### Fixed — theme the mobile edit bar & the "Protegido" badge (were hard-coded colors)
+### Fixed — theme the mobile edit sticky bar & the "Protegido" badge
 
-- The v2.27.15 mobile edit **sticky bar** used literal `bg-white/95` + `bg-teal-700`, which render raw in the Azul Noche (dark) theme — a white bar with the wrong accent. It now uses the app's themed tokens (`--surface-card`, `--border-default`, `--btn-primary-*`), matching how the modals are themed, so it adapts to both themes.
-- Same fix for the **"Protegido" badge** (search card + profile): the neutral chip used literal `bg-stone-100 text-stone-500`; it now uses `--surface-muted` / `--text-muted` so it's theme-safe and identical on both surfaces.
+- The v2.27.15 mobile edit **sticky bar** used literal `bg-white/95`, which renders raw in the Azul Noche (dark) theme. It now uses the app's themed tokens (`--surface-card`, `--border-default`, `--btn-primary-*`), matching how the modals are themed.
+- Also swapped the "Protegido" badge to `--surface-muted`/`--text-muted` (reverted in 2.27.17 — see above).
 
 ## [2.27.15] - 2026-08-07
 

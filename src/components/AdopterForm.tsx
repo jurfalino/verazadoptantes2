@@ -887,8 +887,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                 </span>
                                             ) : (
                                                 <span
-                                                    className="flex-none inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded"
-                                                    style={{ background: 'var(--surface-muted)', color: 'var(--text-muted)' }}
+                                                    className="flex-none inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-stone-100 text-stone-500"
                                                     title={t('search.protected_title')}
                                                 >
                                                     <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
