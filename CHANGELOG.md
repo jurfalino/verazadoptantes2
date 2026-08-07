@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.18] - 2026-08-07
+
+### Changed — search card visibility badge shows its label on mobile too
+
+- The "Público"/"Protegido" badge on search result cards hid its text below `sm` (icon-only on mobile), which left just an eye/padlock icon that's easy to misread. The label now shows at every breakpoint, so the badge always reads as words + icon. (The profile badge already showed its label.)
+
 ## [2.27.17] - 2026-08-07
 
 ### Fixed — revert the "Protegido" badge color change (it was already themed)

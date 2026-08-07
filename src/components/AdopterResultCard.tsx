@@ -182,8 +182,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                                     <path d="M2.5 12S6 5.5 12 5.5s9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" />
                                     <circle cx="12" cy="12" r="3" />
                                 </svg>
-                                {/* Mobile: icon-only (keeps room for the name); ≥sm: icon + label. */}
-                                <span className="hidden sm:inline">{t('search.public_label')}</span>
+                                {t('search.public_label')}
                             </span>
                         ) : res.contactProtected ? (
                             <span
@@ -194,7 +193,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                                     <rect x="3.5" y="11" width="17" height="10" rx="2" />
                                     <path d="M7.5 11V7.5a4.5 4.5 0 0 1 9 0V11" />
                                 </svg>
-                                <span className="hidden sm:inline">{t('search.protected_label')}</span>
+                                {t('search.protected_label')}
                             </span>
                         ) : null}
                     </div>
