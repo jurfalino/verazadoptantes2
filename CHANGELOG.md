@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.16] - 2026-08-07
+
+### Fixed — theme the mobile edit bar & the "Protegido" badge (were hard-coded colors)
+
+- The v2.27.15 mobile edit **sticky bar** used literal `bg-white/95` + `bg-teal-700`, which render raw in the Azul Noche (dark) theme — a white bar with the wrong accent. It now uses the app's themed tokens (`--surface-card`, `--border-default`, `--btn-primary-*`), matching how the modals are themed, so it adapts to both themes.
+- Same fix for the **"Protegido" badge** (search card + profile): the neutral chip used literal `bg-stone-100 text-stone-500`; it now uses `--surface-muted` / `--text-muted` so it's theme-safe and identical on both surfaces.
+
 ## [2.27.15] - 2026-08-07
 
 ### Changed — profile header: rating promoted, visibility inline with the name, usable mobile edit

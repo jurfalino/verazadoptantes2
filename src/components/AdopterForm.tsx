@@ -887,7 +887,8 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                 </span>
                                             ) : (
                                                 <span
-                                                    className="flex-none inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-stone-100 text-stone-500"
+                                                    className="flex-none inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded"
+                                                    style={{ background: 'var(--surface-muted)', color: 'var(--text-muted)' }}
                                                     title={t('search.protected_title')}
                                                 >
                                                     <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -1199,20 +1200,30 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                         here — that stays on the single desktop header button. */}
                     {isEditing && (
                         <div
-                            className="md:hidden fixed inset-x-0 bottom-0 z-40 flex gap-3 border-t border-stone-200 bg-white/95 px-4 py-3 backdrop-blur"
-                            style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
+                            className="md:hidden fixed inset-x-0 bottom-0 z-40 flex gap-3 px-4 py-3"
+                            style={{
+                                background: 'var(--surface-card)',
+                                borderTop: '1px solid var(--border-default)',
+                                paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
+                            }}
                         >
                             <button
                                 type="button"
                                 onClick={handleCancel}
-                                className="px-5 py-2.5 text-sm font-semibold text-teal-700 rounded-xl hover:bg-teal-50 transition-colors"
+                                className="px-5 py-2.5 text-sm font-semibold rounded-xl transition-colors"
+                                style={{ color: 'var(--btn-primary-bg)' }}
                             >
                                 {t('common.cancel')}
                             </button>
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="flex-1 px-5 py-2.5 text-sm font-semibold text-white bg-teal-700 rounded-xl hover:bg-teal-600 focus:ring-4 focus:ring-teal-200 disabled:opacity-70 disabled:cursor-not-allowed transition-all shadow-lg shadow-teal-700/30"
+                                className="flex-1 px-5 py-2.5 text-sm font-semibold rounded-xl transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                                style={{
+                                    background: 'var(--btn-primary-bg)',
+                                    color: 'var(--btn-primary-text)',
+                                    boxShadow: '0 8px 16px -4px var(--btn-primary-shadow)',
+                                }}
                             >
                                 {loading ? t('common.loading') : t('common.save')}
                             </button>
