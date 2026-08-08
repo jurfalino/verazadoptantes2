@@ -698,20 +698,20 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             )}
 
             <form onSubmit={handleSave} className="p-5">
-                {/* Mobile-only action bar (edit mode), pinned to the TOP — not the bottom —
-                    so the on-screen keyboard (which always rises from the bottom) can never
-                    cover it. `fixed top-0` (escapes the card's overflow-hidden since there's
-                    no transform ancestor); a spacer below reserves its height. Desktop keeps
-                    the inline header buttons. No `adopter-form-submit` testid here — that
-                    stays on the single desktop header button. */}
+                {/* Mobile-only action bar (edit mode), pinned to the top so the on-screen
+                    keyboard (which always rises from the bottom) can never cover it. Sits
+                    at `top-16` — directly BELOW the global sticky app nav (h-16, z-50 in
+                    layout.tsx) — so it isn't hidden behind it. `fixed` escapes the card's
+                    overflow-hidden (no transform ancestor). A spacer below reserves its
+                    height. Desktop keeps the inline header buttons. No `adopter-form-submit`
+                    testid here — that stays on the single desktop header button. */}
                 {isEditing && (
                     <>
                         <div
-                            className="md:hidden fixed inset-x-0 top-0 z-40 flex items-center justify-between gap-3 px-4 py-3"
+                            className="md:hidden fixed inset-x-0 top-16 z-40 flex items-center justify-between gap-3 px-4 py-3"
                             style={{
                                 background: 'var(--surface-card)',
                                 borderBottom: '1px solid var(--border-default)',
-                                paddingTop: 'calc(0.75rem + env(safe-area-inset-top))',
                             }}
                         >
                             <button
@@ -735,8 +735,8 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                 {loading ? t('common.loading') : t('common.save')}
                             </button>
                         </div>
-                        {/* Reserve the fixed bar's height at the top of the form. */}
-                        <div className="md:hidden" style={{ height: 'calc(3rem + env(safe-area-inset-top))' }} aria-hidden="true" />
+                        {/* Reserve the fixed bar's height so the form's first field clears it. */}
+                        <div className="md:hidden h-14" aria-hidden="true" />
                     </>
                 )}
                 {isNew && isEditing && (

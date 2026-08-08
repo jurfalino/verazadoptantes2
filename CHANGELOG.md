@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.20] - 2026-08-08
+
+### Fixed — the mobile edit action bar was hidden behind the global nav
+
+- v2.27.19 pinned the edit bar to `top-0`, but the global app nav is `sticky top-0 z-50` (h-16), so the bar rendered *behind* it and was invisible. The bar now sits at **`top-16`** — directly below the nav — and drops the redundant safe-area-top padding (the nav owns the very top). Cancelar/Guardar are visible again, above the keyboard.
+
 ## [2.27.19] - 2026-08-08
 
 ### Fixed — mobile edit action bar moved to the TOP (keyboard no longer covers it)
