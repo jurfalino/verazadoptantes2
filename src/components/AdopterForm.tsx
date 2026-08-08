@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
+import { useSetEditActions } from "@/context/EditActionsContext";
 import { useRouter, useSearchParams } from "next/navigation";
 import { saveAdopter, saveImage, findFormDuplicates, appendToExistingAdopter } from "@/app/actions";
 import { buildMatchChips, hasStrongMatch, type MatchChip } from "@/lib/matchChips";
@@ -118,6 +119,13 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     const id = adopterId || initialData?.id || '';
     const [showReportMenu, setShowReportMenu] = useState(false);
     const flaggingRef = useRef<AdopterFlaggingHandle>(null);
+    // Publishes edit state to the global nav so, on MOBILE, it shows Cancelar/Guardar
+    // (keyboard-proof) while editing an existing profile. `formRef` lets the nav's
+    // Save trigger the same submit path as the desktop button (incl. HTML validation
+    // on the required name). `handleCancelRef` keeps the published handler stable.
+    const setEditActions = useSetEditActions();
+    const formRef = useRef<HTMLFormElement>(null);
+    const handleCancelRef = useRef<() => void>(() => {});
 
     // Auth check — single source of truth for both click-to-edit and save
     const isAuthenticated = useMemo(
@@ -667,6 +675,26 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             setIsEditing(false);
         }
     };
+    handleCancelRef.current = handleCancel;
+
+    // Publish/clear the nav's mobile edit actions. Register on entering edit mode
+    // (existing profiles only — the new-adopter flow keeps its own creation UX);
+    // re-runs on `loading` to keep the Save button's state fresh WITHOUT unregistering
+    // (no mid-save flicker). Clears on exit and on unmount (navigating away mid-edit
+    // must not leave Cancelar/Guardar stuck in the nav on the next page).
+    useEffect(() => {
+        if (isEditing && !isNew) {
+            setEditActions({
+                active: true,
+                loading,
+                onCancel: () => handleCancelRef.current(),
+                onSave: () => formRef.current?.requestSubmit(),
+            });
+        } else {
+            setEditActions(null);
+        }
+    }, [isEditing, isNew, loading, setEditActions]);
+    useEffect(() => () => setEditActions(null), [setEditActions]);
 
     return (
         <div className={`bg-white rounded-2xl shadow-sm border border-stone-200 relative group transition-all duration-300 overflow-hidden ${isEditing ? 'ring-4 ring-teal-50/50' : ''}`}>
@@ -697,48 +725,10 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                 />
             )}
 
-            <form onSubmit={handleSave} className="p-5">
-                {/* Mobile-only action bar (edit mode), pinned to the top so the on-screen
-                    keyboard (which always rises from the bottom) can never cover it. Sits
-                    at `top-16` — directly BELOW the global sticky app nav (h-16, z-50 in
-                    layout.tsx) — so it isn't hidden behind it. `fixed` escapes the card's
-                    overflow-hidden (no transform ancestor). A spacer below reserves its
-                    height. Desktop keeps the inline header buttons. No `adopter-form-submit`
-                    testid here — that stays on the single desktop header button. */}
-                {isEditing && (
-                    <>
-                        <div
-                            className="md:hidden fixed inset-x-0 top-16 z-40 flex items-center justify-between gap-3 px-4 py-3"
-                            style={{
-                                background: 'var(--surface-card)',
-                                borderBottom: '1px solid var(--border-default)',
-                            }}
-                        >
-                            <button
-                                type="button"
-                                onClick={handleCancel}
-                                className="px-4 py-2 text-sm font-semibold rounded-xl transition-colors"
-                                style={{ color: 'var(--btn-primary-bg)' }}
-                            >
-                                {t('common.cancel')}
-                            </button>
-                            <button
-                                type="submit"
-                                disabled={loading}
-                                className="px-5 py-2 text-sm font-semibold rounded-xl transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-                                style={{
-                                    background: 'var(--btn-primary-bg)',
-                                    color: 'var(--btn-primary-text)',
-                                    boxShadow: '0 8px 16px -4px var(--btn-primary-shadow)',
-                                }}
-                            >
-                                {loading ? t('common.loading') : t('common.save')}
-                            </button>
-                        </div>
-                        {/* Reserve the fixed bar's height so the form's first field clears it. */}
-                        <div className="md:hidden h-14" aria-hidden="true" />
-                    </>
-                )}
+            <form ref={formRef} onSubmit={handleSave} className="p-5">
+                {/* On MOBILE, edit-mode Cancelar/Guardar live in the global nav (see
+                    NavBar + EditActionsContext) — keyboard-proof, no extra bar. Desktop
+                    keeps its inline header buttons below. */}
                 {isNew && isEditing && (
                     <>
                         <DuplicatePeek

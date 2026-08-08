@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.21] - 2026-08-08
+
+### Changed — mobile profile edit actions now live in the app nav ("best" option)
+
+- Instead of a separate action bar (which kept fighting the keyboard / the nav), the **global app nav swaps its logo/menu for Cancelar / Guardar on mobile** while editing an existing profile. The nav is already sticky at `top-0` and keyboard-proof, so Save is always reachable with **no extra bar, no stacking, no keyboard overlap**. Desktop is unchanged (keeps its inline header buttons + their e2e testid).
+- Implemented with a small client `EditActionsContext`: `AdopterForm` publishes `{active, loading, onCancel, onSave}` while editing (existing profiles only); a client `NavBar` in `layout.tsx` reads it and renders the mobile actions (`md:hidden`). Split state/dispatch contexts + refs for handlers avoid re-render loops; the nav clears on edit-exit and on unmount. Inert defaults keep every other page's nav byte-identical.
+
 ## [2.27.20] - 2026-08-08
 
 ### Fixed — the mobile edit action bar was hidden behind the global nav
