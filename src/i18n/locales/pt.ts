@@ -619,6 +619,8 @@ export const pt = {
         dup_hint_flag_success: 'Marcado para revisão pelos administradores',
         dup_hint_flag_failed: 'Não foi possível marcar',
         ce_undo: 'Desfazer',
+        field_required: 'Não pode ficar vazio',
+        tap_outside_to_save: 'Toque fora para salvar',
         ce_visibility_microcopy: 'Dados protegidos: outros só podem confirmá-los se já os conhecerem.',
         ce_visibility_profile_public: 'Este perfil é público e visível para todos.',
         public_profile_source_notice: 'Este perfil inclui informações que estavam publicadas em redes sociais ou outras fontes abertas quando foi registrado. O BuenAdoptante as centraliza para que a comunidade resgatista possa verificar adotantes.',

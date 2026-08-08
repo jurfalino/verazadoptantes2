@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.28.0] - 2026-08-08
+
+### Changed — unified profile editing: every simple field is now direct-edit + autosave
+
+- On an existing profile, **name and family are now edited inline** like the contact entries already are: tap the field → edit in place → it **autosaves on blur** → a 5-second **Deshacer** to revert (the same undo the app uses for deleting a contact). The batch **"edit mode"** (the teal ring, the whole-card pencil, and the global Save/Cancel) is **gone** for existing profiles — so is the mobile action-bar problem, because there's no global Save left to place. One consistent model (Nielsen #4): the name behaves exactly like the phone number below it.
+- New reusable `InlineEditField` (display → editing-with-✕ → saved-with-undo; required-field guard); per-field saves reuse `saveAdopter`. The **photo** (modal) and **adoptions** (guided wizard) stay as-is — different tasks, different affordances.
+- The **new-adopter creation** flow is unchanged (still a batch "create"); its mobile Save now correctly comes from the app nav (fixes a gap where 2.27.21 left the new form with no mobile Save). Desktop create keeps its inline Save + e2e testid. Updated the "Edit adopter name" e2e for the inline flow.
+
 ## [2.27.21] - 2026-08-08
 
 ### Changed — mobile profile edit actions now live in the app nav ("best" option)
