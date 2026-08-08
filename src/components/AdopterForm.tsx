@@ -698,6 +698,47 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             )}
 
             <form onSubmit={handleSave} className="p-5">
+                {/* Mobile-only action bar (edit mode), pinned to the TOP — not the bottom —
+                    so the on-screen keyboard (which always rises from the bottom) can never
+                    cover it. `fixed top-0` (escapes the card's overflow-hidden since there's
+                    no transform ancestor); a spacer below reserves its height. Desktop keeps
+                    the inline header buttons. No `adopter-form-submit` testid here — that
+                    stays on the single desktop header button. */}
+                {isEditing && (
+                    <>
+                        <div
+                            className="md:hidden fixed inset-x-0 top-0 z-40 flex items-center justify-between gap-3 px-4 py-3"
+                            style={{
+                                background: 'var(--surface-card)',
+                                borderBottom: '1px solid var(--border-default)',
+                                paddingTop: 'calc(0.75rem + env(safe-area-inset-top))',
+                            }}
+                        >
+                            <button
+                                type="button"
+                                onClick={handleCancel}
+                                className="px-4 py-2 text-sm font-semibold rounded-xl transition-colors"
+                                style={{ color: 'var(--btn-primary-bg)' }}
+                            >
+                                {t('common.cancel')}
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="px-5 py-2 text-sm font-semibold rounded-xl transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                                style={{
+                                    background: 'var(--btn-primary-bg)',
+                                    color: 'var(--btn-primary-text)',
+                                    boxShadow: '0 8px 16px -4px var(--btn-primary-shadow)',
+                                }}
+                            >
+                                {loading ? t('common.loading') : t('common.save')}
+                            </button>
+                        </div>
+                        {/* Reserve the fixed bar's height at the top of the form. */}
+                        <div className="md:hidden" style={{ height: 'calc(3rem + env(safe-area-inset-top))' }} aria-hidden="true" />
+                    </>
+                )}
                 {isNew && isEditing && (
                     <>
                         <DuplicatePeek
@@ -1192,44 +1233,6 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                         )}
                     </div>
 
-                    {/* Mobile-only sticky action bar (edit mode). Keeps Cancelar/Guardar
-                        reachable at any scroll and lets the name input use the full row
-                        width up top (the header buttons are hidden on mobile). Inside the
-                        <form> so the submit still works; no `adopter-form-submit` testid
-                        here — that stays on the single desktop header button. */}
-                    {isEditing && (
-                        <div
-                            className="md:hidden fixed inset-x-0 bottom-0 z-40 flex gap-3 px-4 py-3"
-                            style={{
-                                background: 'var(--surface-card)',
-                                borderTop: '1px solid var(--border-default)',
-                                paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
-                            }}
-                        >
-                            <button
-                                type="button"
-                                onClick={handleCancel}
-                                className="px-5 py-2.5 text-sm font-semibold rounded-xl transition-colors"
-                                style={{ color: 'var(--btn-primary-bg)' }}
-                            >
-                                {t('common.cancel')}
-                            </button>
-                            <button
-                                type="submit"
-                                disabled={loading}
-                                className="flex-1 px-5 py-2.5 text-sm font-semibold rounded-xl transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-                                style={{
-                                    background: 'var(--btn-primary-bg)',
-                                    color: 'var(--btn-primary-text)',
-                                    boxShadow: '0 8px 16px -4px var(--btn-primary-shadow)',
-                                }}
-                            >
-                                {loading ? t('common.loading') : t('common.save')}
-                            </button>
-                        </div>
-                    )}
-                    {/* Spacer so the sticky bar doesn't cover the last field on mobile. */}
-                    {isEditing && <div className="md:hidden h-24" aria-hidden="true" />}
 
                 </div>
             </form>

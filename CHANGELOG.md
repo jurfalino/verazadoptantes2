@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.27.19] - 2026-08-08
+
+### Fixed — mobile edit action bar moved to the TOP (keyboard no longer covers it)
+
+- The v2.27.15 sticky **bottom** action bar sat under the on-screen keyboard on mobile — the user couldn't see Cancelar/Guardar without dismissing the keyboard or scrolling. The bar is now pinned to the **top** (`fixed top-0`, safe-area aware), where the keyboard (which always rises from the bottom) can never reach it — the standard native edit-screen pattern. A spacer reserves its height; desktop keeps the inline header buttons. (`fixed` is used rather than `sticky` because the profile card has `overflow-hidden`, which breaks `sticky`.)
+
 ## [2.27.18] - 2026-08-07
 
 ### Changed — search card visibility badge shows its label on mobile too
