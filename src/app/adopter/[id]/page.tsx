@@ -45,19 +45,20 @@ export default async function AdopterPage({
         await replaySearchMatchGrants({ adopterId: id, query: q, viewerEmail: currentUser });
     }
 
-    // Batch 1b: Config (degrade-on-failure — page renders with defaults if these throw,
-    // since a config-fetch error is not an auth error and should not bounce the user).
-    let adoptionConfig: any = null;
-    try {
-        adoptionConfig = await getAdoptionConfig();
-    } catch (e) {
-        if ((e as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw e;
+    // Batch 1b: Config — kicked off here but NOT awaited until the final wave, so
+    // it overlaps the expensive Batch-2 data wave instead of adding its own
+    // sequential round-trip (this used to be a standalone `await`, one full D1
+    // trip on the critical path). getAdoptionConfig has an internal fallback
+    // (returns hardcoded defaults, never throws); the `.catch` is a guard that
+    // keeps the page rendering if that contract ever changes.
+    const adoptionConfigPromise = getAdoptionConfig().catch((e) => {
         logger.warn('adopter page: config fetch failed, using defaults', {
             adopterId: id,
             userEmail: currentUser,
             error: e instanceof Error ? e.message : String(e),
         });
-    }
+        return undefined;
+    });
 
     // Batch 2: All data queries in parallel (including availableAnimals to avoid a 3rd sequential await)
     let adopter = null;
@@ -120,38 +121,48 @@ export default async function AdopterPage({
     for (const h of history) { if (h.changedBy) editorEmails.push(h.changedBy); }
     for (const a of adoptions) { if (a.addedBy) editorEmails.push(a.addedBy); }
     for (const img of images) { if (img.addedBy) editorEmails.push(img.addedBy); }
-    const userNameMap = await resolveUserNames(editorEmails);
-
+    // Final wave — run concurrently instead of serially. Name resolution
+    // (depends on history/adoptions/images) and org-mate/attribution (depends on
+    // adopter.addedBy) are mutually independent, and config was already resolving
+    // in the background; collecting all three here collapses what used to be two
+    // extra sequential D1 waves into one.
+    //
     // v2.18.11: org-mate awareness — extends audit-log visibility from
-    // admin/moderator (v2.18.8) to also include org-mates of the owner.
-    // And computes the creator-attribution chip's payload (name + org)
-    // for any privileged viewer.
+    // admin/moderator (v2.18.8) to also include org-mates of the owner. And
+    // computes the creator-attribution chip's payload (name + org) for any
+    // privileged viewer.
     let isOrgMateOfOwner = false;
     let attribution: { creatorName: string; orgName: string | null; orgSlug: string | null } | null = null;
-    if (!isNew && adopter?.addedBy) {
-        try {
-            const { isOrgMate, pickAttributionOrg } = await import('@/lib/orgMembership');
-            const [mate, org, creatorName] = await Promise.all([
-                isOrgMate(currentUser, adopter.addedBy),
-                pickAttributionOrg(adopter.addedBy, currentUser),
-                (async () => {
-                    const map = await resolveUserNames([adopter.addedBy as string]);
-                    return map[adopter.addedBy as string] ?? (adopter.addedBy as string).split('@')[0];
-                })(),
-            ]);
-            isOrgMateOfOwner = mate;
-            attribution = {
-                creatorName,
-                orgName: org?.name ?? null,
-                orgSlug: org?.slug ?? null,
-            };
-        } catch (e) {
-            logger.warn('adopter page: org-mate/attribution resolution failed', {
-                adopterId: id, viewer: currentUser,
-                error: e instanceof Error ? e.message : String(e),
-            });
-        }
-    }
+    const [userNameMap, adoptionConfig] = await Promise.all([
+        resolveUserNames(editorEmails),
+        adoptionConfigPromise,
+        (async () => {
+            if (!isNew && adopter?.addedBy) {
+                try {
+                    const { isOrgMate, pickAttributionOrg } = await import('@/lib/orgMembership');
+                    const [mate, org, creatorName] = await Promise.all([
+                        isOrgMate(currentUser, adopter.addedBy),
+                        pickAttributionOrg(adopter.addedBy, currentUser),
+                        (async () => {
+                            const map = await resolveUserNames([adopter.addedBy as string]);
+                            return map[adopter.addedBy as string] ?? (adopter.addedBy as string).split('@')[0];
+                        })(),
+                    ]);
+                    isOrgMateOfOwner = mate;
+                    attribution = {
+                        creatorName,
+                        orgName: org?.name ?? null,
+                        orgSlug: org?.slug ?? null,
+                    };
+                } catch (e) {
+                    logger.warn('adopter page: org-mate/attribution resolution failed', {
+                        adopterId: id, viewer: currentUser,
+                        error: e instanceof Error ? e.message : String(e),
+                    });
+                }
+            }
+        })(),
+    ]);
     const canViewAudit = isModeratorOrAdmin || isOrgMateOfOwner;
 
     return (

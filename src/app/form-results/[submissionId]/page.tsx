@@ -3,7 +3,7 @@ export const runtime = 'edge';
 import { redirect } from 'next/navigation';
 import { getDb } from '@/lib/db';
 import { notifications, adopters, formSubmissions, adopterImages } from '@/db/schema';
-import { eq, or, and, inArray, isNull } from 'drizzle-orm';
+import { eq, or, and, isNull } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { getUser } from '@/app/actions/_db';
 import { markNotificationRead } from '@/app/actions/notifications';
@@ -48,42 +48,24 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
     const db = await getDb();
     if (!db) return <ErrorState message="Database unavailable" />;
 
-    // Auth: verify the current user owns this submission (is the rescuer)
-    const ownerCheck = await db.select({ userId: formSubmissions.userId })
-        .from(formSubmissions)
-        .where(eq(formSubmissions.id, submissionId))
-        .get();
-    if (!ownerCheck) return <ErrorState message="Formulario no encontrado" />;
-    if (ownerCheck.userId !== currentUser) return <ErrorState message="No tenés permiso para ver este formulario" />;
-
-    // Load notification for match metadata + mark as read (single query)
-    let metadata: NotificationMetadata = { submissionId, matchCount: 0 };
-    try {
-        const notif = await db.select({ id: notifications.id, metadata: notifications.metadata })
+    // The ownership check, the match-metadata notification, and the full
+    // submission are mutually independent — fetch them in one parallel wave
+    // instead of three sequential D1 round-trips. (The extra two reads for a
+    // non-owner are harmless: we still gate on ownerCheck before rendering.)
+    const [ownerCheck, notif, submission] = await Promise.all([
+        db.select({ userId: formSubmissions.userId })
+            .from(formSubmissions)
+            .where(eq(formSubmissions.id, submissionId))
+            .get(),
+        db.select({ id: notifications.id, metadata: notifications.metadata })
             .from(notifications)
             .where(and(
                 eq(notifications.userId, currentUser),
                 sql`json_extract(${notifications.metadata}, '$.submissionId') = ${submissionId}`,
             ))
-            .get();
-        if (notif) {
-            // Best-effort mark as read
-            try { await markNotificationRead(notif.id, currentUser); } catch { /* non-blocking */ }
-            if (notif.metadata) {
-                const parsed = JSON.parse(notif.metadata);
-                metadata = {
-                    submissionId,
-                    matchCount: parsed.matchCount ?? 0,
-                    submittedData: parsed.submittedData,
-                    matchedAdopters: parsed.matchedAdopters,
-                };
-            }
-        }
-    } catch { /* keep defaults */ }
-
-    // Load the full submission
-    const submission = await db
-        .select({
+            .get()
+            .catch(() => null),
+        db.select({
             id: formSubmissions.id,
             selfieUrl: formSubmissions.selfieUrl,
             species: formSubmissions.species,
@@ -98,32 +80,62 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
             answersJson: formSubmissions.answersJson,
             createdAt: formSubmissions.createdAt,
         })
-        .from(formSubmissions)
-        .where(eq(formSubmissions.id, submissionId))
-        .get();
+            .from(formSubmissions)
+            .where(eq(formSubmissions.id, submissionId))
+            .get(),
+    ]);
+
+    // Auth: verify the current user owns this submission (is the rescuer)
+    if (!ownerCheck) return <ErrorState message="Formulario no encontrado" />;
+    if (ownerCheck.userId !== currentUser) return <ErrorState message="No tenés permiso para ver este formulario" />;
+
+    // Notification → mark as read (best-effort) + parse match metadata
+    let metadata: NotificationMetadata = { submissionId, matchCount: 0 };
+    if (notif) {
+        try { await markNotificationRead(notif.id, currentUser); } catch { /* non-blocking */ }
+        if (notif.metadata) {
+            try {
+                const parsed = JSON.parse(notif.metadata);
+                metadata = {
+                    submissionId,
+                    matchCount: parsed.matchCount ?? 0,
+                    submittedData: parsed.submittedData,
+                    matchedAdopters: parsed.matchedAdopters,
+                };
+            } catch { /* keep defaults */ }
+        }
+    }
 
     // Fetch matched adopter profiles (with addressInfo and profile image for comparison)
     let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; addressInfo: string | null; status: string | null; profileImageUrl: string | null }> = [];
     if (metadata.matchedAdopters && metadata.matchedAdopters.length > 0) {
         const adopterIds = metadata.matchedAdopters.map(a => a.id);
+        // Profiles and their images are independent — fetch both in one wave.
+        // Both use the OR-of-eq id filter, never `inArray`: D1 does NOT expand
+        // array params in IN clauses (it binds `IN (?)` with a single value and
+        // silently returns wrong results — see docs/D1_COMPATIBILITY.md). The
+        // images query previously used `inArray(...)`, so matched-adopter avatars
+        // could come back missing/wrong on D1; this switches it to the same safe
+        // pattern the profile query already uses.
         // Filter soft-deleted (merged-duplicate) adopters at read time so even legacy
         // notifications whose stored matchedAdopters contains since-deleted IDs render correctly.
-        const rows = await db
-            .select({ id: adopters.id, name: adopters.name, contactInfo: adopters.contactInfo, addressInfo: adopters.addressInfo, status: adopters.status })
-            .from(adopters)
-            .where(and(or(...adopterIds.map(id => eq(adopters.id, id)))!, isNull(adopters.deletedAt)))
-            .all();
-        // Profile images: one per adopter (prefer isProfilePicture=1)
-        const imageRows = await db
-            .select({ adopterId: adopterImages.adopterId, url: adopterImages.url, isProfilePicture: adopterImages.isProfilePicture })
-            .from(adopterImages)
+        const [rows, imageRows] = await Promise.all([
+            db
+                .select({ id: adopters.id, name: adopters.name, contactInfo: adopters.contactInfo, addressInfo: adopters.addressInfo, status: adopters.status })
+                .from(adopters)
+                .where(and(or(...adopterIds.map(id => eq(adopters.id, id)))!, isNull(adopters.deletedAt)))
+                .all(),
             // v2.26.1: profile-level OR the flagged profile picture (an activity/
             // observation photo can be the avatar); isProfilePicture DESC wins.
-            .where(and(
-                inArray(adopterImages.adopterId, adopterIds),
-                or(isNull(adopterImages.adoptionId), eq(adopterImages.isProfilePicture, 1)),
-            ))
-            .orderBy(sql`${adopterImages.isProfilePicture} DESC`, sql`${adopterImages.uploadedAt} DESC`);
+            db
+                .select({ adopterId: adopterImages.adopterId, url: adopterImages.url, isProfilePicture: adopterImages.isProfilePicture })
+                .from(adopterImages)
+                .where(and(
+                    or(...adopterIds.map(id => eq(adopterImages.adopterId, id)))!,
+                    or(isNull(adopterImages.adoptionId), eq(adopterImages.isProfilePicture, 1)),
+                ))
+                .orderBy(sql`${adopterImages.isProfilePicture} DESC`, sql`${adopterImages.uploadedAt} DESC`),
+        ]);
         const imageByAdopter = new Map<string, string>();
         for (const row of imageRows) {
             if (!imageByAdopter.has(row.adopterId)) imageByAdopter.set(row.adopterId, row.url);

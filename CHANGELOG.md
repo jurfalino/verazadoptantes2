@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.29.0] - 2026-08-09
+
+### Added — instant loading skeletons so tapping a card never feels broken
+
+- Opening an adopter profile (and the form-results, contract-results, and admin screens) is a server-rendered page with a data waterfall. Because none of these routes had a loading boundary, tapping a card left the **previous screen frozen on-screen with no feedback** for the whole fetch — on a slow connection or cold start that was 6+ seconds of "is the app broken?". Added route-level `loading.tsx` skeletons (`/adopter/[id]`, `/form-results`, `/contract-results`, and one at `/admin` covering every admin sub-page) that paint **instantly** on navigation and mirror each page's real layout (avatar, name, rating, contact, activity), so the tap responds immediately and real content fills in over the skeleton. Theme-safe (themed base classes only, no `dark:` variants).
+
+### Changed — collapse the profile & form-results data waterfalls
+
+- **`/adopter/[id]`**: `getAdoptionConfig` was a standalone `await` on the critical path; it now kicks off up-front and is collected in the final wave, and name-resolution + org-mate/attribution (previously two sequential steps) now run concurrently. Net: two fewer sequential D1 round-trips before the page can render.
+- **`/form-results/[submissionId]`**: the ownership check, the notification lookup, and the full submission fetch were three sequential round-trips — now one parallel wave; the two matched-profile queries (rows + images) likewise run in parallel.
+
+### Fixed — matched-adopter avatars on form results (D1 `inArray` bug)
+
+- The form-results matched-profile **image** query used `inArray(adopterImages.adopterId, adopterIds)`. D1 does not expand array params in `IN` clauses (it binds `IN (?)` with a single value and silently returns wrong results — see `docs/D1_COMPATIBILITY.md`), so avatars for matched adopters could come back missing or wrong. Switched to the same `or(...map(eq))` pattern the sibling profile query already uses.
+
 ## [2.28.1] - 2026-08-09
 
 ### Fixed — inline field edit now matches the contact entries exactly (explicit Save/Cancel, not autosave)
