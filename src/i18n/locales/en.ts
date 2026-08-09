@@ -612,8 +612,6 @@ export const en = {
         dup_hint_flag_success: 'Flagged for admin review',
         dup_hint_flag_failed: 'Could not flag',
         ce_undo: 'Undo',
-        field_required: "Can't be empty",
-        tap_outside_to_save: 'Tap outside to save',
         ce_visibility_microcopy: 'Protected data: others can only confirm it if they already know it.',
         ce_visibility_profile_public: 'This profile is public and visible to everyone.',
         public_profile_source_notice: 'This profile includes information that was publicly available on social media or other open sources when it was added. BuenAdoptante centralizes it so the rescue community can vet adopters.',

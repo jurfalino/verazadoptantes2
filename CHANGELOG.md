@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.28.1] - 2026-08-09
+
+### Fixed — inline field edit now matches the contact entries exactly (explicit Save/Cancel, not autosave)
+
+- v2.28.0 shipped the inline name/family edit as **autosave-on-blur + a 5-second undo** — but the contact entries (the pattern we were unifying *to*) actually use a **pencil → inline input with explicit Cancelar (✕) / Guardar (✓) buttons** (Enter saves, Escape cancels; the 5-s undo is delete-only). So it was inconsistent in the opposite direction. `InlineEditField` now mirrors the contact-entry edit row 1:1 — same buttons, icons, keys, and styling. Every editable field on the profile — name, family, and each contact — now looks and behaves identically.
+
 ## [2.28.0] - 2026-08-08
 
 ### Changed — unified profile editing: every simple field is now direct-edit + autosave

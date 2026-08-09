@@ -917,6 +917,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                 canEdit={canEdit}
                                                 required
                                                 ariaLabel={displayName}
+                                                editButtonTestId="name-edit-btn"
                                                 onSave={(next) => saveField('name', next)}
                                                 rootClassName="min-w-0 flex-1"
                                                 inputClassName="w-full text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight bg-transparent border-b-2 border-teal-300 focus:border-teal-500 outline-none py-0.5 placeholder-stone-500 transition-all"

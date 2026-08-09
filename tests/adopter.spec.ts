@@ -210,11 +210,13 @@ test.describe('Adopter Profile', () => {
         // Confirms the auth session is loaded (edit affordances gate on it)
         await expect(page.getByRole('button', { name: /Notifications|Notificaciones/i })).toBeVisible({ timeout: 30000 });
 
-        // v2.28 direct-edit: tap the name → an inline input appears (no batch "edit mode",
-        // no Save button). Retry if a login modal opens instead (session race).
+        // v2.28 direct-edit (same pattern as the contact entries): the pencil opens an
+        // inline input with Cancelar/Guardar buttons. Retry if a login modal opens
+        // instead (session race).
+        const editBtn = page.getByTestId('name-edit-btn');
         const nameInput = page.locator('input[type="text"]').first();
         for (let attempt = 0; attempt < 3; attempt++) {
-            await heading.click();
+            await editBtn.click();
             const inputVisible = await nameInput.isVisible({ timeout: 3000 }).catch(() => false);
             if (inputVisible) break;
             await page.keyboard.press('Escape');
@@ -226,8 +228,8 @@ test.describe('Adopter Profile', () => {
         await nameInput.fill(`Persona Editada ${Date.now()}`);
         await expect(nameInput).toHaveValue(/Persona Editada/);
 
-        // Escape cancels the inline edit → the name reverts to the original h1
-        await page.keyboard.press('Escape');
+        // Cancelar discards the edit → the name reverts to the original h1
+        await page.getByRole('button', { name: /cancel|cancelar/i }).first().click();
         await expect(page.getByRole('heading', { name: TEST_NAMES.NUEVA })).toBeVisible({ timeout: 30000 });
     });
 
