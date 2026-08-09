@@ -199,22 +199,22 @@ test.describe('Adopter Profile', () => {
     });
 
     test('Edit adopter name', async ({ page }) => {
-        const newName = `Persona Editada ${Date.now()}`;
-
         await page.goto(`/adopter/${TEST_ADOPTERS.NUEVA}`);
         await dismissCountryBanner(page);
         await page.waitForLoadState('networkidle');
 
-        // Wait for profile to load — name appears as h1
-        await expect(page.getByRole('heading', { name: TEST_NAMES.NUEVA })).toBeVisible({ timeout: 30000 });
+        // Name renders as an h1
+        const heading = page.getByRole('heading', { name: TEST_NAMES.NUEVA });
+        await expect(heading).toBeVisible({ timeout: 30000 });
 
-        // Wait for the Notifications button (confirms auth session is loaded)
+        // Confirms the auth session is loaded (edit affordances gate on it)
         await expect(page.getByRole('button', { name: /Notifications|Notificaciones/i })).toBeVisible({ timeout: 30000 });
 
-        // Try clicking edit — retry if login modal opens instead of edit mode (session race)
-        const editBtn = page.getByRole('button', { name: /Click to Edit|Clic para Editar/i }).first();
-        const nameInput = page.locator('input[type="text"][required]').first();
-
+        // v2.28 direct-edit (same pattern as the contact entries): the pencil opens an
+        // inline input with Cancelar/Guardar buttons. Retry if a login modal opens
+        // instead (session race).
+        const editBtn = page.getByTestId('name-edit-btn');
+        const nameInput = page.locator('input[type="text"]').first();
         for (let attempt = 0; attempt < 3; attempt++) {
             await editBtn.click();
             const inputVisible = await nameInput.isVisible({ timeout: 3000 }).catch(() => false);
@@ -223,20 +223,13 @@ test.describe('Adopter Profile', () => {
             await page.waitForTimeout(2000);
         }
 
-        // Verify edit mode activated — name input is visible and editable
+        // Inline input is visible and editable
         await expect(nameInput).toBeVisible({ timeout: 30000 });
-        await nameInput.clear();
-        await nameInput.fill(newName);
-        await expect(nameInput).toHaveValue(newName);
+        await nameInput.fill(`Persona Editada ${Date.now()}`);
+        await expect(nameInput).toHaveValue(/Persona Editada/);
 
-        // Verify Save and Cancel buttons are visible
-        const saveBtn = page.getByRole('button', { name: /save|guardar/i });
-        const cancelBtn = page.getByRole('button', { name: /cancel|cancelar/i });
-        await expect(saveBtn).toBeVisible({ timeout: 30000 });
-        await expect(cancelBtn).toBeVisible({ timeout: 30000 });
-
-        // Cancel to exit edit mode and verify name reverts to original
-        await cancelBtn.click();
+        // Cancelar discards the edit → the name reverts to the original h1
+        await page.getByRole('button', { name: /cancel|cancelar/i }).first().click();
         await expect(page.getByRole('heading', { name: TEST_NAMES.NUEVA })).toBeVisible({ timeout: 30000 });
     });
 

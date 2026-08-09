@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
+import { useSetEditActions } from "@/context/EditActionsContext";
+import { InlineEditField } from "@/components/InlineEditField";
 import { useRouter, useSearchParams } from "next/navigation";
 import { saveAdopter, saveImage, findFormDuplicates, appendToExistingAdopter } from "@/app/actions";
 import { buildMatchChips, hasStrongMatch, type MatchChip } from "@/lib/matchChips";
@@ -118,6 +120,13 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     const id = adopterId || initialData?.id || '';
     const [showReportMenu, setShowReportMenu] = useState(false);
     const flaggingRef = useRef<AdopterFlaggingHandle>(null);
+    // Publishes edit state to the global nav so, on MOBILE, it shows Cancelar/Guardar
+    // (keyboard-proof) while editing an existing profile. `formRef` lets the nav's
+    // Save trigger the same submit path as the desktop button (incl. HTML validation
+    // on the required name). `handleCancelRef` keeps the published handler stable.
+    const setEditActions = useSetEditActions();
+    const formRef = useRef<HTMLFormElement>(null);
+    const handleCancelRef = useRef<() => void>(() => {});
 
     // Auth check — single source of truth for both click-to-edit and save
     const isAuthenticated = useMemo(
@@ -285,20 +294,6 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     const MIN_NAME_LENGTH_FOR_SEARCH = 2;
     const MAX_DUPLICATE_CARD_RESULTS = 5;
 
-    // Auth-gated click-to-edit: clicking any view field enables editing.
-    // Also mirrors the server-side `canEditAdopterRecord` gate — a viewer
-    // who can't save shouldn't be able to enter edit mode in the first place,
-    // otherwise hitting Save without any changes produces a confusing
-    // permission error.
-    const handleClickToEdit = () => {
-        if (isEditing) return;
-        if (!isAuthenticated) {
-            openLogin();
-            return;
-        }
-        if (!canEdit) return;
-        setIsEditing(true);
-    };
 
     // Status uses numeric values 1-5 only
     const defaultStatus = intent === 'report' ? '1' : '5';
@@ -667,6 +662,53 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             setIsEditing(false);
         }
     };
+    handleCancelRef.current = handleCancel;
+
+    // Latest `data` for inline per-field saves (avoids stale closures if two fields
+    // are edited in quick succession).
+    const dataRef = useRef(data);
+    dataRef.current = data;
+
+    // Per-field autosave for the unified direct-edit fields (name, family) on an
+    // EXISTING profile — reuses saveAdopter with the existing-record payload (contact
+    // is saved separately). Optimistic; reverts + toasts on failure so nothing is
+    // silently lost. The returned boolean drives InlineEditField's 5-second undo.
+    const saveField = useCallback(async (field: 'name' | 'familyMembers', next: string): Promise<boolean> => {
+        const prevData = dataRef.current;
+        const updated = { ...prevData, [field]: next };
+        setData(updated);
+        dataRef.current = updated;
+        const res = await saveAdopter({ ...updated, contactEntries: undefined, contactInfo: undefined }).catch(() => null);
+        if (!res?.success) {
+            setData(prevData);
+            dataRef.current = prevData;
+            const errorId = await reportClientError({
+                message: 'saveAdopter (inline field) failed',
+                source: 'AdopterForm.saveField',
+                extra: { field, adopterId: prevData.id || null },
+            });
+            toast.error(t('toast.save_error_title'), t('errors.save_adopter_failed'), errorId);
+            return false;
+        }
+        return true;
+    }, [toast, t]);
+
+    // Publish/clear the nav's mobile actions — now ONLY for the new-adopter creation
+    // flow (existing profiles edit each field inline, with no global Save). Re-runs on
+    // `loading` without unregistering (no mid-save flicker); clears on exit + unmount.
+    useEffect(() => {
+        if (isEditing && isNew) {
+            setEditActions({
+                active: true,
+                loading,
+                onCancel: () => handleCancelRef.current(),
+                onSave: () => formRef.current?.requestSubmit(),
+            });
+        } else {
+            setEditActions(null);
+        }
+    }, [isEditing, isNew, loading, setEditActions]);
+    useEffect(() => () => setEditActions(null), [setEditActions]);
 
     return (
         <div className={`bg-white rounded-2xl shadow-sm border border-stone-200 relative group transition-all duration-300 overflow-hidden ${isEditing ? 'ring-4 ring-teal-50/50' : ''}`}>
@@ -697,7 +739,10 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                 />
             )}
 
-            <form onSubmit={handleSave} className="p-5">
+            <form ref={formRef} onSubmit={handleSave} className="p-5">
+                {/* On MOBILE, edit-mode Cancelar/Guardar live in the global nav (see
+                    NavBar + EditActionsContext) — keyboard-proof, no extra bar. Desktop
+                    keeps its inline header buttons below. */}
                 {isNew && isEditing && (
                     <>
                         <DuplicatePeek
@@ -864,10 +909,23 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                 </button>
                                             );
                                         }
+                                        // Unified direct-edit: tap the name → inline input → autosaves
+                                        // on blur → Deshacer. Display stays an <h1> (heading role, e2e).
                                         return (
-                                            <h1 className="min-w-0 text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate">
-                                                {displayName}
-                                            </h1>
+                                            <InlineEditField
+                                                value={data.name}
+                                                canEdit={canEdit}
+                                                required
+                                                ariaLabel={displayName}
+                                                editButtonTestId="name-edit-btn"
+                                                onSave={(next) => saveField('name', next)}
+                                                rootClassName="min-w-0 flex-1"
+                                                inputClassName="w-full text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight bg-transparent border-b-2 border-teal-300 focus:border-teal-500 outline-none py-0.5 placeholder-stone-500 transition-all"
+                                                placeholder={t('adopter.placeholder_name_aliases')}
+                                                displayRender={(v) => (
+                                                    <h1 className="text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate">{v}</h1>
+                                                )}
+                                            />
                                         );
                                         })()}
                                         {/* Visibility pill — INLINE with the name, mirroring the search
@@ -926,16 +984,8 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                         </div>
                                     ) : (
                                         <>
-                                            {canEdit && (
-                                                <button
-                                                    type="button"
-                                                    onClick={handleClickToEdit}
-                                                    className="flex items-center justify-center w-8 h-8 text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-lg transition-colors"
-                                                    title={t('common.edit') || 'Edit'}
-                                                >
-                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                                                </button>
-                                            )}
+                                            {/* No batch "edit" pencil anymore — each field on an existing
+                                                profile is directly editable inline (see InlineEditField). */}
                                             {/* Overflow menu */}
                                             {!isNew && initialData && (
                                                 <div className="relative">
@@ -1162,7 +1212,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                     {/* Family Members (Full Width) */}
                     <div className="md:col-span-2">
                         <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.family_members')}</h3>
-                        {isEditing ? (
+                        {isNew ? (
                             <textarea
                                 rows={2}
                                 className="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-y min-h-[60px]"
@@ -1171,65 +1221,22 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                 placeholder={t('adopter.placeholder_family')}
                             />
                         ) : (
-                            data.familyMembers ? (
-                                <div
-                                    className={`w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 font-medium leading-relaxed min-h-[60px] transition-colors ${canEdit ? 'cursor-pointer hover:border-teal-400' : 'cursor-default'}`}
-                                    style={{ overflowWrap: 'anywhere' }}
-                                    onClick={handleClickToEdit}
-                                    title={canEdit ? (t('common.edit') || 'Click to edit') : undefined}
-                                >
-                                    {renderTextWithLinks(data.familyMembers, { emptyLabel: t('audit.empty_val') })}
-                                </div>
-                            ) : (
-                                <div
-                                    className="text-stone-500 italic p-4 rounded-xl border border-dashed border-teal-200 bg-white cursor-pointer hover:border-teal-400 transition-colors"
-                                    onClick={handleClickToEdit}
-                                    title={t('common.edit') || 'Click to edit'}
-                                >
-                                    {t('adopter.no_family')}
-                                </div>
-                            )
+                            // Unified direct-edit (existing profile): tap → inline textarea →
+                            // autosaves on blur → Deshacer. Same model as the contact entries.
+                            <InlineEditField
+                                value={data.familyMembers}
+                                canEdit={canEdit}
+                                multiline
+                                onSave={(next) => saveField('familyMembers', next)}
+                                placeholder={t('adopter.placeholder_family')}
+                                emptyLabel={t('adopter.no_family')}
+                                displayRender={(v) => renderTextWithLinks(v, { emptyLabel: t('audit.empty_val') })}
+                                displayClassName={`w-full p-4 rounded-xl border bg-white text-teal-900 font-medium leading-relaxed min-h-[60px] transition-colors ${canEdit ? 'border-teal-200 hover:border-teal-400' : 'border-teal-200'}`}
+                                inputClassName="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-y min-h-[60px]"
+                            />
                         )}
                     </div>
 
-                    {/* Mobile-only sticky action bar (edit mode). Keeps Cancelar/Guardar
-                        reachable at any scroll and lets the name input use the full row
-                        width up top (the header buttons are hidden on mobile). Inside the
-                        <form> so the submit still works; no `adopter-form-submit` testid
-                        here — that stays on the single desktop header button. */}
-                    {isEditing && (
-                        <div
-                            className="md:hidden fixed inset-x-0 bottom-0 z-40 flex gap-3 px-4 py-3"
-                            style={{
-                                background: 'var(--surface-card)',
-                                borderTop: '1px solid var(--border-default)',
-                                paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
-                            }}
-                        >
-                            <button
-                                type="button"
-                                onClick={handleCancel}
-                                className="px-5 py-2.5 text-sm font-semibold rounded-xl transition-colors"
-                                style={{ color: 'var(--btn-primary-bg)' }}
-                            >
-                                {t('common.cancel')}
-                            </button>
-                            <button
-                                type="submit"
-                                disabled={loading}
-                                className="flex-1 px-5 py-2.5 text-sm font-semibold rounded-xl transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-                                style={{
-                                    background: 'var(--btn-primary-bg)',
-                                    color: 'var(--btn-primary-text)',
-                                    boxShadow: '0 8px 16px -4px var(--btn-primary-shadow)',
-                                }}
-                            >
-                                {loading ? t('common.loading') : t('common.save')}
-                            </button>
-                        </div>
-                    )}
-                    {/* Spacer so the sticky bar doesn't cover the last field on mobile. */}
-                    {isEditing && <div className="md:hidden h-24" aria-hidden="true" />}
 
                 </div>
             </form>

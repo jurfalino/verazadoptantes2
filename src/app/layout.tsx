@@ -5,8 +5,8 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { LanguageProvider } from "@/context/LanguageContext";
 import { ThemeProvider } from "@/context/ThemeContext";
-import { Logo } from "@/components/Logo";
-import UserMenu from "@/components/UserMenu";
+import { NavBar } from "@/components/NavBar";
+import { EditActionsProvider } from "@/context/EditActionsContext";
 import { SessionProvider } from 'next-auth/react';
 import { AuthProvider } from '@/context/AuthContext';
 import LoginModal from '@/components/LoginModal';
@@ -15,7 +15,6 @@ import ClientErrorReporter from '@/components/ClientErrorReporter';
 import InstallPrompt from '@/components/InstallPrompt';
 import Footer from '@/components/Footer';
 import { CountryConfirmBanner } from '@/components/CountryConfirmBanner';
-import NotificationBell from '@/components/NotificationBell';
 import ZarazIdentify from '@/components/ZarazIdentify';
 import ClarityScript from '@/components/ClarityScript';
 import { WebApplicationJsonLd, OrganizationJsonLd } from '@/components/JsonLd';
@@ -141,15 +140,10 @@ export default async function RootLayout({
               <ToastProvider>
                 <ClientErrorReporter />
                 <AuthProvider>
+                  <EditActionsProvider>
                   <div className="min-h-screen flex flex-col bg-stone-50">
                     <nav className="bg-white/80 border-b border-stone-200 sticky top-0 z-50 backdrop-blur-md">
-                      <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-                        <Logo />
-                        <div className="flex items-center gap-1 sm:gap-2">
-                          <NotificationBell />
-                          <UserMenu user={session?.user} isAdmin={(session?.user as { isAdmin?: boolean } | undefined)?.isAdmin} />
-                        </div>
-                      </div>
+                      <NavBar user={session?.user} isAdmin={(session?.user as { isAdmin?: boolean } | undefined)?.isAdmin} />
                     </nav>
                     <CountryConfirmBanner key={session?.user?.email || 'anon'} userEmail={session?.user?.email || null} />
                     <LoginModal />
@@ -158,6 +152,7 @@ export default async function RootLayout({
                     <Footer />
                   </div>
                   {chatEnabled && <ChatWidget />}
+                  </EditActionsProvider>
                 </AuthProvider>
               </ToastProvider>
             </ThemeProvider>

@@ -2,6 +2,39 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.28.1] - 2026-08-09
+
+### Fixed — inline field edit now matches the contact entries exactly (explicit Save/Cancel, not autosave)
+
+- v2.28.0 shipped the inline name/family edit as **autosave-on-blur + a 5-second undo** — but the contact entries (the pattern we were unifying *to*) actually use a **pencil → inline input with explicit Cancelar (✕) / Guardar (✓) buttons** (Enter saves, Escape cancels; the 5-s undo is delete-only). So it was inconsistent in the opposite direction. `InlineEditField` now mirrors the contact-entry edit row 1:1 — same buttons, icons, keys, and styling. Every editable field on the profile — name, family, and each contact — now looks and behaves identically.
+
+## [2.28.0] - 2026-08-08
+
+### Changed — unified profile editing: every simple field is now direct-edit + autosave
+
+- On an existing profile, **name and family are now edited inline** like the contact entries already are: tap the field → edit in place → it **autosaves on blur** → a 5-second **Deshacer** to revert (the same undo the app uses for deleting a contact). The batch **"edit mode"** (the teal ring, the whole-card pencil, and the global Save/Cancel) is **gone** for existing profiles — so is the mobile action-bar problem, because there's no global Save left to place. One consistent model (Nielsen #4): the name behaves exactly like the phone number below it.
+- New reusable `InlineEditField` (display → editing-with-✕ → saved-with-undo; required-field guard); per-field saves reuse `saveAdopter`. The **photo** (modal) and **adoptions** (guided wizard) stay as-is — different tasks, different affordances.
+- The **new-adopter creation** flow is unchanged (still a batch "create"); its mobile Save now correctly comes from the app nav (fixes a gap where 2.27.21 left the new form with no mobile Save). Desktop create keeps its inline Save + e2e testid. Updated the "Edit adopter name" e2e for the inline flow.
+
+## [2.27.21] - 2026-08-08
+
+### Changed — mobile profile edit actions now live in the app nav ("best" option)
+
+- Instead of a separate action bar (which kept fighting the keyboard / the nav), the **global app nav swaps its logo/menu for Cancelar / Guardar on mobile** while editing an existing profile. The nav is already sticky at `top-0` and keyboard-proof, so Save is always reachable with **no extra bar, no stacking, no keyboard overlap**. Desktop is unchanged (keeps its inline header buttons + their e2e testid).
+- Implemented with a small client `EditActionsContext`: `AdopterForm` publishes `{active, loading, onCancel, onSave}` while editing (existing profiles only); a client `NavBar` in `layout.tsx` reads it and renders the mobile actions (`md:hidden`). Split state/dispatch contexts + refs for handlers avoid re-render loops; the nav clears on edit-exit and on unmount. Inert defaults keep every other page's nav byte-identical.
+
+## [2.27.20] - 2026-08-08
+
+### Fixed — the mobile edit action bar was hidden behind the global nav
+
+- v2.27.19 pinned the edit bar to `top-0`, but the global app nav is `sticky top-0 z-50` (h-16), so the bar rendered *behind* it and was invisible. The bar now sits at **`top-16`** — directly below the nav — and drops the redundant safe-area-top padding (the nav owns the very top). Cancelar/Guardar are visible again, above the keyboard.
+
+## [2.27.19] - 2026-08-08
+
+### Fixed — mobile edit action bar moved to the TOP (keyboard no longer covers it)
+
+- The v2.27.15 sticky **bottom** action bar sat under the on-screen keyboard on mobile — the user couldn't see Cancelar/Guardar without dismissing the keyboard or scrolling. The bar is now pinned to the **top** (`fixed top-0`, safe-area aware), where the keyboard (which always rises from the bottom) can never reach it — the standard native edit-screen pattern. A spacer reserves its height; desktop keeps the inline header buttons. (`fixed` is used rather than `sticky` because the profile card has `overflow-hidden`, which breaks `sticky`.)
+
 ## [2.27.18] - 2026-08-07
 
 ### Changed — search card visibility badge shows its label on mobile too
