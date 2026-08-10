@@ -409,6 +409,7 @@ export const en = {
         public_title: 'Public record: contact details shown',
         protected_label: 'Protected',
         protected_unlocked_title: 'Protected — you have access',
+        protected_unlocked_label: 'Access granted',
         protected_title: 'Contact details are protected',
         protected_info: 'Protected info.',
         protected_match: 'Matched on {field} · protected',

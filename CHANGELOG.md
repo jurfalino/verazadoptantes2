@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.30.4] - 2026-08-10
+
+### Changed — teal "unlocked" visibility badge now reads "Acceso concedido"
+
+- The open-padlock teal badge (profile + search card) now labels as **"Acceso concedido" / "Access granted"** instead of "Protegido", so it reads as an affordance ("you can see the contact") rather than the same word as the locked state. New `search.protected_unlocked_label` key (es/en/pt). The closed-padlock/locked badge keeps "Protegido".
+
 ## [2.30.3] - 2026-08-10
 
 ### Changed — a manual PII access request now requires a reason

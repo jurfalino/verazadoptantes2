@@ -408,6 +408,7 @@ export const es = {
         public_title: 'Registro público: datos de contacto a la vista',
         protected_label: 'Protegido',
         protected_unlocked_title: 'Protegido — tenés acceso',
+        protected_unlocked_label: 'Acceso concedido',
         protected_title: 'Datos de contacto protegidos',
         protected_info: 'Información protegida.',
         protected_match: 'Coincide en {field} · dato protegido',

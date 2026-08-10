@@ -194,7 +194,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                                     <rect x="3.5" y="11" width="17" height="10" rx="2" />
                                     <path d="M7.5 11V7a4.5 4.5 0 0 1 8.5-2" />
                                 </svg>
-                                {t('search.protected_label')}
+                                {t('search.protected_unlocked_label')}
                             </span>
                         ) : res.visibilityBadge === 'protected-locked' ? (
                             <span
