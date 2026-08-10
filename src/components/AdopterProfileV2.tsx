@@ -7,7 +7,7 @@ import TransferOwnershipModal from '@/components/TransferOwnershipModal';
 import { AdopterForm } from '@/components/AdopterForm';
 import RequestPiiAccessModal from '@/components/RequestPiiAccessModal';
 import PiiAccessRequestPanel from '@/components/PiiAccessRequestPanel';
-import PiiAccessGrantsDisclosure from '@/components/PiiAccessGrantsDisclosure';
+import VisibilityBadgeModal from '@/components/VisibilityBadgeModal';
 import PiiVerifyPopover from '@/components/PiiVerifyPopover';
 import type { ContactEntryType } from '@/lib/contactEntries';
 import { CollapsibleSection } from '@/components/CollapsibleSection';
@@ -18,7 +18,7 @@ import VisitIntentCard from '@/components/VisitIntentCard';
 import { useLanguage } from '@/context/LanguageContext';
 import { saveImage, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from '@/app/actions';
 import { ImageGallery } from '@/components/ImageGallery';
-import { PublicProfileSourceNotice } from '@/components/PublicProfileSourceNotice';
+import { computeVisibilityBadge } from '@/domain/visibilityBadge';
 import { extractErrorId } from '@/lib/errorUtils';
 import { DisclaimerToast } from '@/components/DisclaimerToast';
 import { RatingBadge } from '@/components/RatingBadge';
@@ -77,6 +77,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     const [deleteLoading, setDeleteLoading] = useState(false);
     const [requestModalOpen, setRequestModalOpen] = useState(false);
     const [requestSubmitted, setRequestSubmitted] = useState(false);
+    // Visibility/access explanatory modal — opened by tapping the header badge.
+    const [visibilityModalOpen, setVisibilityModalOpen] = useState(false);
     // Verify/request popover state — set to the entryType the user clicked,
     // or 'open' for a generic (non-chip-anchored) trigger. Replaces the
     // always-visible banner; the explainer + verify input now live inside
@@ -141,11 +143,13 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     // (`masked`), so the two surfaces can't disagree: public record → 'public';
     // viewer sees masked (no access) → 'protected'; a privileged viewer who CAN
     // see the contact → null (no badge, matching the card).
-    const visibilityBadge: 'public' | 'protected' | null =
-        isNew ? null
-        : displayedAdopter?.isPublic ? 'public'
-        : effectivePiiContext?.masked ? 'protected'
-        : null;
+    const visibilityBadge = computeVisibilityBadge({
+        isNew,
+        isPublic: displayedAdopter?.isPublic,
+        gatingOn: effectivePiiContext?.gatingOn,
+        hasFullAccess: effectivePiiContext?.hasFullAccess,
+        masked: effectivePiiContext?.masked,
+    });
 
     // PII opt-in is offered to a masked viewer with no request already in flight.
     // v2.19.39: uses `effectivePiiContext` so the preview-as-stranger toggle
@@ -348,26 +352,10 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     </div>
                 )}
 
-                {/* v2.19.54: public-source provenance notice. Surfaces the WHY
-                    (source data was already public when ingested) so that the
-                    adopter — or any anonymous third-party who lands here from
-                    search — registers the platform's defensive rationale
-                    immediately, not buried below the data.
-
-                    v2.19.55: broadened from `isPublic` only to
-                    `isPublic || sourceUrl` — `isPublic` controls anonymous-
-                    viewer visibility (a separate concept), while `sourceUrl`
-                    is the actual provenance signal. A record imported from a
-                    public Instagram/FB post should carry the explainer
-                    regardless of whether the rescuer also toggled it
-                    anonymously-readable.
-
-                    Renders for ALL viewers; reads from `displayedAdopter` so
-                    it stays visible under preview-as-stranger. Not
-                    dismissible: defensive purpose requires persistence. */}
-                {!isNew && Boolean(displayedAdopter?.isPublic || displayedAdopter?.sourceUrl) && (
-                    <PublicProfileSourceNotice sourceUrl={displayedAdopter?.sourceUrl} />
-                )}
+                {/* v2.30: the public-source provenance disclaimer moved into the
+                    visibility badge modal (tap the "Público" badge). It's no longer
+                    an always-on banner — see VisibilityBadgeModal's public branch,
+                    which renders <PublicProfileSourceNotice> with the same copy. */}
 
                 {/* v39: pending-duplicate signal. Owner / admin gets the clickable
                     "Revisar" affordance straight to /my-adopters#pending-dedup
@@ -402,22 +390,14 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     )
                 )}
 
-                {/* PII access gating — approver panel + grants disclosure for
-                    privileged viewers. The masked-viewer unlock UI used to live
-                    here as a banner; it now opens as a per-field popover when a
-                    masked chip is clicked (see PiiVerifyPopover below + the
-                    onMaskedContactClick callback passed into AdopterForm). */}
-                {/* v2.19.38: hide privileged-only PII panels when previewing
-                    as a stranger — a real stranger wouldn't see either. */}
-                {!isNew && adopter && piiContext?.gatingOn && !previewAsStranger && (
-                    <>
-                        {piiContext.pendingRequests.length > 0 && (
-                            <PiiAccessRequestPanel requests={piiContext.pendingRequests} />
-                        )}
-                        {piiContext.privileged && (
-                            <PiiAccessGrantsDisclosure grants={piiContext.accessGrants} />
-                        )}
-                    </>
+                {/* PII access gating — pending-request approver panel stays here at
+                    record level: it's an actionable task that must be seen and
+                    resolved ASAP, not tucked behind the badge modal. The "who has
+                    access" grants disclosure moved INTO the visibility modal (tap
+                    the unlocked badge) — see VisibilityBadgeModal's privileged
+                    branch. v2.19.38: hidden while previewing as a stranger. */}
+                {!isNew && adopter && piiContext?.gatingOn && !previewAsStranger && piiContext.pendingRequests.length > 0 && (
+                    <PiiAccessRequestPanel requests={piiContext.pendingRequests} />
                 )}
 
                 {/* Creator attribution moved into AdopterForm's metadata row
@@ -447,6 +427,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     isOrgMateOfOwner={isOrgMateOfOwner && !previewAsStranger}
                     isPrivileged={!!effectivePiiContext?.privileged}
                     visibilityBadge={visibilityBadge}
+                    onBadgeClick={() => setVisibilityModalOpen(true)}
                     canEdit={!effectivePiiContext?.gatingOn || !!effectivePiiContext?.privileged}
                     onMaskedContactClick={
                         effectivePiiContext?.masked
@@ -773,6 +754,45 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                         open={requestModalOpen}
                         onClose={() => setRequestModalOpen(false)}
                         onRequested={() => setRequestSubmitted(true)}
+                    />
+                )}
+
+                {/* Visibility & access explanatory modal — opened by tapping the
+                    header badge. Content branches on the badge state (+ privilege).
+                    Only mounted when a badge is actually shown. */}
+                {!isNew && adopter && visibilityBadge && (
+                    <VisibilityBadgeModal
+                        open={visibilityModalOpen}
+                        onClose={() => setVisibilityModalOpen(false)}
+                        badge={visibilityBadge}
+                        sourceUrl={displayedAdopter?.sourceUrl}
+                        privileged={!!effectivePiiContext?.privileged}
+                        isOwner={isOwner}
+                        isAdmin={isAdmin}
+                        isOrgMateOfOwner={isOrgMateOfOwner}
+                        orgName={attribution?.orgName ?? null}
+                        accessGrants={effectivePiiContext?.accessGrants ?? { allContact: [], orgMates: [], searchMatch: [] }}
+                        requestPending={requestSubmitted || !!effectivePiiContext?.requestState.pending}
+                        requestCooldown={!!effectivePiiContext?.requestState.cooldownUntil}
+                        canRequest={piiOptInEligible}
+                        onVerify={effectivePiiContext?.masked ? () => setVerifyPopoverOpen('open') : undefined}
+                        onRequestAccess={
+                            piiOptInEligible
+                                ? () => {
+                                    // Mirror the verify-popover preview guard: a previewing
+                                    // owner filing a request to themselves is nonsense — toast
+                                    // the simulation instead of opening the real request modal.
+                                    if (previewAsStranger) {
+                                        toast.info(
+                                            t('adopter.preview_simulate_title'),
+                                            t('adopter.preview_request_explainer'),
+                                        );
+                                        return;
+                                    }
+                                    setRequestModalOpen(true);
+                                }
+                                : undefined
+                        }
                     />
                 )}
 

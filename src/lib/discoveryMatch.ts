@@ -15,6 +15,7 @@ import type { adopters } from '@/db/schema';
 import type { AdopterFlags } from '@/types/adopter';
 import type { DiscoveryMatch, MatchSnippet } from '@/app/actions/types';
 import { maskAdopterContact, renderName, type Visibility, type MaskContactOptions } from './piiAccess';
+import { computeVisibilityBadge } from '@/domain/visibilityBadge';
 
 type AdopterRow = typeof adopters.$inferSelect;
 
@@ -54,15 +55,29 @@ export function assembleDiscoveryMatch(
     // The viewer has no access to this contact exactly when we mask it. Compute once
     // so the "Protegido" badge can't drift from what's actually hidden.
     const contactProtected = !!(visibility && !visibility.nothingMasked && !maskOpts.adopterIsPublic);
+    // Mask computed once when protected — reused for the field-count check (badge)
+    // AND the data scrub below, so we never call maskAdopterContact twice.
+    const maskResult = contactProtected ? maskAdopterContact(adopter, visibility as Visibility, maskOpts) : null;
 
-    if (contactProtected) {
-        const masked = maskAdopterContact(adopter, visibility, maskOpts);
+    // Tri-state visibility badge via the shared domain resolver, so the search
+    // card mirrors the profile exactly. `visibility` undefined ⇒ gating off for
+    // this record ⇒ no badge (same as the profile). Keyed on the positive
+    // `nothingMasked` access signal + the maskable-field count, matching the
+    // profile's `computeVisibilityBadge` inputs.
+    const visibilityBadge = computeVisibilityBadge({
+        isPublic: maskOpts.adopterIsPublic,
+        gatingOn: !!visibility,
+        hasFullAccess: visibility?.nothingMasked,
+        masked: !!(maskResult && maskResult.maskedFieldCount > 0),
+    });
+
+    if (contactProtected && maskResult) {
         finalAdopter = {
             ...adopter,
             name: renderName(adopter.name, visibility, query, maskOpts),
-            contactInfo: masked.contactInfo,
-            contactEntries: masked.contactEntries,
-            addressInfo: masked.addressInfo,
+            contactInfo: maskResult.contactInfo,
+            contactEntries: maskResult.contactEntries,
+            addressInfo: maskResult.addressInfo,
             familyMembers: null, // PII — hidden from non-privileged viewers
         };
         if (snippet && (snippet.field === 'contact' || snippet.field === 'address' || snippet.field === 'adoption')) {
@@ -80,6 +95,7 @@ export function assembleDiscoveryMatch(
         adopter: finalAdopter,
         matchSnippet: snippet,
         contactProtected,
+        visibilityBadge,
         avgRating: enrichment.avgRating,
         thumbnail: enrichment.thumbnail,
         stats: enrichment.stats,

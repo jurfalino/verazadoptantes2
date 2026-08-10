@@ -11,8 +11,12 @@ import type { AdopterPiiContext } from '@/lib/piiAccess';
  * approved full-contact grant (each individually revocable) and shows the
  * search-match grants as an aggregate count — those aren't listed or revocable,
  * since the viewer can simply re-search to re-earn them (Resolution #2).
+ *
+ * `embedded` mode (v2.30): renders just the list — always open, no card wrapper
+ * or toggle — for hosting inside the visibility modal, which supplies its own
+ * "Quién tiene acceso" heading. Non-embedded keeps the standalone collapsible.
  */
-export default function PiiAccessGrantsDisclosure({ grants }: { grants: AdopterPiiContext['accessGrants'] }) {
+export default function PiiAccessGrantsDisclosure({ grants, embedded = false }: { grants: AdopterPiiContext['accessGrants']; embedded?: boolean }) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const [allContact, setAllContact] = useState(grants.allContact);
@@ -35,7 +39,7 @@ export default function PiiAccessGrantsDisclosure({ grants }: { grants: AdopterP
     // listed alongside the explicit `allContact` grants as another category
     // of "people who can see this record's PII".
     const totalCount = allContact.length + orgMates.length;
-    if (totalCount === 0 && searchMatch.length === 0) return null;
+    const isEmpty = totalCount === 0 && searchMatch.length === 0;
 
     async function revoke(grantId: string) {
         setBusyId(grantId);
@@ -54,6 +58,130 @@ export default function PiiAccessGrantsDisclosure({ grants }: { grants: AdopterP
         }
     }
 
+    // The list body — shared by the embedded (modal) and standalone renders.
+    const listContent = (
+        <div className="space-y-2">
+            {allContact.length > 0 && (
+                <ul className="space-y-1.5">
+                    {allContact.map(g => (
+                        <li key={g.grantId} className="flex items-center justify-between gap-3 text-sm">
+                            <span className="text-stone-700 truncate">{g.granteeName}</span>
+                            <button
+                                type="button"
+                                onClick={() => revoke(g.grantId)}
+                                disabled={busyId === g.grantId}
+                                className="shrink-0 text-xs font-semibold text-rose-600 hover:opacity-70 transition-opacity disabled:opacity-50"
+                            >
+                                {t('adopter.pii_grants_revoke')}
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+            )}
+            {/* v2.19.25: org-mates of the record's owner. Implicit access (no
+                request flow), so no revoke affordance — managing it is an
+                org-membership change at the org-admin level, not a per-adopter
+                action. Visually deemphasised vs. explicit grants. */}
+            {orgMates.length > 0 && (
+                <div className={allContact.length > 0 ? 'pt-2 border-t border-stone-100' : ''}>
+                    <p className="text-xs font-semibold text-stone-500 mb-1.5">
+                        {t('adopter.pii_grants_orgmates_title')}
+                    </p>
+                    <ul className="space-y-1.5">
+                        {orgMates.map(m => (
+                            <li key={m.granteeEmail} className="flex items-center justify-between gap-3 text-sm">
+                                <span className="text-stone-700 truncate">{m.granteeName}</span>
+                                <span className="shrink-0 flex flex-wrap items-center justify-end gap-1">
+                                    {m.orgs.map(o => (
+                                        <span
+                                            key={o.id}
+                                            className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-teal-50 text-teal-700 border border-teal-100"
+                                            title={o.name}
+                                        >
+                                            {o.name}
+                                        </span>
+                                    ))}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+            {allContact.length === 0 && orgMates.length === 0 && (
+                <p className="text-sm text-stone-400 italic">{t('adopter.pii_grants_none_full')}</p>
+            )}
+            {/* v2.19.26: search-match grants per grantee. Each row names the
+                grantee and (if >1) how many entries they've matched. Not
+                revocable: a grantee can re-earn the grant simply by searching
+                again (Resolution #2), so a per-row revoke would be theatre. */}
+            {searchMatch.length > 0 && (
+                <div className={(allContact.length > 0 || orgMates.length > 0) ? 'pt-2 border-t border-stone-100' : ''}>
+                    <p className="text-xs font-semibold text-stone-500 mb-1.5">
+                        {t('adopter.pii_grants_search_title')}
+                    </p>
+                    <ul className="space-y-1.5">
+                        {searchMatch.map(m => {
+                            const expanded = expandedGrantees.has(m.granteeEmail);
+                            const countLabel = m.count > 1
+                                ? t('adopter.pii_grants_search_count_n').replace('{n}', String(m.count))
+                                : t('adopter.pii_grants_search_count_1');
+                            return (
+                                <li key={m.granteeEmail}>
+                                    <button
+                                        type="button"
+                                        onClick={() => toggleGrantee(m.granteeEmail)}
+                                        aria-expanded={expanded}
+                                        className="w-full flex items-center justify-between gap-3 text-sm hover:bg-stone-50 -mx-1 px-1 py-0.5 rounded transition-colors text-left"
+                                    >
+                                        <span className="text-stone-700 truncate">{m.granteeName}</span>
+                                        <span className="shrink-0 text-xs text-stone-500 flex items-center gap-1">
+                                            <span>{countLabel}</span>
+                                            <span className="text-stone-400" aria-hidden>{expanded ? '▴' : '▾'}</span>
+                                        </span>
+                                    </button>
+                                    {/* v2.19.27: expanded detail — each row names the type (phone, email, etc.)
+                                        or 'name token' and renders the matched value. The owner is already
+                                        privileged so showing the full value is fine; a row whose hash no
+                                        longer resolves (entry deleted / renamed) renders as a dash. */}
+                                    {expanded && m.details.length > 0 && (
+                                        <ul className="mt-1 ml-3 pl-2 border-l border-stone-200 space-y-1">
+                                            {m.details.map((d, i) => {
+                                                const typeLabel = d.scope === 'name_token'
+                                                    ? t('adopter.pii_grants_detail_name_token')
+                                                    : d.type
+                                                        ? t(`adopter.ce_type_${d.type}` as never) || d.type
+                                                        : t('adopter.pii_grants_detail_entry_generic');
+                                                return (
+                                                    <li key={`${d.scope}-${i}-${d.label}`} className="flex items-center gap-2 text-xs text-stone-600">
+                                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 font-medium text-[10px] uppercase tracking-wide shrink-0">
+                                                            {typeLabel}
+                                                        </span>
+                                                        <span className="truncate">{d.label}</span>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+                                    )}
+                                </li>
+                            );
+                        })}
+                    </ul>
+                </div>
+            )}
+        </div>
+    );
+
+    // Embedded (inside the visibility modal): just the list, always open, no card
+    // or toggle. The modal supplies the "Quién tiene acceso" heading.
+    if (embedded) {
+        if (isEmpty) {
+            return <p className="text-sm text-stone-400 italic">{t('adopter.pii_grants_none_full')}</p>;
+        }
+        return listContent;
+    }
+
+    // Standalone collapsible (legacy render path).
+    if (isEmpty) return null;
     return (
         <div className="rounded-xl border border-stone-200 bg-white p-4">
             <button
@@ -68,123 +196,7 @@ export default function PiiAccessGrantsDisclosure({ grants }: { grants: AdopterP
                 </span>
                 <span className="text-stone-400 text-xs" aria-hidden>{open ? '▲' : '▼'}</span>
             </button>
-            {open && (
-                <div className="mt-3 space-y-2">
-                    {allContact.length > 0 && (
-                        <ul className="space-y-1.5">
-                            {allContact.map(g => (
-                                <li key={g.grantId} className="flex items-center justify-between gap-3 text-sm">
-                                    <span className="text-stone-700 truncate">{g.granteeName}</span>
-                                    <button
-                                        type="button"
-                                        onClick={() => revoke(g.grantId)}
-                                        disabled={busyId === g.grantId}
-                                        className="shrink-0 text-xs font-semibold text-rose-600 hover:opacity-70 transition-opacity disabled:opacity-50"
-                                    >
-                                        {t('adopter.pii_grants_revoke')}
-                                    </button>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                    {/* v2.19.25: org-mates of the record's owner. Implicit
-                        access (no request flow), so no revoke affordance —
-                        managing it is an org-membership change at the org-
-                        admin level, not a per-adopter action. Visually
-                        deemphasised vs. explicit grants. */}
-                    {orgMates.length > 0 && (
-                        <div className={allContact.length > 0 ? 'pt-2 border-t border-stone-100' : ''}>
-                            <p className="text-xs font-semibold text-stone-500 mb-1.5">
-                                {t('adopter.pii_grants_orgmates_title')}
-                            </p>
-                            <ul className="space-y-1.5">
-                                {orgMates.map(m => (
-                                    <li key={m.granteeEmail} className="flex items-center justify-between gap-3 text-sm">
-                                        <span className="text-stone-700 truncate">{m.granteeName}</span>
-                                        <span className="shrink-0 flex flex-wrap items-center justify-end gap-1">
-                                            {m.orgs.map(o => (
-                                                <span
-                                                    key={o.id}
-                                                    className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-teal-50 text-teal-700 border border-teal-100"
-                                                    title={o.name}
-                                                >
-                                                    {o.name}
-                                                </span>
-                                            ))}
-                                        </span>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-                    )}
-                    {allContact.length === 0 && orgMates.length === 0 && (
-                        <p className="text-sm text-stone-400 italic">{t('adopter.pii_grants_none_full')}</p>
-                    )}
-                    {/* v2.19.26: search-match grants per grantee. The
-                        aggregate "1 dato desbloqueado" line was useless when
-                        the owner wanted to know WHO matched something — the
-                        whole point of the disclosure is accountability. Each
-                        row names the grantee and (if >1) how many entries
-                        they've matched. Still not revocable: a grantee can
-                        re-earn the grant simply by searching again
-                        (Resolution #2), so a per-row revoke would be
-                        theatre. */}
-                    {searchMatch.length > 0 && (
-                        <div className={(allContact.length > 0 || orgMates.length > 0) ? 'pt-2 border-t border-stone-100' : ''}>
-                            <p className="text-xs font-semibold text-stone-500 mb-1.5">
-                                {t('adopter.pii_grants_search_title')}
-                            </p>
-                            <ul className="space-y-1.5">
-                                {searchMatch.map(m => {
-                                    const expanded = expandedGrantees.has(m.granteeEmail);
-                                    const countLabel = m.count > 1
-                                        ? t('adopter.pii_grants_search_count_n').replace('{n}', String(m.count))
-                                        : t('adopter.pii_grants_search_count_1');
-                                    return (
-                                        <li key={m.granteeEmail}>
-                                            <button
-                                                type="button"
-                                                onClick={() => toggleGrantee(m.granteeEmail)}
-                                                aria-expanded={expanded}
-                                                className="w-full flex items-center justify-between gap-3 text-sm hover:bg-stone-50 -mx-1 px-1 py-0.5 rounded transition-colors text-left"
-                                            >
-                                                <span className="text-stone-700 truncate">{m.granteeName}</span>
-                                                <span className="shrink-0 text-xs text-stone-500 flex items-center gap-1">
-                                                    <span>{countLabel}</span>
-                                                    <span className="text-stone-400" aria-hidden>{expanded ? '▴' : '▾'}</span>
-                                                </span>
-                                            </button>
-                                            {/* v2.19.27: expanded detail — each row names the type (phone, email, etc.)
-                                                or 'name token' and renders the matched value. The owner is already
-                                                privileged so showing the full value is fine; a row whose hash no
-                                                longer resolves (entry deleted / renamed) renders as a dash. */}
-                                            {expanded && m.details.length > 0 && (
-                                                <ul className="mt-1 ml-3 pl-2 border-l border-stone-200 space-y-1">
-                                                    {m.details.map((d, i) => {
-                                                        const typeLabel = d.scope === 'name_token'
-                                                            ? t('adopter.pii_grants_detail_name_token')
-                                                            : d.type
-                                                                ? t(`adopter.ce_type_${d.type}` as never) || d.type
-                                                                : t('adopter.pii_grants_detail_entry_generic');
-                                                        return (
-                                                            <li key={`${d.scope}-${i}-${d.label}`} className="flex items-center gap-2 text-xs text-stone-600">
-                                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 font-medium text-[10px] uppercase tracking-wide shrink-0">
-                                                                    {typeLabel}
-                                                                </span>
-                                                                <span className="truncate">{d.label}</span>
-                                                            </li>
-                                                        );
-                                                    })}
-                                                </ul>
-                                            )}
-                                        </li>
-                                    );
-                                })}
-                            </ul>
-                        </div>
-                    )}
-                </div>
-            )}
+            {open && <div className="mt-3">{listContent}</div>}
         </div>
     );
 }

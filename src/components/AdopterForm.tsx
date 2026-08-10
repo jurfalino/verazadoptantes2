@@ -14,6 +14,7 @@ import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
 import ContactEntriesSection from "@/components/ContactEntriesSection";
 import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
+import type { VisibilityBadge } from "@/domain/visibilityBadge";
 
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
@@ -83,7 +84,10 @@ interface AdopterFormProps {
      *  Público/Protegido badge. Computed by the parent from the SAME piiAccess
      *  masking signal. Null (default) = no pill (new/edit form, or a privileged
      *  viewer who can see the contact). Only rendered in the read (non-editing) view. */
-    visibilityBadge?: 'public' | 'protected' | null;
+    visibilityBadge?: VisibilityBadge | null;
+    /** Opens the visibility/access explanatory modal when the badge is tapped.
+     *  Provided by the profile; absent on the new-adopter form (no badge there). */
+    onBadgeClick?: () => void;
 }
 
 function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
@@ -108,7 +112,7 @@ function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
     );
 }
 
-export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null }: AdopterFormProps) {
+export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -928,34 +932,50 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                             />
                                         );
                                         })()}
-                                        {/* Visibility pill — INLINE with the name, mirroring the search
-                                            card (Nielsen #4). 'protected' = viewer can't see the contact. */}
-                                        {visibilityBadge && (
-                                            visibilityBadge === 'public' ? (
-                                                <span
-                                                    className="flex-none inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded"
-                                                    style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }}
-                                                    title={t('search.public_title')}
-                                                >
-                                                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                                                        <path d="M2.5 12S6 5.5 12 5.5s9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" />
-                                                        <circle cx="12" cy="12" r="3" />
-                                                    </svg>
-                                                    {t('search.public_label')}
-                                                </span>
-                                            ) : (
-                                                <span
-                                                    className="flex-none inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-stone-100 text-stone-500"
-                                                    title={t('search.protected_title')}
-                                                >
+                                        {/* Visibility badge — INLINE with the name, mirroring the search
+                                            card (Nielsen #4). Now a button: tapping opens the
+                                            visibility/access explanatory modal. Three states:
+                                            público (eye/sky), protegido-locked (closed padlock/gray,
+                                            no access), protegido-unlocked (open padlock/teal, viewer
+                                            has full access — the state that used to show no badge). */}
+                                        {visibilityBadge && (() => {
+                                            const common = "flex-none inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded transition-opacity hover:opacity-80";
+                                            if (visibilityBadge === 'public') {
+                                                return (
+                                                    <button type="button" onClick={onBadgeClick} aria-haspopup="dialog" title={t('search.public_title')}
+                                                        className={common} style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }}>
+                                                        <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                                            <path d="M2.5 12S6 5.5 12 5.5s9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" />
+                                                            <circle cx="12" cy="12" r="3" />
+                                                        </svg>
+                                                        {t('search.public_label')}
+                                                    </button>
+                                                );
+                                            }
+                                            if (visibilityBadge === 'protected-unlocked') {
+                                                return (
+                                                    <button type="button" onClick={onBadgeClick} aria-haspopup="dialog" title={t('search.protected_unlocked_title')}
+                                                        className={common} style={{ backgroundColor: 'var(--accent-badge-bg)', color: 'var(--accent-badge-text)' }}>
+                                                        <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                                            <rect x="3.5" y="11" width="17" height="10" rx="2" />
+                                                            <path d="M7.5 11V7a4.5 4.5 0 0 1 8.5-2" />
+                                                        </svg>
+                                                        {t('search.protected_unlocked_label')}
+                                                    </button>
+                                                );
+                                            }
+                                            // protected-locked
+                                            return (
+                                                <button type="button" onClick={onBadgeClick} aria-haspopup="dialog" title={t('search.protected_title')}
+                                                    className={`${common} bg-stone-100 text-stone-500`}>
                                                     <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                                                         <rect x="3.5" y="11" width="17" height="10" rx="2" />
                                                         <path d="M7.5 11V7.5a4.5 4.5 0 0 1 9 0V11" />
                                                     </svg>
                                                     {t('search.protected_label')}
-                                                </span>
-                                            )
-                                        )}
+                                                </button>
+                                            );
+                                        })()}
                                       </div>
                                     )}
                                 </div>

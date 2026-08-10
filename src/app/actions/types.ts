@@ -1,5 +1,6 @@
 import type { adopters } from '@/db/schema';
 import type { AdopterFlags } from '@/types/adopter';
+import type { VisibilityBadge } from '@/domain/visibilityBadge';
 
 export type SnippetField = 'name' | 'contact' | 'address' | 'family' | 'adoption' | 'history';
 
@@ -89,8 +90,13 @@ export interface DiscoveryMatch {
     adopter: typeof adopters.$inferSelect;
     matchSnippet: MatchSnippet | null;
     /** True when the viewer has NO access to this record's contact (it was masked
-     * for them). Drives the "Protegido" card badge — the mirror of the public one. */
+     * for them). Retained as the masking signal; the card badge now uses
+     * `visibilityBadge` (below). */
     contactProtected: boolean;
+    /** Tri-state visibility badge, mirroring the profile header (computed by the
+     * shared `computeVisibilityBadge` domain resolver): 'public' | 'protected-locked'
+     * | 'protected-unlocked' | null. Drives the search-card badge. */
+    visibilityBadge: VisibilityBadge | null;
     avgRating: number | null;
     thumbnail: string | null;
     /** Always populated. Defaults to all-zero when enrich=false. */

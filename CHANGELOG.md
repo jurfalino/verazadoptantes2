@@ -2,6 +2,66 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.30.5] - 2026-08-10
+
+### Changed — teal "unlocked" visibility badge label
+
+- The open-padlock teal badge (profile + search card) now labels as **"Con acceso" / "You have access" / "Com acesso"** instead of "Protegido", so it reads as an affordance ("you can see the contact") rather than sharing the locked state's word. "Con acceso" is accurate for all four viewer types the badge covers (owner, org-mate, admin/moderator, grantee) — unlike "granted", which only fits a grantee. New `search.protected_unlocked_label` key (es/en/pt); the locked badge keeps "Protegido".
+
+## [2.30.4] - 2026-08-10
+
+### Changed — teal "unlocked" visibility badge now reads "Acceso concedido"
+
+- The open-padlock teal badge (profile + search card) now labels as **"Acceso concedido" / "Access granted"** instead of "Protegido" (superseded by 2.30.5's "Con acceso" — the deploy for 2.30.4 was cancelled by a transient CI glitch before reaching staging). New `search.protected_unlocked_label` key (es/en/pt). The closed-padlock/locked badge keeps "Protegido".
+
+## [2.30.3] - 2026-08-10
+
+### Changed — a manual PII access request now requires a reason
+
+- The "Solicitar acceso" form's reason field is now **required**: the submit button stays disabled until a motive is entered, and the label drops "(opcional)" (es/en/pt). The server also rejects a reason-less manual request (`reason_required`), defense-in-depth.
+- **Auto-fired requests are exempt** so nothing breaks: the activity opt-in (carries `activityId`) and the contribution auto-request (carries an `auto:` justification sentinel) don't require a typed reason — only a human filling the request form does. The reason continues to surface to the approver as "Motivo".
+
+## [2.30.2] - 2026-08-10
+
+### Changed — protected-badge modal: clearer copy + a "verify" path
+
+- Reworded the "Datos de contacto protegidos" modal to lead with *"BuenAdoptante protege la información personal de los adoptantes"* and explain **both** ways in: verify a detail you already have (the system reveals it on a match), or request access from the owner **with a reason**.
+- Since the copy now invites verifying, the modal offers a **"Verificar un dato que ya tengo"** button (opens the existing verify-known-info flow) alongside "Solicitar acceso" — previously verification was only reachable by tapping a masked chip. Copy updated in es/en/pt.
+- The request's **reason field already flows to the approver** (stored on the request, shown as "Motivo" in the approver panel) — no change needed there; the new copy just makes it explicit that requests should explain the motive.
+
+## [2.30.1] - 2026-08-10
+
+### Changed — search-card visibility badge now mirrors the profile's 3 states (Phase 2)
+
+- The search-result card badge now shows the same three states as the profile header, computed by the **shared `computeVisibilityBadge` domain resolver** so the two surfaces can't disagree: **Público** (eye), **Protegido — sin acceso** (closed padlock), and the new **Protegido — con acceso** (open padlock, teal). This closes the card↔profile inconsistency the badge work set out to fix — a record you have access to reads identically in search and on the profile. The card badge is display-only (no modal; tapping the card opens the profile).
+- `discoveryMatch.assembleDiscoveryMatch` now emits a tri-state `visibilityBadge` alongside the existing `contactProtected` masking signal; the contact mask is computed once and reused for both the badge's field-count check and the data scrub (no double-masking). Both the real search and the guided-walkthrough demo go through this one path.
+
+## [2.30.0] - 2026-08-10
+
+### Added — visibility badge is now always shown + opens an explanatory modal (Phase 1: profile)
+
+- The profile header visibility badge now renders in **three** states instead of sometimes vanishing: **Público** (eye), **Protegido — sin acceso** (closed padlock, gray), and the new **Protegido — con acceso** (open padlock, teal) — the state that previously showed *no badge at all* when the viewer had full access to a protected record. Teal (the app accent), not green, so it never competes with the rating's good/bad scale.
+- Tapping the badge opens a **state-specific modal**: público shows the origin disclaimer + source link; protegido-sin-acceso explains protection and offers "Solicitar acceso"; protegido-con-acceso shows *why* you have access and, for **custodians only** (owner/org/admin/mod), the "Quién tiene acceso" ledger — a grantee sees only their own access, never the guest list.
+- **Pending access requests stay a record-level actionable banner** (not folded into the modal) — a time-sensitive task must be seen and resolved ASAP. The standalone blue source banner and the mid-page "Quién tiene acceso" collapsible are retired (absorbed into the modal).
+- New pure `computeVisibilityBadge` domain resolver (unit-tested) keyed on a **positive** access signal (`hasFullAccess` = `nothingMasked`), added to the PII context — so a stranger on a record with no maskable contact fields correctly shows **no badge**, never a false "you have access".
+
+Phase 1 is the profile only; the search card still shows the 2-state badge. **Not for prod until Phase 2 mirrors the card** (else it re-introduces the card↔profile inconsistency this work exists to fix).
+
+## [2.29.0] - 2026-08-09
+
+### Added — instant loading skeletons so tapping a card never feels broken
+
+- Opening an adopter profile (and the form-results, contract-results, and admin screens) is a server-rendered page with a data waterfall. Because none of these routes had a loading boundary, tapping a card left the **previous screen frozen on-screen with no feedback** for the whole fetch — on a slow connection or cold start that was 6+ seconds of "is the app broken?". Added route-level `loading.tsx` skeletons (`/adopter/[id]`, `/form-results`, `/contract-results`, and one at `/admin` covering every admin sub-page) that paint **instantly** on navigation and mirror each page's real layout (avatar, name, rating, contact, activity), so the tap responds immediately and real content fills in over the skeleton. Theme-safe (themed base classes only, no `dark:` variants).
+
+### Changed — collapse the profile & form-results data waterfalls
+
+- **`/adopter/[id]`**: `getAdoptionConfig` was a standalone `await` on the critical path; it now kicks off up-front and is collected in the final wave, and name-resolution + org-mate/attribution (previously two sequential steps) now run concurrently. Net: two fewer sequential D1 round-trips before the page can render.
+- **`/form-results/[submissionId]`**: the ownership check, the notification lookup, and the full submission fetch were three sequential round-trips — now one parallel wave; the two matched-profile queries (rows + images) likewise run in parallel.
+
+### Fixed — matched-adopter avatars on form results (D1 `inArray` bug)
+
+- The form-results matched-profile **image** query used `inArray(adopterImages.adopterId, adopterIds)`. D1 does not expand array params in `IN` clauses (it binds `IN (?)` with a single value and silently returns wrong results — see `docs/D1_COMPATIBILITY.md`), so avatars for matched adopters could come back missing or wrong. Switched to the same `or(...map(eq))` pattern the sibling profile query already uses.
+
 ## [2.28.1] - 2026-08-09
 
 ### Fixed — inline field edit now matches the contact entries exactly (explicit Save/Cancel, not autosave)

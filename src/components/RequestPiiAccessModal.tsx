@@ -87,8 +87,8 @@ export default function RequestPiiAccessModal({
                     <button
                         type="button"
                         onClick={submit}
-                        disabled={submitting}
-                        className="flex-1 px-4 py-2.5 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors disabled:opacity-50"
+                        disabled={submitting || !justification.trim()}
+                        className="flex-1 px-4 py-2.5 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {submitting ? '...' : t('adopter.pii_modal_submit')}
                     </button>

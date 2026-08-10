@@ -83,6 +83,15 @@ export async function requestPiiAccess(
         const parsed = requestPiiAccessSchema.safeParse({ adopterId, ...opts });
         if (!parsed.success) return { ok: false, status: 'error', error: 'Invalid input' };
 
+        // A manual access request must explain its motive (the approver relies on
+        // it to decide). Auto-fired requests are exempt: the activity opt-in
+        // carries an `activityId`, and the contribution auto-request carries an
+        // `auto:` justification sentinel — neither is a human typing a reason.
+        const isAutoRequest = !!opts.activityId || (opts.justification?.startsWith('auto:') ?? false);
+        if (!isAutoRequest && !opts.justification?.trim()) {
+            return { ok: false, status: 'error', error: 'reason_required' };
+        }
+
         let viewer = '';
         try { viewer = await getUser(); } catch { /* unauthenticated */ }
         if (!isRealActorEmail(viewer)) return { ok: false, status: 'error', error: 'Not authenticated' };
@@ -422,7 +431,7 @@ export async function getAdopterPiiContext(adopterId: string): Promise<AdopterPi
 
 async function getAdopterPiiContextImpl(adopterId: string): Promise<AdopterPiiContext> {
     const empty: AdopterPiiContext = {
-        gatingOn: false, privileged: false, masked: false, maskedFieldCount: 0,
+        gatingOn: false, privileged: false, masked: false, maskedFieldCount: 0, hasFullAccess: false,
         requestState: { pending: false, cooldownUntil: null, lastResolutionNote: null },
         pendingRequests: [],
         accessGrants: { allContact: [], orgMates: [], searchMatch: [] },
@@ -604,7 +613,7 @@ async function getAdopterPiiContextImpl(adopterId: string): Promise<AdopterPiiCo
             };
         }
 
-        return { gatingOn: true, privileged, masked, maskedFieldCount: mask.maskedFieldCount, requestState, pendingRequests, accessGrants };
+        return { gatingOn: true, privileged, masked, maskedFieldCount: mask.maskedFieldCount, hasFullAccess: visibility.nothingMasked, requestState, pendingRequests, accessGrants };
     } catch (e) {
         logger.error('getAdopterPiiContext failed', e, { adopterId });
         return empty;
