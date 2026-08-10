@@ -14,6 +14,8 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '@/context/LanguageContext';
+import { StarIcon } from '@/components/StarIcon';
+import { getRatingColors } from '@/lib/ratingColors';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { createContractInvitation } from '@/app/actions/contract';
@@ -269,7 +271,7 @@ export default function AnimalApplicants({
                                             )}
                                         </div>
                                         <div className="text-xs text-stone-500 flex items-center gap-1.5 flex-wrap">
-                                            {a.adopterRating != null && <span>★ {a.adopterRating.toFixed(1)}</span>}
+                                            {a.adopterRating != null && <span className="inline-flex items-center gap-1"><StarIcon className={`w-3 h-3 ${getRatingColors(a.adopterRating).text}`} />{a.adopterRating.toFixed(1)}</span>}
                                             {a.appliedAt && <span>· {relativeDate(a.appliedAt, locale)}</span>}
                                         </div>
                                         {summary && (

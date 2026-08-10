@@ -8,6 +8,7 @@ import UserFilterSelect from "@/components/UserFilterSelect";
 import SortSelect from "@/components/SortSelect";
 import { enrichAdopters } from "@/app/actions/enrichAdopters";
 import { getRatingColors, getRatingDescription } from "@/lib/ratingColors";
+import { StarIcon } from "@/components/StarIcon";
 import { getFeatureFlag } from "@/config/features";
 
 
@@ -342,7 +343,7 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                                         : ''
                                         } ${colors.bg} ${colors.text} ${colors.border}`}
                                 >
-                                    <span>⭐</span>
+                                    <StarIcon className="w-3 h-3" />
                                     <span className="capitalize">{label}</span>
                                     <span className="font-semibold opacity-70">{count}</span>
                                 </Link>

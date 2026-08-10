@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.30.8] - 2026-08-10
+
+### Fixed — star size now matches the adjacent text everywhere
+
+- Audited every `StarIcon` size against its context. Two spots drew the star at `w-3.5` (14px) inside `text-xs` (12px) text — the star looked oversized next to its number: the `AdoptionHistory` activity-average and the `admin/adopters` rating filter chip. Both now `w-3` (12px). Every other site already sized the star to its adjacent text (RatingBadge scales via `1em`; RatingExplainer's 14px matches its `text-sm` label), so the rule is now uniform: the star equals the text it sits beside.
+
+## [2.30.7] - 2026-08-10
+
+### Changed — one consistent star SVG for every rating
+
+- Ratings were drawn with **three different glyphs**: a crisp SVG where you *set* the rating (`StarRating`), the `⭐` emoji where it was *displayed* (`RatingBadge` and elsewhere — renders differently per OS and ignores the rating color), and the `★` unicode star in a couple of spots. Now there's **one** shared `<StarIcon>` (the exact SVG the input already used) everywhere, colored by the rating via `currentColor`.
+- Replaced the emoji/unicode star in: `RatingBadge` (the main display — my-adopters, profile, search cards, applicant panels…), `RatingExplainer` (the scale popover), `AdoptionHistory` (activity average), `DuplicateMergeModal`, `AnimalApplicants`, and the admin adopters + blocked-logins pages. `StarRating` was refactored to use the shared component.
+- e2e: the search test now asserts the rating pill via a new `data-testid="rating-value"` on `RatingBadge` (the star is an inline SVG now, not `⭐` text). Deliberately NOT `rating-badge` — that testid is the single `RatingExplainer` wrapper (`AdopterForm`) which `adopter.spec`/`search.spec` target uniquely, so `RatingBadge` gets its own id to avoid a strict-mode collision. (Dead i18n `ratings.1–5` "⭐" strings left as-is — unused/never rendered.)
+
 ## [2.30.5] - 2026-08-10
 
 ### Changed — teal "unlocked" visibility badge label

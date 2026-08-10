@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, ReactNode } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { getRatingColors } from '@/lib/ratingColors';
 import { RATING_LEVELS, RATING_LABEL_KEYS, getRatingLabelKey } from '@/domain/ratings';
+import { StarIcon } from '@/components/StarIcon';
 
 interface RatingExplainerProps {
     rating: number;
@@ -85,8 +86,10 @@ export function RatingExplainer({ rating, children }: RatingExplainerProps) {
                                         className={`p-3 rounded-lg ${colors.bg} ${colors.border} border ${isCurrent ? `ring-2 ${colors.ring}` : ''}`}
                                     >
                                         <div className="flex items-center gap-2 mb-1">
-                                            <span className={`font-semibold ${colors.text} text-sm`}>
-                                                {'⭐'.repeat(level)}
+                                            <span className={`inline-flex items-center gap-0.5 ${colors.text}`}>
+                                                {Array.from({ length: level }, (_, i) => (
+                                                    <StarIcon key={i} className="w-3.5 h-3.5" />
+                                                ))}
                                             </span>
                                             <span className={`font-semibold ${colors.text} text-sm`}>
                                                 {t(`ratings.${key}` as any)}

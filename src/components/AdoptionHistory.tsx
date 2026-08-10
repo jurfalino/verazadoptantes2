@@ -3,6 +3,8 @@
 import { useState, useEffect, type ComponentType } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
+import { StarIcon } from '@/components/StarIcon';
+import { getRatingColors } from '@/lib/ratingColors';
 import { deleteAdoption, getAdoptionImages } from '@/app/actions';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getRecordTypeColors } from '@/lib/recordTypeColors';
@@ -212,7 +214,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                 )}
                 {avgRating != null && (
                     <span className="ml-auto inline-flex items-center gap-1 font-semibold">
-                        <span aria-hidden>⭐</span>
+                        <StarIcon className={`w-3 h-3 ${getRatingColors(avgRating).text}`} />
                         <span>{avgRating.toFixed(1)}</span>
                         <span className="font-normal text-stone-500">{t('stats.rating_avg_short') || 'promedio'}</span>
                     </span>

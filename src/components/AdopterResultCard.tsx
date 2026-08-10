@@ -141,7 +141,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                 mobile = [avatar][name] with the rating wrapping to its own line under
                 the name (flex-wrap + basis-full), and contact promoted full-width below.
                 The rating is a SINGLE DOM instance repositioned by CSS — not duplicated —
-                so a test selecting the ⭐ never resolves to a hidden copy. */}
+                so a test selecting the rating badge never resolves to a hidden copy. */}
             <div className="flex flex-wrap items-start gap-x-3 gap-y-1.5 mb-3">
                 <div className="w-12 h-12 rounded-full bg-stone-100 flex-none overflow-hidden ring-2 ring-white shadow-sm">
                     {res.thumbnail ? (
