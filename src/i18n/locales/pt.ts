@@ -670,7 +670,7 @@ export const pt = {
         pii_request_error: 'Não foi possível concluir a solicitação.',
         pii_modal_title: 'Solicitar acesso ao contato',
         pii_modal_body: 'Será pedido ao responsável por {name} que conceda a você acesso aos dados de contato.',
-        pii_modal_justification_label: 'Por que você precisa do acesso? (opcional)',
+        pii_modal_justification_label: 'Por que você precisa do acesso?',
         pii_modal_justification_ph: 'Um motivo breve ajuda o responsável a decidir.',
         pii_modal_submit: 'Enviar solicitação',
         pii_modal_cancel: 'Cancelar',

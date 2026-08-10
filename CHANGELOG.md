@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.30.3] - 2026-08-10
+
+### Changed — a manual PII access request now requires a reason
+
+- The "Solicitar acceso" form's reason field is now **required**: the submit button stays disabled until a motive is entered, and the label drops "(opcional)" (es/en/pt). The server also rejects a reason-less manual request (`reason_required`), defense-in-depth.
+- **Auto-fired requests are exempt** so nothing breaks: the activity opt-in (carries `activityId`) and the contribution auto-request (carries an `auto:` justification sentinel) don't require a typed reason — only a human filling the request form does. The reason continues to surface to the approver as "Motivo".
+
 ## [2.30.2] - 2026-08-10
 
 ### Changed — protected-badge modal: clearer copy + a "verify" path

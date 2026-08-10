@@ -83,6 +83,15 @@ export async function requestPiiAccess(
         const parsed = requestPiiAccessSchema.safeParse({ adopterId, ...opts });
         if (!parsed.success) return { ok: false, status: 'error', error: 'Invalid input' };
 
+        // A manual access request must explain its motive (the approver relies on
+        // it to decide). Auto-fired requests are exempt: the activity opt-in
+        // carries an `activityId`, and the contribution auto-request carries an
+        // `auto:` justification sentinel — neither is a human typing a reason.
+        const isAutoRequest = !!opts.activityId || (opts.justification?.startsWith('auto:') ?? false);
+        if (!isAutoRequest && !opts.justification?.trim()) {
+            return { ok: false, status: 'error', error: 'reason_required' };
+        }
+
         let viewer = '';
         try { viewer = await getUser(); } catch { /* unauthenticated */ }
         if (!isRealActorEmail(viewer)) return { ok: false, status: 'error', error: 'Not authenticated' };

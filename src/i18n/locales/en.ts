@@ -663,7 +663,7 @@ export const en = {
         pii_request_error: 'Could not complete the request.',
         pii_modal_title: 'Request contact access',
         pii_modal_body: 'The owner of {name} will be asked to grant you access to their contact details.',
-        pii_modal_justification_label: 'Why do you need access? (optional)',
+        pii_modal_justification_label: 'Why do you need access?',
         pii_modal_justification_ph: 'A short reason helps the owner decide.',
         pii_modal_submit: 'Send request',
         pii_modal_cancel: 'Cancel',
