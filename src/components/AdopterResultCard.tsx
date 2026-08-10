@@ -166,13 +166,13 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                                 ? (renderHighlightedSnippet(res.adopter.name, nameRanges) || res.adopter.name)
                                 : res.adopter.name}
                         </span>
-                        {/* Visibility badge — mirror pair. Public (eye) when the record is
-                            public; else a neutral-stone "Protegido" (padlock) when the viewer
-                            has NO access to the contact (server-computed `contactProtected`).
-                            Owner/admin viewers who CAN see the contact get neither.
-                            v2.26.3: eye reads clearly at 12px where open-vs-closed lock does not,
-                            so public=eye and protected=closed-padlock. */}
-                        {res.adopter.isPublic === 1 ? (
+                        {/* Visibility badge — mirror of the profile header's 3-state
+                            badge (server-computed `visibilityBadge`, no modal on the
+                            card): Público (eye/sky), Protegido-sin-acceso (closed
+                            padlock/stone), Protegido-con-acceso (open padlock/teal —
+                            the viewer has full access). v2.26.3: eye reads clearly at
+                            12px; open-vs-closed padlock is the locked/unlocked cue. */}
+                        {res.visibilityBadge === 'public' ? (
                             <span
                                 className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded"
                                 style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }}
@@ -184,7 +184,19 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                                 </svg>
                                 {t('search.public_label')}
                             </span>
-                        ) : res.contactProtected ? (
+                        ) : res.visibilityBadge === 'protected-unlocked' ? (
+                            <span
+                                className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded"
+                                style={{ backgroundColor: 'var(--accent-badge-bg)', color: 'var(--accent-badge-text)' }}
+                                title={t('search.protected_unlocked_title')}
+                            >
+                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                    <rect x="3.5" y="11" width="17" height="10" rx="2" />
+                                    <path d="M7.5 11V7a4.5 4.5 0 0 1 8.5-2" />
+                                </svg>
+                                {t('search.protected_label')}
+                            </span>
+                        ) : res.visibilityBadge === 'protected-locked' ? (
                             <span
                                 className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-stone-100 text-stone-500"
                                 title={t('search.protected_title')}

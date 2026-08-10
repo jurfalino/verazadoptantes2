@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.30.1] - 2026-08-10
+
+### Changed — search-card visibility badge now mirrors the profile's 3 states (Phase 2)
+
+- The search-result card badge now shows the same three states as the profile header, computed by the **shared `computeVisibilityBadge` domain resolver** so the two surfaces can't disagree: **Público** (eye), **Protegido — sin acceso** (closed padlock), and the new **Protegido — con acceso** (open padlock, teal). This closes the card↔profile inconsistency the badge work set out to fix — a record you have access to reads identically in search and on the profile. The card badge is display-only (no modal; tapping the card opens the profile).
+- `discoveryMatch.assembleDiscoveryMatch` now emits a tri-state `visibilityBadge` alongside the existing `contactProtected` masking signal; the contact mask is computed once and reused for both the badge's field-count check and the data scrub (no double-masking). Both the real search and the guided-walkthrough demo go through this one path.
+
 ## [2.30.0] - 2026-08-10
 
 ### Added — visibility badge is now always shown + opens an explanatory modal (Phase 1: profile)
