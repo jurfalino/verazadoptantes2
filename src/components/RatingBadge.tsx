@@ -3,6 +3,7 @@
 import { getRatingColors } from '@/lib/ratingColors';
 import { getRatingLabelKey } from '@/domain/ratings';
 import { useLanguage } from '@/context/LanguageContext';
+import { StarIcon } from '@/components/StarIcon';
 
 interface RatingBadgeProps {
     rating: number | string; // Supports '1'-'5' or 1-5 (including decimals like 4.2)
@@ -37,7 +38,7 @@ export function RatingBadge({ rating, size = 'md', variant = 'badge', label = 'n
         }[size];
         return (
             <span className={`inline-flex items-center gap-0.5 font-semibold ${colors.text} ${inlineSizes}`}>
-                <span>⭐</span><span>{display}</span>
+                <StarIcon className="w-[1em] h-[1em]" /><span>{display}</span>
                 {labelText && <span className="ml-1">{labelText}</span>}
             </span>
         );
@@ -50,8 +51,8 @@ export function RatingBadge({ rating, size = 'md', variant = 'badge', label = 'n
     }[size];
 
     return (
-        <div className={`inline-flex items-center gap-1 rounded-full font-semibold shadow-sm ${colors.bg} ${colors.text} ${colors.border} border ${sizeClasses.pad} ${sizeClasses.text}`}>
-            <span>⭐</span><span>{display}</span>
+        <div data-testid="rating-badge" className={`inline-flex items-center gap-1 rounded-full font-semibold shadow-sm ${colors.bg} ${colors.text} ${colors.border} border ${sizeClasses.pad} ${sizeClasses.text}`}>
+            <StarIcon className="w-[1em] h-[1em]" /><span>{display}</span>
             {label === 'search' ? (
                 // Mobile: the short adjective ("Peligroso") so the name keeps room;
                 // ≥sm: the full label ("Adoptante Peligroso").

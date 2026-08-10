@@ -4,6 +4,8 @@ import { getDb } from '@/app/actions';
 import { blockedLogins, errorReports } from '@/db/schema';
 import { desc } from 'drizzle-orm';
 import { formatDateTime } from '@/lib/dates';
+import { StarIcon } from '@/components/StarIcon';
+import { getRatingColors } from '@/lib/ratingColors';
 
 interface SummaryItem {
     id: string;
@@ -157,7 +159,7 @@ export default async function BlockedLoginsPage() {
                                                         </Link>
                                                         <span className="text-stone-500 ml-2">
                                                             {m.avgRating != null && (
-                                                                <span title="Calificación promedio">⭐ {m.avgRating.toFixed(1)}</span>
+                                                                <span title="Calificación promedio" className="inline-flex items-center gap-1"><StarIcon className={`w-3 h-3 ${getRatingColors(m.avgRating).text}`} />{m.avgRating.toFixed(1)}</span>
                                                             )}
                                                             {m.triggers.length > 0 && (
                                                                 <span className="ml-1 text-stone-400">

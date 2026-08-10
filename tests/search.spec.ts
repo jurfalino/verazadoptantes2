@@ -48,8 +48,10 @@ test.describe('Search to Decision', () => {
         const href = await resultLinks.first().getAttribute('href');
         expect(href).toContain('/adopter/');
 
-        // Step 7: Result card shows rating stars (the "at-a-glance" indicator)
-        await expect(page.getByText('⭐').first()).toBeVisible({ timeout: 30000 });
+        // Step 7: Result card shows the rating badge (the "at-a-glance" indicator).
+        // The star is an inline SVG (StarIcon) now, not the ⭐ emoji, so assert the
+        // badge testid rather than emoji text.
+        await expect(page.getByTestId('rating-badge').first()).toBeVisible({ timeout: 30000 });
     });
 
     test('View adopter profile shows decision-making info', async ({ page }) => {
