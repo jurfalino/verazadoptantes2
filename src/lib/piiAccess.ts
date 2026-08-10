@@ -872,6 +872,12 @@ export interface AdopterPiiContext {
     /** Contact fields are masked for this viewer (gating on, not privileged, fields exist). */
     masked: boolean;
     maskedFieldCount: number;
+    /** The viewer has FULL access to the contact — privileged (owner/org/admin/mod)
+     *  or holds an approved all-contact grant. This is `visibility.nothingMasked`:
+     *  a positive access signal, independent of how many fields exist. Drives the
+     *  green "unlocked" visibility badge. (Do NOT infer access from `!masked` —
+     *  a record with zero maskable fields has `masked: false` for a stranger too.) */
+    hasFullAccess: boolean;
     requestState: PiiAccessRequestState;
     /** Pending requests on this adopter the viewer may act on (privileged viewers only). */
     pendingRequests: PiiAccessRequestView[];

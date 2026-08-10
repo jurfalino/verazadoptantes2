@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.30.0] - 2026-08-10
+
+### Added — visibility badge is now always shown + opens an explanatory modal (Phase 1: profile)
+
+- The profile header visibility badge now renders in **three** states instead of sometimes vanishing: **Público** (eye), **Protegido — sin acceso** (closed padlock, gray), and the new **Protegido — con acceso** (open padlock, teal) — the state that previously showed *no badge at all* when the viewer had full access to a protected record. Teal (the app accent), not green, so it never competes with the rating's good/bad scale.
+- Tapping the badge opens a **state-specific modal**: público shows the origin disclaimer + source link; protegido-sin-acceso explains protection and offers "Solicitar acceso"; protegido-con-acceso shows *why* you have access and, for **custodians only** (owner/org/admin/mod), the "Quién tiene acceso" ledger — a grantee sees only their own access, never the guest list.
+- **Pending access requests stay a record-level actionable banner** (not folded into the modal) — a time-sensitive task must be seen and resolved ASAP. The standalone blue source banner and the mid-page "Quién tiene acceso" collapsible are retired (absorbed into the modal).
+- New pure `computeVisibilityBadge` domain resolver (unit-tested) keyed on a **positive** access signal (`hasFullAccess` = `nothingMasked`), added to the PII context — so a stranger on a record with no maskable contact fields correctly shows **no badge**, never a false "you have access".
+
+Phase 1 is the profile only; the search card still shows the 2-state badge. **Not for prod until Phase 2 mirrors the card** (else it re-introduces the card↔profile inconsistency this work exists to fix).
+
 ## [2.29.0] - 2026-08-09
 
 ### Added — instant loading skeletons so tapping a card never feels broken

@@ -422,7 +422,7 @@ export async function getAdopterPiiContext(adopterId: string): Promise<AdopterPi
 
 async function getAdopterPiiContextImpl(adopterId: string): Promise<AdopterPiiContext> {
     const empty: AdopterPiiContext = {
-        gatingOn: false, privileged: false, masked: false, maskedFieldCount: 0,
+        gatingOn: false, privileged: false, masked: false, maskedFieldCount: 0, hasFullAccess: false,
         requestState: { pending: false, cooldownUntil: null, lastResolutionNote: null },
         pendingRequests: [],
         accessGrants: { allContact: [], orgMates: [], searchMatch: [] },
@@ -604,7 +604,7 @@ async function getAdopterPiiContextImpl(adopterId: string): Promise<AdopterPiiCo
             };
         }
 
-        return { gatingOn: true, privileged, masked, maskedFieldCount: mask.maskedFieldCount, requestState, pendingRequests, accessGrants };
+        return { gatingOn: true, privileged, masked, maskedFieldCount: mask.maskedFieldCount, hasFullAccess: visibility.nothingMasked, requestState, pendingRequests, accessGrants };
     } catch (e) {
         logger.error('getAdopterPiiContext failed', e, { adopterId });
         return empty;
