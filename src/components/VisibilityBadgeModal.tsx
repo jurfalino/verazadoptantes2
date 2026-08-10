@@ -27,6 +27,8 @@ interface VisibilityBadgeModalProps {
     canRequest: boolean;
     /** Opens the existing RequestPiiAccessModal. */
     onRequestAccess?: () => void;
+    /** Opens the verify-known-info popover ("I already have this detail"). */
+    onVerify?: () => void;
 }
 
 const EYE = (
@@ -84,19 +86,31 @@ export default function VisibilityBadgeModal(props: VisibilityBadgeModalProps) {
         body = (
             <div className="space-y-3">
                 <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t('adopter.vis_modal_locked_body')}</p>
-                {props.requestPending ? (
-                    <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>{t('adopter.vis_modal_request_pending')}</p>
-                ) : (props.canRequest && props.onRequestAccess) ? (
-                    <button
-                        type="button"
-                        onClick={() => { props.onRequestAccess?.(); props.onClose(); }}
-                        className="w-full px-4 py-2.5 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors"
-                    >
-                        {t('adopter.pii_modal_title')}
-                    </button>
-                ) : props.requestCooldown ? (
-                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{t('adopter.pii_request_cooldown_short')}</p>
-                ) : null}
+                <div className="space-y-2">
+                    {props.onVerify && (
+                        <button
+                            type="button"
+                            onClick={() => { props.onVerify?.(); props.onClose(); }}
+                            className="w-full px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                            style={{ background: 'var(--surface-muted)', color: 'var(--text-primary)' }}
+                        >
+                            {t('adopter.vis_modal_verify_btn')}
+                        </button>
+                    )}
+                    {props.requestPending ? (
+                        <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>{t('adopter.vis_modal_request_pending')}</p>
+                    ) : (props.canRequest && props.onRequestAccess) ? (
+                        <button
+                            type="button"
+                            onClick={() => { props.onRequestAccess?.(); props.onClose(); }}
+                            className="w-full px-4 py-2.5 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors"
+                        >
+                            {t('adopter.pii_modal_title')}
+                        </button>
+                    ) : props.requestCooldown ? (
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{t('adopter.pii_request_cooldown_short')}</p>
+                    ) : null}
+                </div>
             </div>
         );
     } else {

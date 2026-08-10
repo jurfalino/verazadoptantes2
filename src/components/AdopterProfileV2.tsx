@@ -775,6 +775,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                         requestPending={requestSubmitted || !!effectivePiiContext?.requestState.pending}
                         requestCooldown={!!effectivePiiContext?.requestState.cooldownUntil}
                         canRequest={piiOptInEligible}
+                        onVerify={effectivePiiContext?.masked ? () => setVerifyPopoverOpen('open') : undefined}
                         onRequestAccess={
                             piiOptInEligible
                                 ? () => {

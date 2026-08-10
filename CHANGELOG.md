@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.30.2] - 2026-08-10
+
+### Changed — protected-badge modal: clearer copy + a "verify" path
+
+- Reworded the "Datos de contacto protegidos" modal to lead with *"BuenAdoptante protege la información personal de los adoptantes"* and explain **both** ways in: verify a detail you already have (the system reveals it on a match), or request access from the owner **with a reason**.
+- Since the copy now invites verifying, the modal offers a **"Verificar un dato que ya tengo"** button (opens the existing verify-known-info flow) alongside "Solicitar acceso" — previously verification was only reachable by tapping a masked chip. Copy updated in es/en/pt.
+- The request's **reason field already flows to the approver** (stored on the request, shown as "Motivo" in the approver panel) — no change needed there; the new copy just makes it explicit that requests should explain the motive.
+
 ## [2.30.1] - 2026-08-10
 
 ### Changed — search-card visibility badge now mirrors the profile's 3 states (Phase 2)
