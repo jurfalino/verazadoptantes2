@@ -2,13 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
-## [2.30.6] - 2026-08-10
+## [2.30.7] - 2026-08-10
 
 ### Changed — one consistent star SVG for every rating
 
 - Ratings were drawn with **three different glyphs**: a crisp SVG where you *set* the rating (`StarRating`), the `⭐` emoji where it was *displayed* (`RatingBadge` and elsewhere — renders differently per OS and ignores the rating color), and the `★` unicode star in a couple of spots. Now there's **one** shared `<StarIcon>` (the exact SVG the input already used) everywhere, colored by the rating via `currentColor`.
 - Replaced the emoji/unicode star in: `RatingBadge` (the main display — my-adopters, profile, search cards, applicant panels…), `RatingExplainer` (the scale popover), `AdoptionHistory` (activity average), `DuplicateMergeModal`, `AnimalApplicants`, and the admin adopters + blocked-logins pages. `StarRating` was refactored to use the shared component.
-- e2e: the search test now asserts the rating badge (`data-testid="rating-badge"`) instead of the `⭐` emoji text, since the star is an inline SVG now. (Dead i18n `ratings.1–5` "⭐" strings left as-is — they're unused/never rendered.)
+- e2e: the search test now asserts the rating pill via a new `data-testid="rating-value"` on `RatingBadge` (the star is an inline SVG now, not `⭐` text). Deliberately NOT `rating-badge` — that testid is the single `RatingExplainer` wrapper (`AdopterForm`) which `adopter.spec`/`search.spec` target uniquely, so `RatingBadge` gets its own id to avoid a strict-mode collision. (Dead i18n `ratings.1–5` "⭐" strings left as-is — unused/never rendered.)
 
 ## [2.30.5] - 2026-08-10
 

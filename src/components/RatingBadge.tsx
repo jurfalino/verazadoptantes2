@@ -51,7 +51,7 @@ export function RatingBadge({ rating, size = 'md', variant = 'badge', label = 'n
     }[size];
 
     return (
-        <div data-testid="rating-badge" className={`inline-flex items-center gap-1 rounded-full font-semibold shadow-sm ${colors.bg} ${colors.text} ${colors.border} border ${sizeClasses.pad} ${sizeClasses.text}`}>
+        <div data-testid="rating-value" className={`inline-flex items-center gap-1 rounded-full font-semibold shadow-sm ${colors.bg} ${colors.text} ${colors.border} border ${sizeClasses.pad} ${sizeClasses.text}`}>
             <StarIcon className="w-[1em] h-[1em]" /><span>{display}</span>
             {label === 'search' ? (
                 // Mobile: the short adjective ("Peligroso") so the name keeps room;

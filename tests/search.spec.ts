@@ -50,8 +50,10 @@ test.describe('Search to Decision', () => {
 
         // Step 7: Result card shows the rating badge (the "at-a-glance" indicator).
         // The star is an inline SVG (StarIcon) now, not the ⭐ emoji, so assert the
-        // badge testid rather than emoji text.
-        await expect(page.getByTestId('rating-badge').first()).toBeVisible({ timeout: 30000 });
+        // rating pill via its testid. `rating-value` is on RatingBadge itself (many
+        // per page) — use .first(); `rating-badge` is the RatingExplainer wrapper
+        // that adopter.spec targets uniquely, so don't reuse it here.
+        await expect(page.getByTestId('rating-value').first()).toBeVisible({ timeout: 30000 });
     });
 
     test('View adopter profile shows decision-making info', async ({ page }) => {
