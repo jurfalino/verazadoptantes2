@@ -2,11 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.30.5] - 2026-08-10
+
+### Changed — teal "unlocked" visibility badge label
+
+- The open-padlock teal badge (profile + search card) now labels as **"Con acceso" / "You have access" / "Com acesso"** instead of "Protegido", so it reads as an affordance ("you can see the contact") rather than sharing the locked state's word. "Con acceso" is accurate for all four viewer types the badge covers (owner, org-mate, admin/moderator, grantee) — unlike "granted", which only fits a grantee. New `search.protected_unlocked_label` key (es/en/pt); the locked badge keeps "Protegido".
+
 ## [2.30.4] - 2026-08-10
 
 ### Changed — teal "unlocked" visibility badge now reads "Acceso concedido"
 
-- The open-padlock teal badge (profile + search card) now labels as **"Acceso concedido" / "Access granted"** instead of "Protegido", so it reads as an affordance ("you can see the contact") rather than the same word as the locked state. New `search.protected_unlocked_label` key (es/en/pt). The closed-padlock/locked badge keeps "Protegido".
+- The open-padlock teal badge (profile + search card) now labels as **"Acceso concedido" / "Access granted"** instead of "Protegido" (superseded by 2.30.5's "Con acceso" — the deploy for 2.30.4 was cancelled by a transient CI glitch before reaching staging). New `search.protected_unlocked_label` key (es/en/pt). The closed-padlock/locked badge keeps "Protegido".
 
 ## [2.30.3] - 2026-08-10
 
