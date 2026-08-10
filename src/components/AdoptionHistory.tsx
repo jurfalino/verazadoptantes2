@@ -214,7 +214,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                 )}
                 {avgRating != null && (
                     <span className="ml-auto inline-flex items-center gap-1 font-semibold">
-                        <StarIcon className={`w-3.5 h-3.5 ${getRatingColors(avgRating).text}`} />
+                        <StarIcon className={`w-3 h-3 ${getRatingColors(avgRating).text}`} />
                         <span>{avgRating.toFixed(1)}</span>
                         <span className="font-normal text-stone-500">{t('stats.rating_avg_short') || 'promedio'}</span>
                     </span>

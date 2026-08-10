@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.30.8] - 2026-08-10
+
+### Fixed — star size now matches the adjacent text everywhere
+
+- Audited every `StarIcon` size against its context. Two spots drew the star at `w-3.5` (14px) inside `text-xs` (12px) text — the star looked oversized next to its number: the `AdoptionHistory` activity-average and the `admin/adopters` rating filter chip. Both now `w-3` (12px). Every other site already sized the star to its adjacent text (RatingBadge scales via `1em`; RatingExplainer's 14px matches its `text-sm` label), so the rule is now uniform: the star equals the text it sits beside.
+
 ## [2.30.7] - 2026-08-10
 
 ### Changed — one consistent star SVG for every rating

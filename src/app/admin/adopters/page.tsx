@@ -343,7 +343,7 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                                         : ''
                                         } ${colors.bg} ${colors.text} ${colors.border}`}
                                 >
-                                    <StarIcon className="w-3.5 h-3.5" />
+                                    <StarIcon className="w-3 h-3" />
                                     <span className="capitalize">{label}</span>
                                     <span className="font-semibold opacity-70">{count}</span>
                                 </Link>
