@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.31.0] - 2026-08-12
+
+### Added — a consolidated, discoverable FAQ at `/faq`
+
+- New **`/faq`** page aimed at people new to BuenAdoptante: what it is, how it helps, and **how it protects adopters' data**. Grouped into four categories (Sobre BuenAdoptante · Privacidad y datos · Cómo empezar · Durante la adopción), with an accent-insensitive **search**, a multi-open accordion, per-question deep links (`/faq#slug`), and es/en/pt content. Design-system compliant (SVG icons not emoji, themed tokens, light + "Azul Noche" dark).
+- The privacy answers reflect the shipped access system: records are **Protegido by default** (contact masked); activity/rating stays visible to the community; a masked viewer can **verify a detail they already have** or **request access with a reason**.
+- Absorbed the 4 old process questions and **retired `/guia/faq` → `/faq`** (301 redirect in `next.config.ts`). Added FAQ to the **footer** (discoverable on every public page), updated the guide CTA and the sitemap.
+- Content lives in `src/content/guide-data.ts` (the `FAQ` array gained a `category` field). Note: Keystatic was removed earlier; CLAUDE.md's CMS/content notes are stale — a separate cleanup.
+
 ## [2.30.8] - 2026-08-10
 
 ### Fixed — star size now matches the adjacent text everywhere

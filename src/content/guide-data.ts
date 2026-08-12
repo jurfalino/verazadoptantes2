@@ -30,6 +30,10 @@ export type GuideStep = {
     entry: GuideStepEntry;
 };
 
+/** FAQ category keys — labels are localized in the i18n `faq.category.*`
+ *  namespace, not stored here. Display order is defined by the FAQ page. */
+export type FaqCategory = 'about' | 'privacy' | 'getting-started' | 'process';
+
 export type FaqEntry = {
     question: string;
     questionEs: string;
@@ -38,6 +42,9 @@ export type FaqEntry = {
     answerEs: string;
     answerEn: string;
     answerPt: string;
+    /** Groups the entry under a category section on /faq. */
+    category: FaqCategory;
+    /** Sort order within its category. */
     order: number;
 };
 
@@ -255,43 +262,162 @@ export const STEPS: GuideStep[] = [
 ];
 
 export const FAQ: FaqItem[] = [
+    // ── Sobre BuenAdoptante ──────────────────────────────────────────────
     {
-        slug: 'que-es-verificar',
+        slug: 'que-es-buenadoptante',
         entry: {
-            question: '¿Qué es verificar adoptantes?',
-            questionEs: '¿Qué es verificar adoptantes?',
-            questionEn: 'What is adopter vetting?',
-            questionPt: 'O que é verificar adotantes?',
-            answerEs: 'La verificación de adoptantes es el proceso de consultar referencias e historial antes de entregar un animal a un nuevo hogar. Permite detectar personas con antecedentes de maltrato o adopciones irresponsables.',
-            answerEn: 'Adopter vetting is the process of checking references and history before placing an animal in a new home. It helps detect people with a history of abuse or irresponsible adoptions.',
-            answerPt: 'Verificar adotantes é o processo de consultar referências e histórico antes de entregar um animal a um novo lar. Permite detectar pessoas com antecedentes de maus-tratos ou adoções irresponsáveis.',
+            question: '¿Qué es BuenAdoptante?',
+            questionEs: '¿Qué es BuenAdoptante?',
+            questionEn: 'What is BuenAdoptante?',
+            questionPt: 'O que é o BuenAdoptante?',
+            answerEs: 'Es un registro de adoptantes — un "veraz", si conocés el término — donde la comunidad rescatista registra adopciones, pedidos de adopción y observaciones para evaluar futuras adopciones. Cuando alguien te pide un animal, buscás su nombre y sus datos acá para ver su historial antes de entregarlo.',
+            answerEn: 'It is an adopter registry — a shared record — where the rescue community logs adoptions, adoption requests, and observations to evaluate future adoptions. When someone asks you for an animal, you look up their name and details here to see their history before handing the animal over.',
+            answerPt: 'É um registro de adotantes — um cadastro compartilhado — onde a comunidade resgatista registra adoções, pedidos de adoção e observações para avaliar futuras adoções. Quando alguém te pede um animal, você busca o nome e os dados dela aqui para ver o histórico antes de entregar.',
+            category: 'about',
             order: 1,
         },
     },
     {
-        slug: 'como-empiezo',
+        slug: 'como-me-ayuda',
         entry: {
-            question: '¿Cómo empiezo?',
-            questionEs: '¿Cómo empiezo a usar la plataforma?',
-            questionEn: 'How do I get started?',
-            questionPt: 'Como eu começo a usar a plataforma?',
-            answerEs: 'Registrate con tu cuenta de Google y empezá a buscar o registrar adoptantes de inmediato. Podés seguir esta guía de 6 fases para un proceso completo.',
-            answerEn: 'Sign up with your Google account and start searching or registering adopters right away. You can follow this 6-phase guide for a complete process.',
-            answerPt: 'Cadastre-se com sua conta do Google e comece a buscar ou registrar adotantes na hora. Você pode seguir este guia de 6 fases para um processo completo.',
+            question: '¿Cómo me ayuda y para quién es?',
+            questionEs: '¿Cómo me ayuda y para quién es?',
+            questionEn: 'How does it help me, and who is it for?',
+            questionPt: 'Como me ajuda e para quem é?',
+            answerEs: 'Es para rescatistas, refugios y protectoras. Antes de dar un animal en adopción, podés ver si esa persona ya tiene un historial — buenas o malas experiencias registradas por otros rescatistas — y así evitar que un animal llegue a un hogar irresponsable. También te sirve para llevar el seguimiento de tus propias adopciones.',
+            answerEn: 'It is for rescuers, shelters, and animal protection groups. Before placing an animal, you can see whether a person already has a history — good or bad experiences logged by other rescuers — so you can keep an animal from ending up in an irresponsible home. It also helps you keep track of your own adoptions.',
+            answerPt: 'É para resgatistas, abrigos e protetoras. Antes de dar um animal em adoção, você pode ver se a pessoa já tem um histórico — boas ou más experiências registradas por outros resgatistas — e assim evitar que um animal vá para um lar irresponsável. Também ajuda a acompanhar as suas próprias adoções.',
+            category: 'about',
             order: 2,
+        },
+    },
+    {
+        slug: 'que-es-verificar',
+        entry: {
+            question: '¿Qué significa "verificar" un adoptante?',
+            questionEs: '¿Qué significa "verificar" un adoptante?',
+            questionEn: 'What does it mean to "vet" an adopter?',
+            questionPt: 'O que significa "verificar" um adotante?',
+            answerEs: 'La verificación de adoptantes es el proceso de consultar referencias e historial antes de entregar un animal a un nuevo hogar. Permite detectar personas con antecedentes de maltrato o adopciones irresponsables.',
+            answerEn: 'Adopter vetting is the process of checking references and history before placing an animal in a new home. It helps detect people with a history of abuse or irresponsible adoptions.',
+            answerPt: 'Verificar adotantes é o processo de consultar referências e histórico antes de entregar um animal a um novo lar. Permite detectar pessoas com antecedentes de maus-tratos ou adoções irresponsáveis.',
+            category: 'about',
+            order: 3,
         },
     },
     {
         slug: 'es-gratis',
         entry: {
-            question: '¿Es gratis?',
+            question: '¿La plataforma es gratuita?',
             questionEs: '¿La plataforma es gratuita?',
-            questionEn: 'Is it free?',
+            questionEn: 'Is the platform free?',
             questionPt: 'A plataforma é gratuita?',
             answerEs: 'Sí, la plataforma es completamente gratuita para rescatistas y refugios.',
             answerEn: 'Yes, the platform is completely free for rescuers and shelters.',
             answerPt: 'Sim, a plataforma é totalmente gratuita para resgatistas e abrigos.',
+            category: 'about',
+            order: 4,
+        },
+    },
+    // ── Privacidad y datos ───────────────────────────────────────────────
+    {
+        slug: 'protege-informacion',
+        entry: {
+            question: '¿Cómo se protege la información de los adoptantes?',
+            questionEs: '¿Cómo se protege la información de los adoptantes?',
+            questionEn: 'How is adopters\' information protected?',
+            questionPt: 'Como as informações dos adotantes são protegidas?',
+            answerEs: 'Por defecto cada registro está Protegido: los datos de contacto (teléfono, email, dirección) quedan enmascarados y solo son visibles para el responsable del registro, su organización, los administradores y quienes tengan acceso aprobado. BuenAdoptante no publica los datos de los adoptantes en ningún lado público — un registro solo se vuelve visible sin iniciar sesión si alguien lo marca explícitamente como Público.',
+            answerEn: 'By default every record is Protected: contact details (phone, email, address) are masked and visible only to the record\'s owner, their organization, admins, and people with approved access. BuenAdoptante never publishes adopters\' data anywhere public — a record only becomes visible without signing in if someone explicitly marks it Public.',
+            answerPt: 'Por padrão, cada registro é Protegido: os dados de contato (telefone, e-mail, endereço) ficam ocultos e visíveis apenas para o responsável pelo registro, sua organização, os administradores e quem tiver acesso aprovado. O BuenAdoptante nunca publica os dados dos adotantes em nenhum lugar público — um registro só fica visível sem login se alguém o marcar explicitamente como Público.',
+            category: 'privacy',
+            order: 1,
+        },
+    },
+    {
+        slug: 'quien-puede-ver',
+        entry: {
+            question: '¿Quién puede ver los datos que registro?',
+            questionEs: '¿Quién puede ver los datos que registro?',
+            questionEn: 'Who can see the data I record?',
+            questionPt: 'Quem pode ver os dados que eu registro?',
+            answerEs: 'Vos (el responsable del registro), tus compañeros de organización, los administradores y moderadores, y cualquier persona a la que le otorgues acceso. El resto ve el registro como Protegido, con los datos de contacto ocultos. La actividad de adopción — calificación e historial — sí es visible para la comunidad, porque es el corazón de la verificación; lo que se protege son los datos de contacto personales.',
+            answerEn: 'You (the record\'s owner), your organization teammates, admins and moderators, and anyone you grant access to. Everyone else sees the record as Protected, with contact details hidden. Adoption activity — rating and history — is visible to the community, because that is the heart of vetting; what stays protected is the personal contact information.',
+            answerPt: 'Você (o responsável pelo registro), seus colegas de organização, os administradores e moderadores, e qualquer pessoa a quem você conceda acesso. Os demais veem o registro como Protegido, com os dados de contato ocultos. A atividade de adoção — avaliação e histórico — é visível para a comunidade, pois é o cerne da verificação; o que fica protegido são os dados de contato pessoais.',
+            category: 'privacy',
+            order: 2,
+        },
+    },
+    {
+        slug: 'acceso-protegido',
+        entry: {
+            question: '¿Cómo accedo a un dato protegido?',
+            questionEs: '¿Cómo accedo a un dato protegido?',
+            questionEn: 'How do I access a protected detail?',
+            questionPt: 'Como acesso um dado protegido?',
+            answerEs: 'Tenés dos caminos. Podés verificar un dato que ya tenés: si ingresás, por ejemplo, el teléfono que conocés y coincide, el sistema te lo confirma. O podés solicitar acceso al responsable del registro explicando el motivo; el responsable recibe tu solicitud y decide si te lo otorga.',
+            answerEn: 'You have two paths. You can verify a detail you already have: if you enter, say, a phone number you know and it matches, the system confirms it for you. Or you can request access from the record\'s owner, explaining your reason; the owner receives your request and decides whether to grant it.',
+            answerPt: 'Você tem dois caminhos. Pode verificar um dado que já tem: se você digitar, por exemplo, o telefone que conhece e ele coincidir, o sistema confirma para você. Ou pode solicitar acesso ao responsável pelo registro, explicando o motivo; o responsável recebe seu pedido e decide se concede.',
+            category: 'privacy',
             order: 3,
+        },
+    },
+    // ── Cómo empezar ─────────────────────────────────────────────────────
+    {
+        slug: 'como-empiezo',
+        entry: {
+            question: '¿Cómo empiezo a usar la plataforma?',
+            questionEs: '¿Cómo empiezo a usar la plataforma?',
+            questionEn: 'How do I get started?',
+            questionPt: 'Como eu começo a usar a plataforma?',
+            answerEs: 'Registrate con tu cuenta de Google y empezá a buscar o registrar adoptantes de inmediato. Podés seguir la guía de 6 fases para un proceso completo.',
+            answerEn: 'Sign up with your Google account and start searching or registering adopters right away. You can follow the 6-phase guide for a complete process.',
+            answerPt: 'Cadastre-se com sua conta do Google e comece a buscar ou registrar adotantes na hora. Você pode seguir o guia de 6 fases para um processo completo.',
+            category: 'getting-started',
+            order: 1,
+        },
+    },
+    {
+        slug: 'registrar-buscar',
+        entry: {
+            question: '¿Cómo registro o busco un adoptante?',
+            questionEs: '¿Cómo registro o busco un adoptante?',
+            questionEn: 'How do I register or search for an adopter?',
+            questionPt: 'Como registro ou busco um adotante?',
+            answerEs: 'Desde la pantalla principal, buscá por nombre, teléfono o email. Si el adoptante ya existe, vas a ver su perfil con su calificación e historial; si no, podés crearlo en segundos y empezar a registrar su actividad. Cualquier rescatista puede sumar información a un perfil existente.',
+            answerEn: 'From the home screen, search by name, phone, or email. If the adopter already exists, you\'ll see their profile with their rating and history; if not, you can create it in seconds and start logging their activity. Any rescuer can add information to an existing profile.',
+            answerPt: 'Na tela inicial, busque por nome, telefone ou e-mail. Se o adotante já existir, você verá o perfil com a avaliação e o histórico; se não, você pode criá-lo em segundos e começar a registrar a atividade. Qualquer resgatista pode acrescentar informações a um perfil existente.',
+            category: 'getting-started',
+            order: 2,
+        },
+    },
+    {
+        slug: 'instalar-app',
+        entry: {
+            question: '¿Necesito instalar una app?',
+            questionEs: '¿Necesito instalar una app?',
+            questionEn: 'Do I need to install an app?',
+            questionPt: 'Preciso instalar um aplicativo?',
+            answerEs: 'No. BuenAdoptante funciona en el navegador de tu celular o computadora. Si querés, podés instalarla como app desde el navegador para acceder más rápido, pero no es obligatorio.',
+            answerEn: 'No. BuenAdoptante works in your phone or computer browser. If you want, you can install it as an app from the browser for quicker access, but it is not required.',
+            answerPt: 'Não. O BuenAdoptante funciona no navegador do seu celular ou computador. Se quiser, pode instalá-lo como aplicativo pelo navegador para acessar mais rápido, mas não é obrigatório.',
+            category: 'getting-started',
+            order: 3,
+        },
+    },
+    // ── Durante la adopción ──────────────────────────────────────────────
+    {
+        slug: 'proceso-completo',
+        entry: {
+            question: '¿Cómo es el proceso completo de adopción?',
+            questionEs: '¿Cómo es el proceso completo de adopción?',
+            questionEn: 'What does the full adoption process look like?',
+            questionPt: 'Como é o processo completo de adoção?',
+            answerEs: 'Tenemos una guía de 6 fases para una adopción responsable — desde preparar al animal hasta el seguimiento post-adopción. Podés verla completa en la Guía.',
+            answerEn: 'We have a 6-phase guide for a responsible adoption — from preparing the animal to post-adoption follow-up. You can see it in full in the Guide.',
+            answerPt: 'Temos um guia de 6 fases para uma adoção responsável — desde preparar o animal até o acompanhamento pós-adoção. Você pode vê-lo por completo no Guia.',
+            category: 'process',
+            order: 1,
         },
     },
     {
@@ -304,7 +430,22 @@ export const FAQ: FaqItem[] = [
             answerEs: 'Por eso es clave la Fase 6: seguimiento. Dejale claro al adoptante que ante cualquier problema te contacte antes de regalarlo o abandonarlo. El contrato de adopción también puede incluir una cláusula de devolución al rescatista.',
             answerEn: 'That\'s why Phase 6: follow-up is key. Make it clear to the adopter that if there\'s any problem, they should contact you before giving the animal away or abandoning it. The adoption contract can also include a return-to-rescuer clause.',
             answerPt: 'Por isso a Fase 6: acompanhamento é fundamental. Deixe claro para o adotante que, diante de qualquer problema, entre em contato com você antes de doar ou abandonar o animal. O contrato de adoção também pode incluir uma cláusula de devolução ao resgatista.',
-            order: 4,
+            category: 'process',
+            order: 2,
+        },
+    },
+    {
+        slug: 'generar-contrato',
+        entry: {
+            question: '¿Puedo generar un contrato de adopción?',
+            questionEs: '¿Puedo generar un contrato de adopción?',
+            questionEn: 'Can I generate an adoption contract?',
+            questionPt: 'Posso gerar um contrato de adoção?',
+            answerEs: 'Sí. Al registrar una adopción podés generar un contrato para que el adoptante lo firme, con cláusulas como el compromiso de castración o la devolución al rescatista.',
+            answerEn: 'Yes. When you register an adoption you can generate a contract for the adopter to sign, with clauses such as a spay/neuter commitment or return-to-rescuer.',
+            answerPt: 'Sim. Ao registrar uma adoção você pode gerar um contrato para o adotante assinar, com cláusulas como o compromisso de castração ou a devolução ao resgatista.',
+            category: 'process',
+            order: 3,
         },
     },
 ];

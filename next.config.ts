@@ -63,6 +63,12 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async redirects() {
+    return [
+      // The old process-only FAQ was consolidated into /faq (v2.31).
+      { source: '/guia/faq', destination: '/faq', permanent: true },
+    ];
+  },
   async rewrites() {
     return [
       { source: '/guide', destination: '/guia' },

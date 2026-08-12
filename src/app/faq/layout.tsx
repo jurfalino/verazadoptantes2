@@ -3,23 +3,23 @@ import { FaqPageJsonLd } from '@/components/JsonLd';
 import { FAQ } from '@/content/guide-data';
 
 export const metadata: Metadata = {
-    title: 'Preguntas Frecuentes sobre Adopción',
+    title: 'Preguntas Frecuentes',
     description:
-        'Respuestas a las preguntas más comunes sobre el proceso de verificación de adoptantes y adopción responsable de animales.',
+        'Qué es BuenAdoptante, cómo ayuda a la comunidad rescatista y cómo protege la información de los adoptantes. Respuestas a las preguntas más comunes de quienes empiezan.',
     openGraph: {
         title: 'Preguntas Frecuentes — BuenAdoptante',
         description:
-            'Todo lo que necesitás saber sobre el proceso de adopción responsable.',
+            'Qué es BuenAdoptante, cómo te ayuda y cómo protege los datos de los adoptantes.',
         type: 'website',
     },
     twitter: {
         card: 'summary_large_image',
         title: 'Preguntas Frecuentes — BuenAdoptante',
         description:
-            'Todo lo que necesitás saber sobre el proceso de adopción responsable.',
+            'Qué es BuenAdoptante, cómo te ayuda y cómo protege los datos de los adoptantes.',
     },
     alternates: {
-        canonical: 'https://buenadoptante.org/guia/faq',
+        canonical: 'https://buenadoptante.org/faq',
     },
 };
 

@@ -27,7 +27,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
             priority: 0.8,
         },
         {
-            url: `${baseUrl}/guia/faq`,
+            url: `${baseUrl}/faq`,
             lastModified: LAST_MODIFIED,
             changeFrequency: 'monthly',
             priority: 0.7,

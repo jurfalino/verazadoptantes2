@@ -285,7 +285,7 @@ export default function GuiaPage() {
                             {label('ctaButtonEs', 'ctaButtonEn', 'ctaButtonPt', 'Empezar a Verificar', 'Start Vetting', 'Começar a Verificar')} →
                         </Link>
                         <Link
-                            href="/guia/faq"
+                            href="/faq"
                             className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-stone-600 bg-stone-100 hover:bg-stone-200 transition-all"
                         >
                             {label('faqHeaderEs', 'faqHeaderEn', 'faqHeaderPt', 'Preguntas Frecuentes', 'FAQ', 'Perguntas Frequentes')} →
