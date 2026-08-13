@@ -26,7 +26,9 @@ export const metadata: Metadata = {
 export default function FaqLayout({ children }: { children: React.ReactNode }) {
     const faqs = FAQ.map((f) => ({
         question: f.entry.questionEs,
-        answer: f.entry.answerEs,
+        // Strip the **bold** markers and collapse paragraph breaks so the
+        // structured data carries clean plain text (not markdown/newlines).
+        answer: f.entry.answerEs.replace(/\*\*/g, '').replace(/\s*\n+\s*/g, ' '),
     }));
     return (
         <>

@@ -22,6 +22,15 @@ const CATEGORY_ORDER: FaqCategory[] = ['about', 'privacy', 'getting-started', 'p
 // Accent-insensitive, case-insensitive normalizer for the search filter.
 const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(new RegExp('[\u0300-\u036f]', 'g'), '');
 
+// Render inline **bold** markers in an FAQ answer paragraph as emphasized <strong>.
+// Lets the content (guide-data.ts) highlight core concepts without any markdown dep.
+function renderInline(text: string) {
+    return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) => {
+        const m = /^\*\*(.+)\*\*$/.exec(part);
+        return m ? <strong key={i} className="font-semibold text-stone-800">{m[1]}</strong> : part;
+    });
+}
+
 export default function FaqPage() {
     const { locale, t } = useLanguage();
     const isEn = locale === 'en';
@@ -160,7 +169,7 @@ export default function FaqPage() {
                                             {isOpen && (
                                                 <div className="px-5 pb-4 text-stone-600 text-sm leading-relaxed border-t border-stone-100 pt-3 space-y-2">
                                                     {answer(item).split('\n').map((p) => p.trim()).filter(Boolean).map((p, i) => (
-                                                        <p key={i}>{p}</p>
+                                                        <p key={i}>{renderInline(p)}</p>
                                                     ))}
                                                 </div>
                                             )}

@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.31.4] - 2026-08-13
+
+### Changed — FAQ highlights key words & core concepts
+
+- FAQ answers now render inline **bold** emphasis: `**...**` markers in the content are drawn as `<strong>` so core concepts (e.g. *registro centralizado de adopciones*, *no es una lista de malos adoptantes*, *Protegido*, *Público*, *Valoraciones*, *Alertas*, *cifrada*) stand out for scanning. es/en/pt.
+- Tagged ~24 core-concept phrases across the about/privacy answers (`src/content/guide-data.ts`); added a tiny `renderInline` helper in the FAQ page (no markdown dependency).
+- The FAQ **JSON-LD** structured data strips the `**` markers and collapses paragraph breaks, so search engines still get clean plain-text answers.
+
 ## [2.31.3] - 2026-08-13
 
 ### Changed — richer FAQ "what is / how to evaluate" answers
