@@ -445,7 +445,7 @@ export default function OrgActivityFeed() {
                                         {/* Header line: actor + org chip + time */}
                                         <div className="flex items-start justify-between gap-3 mb-0.5">
                                             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 min-w-0">
-                                                <span className="text-sm font-semibold text-stone-800 truncate max-w-[14rem]" title={entry.userEmail}>
+                                                <span className="text-sm font-semibold text-stone-800 truncate max-w-[14rem]" title={entry.actorName}>
                                                     {entry.actorName}
                                                 </span>
                                                 {entry.actorOrgName && (

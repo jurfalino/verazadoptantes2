@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.31.2] - 2026-08-13
+
+### Changed — rescuer identity never exposes the email to non-admins (unified on the "handle")
+
+- Everywhere a rescuer's identity is shown to non-admins, a missing display name now falls back to the **email handle** (local part only, e.g. `jonathan`) via a new shared `emailHandle()` (`src/lib/userDisplay.ts`) — never `maskEmail` (which leaked the full `@domain`) or a raw full email. This makes the FAQ "the community sees your name, not your email" accurate (closes the tracked v2.31.1 follow-up).
+- Replaced the leaky renders: `maskEmail` on the "added by"/uploader/audit lines (`AdoptionHistory`, `ImageGallery`, `AdopterProfileV2`); raw email on the org **member list** (`organizations/page.tsx`), the applicant panel (`ApplicantDetailPanel`), and `my-adoptions` cards; and the raw-email hover **tooltips** on `/my-adopters` (now shows the name) and `OrgActivityFeed` (now the actor name). Removed the now-unused `addedByEmail` prop from `ProvenanceLine`.
+- **Unchanged by design:** admin/moderation surfaces keep the full email (they need it — the FAQ says "only admins see your email"), and your own email in the account menu.
+
 ## [2.31.1] - 2026-08-12
 
 ### Added — FAQ security answer ("¿Es seguro?")
