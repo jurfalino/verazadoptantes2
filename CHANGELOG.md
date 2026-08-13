@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.31.1] - 2026-08-12
+
+### Added — FAQ security answer ("¿Es seguro?")
+
+- New lead question in the FAQ Privacy section: the platform is secure for **both** sides — adopters' contact data is protected (masked, access-gated), and rescuers' data is protected too (the community sees your **name**, which you can change in Settings, not your email). All information is **encrypted in transit (HTTPS) and at rest** (Cloudflare D1/R2). es/en/pt.
+- **Tracked follow-up (code, not yet done):** two spots still surface a rescuer email — a partially-masked email fallback on activity/audit cards when no display name is set, and a full-email hover tooltip on `/my-adopters`. These should be tightened (neutral "Rescatista" label + drop the tooltip; keep admin-only email for moderation) so the code fully matches the FAQ claim.
+
 ## [2.31.0] - 2026-08-12
 
 ### Added — a consolidated, discoverable FAQ at `/faq`

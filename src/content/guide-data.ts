@@ -321,6 +321,20 @@ export const FAQ: FaqItem[] = [
     },
     // ── Privacidad y datos ───────────────────────────────────────────────
     {
+        slug: 'es-seguro',
+        entry: {
+            question: '¿Es seguro para mí y para los adoptantes?',
+            questionEs: '¿Es seguro para mí y para los adoptantes?',
+            questionEn: 'Is it secure for me and for adopters?',
+            questionPt: 'É seguro para mim e para os adotantes?',
+            answerEs: 'Sí. La información de los adoptantes está protegida: sus datos de contacto quedan enmascarados y solo los ve quien tiene acceso. Tus datos como rescatista también están protegidos: la comunidad ve tu nombre —que podés cambiar en Configuración—, no tu email. Y toda la información viaja y se guarda cifrada: en tránsito (HTTPS) y en reposo.',
+            answerEn: 'Yes. Adopters\' information is protected: their contact details are masked and only seen by people with access. Your data as a rescuer is protected too: the community sees your name — which you can change in Settings — not your email. And all information is encrypted both in transit (HTTPS) and at rest.',
+            answerPt: 'Sim. As informações dos adotantes são protegidas: os dados de contato ficam ocultos e só são vistos por quem tem acesso. Seus dados como resgatista também são protegidos: a comunidade vê seu nome — que você pode alterar nas Configurações —, não seu e-mail. E todas as informações trafegam e são armazenadas de forma criptografada: em trânsito (HTTPS) e em repouso.',
+            category: 'privacy',
+            order: 1,
+        },
+    },
+    {
         slug: 'protege-informacion',
         entry: {
             question: '¿Cómo se protege la información de los adoptantes?',
@@ -331,7 +345,7 @@ export const FAQ: FaqItem[] = [
             answerEn: 'By default every record is Protected: contact details (phone, email, address) are masked and visible only to the record\'s owner, their organization, admins, and people with approved access. BuenAdoptante never publishes adopters\' data anywhere public — a record only becomes visible without signing in if someone explicitly marks it Public.',
             answerPt: 'Por padrão, cada registro é Protegido: os dados de contato (telefone, e-mail, endereço) ficam ocultos e visíveis apenas para o responsável pelo registro, sua organização, os administradores e quem tiver acesso aprovado. O BuenAdoptante nunca publica os dados dos adotantes em nenhum lugar público — um registro só fica visível sem login se alguém o marcar explicitamente como Público.',
             category: 'privacy',
-            order: 1,
+            order: 2,
         },
     },
     {
@@ -345,7 +359,7 @@ export const FAQ: FaqItem[] = [
             answerEn: 'You (the record\'s owner), your organization teammates, admins and moderators, and anyone you grant access to. Everyone else sees the record as Protected, with contact details hidden. Adoption activity — rating and history — is visible to the community, because that is the heart of vetting; what stays protected is the personal contact information.',
             answerPt: 'Você (o responsável pelo registro), seus colegas de organização, os administradores e moderadores, e qualquer pessoa a quem você conceda acesso. Os demais veem o registro como Protegido, com os dados de contato ocultos. A atividade de adoção — avaliação e histórico — é visível para a comunidade, pois é o cerne da verificação; o que fica protegido são os dados de contato pessoais.',
             category: 'privacy',
-            order: 2,
+            order: 3,
         },
     },
     {
@@ -359,7 +373,7 @@ export const FAQ: FaqItem[] = [
             answerEn: 'You have two paths. You can verify a detail you already have: if you enter, say, a phone number you know and it matches, the system confirms it for you. Or you can request access from the record\'s owner, explaining your reason; the owner receives your request and decides whether to grant it.',
             answerPt: 'Você tem dois caminhos. Pode verificar um dado que já tem: se você digitar, por exemplo, o telefone que conhece e ele coincidir, o sistema confirma para você. Ou pode solicitar acesso ao responsável pelo registro, explicando o motivo; o responsável recebe seu pedido e decide se concede.',
             category: 'privacy',
-            order: 3,
+            order: 4,
         },
     },
     // ── Cómo empezar ─────────────────────────────────────────────────────
