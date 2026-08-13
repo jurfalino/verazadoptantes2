@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.31.3] - 2026-08-13
+
+### Changed — richer FAQ "what is / how to evaluate" answers
+
+- Rewrote **"¿Qué es BuenAdoptante y de qué me sirve?"** with the fuller value story (centralized adoption registry; not a blacklist; why traditional screening falls short; factual shared data), merging in the old "how it helps" question.
+- Added **"¿Cómo evaluar a un adoptante?"** — methodical interviews + BuenAdoptante as an additional tool, explaining the 1–5 star ratings and the automatic over-adoption alerts.
+- FAQ answers now render **multiple paragraphs** (split on newlines) so longer answers are readable. es/en/pt.
+
 ## [2.31.2] - 2026-08-13
 
 ### Changed — rescuer identity never exposes the email to non-admins (unified on the "handle")

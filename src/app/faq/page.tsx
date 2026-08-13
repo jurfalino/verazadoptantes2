@@ -158,8 +158,10 @@ export default function FaqPage() {
                                                 </span>
                                             </button>
                                             {isOpen && (
-                                                <div className="px-5 pb-4 text-stone-600 text-sm leading-relaxed border-t border-stone-100 pt-3">
-                                                    {answer(item)}
+                                                <div className="px-5 pb-4 text-stone-600 text-sm leading-relaxed border-t border-stone-100 pt-3 space-y-2">
+                                                    {answer(item).split('\n').map((p) => p.trim()).filter(Boolean).map((p, i) => (
+                                                        <p key={i}>{p}</p>
+                                                    ))}
                                                 </div>
                                             )}
                                         </div>
