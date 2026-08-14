@@ -47,13 +47,23 @@ describe('normalizeSpecies / recordType / neutered', () => {
 });
 
 describe('validateMappedRow', () => {
-    it('flags missing name', () => {
-        expect(validateMappedRow(row({ name: '' }))).toContain('Falta el nombre del adoptante.');
+    it('flags missing name and contact', () => {
+        expect(validateMappedRow(row({ name: '' }))).toContain('Falta el nombre y el contacto del adoptante.');
         expect(validateMappedRow(row({ name: 'Ana' }))).toEqual([]);
     });
     it('flags present-but-invalid rating and date (never silently drops)', () => {
         expect(validateMappedRow(row({ rating: '9' })).some(e => e.includes('Rating'))).toBe(true);
         expect(validateMappedRow(row({ date: 'ayer' })).some(e => e.includes('Fecha'))).toBe(true);
         expect(validateMappedRow(row({ rating: '4', date: '2024-06-15' }))).toEqual([]);
+    });
+});
+
+describe('validateMappedRow — nameless', () => {
+    const empty = { name: '', phones: [], emails: [], socials: [], addresses: [], dnis: [], combinedContacts: [] };
+    it('accepts empty name when a phone is present', () => {
+        expect(validateMappedRow({ ...empty, phones: ['4796-3445'] } as MappedRow)).toEqual([]);
+    });
+    it('rejects when name AND all contact are empty', () => {
+        expect(validateMappedRow({ ...empty } as MappedRow)).toContain('Falta el nombre y el contacto del adoptante.');
     });
 });

@@ -75,7 +75,11 @@ export function normalizeNeutered(raw: string | undefined): number | null {
  */
 export function validateMappedRow(row: MappedRow): string[] {
     const errors: string[] = [];
-    if (!row.name || !row.name.trim()) errors.push('Falta el nombre del adoptante.');
+    const hasContact = [row.phones, row.emails, row.socials, row.dnis, row.addresses, row.combinedContacts]
+        .some((a) => a && a.length > 0);
+    if (!row.name?.trim() && !hasContact) {
+        errors.push('Falta el nombre y el contacto del adoptante.');
+    }
     if (row.rating && normalizeRating(row.rating) === null) errors.push(`Rating inválido: "${row.rating}" (debe ser 1–5).`);
     if (row.date && normalizeImportDate(row.date) === null) errors.push(`Fecha inválida: "${row.date}".`);
     return errors;
