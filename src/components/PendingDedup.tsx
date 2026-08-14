@@ -56,8 +56,8 @@ function AdopterCard({
                 <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">{sideLabel}</span>
                 <SourceBadge source={adopter.source} t={t} />
             </div>
-            <Link href={`/adopter/${adopter.id}`} className="block hover:text-teal-700">
-                <AdopterName adopter={adopter} className="font-semibold text-stone-900 text-sm truncate block" title />
+            <Link href={`/adopter/${adopter.id}`} className="block">
+                <AdopterName adopter={adopter} className="font-semibold text-stone-900 text-sm truncate block hover:text-teal-700" title />
             </Link>
             {adopter.contactInfo && (
                 <p className="mt-1 text-xs text-stone-500 line-clamp-2 whitespace-pre-line">{adopter.contactInfo}</p>
