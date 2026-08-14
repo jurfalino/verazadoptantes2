@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.32.0] - 2026-08-14
+
+### Added — adopter profiles without a name
+
+Rescuers can now record an adopter identified only by contact data (phone, email, social, or ID) — motivated by legacy blacklists like VANA-2015 where ~71 of 837 entries are anonymous. The name requirement is replaced by a **minimum-identifier rule: name OR at least one contact**.
+
+- **Unified "Sin nombre" fallback** everywhere an adopter name is shown — a single, honest placeholder (italic, muted, theme-safe), rendered via the new `<AdopterName>` component and `adopterDisplayName()` helper. It is kept **distinct from a deleted adopter** (e.g. `admin/flags` no longer conflates the two). On name-only surfaces, an access-gated **contact sub-identifier** (email › phone › social) is appended for viewers who can see the contact.
+- **Intentional friction on manual create** (`AdopterForm`): the name field is no longer HTML-`required`, but saving with an empty name is never silent — no contact at all is a hard error, and an empty name with contact prompts you to complete it with an explicit **"No conozco el nombre"** opt-in before saving anonymously.
+- **Anonymous records default Público** (with the flag on), with an explicit **Protegido** toggle at manual create and a per-row + bulk visibility control in the spreadsheet-import review step. **Named records always stay Protegido** — enforced server-side, so typing a name after opting into anonymous can never leak a named record as public.
+- Validation relaxed on the three rescuer-authoring paths (manual form + `saveAdopterSchema`, API `createAdopterApiSchema`, and import `validateMappedRow`); **self-submission** (the adopter's own form/contract via `_adopterFactory`) still **requires a name**. No DB migration (`name = ''` satisfies the existing `NOT NULL`).
+- Full i18n (es/en/pt) for the new strings; e2e coverage for the create flow + min-identifier rejection.
+
 ## [2.31.8] - 2026-08-14
 
 ### Added — powerful filtering in the spreadsheet-import review step
