@@ -34,7 +34,21 @@ import { dismissCountryBanner } from './helpers';
 test.setTimeout(60000);
 
 test.describe('nameless adopter create flow', () => {
+    // Force Spanish. LanguageContext hydrates from localStorage 'app-locale'
+    // first, then navigator.language — and Playwright's Chromium defaults to
+    // `en`, so the form's i18n'd copy would render in English and miss the
+    // Spanish selectors below (placeholder, "No conozco el nombre", the hard
+    // error, "Sin nombre"). es-AR matches the app's default locale and the real
+    // audience. Mirrors the pattern in tests/admin-metrics.spec.ts.
+    test.use({ locale: 'es-AR' });
     test.beforeEach(async ({ page }) => {
+        // The user storage state was captured under Playwright's default `en`
+        // locale, so it carries app-locale='en' in localStorage, which
+        // LanguageContext prefers over navigator.language. Overwrite it before
+        // any app script runs so the form renders the Spanish copy asserted below.
+        await page.addInitScript(() => {
+            try { window.localStorage.setItem('app-locale', 'es'); } catch { /* noop */ }
+        });
         await page.goto('/adopter/create');
         await dismissCountryBanner(page);
     });
