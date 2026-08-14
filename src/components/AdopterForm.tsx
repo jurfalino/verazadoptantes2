@@ -16,6 +16,7 @@ import ContactEntriesSection from "@/components/ContactEntriesSection";
 import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
 import type { VisibilityBadge } from "@/domain/visibilityBadge";
 import { hasMinimumIdentifier } from "@/domain/adopterIdentity";
+import { adopterDisplayName, namelessSubIdentifier } from "@/lib/adopterDisplay";
 
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
@@ -918,9 +919,10 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                         )}
                                         </>
                                     ) : (
+                                      <>
                                       <div className="flex items-center gap-2 min-w-0">
                                         {(() => {
-                                        const displayName = !isNew && initialData ? initialData.name : t('adopter.title_new');
+                                        const displayName = !isNew && initialData ? adopterDisplayName(initialData, t('adopter.nameless')) : t('adopter.title_new');
                                         // Initial-only tokens (1-char words separated by whitespace) are
                                         // the visual signature of `partialRevealName` — when present the
                                         // viewer has only the initials of those tokens. Make the whole
@@ -956,6 +958,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                 rootClassName="min-w-0 flex-1"
                                                 inputClassName="w-full text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight bg-transparent border-b-2 border-teal-300 focus:border-teal-500 outline-none py-0.5 placeholder-stone-500 transition-all"
                                                 placeholder={t('adopter.placeholder_name_aliases')}
+                                                emptyLabel={t('adopter.nameless')}
                                                 displayRender={(v) => (
                                                     <h1 className="text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate">{v}</h1>
                                                 )}
@@ -1007,6 +1010,18 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                             );
                                         })()}
                                       </div>
+                                      {/* Sub-identifier for a nameless adopter — only when the
+                                          contact reaching this form is unmasked for the viewer
+                                          (isPrivileged); a masked contact would be useless noise. */}
+                                      {!isNew && initialData && !initialData.name?.trim() && isPrivileged && (() => {
+                                          const subId = namelessSubIdentifier(initialData.contactInfo);
+                                          return subId ? (
+                                              <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
+                                                  {subId}
+                                              </p>
+                                          ) : null;
+                                      })()}
+                                      </>
                                     )}
                                 </div>
                                 {/* Actions (right-aligned inline) */}

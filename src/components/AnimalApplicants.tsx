@@ -20,6 +20,8 @@ import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { createContractInvitation } from '@/app/actions/contract';
 import ApplicantDetailPanel from '@/components/ApplicantDetailPanel';
+import { AdopterName } from '@/components/AdopterName';
+import { adopterDisplayName } from '@/lib/adopterDisplay';
 
 // Sentinel: tracking the busy row by submissionId (always present) avoids the
 // `null === null` collision that occurred when an applicant had adopterId: null
@@ -91,9 +93,10 @@ function MiniShareModal({
 }) {
     const { t } = useLanguage();
     const [copied, setCopied] = useState(false);
+    const displayAdopterName = adopterDisplayName({ name: adopterName }, t('adopter.nameless'));
     const shareText = (t('myAnimals.applicants_share_text') || 'Contrato de adopción para {animal} — {adopter}')
         .replace('{animal}', animalName)
-        .replace('{adopter}', adopterName);
+        .replace('{adopter}', displayAdopterName);
 
     const copy = async () => {
         try {
@@ -125,7 +128,7 @@ function MiniShareModal({
                             {t('myAnimals.applicants_share_title') || 'Compartir contrato'}
                         </h3>
                         <p className="text-xs text-stone-500 mt-0.5 truncate max-w-[240px]">
-                            {(t('myAnimals.applicants_share_subtitle') || 'Para {adopter}').replace('{adopter}', adopterName)}
+                            {(t('myAnimals.applicants_share_subtitle') || 'Para {adopter}').replace('{adopter}', displayAdopterName)}
                         </p>
                     </div>
                     <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center text-stone-500 hover:bg-stone-100">
@@ -252,7 +255,7 @@ export default function AnimalApplicants({
                                 >
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2 min-w-0">
-                                            <span className="font-medium text-sm text-stone-900 truncate">{a.adopterName}</span>
+                                            <AdopterName adopter={{ name: a.adopterName }} className="font-medium text-sm text-stone-900 truncate" />
                                             {warnCount > 0 && (
                                                 <span
                                                     className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 flex-shrink-0"

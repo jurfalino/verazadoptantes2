@@ -4,6 +4,10 @@ import { adopterFlags, adopters } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { formatShortDate } from '@/lib/dates';
+import { adopterDisplayName } from '@/lib/adopterDisplay';
+
+// Admin UI is English-only (no t()) — mirrors the i18n `adopter.nameless` label.
+const NAMELESS_LABEL = 'No name';
 
 // Server Actions for this page
 async function handleDismiss(formData: FormData) {
@@ -25,6 +29,12 @@ export default async function AdminFlagsPage() {
         createdAt: adopterFlags.createdAt,
         adopterId: adopterFlags.adopterId,
         adopterName: adopters.name, // Join to get name
+        // Presence marker for the joined `adopters` row — distinct from
+        // `adopterId` (a plain FK-less column on adopter_flags that's always
+        // present). Null here means the adopter was deleted; an empty
+        // `adopterName` with a non-null id means a legitimately nameless
+        // adopter. See NAMELESS_LABEL vs 'Unknown' below.
+        adopterFound: adopters.id,
     })
         .from(adopterFlags)
         .leftJoin(adopters, eq(adopterFlags.adopterId, adopters.id))
@@ -56,7 +66,7 @@ export default async function AdminFlagsPage() {
                                 {flags.map((flag: typeof flags[number]) => (
                                     <tr key={flag.id} className="hover:bg-stone-50/50">
                                         <td className="p-4">
-                                            <div className="font-semibold text-stone-900">{flag.adopterName || 'Unknown'}</div>
+                                            <div className="font-semibold text-stone-900">{flag.adopterFound ? adopterDisplayName({ name: flag.adopterName }, NAMELESS_LABEL) : 'Unknown'}</div>
                                             <div className="text-xs text-stone-500 font-mono">{flag.adopterId}</div>
                                         </td>
                                         <td className="p-4">
@@ -102,7 +112,7 @@ export default async function AdminFlagsPage() {
                             <div key={flag.id} className="bg-white rounded-xl p-4 shadow-sm border border-stone-200">
                                 <div className="flex items-start justify-between gap-2 mb-2">
                                     <div className="min-w-0">
-                                        <div className="font-semibold text-stone-900 truncate">{flag.adopterName || 'Unknown'}</div>
+                                        <div className="font-semibold text-stone-900 truncate">{flag.adopterFound ? adopterDisplayName({ name: flag.adopterName }, NAMELESS_LABEL) : 'Unknown'}</div>
                                         <div className="text-xs text-stone-500 font-mono truncate">{flag.adopterId}</div>
                                     </div>
                                     <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold uppercase flex-shrink-0 ${flag.reason === 'dangerous' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'}`}>

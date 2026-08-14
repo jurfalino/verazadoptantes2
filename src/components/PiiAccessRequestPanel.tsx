@@ -5,6 +5,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolvePiiAccessRequest } from '@/app/actions/piiAccess';
 import type { PiiAccessRequestView } from '@/lib/piiAccess';
+import { AdopterName } from '@/components/AdopterName';
 
 interface PiiAccessRequestPanelProps {
     requests: PiiAccessRequestView[];
@@ -60,7 +61,7 @@ export default function PiiAccessRequestPanel({ requests, showAdopter = false }:
                     <li key={r.id} className="rounded-lg bg-white border border-amber-200 p-3 text-sm space-y-2">
                         {showAdopter && (
                             <a href={`/adopter/${r.adopterId}`} className="block font-semibold text-teal-700 hover:underline">
-                                {r.adopterName}
+                                <AdopterName adopter={{ name: r.adopterName }} />
                             </a>
                         )}
                         <div className="text-stone-800">

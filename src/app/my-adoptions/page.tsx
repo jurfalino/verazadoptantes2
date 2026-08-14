@@ -3,6 +3,7 @@ export const runtime = 'edge';
 
 import { useLanguage } from '@/context/LanguageContext';
 import { emailHandle } from '@/lib/userDisplay';
+import { AdopterName } from '@/components/AdopterName';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
@@ -238,12 +239,12 @@ export default function MyAdoptionsPage() {
                                             </td>
                                             <td className="py-3 px-4">
                                                 <div className="flex items-center gap-2 flex-wrap">
-                                                    {adoption.adopterId && adoption.adopterName ? (
+                                                    {adoption.adopterId ? (
                                                         <Link
                                                             href={`/adopter/${adoption.adopterId}`}
                                                             className="font-medium text-teal-700 hover:text-teal-900 hover:underline transition-colors text-sm"
                                                         >
-                                                            {adoption.adopterName}
+                                                            <AdopterName adopter={{ name: adoption.adopterName }} />
                                                         </Link>
                                                     ) : (
                                                         <span className="text-stone-500 italic text-sm">{t('dashboard.no_adopter') || '—'}</span>
@@ -330,12 +331,12 @@ export default function MyAdoptionsPage() {
                                     <div className="border-t border-stone-100 pt-3 space-y-3">
                                         {/* Row 1: Adopter name only */}
                                         <div className="text-xs text-stone-600">
-                                            {adoption.adopterId && adoption.adopterName ? (
+                                            {adoption.adopterId ? (
                                                 <Link
                                                     href={`/adopter/${adoption.adopterId}`}
                                                     className="font-medium text-teal-700 hover:underline"
                                                 >
-                                                    👤 {adoption.adopterName}
+                                                    👤 <AdopterName adopter={{ name: adoption.adopterName }} />
                                                 </Link>
                                             ) : (
                                                 <span className="text-stone-500 italic">{t('dashboard.no_adopter') || '—'}</span>

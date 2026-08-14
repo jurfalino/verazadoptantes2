@@ -13,6 +13,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { emailHandle } from '@/lib/userDisplay';
+import { adopterDisplayName } from '@/lib/adopterDisplay';
+import { AdopterName } from '@/components/AdopterName';
 import Link from 'next/link';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
@@ -157,7 +159,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
 
     const wa = (text: string) => `https://wa.me/?text=${encodeURIComponent(text)}`;
     const mailto = (subject: string, body: string) => `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    const shareText = shareUrl ? `Contrato de adopción para ${animalName} — ${applicant.adopterName}\n${shareUrl}` : '';
+    const shareText = shareUrl ? `Contrato de adopción para ${animalName} — ${adopterDisplayName({ name: applicant.adopterName }, t('adopter.nameless'))}\n${shareUrl}` : '';
 
     return (
         <div
@@ -218,7 +220,9 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
                 <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
                     {/* Identity block */}
                     <div>
-                        <h2 id="applicant-panel-title" className="text-xl font-bold text-stone-900 break-words">{applicant.adopterName}</h2>
+                        <h2 id="applicant-panel-title" className="text-xl font-bold text-stone-900 break-words">
+                            <AdopterName adopter={{ name: applicant.adopterName }} />
+                        </h2>
                         <div className="flex items-center flex-wrap gap-2 mt-1.5">
                             {applicant.adopterRating != null ? (
                                 <RatingExplainer rating={applicant.adopterRating}>
@@ -350,7 +354,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
                     {shareUrl ? (
                         <div className="space-y-2">
                             <p className="text-xs font-semibold text-teal-700">
-                                ✓ {(t('myAnimals.applicants_panel_invite_ready') || 'Invitación lista para {name}').replace('{name}', applicant.adopterName)}
+                                ✓ {(t('myAnimals.applicants_panel_invite_ready') || 'Invitación lista para {name}').replace('{name}', adopterDisplayName({ name: applicant.adopterName }, t('adopter.nameless')))}
                             </p>
                             <code className="block text-[11px] text-stone-500 truncate p-2 bg-stone-50 rounded-lg" title={shareUrl}>{shareUrl}</code>
                             <div className="grid grid-cols-3 gap-2">

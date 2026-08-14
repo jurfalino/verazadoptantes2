@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { transferAdopterOwnership } from '@/app/actions';
+import { adopterDisplayName } from '@/lib/adopterDisplay';
 
 interface UserOption {
     email: string;
@@ -91,7 +92,7 @@ export default function TransferOwnershipModal({
                 </h3>
                 <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                     {(t('admin.transfer_body') || 'Move "{name}" from {from} to a new owner.')
-                        .replace('{name}', adopterName)
+                        .replace('{name}', adopterDisplayName({ name: adopterName }, t('adopter.nameless')))
                         .replace('{from}', currentOwnerEmail || '—')}
                 </p>
                 <div className="space-y-1.5">
