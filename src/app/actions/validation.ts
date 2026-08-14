@@ -7,6 +7,7 @@
  */
 
 import { z } from 'zod';
+import { hasMinimumIdentifier } from '@/domain/adopterIdentity';
 
 // ── Shared primitives ────────────────────────────────────────────
 
@@ -57,7 +58,7 @@ export const removeContactEntrySchema = z.object({
 
 export const saveAdopterSchema = z.object({
     id: id.optional(),
-    name: requiredText,
+    name: z.string().max(5_000).optional().default(''),
     contactInfo: optionalText,
     // JSON-serialized ContactEntry[]. The string is length-bounded here; the
     // structure (entry count, per-value length) is sanitized by
@@ -72,6 +73,12 @@ export const saveAdopterSchema = z.object({
     country: z.string().length(2).optional().nullable(),
     tokenHash: z.string().max(256).optional().nullable(),
     deletedAt: z.coerce.date().optional().nullable(),
+}).superRefine((data, ctx) => {
+    const contactEntries = typeof data.contactEntries === 'string' ? data.contactEntries : null;
+    const contactInfo = typeof data.contactInfo === 'string' ? data.contactInfo : null;
+    if (!hasMinimumIdentifier({ name: data.name, contactEntries, contactInfo })) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['name'], message: 'A name or at least one contact is required.' });
+    }
 });
 
 // ── Adoption / Interaction ───────────────────────────────────────
@@ -154,7 +161,7 @@ export const verifyKnownInfoSchema = z.object({
 // ── Adopters API (POST /api/adopters) ────────────────
 
 export const createAdopterApiSchema = z.object({
-    name: z.string().min(1, 'Name is required').max(1_000),
+    name: z.string().max(1_000).optional().default(''),
     contactInfo: z.union([
         z.string().max(10_000),
         z.object({
@@ -210,4 +217,10 @@ export const createAdopterApiSchema = z.object({
         details: z.string().max(10_000).optional().nullable(),
         onBehalfOf: z.string().max(500).optional().nullable(),
     }).optional(),
+}).superRefine((data, ctx) => {
+    const contactEntries = typeof data.contactEntries === 'string' ? data.contactEntries : null;
+    const contactInfo = typeof data.contactInfo === 'string' ? data.contactInfo : null;
+    if (!hasMinimumIdentifier({ name: data.name, contactEntries, contactInfo })) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['name'], message: 'A name or at least one contact is required.' });
+    }
 });
