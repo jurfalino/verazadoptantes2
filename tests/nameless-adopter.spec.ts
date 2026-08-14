@@ -78,8 +78,16 @@ test.describe('nameless adopter create flow', () => {
         await expect(page.getByRole('checkbox', { name: /No conozco el nombre/i })).toBeVisible({ timeout: 10000 });
         await expect(page.getByText(/al menos un dato de contacto/i)).toHaveCount(0);
 
-        // Opt in via the "No conozco el nombre" checkbox and save again.
-        await page.getByRole('checkbox', { name: /No conozco el nombre/i }).check();
+        // Opt in via the "No conozco el nombre" checkbox. Use click(), NOT
+        // check(): checking sets dontKnowName=true and setNameHint(false)
+        // (AdopterForm.tsx:928), and the checkbox lives inside the `nameHint &&`
+        // block — so it unmounts the instant it's checked. check() clicks and
+        // then polls isChecked() on the now-detached element until timeout;
+        // click() just dispatches the event, which is all the opt-in needs.
+        await page.getByRole('checkbox', { name: /No conozco el nombre/i }).click();
+        // Opt-in registered: the anonymous-public notice (only rendered when
+        // dontKnowName is true, AdopterForm.tsx:934-936) is now shown.
+        await expect(page.getByText(/este registro será público/i)).toBeVisible({ timeout: 10000 });
         await page.getByTestId('adopter-form-submit').click();
 
         // Duplicate-detection confirmation modal may or may not appear
