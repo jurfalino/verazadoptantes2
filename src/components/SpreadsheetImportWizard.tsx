@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
 import { mapImportColumns, interpretRows, aiCleanRowContacts } from '@/app/actions';
 import { buildImportBody } from '@/lib/importRow';
-import { normalizeSpecies, normalizeImportDate } from '@/domain/importRow';
+import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType } from '@/domain/importRow';
 import {
     TARGET_IMPORT_FIELDS, COMBINED_CONTACT, IGNORE,
     applyColumnMap, emptyMappedRow,
@@ -59,6 +59,8 @@ export default function SpreadsheetImportWizard() {
     const [deselected, setDeselected] = useState<Set<number>>(new Set());
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState<Filter>('all');
+    const [typeFilter, setTypeFilter] = useState<string>('all');     // recordType, or 'all'
+    const [ratingFilter, setRatingFilter] = useState<string>('all'); // '1'..'5', 'none', or 'all'
     const [advancedOpen, setAdvancedOpen] = useState(false);
     const [editing, setEditing] = useState<number | null>(null);
     // Import state.
@@ -147,12 +149,22 @@ export default function SpreadsheetImportWizard() {
     const filtered = useMemo(() => records.filter(r => {
         if (filter === 'valid' && r.built.errors.length) return false;
         if (filter === 'invalid' && !r.built.errors.length) return false;
+        if (typeFilter !== 'all' && normalizeRecordType(r.eff.recordType) !== typeFilter) return false;
+        if (ratingFilter !== 'all') {
+            const nr = normalizeRating(r.eff.rating);
+            if (ratingFilter === 'none' ? nr !== null : String(nr) !== ratingFilter) return false;
+        }
         if (search.trim()) {
-            const hay = `${r.eff.name} ${r.eff.phones.join(' ')} ${r.eff.emails.join(' ')} ${r.eff.animalName ?? ''}`.toLowerCase();
+            // Type-ahead across ALL fields (name, every contact type, animal, motivo…).
+            const e = r.eff;
+            const hay = [
+                e.name, e.animalName, e.species, e.details, e.onBehalfOf,
+                ...e.phones, ...e.emails, ...e.socials, ...e.addresses, ...e.dnis, ...e.combinedContacts,
+            ].filter(Boolean).join(' ').toLowerCase();
             if (!hay.includes(search.trim().toLowerCase())) return false;
         }
         return true;
-    }), [records, filter, search]);
+    }), [records, filter, typeFilter, ratingFilter, search]);
 
     const importable = records.filter(r => r.selected && r.built.errors.length === 0);
     const selectedInvalid = records.filter(r => r.selected && r.built.errors.length > 0).length;
@@ -190,7 +202,7 @@ export default function SpreadsheetImportWizard() {
     };
 
     const tally = { created: results.filter(r => r.status === 'created').length, skipped: results.filter(r => r.status === 'skipped').length, failed: results.filter(r => r.status === 'failed').length };
-    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('ai'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); };
+    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('ai'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); };
 
     return (
         <div className="max-w-5xl mx-auto p-4">
@@ -270,22 +282,35 @@ export default function SpreadsheetImportWizard() {
                         </div>
                     )}
 
-                    {/* Toolbar: search + filter + counts + bulk-rating */}
-                    <div className="flex flex-wrap items-center gap-2 mb-3">
-                        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre o contacto…" className="flex-1 min-w-[200px] h-9 px-3 rounded-lg border border-stone-200 text-sm outline-none focus:border-teal-400" />
-                        <select value={filter} onChange={e => setFilter(e.target.value as Filter)} className="h-9 px-2 rounded-lg border border-stone-200 text-sm bg-white">
-                            <option value="all">Todos ({records.length})</option>
-                            <option value="valid">Válidos ({records.filter(r => !r.built.errors.length).length})</option>
-                            <option value="invalid">Con errores ({records.filter(r => r.built.errors.length).length})</option>
-                        </select>
-                        {/* #3: massively set a rating on every row. Controlled value="" so it
-                           snaps back to the placeholder after each action. */}
-                        <select value="" onChange={e => { if (e.target.value) setRatingAll(e.target.value === 'clear' ? '' : e.target.value); }} className="h-9 px-2 rounded-lg border border-stone-200 text-sm bg-white text-stone-600" title="Asignar un rating a todos los registros">
-                            <option value="">Rating a todos…</option>
-                            {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★ a todos</option>)}
-                            <option value="clear">Limpiar rating</option>
-                        </select>
-                        <span className="text-sm text-stone-500">{importable.length} se importarán{selectedInvalid > 0 && <span className="text-rose-500"> · {selectedInvalid} con errores</span>}</span>
+                    {/* Toolbar: type-ahead search (all fields) + filters (validez/tipo/rating) + bulk-rating + counts */}
+                    <div className="space-y-2 mb-3">
+                        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar en todos los campos (nombre, contacto, animal, motivo…)" className="w-full h-9 px-3 rounded-lg border border-stone-200 text-sm outline-none focus:border-teal-400" />
+                        <div className="flex flex-wrap items-center gap-2">
+                            <select value={filter} onChange={e => setFilter(e.target.value as Filter)} className="h-9 px-2 rounded-lg border border-stone-200 text-sm bg-white" title="Validez">
+                                <option value="all">Validez: todas</option>
+                                <option value="valid">Válidos ({records.filter(r => !r.built.errors.length).length})</option>
+                                <option value="invalid">Con errores ({records.filter(r => r.built.errors.length).length})</option>
+                            </select>
+                            <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="h-9 px-2 rounded-lg border border-stone-200 text-sm bg-white" title="Tipo de actividad">
+                                <option value="all">Tipo: todos</option>
+                                {RECORD_TYPES.map(t => <option key={t} value={t}>{RECORD_TYPE_LABELS[t] ?? t}</option>)}
+                            </select>
+                            <select value={ratingFilter} onChange={e => setRatingFilter(e.target.value)} className="h-9 px-2 rounded-lg border border-stone-200 text-sm bg-white" title="Rating">
+                                <option value="all">Rating: todos</option>
+                                {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★</option>)}
+                                <option value="none">Sin rating</option>
+                            </select>
+                            {/* Massively set a rating on every row. Controlled value="" so it snaps back. */}
+                            <select value="" onChange={e => { if (e.target.value) setRatingAll(e.target.value === 'clear' ? '' : e.target.value); }} className="h-9 px-2 rounded-lg border border-stone-200 text-sm bg-white text-stone-600" title="Asignar un rating a todos los registros">
+                                <option value="">Rating a todos…</option>
+                                {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★ a todos</option>)}
+                                <option value="clear">Limpiar rating</option>
+                            </select>
+                            {(filter !== 'all' || typeFilter !== 'all' || ratingFilter !== 'all' || search.trim() !== '') && (
+                                <button onClick={() => { setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setSearch(''); }} className="h-9 px-2 text-sm text-stone-500 hover:text-stone-700">✕ Limpiar filtros</button>
+                            )}
+                            <span className="text-sm text-stone-500 ml-auto">Mostrando {filtered.length} de {records.length} · {importable.length} se importarán{selectedInvalid > 0 && <span className="text-rose-500"> · {selectedInvalid} con errores</span>}</span>
+                        </div>
                     </div>
 
                     <div className="border border-stone-200 rounded-xl overflow-hidden">

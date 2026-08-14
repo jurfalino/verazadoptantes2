@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.31.8] - 2026-08-14
+
+### Added — powerful filtering in the spreadsheet-import review step
+
+- The `/import/sheet` review step now has a full-width **type-ahead search across all fields** (name, every contact type, animal, species, motivo/details, `onBehalfOf`) — previously it only matched name + phones + emails.
+- Added a **Tipo de actividad** dropdown (filter by recordType: Adopción / Tránsito / Observación / Solicitud / Seguimiento / Devolución) and a **Rating** dropdown (1–5 or "Sin rating").
+- Kept the validez (válidos/con errores) filter and the bulk "Rating a todos" control; added a **Limpiar filtros** button and a live "Mostrando N de M" count.
+
 ## [2.31.7] - 2026-08-13
 
 ### Fixed / Changed — spreadsheet import (`/import/sheet`) review flow
