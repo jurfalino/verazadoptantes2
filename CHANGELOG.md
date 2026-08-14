@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.31.5] - 2026-08-13
+
+### Added — FAQ answers support bullet lists
+
+- FAQ answers can now be organized as bullet points: any answer line starting with `- ` or `• ` renders as a `<li>` in a `<ul>` on `/faq` (`renderAnswer` in `src/app/faq/page.tsx`). Consecutive bullet lines group into one list; plain lines stay paragraphs — fully backward-compatible, so existing prose answers are unchanged until bullets are added to the content.
+- The FAQ **JSON-LD** structured data strips line-leading bullet markers (in addition to `**` bold markers) so search engines still get clean plain-text answers.
+
 ## [2.31.4] - 2026-08-13
 
 ### Changed — FAQ highlights key words & core concepts

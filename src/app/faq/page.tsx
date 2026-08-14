@@ -2,7 +2,7 @@
 
 import { useLanguage } from '@/context/LanguageContext';
 import Link from 'next/link';
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { type ReactNode, useEffect, useMemo, useState, useCallback } from 'react';
 
 type FaqCategory = 'about' | 'privacy' | 'getting-started' | 'process';
 
@@ -29,6 +29,36 @@ function renderInline(text: string) {
         const m = /^\*\*(.+)\*\*$/.exec(part);
         return m ? <strong key={i} className="font-semibold text-stone-800">{m[1]}</strong> : part;
     });
+}
+
+// Render an answer: plain lines become <p>, and consecutive lines starting with
+// "- " or "• " become a <ul> bullet list. Content authors (guide-data.ts) opt in
+// per-answer just by prefixing lines — no markdown dependency.
+function renderAnswer(text: string): ReactNode[] {
+    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+    const blocks: ReactNode[] = [];
+    let bullets: string[] = [];
+    const flushBullets = () => {
+        if (!bullets.length) return;
+        const items = bullets;
+        blocks.push(
+            <ul key={`ul-${blocks.length}`} className="list-disc pl-5 space-y-1">
+                {items.map((b, i) => <li key={i}>{renderInline(b)}</li>)}
+            </ul>
+        );
+        bullets = [];
+    };
+    for (const line of lines) {
+        const m = /^[-•]\s+(.*)$/.exec(line);
+        if (m) {
+            bullets.push(m[1]);
+        } else {
+            flushBullets();
+            blocks.push(<p key={`p-${blocks.length}`}>{renderInline(line)}</p>);
+        }
+    }
+    flushBullets();
+    return blocks;
 }
 
 export default function FaqPage() {
@@ -168,9 +198,7 @@ export default function FaqPage() {
                                             </button>
                                             {isOpen && (
                                                 <div className="px-5 pb-4 text-stone-600 text-sm leading-relaxed border-t border-stone-100 pt-3 space-y-2">
-                                                    {answer(item).split('\n').map((p) => p.trim()).filter(Boolean).map((p, i) => (
-                                                        <p key={i}>{renderInline(p)}</p>
-                                                    ))}
+                                                    {renderAnswer(answer(item))}
                                                 </div>
                                             )}
                                         </div>
