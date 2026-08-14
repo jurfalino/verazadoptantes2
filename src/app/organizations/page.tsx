@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { emailHandle } from '@/lib/userDisplay';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
@@ -351,7 +352,7 @@ function OrgCard({ org, onRefresh }: { org: Organization; onRefresh: () => void 
                 <ul className="space-y-1.5">
                     {org.members.map((m) => (
                         <li key={m.id} className="flex items-center justify-between text-sm">
-                            <span className="text-stone-700">{m.displayName || m.userEmail}</span>
+                            <span className="text-stone-700">{m.displayName || emailHandle(m.userEmail)}</span>
                             <span className="text-xs text-stone-400 px-2 py-0.5 bg-stone-50 rounded-full">
                                 {m.role === 'owner' ? t('organizations.owner') : t('organizations.member')}
                             </span>

@@ -94,7 +94,7 @@ function SourcePill({ source, t }: { source?: string; t: (key: string) => string
  * feed.
  */
 function ProvenanceLine({
-    kind, name, org, isSelf, sourceKind, date, addedByEmail, t,
+    kind, name, org, isSelf, sourceKind, date, t,
 }: {
     kind: 'created' | 'edited';
     name: string | null | undefined;
@@ -104,7 +104,6 @@ function ProvenanceLine({
     /** v2.19.14: accept string too — Drizzle Date columns serialise to ISO
      *  through NextResponse.json. `timeAgoSeconds` normalises all three. */
     date: number | Date | string | null | undefined;
-    addedByEmail: string | null | undefined;
     t: (key: string) => string;
 }) {
     const isEs = true; // page already biases ES; tied to LanguageContext upstream if we ever surface EN here
@@ -137,7 +136,7 @@ function ProvenanceLine({
     return (
         <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 min-w-0">
             <span className="text-stone-500 flex-shrink-0">{verb}</span>
-            <span className="font-medium text-stone-700 truncate max-w-[12rem]" title={addedByEmail || undefined}>
+            <span className="font-medium text-stone-700 truncate max-w-[12rem]" title={name || undefined}>
                 {name}
             </span>
             {org && (
@@ -442,7 +441,6 @@ export default function MyAdoptersPage() {
                                                 isSelf={!!adopter.creatorIsSelf}
                                                 sourceKind={adopter.source}
                                                 date={adopter.createdAt}
-                                                addedByEmail={adopter.addedBy}
                                                 t={t}
                                             />
                                             {adopter.lastEditedAt && adopter.lastEditorName
@@ -453,7 +451,6 @@ export default function MyAdoptersPage() {
                                                     org={adopter.lastEditorOrgName ?? null}
                                                     isSelf={!!adopter.lastEditorIsSelf}
                                                     date={adopter.lastEditedAt}
-                                                    addedByEmail={null}
                                                     t={t}
                                                 />
                                             )}
@@ -545,7 +542,6 @@ export default function MyAdoptersPage() {
                                             isSelf={!!adopter.creatorIsSelf}
                                             sourceKind={adopter.source}
                                             date={adopter.createdAt}
-                                            addedByEmail={adopter.addedBy}
                                             t={t}
                                         />
                                         {adopter.lastEditedAt && adopter.lastEditorName
@@ -556,7 +552,6 @@ export default function MyAdoptersPage() {
                                                 org={adopter.lastEditorOrgName ?? null}
                                                 isSelf={!!adopter.lastEditorIsSelf}
                                                 date={adopter.lastEditedAt}
-                                                addedByEmail={null}
                                                 t={t}
                                             />
                                         )}

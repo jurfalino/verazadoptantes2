@@ -2,6 +2,78 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.31.8] - 2026-08-14
+
+### Added — powerful filtering in the spreadsheet-import review step
+
+- The `/import/sheet` review step now has a full-width **type-ahead search across all fields** (name, every contact type, animal, species, motivo/details, `onBehalfOf`) — previously it only matched name + phones + emails.
+- Added a **Tipo de actividad** dropdown (filter by recordType: Adopción / Tránsito / Observación / Solicitud / Seguimiento / Devolución) and a **Rating** dropdown (1–5 or "Sin rating").
+- Kept the validez (válidos/con errores) filter and the bulk "Rating a todos" control; added a **Limpiar filtros** button and a live "Mostrando N de M" count.
+
+## [2.31.7] - 2026-08-13
+
+### Fixed / Changed — spreadsheet import (`/import/sheet`) review flow
+
+- **No more "error" flash while a CSV loads.** During AI interpretation the not-yet-processed rows were rendered as invalid ("falta", red) — the screen looked broken for a few seconds. The review grid is now gated behind a proper loading state (spinner + progress bar + skeleton rows) and only appears once interpretation finishes, showing the full list of all records to validate one by one.
+- **Better review-step editing** (`SpreadsheetImportWizard`): **Species** is now a dropdown (empty default), **Rating** is a 1–5 dropdown with an "— (auto)" default that keeps the system/AI-determined value, and **Date** uses a native date picker. Record type now shows Spanish labels.
+- **Bulk rating:** a "Rating a todos…" control in the toolbar sets (or clears) a rating across every row at once.
+
+## [2.31.6] - 2026-08-13
+
+### Changed — FAQ content refresh (user edits from the shared doc)
+
+- Reworked 8 answers from the user-edited Google Doc, now using **bullet lists** where it aids scanning: *¿Qué es…?* and *¿Cómo evaluar…?* (bulleted), *¿Es seguro…?* (cifrado / adoptantes / rescatistas), *¿Cómo se protege…?* (adds that name + address **locality** stay visible and that social-media imports are **public by default**), *¿Quién puede ver…?* (bulleted), *¿Cómo accedo a un dato protegido?* (3 concrete paths), *¿Cómo empiezo?* (auth + términos), and *¿Es gratuita?* (minor wording).
+- New privacy claims were **verified against the code** before publishing: name + address-locality stay unmasked on Protected records (`piiAccess.ts`), and social-URL imports are stamped public when `ENABLE_PUBLIC_PROFILES` is on (confirmed on in prod).
+- **Removed** the "Durante la adopción" section (proceso completo / devolución / contrato) at the user's request — FAQ is now 11 questions.
+- Light copy cleanup on the new text: fixed typos (Tambien→también, terminos→términos, qué información), normalized to voseo for consistency (buscás/tenés/podés), and replaced hyphen-dashes with em-dashes/parentheses. EN + PT regenerated to match.
+
+## [2.31.5] - 2026-08-13
+
+### Added — FAQ answers support bullet lists
+
+- FAQ answers can now be organized as bullet points: any answer line starting with `- ` or `• ` renders as a `<li>` in a `<ul>` on `/faq` (`renderAnswer` in `src/app/faq/page.tsx`). Consecutive bullet lines group into one list; plain lines stay paragraphs — fully backward-compatible, so existing prose answers are unchanged until bullets are added to the content.
+- The FAQ **JSON-LD** structured data strips line-leading bullet markers (in addition to `**` bold markers) so search engines still get clean plain-text answers.
+
+## [2.31.4] - 2026-08-13
+
+### Changed — FAQ highlights key words & core concepts
+
+- FAQ answers now render inline **bold** emphasis: `**...**` markers in the content are drawn as `<strong>` so core concepts (e.g. *registro centralizado de adopciones*, *no es una lista de malos adoptantes*, *Protegido*, *Público*, *Valoraciones*, *Alertas*, *cifrada*) stand out for scanning. es/en/pt.
+- Tagged ~24 core-concept phrases across the about/privacy answers (`src/content/guide-data.ts`); added a tiny `renderInline` helper in the FAQ page (no markdown dependency).
+- The FAQ **JSON-LD** structured data strips the `**` markers and collapses paragraph breaks, so search engines still get clean plain-text answers.
+
+## [2.31.3] - 2026-08-13
+
+### Changed — richer FAQ "what is / how to evaluate" answers
+
+- Rewrote **"¿Qué es BuenAdoptante y de qué me sirve?"** with the fuller value story (centralized adoption registry; not a blacklist; why traditional screening falls short; factual shared data), merging in the old "how it helps" question.
+- Added **"¿Cómo evaluar a un adoptante?"** — methodical interviews + BuenAdoptante as an additional tool, explaining the 1–5 star ratings and the automatic over-adoption alerts.
+- FAQ answers now render **multiple paragraphs** (split on newlines) so longer answers are readable. es/en/pt.
+
+## [2.31.2] - 2026-08-13
+
+### Changed — rescuer identity never exposes the email to non-admins (unified on the "handle")
+
+- Everywhere a rescuer's identity is shown to non-admins, a missing display name now falls back to the **email handle** (local part only, e.g. `jonathan`) via a new shared `emailHandle()` (`src/lib/userDisplay.ts`) — never `maskEmail` (which leaked the full `@domain`) or a raw full email. This makes the FAQ "the community sees your name, not your email" accurate (closes the tracked v2.31.1 follow-up).
+- Replaced the leaky renders: `maskEmail` on the "added by"/uploader/audit lines (`AdoptionHistory`, `ImageGallery`, `AdopterProfileV2`); raw email on the org **member list** (`organizations/page.tsx`), the applicant panel (`ApplicantDetailPanel`), and `my-adoptions` cards; and the raw-email hover **tooltips** on `/my-adopters` (now shows the name) and `OrgActivityFeed` (now the actor name). Removed the now-unused `addedByEmail` prop from `ProvenanceLine`.
+- **Unchanged by design:** admin/moderation surfaces keep the full email (they need it — the FAQ says "only admins see your email"), and your own email in the account menu.
+
+## [2.31.1] - 2026-08-12
+
+### Added — FAQ security answer ("¿Es seguro?")
+
+- New lead question in the FAQ Privacy section: the platform is secure for **both** sides — adopters' contact data is protected (masked, access-gated), and rescuers' data is protected too (the community sees your **name**, which you can change in Settings, not your email). All information is **encrypted in transit (HTTPS) and at rest** (Cloudflare D1/R2). es/en/pt.
+- **Tracked follow-up (code, not yet done):** two spots still surface a rescuer email — a partially-masked email fallback on activity/audit cards when no display name is set, and a full-email hover tooltip on `/my-adopters`. These should be tightened (neutral "Rescatista" label + drop the tooltip; keep admin-only email for moderation) so the code fully matches the FAQ claim.
+
+## [2.31.0] - 2026-08-12
+
+### Added — a consolidated, discoverable FAQ at `/faq`
+
+- New **`/faq`** page aimed at people new to BuenAdoptante: what it is, how it helps, and **how it protects adopters' data**. Grouped into four categories (Sobre BuenAdoptante · Privacidad y datos · Cómo empezar · Durante la adopción), with an accent-insensitive **search**, a multi-open accordion, per-question deep links (`/faq#slug`), and es/en/pt content. Design-system compliant (SVG icons not emoji, themed tokens, light + "Azul Noche" dark).
+- The privacy answers reflect the shipped access system: records are **Protegido by default** (contact masked); activity/rating stays visible to the community; a masked viewer can **verify a detail they already have** or **request access with a reason**.
+- Absorbed the 4 old process questions and **retired `/guia/faq` → `/faq`** (301 redirect in `next.config.ts`). Added FAQ to the **footer** (discoverable on every public page), updated the guide CTA and the sitemap.
+- Content lives in `src/content/guide-data.ts` (the `FAQ` array gained a `category` field). Note: Keystatic was removed earlier; CLAUDE.md's CMS/content notes are stale — a separate cleanup.
+
 ## [2.30.8] - 2026-08-10
 
 ### Fixed — star size now matches the adjacent text everywhere

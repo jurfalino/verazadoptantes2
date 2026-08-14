@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
 import { mapImportColumns, interpretRows, aiCleanRowContacts } from '@/app/actions';
 import { buildImportBody } from '@/lib/importRow';
+import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType } from '@/domain/importRow';
 import {
     TARGET_IMPORT_FIELDS, COMBINED_CONTACT, IGNORE,
     applyColumnMap, emptyMappedRow,
@@ -20,6 +21,23 @@ const FIELD_OPTIONS = [
 ];
 const CONFIDENCE_DOT: Record<string, string> = { high: 'bg-emerald-500', medium: 'bg-amber-400', low: 'bg-stone-300' };
 const RECORD_TYPES = ['adoption', 'foster', 'observation', 'adoption_request', 'follow_up', 'returned_pet'];
+const RECORD_TYPE_LABELS: Record<string, string> = {
+    adoption: 'Adopción', foster: 'Tránsito', observation: 'Observación',
+    adoption_request: 'Solicitud', follow_up: 'Seguimiento', returned_pet: 'Devolución',
+};
+// Species dropdown — value normalizes cleanly via normalizeSpecies; empty = sin especie.
+const SPECIES_OPTIONS: Array<{ v: string; l: string }> = [
+    { v: '', l: '— Especie —' }, { v: 'dog', l: 'Perro' }, { v: 'cat', l: 'Gato' },
+    { v: 'bird', l: 'Ave' }, { v: 'other', l: 'Otro' },
+];
+const RATING_OPTIONS = ['', '1', '2', '3', '4', '5'];
+// Map any interpreted species string onto one of the dropdown option values.
+function speciesOptionValue(raw: string | undefined): string {
+    const norm = normalizeSpecies(raw);
+    if (!norm) return '';
+    const canon = norm.toLowerCase();
+    return SPECIES_OPTIONS.some(o => o.v === canon) ? canon : 'other';
+}
 
 type Step = 'upload' | 'confirm' | 'import';
 type Filter = 'all' | 'valid' | 'invalid';
@@ -41,6 +59,8 @@ export default function SpreadsheetImportWizard() {
     const [deselected, setDeselected] = useState<Set<number>>(new Set());
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState<Filter>('all');
+    const [typeFilter, setTypeFilter] = useState<string>('all');     // recordType, or 'all'
+    const [ratingFilter, setRatingFilter] = useState<string>('all'); // '1'..'5', 'none', or 'all'
     const [advancedOpen, setAdvancedOpen] = useState(false);
     const [editing, setEditing] = useState<number | null>(null);
     // Import state.
@@ -103,6 +123,16 @@ export default function SpreadsheetImportWizard() {
     };
     const setOverride = (i: number, patch: Partial<MappedRow>) => setOverrides(o => ({ ...o, [i]: { ...o[i], ...patch } }));
     const toggle = (i: number) => setDeselected(s => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n; });
+    // Bulk-set a rating on every row (empty = clear the override, back to the
+    // system/AI-determined value).
+    const setRatingAll = (rating: string) => {
+        if (!parsed) return;
+        setOverrides(o => {
+            const n = { ...o };
+            parsed.rows.forEach((_, i) => { n[i] = { ...n[i], rating: rating || undefined }; });
+            return n;
+        });
+    };
 
     // Derive final records (AI interpretation OR column mapping, + per-row edits).
     const records = useMemo(() => {
@@ -119,12 +149,22 @@ export default function SpreadsheetImportWizard() {
     const filtered = useMemo(() => records.filter(r => {
         if (filter === 'valid' && r.built.errors.length) return false;
         if (filter === 'invalid' && !r.built.errors.length) return false;
+        if (typeFilter !== 'all' && normalizeRecordType(r.eff.recordType) !== typeFilter) return false;
+        if (ratingFilter !== 'all') {
+            const nr = normalizeRating(r.eff.rating);
+            if (ratingFilter === 'none' ? nr !== null : String(nr) !== ratingFilter) return false;
+        }
         if (search.trim()) {
-            const hay = `${r.eff.name} ${r.eff.phones.join(' ')} ${r.eff.emails.join(' ')} ${r.eff.animalName ?? ''}`.toLowerCase();
+            // Type-ahead across ALL fields (name, every contact type, animal, motivo…).
+            const e = r.eff;
+            const hay = [
+                e.name, e.animalName, e.species, e.details, e.onBehalfOf,
+                ...e.phones, ...e.emails, ...e.socials, ...e.addresses, ...e.dnis, ...e.combinedContacts,
+            ].filter(Boolean).join(' ').toLowerCase();
             if (!hay.includes(search.trim().toLowerCase())) return false;
         }
         return true;
-    }), [records, filter, search]);
+    }), [records, filter, typeFilter, ratingFilter, search]);
 
     const importable = records.filter(r => r.selected && r.built.errors.length === 0);
     const selectedInvalid = records.filter(r => r.selected && r.built.errors.length > 0).length;
@@ -162,7 +202,7 @@ export default function SpreadsheetImportWizard() {
     };
 
     const tally = { created: results.filter(r => r.status === 'created').length, skipped: results.filter(r => r.status === 'skipped').length, failed: results.filter(r => r.status === 'failed').length };
-    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('ai'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); };
+    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('ai'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); };
 
     return (
         <div className="max-w-5xl mx-auto p-4">
@@ -194,24 +234,36 @@ export default function SpreadsheetImportWizard() {
                         <span><span className="font-semibold">{fileName}</span> · {parsed.rowCount} filas</span>
                     </div>
 
-                    {/* Interpreting progress (AI ingesting the rows, chunked). */}
-                    {busy && mode === 'ai' && interpretProgress.total > 0 && interpretProgress.done < interpretProgress.total && (
-                        <div className="mb-4">
-                            <div className="text-xs text-teal-600 mb-1">🤖 Interpretando con IA… {interpretProgress.done}/{interpretProgress.total}</div>
-                            <div className="h-2 rounded-full bg-stone-100 overflow-hidden"><div className="h-full bg-teal-500 transition-all" style={{ width: `${(interpretProgress.done / interpretProgress.total) * 100}%` }} /></div>
+                    {busy ? (
+                        /* #1: while the AI interprets the rows, show a loading state — NOT
+                           the not-yet-interpreted rows, which render as red "falta" errors
+                           and make the screen look broken. */
+                        <div className="border border-stone-200 rounded-xl p-6">
+                            <div className="text-sm text-teal-700 mb-3 flex items-center gap-2">
+                                <span className="inline-block w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" aria-hidden />
+                                {mode === 'ai' && interpretProgress.total > 0
+                                    ? `Interpretando ${interpretProgress.total} filas con IA… ${interpretProgress.done}/${interpretProgress.total}`
+                                    : 'Preparando la lista de registros…'}
+                            </div>
+                            {mode === 'ai' && interpretProgress.total > 0 && (
+                                <div className="h-2 rounded-full bg-stone-100 overflow-hidden mb-4"><div className="h-full bg-teal-500 transition-all" style={{ width: `${(interpretProgress.done / interpretProgress.total) * 100}%` }} /></div>
+                            )}
+                            <div className="space-y-2">
+                                {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-9 rounded-lg bg-stone-100 animate-pulse" />)}
+                            </div>
                         </div>
-                    )}
-
+                    ) : (
+                    <>
                     {/* Mode: AI interpretation (default) with an escape hatch, or the mapping fallback. */}
                     {mode === 'ai' ? (
                         <div className="mb-4 p-3 rounded-lg bg-teal-50 border border-teal-100 text-sm text-teal-800 flex items-center justify-between gap-3">
-                            <span>🤖 Registros interpretados por IA — revisá y editá lo que haga falta.</span>
-                            {!busy && <button onClick={switchToMapping} className="flex-shrink-0 text-teal-700 hover:underline">¿Mal interpretado? Mapear columnas</button>}
+                            <span>🤖 {records.length} registros interpretados por IA — revisalos y editá lo que haga falta.</span>
+                            <button onClick={switchToMapping} className="flex-shrink-0 text-teal-700 hover:underline">¿Mal interpretado? Mapear columnas</button>
                         </div>
                     ) : (
                         <div className="border border-stone-200 rounded-xl mb-4">
                             <button onClick={() => setAdvancedOpen(o => !o)} className="w-full text-left px-4 py-2 text-sm font-medium text-stone-600 flex items-center justify-between">
-                                <span>⚙️ Mapeo de columnas {busy && '· cargando…'}</span>
+                                <span>⚙️ Mapeo de columnas</span>
                                 <span className="text-stone-400">{advancedOpen ? '▲' : '▼'}</span>
                             </button>
                             {advancedOpen && map && (
@@ -230,15 +282,35 @@ export default function SpreadsheetImportWizard() {
                         </div>
                     )}
 
-                    {/* Toolbar: search + filter + counts */}
-                    <div className="flex flex-wrap items-center gap-2 mb-3">
-                        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre o contacto…" className="flex-1 min-w-[200px] h-9 px-3 rounded-lg border border-stone-200 text-sm outline-none focus:border-teal-400" />
-                        <select value={filter} onChange={e => setFilter(e.target.value as Filter)} className="h-9 px-2 rounded-lg border border-stone-200 text-sm bg-white">
-                            <option value="all">Todos ({records.length})</option>
-                            <option value="valid">Válidos ({records.filter(r => !r.built.errors.length).length})</option>
-                            <option value="invalid">Con errores ({records.filter(r => r.built.errors.length).length})</option>
-                        </select>
-                        <span className="text-sm text-stone-500">{importable.length} se importarán{selectedInvalid > 0 && <span className="text-rose-500"> · {selectedInvalid} con errores</span>}</span>
+                    {/* Toolbar: type-ahead search (all fields) + filters (validez/tipo/rating) + bulk-rating + counts */}
+                    <div className="space-y-2 mb-3">
+                        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar en todos los campos (nombre, contacto, animal, motivo…)" className="w-full h-9 px-3 rounded-lg border border-stone-200 text-sm outline-none focus:border-teal-400" />
+                        <div className="flex flex-wrap items-center gap-2">
+                            <select value={filter} onChange={e => setFilter(e.target.value as Filter)} className="h-9 px-2 rounded-lg border border-stone-200 text-sm bg-white" title="Validez">
+                                <option value="all">Validez: todas</option>
+                                <option value="valid">Válidos ({records.filter(r => !r.built.errors.length).length})</option>
+                                <option value="invalid">Con errores ({records.filter(r => r.built.errors.length).length})</option>
+                            </select>
+                            <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="h-9 px-2 rounded-lg border border-stone-200 text-sm bg-white" title="Tipo de actividad">
+                                <option value="all">Tipo: todos</option>
+                                {RECORD_TYPES.map(t => <option key={t} value={t}>{RECORD_TYPE_LABELS[t] ?? t}</option>)}
+                            </select>
+                            <select value={ratingFilter} onChange={e => setRatingFilter(e.target.value)} className="h-9 px-2 rounded-lg border border-stone-200 text-sm bg-white" title="Rating">
+                                <option value="all">Rating: todos</option>
+                                {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★</option>)}
+                                <option value="none">Sin rating</option>
+                            </select>
+                            {/* Massively set a rating on every row. Controlled value="" so it snaps back. */}
+                            <select value="" onChange={e => { if (e.target.value) setRatingAll(e.target.value === 'clear' ? '' : e.target.value); }} className="h-9 px-2 rounded-lg border border-stone-200 text-sm bg-white text-stone-600" title="Asignar un rating a todos los registros">
+                                <option value="">Rating a todos…</option>
+                                {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★ a todos</option>)}
+                                <option value="clear">Limpiar rating</option>
+                            </select>
+                            {(filter !== 'all' || typeFilter !== 'all' || ratingFilter !== 'all' || search.trim() !== '') && (
+                                <button onClick={() => { setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setSearch(''); }} className="h-9 px-2 text-sm text-stone-500 hover:text-stone-700">✕ Limpiar filtros</button>
+                            )}
+                            <span className="text-sm text-stone-500 ml-auto">Mostrando {filtered.length} de {records.length} · {importable.length} se importarán{selectedInvalid > 0 && <span className="text-rose-500"> · {selectedInvalid} con errores</span>}</span>
+                        </div>
                     </div>
 
                     <div className="border border-stone-200 rounded-xl overflow-hidden">
@@ -264,6 +336,8 @@ export default function SpreadsheetImportWizard() {
                             Importar {importable.length} registros →
                         </button>
                     </div>
+                    </>
+                    )}
                 </div>
             )}
 
@@ -325,12 +399,23 @@ function RowView({ r, editing, onToggle, onEdit, onChange }: {
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                         <EditField label="Nombre" value={eff.name} onChange={v => onChange({ name: v })} />
                         <EditField label="Animal" value={eff.animalName ?? ''} onChange={v => onChange({ animalName: v })} />
-                        <EditField label="Especie" value={eff.species ?? ''} onChange={v => onChange({ species: v })} />
-                        <EditField label="Rating" value={eff.rating ?? ''} onChange={v => onChange({ rating: v })} />
-                        <EditField label="Fecha" value={eff.date ?? ''} onChange={v => onChange({ date: v })} />
+                        <label className="text-xs text-stone-500">Especie
+                            <select value={speciesOptionValue(eff.species)} onChange={e => onChange({ species: e.target.value || undefined })} className="mt-0.5 w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white">
+                                {SPECIES_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+                            </select>
+                        </label>
+                        <label className="text-xs text-stone-500">Rating
+                            <select value={RATING_OPTIONS.includes(eff.rating ?? '') ? (eff.rating ?? '') : ''} onChange={e => onChange({ rating: e.target.value || undefined })} className="mt-0.5 w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white">
+                                <option value="">— (auto)</option>
+                                {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★</option>)}
+                            </select>
+                        </label>
+                        <label className="text-xs text-stone-500">Fecha
+                            <input type="date" value={normalizeImportDate(eff.date) ?? ''} onChange={e => onChange({ date: e.target.value || undefined })} className="mt-0.5 w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white" />
+                        </label>
                         <label className="text-xs text-stone-500">Tipo
                             <select value={eff.recordType ?? 'adoption'} onChange={e => onChange({ recordType: e.target.value })} className="mt-0.5 w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white">
-                                {RECORD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                                {RECORD_TYPES.map(t => <option key={t} value={t}>{RECORD_TYPE_LABELS[t] ?? t}</option>)}
                             </select>
                         </label>
                     </div>
