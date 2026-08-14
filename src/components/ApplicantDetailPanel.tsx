@@ -221,7 +221,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
                     {/* Identity block */}
                     <div>
                         <h2 id="applicant-panel-title" className="text-xl font-bold text-stone-900 break-words">
-                            <AdopterName adopter={{ name: applicant.adopterName }} />
+                            <AdopterName adopter={{ name: applicant.adopterName }} subId={applicant.submission?.email || applicant.submission?.phone || null} />
                         </h2>
                         <div className="flex items-center flex-wrap gap-2 mt-1.5">
                             {applicant.adopterRating != null ? (
