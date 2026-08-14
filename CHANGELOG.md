@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.31.6] - 2026-08-13
+
+### Changed — FAQ content refresh (user edits from the shared doc)
+
+- Reworked 8 answers from the user-edited Google Doc, now using **bullet lists** where it aids scanning: *¿Qué es…?* and *¿Cómo evaluar…?* (bulleted), *¿Es seguro…?* (cifrado / adoptantes / rescatistas), *¿Cómo se protege…?* (adds that name + address **locality** stay visible and that social-media imports are **public by default**), *¿Quién puede ver…?* (bulleted), *¿Cómo accedo a un dato protegido?* (3 concrete paths), *¿Cómo empiezo?* (auth + términos), and *¿Es gratuita?* (minor wording).
+- New privacy claims were **verified against the code** before publishing: name + address-locality stay unmasked on Protected records (`piiAccess.ts`), and social-URL imports are stamped public when `ENABLE_PUBLIC_PROFILES` is on (confirmed on in prod).
+- **Removed** the "Durante la adopción" section (proceso completo / devolución / contrato) at the user's request — FAQ is now 11 questions.
+- Light copy cleanup on the new text: fixed typos (Tambien→también, terminos→términos, qué información), normalized to voseo for consistency (buscás/tenés/podés), and replaced hyphen-dashes with em-dashes/parentheses. EN + PT regenerated to match.
+
 ## [2.31.5] - 2026-08-13
 
 ### Added — FAQ answers support bullet lists
