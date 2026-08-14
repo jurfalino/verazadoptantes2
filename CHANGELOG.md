@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.31.7] - 2026-08-13
+
+### Fixed / Changed — spreadsheet import (`/import/sheet`) review flow
+
+- **No more "error" flash while a CSV loads.** During AI interpretation the not-yet-processed rows were rendered as invalid ("falta", red) — the screen looked broken for a few seconds. The review grid is now gated behind a proper loading state (spinner + progress bar + skeleton rows) and only appears once interpretation finishes, showing the full list of all records to validate one by one.
+- **Better review-step editing** (`SpreadsheetImportWizard`): **Species** is now a dropdown (empty default), **Rating** is a 1–5 dropdown with an "— (auto)" default that keeps the system/AI-determined value, and **Date** uses a native date picker. Record type now shows Spanish labels.
+- **Bulk rating:** a "Rating a todos…" control in the toolbar sets (or clears) a rating across every row at once.
+
 ## [2.31.6] - 2026-08-13
 
 ### Changed — FAQ content refresh (user edits from the shared doc)
