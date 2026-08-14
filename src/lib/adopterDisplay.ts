@@ -15,3 +15,18 @@ export function adopterDisplayName(
 ): string {
     return adopter?.name?.trim() || fallbackLabel;
 }
+
+/**
+ * Best single contact to disambiguate a nameless adopter on NAME-ONLY surfaces.
+ * Pass the contactInfo blob ONLY when the viewer has access (unmasked); pass
+ * null when masked (a masked hint is useless). Email > phone > first line.
+ */
+export function namelessSubIdentifier(contactInfo: string | null | undefined): string | null {
+    if (!contactInfo || !contactInfo.trim()) return null;
+    const lines = contactInfo.split('\n').map((l) => l.trim()).filter(Boolean);
+    const val = (prefix: string) => {
+        const line = lines.find((l) => l.toLowerCase().startsWith(prefix));
+        return line ? line.slice(line.indexOf(':') + 1).trim() || null : null;
+    };
+    return val('email:') || val('tel:') || (lines[0] ?? null);
+}
