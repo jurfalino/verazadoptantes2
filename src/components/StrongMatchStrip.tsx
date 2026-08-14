@@ -14,6 +14,7 @@
 import type { DiscoveryMatch } from '@/app/actions';
 import { buildMatchChips, hasStrongMatch } from '@/lib/matchChips';
 import { useLanguage } from '@/context/LanguageContext';
+import { AdopterName } from '@/components/AdopterName';
 
 interface Props {
     results: DiscoveryMatch[] | null;
@@ -54,7 +55,7 @@ export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onC
                                 </div>
                             )}
                             <div className="min-w-0 flex-1">
-                                <p className="font-semibold text-stone-900 text-sm truncate">{result.adopter.name}</p>
+                                <AdopterName adopter={result.adopter} className="font-semibold text-stone-900 text-sm truncate block" title />
                                 <div className="flex flex-wrap gap-1 mt-1">
                                     {chips.map(c => (
                                         <span

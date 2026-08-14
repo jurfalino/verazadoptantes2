@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { StarIcon } from '@/components/StarIcon';
 import { getRatingColors } from '@/lib/ratingColors';
+import { AdopterName } from '@/components/AdopterName';
 
 /**
  * Render an i18n template that contains a single `{name}` placeholder,
@@ -178,7 +179,7 @@ function ProfileCard({
                     {role === 'primary' ? t('admin.dmm_role_keep') : t('admin.dmm_role_delete')}
                 </span>
             </div>
-            <p className="font-semibold text-stone-900 text-sm line-clamp-2 break-words" title={adopter.name}>{adopter.name}</p>
+            <AdopterName adopter={adopter} className="font-semibold text-stone-900 text-sm line-clamp-2 break-words block" title />
             <p className="text-xs text-stone-500 font-mono mt-1 truncate">{adopter.id}</p>
             {adopter.contact && (
                 <p className="text-xs text-stone-500 mt-2 line-clamp-2 break-words">{adopter.contact}</p>

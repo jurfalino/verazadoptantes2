@@ -7,6 +7,7 @@ import { findAdopters } from '@/app/actions';
 import type { DiscoveryMatch, SnippetField } from '@/app/actions';
 import { RatingBadge } from '@/components/RatingBadge';
 import { RatingExplainer } from '@/components/RatingExplainer';
+import { AdopterName } from '@/components/AdopterName';
 
 const SEARCH_DEBOUNCE_MS = 250;
 
@@ -124,7 +125,7 @@ export default function AdopterPicker({
                             </div>
                         )}
                         <div className="flex-1 min-w-0">
-                            <div className="font-semibold text-stone-800 text-lg line-clamp-2 break-words" title={preview.adopter.name}>{preview.adopter.name}</div>
+                            <AdopterName adopter={preview.adopter} className="font-semibold text-stone-800 text-lg line-clamp-2 break-words block" title />
                             {preview.matchSnippet && (
                                 <div className={`text-xs ${accentClasses.snippet}`}>{SNIPPET_ICONS[preview.matchSnippet.field as SnippetField]} {t(`search.snippet_${preview.matchSnippet.field}`)}</div>
                             )}
@@ -227,7 +228,7 @@ export default function AdopterPicker({
                                 className="flex-1 text-left min-w-0"
                             >
                                 <div className="flex items-center gap-2">
-                                    <div className="font-semibold text-sm text-stone-800 truncate">{res.adopter.name}</div>
+                                    <AdopterName adopter={res.adopter} className="font-semibold text-sm text-stone-800 truncate" title />
                                     {/* v2.19.1: visible "yours" cue so the rescuer
                                         can spot their own records in a mixed list. */}
                                     {isMine && (

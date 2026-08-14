@@ -8,6 +8,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { extractErrorId } from '@/lib/errorUtils';
 import { RatingBadge } from '@/components/RatingBadge';
 import { formatShortDate } from '@/lib/dates';
+import { AdopterName } from '@/components/AdopterName';
 import type { EnrichmentResult } from '@/app/actions/enrichAdopters';
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -251,7 +252,7 @@ export default function AdminAdopterList({ adopters, countries: _countries, publ
                                 </div>
                                 {/* Name + Contact + ID */}
                                 <div className="flex-1 min-w-0">
-                                    <div className="font-semibold text-stone-900 truncate">{adopter.name}</div>
+                                    <AdopterName adopter={adopter} className="font-semibold text-stone-900 truncate block" title />
                                     <div className="text-xs text-stone-500 truncate">
                                         {adopter.contactInfo || '-'}
                                     </div>

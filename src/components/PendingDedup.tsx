@@ -25,6 +25,7 @@ import {
     mergeAdopters,
     type PendingDedupPair,
 } from '@/app/actions/duplicates';
+import { AdopterName } from '@/components/AdopterName';
 
 function SourceBadge({ source, t }: { source: string; t: (k: string) => string }) {
     if (source === 'form') return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-700 font-semibold">📝 {t('myAdopters.source_form') || 'Form'}</span>;
@@ -55,8 +56,8 @@ function AdopterCard({
                 <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">{sideLabel}</span>
                 <SourceBadge source={adopter.source} t={t} />
             </div>
-            <Link href={`/adopter/${adopter.id}`} className="block font-semibold text-stone-900 text-sm truncate hover:text-teal-700" title={adopter.name}>
-                {adopter.name}
+            <Link href={`/adopter/${adopter.id}`} className="block hover:text-teal-700">
+                <AdopterName adopter={adopter} className="font-semibold text-stone-900 text-sm truncate block" title />
             </Link>
             {adopter.contactInfo && (
                 <p className="mt-1 text-xs text-stone-500 line-clamp-2 whitespace-pre-line">{adopter.contactInfo}</p>
