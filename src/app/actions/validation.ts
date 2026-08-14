@@ -73,6 +73,7 @@ export const saveAdopterSchema = z.object({
     country: z.string().length(2).optional().nullable(),
     tokenHash: z.string().max(256).optional().nullable(),
     deletedAt: z.coerce.date().optional().nullable(),
+    isPublic: z.boolean().optional(),
 }).superRefine((data, ctx) => {
     const contactEntries = typeof data.contactEntries === 'string' ? data.contactEntries : null;
     const contactInfo = typeof data.contactInfo === 'string' ? data.contactInfo : null;

@@ -576,6 +576,7 @@ export const es = {
         dont_know_name: 'No conozco el nombre',
         name_or_contact_required: 'Ingresá un nombre/alias o al menos un dato de contacto.',
         name_empty_prompt: 'Te falta el nombre. Completalo, o marcá "No conozco el nombre" si es un adoptante anónimo.',
+        anon_public_notice: 'Como no tiene nombre, este registro será público para que sus contactos sean encontrables. Podés marcarlo como Protegido.',
         title_profile: 'Perfil de Adoptante',
         id: 'ID',
         edit_details: 'Editar Detalles',

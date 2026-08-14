@@ -575,6 +575,7 @@ export const en = {
         dont_know_name: "I don't know the name",
         name_or_contact_required: 'Enter a name/alias or at least one contact detail.',
         name_empty_prompt: 'The name is missing. Fill it in, or check "I don\'t know the name" for an anonymous adopter.',
+        anon_public_notice: 'Since it has no name, this record will be public so its contacts are findable. You can mark it Protected.',
         title_profile: 'Adopter Profile',
         id: 'ID',
         edit_details: 'Edit Details',

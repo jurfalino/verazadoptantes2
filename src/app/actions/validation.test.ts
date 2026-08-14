@@ -30,4 +30,7 @@ describe('saveAdopterSchema — nameless', () => {
     it('still accepts a normal named record', () => {
         expect(saveAdopterSchema.safeParse({ name: 'Ana' }).success).toBe(true);
     });
+    it('accepts an optional isPublic flag for anonymous records', () => {
+        expect(saveAdopterSchema.safeParse({ name: '', ...base, isPublic: true }).success).toBe(true);
+    });
 });

@@ -172,6 +172,10 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     // inline prompt/error under the name input. See handleSave.
     const [dontKnowName, setDontKnowName] = useState(false);
     const [nameHint, setNameHint] = useState(false);
+    // Anonymous (no-name) records default to Público (findable) so their
+    // contact info isn't invisible; the rescuer can flip this to Protegido.
+    // Only meaningful (and only sent to saveAdopter) when dontKnowName is true.
+    const [anonPublic, setAnonPublic] = useState(true);
 
     // Duplicate detection (create only): while-typing results + save confirmation modal
     const [duplicateResults, setDuplicateResults] = useState<DiscoveryMatch[] | null>(null);
@@ -487,7 +491,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             // Strip them from the saveAdopter payload so the bulk replace path
             // doesn't override what those actions wrote.
             const payload = isNew
-                ? { ...data, contactEntries: JSON.stringify(contactEntries) }
+                ? { ...data, contactEntries: JSON.stringify(contactEntries), ...(dontKnowName ? { isPublic: anonPublic } : {}) }
                 : { ...data, contactEntries: undefined, contactInfo: undefined };
             const res = await saveAdopter(payload);
             // v2.19.43: defensive check. saveAdopter is supposed to either return
@@ -619,7 +623,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         } finally {
             setLoading(false);
         }
-    }, [data, contactEntries, isNew, formPrefill, searchParams, router, t]);
+    }, [data, contactEntries, isNew, formPrefill, searchParams, router, t, dontKnowName, anonPublic]);
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -906,15 +910,28 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                             placeholder={t('adopter.placeholder_name_aliases')}
                                             autoFocus
                                         />
-                                        {nameHint && (
+                                        {(nameHint || dontKnowName) && (
                                             <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                                <p>{t('adopter.name_empty_prompt')}</p>
-                                                {hasMinimumIdentifier({ name: data.name, contactEntries: JSON.stringify(contactEntries), contactInfo: data.contactInfo })
-                                                    ? (<label className="inline-flex items-center gap-1.5 mt-1 cursor-pointer">
-                                                         <input type="checkbox" checked={dontKnowName} onChange={(e) => { setDontKnowName(e.target.checked); if (e.target.checked) setNameHint(false); }} />
-                                                         <span>{t('adopter.dont_know_name')}</span>
-                                                       </label>)
-                                                    : (<p className="text-rose-600 mt-1">{t('adopter.name_or_contact_required')}</p>)}
+                                                {nameHint && (
+                                                    <>
+                                                        <p>{t('adopter.name_empty_prompt')}</p>
+                                                        {hasMinimumIdentifier({ name: data.name, contactEntries: JSON.stringify(contactEntries), contactInfo: data.contactInfo })
+                                                            ? (<label className="inline-flex items-center gap-1.5 mt-1 cursor-pointer">
+                                                                 <input type="checkbox" checked={dontKnowName} onChange={(e) => { setDontKnowName(e.target.checked); if (e.target.checked) setNameHint(false); }} />
+                                                                 <span>{t('adopter.dont_know_name')}</span>
+                                                               </label>)
+                                                            : (<p className="text-rose-600 mt-1">{t('adopter.name_or_contact_required')}</p>)}
+                                                    </>
+                                                )}
+                                                {dontKnowName && (
+                                                    <div className="mt-1.5">
+                                                        <p>{t('adopter.anon_public_notice')}</p>
+                                                        <label className="inline-flex items-center gap-1.5 mt-1 cursor-pointer">
+                                                            <input type="checkbox" checked={anonPublic} onChange={(e) => setAnonPublic(e.target.checked)} />
+                                                            <span>{anonPublic ? t('search.public_label') : t('search.protected_label')}</span>
+                                                        </label>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                         </>

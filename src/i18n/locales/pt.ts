@@ -576,6 +576,7 @@ export const pt = {
         dont_know_name: 'Não sei o nome',
         name_or_contact_required: 'Insira um nome/apelido ou pelo menos um contato.',
         name_empty_prompt: 'Falta o nome. Preencha, ou marque "Não sei o nome" para um adotante anônimo.',
+        anon_public_notice: 'Como não tem nome, este registro será público para que seus contatos sejam encontráveis. Você pode marcá-lo como Protegido.',
         title_profile: 'Perfil de Adotante',
         id: 'ID',
         edit_details: 'Editar Detalhes',

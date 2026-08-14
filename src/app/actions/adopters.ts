@@ -193,7 +193,13 @@ export async function appendToExistingAdopter(
     }
 }
 
-export async function saveAdopter(data: typeof adopters.$inferInsert) {
+// isPublic is widened to accept a boolean: AdopterForm sends a plain boolean
+// for the anonymous-record visibility toggle (matches saveAdopterSchema's
+// `z.boolean()`), while the DB column itself is a 0/1 integer — the CREATE
+// branch below normalizes it before insert.
+type SaveAdopterInput = Omit<typeof adopters.$inferInsert, 'isPublic'> & { isPublic?: boolean | number };
+
+export async function saveAdopter(data: SaveAdopterInput) {
     // Defense-in-depth: notes field deprecated in v2.12.1-28 (backfilled into
     // observation records). Strip from any incoming payload before validation
     // so legacy clients can't write to it.
@@ -355,7 +361,14 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
                 addedBy: changedBy, // Added this line
                 country: userCountry,
                 createdAt: new Date(),
-                updatedAt: new Date()
+                updatedAt: new Date(),
+                // v2.31.x: anonymous (no-name) manual records default to
+                // public so their contacts stay findable — an anonymous +
+                // protected record is invisible in search. Named records are
+                // unaffected: data.isPublic is only sent by AdopterForm when
+                // the "No conozco el nombre" opt-in is checked; every other
+                // caller omits it and gets the protected default (0).
+                isPublic: data.isPublic ? 1 : 0,
             });
 
             logger.info('Adopter created', { adopterId: newId, changedBy });
