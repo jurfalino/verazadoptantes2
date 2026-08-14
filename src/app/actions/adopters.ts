@@ -268,6 +268,13 @@ export async function saveAdopter(data: SaveAdopterInput) {
             delete (data as Record<string, unknown>).contactEntries;
             delete (data as Record<string, unknown>).contactInfo;
 
+            // Defense-in-depth: visibility (isPublic) is only ever set by the
+            // CREATE branch's nameless-record default (see below). The generic
+            // update path must never be able to flip a record's visibility —
+            // strip it here so a stale or malicious payload can't silently
+            // make a named/protected record public through saveAdopter.
+            delete (data as Record<string, unknown>).isPublic;
+
             // Calculate changes
             const changes: Record<string, any> = {};
             let hasChanges = false;
@@ -368,7 +375,16 @@ export async function saveAdopter(data: SaveAdopterInput) {
                 // unaffected: data.isPublic is only sent by AdopterForm when
                 // the "No conozco el nombre" opt-in is checked; every other
                 // caller omits it and gets the protected default (0).
-                isPublic: data.isPublic ? 1 : 0,
+                //
+                // Server-side guard: isPublic is honored ONLY when the name
+                // is also empty. The opt-in checkbox and the name field are
+                // independent client state — a user can check "No conozco el
+                // nombre" and then type a real name before saving, which used
+                // to leave the stale isPublic=true in the payload and silently
+                // publish a named record. The name check here is the actual
+                // security boundary; the client-side gate in AdopterForm is
+                // defense-in-depth, not the source of truth.
+                isPublic: (data.isPublic && !data.name?.trim()) ? 1 : 0,
             });
 
             logger.info('Adopter created', { adopterId: newId, changedBy });

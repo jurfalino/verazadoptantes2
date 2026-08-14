@@ -491,7 +491,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             // Strip them from the saveAdopter payload so the bulk replace path
             // doesn't override what those actions wrote.
             const payload = isNew
-                ? { ...data, contactEntries: JSON.stringify(contactEntries), ...(dontKnowName ? { isPublic: anonPublic } : {}) }
+                ? { ...data, contactEntries: JSON.stringify(contactEntries), ...(dontKnowName && !data.name.trim() ? { isPublic: anonPublic } : {}) }
                 : { ...data, contactEntries: undefined, contactInfo: undefined };
             const res = await saveAdopter(payload);
             // v2.19.43: defensive check. saveAdopter is supposed to either return
@@ -906,7 +906,15 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                             type="text"
                                             className="w-full text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight bg-transparent border-b-2 border-teal-300 focus:border-teal-500 outline-none py-0.5 placeholder-stone-500 transition-all"
                                             value={data.name}
-                                            onChange={e => setData({ ...data, name: e.target.value })}
+                                            onChange={e => {
+                                                setData({ ...data, name: e.target.value });
+                                                // Once a real name is typed, this record is no longer
+                                                // nameless — drop the "don't know the name" opt-in (and
+                                                // the empty-name hint) so the anon-public notice/gate in
+                                                // performActualSave stop applying. See the security fix
+                                                // for the named-record-saved-as-public leak.
+                                                if (e.target.value.trim()) { setDontKnowName(false); setNameHint(false); }
+                                            }}
                                             placeholder={t('adopter.placeholder_name_aliases')}
                                             autoFocus
                                         />
