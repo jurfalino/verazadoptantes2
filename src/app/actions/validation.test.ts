@@ -14,6 +14,9 @@ describe('createAdopterApiSchema — nameless', () => {
     it('still accepts a normal named record', () => {
         expect(createAdopterApiSchema.safeParse({ name: 'Ana' }).success).toBe(true);
     });
+    it('accepts an empty name when object-form contactInfo has a contact', () => {
+        expect(createAdopterApiSchema.safeParse({ name: '', contactInfo: { emails: ['x@y.com'] } }).success).toBe(true);
+    });
 });
 
 describe('saveAdopterSchema — nameless', () => {

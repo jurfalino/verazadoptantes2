@@ -219,8 +219,16 @@ export const createAdopterApiSchema = z.object({
     }).optional(),
 }).superRefine((data, ctx) => {
     const contactEntries = typeof data.contactEntries === 'string' ? data.contactEntries : null;
-    const contactInfo = typeof data.contactInfo === 'string' ? data.contactInfo : null;
-    if (!hasMinimumIdentifier({ name: data.name, contactEntries, contactInfo })) {
+    let objHasContact = false;
+    let contactInfoStr: string | null = null;
+    if (typeof data.contactInfo === 'string') {
+        contactInfoStr = data.contactInfo;
+    } else if (data.contactInfo && typeof data.contactInfo === 'object') {
+        const o = data.contactInfo as { phones?: string[]; emails?: string[]; socialProfiles?: string[]; addresses?: string[] };
+        objHasContact = [o.phones, o.emails, o.socialProfiles, o.addresses]
+            .some((a) => Array.isArray(a) && a.some((v) => typeof v === 'string' && v.trim()));
+    }
+    if (!objHasContact && !hasMinimumIdentifier({ name: data.name, contactEntries, contactInfo: contactInfoStr })) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['name'], message: 'A name or at least one contact is required.' });
     }
 });
