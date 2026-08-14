@@ -117,6 +117,7 @@ export interface MappedRow {
     addresses: string[];
     dnis: string[];
     combinedContacts: string[];
+    isPublic?: boolean;
     animalName?: string;
     species?: string;
     sex?: string;

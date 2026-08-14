@@ -133,6 +133,15 @@ export default function SpreadsheetImportWizard() {
             return n;
         });
     };
+    // Bulk-set visibility (público/protegido) on every row.
+    const setVisibilityAll = (isPublic: boolean) => {
+        if (!parsed) return;
+        setOverrides(o => {
+            const n = { ...o };
+            parsed.rows.forEach((_, i) => { n[i] = { ...n[i], isPublic }; });
+            return n;
+        });
+    };
 
     // Derive final records (AI interpretation OR column mapping, + per-row edits).
     const records = useMemo(() => {
@@ -183,8 +192,13 @@ export default function SpreadsheetImportWizard() {
             if (built.errors.length || !built.body) {
                 acc.push({ index, name: eff.name || `Fila ${index + 1}`, status: 'skipped', message: built.errors.join(' ') });
             } else {
+                // Anonymous rows (no name) default to público so their contacts are
+                // findable; named rows default to protegido (undefined = route default).
+                // Per-row/bulk overrides (eff.isPublic) always win.
+                const isAnon = !eff.name?.trim();
+                const effPublic = eff.isPublic !== undefined ? eff.isPublic : (isAnon ? true : undefined);
                 try {
-                    const r = await fetch('/api/adopters', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(built.body) });
+                    const r = await fetch('/api/adopters', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...built.body, ...(effPublic !== undefined ? { isPublic: effPublic } : {}) }) });
                     if (r.ok) acc.push({ index, name: built.body.name, status: 'created' });
                     else { const b = await r.json().catch(() => ({})) as { error?: string; errorId?: string }; acc.push({ index, name: built.body.name, status: 'failed', message: b.error ? `${b.error}${b.errorId ? ` (${b.errorId})` : ''}` : `HTTP ${r.status}` }); }
                 } catch (e) { acc.push({ index, name: built.body!.name, status: 'failed', message: e instanceof Error ? e.message : 'error de red' }); }
@@ -306,6 +320,12 @@ export default function SpreadsheetImportWizard() {
                                 {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★ a todos</option>)}
                                 <option value="clear">Limpiar rating</option>
                             </select>
+                            {/* Massively set visibility on every row. Controlled value="" so it snaps back. */}
+                            <select value="" onChange={e => { if (e.target.value) setVisibilityAll(e.target.value === 'public'); }} className="h-9 px-2 rounded-lg border border-stone-200 text-sm bg-white text-stone-600" title="Asignar visibilidad a todos los registros">
+                                <option value="">Visibilidad a todos…</option>
+                                <option value="public">Todos públicos</option>
+                                <option value="protected">Todos protegidos</option>
+                            </select>
                             {(filter !== 'all' || typeFilter !== 'all' || ratingFilter !== 'all' || search.trim() !== '') && (
                                 <button onClick={() => { setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setSearch(''); }} className="h-9 px-2 text-sm text-stone-500 hover:text-stone-700">✕ Limpiar filtros</button>
                             )}
@@ -384,11 +404,20 @@ function RowView({ r, editing, onToggle, onEdit, onChange }: {
     const { eff, built, selected } = r;
     const contacts = [...eff.phones, ...eff.emails, ...eff.socials, ...eff.addresses, ...eff.dnis].join(' · ');
     const invalid = built.errors.length > 0;
+    // Effective visibility shown to the reviewer: anonymous rows default público,
+    // named rows default protegido, unless overridden per-row or in bulk.
+    const isAnon = !eff.name?.trim();
+    const isPublicEff = eff.isPublic ?? isAnon;
     return (
         <>
             <tr className={`border-t border-stone-100 ${!selected ? 'opacity-40' : ''} ${invalid ? 'bg-rose-50' : ''}`}>
                 <td className="px-2 py-2 text-center"><input type="checkbox" checked={selected} onChange={onToggle} /></td>
-                <td className="px-3 py-2 font-medium text-stone-800">{eff.name || <span className="text-rose-500 italic">falta</span>}</td>
+                <td className="px-3 py-2 font-medium text-stone-800">
+                    {eff.name || <span className="text-rose-500 italic">falta</span>}
+                    <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-semibold align-middle ${isPublicEff ? 'bg-emerald-50 text-emerald-700' : 'bg-stone-100 text-stone-500'}`}>
+                        {isPublicEff ? 'Público' : 'Protegido'}
+                    </span>
+                </td>
                 <td className="px-3 py-2 text-stone-500 max-w-[240px] truncate" title={contacts}>{contacts || '—'}{eff.combinedContacts.length > 0 && <span className="ml-1 text-indigo-500" title="se separará al importar">🧩</span>}</td>
                 <td className="px-3 py-2 text-stone-500">{[eff.animalName, eff.species, eff.recordType, eff.rating, eff.date].filter(Boolean).join(' · ') || '—'}</td>
                 <td className="px-2 py-2 text-right"><button onClick={onEdit} className="text-stone-400 hover:text-teal-600" title="Editar">✎</button></td>
@@ -416,6 +445,12 @@ function RowView({ r, editing, onToggle, onEdit, onChange }: {
                         <label className="text-xs text-stone-500">Tipo
                             <select value={eff.recordType ?? 'adoption'} onChange={e => onChange({ recordType: e.target.value })} className="mt-0.5 w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white">
                                 {RECORD_TYPES.map(t => <option key={t} value={t}>{RECORD_TYPE_LABELS[t] ?? t}</option>)}
+                            </select>
+                        </label>
+                        <label className="text-xs text-stone-500">Visibilidad
+                            <select value={isPublicEff ? 'public' : 'protected'} onChange={e => onChange({ isPublic: e.target.value === 'public' })} className="mt-0.5 w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white">
+                                <option value="public">Público</option>
+                                <option value="protected">Protegido</option>
                             </select>
                         </label>
                     </div>

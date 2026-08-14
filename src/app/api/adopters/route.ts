@@ -381,7 +381,7 @@ export async function POST(request: Request) {
         // "este perfil será visible para todos" toggle, v2.19.47).
         const recordHasPublicSource = !!sourceUrl?.trim();
         const recordCallerConsentedToPublic = callerIsPublic !== false;
-        const stampRecordPublic = recordHasPublicSource && recordCallerConsentedToPublic;
+        const stampRecordPublic = (recordHasPublicSource || callerIsPublic === true) && recordCallerConsentedToPublic;
 
         // Insert adopter record
         // notes deprecated v2.12.1-28 — handled below as a dedicated observation record.
