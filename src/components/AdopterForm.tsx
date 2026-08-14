@@ -15,6 +15,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import ContactEntriesSection from "@/components/ContactEntriesSection";
 import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
 import type { VisibilityBadge } from "@/domain/visibilityBadge";
+import { hasMinimumIdentifier } from "@/domain/adopterIdentity";
 
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
@@ -162,6 +163,14 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
 
     const [isEditing, setIsEditing] = useState(isNew);
     const [loading, setLoading] = useState(false);
+
+    // Manual-create friction gate (nameless-adopter-profiles design): saving
+    // with an empty name shows a gentle prompt instead of hard-blocking via
+    // HTML `required`. `dontKnowName` is the explicit opt-in that lets the
+    // rescuer proceed with a contact-only record; `nameHint` toggles the
+    // inline prompt/error under the name input. See handleSave.
+    const [dontKnowName, setDontKnowName] = useState(false);
+    const [nameHint, setNameHint] = useState(false);
 
     // Duplicate detection (create only): while-typing results + save confirmation modal
     const [duplicateResults, setDuplicateResults] = useState<DiscoveryMatch[] | null>(null);
@@ -617,6 +626,15 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             openLogin();
             return;
         }
+        // Manual-create friction gate: no HTML `required` on the name input —
+        // instead a save-time check. Neither name nor any contact → hard
+        // error (can't identify the adopter at all). Name empty but contact
+        // present → gentle prompt with an explicit "No conozco el nombre"
+        // opt-in before the save is allowed through.
+        const nameEmpty = !data.name.trim();
+        const hasContact = hasMinimumIdentifier({ name: data.name, contactEntries: JSON.stringify(contactEntries), contactInfo: data.contactInfo });
+        if (nameEmpty && !hasContact) { setNameHint(true); return; }
+        if (nameEmpty && !dontKnowName) { setNameHint(true); return; }
         if (isNew) {
             // v2.19.65: if the rescuer's input still normalizes to what
             // search already showed them, skip the save-time modal — they're
@@ -878,15 +896,27 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                             <div className="flex items-center justify-between gap-2">
                                 <div className="min-w-0 flex-1">
                                     {isEditing ? (
+                                        <>
                                         <input
                                             type="text"
-                                            required
                                             className="w-full text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight bg-transparent border-b-2 border-teal-300 focus:border-teal-500 outline-none py-0.5 placeholder-stone-500 transition-all"
                                             value={data.name}
                                             onChange={e => setData({ ...data, name: e.target.value })}
                                             placeholder={t('adopter.placeholder_name_aliases')}
                                             autoFocus
                                         />
+                                        {nameHint && (
+                                            <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                                <p>{t('adopter.name_empty_prompt')}</p>
+                                                {hasMinimumIdentifier({ name: data.name, contactEntries: JSON.stringify(contactEntries), contactInfo: data.contactInfo })
+                                                    ? (<label className="inline-flex items-center gap-1.5 mt-1 cursor-pointer">
+                                                         <input type="checkbox" checked={dontKnowName} onChange={(e) => { setDontKnowName(e.target.checked); if (e.target.checked) setNameHint(false); }} />
+                                                         <span>{t('adopter.dont_know_name')}</span>
+                                                       </label>)
+                                                    : (<p className="text-rose-600 mt-1">{t('adopter.name_or_contact_required')}</p>)}
+                                            </div>
+                                        )}
+                                        </>
                                     ) : (
                                       <div className="flex items-center gap-2 min-w-0">
                                         {(() => {
