@@ -14,7 +14,7 @@
 
 import { eq } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
-import { adopters, userProfiles, users } from '@/db/schema';
+import { adopters, userProfiles, users, importRunItems } from '@/db/schema';
 import { deserializeContactEntries, contactEntriesToBlob } from '@/lib/contactEntries';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { insertRecord } from './_recordWrite';
@@ -35,6 +35,8 @@ export interface ImportBatchRow {
     };
     isPublic?: boolean;
     matchedAdopterId?: string | null;
+    matchedAdopterName?: string | null;
+    matchConfidence?: number | null;
 }
 export interface ImportBatchResult {
     index: number;
@@ -158,6 +160,37 @@ export async function importAdoptersBatch(rows: ImportBatchRow[], runId: string)
             const errorId = logger.error('importAdoptersBatch: row failed', e, { actorEmail: actor, index: row.index, action: row.action });
             out.push({ index: row.index, status: 'failed', message: `Error del servidor (${errorId})` });
         }
+    }
+
+    // Audit incrementally, per batch — so failures are ALWAYS captured even if the
+    // client never reaches the final finishImportRun (a big import writing all
+    // items at once used to blow the Worker limit and silently record nothing).
+    // Deterministic item id + onConflictDoNothing keeps split-retries from
+    // duplicating audit rows. Best-effort — never fails the import.
+    try {
+        const byIndex = new Map(rows.map(r => [r.index, r]));
+        const itemRows = out.map(r => {
+            const row = byIndex.get(r.index);
+            return {
+                id: `impitem-${runId}-${r.index}`,
+                runId,
+                rowIndex: r.index + 1,
+                adopterId: r.id ?? null,
+                adopterName: row?.name?.trim() || null,
+                action: row?.action ?? null,
+                status: r.status,
+                matchedAdopterId: row?.matchedAdopterId ?? null,
+                matchedAdopterName: row?.matchedAdopterName ?? null,
+                matchConfidence: row?.matchConfidence ?? null,
+                message: r.message ?? null,
+                createdAt: new Date(),
+            };
+        });
+        for (let i = 0; i < itemRows.length; i += 40) {
+            await db.insert(importRunItems).values(itemRows.slice(i, i + 40)).onConflictDoNothing();
+        }
+    } catch (e) {
+        logger.warn('importAdoptersBatch: audit write failed', { runId, error: e instanceof Error ? e.message : String(e) });
     }
     return out;
 }

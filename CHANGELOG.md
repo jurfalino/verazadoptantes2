@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.32.7] - 2026-08-15
+
+### Fixed — import: heavy batches no longer fail wholesale ("Falló el lote")
+
+- **Root cause of the mass failures:** a 25-row batch of heavy rows exceeded the Cloudflare Worker CPU/time limit and threw; the client retried the same too-heavy batch 3× (all failing) and marked the **whole batch failed** — even rows that had actually committed (idempotency created them, the client just never got the response).
+- **Fix — adaptive batch splitting:** if a batch still throws after 2 tries, it's **split in half and each half retried**, recursively down to a single row. Idempotent server-side, so re-sending already-created rows is a no-op — a heavy batch just subdivides until it fits, instead of dropping ~25 rows. Initial batch size also lowered (25 → 12).
+- **Fix — the audit now captures failures.** Items are written **per batch, server-side** (deterministic id + `ON CONFLICT DO NOTHING`) instead of all-at-once at the end — the previous single 800-item write itself hit the Worker limit and silently recorded nothing, which is why the failure messages were missing from `/admin/imports`.
+
 ## [2.32.6] - 2026-08-15
 
 ### Fixed — import speed + resume-across-refresh

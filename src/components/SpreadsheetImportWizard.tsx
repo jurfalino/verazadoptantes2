@@ -22,7 +22,6 @@ type RowAction = 'create' | 'upsert' | 'skip';
 interface ResumeSnapshot {
     runId: string; fileName: string; total: number;
     rows: ImportBatchRow[]; names: Record<number, string>;
-    enrich: Record<number, { name?: string | null; confidence?: number | null }>;
 }
 const RESUME_KEY = 'buenadoptante-import-resume-v1';
 
@@ -309,6 +308,8 @@ export default function SpreadsheetImportWizard() {
                 adoption: built.body.adoption,
                 isPublic,
                 matchedAdopterId: action === 'upsert' ? (match?.adopterId ?? null) : null,
+                matchedAdopterName: match?.adopterName ?? null,
+                matchConfidence: match?.relevancePercent ?? null,
             },
             name,
         };
@@ -321,7 +322,6 @@ export default function SpreadsheetImportWizard() {
     const sendBatches = async (
         runId: string, toSend: ImportBatchRow[], total: number,
         preResults: RowResult[], nameByIndex: Record<number, string>,
-        enrich: Record<number, { name?: string | null; confidence?: number | null }>,
     ) => {
         setStep('import'); setImportDone(false); setFailureByIndex({});
         const acc = new Map<number, RowResult>();
@@ -330,19 +330,34 @@ export default function SpreadsheetImportWizard() {
         setProgress({ done, total });
         setResults([...acc.values()].sort((a, b) => a.index - b.index));
 
-        const BATCH = 25, CONCURRENCY = 2;
+        // Send a batch resiliently: try twice, then — if it still throws (a
+        // too-heavy batch hitting the Worker CPU/time limit, or a persistent
+        // network issue) — SPLIT it in half and retry each half. Idempotent
+        // server-side, so re-sending already-created rows is a no-op. This is what
+        // stops "el lote falló entero": a heavy batch subdivides until it fits.
+        const sendResilient = async (batch: ImportBatchRow[]): Promise<ImportBatchResult[]> => {
+            for (let attempt = 0; attempt < 2; attempt++) {
+                try { return await importAdoptersBatch(batch, runId); }
+                catch { if (attempt === 0) await new Promise(r => setTimeout(r, 400)); }
+            }
+            if (batch.length <= 1) {
+                return batch.map(r => ({ index: r.index, status: 'failed' as const, message: 'Falló (posible límite del servidor en una fila pesada).' }));
+            }
+            const mid = Math.ceil(batch.length / 2);
+            const a = await sendResilient(batch.slice(0, mid));
+            const b = await sendResilient(batch.slice(mid));
+            return [...a, ...b];
+        };
+
+        // Smaller initial batches (per-row writes are already low after the token-
+        // insert batching) so a batch rarely needs splitting in the first place.
+        const BATCH = 12, CONCURRENCY = 2;
         const batches: ImportBatchRow[][] = [];
         for (let i = 0; i < toSend.length; i += BATCH) batches.push(toSend.slice(i, i + BATCH));
         let bcursor = 0;
         const worker = async () => {
             for (let b = bcursor++; b < batches.length; b = bcursor++) {
-                const batch = batches[b];
-                let res: ImportBatchResult[] | null = null;
-                for (let attempt = 0; attempt < 3 && !res; attempt++) {
-                    try { res = await importAdoptersBatch(batch, runId); }
-                    catch { if (attempt < 2) await new Promise(r => setTimeout(r, 600 * (attempt + 1))); }
-                }
-                const mapped: ImportBatchResult[] = res ?? batch.map(r => ({ index: r.index, status: 'failed' as const, message: 'Falló el lote tras 3 intentos (red).' }));
+                const mapped = await sendResilient(batches[b]);
                 for (const m of mapped) {
                     acc.set(m.index, { index: m.index, name: nameByIndex[m.index] || `Fila ${m.index + 1}`, status: m.status, id: m.id ?? undefined, message: m.message ?? undefined });
                     done++;
@@ -358,25 +373,14 @@ export default function SpreadsheetImportWizard() {
 
         const finalResults = [...acc.values()].sort((a, b) => a.index - b.index);
         setFailureByIndex(Object.fromEntries(finalResults.filter(r => r.status === 'failed').map(r => [r.index, r.message || 'Falló al importar'])));
-        const rowByIndex = new Map(toSend.map(r => [r.index, r]));
+        // Items are recorded per-batch server-side; here we just close the run.
         const counts = {
             created: finalResults.filter(r => r.status === 'created').length,
             updated: finalResults.filter(r => r.status === 'updated').length,
             skipped: finalResults.filter(r => r.status === 'skipped').length,
             failed: finalResults.filter(r => r.status === 'failed').length,
         };
-        const items = finalResults.map(r => ({
-            rowIndex: r.index + 1,
-            adopterId: r.id ?? null,
-            adopterName: /^Fila \d+$/.test(r.name) ? null : r.name,
-            action: rowByIndex.get(r.index)?.action ?? 'create',
-            status: r.status,
-            matchedAdopterId: rowByIndex.get(r.index)?.matchedAdopterId ?? null,
-            matchedAdopterName: enrich[r.index]?.name ?? null,
-            matchConfidence: enrich[r.index]?.confidence ?? null,
-            message: r.message ?? null,
-        }));
-        finishImportRun({ runId, items, counts }).catch(() => { /* audit is best-effort */ });
+        finishImportRun({ runId, counts }).catch(() => { /* audit is best-effort */ });
     };
 
     const runImport = async () => {
@@ -390,20 +394,17 @@ export default function SpreadsheetImportWizard() {
         // immediate 'skipped' results and are never sent to the server.
         const preResults: RowResult[] = [];
         const nameByIndex: Record<number, string> = {};
-        const enrich: Record<number, { name?: string | null; confidence?: number | null }> = {};
         const toSend: ImportBatchRow[] = [];
         for (const t of targets) {
             const { row, pre, name } = await buildBatchRow(t);
             nameByIndex[t.index] = name;
-            const m = matches[t.index];
-            if (m) enrich[t.index] = { name: m.adopterName, confidence: m.relevancePercent };
             if (pre) preResults.push(pre);
             else if (row) toSend.push(row);
         }
         // Persist a resume snapshot so a page refresh mid-import can pick up where
         // it left off (only the not-yet-created rows actually re-run — see sendBatches).
-        try { localStorage.setItem(RESUME_KEY, JSON.stringify({ runId, fileName, total: targets.length, rows: toSend, names: nameByIndex, enrich })); } catch { /* quota — resume just won't be available */ }
-        await sendBatches(runId, toSend, targets.length, preResults, nameByIndex, enrich);
+        try { localStorage.setItem(RESUME_KEY, JSON.stringify({ runId, fileName, total: targets.length, rows: toSend, names: nameByIndex })); } catch { /* quota — resume just won't be available */ }
+        await sendBatches(runId, toSend, targets.length, preResults, nameByIndex);
     };
 
     // Resume a run persisted before a refresh. Re-sends every row; the server
@@ -411,7 +412,7 @@ export default function SpreadsheetImportWizard() {
     // rows are created.
     const resumeImport = async (snap: ResumeSnapshot) => {
         setResumable(null);
-        await sendBatches(snap.runId, snap.rows, snap.rows.length, [], snap.names, snap.enrich || {});
+        await sendBatches(snap.runId, snap.rows, snap.rows.length, [], snap.names);
     };
     const discardResume = () => { try { localStorage.removeItem(RESUME_KEY); } catch { /* ignore */ } setResumable(null); };
 

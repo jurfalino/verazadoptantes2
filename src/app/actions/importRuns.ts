@@ -48,11 +48,11 @@ export async function startImportRun(input: { runId: string; source?: string | n
     }
 }
 
-/** Write the run's per-row items and mark the run completed with final counts.
- *  Only the run's own actor (or an admin) may finish it. */
+/** Mark the run completed with final counts (items are written per-batch by
+ *  importAdoptersBatch). Only the run's own actor (or an admin) may finish it. */
 export async function finishImportRun(input: {
     runId: string;
-    items: ImportRunItemInput[];
+    items?: ImportRunItemInput[]; // accepted for back-compat; no longer used here
     counts?: { created: number; updated: number; skipped: number; failed: number };
 }): Promise<{ ok: boolean }> {
     let actor = '';
@@ -65,19 +65,9 @@ export async function finishImportRun(input: {
         if (!run) return { ok: false };
         if (run.actorEmail !== actor && !(await getIsAdmin())) return { ok: false };
 
-        // Chunked insert — a single multi-row INSERT of hundreds of rows blows past
-        // SQLite/D1's bound-parameter limit. ~40 rows × ~12 cols stays well under.
-        const rows = input.items.map(it => ({
-            id: crypto.randomUUID(), runId: input.runId,
-            rowIndex: it.rowIndex ?? null, adopterId: it.adopterId ?? null, adopterName: it.adopterName ?? null,
-            action: it.action ?? null, status: it.status ?? null,
-            matchedAdopterId: it.matchedAdopterId ?? null, matchedAdopterName: it.matchedAdopterName ?? null,
-            matchConfidence: it.matchConfidence ?? null, message: it.message ?? null, createdAt: new Date(),
-        }));
-        for (let i = 0; i < rows.length; i += 40) {
-            await db.insert(importRunItems).values(rows.slice(i, i + 40));
-        }
-
+        // Items are written incrementally by importAdoptersBatch (per batch), so
+        // finishImportRun only closes the run — no big all-at-once item write that
+        // could blow the Worker limit and lose the whole audit.
         const c = input.counts ?? { created: 0, updated: 0, skipped: 0, failed: 0 };
         await db.update(importRuns).set({
             status: 'completed', finishedAt: new Date(),
