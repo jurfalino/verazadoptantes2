@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
-import { mapImportColumns, interpretRows, aiCleanRowContacts } from '@/app/actions';
+import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, upsertImportRecord, type DuplicateMatch } from '@/app/actions';
+import { isExactIdentifierMatch } from '@/domain/importMerge';
 import { buildImportBody } from '@/lib/importRow';
 import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType } from '@/domain/importRow';
 import {
@@ -11,8 +12,11 @@ import {
     type ColumnMap, type MappedRow,
 } from '@/domain/importFields';
 
-type RowStatus = 'created' | 'skipped' | 'failed';
+type RowStatus = 'created' | 'updated' | 'skipped' | 'failed';
 interface RowResult { index: number; name: string; status: RowStatus; message?: string; id?: string }
+/** Per-row choice on the duplicate-aware import: create a new record, update the
+ *  matched existing one (upsert), or skip. */
+type RowAction = 'create' | 'upsert' | 'skip';
 
 const FIELD_OPTIONS = [
     ...TARGET_IMPORT_FIELDS.map(f => ({ value: f.key, label: f.label })),
@@ -67,6 +71,13 @@ export default function SpreadsheetImportWizard() {
     const [progress, setProgress] = useState({ done: 0, total: 0 });
     const [results, setResults] = useState<RowResult[]>([]);
     const [importDone, setImportDone] = useState(false);
+    // Duplicate-aware import: top existing match per row index (null = checked, no
+    // match; absent = not checked yet), and the per-row create/upsert/skip choice.
+    const [matches, setMatches] = useState<Record<number, DuplicateMatch | null>>({});
+    const [rowAction, setRowAction] = useState<Record<number, RowAction>>({});
+    const [detecting, setDetecting] = useState(false);
+    const [detectProgress, setDetectProgress] = useState({ done: 0, total: 0 });
+    const [detectionDone, setDetectionDone] = useState(false);
 
     const handleFile = async (file: File) => {
         setError(null); setBusy(true);
@@ -193,6 +204,44 @@ export default function SpreadsheetImportWizard() {
     const selectedInvalid = records.filter(r => r.selected && r.built.errors.length > 0).length;
     const selectedWarnings = records.filter(r => r.selected && r.built.errors.length === 0 && r.built.warnings.length > 0).length;
 
+    // Look for an existing adopter that matches each selected row, reusing the
+    // same duplicate engine the manual form uses (findAdopters, mode 'duplicate').
+    // Opt-in (a button), like AI interpretation — 1 lightweight lookup per row,
+    // bounded concurrency. Keys on name/phone/email/social (the engine's inputs);
+    // address-only / DNI-only rows won't match here and default to "crear".
+    const runDetection = async () => {
+        const targets = records.filter(r => r.selected);
+        setDetecting(true); setDetectionDone(false); setDetectProgress({ done: 0, total: targets.length });
+        const found: Record<number, DuplicateMatch | null> = {};
+        const actions: Record<number, RowAction> = {};
+        let done = 0, cursor = 0;
+        const worker = async () => {
+            for (let k = cursor++; k < targets.length; k = cursor++) {
+                const { index, eff } = targets[k];
+                try {
+                    const res = await findAdopters(
+                        { name: eff.name || undefined, phones: eff.phones, emails: eff.emails, socials: eff.socials },
+                        { mode: 'duplicate', limit: 1, minRelevance: 5 },
+                    );
+                    const dup = (res.results as DuplicateMatch[]) ?? [];
+                    const top = dup[0] ?? null;
+                    found[index] = top;
+                    // High confidence (exact identifier) defaults to "actualizar";
+                    // a weaker match still surfaces but defaults to "crear" (review).
+                    actions[index] = top && isExactIdentifierMatch(top.matchTypes) ? 'upsert' : 'create';
+                } catch {
+                    found[index] = null; actions[index] = 'create';
+                }
+                done++; setDetectProgress({ done, total: targets.length });
+            }
+        };
+        await Promise.all(Array.from({ length: Math.min(5, targets.length) }, worker));
+        setMatches(found);
+        // Seed default actions, but never clobber a choice the user already made.
+        setRowAction(prev => { const next = { ...actions }; for (const k of Object.keys(prev)) next[+k] = prev[+k]; return next; });
+        setDetecting(false); setDetectionDone(true);
+    };
+
     // Import ONE row: build → optional AI contact-cleanup → POST with retry.
     // A 4xx (validation) is deterministic — surface the server's field-level
     // `details` and don't retry. Network errors / 5xx retry up to 3 attempts.
@@ -232,6 +281,36 @@ export default function SpreadsheetImportWizard() {
         return { index, name, status: 'failed', message: 'Falló tras 3 intentos (red o servidor). Reintentá la importación.' };
     };
 
+    // Update the matched existing adopter (additive merge) instead of creating a
+    // new record. Falls back to create if there's no match to update.
+    const upsertOne = async (t: { index: number; eff: MappedRow }): Promise<RowResult> => {
+        const { index, eff } = t;
+        const match = matches[index];
+        if (!match) return importOne(t);
+        const built = buildImportBody(eff);
+        if (built.errors.length || !built.body) {
+            return { index, name: eff.name || `Fila ${index + 1}`, status: 'skipped', message: built.errors.join(' ') };
+        }
+        const name = match.adopterName || built.body.name || `Fila ${index + 1}`;
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                const r = await upsertImportRecord({ adopterId: match.adopterId, name: built.body.name, contactEntries: built.body.contactEntries, adoption: built.body.adoption });
+                if (r.ok) {
+                    const bits = [
+                        r.addedContacts ? `+${r.addedContacts} contacto${r.addedContacts > 1 ? 's' : ''}` : '',
+                        r.addedActivity ? '+1 actividad' : '', r.nameFilled ? 'nombre' : '', r.aliasAdded ? 'alias' : '',
+                    ].filter(Boolean).join(', ');
+                    return bits
+                        ? { index, name, status: 'updated', id: match.adopterId, message: `Actualizó: ${bits}` }
+                        : { index, name, status: 'skipped', id: match.adopterId, message: 'Sin novedad — ya estaba todo' };
+                }
+                return { index, name, status: 'failed', id: match.adopterId, message: r.error || 'No se pudo actualizar' };
+            } catch { /* network → retry */ }
+            if (attempt < 2) await new Promise(res => setTimeout(res, 400 * (attempt + 1)));
+        }
+        return { index, name, status: 'failed', id: match.adopterId, message: 'Falló al actualizar tras 3 intentos.' };
+    };
+
     const runImport = async () => {
         setStep('import'); setImportDone(false); setResults([]);
         const targets = records.filter(r => r.selected);
@@ -243,7 +322,11 @@ export default function SpreadsheetImportWizard() {
         let done = 0, cursor = 0;
         const worker = async () => {
             for (let k = cursor++; k < targets.length; k = cursor++) {
-                acc[k] = await importOne(targets[k]);
+                const t = targets[k];
+                const action = rowAction[t.index] ?? 'create';
+                acc[k] = action === 'skip'
+                    ? { index: t.index, name: t.eff.name || `Fila ${t.index + 1}`, status: 'skipped', message: 'Omitido' }
+                    : action === 'upsert' ? await upsertOne(t) : await importOne(t);
                 done++;
                 setProgress({ done, total: targets.length });
                 setResults(acc.filter(Boolean) as RowResult[]);
@@ -254,14 +337,14 @@ export default function SpreadsheetImportWizard() {
     };
 
     const downloadErrors = () => {
-        const bad = results.filter(r => r.status !== 'created');
+        const bad = results.filter(r => r.status === 'skipped' || r.status === 'failed');
         const csv = ['fila,nombre,estado,motivo', ...bad.map(r => `${r.index + 1},"${(r.name || '').replace(/"/g, '""')}",${r.status},"${(r.message || '').replace(/"/g, '""')}"`)].join('\n');
         const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
         const a = document.createElement('a'); a.href = url; a.download = 'errores-importacion.csv'; a.click(); URL.revokeObjectURL(url);
     };
 
-    const tally = { created: results.filter(r => r.status === 'created').length, skipped: results.filter(r => r.status === 'skipped').length, failed: results.filter(r => r.status === 'failed').length };
-    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); };
+    const tally = { created: results.filter(r => r.status === 'created').length, updated: results.filter(r => r.status === 'updated').length, skipped: results.filter(r => r.status === 'skipped').length, failed: results.filter(r => r.status === 'failed').length };
+    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); };
 
     return (
         <div className="max-w-5xl mx-auto p-4">
@@ -380,6 +463,11 @@ export default function SpreadsheetImportWizard() {
                             {(filter !== 'all' || typeFilter !== 'all' || ratingFilter !== 'all' || search.trim() !== '') && (
                                 <button onClick={() => { setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setSearch(''); }} className="h-9 px-2 text-sm text-stone-500 hover:text-stone-700">✕ Limpiar filtros</button>
                             )}
+                            {detecting ? (
+                                <span className="text-sm text-teal-700 flex items-center gap-1.5"><span className="inline-block w-3.5 h-3.5 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" aria-hidden />Buscando duplicados… {detectProgress.done}/{detectProgress.total}</span>
+                            ) : (
+                                <button onClick={runDetection} className="h-9 px-2 rounded-lg border border-teal-200 text-sm text-teal-700 bg-teal-50 hover:bg-teal-100" title="Busca cada fila contra los registros existentes (por nombre/teléfono/email/social)">🔍 {detectionDone ? 'Re-buscar duplicados' : 'Buscar duplicados existentes'}</button>
+                            )}
                             <span className="text-sm text-stone-500 ml-auto">Mostrando {filtered.length} de {records.length} · {importable.length} se importarán{selectedWarnings > 0 && <span className="text-amber-600"> · {selectedWarnings} con advertencias</span>}{selectedInvalid > 0 && <span className="text-rose-500"> · {selectedInvalid} con errores</span>}</span>
                         </div>
                     </div>
@@ -393,6 +481,9 @@ export default function SpreadsheetImportWizard() {
                                 <tbody>
                                     {filtered.map(r => (
                                         <RowView key={r.index} r={r} editing={editing === r.index}
+                                            match={r.index in matches ? matches[r.index] : undefined}
+                                            action={rowAction[r.index] ?? 'create'}
+                                            onAction={a => setRowAction(prev => ({ ...prev, [r.index]: a }))}
                                             onToggle={() => toggle(r.index)} onEdit={() => setEditing(editing === r.index ? null : r.index)}
                                             onChange={patch => setOverride(r.index, patch)} />
                                     ))}
@@ -421,6 +512,7 @@ export default function SpreadsheetImportWizard() {
                     <div className="h-3 rounded-full bg-stone-100 overflow-hidden mb-4"><div className="h-full bg-teal-500 transition-all" style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} /></div>
                     <div className="flex gap-3 mb-4 text-sm">
                         <span className="px-3 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-medium">✅ {tally.created} creados</span>
+                        {tally.updated > 0 && <span className="px-3 py-1 rounded-lg bg-sky-50 text-sky-700 font-medium">↻ {tally.updated} actualizados</span>}
                         <span className="px-3 py-1 rounded-lg bg-amber-50 text-amber-700 font-medium">⏭️ {tally.skipped} omitidos</span>
                         <span className="px-3 py-1 rounded-lg bg-rose-50 text-rose-700 font-medium">⚠️ {tally.failed} fallidos</span>
                     </div>
@@ -429,23 +521,24 @@ export default function SpreadsheetImportWizard() {
                         <div className="border border-stone-200 rounded-xl overflow-hidden mb-4">
                             <div className="bg-stone-50 px-3 py-2 text-xs uppercase tracking-wider text-stone-500 flex items-center justify-between"><span>Filas no importadas</span>{importDone && <button onClick={downloadErrors} className="text-teal-600 hover:underline normal-case tracking-normal">Descargar CSV</button>}</div>
                             <div className="max-h-64 overflow-y-auto">
-                                {results.filter(r => r.status !== 'created').map(r => (
+                                {results.filter(r => r.status === 'skipped' || r.status === 'failed').map(r => (
                                     <div key={r.index} className="px-3 py-1.5 text-sm border-t border-stone-100 flex gap-2"><span className="text-stone-400 w-10 flex-shrink-0">#{r.index + 1}</span><span className="font-medium text-stone-700 w-40 flex-shrink-0 truncate">{r.name}</span><span className={r.status === 'failed' ? 'text-rose-600' : 'text-amber-600'}>{r.message || r.status}</span></div>
                                 ))}
                             </div>
                         </div>
                     )}
-                    {importDone && tally.created > 0 && (
+                    {importDone && (tally.created + tally.updated) > 0 && (
                         <div className="border border-stone-200 rounded-xl overflow-hidden mb-4">
-                            <div className="bg-emerald-50 px-3 py-2 text-xs uppercase tracking-wider text-emerald-700">Registros creados ({tally.created}) — revisalos</div>
+                            <div className="bg-emerald-50 px-3 py-2 text-xs uppercase tracking-wider text-emerald-700">Registros creados ({tally.created}){tally.updated > 0 && ` y actualizados (${tally.updated})`} — revisalos</div>
                             <div className="max-h-72 overflow-y-auto">
-                                {results.filter(r => r.status === 'created').map(r => (
+                                {results.filter(r => r.status === 'created' || r.status === 'updated').map(r => (
                                     <div key={r.index} className="px-3 py-1.5 text-sm border-t border-stone-100 flex gap-2 items-center">
                                         <span className="text-stone-400 w-10 flex-shrink-0">#{r.index + 1}</span>
-                                        <span className="font-medium text-stone-700 flex-1 truncate">{/^Fila \d+$/.test(r.name) ? <span className="italic text-stone-400">Sin nombre</span> : r.name}</span>
+                                        <span className={`flex-shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded ${r.status === 'updated' ? 'bg-sky-50 text-sky-700' : 'bg-emerald-50 text-emerald-700'}`}>{r.status === 'updated' ? 'actualizado' : 'creado'}</span>
+                                        <span className="font-medium text-stone-700 flex-1 truncate">{/^Fila \d+$/.test(r.name) ? <span className="italic text-stone-400">Sin nombre</span> : r.name}{r.status === 'updated' && r.message && <span className="text-stone-400 font-normal"> · {r.message}</span>}</span>
                                         {r.id
                                             ? <a href={`/adopter/${r.id}`} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 text-teal-600 hover:underline">Ver perfil →</a>
-                                            : <span className="flex-shrink-0 text-stone-400">creado</span>}
+                                            : <span className="flex-shrink-0 text-stone-400">{r.status === 'updated' ? 'actualizado' : 'creado'}</span>}
                                     </div>
                                 ))}
                             </div>
@@ -464,11 +557,22 @@ export default function SpreadsheetImportWizard() {
 }
 
 // One record row in the confirmation grid: checkbox + summary, expandable to edit.
-function RowView({ r, editing, onToggle, onEdit, onChange }: {
+const MATCH_TYPE_LABELS: Record<string, string> = {
+    phone: 'teléfono', phone_suffix: 'teléfono', email: 'email', social: 'red social',
+    id_number: 'DNI', address_word: 'dirección', name_full: 'nombre', name_word: 'nombre', name_word_fuzzy: 'nombre',
+};
+function matchTypeLabels(types: string[]): string {
+    const labels = [...new Set(types.map(t => MATCH_TYPE_LABELS[t]).filter(Boolean))];
+    return labels.length ? labels.join(', ') : 'datos';
+}
+
+function RowView({ r, editing, match, action, onAction, onToggle, onEdit, onChange }: {
     r: { index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean };
-    editing: boolean; onToggle: () => void; onEdit: () => void; onChange: (p: Partial<MappedRow>) => void;
+    editing: boolean; match?: DuplicateMatch | null; action: RowAction; onAction: (a: RowAction) => void;
+    onToggle: () => void; onEdit: () => void; onChange: (p: Partial<MappedRow>) => void;
 }) {
     const { eff, built, selected } = r;
+    const isExact = match ? isExactIdentifierMatch(match.matchTypes) : false;
     const contacts = [...eff.phones, ...eff.emails, ...eff.socials, ...eff.addresses, ...eff.dnis].join(' · ');
     const invalid = built.errors.length > 0;
     const warned = built.warnings.length > 0;
@@ -500,6 +604,29 @@ function RowView({ r, editing, onToggle, onEdit, onChange }: {
                 </td>
                 <td className="px-2 py-2 text-right"><button onClick={onEdit} className="text-stone-400 hover:text-teal-600" title="Editar">✎</button></td>
             </tr>
+            {match && (
+                <tr className={!selected ? 'opacity-40' : ''}>
+                    <td></td>
+                    <td colSpan={4} className="px-3 pb-2">
+                        <div className="flex flex-wrap items-center gap-2 text-xs bg-sky-50 border border-sky-100 rounded-lg px-2.5 py-1.5">
+                            <span className={isExact ? 'text-sky-800' : 'text-stone-600'}>
+                                {isExact ? '● Duplicado' : '○ Posible duplicado'} de <span className="font-semibold">{match.adopterName?.trim() || 'Sin nombre'}</span>
+                                <span className="text-stone-500"> · {match.relevancePercent}% · coincide en {matchTypeLabels(match.matchTypes)}</span>
+                            </span>
+                            <button type="button" onClick={() => window.open(`/adopter/${match.adopterId}`, '_blank', 'noopener,noreferrer')} className="text-teal-700 hover:underline">Abrir ↗</button>
+                            <div className="ml-auto inline-flex rounded-lg border border-stone-200 overflow-hidden">
+                                {(['upsert', 'create', 'skip'] as RowAction[]).map(a => (
+                                    <button key={a} type="button" onClick={() => onAction(a)}
+                                        className={`px-2 py-0.5 ${action === a ? 'bg-teal-600 text-white' : 'bg-white text-stone-600 hover:bg-stone-50'}`}
+                                        title={a === 'upsert' ? 'Actualizar el registro existente (merge aditivo)' : a === 'create' ? 'Crear un registro nuevo igual' : 'No importar esta fila'}>
+                                        {a === 'upsert' ? 'Actualizar' : a === 'create' ? 'Crear' : 'Omitir'}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            )}
             {editing && (
                 <tr className="bg-stone-50 border-t border-stone-100"><td colSpan={5} className="px-4 py-3">
                     {invalid && <div className="text-xs text-rose-600 mb-2">{built.errors.join(' ')}</div>}

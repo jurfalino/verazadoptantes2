@@ -56,3 +56,7 @@ export type { EnrichmentResult } from './enrichAdopters';
 // Admin metrics
 export { fetchMetrics } from './metrics';
 export type { MetricsPayload, MetricCardData } from './metrics';
+
+// Duplicate-aware import upsert
+export { upsertImportRecord } from './importUpsert';
+export type { ImportUpsertInput, ImportUpsertResult } from './importUpsert';

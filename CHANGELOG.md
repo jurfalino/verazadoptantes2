@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.32.2] - 2026-08-15
+
+### Added — duplicate-aware spreadsheet import (update instead of duplicate)
+
+- New **"🔍 Buscar duplicados existentes"** step in the import review grid: each row is checked against existing adopters using the same engine the manual form uses (`findAdopters` duplicate mode), keyed on name/phone/email/social.
+- Per matched row the grid shows the **confidence** (% + exact vs. possible + which field matched), an **"Abrir ↗"** link to the existing record in a new tab, and a **Actualizar / Crear / Omitir** selector. Default: an **exact-identifier match** (phone/email/DNI/social) defaults to **Actualizar**; a weaker (name-only) match still surfaces but defaults to **Crear** so you review it.
+- **Actualizar (upsert)** additively merges into the existing record — adds contacts it doesn't have, adds the activity (skipping one equivalent to an existing type+date+details), fills the name only if the existing record is nameless (otherwise adds the incoming name as an **alias**); never overwrites existing data. Rating is untouched (avgRating derives from the added activity). Powered by the new `upsertImportRecord` action + the pure `planRecordMerge` planner.
+- Dateless activities now store a **null** date on both create and upsert paths (instead of fabricating import-time), so re-importing a dateless row dedups its activity rather than duplicating it.
+- **Known limitation:** detection keys on name/phone/email/social — address-only and DNI-only rows are not auto-matched (they default to Crear; no risk of a wrong merge). They can still be deduped afterward via the existing duplicate-candidates review.
+
 ## [2.32.1] - 2026-08-15
 
 ### Fixed / Changed — spreadsheet import robustness (VANA bulk import)

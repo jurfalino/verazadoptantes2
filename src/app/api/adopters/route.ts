@@ -508,7 +508,11 @@ export async function POST(request: Request) {
                 status: 'completed',
                 rating: adoption.rating || 2,
                 recordType: adoptionRecordType,
-                date: adoption.date ? new Date(adoption.date) : new Date(),
+                // NULL (not now()) when the row has no date: fabricating import-time
+                // as the event date is misleading for a historical entry, AND it
+                // symmetrises with the upsert path (which stores null) so a dateless
+                // row's activity dedups on re-import instead of duplicating.
+                date: adoption.date ? new Date(adoption.date) : null,
                 sourceUrl: sourceUrl || null,
                 details: detailsParts.length > 0 ? detailsParts.join('\n') : null,
                 // v2.24.6: animal/record fields forwarded from the importer.
