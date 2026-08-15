@@ -7,7 +7,7 @@ import { buildImportBody } from '@/lib/importRow';
 import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType } from '@/domain/importRow';
 import {
     TARGET_IMPORT_FIELDS, COMBINED_CONTACT, IGNORE,
-    applyColumnMap, emptyMappedRow,
+    applyColumnMap, emptyMappedRow, guessColumnMap,
     type ColumnMap, type MappedRow,
 } from '@/domain/importFields';
 
@@ -51,7 +51,7 @@ export default function SpreadsheetImportWizard() {
     const [error, setError] = useState<string | null>(null);
     // Interpretation: 'ai' = AI ingested the rows directly; 'mapping' = deterministic
     // column-mapping fallback. AI is the default.
-    const [mode, setMode] = useState<'ai' | 'mapping'>('ai');
+    const [mode, setMode] = useState<'ai' | 'mapping'>('mapping');
     const [interpreted, setInterpreted] = useState<MappedRow[]>([]);
     const [interpretProgress, setInterpretProgress] = useState({ done: 0, total: 0 });
     // Confirmation-grid state.
@@ -74,34 +74,47 @@ export default function SpreadsheetImportWizard() {
             const sheet = await parseSpreadsheetFile(file);
             if (sheet.headers.length === 0) { setError('El archivo está vacío o no tiene encabezados.'); setBusy(false); return; }
             setFileName(file.name); setParsed(sheet); setOverrides({}); setDeselected(new Set());
-            setMode('ai'); setInterpreted([]); setMap(null); setStep('confirm');
-            // AI ingests the rows directly, chunked so we can show progress and
-            // avoid one long request. Falls back to deterministic column-mapping.
-            try {
-                setInterpretProgress({ done: 0, total: sheet.rows.length });
-                const CHUNK = 20;
-                const acc: MappedRow[] = [];
-                for (let i = 0; i < sheet.rows.length; i += CHUNK) {
-                    const chunk = sheet.rows.slice(i, i + CHUNK);
-                    try {
-                        acc.push(...await interpretRows(sheet.headers, chunk, 'es'));
-                    } catch (chunkErr) {
-                        // First chunk failed → AI unavailable → fall back to mapping
-                        // (nothing interpreted yet). A LATER chunk failing keeps the
-                        // rows we already have and pads this chunk with empty rows
-                        // (visible as errors in the grid), rather than discarding.
-                        if (acc.length === 0) throw chunkErr;
-                        acc.push(...chunk.map(() => emptyMappedRow()));
-                    }
-                    setInterpreted([...acc]);
-                    setInterpretProgress({ done: Math.min(i + CHUNK, sheet.rows.length), total: sheet.rows.length });
-                }
-            } catch {
-                const aiMap = await mapImportColumns(sheet.headers, sheet.rows.slice(0, 5), 'es');
-                setMap(aiMap); setMode('mapping'); setAdvancedOpen(true);
-            }
+            // Default: deterministic column-mapping, ready INSTANTLY. `guessColumnMap`
+            // matches header names offline (no AI, no per-row wait) — the grid renders
+            // immediately via applyColumnMap. The user tweaks any wrong field in the
+            // mapping panel, or opts into AI interpretation for genuinely messy sheets
+            // (runAiInterpretation). This flips the old default, which eagerly ran
+            // ~N/20 sequential AI calls over every row before the grid could appear.
+            setInterpreted([]); setInterpretProgress({ done: 0, total: 0 });
+            setMap(guessColumnMap(sheet.headers)); setMode('mapping'); setAdvancedOpen(true);
+            setStep('confirm');
         } catch (e) {
             setError(e instanceof Error ? e.message : 'No se pudo leer el archivo.'); setStep('upload');
+        } finally { setBusy(false); }
+    };
+
+    // Opt-in AI interpretation for messy sheets: send each row to the model
+    // (chunked, with progress) so it extracts structured fields the deterministic
+    // column-map can't. Slow (one request per ~20 rows), so it's never eager.
+    const runAiInterpretation = async () => {
+        if (!parsed) return;
+        setError(null); setBusy(true); setMode('ai'); setInterpreted([]);
+        try {
+            setInterpretProgress({ done: 0, total: parsed.rows.length });
+            const CHUNK = 20;
+            const acc: MappedRow[] = [];
+            for (let i = 0; i < parsed.rows.length; i += CHUNK) {
+                const chunk = parsed.rows.slice(i, i + CHUNK);
+                try {
+                    acc.push(...await interpretRows(parsed.headers, chunk, 'es'));
+                } catch (chunkErr) {
+                    // First chunk failed → AI unavailable → bail back to mapping.
+                    // A later chunk failing keeps what we have and pads this chunk
+                    // with empty rows (visible as errors) rather than discarding.
+                    if (acc.length === 0) throw chunkErr;
+                    acc.push(...chunk.map(() => emptyMappedRow()));
+                }
+                setInterpreted([...acc]);
+                setInterpretProgress({ done: Math.min(i + CHUNK, parsed.rows.length), total: parsed.rows.length });
+            }
+        } catch {
+            // AI unavailable — stay on the deterministic column-map (already set).
+            setMode('mapping'); setError('No se pudo interpretar con IA. Usá el mapeo de columnas.');
         } finally { setBusy(false); }
     };
 
@@ -218,7 +231,7 @@ export default function SpreadsheetImportWizard() {
     };
 
     const tally = { created: results.filter(r => r.status === 'created').length, skipped: results.filter(r => r.status === 'skipped').length, failed: results.filter(r => r.status === 'failed').length };
-    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('ai'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); };
+    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); };
 
     return (
         <div className="max-w-5xl mx-auto p-4">
@@ -270,7 +283,8 @@ export default function SpreadsheetImportWizard() {
                         </div>
                     ) : (
                     <>
-                    {/* Mode: AI interpretation (default) with an escape hatch, or the mapping fallback. */}
+                    {/* Mode: deterministic column-mapping (default, instant) with an
+                        opt-in to AI interpretation, or the AI view with an escape hatch. */}
                     {mode === 'ai' ? (
                         <div className="mb-4 p-3 rounded-lg bg-teal-50 border border-teal-100 text-sm text-teal-800 flex items-center justify-between gap-3">
                             <span>🤖 {records.length} registros interpretados por IA — revisalos y editá lo que haga falta.</span>
@@ -278,6 +292,10 @@ export default function SpreadsheetImportWizard() {
                         </div>
                     ) : (
                         <div className="border border-stone-200 rounded-xl mb-4">
+                            <div className="px-4 py-2.5 flex items-center justify-between gap-3 text-sm border-b border-stone-100">
+                                <span className="text-stone-600">📋 <span className="font-medium">Mapeo por columnas</span> — instantáneo. Revisá que cada columna apunte al campo correcto.</span>
+                                <button onClick={runAiInterpretation} className="flex-shrink-0 text-teal-700 hover:underline" title="Para planillas desordenadas (varios contactos en una celda, formatos raros)">🤖 ¿Columnas mezcladas? Interpretar con IA</button>
+                            </div>
                             <button onClick={() => setAdvancedOpen(o => !o)} className="w-full text-left px-4 py-2 text-sm font-medium text-stone-600 flex items-center justify-between">
                                 <span>⚙️ Mapeo de columnas</span>
                                 <span className="text-stone-400">{advancedOpen ? '▲' : '▼'}</span>

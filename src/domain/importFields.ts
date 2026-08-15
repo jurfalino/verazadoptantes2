@@ -105,6 +105,43 @@ export function hasNameMapping(map: ColumnMap): boolean {
     return map.columns.some(c => c.field === 'name');
 }
 
+/** Accent- and case-insensitive header normalization for heuristic matching. */
+function normHeader(h: string): string {
+    return h.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+
+/** Ordered header-name heuristics (most specific first). First match wins. */
+const GUESS_RULES: { field: string; test: RegExp }[] = [
+    { field: 'phone', test: /(^|[^a-z])(tel|phone|celular|cel|whatsapp|wsp|movil)/ },
+    { field: 'email', test: /(e-?mail|correo)/ },
+    { field: 'social', test: /(facebook|instagram|\bfb\b|\big\b|social|perfil)/ },
+    { field: 'dni', test: /(dni|documento|cedula|pasaporte)/ },
+    { field: 'address', test: /(direcc|domicilio|address|localidad|barrio|ciudad|provincia)/ },
+    { field: 'onBehalfOf', test: /(aportante|a nombre|reportad|on behalf)/ },
+    { field: 'rating', test: /(rating|puntaje|score|calificaci)/ },
+    { field: 'date', test: /(fecha|date)/ },
+    { field: 'recordType', test: /(tipo|type|record)/ },
+    { field: 'species', test: /(especie|species)/ },
+    { field: 'animalName', test: /(animal|mascota)/ },
+    { field: 'details', test: /(motivo|detalle|nota|observaci|coment|descripci|details)/ },
+    { field: 'name', test: /(nombre|name|adoptante)/ },
+];
+
+/**
+ * Deterministic, OFFLINE column-map guess from header names (no AI). Used as the
+ * instant default when a sheet is opened, so a well-structured sheet is ready to
+ * import immediately without waiting for AI. The user can correct any field in
+ * the UI, or opt into AI interpretation for genuinely messy sheets. Unmatched
+ * headers → `ignore`.
+ */
+export function guessColumnMap(headers: string[]): ColumnMap {
+    const columns: ColumnAssignment[] = headers.map(h => {
+        const rule = GUESS_RULES.find(r => r.test.test(normHeader(h)));
+        return { column: h, field: rule ? rule.field : IGNORE, confidence: (rule ? 'medium' : 'low') as ColumnAssignment['confidence'] };
+    });
+    return { columns };
+}
+
 /** A spreadsheet row projected onto our schema via a ColumnMap. Contact-type
  *  fields are arrays (several columns may map to the same type); single-value
  *  fields take the first non-empty. `combinedContacts` holds raw messy cells to

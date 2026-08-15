@@ -1,7 +1,35 @@
 import { describe, it, expect } from 'vitest';
-import { parseColumnMap, hasNameMapping, applyColumnMap, parseAiRows, COMBINED_CONTACT, IGNORE } from './importFields';
+import { parseColumnMap, hasNameMapping, applyColumnMap, parseAiRows, guessColumnMap, COMBINED_CONTACT, IGNORE } from './importFields';
 
 const headers = ['Nombre', 'Tel', 'Mail', 'Contacto', 'Mascota', 'Basura'];
+
+describe('guessColumnMap', () => {
+    const field = (m: ReturnType<typeof guessColumnMap>, col: string) => m.columns.find(c => c.column === col)?.field;
+    it('maps the real VANA headers offline (accent/case-insensitive), unknowns → ignore', () => {
+        const m = guessColumnMap(['row_id', 'numero', 'tramo', 'nombre', 'aportante', 'telefonos', 'emails', 'dni', 'facebook', 'direccion', 'fecha', 'tipo', 'rating', 'motivo']);
+        expect(field(m, 'nombre')).toBe('name');
+        expect(field(m, 'telefonos')).toBe('phone');
+        expect(field(m, 'emails')).toBe('email');
+        expect(field(m, 'dni')).toBe('dni');
+        expect(field(m, 'facebook')).toBe('social');
+        expect(field(m, 'direccion')).toBe('address');
+        expect(field(m, 'fecha')).toBe('date');
+        expect(field(m, 'tipo')).toBe('recordType');
+        expect(field(m, 'rating')).toBe('rating');
+        expect(field(m, 'motivo')).toBe('details');
+        expect(field(m, 'aportante')).toBe('onBehalfOf');
+        // Non-field headers are ignored, never misassigned.
+        expect(field(m, 'row_id')).toBe(IGNORE);
+        expect(field(m, 'numero')).toBe(IGNORE);
+        expect(field(m, 'tramo')).toBe(IGNORE);
+    });
+    it('handles accents/case (Teléfono, Correo, Dirección)', () => {
+        const m = guessColumnMap(['Teléfono', 'Correo electrónico', 'Dirección']);
+        expect(field(m, 'Teléfono')).toBe('phone');
+        expect(field(m, 'Correo electrónico')).toBe('email');
+        expect(field(m, 'Dirección')).toBe('address');
+    });
+});
 
 describe('parseColumnMap', () => {
     it('maps a well-formed AI response and preserves header order', () => {
