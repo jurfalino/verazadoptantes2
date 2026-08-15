@@ -178,10 +178,16 @@ export function emptyMappedRow(): MappedRow {
     return { name: '', phones: [], emails: [], socials: [], addresses: [], dnis: [], combinedContacts: [] };
 }
 
+/** Split a cell that packs several contact values into one, separated by ';' or
+ *  newlines. NOT commas — addresses legitimately contain commas ("Calle 1234,
+ *  Piso 2, Ciudad"). "a@x.com; b@y.com" → ['a@x.com', 'b@y.com']. */
+export function splitMultiValue(v: string): string[] {
+    return v.split(/[;\n]+/).map(s => s.trim()).filter(Boolean);
+}
+
 function strArray(v: unknown): string[] {
-    if (Array.isArray(v)) return v.map(x => (x ?? '').toString().trim()).filter(Boolean);
-    if (typeof v === 'string' && v.trim()) return [v.trim()];
-    return [];
+    const raw = Array.isArray(v) ? v.map(x => (x ?? '').toString()) : (typeof v === 'string' ? [v] : []);
+    return raw.flatMap(splitMultiValue);
 }
 function strOrUndef(v: unknown): string | undefined {
     const s = (v ?? '').toString().trim();
@@ -236,7 +242,9 @@ export function applyColumnMap(map: ColumnMap, headers: string[], row: string[])
 
         if (assign.field === COMBINED_CONTACT) { out.combinedContacts.push(value); continue; }
         const multi = MULTI_CONTACT[assign.field];
-        if (multi) { out[multi].push(value); continue; }
+        // A single cell may pack several values ("a@x.com; b@y.com") — split so
+        // each becomes its own contact entry (own chip in review, stored separately).
+        if (multi) { for (const p of splitMultiValue(value)) out[multi].push(p); continue; }
         // Single-value field: first non-empty wins.
         if (assign.field === 'name') { if (!out.name) out.name = value; continue; }
         const key = assign.field as keyof MappedRow;

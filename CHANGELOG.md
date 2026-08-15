@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.32.5] - 2026-08-15
+
+### Fixed — import splits multi-value contact cells
+
+- A cell that packs several contacts into one value (`a@x.com; b@y.com`, multiple phones or addresses separated by `;` or newlines) is now **split into separate entries** at the column-mapping step — so each value shows as its **own chip** in the review grid (no more one crowded chip hiding data) and is **stored as a separate contact entry** (no more all-phones-as-one). Splitting is on `;`/newline only — **not** commas, which addresses legitimately contain.
+
 ## [2.32.4] - 2026-08-15
 
 ### Fixed / Changed — spreadsheet import robustness + UX (mass-failure fix)

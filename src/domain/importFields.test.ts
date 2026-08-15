@@ -1,5 +1,25 @@
 import { describe, it, expect } from 'vitest';
-import { parseColumnMap, hasNameMapping, applyColumnMap, parseAiRows, guessColumnMap, COMBINED_CONTACT, IGNORE } from './importFields';
+import { parseColumnMap, hasNameMapping, applyColumnMap, parseAiRows, guessColumnMap, splitMultiValue, COMBINED_CONTACT, IGNORE } from './importFields';
+
+describe('splitMultiValue', () => {
+    it("splits on ';' and newlines, trims, drops empties", () => {
+        expect(splitMultiValue('a@x.com; b@y.com')).toEqual(['a@x.com', 'b@y.com']);
+        expect(splitMultiValue('11-1111\n22-2222 ; 33-3333')).toEqual(['11-1111', '22-2222', '33-3333']);
+        expect(splitMultiValue('solo@uno.com')).toEqual(['solo@uno.com']);
+    });
+    it('does NOT split on commas (addresses contain them)', () => {
+        expect(splitMultiValue('Calle 1234, Piso 2, Ciudad')).toEqual(['Calle 1234, Piso 2, Ciudad']);
+    });
+});
+
+describe('applyColumnMap — multi-value cells', () => {
+    it('splits a cell packing several values into separate entries', () => {
+        const map = { columns: [{ column: 'Tels', field: 'phone', confidence: 'high' as const }, { column: 'Dir', field: 'address', confidence: 'high' as const }] };
+        const row = applyColumnMap(map, ['Tels', 'Dir'], ['11-1; 11-2 ; 11-3', 'Av. Siempreviva 742, Springfield']);
+        expect(row.phones).toEqual(['11-1', '11-2', '11-3']);
+        expect(row.addresses).toEqual(['Av. Siempreviva 742, Springfield']); // comma NOT split
+    });
+});
 
 const headers = ['Nombre', 'Tel', 'Mail', 'Contacto', 'Mascota', 'Basura'];
 
