@@ -40,7 +40,7 @@ function speciesOptionValue(raw: string | undefined): string {
 }
 
 type Step = 'upload' | 'confirm' | 'import';
-type Filter = 'all' | 'valid' | 'invalid';
+type Filter = 'all' | 'valid' | 'invalid' | 'warnings';
 
 export default function SpreadsheetImportWizard() {
     const [step, setStep] = useState<Step>('upload');
@@ -158,6 +158,7 @@ export default function SpreadsheetImportWizard() {
     const filtered = useMemo(() => records.filter(r => {
         if (filter === 'valid' && r.built.errors.length) return false;
         if (filter === 'invalid' && !r.built.errors.length) return false;
+        if (filter === 'warnings' && !r.built.warnings.length) return false;
         if (typeFilter !== 'all' && normalizeRecordType(r.eff.recordType) !== typeFilter) return false;
         if (ratingFilter !== 'all') {
             const nr = normalizeRating(r.eff.rating);
@@ -177,6 +178,7 @@ export default function SpreadsheetImportWizard() {
 
     const importable = records.filter(r => r.selected && r.built.errors.length === 0);
     const selectedInvalid = records.filter(r => r.selected && r.built.errors.length > 0).length;
+    const selectedWarnings = records.filter(r => r.selected && r.built.errors.length === 0 && r.built.warnings.length > 0).length;
 
     const runImport = async () => {
         setStep('import'); setImportDone(false); setResults([]);
@@ -304,6 +306,7 @@ export default function SpreadsheetImportWizard() {
                                 <option value="all">Validez: todas</option>
                                 <option value="valid">Válidos ({records.filter(r => !r.built.errors.length).length})</option>
                                 <option value="invalid">Con errores ({records.filter(r => r.built.errors.length).length})</option>
+                                <option value="warnings">Con advertencias ({records.filter(r => r.built.warnings.length).length})</option>
                             </select>
                             <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="h-9 px-2 rounded-lg border border-stone-200 text-sm bg-white" title="Tipo de actividad">
                                 <option value="all">Tipo: todos</option>
@@ -329,7 +332,7 @@ export default function SpreadsheetImportWizard() {
                             {(filter !== 'all' || typeFilter !== 'all' || ratingFilter !== 'all' || search.trim() !== '') && (
                                 <button onClick={() => { setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setSearch(''); }} className="h-9 px-2 text-sm text-stone-500 hover:text-stone-700">✕ Limpiar filtros</button>
                             )}
-                            <span className="text-sm text-stone-500 ml-auto">Mostrando {filtered.length} de {records.length} · {importable.length} se importarán{selectedInvalid > 0 && <span className="text-rose-500"> · {selectedInvalid} con errores</span>}</span>
+                            <span className="text-sm text-stone-500 ml-auto">Mostrando {filtered.length} de {records.length} · {importable.length} se importarán{selectedWarnings > 0 && <span className="text-amber-600"> · {selectedWarnings} con advertencias</span>}{selectedInvalid > 0 && <span className="text-rose-500"> · {selectedInvalid} con errores</span>}</span>
                         </div>
                     </div>
 
@@ -404,6 +407,7 @@ function RowView({ r, editing, onToggle, onEdit, onChange }: {
     const { eff, built, selected } = r;
     const contacts = [...eff.phones, ...eff.emails, ...eff.socials, ...eff.addresses, ...eff.dnis].join(' · ');
     const invalid = built.errors.length > 0;
+    const warned = built.warnings.length > 0;
     // Effective visibility shown to the reviewer: anonymous rows default público,
     // named rows default protegido, unless overridden per-row or in bulk.
     const isAnon = !eff.name?.trim();
@@ -424,12 +428,18 @@ function RowView({ r, editing, onToggle, onEdit, onChange }: {
                     </span>
                 </td>
                 <td className="px-3 py-2 text-stone-500 max-w-[240px] truncate" title={contacts}>{contacts || '—'}{eff.combinedContacts.length > 0 && <span className="ml-1 text-indigo-500" title="se separará al importar">🧩</span>}</td>
-                <td className="px-3 py-2 text-stone-500">{[eff.animalName, eff.species, eff.recordType, eff.rating, eff.date].filter(Boolean).join(' · ') || '—'}</td>
+                <td className="px-3 py-2 text-stone-500">
+                    {[eff.animalName, eff.species, eff.recordType, eff.rating, eff.date].filter(Boolean).join(' · ') || '—'}
+                    {/* Non-blocking warning (unparseable rating/date) — the row still
+                        imports; the reviewer can fix the cell in the editor or proceed. */}
+                    {warned && <span className="ml-1.5 text-amber-600" title={built.warnings.join(' ')}>⚠</span>}
+                </td>
                 <td className="px-2 py-2 text-right"><button onClick={onEdit} className="text-stone-400 hover:text-teal-600" title="Editar">✎</button></td>
             </tr>
             {editing && (
                 <tr className="bg-stone-50 border-t border-stone-100"><td colSpan={5} className="px-4 py-3">
                     {invalid && <div className="text-xs text-rose-600 mb-2">{built.errors.join(' ')}</div>}
+                    {warned && <div className="text-xs text-amber-600 mb-2">{built.warnings.join(' ')} Corregí la fecha/rating abajo, o dejá el registro así (se importa igual).</div>}
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                         <EditField label="Nombre" value={eff.name} onChange={v => onChange({ name: v })} />
                         <EditField label="Animal" value={eff.animalName ?? ''} onChange={v => onChange({ animalName: v })} />

@@ -8,7 +8,7 @@
  */
 
 import { categorizeContactText, buildContactEntries, type ContactEntry } from '@/lib/contactEntries';
-import { normalizeRating, normalizeImportDate, normalizeSpecies, normalizeRecordType, normalizeNeutered, validateMappedRow } from '@/domain/importRow';
+import { normalizeRating, normalizeImportDate, normalizeSpecies, normalizeRecordType, normalizeNeutered, validateMappedRow, rowWarnings } from '@/domain/importRow';
 import type { MappedRow } from '@/domain/importFields';
 
 export interface ImportBody {
@@ -34,6 +34,8 @@ export interface ImportBody {
 export interface BuiltRow {
     body: ImportBody | null; // null when errors present
     errors: string[];
+    /** Non-blocking warnings (unparseable rating/date). The row still imports. */
+    warnings: string[];
     /** A combined-contact cell produced no structured contact → AI-cleanup candidate. */
     needsAiCleanup: boolean;
 }
@@ -49,6 +51,7 @@ export interface ExtraContacts {
 
 export function buildImportBody(row: MappedRow, extra?: ExtraContacts): BuiltRow {
     const errors = validateMappedRow(row);
+    const warnings = rowWarnings(row);
 
     // Deterministic split of combined cells.
     const split: ContactEntry[] = row.combinedContacts.flatMap(c => categorizeContactText(c));
@@ -64,7 +67,7 @@ export function buildImportBody(row: MappedRow, extra?: ExtraContacts): BuiltRow
         ids: [...row.dnis, ...ofType('id'), ...(extra?.ids ?? [])].map(value => ({ value, label: 'DNI' })),
     });
 
-    if (errors.length) return { body: null, errors, needsAiCleanup };
+    if (errors.length) return { body: null, errors, warnings, needsAiCleanup };
 
     const body: ImportBody = {
         name: row.name.trim(),
@@ -85,5 +88,5 @@ export function buildImportBody(row: MappedRow, extra?: ExtraContacts): BuiltRow
             onBehalfOf: row.onBehalfOf?.trim() || null,
         },
     };
-    return { body, errors: [], needsAiCleanup };
+    return { body, errors: [], warnings, needsAiCleanup };
 }

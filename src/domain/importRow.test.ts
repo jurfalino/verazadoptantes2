@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeRating, normalizeImportDate, normalizeSpecies, normalizeRecordType, normalizeNeutered, validateMappedRow } from './importRow';
+import { normalizeRating, normalizeImportDate, normalizeSpecies, normalizeRecordType, normalizeNeutered, validateMappedRow, rowWarnings } from './importRow';
 import type { MappedRow } from './importFields';
 
 function row(o: Partial<MappedRow>): MappedRow {
@@ -29,6 +29,18 @@ describe('normalizeImportDate', () => {
         expect(normalizeImportDate('45/13/2024')).toBeNull();
         expect(normalizeImportDate(undefined)).toBeNull();
     });
+    it('extracts the FIRST valid date from a range or prose', () => {
+        expect(normalizeImportDate('14/03/2009 - 20/06/2009')).toBe('2009-03-14');
+        expect(normalizeImportDate('4/07/2009 - diciembre 2009')).toBe('2009-07-04');
+        expect(normalizeImportDate('adoptado el 2/05/2009, devuelto el 4/05/2009')).toBe('2009-05-02');
+    });
+    it('returns null for a range with no complete date (bare years, relative, month-day)', () => {
+        expect(normalizeImportDate('2014-2015')).toBeNull();
+        expect(normalizeImportDate('2015 y 2016')).toBeNull();
+        expect(normalizeImportDate('hace un mes')).toBeNull();
+        expect(normalizeImportDate('Feb 23rd')).toBeNull();
+        expect(normalizeImportDate('adoptado 30/3, devuelto 09/06')).toBeNull(); // no year on either
+    });
 });
 
 describe('normalizeSpecies / recordType / neutered', () => {
@@ -51,10 +63,23 @@ describe('validateMappedRow', () => {
         expect(validateMappedRow(row({ name: '' }))).toContain('Falta el nombre y el contacto del adoptante.');
         expect(validateMappedRow(row({ name: 'Ana' }))).toEqual([]);
     });
-    it('flags present-but-invalid rating and date (never silently drops)', () => {
-        expect(validateMappedRow(row({ rating: '9' })).some(e => e.includes('Rating'))).toBe(true);
-        expect(validateMappedRow(row({ date: 'ayer' })).some(e => e.includes('Fecha'))).toBe(true);
+    it('does NOT block on an unparseable rating or date (those are warnings)', () => {
+        expect(validateMappedRow(row({ rating: '9' }))).toEqual([]);
+        expect(validateMappedRow(row({ date: 'ayer' }))).toEqual([]);
         expect(validateMappedRow(row({ rating: '4', date: '2024-06-15' }))).toEqual([]);
+    });
+});
+
+describe('rowWarnings', () => {
+    it('warns (non-blocking) on a present-but-unparseable rating or date', () => {
+        expect(rowWarnings(row({ rating: '9' })).some(w => w.includes('Rating'))).toBe(true);
+        expect(rowWarnings(row({ date: '2014-2015' })).some(w => w.includes('Fecha'))).toBe(true);
+    });
+    it('is silent when rating/date are valid, absent, or a salvageable range', () => {
+        expect(rowWarnings(row({ rating: '4', date: '2024-06-15' }))).toEqual([]);
+        expect(rowWarnings(row({}))).toEqual([]);
+        // A range whose first date parses is NOT a warning — it's salvaged.
+        expect(rowWarnings(row({ date: '14/03/2009 - 20/06/2009' }))).toEqual([]);
     });
 });
 

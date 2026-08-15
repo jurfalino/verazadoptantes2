@@ -16,19 +16,26 @@ export function normalizeRating(raw: string | undefined): number | null {
 }
 
 /** Parse a date cell → 'YYYY-MM-DD', or null if absent/unparseable. Accepts
- *  ISO, D/M/Y and D-M-Y (day-first, matching the es locale). */
+ *  ISO, D/M/Y and D-M-Y (day-first, matching the es locale). Extracts the FIRST
+ *  valid date found ANYWHERE in the cell: legacy rows often carry a range
+ *  ("14/03/2009 - 20/06/2009") or extra prose ("adoptado 4/07/2009"), and taking
+ *  the first date beats rejecting the whole row. Returns null only when no
+ *  complete date is present (bare years, "hace un mes", "Feb 23rd", …). */
 export function normalizeImportDate(raw: string | undefined): string | null {
     if (!raw) return null;
     const s = String(raw).trim();
-    const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-    if (iso) return ymd(+iso[1], +iso[2], +iso[3]);
-    const dmy = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+    const candidates: { idx: number; val: string | null }[] = [];
+    const iso = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (iso) candidates.push({ idx: iso.index ?? Infinity, val: ymd(+iso[1], +iso[2], +iso[3]) });
+    const dmy = s.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
     if (dmy) {
         let year = +dmy[3];
         if (year < 100) year += year < 50 ? 2000 : 1900;
-        return ymd(year, +dmy[2], +dmy[1]); // day-first
+        candidates.push({ idx: dmy.index ?? Infinity, val: ymd(year, +dmy[2], +dmy[1]) }); // day-first
     }
-    return null;
+    // Earliest-positioned valid date wins (an ISO prefix beats a later dmy match).
+    const valid = candidates.filter(c => c.val).sort((a, b) => a.idx - b.idx);
+    return valid.length ? valid[0].val : null;
 }
 function ymd(y: number, m: number, d: number): string | null {
     if (m < 1 || m > 12 || d < 1 || d > 31) return null;
@@ -69,9 +76,10 @@ export function normalizeNeutered(raw: string | undefined): number | null {
 }
 
 /**
- * Validate a mapped row. Returns human-readable errors (empty = importable).
- * `name` is required; a present-but-invalid rating/date is an error (silently
- * dropping them would corrupt the record).
+ * Validate a mapped row. Returns BLOCKING errors (empty = importable). The only
+ * hard rule is the minimum identifier: a row needs a name OR at least one
+ * contact. A present-but-unparseable rating/date does NOT block — see
+ * `rowWarnings` (the value is dropped, the record still imports).
  */
 export function validateMappedRow(row: MappedRow): string[] {
     const errors: string[] = [];
@@ -80,7 +88,23 @@ export function validateMappedRow(row: MappedRow): string[] {
     if (!row.name?.trim() && !hasContact) {
         errors.push('Falta el nombre y el contacto del adoptante.');
     }
-    if (row.rating && normalizeRating(row.rating) === null) errors.push(`Rating inválido: "${row.rating}" (debe ser 1–5).`);
-    if (row.date && normalizeImportDate(row.date) === null) errors.push(`Fecha inválida: "${row.date}".`);
     return errors;
+}
+
+/**
+ * Non-blocking warnings for a mapped row: a present-but-unparseable rating or
+ * date. These never block import — the value is dropped (normalizeRating /
+ * normalizeImportDate return null and the record imports without it) — but the
+ * reviewer sees the warning so nothing is lost silently and they can fix or
+ * clear the cell first, or proceed as-is.
+ */
+export function rowWarnings(row: MappedRow): string[] {
+    const warnings: string[] = [];
+    if (row.rating && normalizeRating(row.rating) === null) {
+        warnings.push(`Rating no reconocido: "${row.rating}" — se importa sin rating.`);
+    }
+    if (row.date && normalizeImportDate(row.date) === null) {
+        warnings.push(`Fecha no reconocida: "${row.date}" — se importa sin fecha.`);
+    }
+    return warnings;
 }
