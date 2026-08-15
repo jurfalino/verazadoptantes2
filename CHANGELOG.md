@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.32.4] - 2026-08-15
+
+### Fixed / Changed — spreadsheet import robustness + UX (mass-failure fix)
+
+- **Prevents the mass "Failed to fetch" failures.** The import no longer fires one HTTP request per row (~800 concurrent Worker invocations hammering D1 → transient `database is locked` / rate errors → rows failing en masse). Rows are now sent to a **server-side bulk endpoint** (`importAdoptersBatch`) in ~25-row batches at low concurrency; each batch writes **sequentially** with a **transient-error retry wrapped around every write**, so D1 contention is ridden out server-side instead of surfacing as a failed row.
+- **Idempotent — no duplicate records on retry.** Each row's adopter gets a **deterministic id** (from the run id + row index) and the create is existence-gated + `ON CONFLICT DO NOTHING`, so re-sending a batch after a mid-batch Worker timeout can never double-create the adopter or its activity.
+- **Failed rows are actionable and fixable.** After an import, **"✗ Corregir y reintentar N fallidos"** returns you to the review grid with only the failed rows selected; each shows its **server error** (the field that failed) inline and is editable — fix it and re-import just those. Loop until zero.
+- **Preview shows full contact info.** The review grid's contact column no longer truncates to one clipped line — contacts render as **typed chips** (Tel / Email / Red / DNI / Dir) that wrap.
+- **Results show the original spreadsheet row.** Each created / updated / failed record now displays its **source row** (header: value · …) so it's traceable back to the sheet.
+
 ## [2.32.3] - 2026-08-15
 
 ### Added — import-runs audit for admins (`/admin/imports`)

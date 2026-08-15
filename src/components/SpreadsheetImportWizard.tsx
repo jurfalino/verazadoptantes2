@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
-import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, upsertImportRecord, startImportRun, finishImportRun, type DuplicateMatch } from '@/app/actions';
+import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult } from '@/app/actions';
 import { isExactIdentifierMatch } from '@/domain/importMerge';
 import { buildImportBody } from '@/lib/importRow';
 import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType } from '@/domain/importRow';
@@ -78,6 +78,9 @@ export default function SpreadsheetImportWizard() {
     const [detecting, setDetecting] = useState(false);
     const [detectProgress, setDetectProgress] = useState({ done: 0, total: 0 });
     const [detectionDone, setDetectionDone] = useState(false);
+    // Server failure message per row index (from the last import) — surfaced in the
+    // grid so the user can fix the offending field and retry just the failed rows.
+    const [failureByIndex, setFailureByIndex] = useState<Record<number, string>>({});
 
     const handleFile = async (file: File) => {
         setError(null); setBusy(true);
@@ -145,7 +148,27 @@ export default function SpreadsheetImportWizard() {
         if (!map) return;
         setMap({ ...map, columns: map.columns.map(c => c.column === column ? { ...c, field, confidence: 'high' as const } : c) });
     };
-    const setOverride = (i: number, patch: Partial<MappedRow>) => setOverrides(o => ({ ...o, [i]: { ...o[i], ...patch } }));
+    const setOverride = (i: number, patch: Partial<MappedRow>) => {
+        setOverrides(o => ({ ...o, [i]: { ...o[i], ...patch } }));
+        // Editing a failed row clears its error — it'll be re-evaluated on retry.
+        setFailureByIndex(f => { if (!(i in f)) return f; const n = { ...f }; delete n[i]; return n; });
+    };
+    // "Corregir y reintentar": select ONLY the failed rows and go back to the grid
+    // so the user can fix the flagged field, then import just those.
+    const retryFailed = () => {
+        const failed = new Set(Object.keys(failureByIndex).map(Number));
+        if (failed.size === 0) return;
+        setDeselected(new Set(records.filter(r => !failed.has(r.index)).map(r => r.index)));
+        setFilter('all'); setSearch(''); setTypeFilter('all'); setRatingFilter('all');
+        setStep('confirm');
+    };
+    // The original spreadsheet row (header: value · …) for a given record index —
+    // shown on the results so a created/failed row is traceable to its source.
+    const sourceRowText = (index: number): string => {
+        const row = parsed?.rows[index];
+        if (!parsed || !row) return '';
+        return parsed.headers.map((h, i) => { const v = (row[i] ?? '').toString().trim(); return v ? `${h}: ${v}` : ''; }).filter(Boolean).join(' · ');
+    };
     const toggle = (i: number) => setDeselected(s => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n; });
     // Bulk-set a rating on every row (empty = clear the override, back to the
     // system/AI-determined value).
@@ -242,104 +265,93 @@ export default function SpreadsheetImportWizard() {
         setDetecting(false); setDetectionDone(true);
     };
 
-    // Import ONE row: build → optional AI contact-cleanup → POST with retry.
-    // A 4xx (validation) is deterministic — surface the server's field-level
-    // `details` and don't retry. Network errors / 5xx retry up to 3 attempts.
-    const importOne = async (t: { index: number; eff: MappedRow }): Promise<RowResult> => {
+    // Build ONE selected record into a server batch row (client-side: validate +
+    // optional AI contact-cleanup). Invalid rows (no name AND no contact) become
+    // an immediate 'skipped' result and are never sent. Public default: anonymous
+    // rows público, named rows protegido, unless the per-row/bulk toggle overrides.
+    const buildBatchRow = async (t: { index: number; eff: MappedRow }): Promise<{ row?: ImportBatchRow; pre?: RowResult; name: string }> => {
         const { index, eff } = t;
         let built = buildImportBody(eff);
         if (built.needsAiCleanup) {
             try { built = buildImportBody(eff, await aiCleanRowContacts(eff.combinedContacts.join('\n'))); } catch { /* keep deterministic */ }
         }
-        if (built.errors.length || !built.body) {
-            return { index, name: eff.name || `Fila ${index + 1}`, status: 'skipped', message: built.errors.join(' ') };
-        }
-        // Anonymous rows (no name) default to público so their contacts are
-        // findable; named rows default to protegido (undefined = route default).
-        // Per-row/bulk overrides (eff.isPublic) always win.
-        const isAnon = !eff.name?.trim();
-        const effPublic = eff.isPublic !== undefined ? eff.isPublic : (isAnon ? true : undefined);
-        const payload = JSON.stringify({ ...built.body, ...(effPublic !== undefined ? { isPublic: effPublic } : {}) });
-        const name = built.body.name || `Fila ${index + 1}`;
-        for (let attempt = 0; attempt < 3; attempt++) {
-            try {
-                const r = await fetch('/api/adopters', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload });
-                if (r.ok) {
-                    const j = await r.json().catch(() => ({})) as { id?: string };
-                    return { index, name, status: 'created', id: j.id };
-                }
-                if (r.status < 500) {
-                    // Deterministic client error — surface WHICH field failed.
-                    const b = await r.json().catch(() => ({})) as { error?: string; errorId?: string; details?: string[] };
-                    const detail = b.details?.length ? `: ${b.details.join('; ')}` : '';
-                    return { index, name, status: 'failed', message: b.error ? `${b.error}${detail}${b.errorId ? ` (${b.errorId})` : ''}` : `HTTP ${r.status}` };
-                }
-                // 5xx → fall through to retry
-            } catch { /* network error ("Failed to fetch") → retry */ }
-            if (attempt < 2) await new Promise(res => setTimeout(res, 400 * (attempt + 1)));
-        }
-        return { index, name, status: 'failed', message: 'Falló tras 3 intentos (red o servidor). Reintentá la importación.' };
-    };
-
-    // Update the matched existing adopter (additive merge) instead of creating a
-    // new record. Falls back to create if there's no match to update.
-    const upsertOne = async (t: { index: number; eff: MappedRow }): Promise<RowResult> => {
-        const { index, eff } = t;
         const match = matches[index];
-        if (!match) return importOne(t);
-        const built = buildImportBody(eff);
+        const action = rowAction[index] ?? 'create';
+        const name = (action === 'upsert' && match?.adopterName) || built.body?.name || eff.name || `Fila ${index + 1}`;
         if (built.errors.length || !built.body) {
-            return { index, name: eff.name || `Fila ${index + 1}`, status: 'skipped', message: built.errors.join(' ') };
+            return { pre: { index, name: eff.name || `Fila ${index + 1}`, status: 'skipped', message: built.errors.join(' ') }, name };
         }
-        const name = match.adopterName || built.body.name || `Fila ${index + 1}`;
-        for (let attempt = 0; attempt < 3; attempt++) {
-            try {
-                const r = await upsertImportRecord({ adopterId: match.adopterId, name: built.body.name, contactEntries: built.body.contactEntries, adoption: built.body.adoption });
-                if (r.ok) {
-                    const bits = [
-                        r.addedContacts ? `+${r.addedContacts} contacto${r.addedContacts > 1 ? 's' : ''}` : '',
-                        r.addedActivity ? '+1 actividad' : '', r.nameFilled ? 'nombre' : '', r.aliasAdded ? 'alias' : '',
-                    ].filter(Boolean).join(', ');
-                    return bits
-                        ? { index, name, status: 'updated', id: match.adopterId, message: `Actualizó: ${bits}` }
-                        : { index, name, status: 'skipped', id: match.adopterId, message: 'Sin novedad — ya estaba todo' };
-                }
-                return { index, name, status: 'failed', id: match.adopterId, message: r.error || 'No se pudo actualizar' };
-            } catch { /* network → retry */ }
-            if (attempt < 2) await new Promise(res => setTimeout(res, 400 * (attempt + 1)));
-        }
-        return { index, name, status: 'failed', id: match.adopterId, message: 'Falló al actualizar tras 3 intentos.' };
+        const isAnon = !eff.name?.trim();
+        const isPublic = eff.isPublic !== undefined ? eff.isPublic : isAnon;
+        return {
+            row: {
+                index, action,
+                name: built.body.name,
+                contactEntries: built.body.contactEntries,
+                adoption: built.body.adoption,
+                isPublic,
+                matchedAdopterId: action === 'upsert' ? (match?.adopterId ?? null) : null,
+            },
+            name,
+        };
     };
 
     const runImport = async () => {
-        setStep('import'); setImportDone(false); setResults([]);
+        setStep('import'); setImportDone(false); setResults([]); setFailureByIndex({});
         const targets = records.filter(r => r.selected);
         setProgress({ done: 0, total: targets.length });
         // Import-run audit: record the header NOW so an abandoned run is still
         // visible to admins as 'running' (best-effort — never blocks the import).
         const runId = crypto.randomUUID();
         startImportRun({ runId, source: fileName, total: targets.length }).catch(() => { /* audit is best-effort */ });
-        // Bounded concurrency: N workers pull from a shared cursor. ~N× faster
-        // than the old strictly-sequential loop, without hammering D1.
-        const CONCURRENCY = 5;
-        const acc: (RowResult | undefined)[] = new Array(targets.length);
-        let done = 0, cursor = 0;
+
+        // Build all rows client-side (validate + AI cleanup). Invalid rows become
+        // immediate 'skipped' results and are never sent to the server.
+        const acc = new Map<number, RowResult>();
+        const nameByIndex: Record<number, string> = {};
+        const toSend: ImportBatchRow[] = [];
+        for (const t of targets) {
+            const { row, pre, name } = await buildBatchRow(t);
+            nameByIndex[t.index] = name;
+            if (pre) acc.set(t.index, pre);
+            else if (row) toSend.push(row);
+        }
+        let done = acc.size;
+        setProgress({ done, total: targets.length });
+        setResults([...acc.values()].sort((a, b) => a.index - b.index));
+
+        // Send in ~25-row batches at low concurrency. The SERVER processes each
+        // batch sequentially with its own DB-level retry, so transient D1
+        // contention is ridden out server-side instead of failing rows. The whole
+        // batch call is retried on a network blip.
+        const BATCH = 25, CONCURRENCY = 2;
+        const batches: ImportBatchRow[][] = [];
+        for (let i = 0; i < toSend.length; i += BATCH) batches.push(toSend.slice(i, i + BATCH));
+        let bcursor = 0;
         const worker = async () => {
-            for (let k = cursor++; k < targets.length; k = cursor++) {
-                const t = targets[k];
-                const action = rowAction[t.index] ?? 'create';
-                acc[k] = action === 'skip'
-                    ? { index: t.index, name: t.eff.name || `Fila ${t.index + 1}`, status: 'skipped', message: 'Omitido' }
-                    : action === 'upsert' ? await upsertOne(t) : await importOne(t);
-                done++;
+            for (let b = bcursor++; b < batches.length; b = bcursor++) {
+                const batch = batches[b];
+                let res: ImportBatchResult[] | null = null;
+                for (let attempt = 0; attempt < 3 && !res; attempt++) {
+                    try { res = await importAdoptersBatch(batch, runId); }
+                    catch { if (attempt < 2) await new Promise(r => setTimeout(r, 600 * (attempt + 1))); }
+                }
+                const mapped: ImportBatchResult[] = res ?? batch.map(r => ({ index: r.index, status: 'failed' as const, message: 'Falló el lote tras 3 intentos (red).' }));
+                for (const m of mapped) {
+                    acc.set(m.index, { index: m.index, name: nameByIndex[m.index] || `Fila ${m.index + 1}`, status: m.status, id: m.id ?? undefined, message: m.message ?? undefined });
+                    done++;
+                }
                 setProgress({ done, total: targets.length });
-                setResults(acc.filter(Boolean) as RowResult[]);
+                setResults([...acc.values()].sort((a, b2) => a.index - b2.index));
             }
         };
-        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker));
+        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batches.length) }, worker));
         setImportDone(true);
         // Persist the per-row items + final counts for the admin audit view.
-        const finalResults = acc.filter(Boolean) as RowResult[];
+        const finalResults = [...acc.values()].sort((a, b) => a.index - b.index);
+        // Remember server failures per row so "corregir y reintentar" can surface
+        // the actionable error in the grid.
+        setFailureByIndex(Object.fromEntries(finalResults.filter(r => r.status === 'failed').map(r => [r.index, r.message || 'Falló al importar'])));
         const counts = {
             created: finalResults.filter(r => r.status === 'created').length,
             updated: finalResults.filter(r => r.status === 'updated').length,
@@ -371,7 +383,7 @@ export default function SpreadsheetImportWizard() {
     };
 
     const tally = { created: results.filter(r => r.status === 'created').length, updated: results.filter(r => r.status === 'updated').length, skipped: results.filter(r => r.status === 'skipped').length, failed: results.filter(r => r.status === 'failed').length };
-    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); };
+    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); };
 
     return (
         <div className="max-w-5xl mx-auto p-4">
@@ -511,6 +523,7 @@ export default function SpreadsheetImportWizard() {
                                             match={r.index in matches ? matches[r.index] : undefined}
                                             action={rowAction[r.index] ?? 'create'}
                                             onAction={a => setRowAction(prev => ({ ...prev, [r.index]: a }))}
+                                            failure={failureByIndex[r.index]}
                                             onToggle={() => toggle(r.index)} onEdit={() => setEditing(editing === r.index ? null : r.index)}
                                             onChange={patch => setOverride(r.index, patch)} />
                                     ))}
@@ -549,7 +562,14 @@ export default function SpreadsheetImportWizard() {
                             <div className="bg-stone-50 px-3 py-2 text-xs uppercase tracking-wider text-stone-500 flex items-center justify-between"><span>Filas no importadas</span>{importDone && <button onClick={downloadErrors} className="text-teal-600 hover:underline normal-case tracking-normal">Descargar CSV</button>}</div>
                             <div className="max-h-64 overflow-y-auto">
                                 {results.filter(r => r.status === 'skipped' || r.status === 'failed').map(r => (
-                                    <div key={r.index} className="px-3 py-1.5 text-sm border-t border-stone-100 flex gap-2"><span className="text-stone-400 w-10 flex-shrink-0">#{r.index + 1}</span><span className="font-medium text-stone-700 w-40 flex-shrink-0 truncate">{r.name}</span><span className={r.status === 'failed' ? 'text-rose-600' : 'text-amber-600'}>{r.message || r.status}</span></div>
+                                    <div key={r.index} className="px-3 py-1.5 text-sm border-t border-stone-100">
+                                        <div className="flex gap-2">
+                                            <span className="text-stone-400 w-10 flex-shrink-0">#{r.index + 1}</span>
+                                            <span className="font-medium text-stone-700 w-40 flex-shrink-0 truncate">{r.name}</span>
+                                            <span className={`min-w-0 ${r.status === 'failed' ? 'text-rose-600' : 'text-amber-600'}`}>{r.message || r.status}</span>
+                                        </div>
+                                        {sourceRowText(r.index) && <div className="text-[11px] text-stone-400 truncate pl-12" title={sourceRowText(r.index)}>{sourceRowText(r.index)}</div>}
+                                    </div>
                                 ))}
                             </div>
                         </div>
@@ -559,13 +579,16 @@ export default function SpreadsheetImportWizard() {
                             <div className="bg-emerald-50 px-3 py-2 text-xs uppercase tracking-wider text-emerald-700">Registros creados ({tally.created}){tally.updated > 0 && ` y actualizados (${tally.updated})`} — revisalos</div>
                             <div className="max-h-72 overflow-y-auto">
                                 {results.filter(r => r.status === 'created' || r.status === 'updated').map(r => (
-                                    <div key={r.index} className="px-3 py-1.5 text-sm border-t border-stone-100 flex gap-2 items-center">
-                                        <span className="text-stone-400 w-10 flex-shrink-0">#{r.index + 1}</span>
-                                        <span className={`flex-shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded ${r.status === 'updated' ? 'bg-sky-50 text-sky-700' : 'bg-emerald-50 text-emerald-700'}`}>{r.status === 'updated' ? 'actualizado' : 'creado'}</span>
-                                        <span className="font-medium text-stone-700 flex-1 truncate">{/^Fila \d+$/.test(r.name) ? <span className="italic text-stone-400">Sin nombre</span> : r.name}{r.status === 'updated' && r.message && <span className="text-stone-400 font-normal"> · {r.message}</span>}</span>
-                                        {r.id
-                                            ? <a href={`/adopter/${r.id}`} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 text-teal-600 hover:underline">Ver perfil →</a>
-                                            : <span className="flex-shrink-0 text-stone-400">{r.status === 'updated' ? 'actualizado' : 'creado'}</span>}
+                                    <div key={r.index} className="px-3 py-1.5 text-sm border-t border-stone-100">
+                                        <div className="flex gap-2 items-center">
+                                            <span className="text-stone-400 w-10 flex-shrink-0">#{r.index + 1}</span>
+                                            <span className={`flex-shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded ${r.status === 'updated' ? 'bg-sky-50 text-sky-700' : 'bg-emerald-50 text-emerald-700'}`}>{r.status === 'updated' ? 'actualizado' : 'creado'}</span>
+                                            <span className="font-medium text-stone-700 flex-1 truncate">{/^Fila \d+$/.test(r.name) ? <span className="italic text-stone-400">Sin nombre</span> : r.name}{r.status === 'updated' && r.message && <span className="text-stone-400 font-normal"> · {r.message}</span>}</span>
+                                            {r.id
+                                                ? <a href={`/adopter/${r.id}`} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 text-teal-600 hover:underline">Ver perfil →</a>
+                                                : <span className="flex-shrink-0 text-stone-400">{r.status === 'updated' ? 'actualizado' : 'creado'}</span>}
+                                        </div>
+                                        {sourceRowText(r.index) && <div className="text-[11px] text-stone-400 truncate pl-12" title={sourceRowText(r.index)}>{sourceRowText(r.index)}</div>}
                                     </div>
                                 ))}
                             </div>
@@ -574,7 +597,12 @@ export default function SpreadsheetImportWizard() {
                     {importDone && (
                         <div className="flex items-center justify-between gap-4">
                             <p className="text-xs text-stone-400">Los posibles duplicados con registros existentes quedan marcados para revisar/fusionar en cada perfil. Reimportar la misma planilla vuelve a crear registros.</p>
-                            <button onClick={reset} className="flex-shrink-0 px-5 py-2 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700">Importar otra planilla</button>
+                            <div className="flex-shrink-0 flex items-center gap-2">
+                                {tally.failed > 0 && (
+                                    <button onClick={retryFailed} className="px-4 py-2 text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl hover:bg-rose-100" title="Vuelve a la grilla con solo las filas fallidas para que corrijas el campo señalado y reintentes">✗ Corregir y reintentar {tally.failed} fallido{tally.failed > 1 ? 's' : ''}</button>
+                                )}
+                                <button onClick={reset} className="px-5 py-2 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700">Importar otra planilla</button>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -593,14 +621,20 @@ function matchTypeLabels(types: string[]): string {
     return labels.length ? labels.join(', ') : 'datos';
 }
 
-function RowView({ r, editing, match, action, onAction, onToggle, onEdit, onChange }: {
+function RowView({ r, editing, match, action, onAction, failure, onToggle, onEdit, onChange }: {
     r: { index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean };
     editing: boolean; match?: DuplicateMatch | null; action: RowAction; onAction: (a: RowAction) => void;
-    onToggle: () => void; onEdit: () => void; onChange: (p: Partial<MappedRow>) => void;
+    failure?: string; onToggle: () => void; onEdit: () => void; onChange: (p: Partial<MappedRow>) => void;
 }) {
     const { eff, built, selected } = r;
     const isExact = match ? isExactIdentifierMatch(match.matchTypes) : false;
-    const contacts = [...eff.phones, ...eff.emails, ...eff.socials, ...eff.addresses, ...eff.dnis].join(' · ');
+    const contactChips: Array<{ t: string; v: string }> = [
+        ...eff.phones.map(v => ({ t: 'Tel', v })),
+        ...eff.emails.map(v => ({ t: 'Email', v })),
+        ...eff.socials.map(v => ({ t: 'Red', v })),
+        ...eff.dnis.map(v => ({ t: 'DNI', v })),
+        ...eff.addresses.map(v => ({ t: 'Dir', v })),
+    ];
     const invalid = built.errors.length > 0;
     const warned = built.warnings.length > 0;
     // Effective visibility shown to the reviewer: anonymous rows default público,
@@ -609,7 +643,7 @@ function RowView({ r, editing, match, action, onAction, onToggle, onEdit, onChan
     const isPublicEff = eff.isPublic ?? isAnon;
     return (
         <>
-            <tr className={`border-t border-stone-100 ${!selected ? 'opacity-40' : ''} ${invalid ? 'bg-rose-50' : ''}`}>
+            <tr className={`border-t border-stone-100 ${!selected ? 'opacity-40' : ''} ${(invalid || failure) ? 'bg-rose-50' : ''}`}>
                 <td className="px-2 py-2 text-center"><input type="checkbox" checked={selected} onChange={onToggle} /></td>
                 <td className="px-3 py-2 font-medium text-stone-800">
                     {/* Empty name is allowed (min-identifier: name OR contact). A
@@ -622,12 +656,27 @@ function RowView({ r, editing, match, action, onAction, onToggle, onEdit, onChan
                         {isPublicEff ? 'Público' : 'Protegido'}
                     </span>
                 </td>
-                <td className="px-3 py-2 text-stone-500 max-w-[240px] truncate" title={contacts}>{contacts || '—'}{eff.combinedContacts.length > 0 && <span className="ml-1 text-indigo-500" title="se separará al importar">🧩</span>}</td>
+                <td className="px-3 py-2 align-top">
+                    {contactChips.length === 0 && eff.combinedContacts.length === 0 ? (
+                        <span className="text-stone-400">—</span>
+                    ) : (
+                        <div className="flex flex-wrap gap-1 max-w-[360px]">
+                            {contactChips.map((c, i) => (
+                                <span key={i} className="inline-flex items-center gap-1 max-w-full text-xs bg-stone-100 rounded px-1.5 py-0.5" title={`${c.t}: ${c.v}`}>
+                                    <span className="text-[9px] uppercase font-semibold text-stone-400 flex-shrink-0">{c.t}</span>
+                                    <span className="text-stone-700 truncate">{c.v}</span>
+                                </span>
+                            ))}
+                            {eff.combinedContacts.length > 0 && <span className="text-indigo-500 text-xs self-center" title="se separará al importar">🧩</span>}
+                        </div>
+                    )}
+                </td>
                 <td className="px-3 py-2 text-stone-500">
                     {[eff.animalName, eff.species, eff.recordType, eff.rating, eff.date].filter(Boolean).join(' · ') || '—'}
                     {/* Non-blocking warning (unparseable rating/date) — the row still
                         imports; the reviewer can fix the cell in the editor or proceed. */}
                     {warned && <span className="ml-1.5 text-amber-600" title={built.warnings.join(' ')}>⚠</span>}
+                    {failure && <span className="ml-1.5 text-rose-600 font-semibold" title={failure}>✗ falló</span>}
                 </td>
                 <td className="px-2 py-2 text-right"><button onClick={onEdit} className="text-stone-400 hover:text-teal-600" title="Editar">✎</button></td>
             </tr>
@@ -657,6 +706,7 @@ function RowView({ r, editing, match, action, onAction, onToggle, onEdit, onChan
             {editing && (
                 <tr className="bg-stone-50 border-t border-stone-100"><td colSpan={5} className="px-4 py-3">
                     {invalid && <div className="text-xs text-rose-600 mb-2">{built.errors.join(' ')}</div>}
+                    {failure && <div className="text-xs text-rose-700 mb-2 font-medium">✗ Falló al importar: {failure} — corregí el campo y reintentá.</div>}
                     {warned && <div className="text-xs text-amber-600 mb-2">{built.warnings.join(' ')} Corregí la fecha/rating abajo, o dejá el registro así (se importa igual).</div>}
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                         <EditField label="Nombre" value={eff.name} onChange={v => onChange({ name: v })} />
