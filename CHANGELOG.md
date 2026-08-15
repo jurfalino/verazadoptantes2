@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.32.3] - 2026-08-15
+
+### Added — import-runs audit for admins (`/admin/imports`)
+
+- Every spreadsheet import is now recorded: **who** ran it, **when**, from which **file**, and — expandable per run — **every created/updated record** with a link to its profile, the **action taken** (Crear / Actualizar / Omitir), the final **status**, and (when it matched an existing record) **which record it matched** with the **confidence %**.
+- Robust recording: the run **header is written when the import starts** (so an abandoned/interrupted run still shows as *en curso*), and the per-row items are written when it finishes with final counts. The actor is resolved **server-side**, never trusted from the client. All recording is best-effort — it never blocks the import.
+- New admin-gated tables `import_runs` + `import_run_items` (migration `0057`), server actions (`startImportRun`/`finishImportRun`/`getImportRuns`/`getImportRunItems`), a new **Importaciones** sidebar entry (es/en/pt), and the `/admin/imports` page.
+
 ## [2.32.2] - 2026-08-15
 
 ### Added — duplicate-aware spreadsheet import (update instead of duplicate)

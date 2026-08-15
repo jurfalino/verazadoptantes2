@@ -60,3 +60,7 @@ export type { MetricsPayload, MetricCardData } from './metrics';
 // Duplicate-aware import upsert
 export { upsertImportRecord } from './importUpsert';
 export type { ImportUpsertInput, ImportUpsertResult } from './importUpsert';
+
+// Import-run audit (admin view)
+export { startImportRun, finishImportRun, getImportRuns, getImportRunItems } from './importRuns';
+export type { ImportRunItemInput } from './importRuns';

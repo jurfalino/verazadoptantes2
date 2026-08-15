@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
-import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, upsertImportRecord, type DuplicateMatch } from '@/app/actions';
+import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, upsertImportRecord, startImportRun, finishImportRun, type DuplicateMatch } from '@/app/actions';
 import { isExactIdentifierMatch } from '@/domain/importMerge';
 import { buildImportBody } from '@/lib/importRow';
 import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType } from '@/domain/importRow';
@@ -315,6 +315,10 @@ export default function SpreadsheetImportWizard() {
         setStep('import'); setImportDone(false); setResults([]);
         const targets = records.filter(r => r.selected);
         setProgress({ done: 0, total: targets.length });
+        // Import-run audit: record the header NOW so an abandoned run is still
+        // visible to admins as 'running' (best-effort — never blocks the import).
+        const runId = crypto.randomUUID();
+        startImportRun({ runId, source: fileName, total: targets.length }).catch(() => { /* audit is best-effort */ });
         // Bounded concurrency: N workers pull from a shared cursor. ~N× faster
         // than the old strictly-sequential loop, without hammering D1.
         const CONCURRENCY = 5;
@@ -334,6 +338,29 @@ export default function SpreadsheetImportWizard() {
         };
         await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker));
         setImportDone(true);
+        // Persist the per-row items + final counts for the admin audit view.
+        const finalResults = acc.filter(Boolean) as RowResult[];
+        const counts = {
+            created: finalResults.filter(r => r.status === 'created').length,
+            updated: finalResults.filter(r => r.status === 'updated').length,
+            skipped: finalResults.filter(r => r.status === 'skipped').length,
+            failed: finalResults.filter(r => r.status === 'failed').length,
+        };
+        const items = finalResults.map(r => {
+            const m = r.index in matches ? matches[r.index] : null;
+            return {
+                rowIndex: r.index + 1,
+                adopterId: r.id ?? null,
+                adopterName: /^Fila \d+$/.test(r.name) ? null : r.name,
+                action: rowAction[r.index] ?? 'create',
+                status: r.status,
+                matchedAdopterId: m?.adopterId ?? null,
+                matchedAdopterName: m?.adopterName ?? null,
+                matchConfidence: m?.relevancePercent ?? null,
+                message: r.message ?? null,
+            };
+        });
+        finishImportRun({ runId, items, counts }).catch(() => { /* audit is best-effort */ });
     };
 
     const downloadErrors = () => {

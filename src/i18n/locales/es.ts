@@ -90,6 +90,7 @@ export const es = {
         nav_users: 'Usuarios',
         nav_organizations: 'Organizaciones',
         nav_audit_log: 'Registro de auditoría',
+        nav_imports: 'Importaciones',
         nav_blocked_logins: 'Logins bloqueados',
         nav_system_health: 'Salud del sistema',
         nav_data_migration: 'Migración de datos',
