@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
 import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult } from '@/app/actions';
 import { isExactIdentifierMatch } from '@/domain/importMerge';
@@ -17,6 +17,14 @@ interface RowResult { index: number; name: string; status: RowStatus; message?: 
 /** Per-row choice on the duplicate-aware import: create a new record, update the
  *  matched existing one (upsert), or skip. */
 type RowAction = 'create' | 'upsert' | 'skip';
+
+/** Snapshot persisted to localStorage so a refresh mid-import can resume. */
+interface ResumeSnapshot {
+    runId: string; fileName: string; total: number;
+    rows: ImportBatchRow[]; names: Record<number, string>;
+    enrich: Record<number, { name?: string | null; confidence?: number | null }>;
+}
+const RESUME_KEY = 'buenadoptante-import-resume-v1';
 
 const FIELD_OPTIONS = [
     ...TARGET_IMPORT_FIELDS.map(f => ({ value: f.key, label: f.label })),
@@ -81,6 +89,16 @@ export default function SpreadsheetImportWizard() {
     // Server failure message per row index (from the last import) — surfaced in the
     // grid so the user can fix the offending field and retry just the failed rows.
     const [failureByIndex, setFailureByIndex] = useState<Record<number, string>>({});
+    // A resume snapshot found in localStorage (an import interrupted by a refresh).
+    const [resumable, setResumable] = useState<ResumeSnapshot | null>(null);
+    useEffect(() => {
+        try {
+            const raw = localStorage.getItem(RESUME_KEY);
+            if (!raw) return;
+            const snap = JSON.parse(raw) as ResumeSnapshot;
+            if (snap?.runId && Array.isArray(snap.rows) && snap.rows.length > 0) setResumable(snap);
+        } catch { /* ignore malformed/blocked storage */ }
+    }, []);
 
     const handleFile = async (file: File) => {
         setError(null); setBusy(true);
@@ -296,34 +314,22 @@ export default function SpreadsheetImportWizard() {
         };
     };
 
-    const runImport = async () => {
-        setStep('import'); setImportDone(false); setResults([]); setFailureByIndex({});
-        const targets = records.filter(r => r.selected);
-        setProgress({ done: 0, total: targets.length });
-        // Import-run audit: record the header NOW so an abandoned run is still
-        // visible to admins as 'running' (best-effort — never blocks the import).
-        const runId = crypto.randomUUID();
-        startImportRun({ runId, source: fileName, total: targets.length }).catch(() => { /* audit is best-effort */ });
-
-        // Build all rows client-side (validate + AI cleanup). Invalid rows become
-        // immediate 'skipped' results and are never sent to the server.
+    // Send prebuilt batch rows to the server and finish the run. Shared by a
+    // fresh import and a resumed one (after a refresh). Idempotent server-side:
+    // rows already created under this runId are no-ops (deterministic ids), so a
+    // resume only creates what's missing.
+    const sendBatches = async (
+        runId: string, toSend: ImportBatchRow[], total: number,
+        preResults: RowResult[], nameByIndex: Record<number, string>,
+        enrich: Record<number, { name?: string | null; confidence?: number | null }>,
+    ) => {
+        setStep('import'); setImportDone(false); setFailureByIndex({});
         const acc = new Map<number, RowResult>();
-        const nameByIndex: Record<number, string> = {};
-        const toSend: ImportBatchRow[] = [];
-        for (const t of targets) {
-            const { row, pre, name } = await buildBatchRow(t);
-            nameByIndex[t.index] = name;
-            if (pre) acc.set(t.index, pre);
-            else if (row) toSend.push(row);
-        }
+        for (const p of preResults) acc.set(p.index, p);
         let done = acc.size;
-        setProgress({ done, total: targets.length });
+        setProgress({ done, total });
         setResults([...acc.values()].sort((a, b) => a.index - b.index));
 
-        // Send in ~25-row batches at low concurrency. The SERVER processes each
-        // batch sequentially with its own DB-level retry, so transient D1
-        // contention is ridden out server-side instead of failing rows. The whole
-        // batch call is retried on a network blip.
         const BATCH = 25, CONCURRENCY = 2;
         const batches: ImportBatchRow[][] = [];
         for (let i = 0; i < toSend.length; i += BATCH) batches.push(toSend.slice(i, i + BATCH));
@@ -341,39 +347,73 @@ export default function SpreadsheetImportWizard() {
                     acc.set(m.index, { index: m.index, name: nameByIndex[m.index] || `Fila ${m.index + 1}`, status: m.status, id: m.id ?? undefined, message: m.message ?? undefined });
                     done++;
                 }
-                setProgress({ done, total: targets.length });
+                setProgress({ done, total });
                 setResults([...acc.values()].sort((a, b2) => a.index - b2.index));
             }
         };
         await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batches.length) }, worker));
         setImportDone(true);
-        // Persist the per-row items + final counts for the admin audit view.
+        try { localStorage.removeItem(RESUME_KEY); } catch { /* ignore */ }
+        setResumable(null);
+
         const finalResults = [...acc.values()].sort((a, b) => a.index - b.index);
-        // Remember server failures per row so "corregir y reintentar" can surface
-        // the actionable error in the grid.
         setFailureByIndex(Object.fromEntries(finalResults.filter(r => r.status === 'failed').map(r => [r.index, r.message || 'Falló al importar'])));
+        const rowByIndex = new Map(toSend.map(r => [r.index, r]));
         const counts = {
             created: finalResults.filter(r => r.status === 'created').length,
             updated: finalResults.filter(r => r.status === 'updated').length,
             skipped: finalResults.filter(r => r.status === 'skipped').length,
             failed: finalResults.filter(r => r.status === 'failed').length,
         };
-        const items = finalResults.map(r => {
-            const m = r.index in matches ? matches[r.index] : null;
-            return {
-                rowIndex: r.index + 1,
-                adopterId: r.id ?? null,
-                adopterName: /^Fila \d+$/.test(r.name) ? null : r.name,
-                action: rowAction[r.index] ?? 'create',
-                status: r.status,
-                matchedAdopterId: m?.adopterId ?? null,
-                matchedAdopterName: m?.adopterName ?? null,
-                matchConfidence: m?.relevancePercent ?? null,
-                message: r.message ?? null,
-            };
-        });
+        const items = finalResults.map(r => ({
+            rowIndex: r.index + 1,
+            adopterId: r.id ?? null,
+            adopterName: /^Fila \d+$/.test(r.name) ? null : r.name,
+            action: rowByIndex.get(r.index)?.action ?? 'create',
+            status: r.status,
+            matchedAdopterId: rowByIndex.get(r.index)?.matchedAdopterId ?? null,
+            matchedAdopterName: enrich[r.index]?.name ?? null,
+            matchConfidence: enrich[r.index]?.confidence ?? null,
+            message: r.message ?? null,
+        }));
         finishImportRun({ runId, items, counts }).catch(() => { /* audit is best-effort */ });
     };
+
+    const runImport = async () => {
+        setStep('import'); setImportDone(false); setResults([]); setFailureByIndex({});
+        const targets = records.filter(r => r.selected);
+        setProgress({ done: 0, total: targets.length });
+        const runId = crypto.randomUUID();
+        startImportRun({ runId, source: fileName, total: targets.length }).catch(() => { /* best-effort */ });
+
+        // Build all rows client-side (validate + AI cleanup). Invalid rows become
+        // immediate 'skipped' results and are never sent to the server.
+        const preResults: RowResult[] = [];
+        const nameByIndex: Record<number, string> = {};
+        const enrich: Record<number, { name?: string | null; confidence?: number | null }> = {};
+        const toSend: ImportBatchRow[] = [];
+        for (const t of targets) {
+            const { row, pre, name } = await buildBatchRow(t);
+            nameByIndex[t.index] = name;
+            const m = matches[t.index];
+            if (m) enrich[t.index] = { name: m.adopterName, confidence: m.relevancePercent };
+            if (pre) preResults.push(pre);
+            else if (row) toSend.push(row);
+        }
+        // Persist a resume snapshot so a page refresh mid-import can pick up where
+        // it left off (only the not-yet-created rows actually re-run — see sendBatches).
+        try { localStorage.setItem(RESUME_KEY, JSON.stringify({ runId, fileName, total: targets.length, rows: toSend, names: nameByIndex, enrich })); } catch { /* quota — resume just won't be available */ }
+        await sendBatches(runId, toSend, targets.length, preResults, nameByIndex, enrich);
+    };
+
+    // Resume a run persisted before a refresh. Re-sends every row; the server
+    // skips the ones already created (deterministic ids), so only the missing
+    // rows are created.
+    const resumeImport = async (snap: ResumeSnapshot) => {
+        setResumable(null);
+        await sendBatches(snap.runId, snap.rows, snap.rows.length, [], snap.names, snap.enrich || {});
+    };
+    const discardResume = () => { try { localStorage.removeItem(RESUME_KEY); } catch { /* ignore */ } setResumable(null); };
 
     const downloadErrors = () => {
         const bad = results.filter(r => r.status === 'skipped' || r.status === 'failed');
@@ -400,6 +440,18 @@ export default function SpreadsheetImportWizard() {
 
             {error && <div className="mb-4 p-3 rounded-lg bg-rose-50 text-rose-700 text-sm border border-rose-200">{error}</div>}
 
+            {step === 'upload' && resumable && (
+                <div className="mb-4 p-4 rounded-xl bg-amber-50 border border-amber-200 flex flex-wrap items-center justify-between gap-3">
+                    <div className="text-sm text-amber-800 min-w-0">
+                        <div className="font-semibold">Importación sin terminar</div>
+                        <div className="text-amber-700 truncate" title={resumable.fileName}>{resumable.fileName} · {resumable.total} filas. Reanudar crea solo lo que falte (no duplica lo ya creado).</div>
+                    </div>
+                    <div className="flex-shrink-0 flex gap-2">
+                        <button onClick={() => resumeImport(resumable)} className="px-4 py-2 text-sm font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700">Reanudar</button>
+                        <button onClick={discardResume} className="px-3 py-2 text-sm text-amber-700 hover:bg-amber-100 rounded-lg">Descartar</button>
+                    </div>
+                </div>
+            )}
             {step === 'upload' && (
                 <label className="block border-2 border-dashed border-stone-300 rounded-2xl p-12 text-center cursor-pointer hover:border-teal-400 transition-colors">
                     <input type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />

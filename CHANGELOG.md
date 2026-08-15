@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.32.6] - 2026-08-15
+
+### Fixed — import speed + resume-across-refresh
+
+- **Much faster.** `tokenizeAdopter` inserted duplicate-detection tokens **one row at a time** (5–15 sequential D1 round-trips per adopter — the dominant cost of a bulk import). It now writes them in **one multi-row insert**, so tokens still exist immediately (no dedup-consistency gap — chosen over *deferring* tokenization, which would leave records invisible to the fast dedup index until a later pass) and per-row write count drops sharply. Benefits every save, not just import.
+- **Resumable after a page refresh.** The import runs in the browser tab; refreshing used to kill it, leaving a half-done run and no safe way to continue (a re-import minted a new run id and duplicated the already-created records). The wizard now persists a resume snapshot; on reload it offers **"Reanudar importación"**, which re-sends the rows under the **same run id** — the server skips everything already created (deterministic ids) and creates only what's missing. The interrupted run is then properly finished in `/admin/imports`.
+
 ## [2.32.5] - 2026-08-15
 
 ### Fixed — import splits multi-value contact cells
