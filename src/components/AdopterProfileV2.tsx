@@ -140,16 +140,16 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
         : piiContext;
 
     // Visibility verdict for the header badge — the mirror of the search card's
-    // Público/Protegido pill. Keyed on the SAME piiAccess signal the masking uses
-    // (`masked`), so the two surfaces can't disagree: public record → 'public';
-    // viewer sees masked (no access) → 'protected'; a privileged viewer who CAN
-    // see the contact → null (no badge, matching the card).
+    // Público/Protegido pill (both call the same resolver, so they can't disagree):
+    // public record → 'public'; protected + full access → 'protected-unlocked'
+    // (green); protected + anything less than full access (no access OR only a
+    // partial search/verify unlock) → 'protected-locked' (gray). No protected
+    // record renders without a badge.
     const visibilityBadge = computeVisibilityBadge({
         isNew,
         isPublic: displayedAdopter?.isPublic,
         gatingOn: effectivePiiContext?.gatingOn,
         hasFullAccess: effectivePiiContext?.hasFullAccess,
-        masked: effectivePiiContext?.masked,
     });
 
     // PII opt-in is offered to a masked viewer with no request already in flight.

@@ -13,6 +13,7 @@ Rescuers can now record an adopter identified only by contact data (phone, email
 - **Anonymous records default Público** (with the flag on), with an explicit **Protegido** toggle at manual create and a per-row + bulk visibility control in the spreadsheet-import review step. **Named records always stay Protegido** — enforced server-side, so typing a name after opting into anonymous can never leak a named record as public.
 - Validation relaxed on the three rescuer-authoring paths (manual form + `saveAdopterSchema`, API `createAdopterApiSchema`, and import `validateMappedRow`); **self-submission** (the adopter's own form/contract via `_adopterFactory`) still **requires a name**. No DB migration (`name = ''` satisfies the existing `NOT NULL`).
 - Full i18n (es/en/pt) for the new strings; e2e coverage for the create flow + min-identifier rejection.
+- **Visibility badge is now exhaustive.** Fixed a gap (pre-existing in the PII layer, made common by single-contact records): a protected record whose only contact field the viewer had unlocked via search/verify showed **no badge at all**. The resolver now yields a badge for every protected record — green **"Con acceso"** only on full access (owner / org-mate / admin / granted), gray **"Protegido"** for anything less (no access, or a partial search/verify unlock). Applies to both the profile header and the search card (shared resolver).
 
 ## [2.31.8] - 2026-08-14
 
