@@ -251,7 +251,9 @@ export async function POST(request: Request) {
         });
         return NextResponse.json({
             error: 'Invalid input',
-            details: parsed.error.issues.map(i => i.message),
+            // Field-level so the caller (e.g. the import wizard) can show WHICH
+            // field failed, not a bare "Invalid input".
+            details: issues.map(i => (i.path ? `${i.path}: ${i.message}` : i.message)),
             errorId,
         }, { status: 400 });
     }

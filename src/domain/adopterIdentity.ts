@@ -1,10 +1,14 @@
 /**
  * Minimum-identifiability rule for nameless adopter profiles (design:
  * nameless-adopter-profiles). A record needs a name OR at least one contact
- * (phone/email/social/id). Pure — no DB/lib imports; parses the contactEntries
- * JSON defensively so it can run in Zod refines and the import validator.
+ * (phone/email/social/id/address). Pure — no DB/lib imports; parses the
+ * contactEntries JSON defensively so it can run in Zod refines and the import
+ * validator. `address` counts (a physical address identifies a household — e.g.
+ * VANA blacklist entries known only by address); it must stay in sync with the
+ * import's client-side `validateMappedRow`, which also treats addresses as
+ * contact, so a row can't pass the grid then get rejected server-side.
  */
-const CONTACT_TYPES = new Set(['phone', 'email', 'social', 'id']);
+const CONTACT_TYPES = new Set(['phone', 'email', 'social', 'id', 'address']);
 
 export function hasAnyContact(
     contactEntriesJson: string | null | undefined,

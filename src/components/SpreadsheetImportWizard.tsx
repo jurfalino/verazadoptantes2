@@ -12,7 +12,7 @@ import {
 } from '@/domain/importFields';
 
 type RowStatus = 'created' | 'skipped' | 'failed';
-interface RowResult { index: number; name: string; status: RowStatus; message?: string }
+interface RowResult { index: number; name: string; status: RowStatus; message?: string; id?: string }
 
 const FIELD_OPTIONS = [
     ...TARGET_IMPORT_FIELDS.map(f => ({ value: f.key, label: f.label })),
@@ -193,33 +193,63 @@ export default function SpreadsheetImportWizard() {
     const selectedInvalid = records.filter(r => r.selected && r.built.errors.length > 0).length;
     const selectedWarnings = records.filter(r => r.selected && r.built.errors.length === 0 && r.built.warnings.length > 0).length;
 
+    // Import ONE row: build → optional AI contact-cleanup → POST with retry.
+    // A 4xx (validation) is deterministic — surface the server's field-level
+    // `details` and don't retry. Network errors / 5xx retry up to 3 attempts.
+    const importOne = async (t: { index: number; eff: MappedRow }): Promise<RowResult> => {
+        const { index, eff } = t;
+        let built = buildImportBody(eff);
+        if (built.needsAiCleanup) {
+            try { built = buildImportBody(eff, await aiCleanRowContacts(eff.combinedContacts.join('\n'))); } catch { /* keep deterministic */ }
+        }
+        if (built.errors.length || !built.body) {
+            return { index, name: eff.name || `Fila ${index + 1}`, status: 'skipped', message: built.errors.join(' ') };
+        }
+        // Anonymous rows (no name) default to público so their contacts are
+        // findable; named rows default to protegido (undefined = route default).
+        // Per-row/bulk overrides (eff.isPublic) always win.
+        const isAnon = !eff.name?.trim();
+        const effPublic = eff.isPublic !== undefined ? eff.isPublic : (isAnon ? true : undefined);
+        const payload = JSON.stringify({ ...built.body, ...(effPublic !== undefined ? { isPublic: effPublic } : {}) });
+        const name = built.body.name || `Fila ${index + 1}`;
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                const r = await fetch('/api/adopters', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload });
+                if (r.ok) {
+                    const j = await r.json().catch(() => ({})) as { id?: string };
+                    return { index, name, status: 'created', id: j.id };
+                }
+                if (r.status < 500) {
+                    // Deterministic client error — surface WHICH field failed.
+                    const b = await r.json().catch(() => ({})) as { error?: string; errorId?: string; details?: string[] };
+                    const detail = b.details?.length ? `: ${b.details.join('; ')}` : '';
+                    return { index, name, status: 'failed', message: b.error ? `${b.error}${detail}${b.errorId ? ` (${b.errorId})` : ''}` : `HTTP ${r.status}` };
+                }
+                // 5xx → fall through to retry
+            } catch { /* network error ("Failed to fetch") → retry */ }
+            if (attempt < 2) await new Promise(res => setTimeout(res, 400 * (attempt + 1)));
+        }
+        return { index, name, status: 'failed', message: 'Falló tras 3 intentos (red o servidor). Reintentá la importación.' };
+    };
+
     const runImport = async () => {
         setStep('import'); setImportDone(false); setResults([]);
         const targets = records.filter(r => r.selected);
         setProgress({ done: 0, total: targets.length });
-        const acc: RowResult[] = [];
-        for (let k = 0; k < targets.length; k++) {
-            const { index, eff } = targets[k];
-            let built = buildImportBody(eff);
-            if (built.needsAiCleanup) {
-                try { built = buildImportBody(eff, await aiCleanRowContacts(eff.combinedContacts.join('\n'))); } catch { /* keep deterministic */ }
+        // Bounded concurrency: N workers pull from a shared cursor. ~N× faster
+        // than the old strictly-sequential loop, without hammering D1.
+        const CONCURRENCY = 5;
+        const acc: (RowResult | undefined)[] = new Array(targets.length);
+        let done = 0, cursor = 0;
+        const worker = async () => {
+            for (let k = cursor++; k < targets.length; k = cursor++) {
+                acc[k] = await importOne(targets[k]);
+                done++;
+                setProgress({ done, total: targets.length });
+                setResults(acc.filter(Boolean) as RowResult[]);
             }
-            if (built.errors.length || !built.body) {
-                acc.push({ index, name: eff.name || `Fila ${index + 1}`, status: 'skipped', message: built.errors.join(' ') });
-            } else {
-                // Anonymous rows (no name) default to público so their contacts are
-                // findable; named rows default to protegido (undefined = route default).
-                // Per-row/bulk overrides (eff.isPublic) always win.
-                const isAnon = !eff.name?.trim();
-                const effPublic = eff.isPublic !== undefined ? eff.isPublic : (isAnon ? true : undefined);
-                try {
-                    const r = await fetch('/api/adopters', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...built.body, ...(effPublic !== undefined ? { isPublic: effPublic } : {}) }) });
-                    if (r.ok) acc.push({ index, name: built.body.name, status: 'created' });
-                    else { const b = await r.json().catch(() => ({})) as { error?: string; errorId?: string }; acc.push({ index, name: built.body.name, status: 'failed', message: b.error ? `${b.error}${b.errorId ? ` (${b.errorId})` : ''}` : `HTTP ${r.status}` }); }
-                } catch (e) { acc.push({ index, name: built.body!.name, status: 'failed', message: e instanceof Error ? e.message : 'error de red' }); }
-            }
-            setProgress({ done: k + 1, total: targets.length }); setResults([...acc]);
-        }
+        };
+        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker));
         setImportDone(true);
     };
 
@@ -401,6 +431,22 @@ export default function SpreadsheetImportWizard() {
                             <div className="max-h-64 overflow-y-auto">
                                 {results.filter(r => r.status !== 'created').map(r => (
                                     <div key={r.index} className="px-3 py-1.5 text-sm border-t border-stone-100 flex gap-2"><span className="text-stone-400 w-10 flex-shrink-0">#{r.index + 1}</span><span className="font-medium text-stone-700 w-40 flex-shrink-0 truncate">{r.name}</span><span className={r.status === 'failed' ? 'text-rose-600' : 'text-amber-600'}>{r.message || r.status}</span></div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    {importDone && tally.created > 0 && (
+                        <div className="border border-stone-200 rounded-xl overflow-hidden mb-4">
+                            <div className="bg-emerald-50 px-3 py-2 text-xs uppercase tracking-wider text-emerald-700">Registros creados ({tally.created}) — revisalos</div>
+                            <div className="max-h-72 overflow-y-auto">
+                                {results.filter(r => r.status === 'created').map(r => (
+                                    <div key={r.index} className="px-3 py-1.5 text-sm border-t border-stone-100 flex gap-2 items-center">
+                                        <span className="text-stone-400 w-10 flex-shrink-0">#{r.index + 1}</span>
+                                        <span className="font-medium text-stone-700 flex-1 truncate">{/^Fila \d+$/.test(r.name) ? <span className="italic text-stone-400">Sin nombre</span> : r.name}</span>
+                                        {r.id
+                                            ? <a href={`/adopter/${r.id}`} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 text-teal-600 hover:underline">Ver perfil →</a>
+                                            : <span className="flex-shrink-0 text-stone-400">creado</span>}
+                                    </div>
                                 ))}
                             </div>
                         </div>

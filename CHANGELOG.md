@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.32.1] - 2026-08-15
+
+### Fixed / Changed — spreadsheet import robustness (VANA bulk import)
+
+- **Address now counts as a minimum identifier.** A nameless record known only by a physical address (e.g. a VANA blacklist entry) was accepted by the import grid but **rejected server-side** with a bare "Invalid input" — the min-identifier rule (`hasAnyContact`) counted phone/email/social/id but not `address`, disagreeing with the import's client check. `address` is now a valid identifier everywhere (client, API, manual form), so these records import.
+- **Import errors are actionable.** The API already returned which field failed (`details`), but the wizard threw it away and showed only "Invalid input (id)". It now surfaces the field-level detail, and the API details include the field path.
+- **Transient failures retry.** A row that hit a network blip ("Failed to fetch") or a 5xx during the long run is now retried up to 3× with backoff instead of being marked failed on the first hiccup. A 4xx (validation) is not retried — it's deterministic.
+- **Import is ~5× faster.** Rows now POST with bounded concurrency (5 at a time) instead of strictly one-at-a-time.
+- **Review step shows the created records with links.** The final step now lists every created record (nameless ones as "Sin nombre") with a "Ver perfil →" link to each new profile, alongside the existing not-imported list and error CSV.
+
 ## [2.32.0] - 2026-08-14
 
 ### Added — adopter profiles without a name
