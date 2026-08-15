@@ -413,7 +413,12 @@ function RowView({ r, editing, onToggle, onEdit, onChange }: {
             <tr className={`border-t border-stone-100 ${!selected ? 'opacity-40' : ''} ${invalid ? 'bg-rose-50' : ''}`}>
                 <td className="px-2 py-2 text-center"><input type="checkbox" checked={selected} onChange={onToggle} /></td>
                 <td className="px-3 py-2 font-medium text-stone-800">
-                    {eff.name || <span className="text-rose-500 italic">falta</span>}
+                    {/* Empty name is allowed (min-identifier: name OR contact). A
+                        nameless-but-valid row shows the muted "Sin nombre" fallback
+                        (matching the rest of the app), NOT the red "falta" — that red
+                        error label is reserved for a row that is actually invalid
+                        (no name AND no contact). */}
+                    {eff.name || <span className={`italic ${invalid ? 'text-rose-500' : 'text-stone-400'}`}>{invalid ? 'falta' : 'Sin nombre'}</span>}
                     <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-semibold align-middle ${isPublicEff ? 'bg-emerald-50 text-emerald-700' : 'bg-stone-100 text-stone-500'}`}>
                         {isPublicEff ? 'Público' : 'Protegido'}
                     </span>
