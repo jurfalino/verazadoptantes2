@@ -6,8 +6,18 @@ import { formatDateTimeFull } from '@/lib/dates';
 
 interface ImportRun {
     id: string; actorEmail: string | null; source: string | null; total: number | null;
-    createdCount: number | null; updatedCount: number | null; skippedCount: number | null; failedCount: number | null;
     status: string; startedAt: Date | number | string | null; finishedAt: Date | number | string | null;
+    // Derived live from the items (accurate even if finishImportRun never ran).
+    itemCount: number; dCreated: number; dUpdated: number; dSkipped: number; dFailed: number; lastItemAt: number | null;
+}
+
+/** A run is 'completed' once finished; otherwise 'interrupted' if there's been no
+ *  item activity for a while (a real import completes in minutes), else 'running'. */
+function runState(run: ImportRun): 'completed' | 'interrupted' | 'running' {
+    if (run.finishedAt) return 'completed';
+    const nowSecs = Date.now() / 1000;
+    if (run.lastItemAt && nowSecs - run.lastItemAt > 300) return 'interrupted';
+    return 'running';
 }
 interface ImportRunItem {
     id: string; runId: string; rowIndex: number | null; adopterId: string | null; adopterName: string | null;
@@ -67,15 +77,18 @@ export default function AdminImportsPage() {
                                 <span className="font-medium text-stone-800">{run.actorEmail || '—'}</span>
                                 <span className="text-sm text-stone-500">{formatDateTimeFull(run.startedAt ?? '')}</span>
                                 {run.source && <span className="text-xs text-stone-400 truncate max-w-[220px]" title={run.source}>· {run.source}</span>}
-                                {run.status === 'running'
-                                    ? <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">en curso</span>
-                                    : <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-stone-100 text-stone-500">completa</span>}
+                                {(() => {
+                                    const st = runState(run);
+                                    const style = st === 'completed' ? 'bg-stone-100 text-stone-500' : st === 'interrupted' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700';
+                                    const label = st === 'completed' ? 'completa' : st === 'interrupted' ? 'interrumpida' : 'en curso';
+                                    return <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${style}`}>{label}</span>;
+                                })()}
                                 <span className="ml-auto text-xs text-stone-500 flex gap-2">
-                                    <span className="text-emerald-700">{run.createdCount ?? 0} creados</span>
-                                    {(run.updatedCount ?? 0) > 0 && <span className="text-sky-700">{run.updatedCount} actualizados</span>}
-                                    {(run.skippedCount ?? 0) > 0 && <span className="text-amber-700">{run.skippedCount} omitidos</span>}
-                                    {(run.failedCount ?? 0) > 0 && <span className="text-rose-700">{run.failedCount} fallidos</span>}
-                                    <span className="text-stone-400">de {run.total ?? 0}</span>
+                                    <span className="text-emerald-700">{run.dCreated} creados</span>
+                                    {run.dUpdated > 0 && <span className="text-sky-700">{run.dUpdated} actualizados</span>}
+                                    {run.dSkipped > 0 && <span className="text-amber-700">{run.dSkipped} omitidos</span>}
+                                    {run.dFailed > 0 && <span className="text-rose-700">{run.dFailed} fallidos</span>}
+                                    {run.total ? <span className="text-stone-400">de {run.total}</span> : null}
                                 </span>
                             </button>
                             {expanded === run.id && (

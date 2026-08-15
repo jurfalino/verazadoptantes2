@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.32.8] - 2026-08-15
+
+### Fixed / Added — import-runs audit reliability + user-visible history
+
+- **`/admin/imports` was stuck showing one run as "en curso" forever with zero counts.** Cause: the audit depended on client-side calls that could fail — `startImportRun` (fire-and-forget) could orphan a run, and the old `finishImportRun` wrote all items in one call that hit the Worker limit, so status never flipped and no items were recorded. Now: the **run header is created server-side by the batch** (idempotent) so a run always appears; and the list **derives counts and status live from the items** (accurate even if `finishImportRun` never ran), marking a run that's had no activity for 5 min as **"interrumpida"** instead of a permanent "en curso".
+- **Rescuers can see their own (and their org's) previous imports.** `/import/sheet` now shows an **"Importaciones anteriores"** list on the upload screen — date, file, and created/updated/failed counts with status — via the new `getMyImportRuns` action (scoped to the actor + org-mates). Per-row detail stays admin-only (`/admin/imports`).
+
 ## [2.32.7] - 2026-08-15
 
 ### Fixed — import: heavy batches no longer fail wholesale ("Falló el lote")

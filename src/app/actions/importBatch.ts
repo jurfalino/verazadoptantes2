@@ -14,7 +14,7 @@
 
 import { eq } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
-import { adopters, userProfiles, users, importRunItems } from '@/db/schema';
+import { adopters, userProfiles, users, importRunItems, importRuns } from '@/db/schema';
 import { deserializeContactEntries, contactEntriesToBlob } from '@/lib/contactEntries';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { insertRecord } from './_recordWrite';
@@ -168,6 +168,10 @@ export async function importAdoptersBatch(rows: ImportBatchRow[], runId: string)
     // Deterministic item id + onConflictDoNothing keeps split-retries from
     // duplicating audit rows. Best-effort — never fails the import.
     try {
+        // Ensure the run header exists — the client's startImportRun is best-effort
+        // and can fail, orphaning the run. Creating it here (idempotent) means a run
+        // ALWAYS appears in /admin/imports as soon as its first batch lands.
+        await db.insert(importRuns).values({ id: runId, actorEmail: actor, status: 'running', startedAt: new Date() }).onConflictDoNothing();
         const byIndex = new Map(rows.map(r => [r.index, r]));
         const itemRows = out.map(r => {
             const row = byIndex.get(r.index);

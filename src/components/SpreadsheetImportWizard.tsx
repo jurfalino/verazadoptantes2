@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
-import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult } from '@/app/actions';
+import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun } from '@/app/actions';
 import { isExactIdentifierMatch } from '@/domain/importMerge';
+import { formatDateTimeFull } from '@/lib/dates';
 import { buildImportBody } from '@/lib/importRow';
 import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType } from '@/domain/importRow';
 import {
@@ -98,6 +99,9 @@ export default function SpreadsheetImportWizard() {
             if (snap?.runId && Array.isArray(snap.rows) && snap.rows.length > 0) setResumable(snap);
         } catch { /* ignore malformed/blocked storage */ }
     }, []);
+    // The user's (and their org's) previous imports, shown on the upload screen.
+    const [myRuns, setMyRuns] = useState<EnrichedImportRun[]>([]);
+    useEffect(() => { getMyImportRuns().then(setMyRuns).catch(() => setMyRuns([])); }, []);
 
     const handleFile = async (file: File) => {
         setError(null); setBusy(true);
@@ -460,6 +464,30 @@ export default function SpreadsheetImportWizard() {
                     <div className="font-semibold text-stone-700">{busy ? 'Leyendo…' : 'Elegí un archivo'}</div>
                     <div className="text-xs text-stone-400 mt-1">CSV o Excel (.xlsx)</div>
                 </label>
+            )}
+
+            {step === 'upload' && myRuns.length > 0 && (
+                <div className="mt-6">
+                    <div className="text-xs uppercase tracking-wider text-stone-400 mb-2">Importaciones anteriores</div>
+                    <div className="border border-stone-200 rounded-xl overflow-hidden">
+                        {myRuns.map(run => {
+                            const st = run.finishedAt ? 'completa' : (run.lastItemAt && Date.now() / 1000 - run.lastItemAt > 300 ? 'interrumpida' : 'en curso');
+                            const stStyle = st === 'completa' ? 'bg-stone-100 text-stone-500' : st === 'interrumpida' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700';
+                            return (
+                                <div key={run.id} className="px-4 py-2.5 border-t first:border-t-0 border-stone-100 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                                    <span className="text-stone-500">{formatDateTimeFull(run.startedAt ?? '')}</span>
+                                    {run.source && <span className="text-xs text-stone-400 truncate max-w-[200px]" title={run.source}>{run.source}</span>}
+                                    <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${stStyle}`}>{st}</span>
+                                    <span className="ml-auto text-xs text-stone-500 flex gap-2">
+                                        <span className="text-emerald-700">{run.dCreated} creados</span>
+                                        {run.dUpdated > 0 && <span className="text-sky-700">{run.dUpdated} actualizados</span>}
+                                        {run.dFailed > 0 && <span className="text-rose-700">{run.dFailed} fallidos</span>}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
             )}
 
             {step === 'confirm' && parsed && (

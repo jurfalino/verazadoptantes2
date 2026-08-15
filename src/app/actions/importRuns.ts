@@ -8,11 +8,28 @@
  * admin-gated.
  */
 
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, or, sql, getTableColumns } from 'drizzle-orm';
 import { getDb, getUser, getIsAdmin } from './_db';
 import { importRuns, importRunItems } from '@/db/schema';
 import { isRealActorEmail } from '@/lib/piiAccess';
+import { getOrgMatesOf } from '@/lib/orgMembership';
 import { logger } from '@/lib/logger';
+
+/** Live counts + last-activity derived from the items, so the admin/user view is
+ *  accurate even when the client's finishImportRun never ran (the stored counters
+ *  stay 0 in that case). Correlated subqueries — one row per run. */
+const derivedRunCols = () => ({
+    itemCount: sql<number>`(SELECT COUNT(*) FROM import_run_items WHERE run_id = ${importRuns.id})`,
+    dCreated: sql<number>`(SELECT COUNT(*) FROM import_run_items WHERE run_id = ${importRuns.id} AND status = 'created')`,
+    dUpdated: sql<number>`(SELECT COUNT(*) FROM import_run_items WHERE run_id = ${importRuns.id} AND status = 'updated')`,
+    dSkipped: sql<number>`(SELECT COUNT(*) FROM import_run_items WHERE run_id = ${importRuns.id} AND status = 'skipped')`,
+    dFailed: sql<number>`(SELECT COUNT(*) FROM import_run_items WHERE run_id = ${importRuns.id} AND status = 'failed')`,
+    lastItemAt: sql<number | null>`(SELECT MAX(created_at) FROM import_run_items WHERE run_id = ${importRuns.id})`,
+});
+
+export type EnrichedImportRun = typeof importRuns.$inferSelect & {
+    itemCount: number; dCreated: number; dUpdated: number; dSkipped: number; dFailed: number; lastItemAt: number | null;
+};
 
 export interface ImportRunItemInput {
     rowIndex?: number | null;
@@ -81,15 +98,36 @@ export async function finishImportRun(input: {
     }
 }
 
-/** Admin: list import runs, newest first. */
-export async function getImportRuns(): Promise<Array<typeof importRuns.$inferSelect>> {
+/** Admin: list ALL import runs, newest first (counts derived from items). */
+export async function getImportRuns(): Promise<EnrichedImportRun[]> {
     if (!(await getIsAdmin())) return [];
     try {
         const db = await getDb();
         if (!db) return [];
-        return await db.select().from(importRuns).orderBy(desc(importRuns.startedAt)).limit(200);
+        return await db.select({ ...getTableColumns(importRuns), ...derivedRunCols() })
+            .from(importRuns).orderBy(desc(importRuns.startedAt)).limit(200) as EnrichedImportRun[];
     } catch (e) {
         logger.warn('getImportRuns failed', { error: e instanceof Error ? e.message : String(e) });
+        return [];
+    }
+}
+
+/** Any authenticated user: their OWN import runs plus their org-mates' — so a
+ *  rescuer can see (and their group can see) previous imports from /import/sheet. */
+export async function getMyImportRuns(): Promise<EnrichedImportRun[]> {
+    let actor = '';
+    try { actor = await getUser(); } catch { /* anonymous */ }
+    if (!isRealActorEmail(actor)) return [];
+    try {
+        const db = await getDb();
+        if (!db) return [];
+        const mates = await getOrgMatesOf(actor).catch(() => [] as Array<{ email: string }>);
+        const emails = Array.from(new Set([actor, ...mates.map(m => m.email)]));
+        const cond = or(...emails.map(e => eq(importRuns.actorEmail, e)));
+        return await db.select({ ...getTableColumns(importRuns), ...derivedRunCols() })
+            .from(importRuns).where(cond).orderBy(desc(importRuns.startedAt)).limit(50) as EnrichedImportRun[];
+    } catch (e) {
+        logger.warn('getMyImportRuns failed', { error: e instanceof Error ? e.message : String(e) });
         return [];
     }
 }
