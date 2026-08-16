@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.32.9] - 2026-08-15
+
+### Fixed — import duplicate detection now uses the DNI; warn when skipping detection
+
+- **Duplicate detection ignored the DNI.** It passed only name/phone/email/social to the matcher, so a record with an **identical name AND identical document number** scored a weak ~50% (name-only) and — worse — was **not classified as an exact-identifier match**, so it defaulted to *Crear* (duplicate) instead of *Actualizar*. Detection now passes the DNI (labeled, so the matcher extracts it as an `id_number` token); a shared DNI now scores high and defaults to update.
+- **Clarified: without "Buscar duplicados", nothing is deduped.** If you import without running detection, every row is **created** — no upsert, even against records that already exist. The review step now shows a warning to that effect (with a one-click "Buscar duplicados"), so it's a deliberate choice, not a surprise.
+
 ## [2.32.8] - 2026-08-15
 
 ### Fixed / Added — import-runs audit reliability + user-visible history

@@ -263,8 +263,15 @@ export default function SpreadsheetImportWizard() {
             for (let k = cursor++; k < targets.length; k = cursor++) {
                 const { index, eff } = targets[k];
                 try {
+                    // DNIs go via contactInfo, LABELED ("DNI 12345678"), because
+                    // findAdopters extracts id_number tokens from contactInfo (there's
+                    // no structured `dnis` input) — without this a same-DNI record only
+                    // matches on name (~50%) and never counts as an exact identifier.
                     const res = await findAdopters(
-                        { name: eff.name || undefined, phones: eff.phones, emails: eff.emails, socials: eff.socials },
+                        {
+                            name: eff.name || undefined, phones: eff.phones, emails: eff.emails, socials: eff.socials,
+                            contactInfo: eff.dnis.length ? eff.dnis.map(d => `DNI ${d}`).join('\n') : undefined,
+                        },
                         { mode: 'duplicate', limit: 1, minRelevance: 5 },
                     );
                     const dup = (res.results as DuplicateMatch[]) ?? [];
@@ -613,6 +620,12 @@ export default function SpreadsheetImportWizard() {
                         </div>
                     </div>
 
+                    {!detectionDone && !detecting && (
+                        <div className="mt-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800 flex flex-wrap items-center justify-between gap-2">
+                            <span>⚠ No buscaste duplicados: se <b>crearán todos</b> los registros, incluso los que ya existan (podés duplicar registros existentes). No se actualiza nada.</span>
+                            <button onClick={runDetection} className="flex-shrink-0 font-semibold text-amber-800 underline hover:no-underline">Buscar duplicados</button>
+                        </div>
+                    )}
                     <div className="flex justify-between mt-4">
                         <button onClick={reset} className="px-4 py-2 text-sm text-stone-500 hover:text-stone-700">← Empezar de nuevo</button>
                         <button disabled={importable.length === 0} onClick={runImport} className="px-5 py-2 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700 disabled:opacity-40">
