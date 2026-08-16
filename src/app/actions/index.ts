@@ -68,3 +68,6 @@ export type { ImportRunItemInput, EnrichedImportRun } from './importRuns';
 // Bulk import (batch endpoint — robust against D1 contention)
 export { importAdoptersBatch } from './importBatch';
 export type { ImportBatchRow, ImportBatchResult } from './importBatch';
+
+// On-the-fly identical-record detection for import
+export { matchFingerprints } from './importIdentical';

@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.33.0] - 2026-08-15
+
+### Added — import detects IDENTICAL records (never duplicates them)
+
+- **If two records hold the same information — regardless of which fields — the import now recognizes them as the same and updates instead of creating a copy.** On "Buscar duplicados", each row's identifying content (name + all contacts, normalized: accent/case/format/order-independent) is fingerprinted, and one server scan matches it against existing records. An **exact** content match is shown as **"● Idéntico"** and defaults to **Actualizar** — so re-importing, or importing a record that already exists, no longer creates a duplicate.
+- Catches identical records **any** field combination, including **address-only** and **DNI-only** (which the fuzzy matcher couldn't), because it scans existing records rather than relying on the token index. Computed **on the fly** — no stored column, migration, or backfill. The fuzzy match still handles *similar-but-not-identical* rows (defaults to review/create).
+
 ## [2.32.9] - 2026-08-15
 
 ### Fixed — import duplicate detection now uses the DNI; warn when skipping detection

@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
-import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun } from '@/app/actions';
+import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, matchFingerprints, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun } from '@/app/actions';
 import { isExactIdentifierMatch } from '@/domain/importMerge';
+import { computeContentFingerprint } from '@/domain/contentFingerprint';
 import { formatDateTimeFull } from '@/lib/dates';
 import { buildImportBody } from '@/lib/importRow';
 import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType } from '@/domain/importRow';
@@ -258,10 +259,29 @@ export default function SpreadsheetImportWizard() {
         setDetecting(true); setDetectionDone(false); setDetectProgress({ done: 0, total: targets.length });
         const found: Record<number, DuplicateMatch | null> = {};
         const actions: Record<number, RowAction> = {};
+
+        // Phase 1 — EXACT identical-record match. One server scan fingerprints all
+        // existing records and returns which import rows are byte-for-byte the same
+        // person (any field combo, incl. address-only). An identical row defaults to
+        // "actualizar" — never a duplicate — and skips the fuzzy call below.
+        const fpByIndex: Record<number, string> = {};
+        for (const t of targets) {
+            fpByIndex[t.index] = computeContentFingerprint({ name: t.eff.name, phones: t.eff.phones, emails: t.eff.emails, socials: t.eff.socials, ids: t.eff.dnis, addresses: t.eff.addresses });
+        }
+        const uniqueFps = Array.from(new Set(Object.values(fpByIndex).filter(Boolean)));
+        const idMap = uniqueFps.length ? await matchFingerprints(uniqueFps).catch(() => ({} as Record<string, { adopterId: string; adopterName: string | null }>)) : {};
+
         let done = 0, cursor = 0;
         const worker = async () => {
             for (let k = cursor++; k < targets.length; k = cursor++) {
                 const { index, eff } = targets[k];
+                const idHit = idMap[fpByIndex[index]];
+                if (idHit) {
+                    found[index] = { adopterId: idHit.adopterId, adopterName: idHit.adopterName ?? '', relevancePercent: 100, matchTypes: ['identical'], matchValues: [], source: 'token' };
+                    actions[index] = 'upsert';
+                    done++; setDetectProgress({ done, total: targets.length });
+                    continue;
+                }
                 try {
                     // DNIs go via contactInfo, LABELED ("DNI 12345678"), because
                     // findAdopters extracts id_number tokens from contactInfo (there's
@@ -707,7 +727,7 @@ export default function SpreadsheetImportWizard() {
 
 // One record row in the confirmation grid: checkbox + summary, expandable to edit.
 const MATCH_TYPE_LABELS: Record<string, string> = {
-    phone: 'teléfono', phone_suffix: 'teléfono', email: 'email', social: 'red social',
+    identical: 'todos los datos', phone: 'teléfono', phone_suffix: 'teléfono', email: 'email', social: 'red social',
     id_number: 'DNI', address_word: 'dirección', name_full: 'nombre', name_word: 'nombre', name_word_fuzzy: 'nombre',
 };
 function matchTypeLabels(types: string[]): string {
@@ -779,10 +799,16 @@ function RowView({ r, editing, match, action, onAction, failure, onToggle, onEdi
                     <td></td>
                     <td colSpan={4} className="px-3 pb-2">
                         <div className="flex flex-wrap items-center gap-2 text-xs bg-sky-50 border border-sky-100 rounded-lg px-2.5 py-1.5">
-                            <span className={isExact ? 'text-sky-800' : 'text-stone-600'}>
-                                {isExact ? '● Duplicado' : '○ Posible duplicado'} de <span className="font-semibold">{match.adopterName?.trim() || 'Sin nombre'}</span>
-                                <span className="text-stone-500"> · {match.relevancePercent}% · coincide en {matchTypeLabels(match.matchTypes)}</span>
-                            </span>
+                            {(() => {
+                                const identical = match.matchTypes?.includes('identical');
+                                const strong = identical || isExact;
+                                return (
+                                    <span className={strong ? 'text-sky-800' : 'text-stone-600'}>
+                                        {identical ? '● Idéntico a' : isExact ? '● Duplicado de' : '○ Posible duplicado de'} <span className="font-semibold">{match.adopterName?.trim() || 'Sin nombre'}</span>
+                                        <span className="text-stone-500"> · {identical ? 'mismos datos' : `${match.relevancePercent}% · coincide en ${matchTypeLabels(match.matchTypes)}`}</span>
+                                    </span>
+                                );
+                            })()}
                             <button type="button" onClick={() => window.open(`/adopter/${match.adopterId}`, '_blank', 'noopener,noreferrer')} className="text-teal-700 hover:underline">Abrir ↗</button>
                             <div className="ml-auto inline-flex rounded-lg border border-stone-200 overflow-hidden">
                                 {(['upsert', 'create', 'skip'] as RowAction[]).map(a => (
