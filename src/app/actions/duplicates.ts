@@ -59,8 +59,11 @@ export async function tokenizeAdopter(adopterId: string): Promise<void> {
                 tokenType: token.type,
                 tokenValue: token.value,
             }));
-            for (let i = 0; i < rows.length; i += 100) {
-                await db.insert(duplicateTokens).values(rows.slice(i, i + 100));
+            // ≤24 rows/insert: 4 columns × 24 = 96 bound params, under D1's ~100-per-
+            // query limit. (100 rows = 400 params would fail for records with >25
+            // tokens — compound names + many contacts — silently dropping their tokens.)
+            for (let i = 0; i < rows.length; i += 24) {
+                await db.insert(duplicateTokens).values(rows.slice(i, i + 24));
             }
         }
 

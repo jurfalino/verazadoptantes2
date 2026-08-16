@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.33.1] - 2026-08-16
+
+### Fixed — import audit was silently failing (D1 bound-parameter limit)
+
+- **The per-batch audit write exceeded D1's ~100-bound-parameters-per-query limit** (40 rows × 12 columns = 480 params) and failed on every batch — which is why `/admin/imports` recorded **zero items** despite completed imports (Axiom showed `importAdoptersBatch: audit write failed` ×33). Now chunked to **8 rows/insert** (96 params). The same latent overflow in the duplicate-token write (100 rows × 4 columns = 400 params, which would drop tokens for records with >25 tokens) is chunked to **24 rows/insert**.
+
 ## [2.33.0] - 2026-08-15
 
 ### Added — import detects IDENTICAL records (never duplicates them)

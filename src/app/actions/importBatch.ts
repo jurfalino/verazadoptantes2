@@ -190,8 +190,11 @@ export async function importAdoptersBatch(rows: ImportBatchRow[], runId: string)
                 createdAt: new Date(),
             };
         });
-        for (let i = 0; i < itemRows.length; i += 40) {
-            await db.insert(importRunItems).values(itemRows.slice(i, i + 40)).onConflictDoNothing();
+        // ≤8 rows/insert: 12 columns × 8 = 96 bound params, under D1's ~100-per-query
+        // limit. (40 rows = 480 params silently failed every audit write — see Axiom
+        // "importAdoptersBatch: audit write failed" ×33, and 0 rows in /admin/imports.)
+        for (let i = 0; i < itemRows.length; i += 8) {
+            await db.insert(importRunItems).values(itemRows.slice(i, i + 8)).onConflictDoNothing();
         }
     } catch (e) {
         logger.warn('importAdoptersBatch: audit write failed', { runId, error: e instanceof Error ? e.message : String(e) });
