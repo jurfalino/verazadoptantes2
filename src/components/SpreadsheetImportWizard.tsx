@@ -218,14 +218,22 @@ export default function SpreadsheetImportWizard() {
         // Editing a failed row clears its error — it'll be re-evaluated on retry.
         setFailureByIndex(f => { if (!(i in f)) return f; const n = { ...f }; delete n[i]; return n; });
     };
-    // "Corregir y reintentar": select ONLY the failed rows and go back to the grid
-    // so the user can fix the flagged field, then import just those.
-    const retryFailed = () => {
-        const failed = new Set(Object.keys(failureByIndex).map(Number));
-        if (failed.size === 0) return;
-        setDeselected(new Set(records.filter(r => !failed.has(r.index)).map(r => r.index)));
-        setFilter('all'); setSearch(''); setTypeFilter('all'); setRatingFilter('all');
-        setStep('confirm');
+    // Retry the rows the server failed to create (capacity/network — re-sendable).
+    // Re-sends JUST those rows with a fresh progress bar + cancel; the server skips
+    // any that did get created (idempotent deterministic ids), so this only creates
+    // what's missing. Works whether the import was fresh or resumed — it reads the
+    // batch rows from the retained snapshot, never the (maybe-absent) parsed grid.
+    const retryFailed = async () => {
+        const failedIdx = new Set(results.filter(r => r.status === 'failed').map(r => r.index));
+        if (!failedIdx.size || !resumable) return;
+        const rows = resumable.rows.filter(r => failedIdx.has(r.index));
+        if (!rows.length) return;
+        cancelRef.current = false; setCancelled(false); setCancelling(false);
+        try { await sendBatches(resumable.runId, rows, rows.length, [], resumable.names); }
+        catch (e) {
+            setError(e instanceof Error ? e.message : 'La importación se interrumpió.');
+            setImportDone(true); setCancelling(false);
+        }
     };
     // The original spreadsheet row (header: value · …) for a given record index —
     // shown on the results so a created/failed row is traceable to its source.
@@ -473,8 +481,6 @@ export default function SpreadsheetImportWizard() {
             return;
         }
 
-        try { localStorage.removeItem(RESUME_KEY); } catch { /* ignore */ }
-        setResumable(null);
         // Items are recorded per-batch server-side; here we just close the run.
         const counts = {
             created: finalResults.filter(r => r.status === 'created').length,
@@ -482,6 +488,12 @@ export default function SpreadsheetImportWizard() {
             skipped: finalResults.filter(r => r.status === 'skipped').length,
             failed: finalResults.filter(r => r.status === 'failed').length,
         };
+        // Keep the resume snapshot when rows failed, so "Reintentar" can re-send them;
+        // only clear it on a clean run with nothing left to retry.
+        if (counts.failed === 0) {
+            try { localStorage.removeItem(RESUME_KEY); } catch { /* ignore */ }
+            setResumable(null);
+        }
         finishImportRun({ runId, counts }).catch(() => { /* audit is best-effort */ });
         getMyImportRuns().then(setMyRuns).catch(() => { /* refresh the previous-runs list */ });
     };
@@ -527,7 +539,7 @@ export default function SpreadsheetImportWizard() {
     // skips the ones already created (deterministic ids), so only the missing
     // rows are created.
     const resumeImport = async (snap: ResumeSnapshot) => {
-        setResumable(null);
+        setResumable(snap); // keep it — a retry after resume re-reads these rows; cleared on a clean finish
         setFileName(snap.fileName); // so the running screen shows the file name on resume too
         cancelRef.current = false; setCancelled(false); setCancelling(false);
         try {
@@ -884,8 +896,8 @@ export default function SpreadsheetImportWizard() {
                                 {cancelled && resumable && (
                                     <button onClick={() => resumeImport(resumable)} className="px-4 py-2 text-sm font-semibold text-white bg-amber-600 rounded-xl hover:bg-amber-700">Reanudar y completar</button>
                                 )}
-                                {tally.failed > 0 && (
-                                    <button onClick={retryFailed} className="px-4 py-2 text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl hover:bg-rose-100" title="Vuelve a la grilla con solo las filas fallidas para que corrijas el campo señalado y reintentes">✗ Corregir y reintentar {tally.failed} fallido{tally.failed > 1 ? 's' : ''}</button>
+                                {tally.failed > 0 && resumable && (
+                                    <button onClick={retryFailed} className="px-4 py-2 text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl hover:bg-rose-100" title="Reenvía solo las filas fallidas (no duplica lo ya creado). Muestra progreso y podés cancelar.">↻ Reintentar {tally.failed} fallida{tally.failed > 1 ? 's' : ''}</button>
                                 )}
                                 <button onClick={reset} className="px-5 py-2 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700">Importar otra planilla</button>
                             </div>

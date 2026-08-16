@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.33.9] - 2026-08-16
+
+### Fixed — "Reintentar fallidas" showed a blank screen; now re-sends with progress
+
+- Clicking the failed-rows retry sent the user to the confirm grid (`step='confirm'`), which only renders when `parsed` is present — so after a **resumed** import (no parsed rows) it was a **blank screen: no grid, no progress bar, no cancel**. And server-capacity failures don't have a data error to "correct" anyway.
+- Now the button (relabeled **"↻ Reintentar N fallidas"**) **re-sends just the failed rows** through the normal import screen — real progress bar + cancel — reading the rows from the retained resume snapshot (works for fresh *and* resumed imports). The server skips any already-created rows (idempotent), so only the missing ones are created. The resume snapshot is now **kept whenever rows failed** (cleared only on a clean finish), and the button only shows when a snapshot is available (no dead-click).
+
 ## [2.33.8] - 2026-08-16
 
 ### Added — import running screen shows the file name + estimated time remaining
