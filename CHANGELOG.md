@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.33.3] - 2026-08-16
+
+### Fixed — "Importaciones anteriores" always showed "0 creados"
+
+- The previous-imports list (in `/import/sheet`) and the admin run list (`/admin/imports`) derived their per-status counts with a **correlated subquery inside a Drizzle `sql` template**, which returned **0 for every run in D1** even when the audited items existed (raw SQL for the same subquery returned the correct 837). Replaced with a **plain `GROUP BY` aggregation merged in JS** (chunked to stay under D1's ~100-param limit) — counts are now correct.
+- **Richer summary:** each run now shows total rows + **creados / actualizados / omitidos / fallidos** (was: created/updated/failed, no skipped). For old runs whose per-row items were never written, it **falls back to the stored header counters** instead of showing a misleading 0.
+
 ## [2.33.2] - 2026-08-16
 
 ### Changed — admin SQL runner allows writes (with a confirmation gate)

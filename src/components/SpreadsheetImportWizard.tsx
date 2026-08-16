@@ -500,15 +500,24 @@ export default function SpreadsheetImportWizard() {
                         {myRuns.map(run => {
                             const st = run.finishedAt ? 'completa' : (run.lastItemAt && Date.now() / 1000 - run.lastItemAt > 300 ? 'interrumpida' : 'en curso');
                             const stStyle = st === 'completa' ? 'bg-stone-100 text-stone-500' : st === 'interrumpida' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700';
+                            // Prefer the per-row audit counts; fall back to the stored header
+                            // counters for old runs whose items were never written.
+                            const hasItems = run.itemCount > 0;
+                            const created = hasItems ? run.dCreated : (run.createdCount ?? 0);
+                            const updated = hasItems ? run.dUpdated : (run.updatedCount ?? 0);
+                            const skipped = hasItems ? run.dSkipped : (run.skippedCount ?? 0);
+                            const failed = hasItems ? run.dFailed : (run.failedCount ?? 0);
                             return (
                                 <div key={run.id} className="px-4 py-2.5 border-t first:border-t-0 border-stone-100 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
                                     <span className="text-stone-500">{formatDateTimeFull(run.startedAt ?? '')}</span>
                                     {run.source && <span className="text-xs text-stone-400 truncate max-w-[200px]" title={run.source}>{run.source}</span>}
                                     <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${stStyle}`}>{st}</span>
-                                    <span className="ml-auto text-xs text-stone-500 flex gap-2">
-                                        <span className="text-emerald-700">{run.dCreated} creados</span>
-                                        {run.dUpdated > 0 && <span className="text-sky-700">{run.dUpdated} actualizados</span>}
-                                        {run.dFailed > 0 && <span className="text-rose-700">{run.dFailed} fallidos</span>}
+                                    <span className="ml-auto text-xs text-stone-500 flex flex-wrap gap-x-2 gap-y-0.5 justify-end">
+                                        {run.total ? <span className="text-stone-400">{run.total} filas</span> : null}
+                                        <span className="text-emerald-700">{created} creados</span>
+                                        {updated > 0 && <span className="text-sky-700">{updated} actualizados</span>}
+                                        {skipped > 0 && <span className="text-amber-700">{skipped} omitidos</span>}
+                                        {failed > 0 && <span className="text-rose-700">{failed} fallidos</span>}
                                     </span>
                                 </div>
                             );

@@ -60,7 +60,20 @@
       "Bash(curl -s -X POST http://172.28.240.1:3000/api/log-client-error -H 'Content-Type: application/json' -d '{\"message\":\"server-gen test\",\"source\":\"smoke-test\"}')",
       "Bash(curl -s --max-time 10 -X POST http://172.28.240.1:3000/api/log-client-error -H 'Content-Type: application/json' -d '{\"message\":\"server-gen test\",\"source\":\"smoke-test\"}')",
       "Bash(kill %1)",
-      "Bash(pkill -f \"next dev\")"
+      "Bash(pkill -f \"next dev\")",
+      "Bash(git checkout *)",
+      "Bash(grep -rlE *)",
+      "Bash(node -p \"require\\('./package.json'\\).version\")",
+      "Bash(gh auth *)",
+      "Bash(git commit *)",
+      "Bash(python3 -c \"import sys,json;print\\('master version:', json.load\\(sys.stdin\\)['version']\\)\")",
+      "Bash(python3 -c \"import json;print\\('\\\\n'.join\\(json.load\\(open\\('.claude/settings.json'\\)\\)['permissions']['allow']\\)\\)\")",
+      "Bash(python3 /private/tmp/claude-501/-Users-jurfalino-Developer-Personal-verazadoptantes2/fd0ca035-b3f5-4add-919c-b78537970ccf/scratchpad/scan.py)",
+      "Bash(python3 -c \"import json;print\\(len\\(json.load\\(open\\('.claude/settings.local.json'\\)\\)['permissions']['allow']\\),'entries'\\)\")",
+      "Bash(python3 -)",
+      "Bash(grep -vE \"^\\\\.claude/settings\\\\.json$\")",
+      "Bash(node /private/tmp/claude-501/-Users-jurfalino-Developer-Personal-verazadoptantes2/fd0ca035-b3f5-4add-919c-b78537970ccf/scratchpad/verify-dup.mjs)",
+      "Bash(echo \"version: $\\(node -p \"require\\('./package.json'\\).version\"\\)\")"
     ]
   }
 }

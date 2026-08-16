@@ -1,0 +1,5 @@
+{
+  "terminal.integrated.env.osx": {
+    "CLAUDE_CONFIG_DIR": "/Users/jurfalino/.claude-personal"
+  }
+}

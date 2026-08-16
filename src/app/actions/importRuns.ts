@@ -8,24 +8,55 @@
  * admin-gated.
  */
 
-import { desc, eq, or, sql, getTableColumns } from 'drizzle-orm';
+import { desc, eq, or, sql } from 'drizzle-orm';
 import { getDb, getUser, getIsAdmin } from './_db';
 import { importRuns, importRunItems } from '@/db/schema';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { getOrgMatesOf } from '@/lib/orgMembership';
 import { logger } from '@/lib/logger';
 
-/** Live counts + last-activity derived from the items, so the admin/user view is
- *  accurate even when the client's finishImportRun never ran (the stored counters
- *  stay 0 in that case). Correlated subqueries — one row per run. */
-const derivedRunCols = () => ({
-    itemCount: sql<number>`(SELECT COUNT(*) FROM import_run_items WHERE run_id = ${importRuns.id})`,
-    dCreated: sql<number>`(SELECT COUNT(*) FROM import_run_items WHERE run_id = ${importRuns.id} AND status = 'created')`,
-    dUpdated: sql<number>`(SELECT COUNT(*) FROM import_run_items WHERE run_id = ${importRuns.id} AND status = 'updated')`,
-    dSkipped: sql<number>`(SELECT COUNT(*) FROM import_run_items WHERE run_id = ${importRuns.id} AND status = 'skipped')`,
-    dFailed: sql<number>`(SELECT COUNT(*) FROM import_run_items WHERE run_id = ${importRuns.id} AND status = 'failed')`,
-    lastItemAt: sql<number | null>`(SELECT MAX(created_at) FROM import_run_items WHERE run_id = ${importRuns.id})`,
-});
+type RunItemAgg = { itemCount: number; dCreated: number; dUpdated: number; dSkipped: number; dFailed: number; lastItemAt: number | null };
+const emptyAgg = (): RunItemAgg => ({ itemCount: 0, dCreated: 0, dUpdated: 0, dSkipped: 0, dFailed: 0, lastItemAt: null });
+
+/** Enrich run headers with live per-status counts + last-activity derived from the
+ *  items — accurate even when the client's finishImportRun never ran (the stored
+ *  counters stay 0 then). Uses a plain GROUP BY aggregation: the previous approach
+ *  (a per-status correlated subquery inside a Drizzle `sql` template) returned 0 for
+ *  every run in D1 even when the items existed — this shape avoids it. Chunked to
+ *  stay under D1's ~100 bound-parameter limit. Any DbInstance works. */
+async function enrichRuns(
+    db: Awaited<ReturnType<typeof getDb>>,
+    runs: Array<typeof importRuns.$inferSelect>,
+): Promise<EnrichedImportRun[]> {
+    if (!db || !runs.length) return runs.map(r => ({ ...r, ...emptyAgg() }));
+    const ids = runs.map(r => r.id);
+    const CHUNK = 90; // one bound param per id — keep the OR list under D1's limit
+    const byRun = new Map<string, RunItemAgg>();
+    for (let i = 0; i < ids.length; i += CHUNK) {
+        const slice = ids.slice(i, i + CHUNK);
+        const rows = await db.select({
+            runId: importRunItems.runId,
+            status: importRunItems.status,
+            n: sql<number>`COUNT(*)`,
+            last: sql<number | null>`MAX(${importRunItems.createdAt})`,
+        }).from(importRunItems)
+            .where(or(...slice.map(id => eq(importRunItems.runId, id))))
+            .groupBy(importRunItems.runId, importRunItems.status);
+        for (const r of rows) {
+            const e = byRun.get(r.runId) ?? emptyAgg();
+            const n = Number(r.n) || 0;
+            e.itemCount += n;
+            if (r.status === 'created') e.dCreated += n;
+            else if (r.status === 'updated') e.dUpdated += n;
+            else if (r.status === 'skipped') e.dSkipped += n;
+            else if (r.status === 'failed') e.dFailed += n;
+            const last = r.last == null ? null : Number(r.last);
+            if (last != null) e.lastItemAt = e.lastItemAt == null ? last : Math.max(e.lastItemAt, last);
+            byRun.set(r.runId, e);
+        }
+    }
+    return runs.map(r => ({ ...r, ...(byRun.get(r.id) ?? emptyAgg()) }));
+}
 
 export type EnrichedImportRun = typeof importRuns.$inferSelect & {
     itemCount: number; dCreated: number; dUpdated: number; dSkipped: number; dFailed: number; lastItemAt: number | null;
@@ -104,8 +135,8 @@ export async function getImportRuns(): Promise<EnrichedImportRun[]> {
     try {
         const db = await getDb();
         if (!db) return [];
-        return await db.select({ ...getTableColumns(importRuns), ...derivedRunCols() })
-            .from(importRuns).orderBy(desc(importRuns.startedAt)).limit(200) as EnrichedImportRun[];
+        const runs = await db.select().from(importRuns).orderBy(desc(importRuns.startedAt)).limit(200);
+        return await enrichRuns(db, runs);
     } catch (e) {
         logger.warn('getImportRuns failed', { error: e instanceof Error ? e.message : String(e) });
         return [];
@@ -124,8 +155,8 @@ export async function getMyImportRuns(): Promise<EnrichedImportRun[]> {
         const mates = await getOrgMatesOf(actor).catch(() => [] as Array<{ email: string }>);
         const emails = Array.from(new Set([actor, ...mates.map(m => m.email)]));
         const cond = or(...emails.map(e => eq(importRuns.actorEmail, e)));
-        return await db.select({ ...getTableColumns(importRuns), ...derivedRunCols() })
-            .from(importRuns).where(cond).orderBy(desc(importRuns.startedAt)).limit(50) as EnrichedImportRun[];
+        const runs = await db.select().from(importRuns).where(cond).orderBy(desc(importRuns.startedAt)).limit(50);
+        return await enrichRuns(db, runs);
     } catch (e) {
         logger.warn('getMyImportRuns failed', { error: e instanceof Error ? e.message : String(e) });
         return [];
