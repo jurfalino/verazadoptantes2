@@ -96,6 +96,17 @@ export default function SpreadsheetImportWizard() {
     const cancelRef = useRef(false);
     const [cancelling, setCancelling] = useState(false);
     const [cancelled, setCancelled] = useState(false);
+    // ETA: timestamp + row count at the moment sending began, so we can extrapolate
+    // the remaining time from the observed rate. A 1s ticker re-renders for a live
+    // countdown (progress alone only updates once per batch).
+    const importStartRef = useRef<number | null>(null);
+    const importStartDoneRef = useRef(0);
+    const [, setTick] = useState(0);
+    useEffect(() => {
+        if (step !== 'import' || importDone) return;
+        const id = setInterval(() => setTick(t => t + 1), 1000);
+        return () => clearInterval(id);
+    }, [step, importDone]);
     // Duplicate-aware import: top existing match per row index (null = checked, no
     // match; absent = not checked yet), and the per-row create/upsert/skip choice.
     const [matches, setMatches] = useState<Record<number, DuplicateMatch | null>>({});
@@ -392,6 +403,8 @@ export default function SpreadsheetImportWizard() {
         let done = acc.size;
         setProgress({ done, total });
         setResults([...acc.values()].sort((a, b) => a.index - b.index));
+        importStartRef.current = Date.now();
+        importStartDoneRef.current = done; // rows already accounted (skips) don't count toward the rate
 
         // Send a batch resiliently: try twice, then — if it still throws (a
         // too-heavy batch hitting the Worker CPU/time limit, or a persistent
@@ -515,6 +528,7 @@ export default function SpreadsheetImportWizard() {
     // rows are created.
     const resumeImport = async (snap: ResumeSnapshot) => {
         setResumable(null);
+        setFileName(snap.fileName); // so the running screen shows the file name on resume too
         cancelRef.current = false; setCancelled(false); setCancelling(false);
         try {
             await sendBatches(snap.runId, snap.rows, snap.rows.length, [], snap.names);
@@ -533,6 +547,16 @@ export default function SpreadsheetImportWizard() {
     };
 
     const tally = { created: results.filter(r => r.status === 'created').length, updated: results.filter(r => r.status === 'updated').length, skipped: results.filter(r => r.status === 'skipped').length, failed: results.filter(r => r.status === 'failed').length };
+    // Estimated time remaining, extrapolated from the observed rate since sending began.
+    const etaMs = (() => {
+        if (importDone || cancelling || !importStartRef.current) return null;
+        const processed = progress.done - importStartDoneRef.current;
+        const elapsed = Date.now() - importStartRef.current;
+        const remainingRows = progress.total - progress.done;
+        if (processed <= 0 || elapsed <= 0 || remainingRows <= 0) return null;
+        return Math.round((elapsed / processed) * remainingRows);
+    })();
+    const fmtEta = (ms: number) => { const s = Math.ceil(ms / 1000); return s < 60 ? `~${s} s` : `~${Math.ceil(s / 60)} min`; };
     const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); };
 
     return (
@@ -790,7 +814,10 @@ export default function SpreadsheetImportWizard() {
                             {importDone ? (cancelled ? 'Importación cancelada' : 'Importación completa') : (cancelling ? 'Cancelando…' : 'Importando…')}
                         </span>
                         <div className="flex items-center gap-3">
-                            <span className="text-stone-500">{progress.done} / {progress.total}</span>
+                            <span className="text-stone-500">
+                                {progress.done} / {progress.total}
+                                {etaMs != null && <span className="text-stone-400"> · {fmtEta(etaMs)} restante</span>}
+                            </span>
                             {!importDone && (
                                 <button onClick={cancelImport} disabled={cancelling}
                                     className="px-3 py-1 text-xs font-semibold text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200 disabled:opacity-50"
@@ -800,6 +827,7 @@ export default function SpreadsheetImportWizard() {
                             )}
                         </div>
                     </div>
+                    {fileName && <div className="text-xs text-stone-400 mb-3 truncate" title={fileName}><span aria-hidden>📄</span> {fileName}</div>}
                     <div className="h-3 rounded-full bg-stone-100 overflow-hidden mb-4"><div className="h-full bg-teal-500 transition-all" style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} /></div>
                     <div className="flex gap-3 mb-4 text-sm">
                         <span className="px-3 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-medium">✅ {tally.created} creados</span>

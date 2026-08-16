@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.33.8] - 2026-08-16
+
+### Added — import running screen shows the file name + estimated time remaining
+
+- The import progress screen now shows the **file name** being imported (for reference; also on resume). The folder isn't shown because browsers don't expose a file's path to web pages.
+- Added a live **estimated time remaining** (`~N s`/`~N min`) next to the progress count, extrapolated from the observed rate since sending began and refreshed every second.
+
 ## [2.33.7] - 2026-08-16
 
 ### Fixed — a heavy import batch no longer crashes (and stalls) the whole import
