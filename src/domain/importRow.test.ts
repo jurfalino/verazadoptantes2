@@ -34,6 +34,20 @@ describe('normalizeImportDate', () => {
         expect(normalizeImportDate('4/07/2009 - diciembre 2009')).toBe('2009-07-04');
         expect(normalizeImportDate('adoptado el 2/05/2009, devuelto el 4/05/2009')).toBe('2009-05-02');
     });
+    it('accepts month + year → the 1st of that month (numeric and named, es/en/pt)', () => {
+        expect(normalizeImportDate('06/2009')).toBe('2009-06-01');
+        expect(normalizeImportDate('6-2009')).toBe('2009-06-01');
+        expect(normalizeImportDate('2009-06')).toBe('2009-06-01');
+        expect(normalizeImportDate('2009/6')).toBe('2009-06-01');
+        expect(normalizeImportDate('diciembre 2009')).toBe('2009-12-01');
+        expect(normalizeImportDate('dic de 2009')).toBe('2009-12-01');
+        expect(normalizeImportDate('December 2009')).toBe('2009-12-01');
+        expect(normalizeImportDate('março 2009')).toBe('2009-03-01'); // accented pt
+        expect(normalizeImportDate('junio de 2015')).toBe('2015-06-01');
+        expect(normalizeImportDate('13/2009')).toBeNull(); // invalid month
+        expect(normalizeImportDate('12/09')).toBeNull(); // ambiguous, no 4-digit year
+        expect(normalizeImportDate('14/03/2009')).toBe('2009-03-14'); // full date still wins
+    });
     it('accepts a whole-cell year → Jan 1 of that year (imprecise legacy data)', () => {
         expect(normalizeImportDate('2015')).toBe('2015-01-01');
         expect(normalizeImportDate('  2009  ')).toBe('2009-01-01');

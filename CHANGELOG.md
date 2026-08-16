@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.33.6] - 2026-08-16
+
+### Added — import accepts a month + year date
+
+- Extends the year-only support (2.33.5): a date cell with **month + year** now maps to the **1st of that month** — numeric `06/2009`, `6-2009`, `2009-06`, `2009/6`, and named `diciembre 2009`, `dic de 2009`, `December 2009`, `março 2009`, `junio de 2015` (es/en/pt, full + abbreviations, accent-insensitive). Numeric forms require a **4-digit year** so ambiguous `12/09` stays null; invalid months (`13/2009`) stay null; a complete date anywhere in the cell still wins. +1 unit test (12 assertions).
+
 ## [2.33.5] - 2026-08-16
 
 ### Added — import accepts a year-only date
