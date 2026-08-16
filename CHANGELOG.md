@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.33.2] - 2026-08-16
+
+### Changed — admin SQL runner allows writes (with a confirmation gate)
+
+- `/admin/query` was read-only (SELECT/WITH only). It now runs **any single statement**; a **mutating** one (anything that isn't a plain SELECT/EXPLAIN or read-only CTE — INSERT/UPDATE/DELETE/DROP/ALTER/…) is **not executed on the first click** — it returns a confirmation prompt ("⚠ modifica o borra datos"), and only runs after the admin explicitly confirms. Mutating results report the number of rows affected. Still admin-gated and every statement is written to the audit log. One statement at a time (no multi-statement).
+
 ## [2.33.1] - 2026-08-16
 
 ### Fixed — import audit was silently failing (D1 bound-parameter limit)
