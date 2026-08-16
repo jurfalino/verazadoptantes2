@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.33.7] - 2026-08-16
+
+### Fixed — a heavy import batch no longer crashes (and stalls) the whole import
+
+- **Root cause:** on Cloudflare, a heavy batch that hits the Worker CPU/time limit gets the Worker killed at the infra level, so the `importAdoptersBatch` server action **resolves to `undefined`** on the client (it doesn't throw, and logs nothing server-side). The client did `for (const … of await sendResilient(batch))`, and `for…of undefined` threw — aborting the entire import with a toast while the screen stayed stuck on "Importando…" forever.
+- **Fix:** `sendResilient` now treats a non-array resolve exactly like a throw (retry → split → mark the row failed), so one bad batch degrades to per-row failures instead of crashing everything. `runImport`/`resumeImport` are wrapped so the screen **always** reaches a terminal state (never stuck on "Importando…").
+
+### Added — cancel an import safely + resume it
+
+- A **Cancelar** button during the import stops sending further batches (and bails out of the retry/split recursion at once). Already-created rows persist (idempotent, deterministic ids), so a cancel leaves a **resumable** run rather than half-broken data.
+- **Reanudar:** a cancelled/interrupted run can be resumed — from the cancelled screen, the upload-screen banner, or a **Reanudar** button on its row in "Importaciones anteriores". Resume re-sends every row; the server skips the ones already created, so only the missing rows are created. (Same-browser, via the local resume snapshot.)
+
 ## [2.33.6] - 2026-08-16
 
 ### Added — import accepts a month + year date

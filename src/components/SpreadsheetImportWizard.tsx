@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
 import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun } from '@/app/actions';
 import { isExactIdentifierMatch } from '@/domain/importMerge';
@@ -90,6 +90,12 @@ export default function SpreadsheetImportWizard() {
     const [progress, setProgress] = useState({ done: 0, total: 0 });
     const [results, setResults] = useState<RowResult[]>([]);
     const [importDone, setImportDone] = useState(false);
+    // Cancel: a ref the send-loop checks between batches (state would be stale in
+    // the running closure). Already-sent rows persist (idempotent), so a cancel
+    // leaves a resumable run rather than half-broken data.
+    const cancelRef = useRef(false);
+    const [cancelling, setCancelling] = useState(false);
+    const [cancelled, setCancelled] = useState(false);
     // Duplicate-aware import: top existing match per row index (null = checked, no
     // match; absent = not checked yet), and the per-row create/upsert/skip choice.
     const [matches, setMatches] = useState<Record<number, DuplicateMatch | null>>({});
@@ -393,9 +399,23 @@ export default function SpreadsheetImportWizard() {
         // server-side, so re-sending already-created rows is a no-op. This is what
         // stops "el lote falló entero": a heavy batch subdivides until it fits.
         const sendResilient = async (batch: ImportBatchRow[]): Promise<ImportBatchResult[]> => {
+            // Cancel mid-flight too: a struggling import (heavy batches retrying and
+            // splitting) is exactly when the user hits Cancel — bail out of the retry/
+            // split recursion at once. Unprocessed rows stay uncounted and fall to the
+            // resume snapshot (idempotent), so nothing is lost or double-created.
+            if (cancelRef.current) return [];
             for (let attempt = 0; attempt < 2; attempt++) {
-                try { return await importAdoptersBatch(batch, runId); }
-                catch { if (attempt === 0) await new Promise(r => setTimeout(r, 400)); }
+                try {
+                    const res = await importAdoptersBatch(batch, runId);
+                    // A server action can RESOLVE to a non-array (undefined) — not just
+                    // throw — when a heavy batch hits the Worker CPU/time limit and the
+                    // Worker is killed at the infra level (no app error is logged). Treat
+                    // that exactly like a throw: retry, then split, then fail the row —
+                    // never let `for…of` on an undefined resolve crash the whole import.
+                    if (Array.isArray(res)) return res;
+                }
+                catch { /* fall through to retry/split */ }
+                if (attempt === 0) await new Promise(r => setTimeout(r, 400));
             }
             if (batch.length <= 1) {
                 return batch.map(r => ({ index: r.index, status: 'failed' as const, message: 'Falló (posible límite del servidor en una fila pesada).' }));
@@ -414,6 +434,7 @@ export default function SpreadsheetImportWizard() {
         let bcursor = 0;
         const worker = async () => {
             for (let b = bcursor++; b < batches.length; b = bcursor++) {
+                if (cancelRef.current) return; // stop pulling new batches on cancel
                 const mapped = await sendResilient(batches[b]);
                 for (const m of mapped) {
                     acc.set(m.index, { index: m.index, name: nameByIndex[m.index] || `Fila ${m.index + 1}`, status: m.status, id: m.id ?? undefined, message: m.message ?? undefined });
@@ -424,12 +445,23 @@ export default function SpreadsheetImportWizard() {
             }
         };
         await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batches.length) }, worker));
-        setImportDone(true);
-        try { localStorage.removeItem(RESUME_KEY); } catch { /* ignore */ }
-        setResumable(null);
 
         const finalResults = [...acc.values()].sort((a, b) => a.index - b.index);
         setFailureByIndex(Object.fromEntries(finalResults.filter(r => r.status === 'failed').map(r => [r.index, r.message || 'Falló al importar'])));
+        setImportDone(true);
+        setCancelling(false);
+
+        if (cancelRef.current) {
+            // Cancelled: keep the resume snapshot and leave the run open (interrupted)
+            // so the user can reanudar to finish the rest later. Refresh the list so
+            // the interrupted run shows up with its "Reanudar" affordance.
+            setCancelled(true);
+            getMyImportRuns().then(setMyRuns).catch(() => { /* best-effort */ });
+            return;
+        }
+
+        try { localStorage.removeItem(RESUME_KEY); } catch { /* ignore */ }
+        setResumable(null);
         // Items are recorded per-batch server-side; here we just close the run.
         const counts = {
             created: finalResults.filter(r => r.status === 'created').length,
@@ -438,38 +470,58 @@ export default function SpreadsheetImportWizard() {
             failed: finalResults.filter(r => r.status === 'failed').length,
         };
         finishImportRun({ runId, counts }).catch(() => { /* audit is best-effort */ });
+        getMyImportRuns().then(setMyRuns).catch(() => { /* refresh the previous-runs list */ });
     };
 
     const runImport = async () => {
         setStep('import'); setImportDone(false); setResults([]); setFailureByIndex({});
+        cancelRef.current = false; setCancelled(false); setCancelling(false);
         const targets = records.filter(r => r.selected);
         setProgress({ done: 0, total: targets.length });
         const runId = crypto.randomUUID();
         startImportRun({ runId, source: fileName, total: targets.length }).catch(() => { /* best-effort */ });
-
-        // Build all rows client-side (validate + AI cleanup). Invalid rows become
-        // immediate 'skipped' results and are never sent to the server.
-        const preResults: RowResult[] = [];
-        const nameByIndex: Record<number, string> = {};
-        const toSend: ImportBatchRow[] = [];
-        for (const t of targets) {
-            const { row, pre, name } = await buildBatchRow(t);
-            nameByIndex[t.index] = name;
-            if (pre) preResults.push(pre);
-            else if (row) toSend.push(row);
+        try {
+            // Build all rows client-side (validate + AI cleanup). Invalid rows become
+            // immediate 'skipped' results and are never sent to the server.
+            const preResults: RowResult[] = [];
+            const nameByIndex: Record<number, string> = {};
+            const toSend: ImportBatchRow[] = [];
+            for (const t of targets) {
+                const { row, pre, name } = await buildBatchRow(t);
+                nameByIndex[t.index] = name;
+                if (pre) preResults.push(pre);
+                else if (row) toSend.push(row);
+            }
+            // Persist a resume snapshot so a refresh or a cancel mid-import can pick up
+            // where it left off (only the not-yet-created rows re-run — see sendBatches).
+            const snapshot: ResumeSnapshot = { runId, fileName, total: targets.length, rows: toSend, names: nameByIndex };
+            try { localStorage.setItem(RESUME_KEY, JSON.stringify(snapshot)); } catch { /* quota — resume just won't be available */ }
+            setResumable(snapshot);
+            await sendBatches(runId, toSend, targets.length, preResults, nameByIndex);
+        } catch (e) {
+            // Last-resort terminal state — never leave the screen stuck on "Importando…".
+            // Row-level failures are already handled resiliently inside sendBatches.
+            setError(e instanceof Error ? e.message : 'La importación se interrumpió.');
+            setImportDone(true); setCancelling(false);
         }
-        // Persist a resume snapshot so a page refresh mid-import can pick up where
-        // it left off (only the not-yet-created rows actually re-run — see sendBatches).
-        try { localStorage.setItem(RESUME_KEY, JSON.stringify({ runId, fileName, total: targets.length, rows: toSend, names: nameByIndex })); } catch { /* quota — resume just won't be available */ }
-        await sendBatches(runId, toSend, targets.length, preResults, nameByIndex);
     };
 
-    // Resume a run persisted before a refresh. Re-sends every row; the server
+    // Cancel: stop pulling new batches. The in-flight batch finishes (idempotent),
+    // already-created rows stay, and the run is left resumable.
+    const cancelImport = () => { cancelRef.current = true; setCancelling(true); };
+
+    // Resume a run persisted before a refresh/cancel. Re-sends every row; the server
     // skips the ones already created (deterministic ids), so only the missing
     // rows are created.
     const resumeImport = async (snap: ResumeSnapshot) => {
         setResumable(null);
-        await sendBatches(snap.runId, snap.rows, snap.rows.length, [], snap.names);
+        cancelRef.current = false; setCancelled(false); setCancelling(false);
+        try {
+            await sendBatches(snap.runId, snap.rows, snap.rows.length, [], snap.names);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'La importación se interrumpió.');
+            setImportDone(true); setCancelling(false);
+        }
     };
     const discardResume = () => { try { localStorage.removeItem(RESUME_KEY); } catch { /* ignore */ } setResumable(null); };
 
@@ -535,20 +587,27 @@ export default function SpreadsheetImportWizard() {
                             const failed = hasItems ? run.dFailed : (run.failedCount ?? 0);
                             return (
                                 <div key={run.id} className="border-t first:border-t-0 border-stone-100">
-                                    <button type="button" onClick={() => toggleRun(run.id)} aria-expanded={expandedRun === run.id}
-                                        className="w-full text-left px-4 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm hover:bg-stone-50">
-                                        <span className="text-stone-400">{expandedRun === run.id ? '▾' : '▸'}</span>
-                                        <span className="text-stone-500">{formatDateTimeFull(run.startedAt ?? '')}</span>
-                                        {run.source && <span className="text-xs text-stone-400 truncate max-w-[200px]" title={run.source}>{run.source}</span>}
-                                        <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${stStyle}`}>{st}</span>
-                                        <span className="ml-auto text-xs text-stone-500 flex flex-wrap gap-x-2 gap-y-0.5 justify-end">
-                                            {run.total ? <span className="text-stone-400">{run.total} filas</span> : null}
-                                            <span className="text-emerald-700">{created} creados</span>
-                                            {updated > 0 && <span className="text-sky-700">{updated} actualizados</span>}
-                                            {skipped > 0 && <span className="text-amber-700">{skipped} omitidos</span>}
-                                            {failed > 0 && <span className="text-rose-700">{failed} fallidos</span>}
-                                        </span>
-                                    </button>
+                                    <div className="flex items-stretch">
+                                        <button type="button" onClick={() => toggleRun(run.id)} aria-expanded={expandedRun === run.id}
+                                            className="flex-1 min-w-0 text-left px-4 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm hover:bg-stone-50">
+                                            <span className="text-stone-400">{expandedRun === run.id ? '▾' : '▸'}</span>
+                                            <span className="text-stone-500">{formatDateTimeFull(run.startedAt ?? '')}</span>
+                                            {run.source && <span className="text-xs text-stone-400 truncate max-w-[200px]" title={run.source}>{run.source}</span>}
+                                            <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${stStyle}`}>{st}</span>
+                                            <span className="ml-auto text-xs text-stone-500 flex flex-wrap gap-x-2 gap-y-0.5 justify-end">
+                                                {run.total ? <span className="text-stone-400">{run.total} filas</span> : null}
+                                                <span className="text-emerald-700">{created} creados</span>
+                                                {updated > 0 && <span className="text-sky-700">{updated} actualizados</span>}
+                                                {skipped > 0 && <span className="text-amber-700">{skipped} omitidos</span>}
+                                                {failed > 0 && <span className="text-rose-700">{failed} fallidos</span>}
+                                            </span>
+                                        </button>
+                                        {resumable?.runId === run.id && st !== 'completa' && (
+                                            <button type="button" onClick={() => resumeImport(resumable)}
+                                                className="flex-shrink-0 px-3 my-1.5 mr-2 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100"
+                                                title="Reanudar esta importación (crea solo lo que falte; no duplica lo ya creado)">Reanudar</button>
+                                        )}
+                                    </div>
                                     {expandedRun === run.id && (
                                         <div className="border-t border-stone-100 bg-stone-50/50">
                                             {loadingItems === run.id ? (
@@ -726,9 +785,20 @@ export default function SpreadsheetImportWizard() {
 
             {step === 'import' && (
                 <div>
-                    <div className="mb-2 flex items-center justify-between text-sm">
-                        <span className="font-semibold text-stone-700">{importDone ? 'Importación completa' : 'Importando…'}</span>
-                        <span className="text-stone-500">{progress.done} / {progress.total}</span>
+                    <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+                        <span className="font-semibold text-stone-700">
+                            {importDone ? (cancelled ? 'Importación cancelada' : 'Importación completa') : (cancelling ? 'Cancelando…' : 'Importando…')}
+                        </span>
+                        <div className="flex items-center gap-3">
+                            <span className="text-stone-500">{progress.done} / {progress.total}</span>
+                            {!importDone && (
+                                <button onClick={cancelImport} disabled={cancelling}
+                                    className="px-3 py-1 text-xs font-semibold text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200 disabled:opacity-50"
+                                    title="Frena el envío. Lo ya creado se conserva y podés reanudar para completar el resto.">
+                                    {cancelling ? 'Cancelando…' : 'Cancelar'}
+                                </button>
+                            )}
+                        </div>
                     </div>
                     <div className="h-3 rounded-full bg-stone-100 overflow-hidden mb-4"><div className="h-full bg-teal-500 transition-all" style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} /></div>
                     <div className="flex gap-3 mb-4 text-sm">
@@ -777,8 +847,15 @@ export default function SpreadsheetImportWizard() {
                     )}
                     {importDone && (
                         <div className="flex items-center justify-between gap-4">
-                            <p className="text-xs text-stone-400">Los posibles duplicados con registros existentes quedan marcados para revisar/fusionar en cada perfil. Reimportar la misma planilla vuelve a crear registros.</p>
+                            <p className="text-xs text-stone-400">
+                                {cancelled
+                                    ? 'Cancelaste la importación. Lo ya creado quedó guardado — reanudá para crear las filas restantes (no duplica lo ya creado).'
+                                    : 'Los posibles duplicados con registros existentes quedan marcados para revisar/fusionar en cada perfil. Reimportar la misma planilla vuelve a crear registros.'}
+                            </p>
                             <div className="flex-shrink-0 flex items-center gap-2">
+                                {cancelled && resumable && (
+                                    <button onClick={() => resumeImport(resumable)} className="px-4 py-2 text-sm font-semibold text-white bg-amber-600 rounded-xl hover:bg-amber-700">Reanudar y completar</button>
+                                )}
                                 {tally.failed > 0 && (
                                     <button onClick={retryFailed} className="px-4 py-2 text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl hover:bg-rose-100" title="Vuelve a la grilla con solo las filas fallidas para que corrijas el campo señalado y reintentes">✗ Corregir y reintentar {tally.failed} fallido{tally.failed > 1 ? 's' : ''}</button>
                                 )}
