@@ -19,8 +19,8 @@ export function normalizeRating(raw: string | undefined): number | null {
  *  ISO, D/M/Y and D-M-Y (day-first, matching the es locale). Extracts the FIRST
  *  valid date found ANYWHERE in the cell: legacy rows often carry a range
  *  ("14/03/2009 - 20/06/2009") or extra prose ("adoptado 4/07/2009"), and taking
- *  the first date beats rejecting the whole row. Returns null only when no
- *  complete date is present (bare years, "hace un mes", "Feb 23rd", …). */
+ *  the first date beats rejecting the whole row. A cell that is ONLY a 4-digit
+ *  year ("2015") maps to Jan 1 of that year. Returns null when no date is present ("hace un mes", "Feb 23rd", …). */
 export function normalizeImportDate(raw: string | undefined): string | null {
     if (!raw) return null;
     const s = String(raw).trim();
@@ -35,7 +35,18 @@ export function normalizeImportDate(raw: string | undefined): string | null {
     }
     // Earliest-positioned valid date wins (an ISO prefix beats a later dmy match).
     const valid = candidates.filter(c => c.val).sort((a, b) => a.idx - b.idx);
-    return valid.length ? valid[0].val : null;
+    if (valid.length) return valid[0].val;
+    // Fallback: the whole cell is just a 4-digit year → Jan 1 of that year. The
+    // stored `date` is a timestamp (no partial-date type), so imprecise legacy
+    // "year only" data maps to Jan 1 — the review's date picker shows 2015-01-01,
+    // so the coercion is visible. A complete date anywhere in the cell wins above,
+    // so the year inside "14/03/2009" is never treated as year-only.
+    const yearOnly = s.match(/^(\d{4})$/);
+    if (yearOnly) {
+        const y = +yearOnly[1];
+        if (y >= 1900 && y <= 2100) return ymd(y, 1, 1);
+    }
+    return null;
 }
 function ymd(y: number, m: number, d: number): string | null {
     if (m < 1 || m > 12 || d < 1 || d > 31) return null;

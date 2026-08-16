@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.33.5] - 2026-08-16
+
+### Added — import accepts a year-only date
+
+- A date cell that is **only a 4-digit year** (e.g. `2015`) is now accepted and stored as **Jan 1 of that year** (1900–2100), instead of being dropped with a "fecha no reconocida" warning. Imprecise legacy data (like the VANA blacklist) often records just the year; the stored `date` is a timestamp with no partial-date type, so Jan 1 is the standard mapping, and the review's date picker shows `2015-01-01` so the coercion is visible. A complete date anywhere in the cell still wins, so the year inside `14/03/2009` is never treated as year-only.
+
 ## [2.33.4] - 2026-08-16
 
 ### Added — open the records of a previous import from `/import/sheet`

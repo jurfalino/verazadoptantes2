@@ -34,6 +34,14 @@ describe('normalizeImportDate', () => {
         expect(normalizeImportDate('4/07/2009 - diciembre 2009')).toBe('2009-07-04');
         expect(normalizeImportDate('adoptado el 2/05/2009, devuelto el 4/05/2009')).toBe('2009-05-02');
     });
+    it('accepts a whole-cell year → Jan 1 of that year (imprecise legacy data)', () => {
+        expect(normalizeImportDate('2015')).toBe('2015-01-01');
+        expect(normalizeImportDate('  2009  ')).toBe('2009-01-01');
+        expect(normalizeImportDate('1998')).toBe('1998-01-01');
+        expect(normalizeImportDate('1800')).toBeNull(); // out of 1900–2100 range
+        expect(normalizeImportDate('12345')).toBeNull(); // not a 4-digit year
+        expect(normalizeImportDate('14/03/2009')).toBe('2009-03-14'); // full date still wins, not year-only
+    });
     it('returns null for a range with no complete date (bare years, relative, month-day)', () => {
         expect(normalizeImportDate('2014-2015')).toBeNull();
         expect(normalizeImportDate('2015 y 2016')).toBeNull();
