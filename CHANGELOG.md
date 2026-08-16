@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.33.4] - 2026-08-16
+
+### Added — open the records of a previous import from `/import/sheet`
+
+- Each row in "Importaciones anteriores" is now **clickable** and expands to list that run's audited records — row #, action (Crear/Actualizar/Omitir), the adopter name **linked to its profile** (opens in a new tab), the status badge, a "→ registro existente" link when it matched, and any message. Mirrors the admin `/admin/imports` drill-down.
+- Backed by a new **auth-scoped** `getMyImportRunItems(runId)` — only the run's own actor, an org-mate, or an admin can read a run's items. Unlike the admin view, the matched record shows only a link (not the matched name) to avoid leaking a name from another org's record.
+
 ## [2.33.3] - 2026-08-16
 
 ### Fixed — "Importaciones anteriores" always showed "0 creados"

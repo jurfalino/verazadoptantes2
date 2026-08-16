@@ -175,3 +175,28 @@ export async function getImportRunItems(runId: string): Promise<Array<typeof imp
         return [];
     }
 }
+
+/** The per-row items for one of the caller's OWN (or an org-mate's) runs — so a
+ *  rescuer can drill into a previous import from /import/sheet and open the records
+ *  it created. Auth-scoped: only the run's actor, an org-mate, or an admin may read
+ *  it; anyone else gets []. */
+export async function getMyImportRunItems(runId: string): Promise<Array<typeof importRunItems.$inferSelect>> {
+    let actor = '';
+    try { actor = await getUser(); } catch { /* anonymous */ }
+    if (!isRealActorEmail(actor)) return [];
+    try {
+        const db = await getDb();
+        if (!db) return [];
+        const run = await db.select({ actorEmail: importRuns.actorEmail }).from(importRuns).where(eq(importRuns.id, runId)).get();
+        if (!run) return [];
+        if (run.actorEmail !== actor) {
+            const mates = await getOrgMatesOf(actor).catch(() => [] as Array<{ email: string }>);
+            const allowed = new Set(mates.map(m => m.email));
+            if (!allowed.has(run.actorEmail ?? '') && !(await getIsAdmin())) return [];
+        }
+        return await db.select().from(importRunItems).where(eq(importRunItems.runId, runId)).orderBy(importRunItems.rowIndex);
+    } catch (e) {
+        logger.warn('getMyImportRunItems failed', { runId, error: e instanceof Error ? e.message : String(e) });
+        return [];
+    }
+}

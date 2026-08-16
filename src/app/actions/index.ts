@@ -62,7 +62,7 @@ export { upsertImportRecord } from './importUpsert';
 export type { ImportUpsertInput, ImportUpsertResult } from './importUpsert';
 
 // Import-run audit (admin view)
-export { startImportRun, finishImportRun, getImportRuns, getMyImportRuns, getImportRunItems } from './importRuns';
+export { startImportRun, finishImportRun, getImportRuns, getMyImportRuns, getImportRunItems, getMyImportRunItems } from './importRuns';
 export type { ImportRunItemInput, EnrichedImportRun } from './importRuns';
 
 // Bulk import (batch endpoint — robust against D1 contention)

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
-import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, matchFingerprints, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun } from '@/app/actions';
+import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun } from '@/app/actions';
 import { isExactIdentifierMatch } from '@/domain/importMerge';
 import { computeContentFingerprint } from '@/domain/contentFingerprint';
 import { formatDateTimeFull } from '@/lib/dates';
@@ -16,6 +16,16 @@ import {
 
 type RowStatus = 'created' | 'updated' | 'skipped' | 'failed';
 interface RowResult { index: number; name: string; status: RowStatus; message?: string; id?: string }
+/** One audited row from a previous run (drill-down on the upload screen). */
+interface PrevRunItem {
+    id: string; rowIndex: number | null; adopterId: string | null; adopterName: string | null;
+    action: string | null; status: string | null; matchedAdopterId: string | null; message: string | null;
+}
+const PREV_ACTION_LABEL: Record<string, string> = { create: 'Crear', upsert: 'Actualizar', skip: 'Omitir' };
+const PREV_STATUS_STYLE: Record<string, string> = {
+    created: 'bg-emerald-50 text-emerald-700', updated: 'bg-sky-50 text-sky-700',
+    skipped: 'bg-amber-50 text-amber-700', failed: 'bg-rose-50 text-rose-700',
+};
 /** Per-row choice on the duplicate-aware import: create a new record, update the
  *  matched existing one (upsert), or skip. */
 type RowAction = 'create' | 'upsert' | 'skip';
@@ -103,6 +113,22 @@ export default function SpreadsheetImportWizard() {
     // The user's (and their org's) previous imports, shown on the upload screen.
     const [myRuns, setMyRuns] = useState<EnrichedImportRun[]>([]);
     useEffect(() => { getMyImportRuns().then(setMyRuns).catch(() => setMyRuns([])); }, []);
+    // Drill-down: click a previous run to open its records.
+    const [expandedRun, setExpandedRun] = useState<string | null>(null);
+    const [runItems, setRunItems] = useState<Record<string, PrevRunItem[]>>({});
+    const [loadingItems, setLoadingItems] = useState<string | null>(null);
+    const toggleRun = async (runId: string) => {
+        if (expandedRun === runId) { setExpandedRun(null); return; }
+        setExpandedRun(runId);
+        if (!runItems[runId]) {
+            setLoadingItems(runId);
+            try {
+                const it = await getMyImportRunItems(runId);
+                setRunItems(prev => ({ ...prev, [runId]: it as unknown as PrevRunItem[] }));
+            } catch { setRunItems(prev => ({ ...prev, [runId]: [] })); }
+            finally { setLoadingItems(null); }
+        }
+    };
 
     const handleFile = async (file: File) => {
         setError(null); setBusy(true);
@@ -508,17 +534,49 @@ export default function SpreadsheetImportWizard() {
                             const skipped = hasItems ? run.dSkipped : (run.skippedCount ?? 0);
                             const failed = hasItems ? run.dFailed : (run.failedCount ?? 0);
                             return (
-                                <div key={run.id} className="px-4 py-2.5 border-t first:border-t-0 border-stone-100 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                                    <span className="text-stone-500">{formatDateTimeFull(run.startedAt ?? '')}</span>
-                                    {run.source && <span className="text-xs text-stone-400 truncate max-w-[200px]" title={run.source}>{run.source}</span>}
-                                    <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${stStyle}`}>{st}</span>
-                                    <span className="ml-auto text-xs text-stone-500 flex flex-wrap gap-x-2 gap-y-0.5 justify-end">
-                                        {run.total ? <span className="text-stone-400">{run.total} filas</span> : null}
-                                        <span className="text-emerald-700">{created} creados</span>
-                                        {updated > 0 && <span className="text-sky-700">{updated} actualizados</span>}
-                                        {skipped > 0 && <span className="text-amber-700">{skipped} omitidos</span>}
-                                        {failed > 0 && <span className="text-rose-700">{failed} fallidos</span>}
-                                    </span>
+                                <div key={run.id} className="border-t first:border-t-0 border-stone-100">
+                                    <button type="button" onClick={() => toggleRun(run.id)} aria-expanded={expandedRun === run.id}
+                                        className="w-full text-left px-4 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm hover:bg-stone-50">
+                                        <span className="text-stone-400">{expandedRun === run.id ? '▾' : '▸'}</span>
+                                        <span className="text-stone-500">{formatDateTimeFull(run.startedAt ?? '')}</span>
+                                        {run.source && <span className="text-xs text-stone-400 truncate max-w-[200px]" title={run.source}>{run.source}</span>}
+                                        <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${stStyle}`}>{st}</span>
+                                        <span className="ml-auto text-xs text-stone-500 flex flex-wrap gap-x-2 gap-y-0.5 justify-end">
+                                            {run.total ? <span className="text-stone-400">{run.total} filas</span> : null}
+                                            <span className="text-emerald-700">{created} creados</span>
+                                            {updated > 0 && <span className="text-sky-700">{updated} actualizados</span>}
+                                            {skipped > 0 && <span className="text-amber-700">{skipped} omitidos</span>}
+                                            {failed > 0 && <span className="text-rose-700">{failed} fallidos</span>}
+                                        </span>
+                                    </button>
+                                    {expandedRun === run.id && (
+                                        <div className="border-t border-stone-100 bg-stone-50/50">
+                                            {loadingItems === run.id ? (
+                                                <div className="px-4 py-3 text-sm text-stone-500">Cargando registros…</div>
+                                            ) : (runItems[run.id]?.length ?? 0) === 0 ? (
+                                                <div className="px-4 py-3 text-sm text-stone-500">{st === 'en curso' ? 'Corrida en curso o interrumpida — sin registros guardados aún.' : 'Sin registros.'}</div>
+                                            ) : (
+                                                <div className="max-h-96 overflow-y-auto">
+                                                    {runItems[run.id].map(it => (
+                                                        <div key={it.id} className="px-4 py-1.5 text-sm border-t first:border-t-0 border-stone-100 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                                            <span className="text-stone-400 w-10 flex-shrink-0">#{it.rowIndex ?? '—'}</span>
+                                                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 flex-shrink-0">{PREV_ACTION_LABEL[it.action ?? ''] ?? it.action ?? '—'}</span>
+                                                            <span className="font-medium text-stone-800 min-w-0 truncate">
+                                                                {it.adopterId
+                                                                    ? <a href={`/adopter/${it.adopterId}`} target="_blank" rel="noopener noreferrer" className="text-teal-700 hover:underline">{it.adopterName?.trim() || 'Sin nombre'}</a>
+                                                                    : (it.adopterName?.trim() || <span className="italic text-stone-400">Sin nombre</span>)}
+                                                            </span>
+                                                            {it.status && <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0 ${PREV_STATUS_STYLE[it.status] ?? 'bg-stone-100 text-stone-500'}`}>{it.status}</span>}
+                                                            {it.matchedAdopterId && (
+                                                                <a href={`/adopter/${it.matchedAdopterId}`} target="_blank" rel="noopener noreferrer" className="text-xs text-teal-700 hover:underline flex-shrink-0">→ registro existente</a>
+                                                            )}
+                                                            {it.message && <span className="text-xs text-stone-400 min-w-0 truncate">· {it.message}</span>}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}
