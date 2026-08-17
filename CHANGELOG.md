@@ -2,6 +2,32 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.34.0] - 2026-08-16
+
+### Import Wave 0 — data-integrity + trust fixes (audit remediation)
+
+Fixes the 8 engineering + 2 UX blockers from the import audit (`.agents/audits/2026-08-16-import-audit.md`), executed task-by-task with per-task + whole-branch code review.
+
+**Data integrity (server):**
+- **Atomic-safe create (E1):** the adopter, its activity, the animal, and the placement now use **deterministic ids + `onConflictDoNothing`**, so a Worker kill mid-row (or a retry) re-attempts only the un-committed writes — no more adopters stranded with no activity/rating, no orphan animals, no duplicate placements.
+- **Honest audit counts (E7):** per-row audit items now **upsert** — a row that was `failed` on attempt 1 and `created` on retry reports `created` (admin counts no longer lie).
+
+**Duplicate detection:**
+- **Fails closed (E2):** a transient DB error during detection now **surfaces a "búsqueda incompleta" warning** instead of silently reporting "0 duplicados" and creating a full duplicate set.
+- **Detects combined-contact columns (E3):** detection now runs on the **split** contact entries, so a messy single "Contacto" column no longer bypasses dedup and imports duplicates every time.
+- **No homonym auto-merge (E5):** a **name-only** record no longer produces a content fingerprint, so two different people with the same name are routed to review instead of auto-updating the wrong record.
+
+**Dates & parsing:**
+- **Excel dates keep their day (E4):** `.xlsx` date cells now parse to ISO `YYYY-MM-DD` (via UTC parts) instead of being coarsened to the 1st of the month or dropped.
+
+**Import UX / regressions from the recent cancel-resume work:**
+- **Cancel race (E8):** cancelling exactly as the last batch finishes no longer mislabels a completed run as "cancelled"/leaves it un-closed.
+- **Retry/resume keep the full picture (E6):** retrying failed rows no longer wipes the results view or collapses the run's counts to the retried subset.
+- **Visibility is clear before importing (U1):** every review row shows a **blue "Público" / gray "Protegido"** badge (canonical themed treatment), plus an explainer and a running **"N públicos · N protegidos"** count.
+- **Pre-import confirmation (U2):** importing now opens a summary — **crear / actualizar (registros existentes) / omitir · públicos/protegidos** (with a reminder if duplicate detection was incomplete) — before writing anything.
+
+Deferred to Wave 1 (tracked in the audit): E9 (upsert idempotency — a resume that re-sends upsert rows can double-add an activity), full i18n of the wizard, mobile polish, and the `/import/sheet` route auth gate.
+
 ## [2.33.9] - 2026-08-16
 
 ### Fixed — "Reintentar fallidas" showed a blank screen; now re-sends with progress
