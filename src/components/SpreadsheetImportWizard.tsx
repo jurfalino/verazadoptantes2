@@ -114,6 +114,7 @@ export default function SpreadsheetImportWizard() {
     const [detecting, setDetecting] = useState(false);
     const [detectProgress, setDetectProgress] = useState({ done: 0, total: 0 });
     const [detectionDone, setDetectionDone] = useState(false);
+    const [detectionDegraded, setDetectionDegraded] = useState(false);
     // Server failure message per row index (from the last import) — surfaced in the
     // grid so the user can fix the offending field and retry just the failed rows.
     const [failureByIndex, setFailureByIndex] = useState<Record<number, string>>({});
@@ -311,6 +312,8 @@ export default function SpreadsheetImportWizard() {
     const runDetection = async () => {
         const targets = records.filter(r => r.selected);
         setDetecting(true); setDetectionDone(false); setDetectProgress({ done: 0, total: targets.length });
+        setDetectionDegraded(false);
+        let detectionHadError = false;
         const found: Record<number, DuplicateMatch | null> = {};
         const actions: Record<number, RowAction> = {};
 
@@ -323,7 +326,12 @@ export default function SpreadsheetImportWizard() {
             fpByIndex[t.index] = computeContentFingerprint({ name: t.eff.name, phones: t.eff.phones, emails: t.eff.emails, socials: t.eff.socials, ids: t.eff.dnis, addresses: t.eff.addresses });
         }
         const uniqueFps = Array.from(new Set(Object.values(fpByIndex).filter(Boolean)));
-        const idMap = uniqueFps.length ? await matchFingerprints(uniqueFps).catch(() => ({} as Record<string, { adopterId: string; adopterName: string | null }>)) : {};
+        let idMap: Record<string, { adopterId: string; adopterName: string | null }> = {};
+        if (uniqueFps.length) {
+            const res = await matchFingerprints(uniqueFps).catch(() => ({ ok: false as const, errorId: 'net' }));
+            if (res.ok) idMap = res.map;
+            else setDetectionDegraded(true); // surfaced in the UI; do NOT treat as "no matches"
+        }
 
         let done = 0, cursor = 0;
         const worker = async () => {
@@ -356,11 +364,13 @@ export default function SpreadsheetImportWizard() {
                     actions[index] = top && isExactIdentifierMatch(top.matchTypes) ? 'upsert' : 'create';
                 } catch {
                     found[index] = null; actions[index] = 'create';
+                    detectionHadError = true;
                 }
                 done++; setDetectProgress({ done, total: targets.length });
             }
         };
         await Promise.all(Array.from({ length: Math.min(5, targets.length) }, worker));
+        if (detectionHadError) setDetectionDegraded(true);
         setMatches(found);
         // Seed default actions, but never clobber a choice the user already made.
         setRowAction(prev => { const next = { ...actions }; for (const k of Object.keys(prev)) next[+k] = prev[+k]; return next; });
@@ -825,6 +835,11 @@ export default function SpreadsheetImportWizard() {
                         <div className="mt-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800 flex flex-wrap items-center justify-between gap-2">
                             <span>⚠ No buscaste duplicados: se <b>crearán todos</b> los registros, incluso los que ya existan (podés duplicar registros existentes). No se actualiza nada.</span>
                             <button onClick={runDetection} className="flex-shrink-0 font-semibold text-amber-800 underline hover:no-underline">Buscar duplicados</button>
+                        </div>
+                    )}
+                    {detectionDone && detectionDegraded && (
+                        <div className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+                            La búsqueda de duplicados no se completó del todo (error temporal). Algunos registros podrían no haberse comparado — revisá antes de importar o volvé a buscar duplicados.
                         </div>
                     )}
                     <div className="flex justify-between mt-4">

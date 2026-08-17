@@ -36,16 +36,19 @@ function groupContacts(contactEntriesJson: string | null | undefined) {
 
 /** Map: incoming fingerprint → the existing adopter that has identical content.
  *  Only fingerprints that matched are present. */
-export async function matchFingerprints(fingerprints: string[]): Promise<Record<string, { adopterId: string; adopterName: string | null }>> {
+export type MatchFingerprintsResult =
+    | { ok: true; map: Record<string, { adopterId: string; adopterName: string | null }> }
+    | { ok: false; errorId: string };
+
+export async function matchFingerprints(fingerprints: string[]): Promise<MatchFingerprintsResult> {
     let actor = '';
     try { actor = await getUser(); } catch { /* anonymous */ }
-    if (!isRealActorEmail(actor)) return {};
+    if (!isRealActorEmail(actor)) return { ok: false, errorId: 'unauth' };
     const wanted = new Set(fingerprints.filter(Boolean));
-    if (wanted.size === 0) return {};
-
+    if (wanted.size === 0) return { ok: true, map: {} };
     try {
         const db = await getDb();
-        if (!db) return {};
+        if (!db) return { ok: false, errorId: 'nodb' };
         const rows = await db.select({ id: adopters.id, name: adopters.name, contactEntries: adopters.contactEntries })
             .from(adopters)
             .where(and(isNull(adopters.deletedAt), or(isNull(adopters.isDemo), eq(adopters.isDemo, 0))))
@@ -53,14 +56,14 @@ export async function matchFingerprints(fingerprints: string[]): Promise<Record<
         if (rows.length >= SCAN_LIMIT) {
             logger.warn('matchFingerprints: scan hit the cap — identical-detection may be incomplete', { scanned: rows.length, cap: SCAN_LIMIT });
         }
-        const out: Record<string, { adopterId: string; adopterName: string | null }> = {};
+        const map: Record<string, { adopterId: string; adopterName: string | null }> = {};
         for (const r of rows) {
             const fp = computeContentFingerprint({ name: r.name, ...groupContacts(r.contactEntries) });
-            if (fp && wanted.has(fp) && !out[fp]) out[fp] = { adopterId: r.id, adopterName: r.name };
+            if (fp && wanted.has(fp) && !map[fp]) map[fp] = { adopterId: r.id, adopterName: r.name };
         }
-        return out;
+        return { ok: true, map };
     } catch (e) {
-        logger.warn('matchFingerprints failed', { error: e instanceof Error ? e.message : String(e) });
-        return {};
+        const errorId = logger.error('matchFingerprints failed', e, { fingerprintCount: wanted.size });
+        return { ok: false, errorId };
     }
 }
