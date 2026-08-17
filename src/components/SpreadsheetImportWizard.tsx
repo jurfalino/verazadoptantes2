@@ -5,7 +5,7 @@ import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
 import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun } from '@/app/actions';
 import { isExactIdentifierMatch } from '@/domain/importMerge';
 import { computeContentFingerprint } from '@/domain/contentFingerprint';
-import { formatDateTimeFull } from '@/lib/dates';
+import { formatDateTimeFull, formatShortDate } from '@/lib/dates';
 import { buildImportBody } from '@/lib/importRow';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType } from '@/domain/importRow';
@@ -103,7 +103,11 @@ export default function SpreadsheetImportWizard() {
     const [typeFilter, setTypeFilter] = useState<string>('all');     // recordType, or 'all'
     const [ratingFilter, setRatingFilter] = useState<string>('all'); // '1'..'5', 'none', or 'all'
     const [advancedOpen, setAdvancedOpen] = useState(false);
-    const [editing, setEditing] = useState<number | null>(null);
+    // Which single grid cell is in edit mode (perf-critical: only ONE cell across
+    // all rows ever renders a live control — everything else renders a static
+    // display button — so an 800-row grid stays ~800 buttons, not thousands of
+    // live inputs/selects).
+    const [editingCell, setEditingCell] = useState<{ index: number; field: string } | null>(null);
     // Import state.
     const [progress, setProgress] = useState({ done: 0, total: 0 });
     const [results, setResults] = useState<RowResult[]>([]);
@@ -836,18 +840,9 @@ export default function SpreadsheetImportWizard() {
                                 {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★</option>)}
                                 <option value="none">Sin rating</option>
                             </select>
-                            {/* Massively set a rating on every row. Controlled value="" so it snaps back. */}
-                            <select value="" onChange={e => { if (e.target.value) setRatingAll(e.target.value === 'clear' ? '' : e.target.value); }} className="h-9 px-2 rounded-lg border border-stone-200 text-sm bg-white text-stone-600" title="Asignar un rating a todos los registros">
-                                <option value="">Rating a todos…</option>
-                                {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★ a todos</option>)}
-                                <option value="clear">Limpiar rating</option>
-                            </select>
-                            {/* Massively set visibility on every row. Controlled value="" so it snaps back. */}
-                            <select value="" onChange={e => { if (e.target.value) setVisibilityAll(e.target.value === 'public'); }} className="h-9 px-2 rounded-lg border border-stone-200 text-sm bg-white text-stone-600" title="Asignar visibilidad a todos los registros">
-                                <option value="">Visibilidad a todos…</option>
-                                <option value="public">Todos públicos</option>
-                                <option value="protected">Todos protegidos</option>
-                            </select>
+                            {/* Rating a todos / Visibilidad a todos now live as compact
+                                "· a todos" menus in their column headers, next to the
+                                field they act on — see the <thead> below. */}
                             {(filter !== 'all' || typeFilter !== 'all' || ratingFilter !== 'all' || search.trim() !== '') && (
                                 <button onClick={() => { setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setSearch(''); }} className="h-9 px-2 text-sm text-stone-500 hover:text-stone-700">✕ Limpiar filtros</button>
                             )}
@@ -866,20 +861,54 @@ export default function SpreadsheetImportWizard() {
                         </p>
                     </div>
 
+                    {/* TODO(wave1c-mobile): reflow to card-per-record ≤sm (single-DOM CSS reflow) */}
                     <div className="border border-stone-200 rounded-xl overflow-hidden">
-                        <div className="max-h-[420px] overflow-y-auto">
+                        <div className="max-h-[420px] overflow-y-auto overflow-x-auto">
                             <table className="w-full text-sm">
                                 <thead className="bg-stone-50 text-stone-500 text-xs uppercase tracking-wider sticky top-0">
-                                    <tr><th className="px-2 py-2"></th><th className="text-left px-3 py-2">Nombre</th><th className="text-left px-3 py-2">Contactos</th><th className="text-left px-3 py-2">Animal · tipo · rating · fecha</th><th className="px-2 py-2"></th></tr>
+                                    <tr>
+                                        <th className="px-2 py-2"></th>
+                                        <th className="text-left px-3 py-2">Nombre</th>
+                                        <th className="text-left px-3 py-2">Contacto</th>
+                                        <th className="text-left px-3 py-2">Animal</th>
+                                        <th className="text-left px-3 py-2">Especie</th>
+                                        <th className="text-left px-3 py-2">Tipo</th>
+                                        <th className="text-left px-3 py-2">
+                                            <div className="flex items-center gap-1">
+                                                <span>Rating</span>
+                                                {/* Bulk "a todos" — controlled value="" so it snaps back after firing. */}
+                                                <select value="" onChange={e => { if (e.target.value) setRatingAll(e.target.value === 'clear' ? '' : e.target.value); }}
+                                                    className="normal-case font-normal text-[11px] border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-500" title="Asignar un rating a todos los registros">
+                                                    <option value="">· a todos</option>
+                                                    {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★ a todos</option>)}
+                                                    <option value="clear">Limpiar rating</option>
+                                                </select>
+                                            </div>
+                                        </th>
+                                        <th className="text-left px-3 py-2">Fecha</th>
+                                        <th className="text-left px-3 py-2">
+                                            <div className="flex items-center gap-1">
+                                                <span>Visibilidad</span>
+                                                <select value="" onChange={e => { if (e.target.value) setVisibilityAll(e.target.value === 'public'); }}
+                                                    className="normal-case font-normal text-[11px] border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-500" title="Asignar visibilidad a todos los registros">
+                                                    <option value="">· a todos</option>
+                                                    <option value="public">Todos públicos</option>
+                                                    <option value="protected">Todos protegidos</option>
+                                                </select>
+                                            </div>
+                                        </th>
+                                    </tr>
                                 </thead>
                                 <tbody>
                                     {filtered.map(r => (
-                                        <RowView key={r.index} r={r} editing={editing === r.index}
+                                        <RowView key={r.index} r={r}
+                                            editingField={editingCell?.index === r.index ? editingCell.field : null}
+                                            onEditCell={field => setEditingCell(field ? { index: r.index, field } : null)}
                                             match={r.index in matches ? matches[r.index] : undefined}
                                             action={rowAction[r.index] ?? 'create'}
                                             onAction={a => setRowAction(prev => ({ ...prev, [r.index]: a }))}
                                             failure={failureByIndex[r.index]}
-                                            onToggle={() => toggle(r.index)} onEdit={() => setEditing(editing === r.index ? null : r.index)}
+                                            onToggle={() => toggle(r.index)}
                                             onChange={patch => setOverride(r.index, patch)} />
                                     ))}
                                 </tbody>
@@ -1029,10 +1058,11 @@ function matchTypeLabels(types: string[]): string {
     return labels.length ? labels.join(', ') : 'datos';
 }
 
-function RowView({ r, editing, match, action, onAction, failure, onToggle, onEdit, onChange }: {
+function RowView({ r, editingField, onEditCell, match, action, onAction, failure, onToggle, onChange }: {
     r: { index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean };
-    editing: boolean; match?: DuplicateMatch | null; action: RowAction; onAction: (a: RowAction) => void;
-    failure?: string; onToggle: () => void; onEdit: () => void; onChange: (p: Partial<MappedRow>) => void;
+    editingField: string | null; onEditCell: (field: string | null) => void;
+    match?: DuplicateMatch | null; action: RowAction; onAction: (a: RowAction) => void;
+    failure?: string; onToggle: () => void; onChange: (p: Partial<MappedRow>) => void;
 }) {
     const { eff, built, selected } = r;
     const isExact = match ? isExactIdentifierMatch(match.matchTypes) : false;
@@ -1045,29 +1075,47 @@ function RowView({ r, editing, match, action, onAction, failure, onToggle, onEdi
     ];
     const invalid = built.errors.length > 0;
     const warned = built.warnings.length > 0;
+    const hasIssue = invalid || warned || !!failure;
     // Effective visibility shown to the reviewer: anonymous rows default público,
     // named rows default protegido, unless overridden per-row or in bulk.
     // PRODUCT: anon-rows-default-to-público is the intended showcase behavior today;
     // flipping this default to protected-by-default is a product decision, not made here.
     const isAnon = !eff.name?.trim();
     const isPublicEff = eff.isPublic ?? isAnon;
+
+    // Translated/human-readable display values (the whole point of this grid: every
+    // field visible + readable without expanding a row).
+    const speciesVal = speciesOptionValue(eff.species);
+    const speciesLabel = speciesVal ? (SPECIES_OPTIONS.find(o => o.v === speciesVal)?.l ?? '—') : '—';
+    const typeVal = normalizeRecordType(eff.recordType);
+    const typeLabel = RECORD_TYPE_LABELS[typeVal] ?? typeVal;
+    const ratingNorm = normalizeRating(eff.rating);
+    const normDate = normalizeImportDate(eff.date);
+    const dateUnparseable = !normDate && !!eff.date;
+
+    // Small helper so every field-cell wires the same active/activate/deactivate
+    // triple against the lifted editingCell state (see the parent's setEditingCell).
+    const cellProps = (field: string) => ({
+        active: editingField === field,
+        onActivate: () => onEditCell(field),
+        onDeactivate: () => onEditCell(null),
+    });
+
     return (
         <>
             <tr className={`border-t border-stone-100 ${!selected ? 'opacity-40' : ''} ${(invalid || failure) ? 'bg-rose-50' : ''}`}>
-                <td className="px-2 py-2 text-center"><input type="checkbox" checked={selected} onChange={onToggle} /></td>
+                <td className="px-2 py-2 text-center"><input type="checkbox" checked={selected} onChange={onToggle} aria-label="Seleccionar fila" /></td>
                 <td className="px-3 py-2 font-medium text-stone-800">
-                    {/* Empty name is allowed (min-identifier: name OR contact). A
-                        nameless-but-valid row shows the muted "Sin nombre" fallback
-                        (matching the rest of the app), NOT the red "falta" — that red
-                        error label is reserved for a row that is actually invalid
-                        (no name AND no contact). */}
-                    {eff.name || <span className={`italic ${invalid ? 'text-rose-500' : 'text-stone-400'}`}>{invalid ? 'falta' : 'Sin nombre'}</span>}
-                    <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-semibold align-middle"
-                        style={isPublicEff
-                            ? { backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }
-                            : { backgroundColor: 'var(--surface-muted)', color: 'var(--text-muted)' }}>
-                        {isPublicEff ? 'Público' : 'Protegido'}
-                    </span>
+                    <InlineCell {...cellProps('name')} kind="text" ariaLabel="Editar nombre"
+                        value={eff.name} onCommit={v => onChange({ name: v })}
+                        display={
+                            /* Empty name is allowed (min-identifier: name OR contact). A
+                               nameless-but-valid row shows the muted "Sin nombre" fallback
+                               (matching the rest of the app), NOT the red "falta" — that red
+                               error label is reserved for a row that is actually invalid
+                               (no name AND no contact). */
+                            eff.name || <span className={`italic ${invalid ? 'text-rose-500' : 'text-stone-400'}`}>{invalid ? 'falta' : 'Sin nombre'}</span>
+                        } />
                 </td>
                 <td className="px-3 py-2 align-top">
                     {contactChips.length === 0 && eff.combinedContacts.length === 0 ? (
@@ -1080,23 +1128,69 @@ function RowView({ r, editing, match, action, onAction, failure, onToggle, onEdi
                                     <span className="text-stone-700 truncate">{c.v}</span>
                                 </span>
                             ))}
-                            {eff.combinedContacts.length > 0 && <span className="text-indigo-500 text-xs self-center" title="se separará al importar">🧩</span>}
+                            {eff.combinedContacts.length > 0 && (
+                                <span className="inline-flex items-center text-indigo-600 self-center" title="se separará al importar">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                                    </svg>
+                                </span>
+                            )}
                         </div>
                     )}
                 </td>
-                <td className="px-3 py-2 text-stone-500">
-                    {[eff.animalName, eff.species, eff.recordType, eff.rating, eff.date].filter(Boolean).join(' · ') || '—'}
-                    {/* Non-blocking warning (unparseable rating/date) — the row still
-                        imports; the reviewer can fix the cell in the editor or proceed. */}
-                    {warned && <span className="ml-1.5 text-amber-600" title={built.warnings.join(' ')}>⚠</span>}
-                    {failure && <span className="ml-1.5 text-rose-600 font-semibold" title={failure}>✗ falló</span>}
+                <td className="px-3 py-2 text-stone-600">
+                    <InlineCell {...cellProps('animalName')} kind="text" ariaLabel="Editar animal"
+                        value={eff.animalName ?? ''} onCommit={v => onChange({ animalName: v })}
+                        display={eff.animalName || <span className="text-stone-400">—</span>} />
                 </td>
-                <td className="px-2 py-2 text-right"><button onClick={onEdit} className="text-stone-400 hover:text-teal-600" title="Editar">✎</button></td>
+                <td className="px-3 py-2 text-stone-600">
+                    <InlineCell {...cellProps('species')} kind="select" ariaLabel="Editar especie"
+                        value={speciesVal} options={SPECIES_OPTIONS.map(o => ({ value: o.v, label: o.l }))}
+                        onCommit={v => onChange({ species: v || undefined })}
+                        display={speciesVal ? speciesLabel : <span className="text-stone-400">—</span>} />
+                </td>
+                <td className="px-3 py-2 text-stone-600">
+                    <InlineCell {...cellProps('recordType')} kind="select" ariaLabel="Editar tipo"
+                        value={typeVal} options={RECORD_TYPES.map(t => ({ value: t, label: RECORD_TYPE_LABELS[t] ?? t }))}
+                        onCommit={v => onChange({ recordType: v })}
+                        display={typeLabel} />
+                </td>
+                <td className="px-3 py-2 text-stone-600">
+                    <InlineCell {...cellProps('rating')} kind="select" ariaLabel="Editar rating"
+                        value={RATING_OPTIONS.includes(eff.rating ?? '') ? (eff.rating ?? '') : ''}
+                        options={[{ value: '', label: '— (auto)' }, ...['1', '2', '3', '4', '5'].map(n => ({ value: n, label: `${n} ★` }))]}
+                        onCommit={v => onChange({ rating: v || undefined })}
+                        display={ratingNorm != null ? `${'★'.repeat(ratingNorm)}` : <span className="text-stone-400">— auto</span>} />
+                </td>
+                <td className="px-3 py-2 text-stone-600">
+                    <InlineCell {...cellProps('date')} kind="date" ariaLabel="Editar fecha"
+                        value={normDate ?? ''} onCommit={v => onChange({ date: v || undefined })}
+                        display={
+                            normDate ? formatShortDate(normDate)
+                                : dateUnparseable ? <span className="text-amber-700">{eff.date} <span title={built.warnings.join(' ')}>⚠</span></span>
+                                    : <span className="text-stone-400">—</span>
+                        } />
+                </td>
+                <td className="px-3 py-2">
+                    <InlineCell {...cellProps('isPublic')} kind="select" ariaLabel="Editar visibilidad"
+                        value={isPublicEff ? 'public' : 'protected'}
+                        options={[{ value: 'public', label: 'Público' }, { value: 'protected', label: 'Protegido' }]}
+                        onCommit={v => onChange({ isPublic: v === 'public' })}
+                        display={
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                                style={isPublicEff
+                                    ? { backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }
+                                    : { backgroundColor: 'var(--surface-muted)', color: 'var(--text-muted)' }}>
+                                {isPublicEff ? 'Público' : 'Protegido'}
+                            </span>
+                        } />
+                </td>
             </tr>
             {match && (
                 <tr className={!selected ? 'opacity-40' : ''}>
                     <td></td>
-                    <td colSpan={4} className="px-3 pb-2">
+                    <td colSpan={8} className="px-3 pb-2">
                         <div className="flex flex-wrap items-center gap-2 text-xs bg-sky-50 border border-sky-100 rounded-lg px-2.5 py-1.5">
                             {(() => {
                                 const identical = match.matchTypes?.includes('identical');
@@ -1122,50 +1216,77 @@ function RowView({ r, editing, match, action, onAction, failure, onToggle, onEdi
                     </td>
                 </tr>
             )}
-            {editing && (
-                <tr className="bg-stone-50 border-t border-stone-100"><td colSpan={5} className="px-4 py-3">
-                    {invalid && <div className="text-xs text-rose-600 mb-2">{built.errors.join(' ')}</div>}
-                    {failure && <div className="text-xs text-rose-700 mb-2 font-medium">✗ Falló al importar: {failure} — corregí el campo y reintentá.</div>}
-                    {warned && <div className="text-xs text-amber-600 mb-2">{built.warnings.join(' ')} Corregí la fecha/rating abajo, o dejá el registro así (se importa igual).</div>}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        <EditField label="Nombre" value={eff.name} onChange={v => onChange({ name: v })} />
-                        <EditField label="Animal" value={eff.animalName ?? ''} onChange={v => onChange({ animalName: v })} />
-                        <label className="text-xs text-stone-500">Especie
-                            <select value={speciesOptionValue(eff.species)} onChange={e => onChange({ species: e.target.value || undefined })} className="mt-0.5 w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white">
-                                {SPECIES_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
-                            </select>
-                        </label>
-                        <label className="text-xs text-stone-500">Rating
-                            <select value={RATING_OPTIONS.includes(eff.rating ?? '') ? (eff.rating ?? '') : ''} onChange={e => onChange({ rating: e.target.value || undefined })} className="mt-0.5 w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white">
-                                <option value="">— (auto)</option>
-                                {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★</option>)}
-                            </select>
-                        </label>
-                        <label className="text-xs text-stone-500">Fecha
-                            <input type="date" value={normalizeImportDate(eff.date) ?? ''} onChange={e => onChange({ date: e.target.value || undefined })} className="mt-0.5 w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white" />
-                        </label>
-                        <label className="text-xs text-stone-500">Tipo
-                            <select value={eff.recordType ?? 'adoption'} onChange={e => onChange({ recordType: e.target.value })} className="mt-0.5 w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white">
-                                {RECORD_TYPES.map(t => <option key={t} value={t}>{RECORD_TYPE_LABELS[t] ?? t}</option>)}
-                            </select>
-                        </label>
-                        <label className="text-xs text-stone-500">Visibilidad
-                            <select value={isPublicEff ? 'public' : 'protected'} onChange={e => onChange({ isPublic: e.target.value === 'public' })} className="mt-0.5 w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white">
-                                <option value="public">Público</option>
-                                <option value="protected">Protegido</option>
-                            </select>
-                        </label>
-                    </div>
-                </td></tr>
+            {/* The expand-to-edit panel is gone, so this is the only place errors/
+                warnings/import-failures stay readable without a click — a thin
+                sub-row (styled like the duplicate-match sub-row above). */}
+            {hasIssue && (
+                <tr className={!selected ? 'opacity-40' : ''}>
+                    <td></td>
+                    <td colSpan={8} className="px-3 pb-2">
+                        <div className={`text-xs space-y-0.5 rounded-lg px-2.5 py-1.5 border ${(invalid || failure) ? 'bg-rose-50 border-rose-100' : 'bg-amber-50 border-amber-100'}`}>
+                            {invalid && <div className="text-rose-600">{built.errors.join(' ')}</div>}
+                            {failure && <div className="text-rose-700 font-medium">✗ Falló al importar: {failure} — corregí el campo y reintentá.</div>}
+                            {warned && <div className="text-amber-700">{built.warnings.join(' ')} Corregí la fecha/rating arriba, o dejá el registro así (se importa igual).</div>}
+                        </div>
+                    </td>
+                </tr>
             )}
         </>
     );
 }
 
-function EditField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+/** One click-to-edit spreadsheet cell. Display mode is a static button (cheap to
+ *  render across hundreds of rows); edit mode renders the live control ONLY for
+ *  the single active cell (lifted `editingCell` state in the parent guarantees
+ *  at most one control exists in the DOM at a time — see SpreadsheetImportWizard). */
+function InlineCell({ active, onActivate, onDeactivate, value, onCommit, kind, options, ariaLabel, display }: {
+    active: boolean; onActivate: () => void; onDeactivate: () => void;
+    value: string; onCommit: (v: string) => void; kind: 'text' | 'select' | 'date';
+    options?: Array<{ value: string; label: string }>; ariaLabel: string; display: React.ReactNode;
+}) {
+    const [draft, setDraft] = useState(value);
+    // Re-seed the draft whenever this cell becomes the active one (or the
+    // underlying value changes while inactive), so stale text never lingers.
+    useEffect(() => { if (active) setDraft(value); }, [active, value]);
+    // Escape must discard, not commit. Both the Enter and Escape paths exit via
+    // blur (rather than calling onDeactivate directly) so the commit logic lives
+    // in ONE place regardless of which path triggered it; the skip flag tells
+    // that shared blur handler to discard instead of commit.
+    const skipCommit = useRef(false);
+    const commitOnBlur = () => {
+        if (!skipCommit.current) onCommit(draft);
+        skipCommit.current = false;
+        onDeactivate();
+    };
+
+    if (!active) {
+        return (
+            <button type="button" onClick={onActivate} aria-label={ariaLabel}
+                className="block w-full text-left hover:bg-stone-100 rounded px-1 -mx-1">
+                {display}
+            </button>
+        );
+    }
+
+    if (kind === 'select') {
+        return (
+            <select autoFocus aria-label={ariaLabel} value={draft}
+                onChange={e => { onCommit(e.target.value); onDeactivate(); }}
+                onBlur={onDeactivate}
+                className="w-full border border-stone-200 rounded px-1 py-0.5 text-sm bg-white">
+                {options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+        );
+    }
+
     return (
-        <label className="text-xs text-stone-500">{label}
-            <input value={value} onChange={e => onChange(e.target.value)} className="mt-0.5 w-full border border-stone-200 rounded px-2 py-1 text-sm" />
-        </label>
+        <input autoFocus aria-label={ariaLabel} type={kind === 'date' ? 'date' : 'text'} value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onBlur={commitOnBlur}
+            onKeyDown={e => {
+                if (e.key === 'Enter') e.currentTarget.blur();
+                else if (e.key === 'Escape') { skipCommit.current = true; e.currentTarget.blur(); }
+            }}
+            className="w-full border border-stone-200 rounded px-1 py-0.5 text-sm bg-white" />
     );
 }
