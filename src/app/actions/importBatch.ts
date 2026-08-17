@@ -136,7 +136,13 @@ export async function importAdoptersBatch(rows: ImportBatchRow[], runId: string)
         try {
             if (row.action === 'skip') { out.push({ index: row.index, status: 'skipped', message: 'Omitido' }); continue; }
             if (row.action === 'upsert' && row.matchedAdopterId) {
-                const r = await withDbRetry(() => upsertImportRecord({ adopterId: row.matchedAdopterId!, name: row.name, contactEntries: row.contactEntries, adoption: row.adoption }));
+                const r = await withDbRetry(() => upsertImportRecord({
+                    adopterId: row.matchedAdopterId!,
+                    activityId: `impups-${runId}-${row.index}-act`,
+                    name: row.name,
+                    contactEntries: row.contactEntries,
+                    adoption: row.adoption,
+                }));
                 if (r.ok) {
                     const bits = [
                         r.addedContacts ? `+${r.addedContacts} contacto${r.addedContacts > 1 ? 's' : ''}` : '',

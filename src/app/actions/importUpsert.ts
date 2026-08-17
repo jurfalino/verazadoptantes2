@@ -24,6 +24,9 @@ import { logger } from '@/lib/logger';
 
 export interface ImportUpsertInput {
     adopterId: string;
+    /** Deterministic id for the merged activity (from runId+rowIndex) → a re-sent
+     *  import row updates-in-place / no-ops instead of double-adding the activity. */
+    activityId?: string | null;
     name?: string | null;
     /** JSON ContactEntry[] — the incoming row's contacts. */
     contactEntries: string;
@@ -88,7 +91,7 @@ export async function upsertImportRecord(input: ImportUpsertInput): Promise<Impo
             existingActivities,
             incomingName: input.name,
             incomingEntries: deserializeContactEntries(input.contactEntries).map(toMergeContact),
-            incomingActivity: { recordType: input.adoption.recordType, date: input.adoption.date ?? '', details: input.adoption.details },
+            incomingActivity: { recordType: input.adoption.recordType, date: toYmd(input.adoption.date), details: input.adoption.details },
         });
 
         let addedContacts = 0;
@@ -114,7 +117,7 @@ export async function upsertImportRecord(input: ImportUpsertInput): Promise<Impo
 
         if (plan.addActivity) {
             await saveAdoption({
-                id: crypto.randomUUID(), // fresh id ⇒ saveAdoption inserts (no existing row)
+                id: input.activityId ?? crypto.randomUUID(), // deterministic on import ⇒ retry-safe
                 adopterId: input.adopterId,
                 recordType: input.adoption.recordType as 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet' | 'available' | 'foster',
                 animalName: input.adoption.animalName,
