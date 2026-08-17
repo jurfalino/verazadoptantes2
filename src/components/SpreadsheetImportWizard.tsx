@@ -229,7 +229,9 @@ export default function SpreadsheetImportWizard() {
         const rows = resumable.rows.filter(r => failedIdx.has(r.index));
         if (!rows.length) return;
         cancelRef.current = false; setCancelled(false); setCancelling(false);
-        try { await sendBatches(resumable.runId, rows, rows.length, [], resumable.names); }
+        // Keep the full run in view: pass every current result as prior, and the ORIGINAL
+        // total so the tally/counters don't collapse to just the retried rows.
+        try { await sendBatches(resumable.runId, rows, resumable.total, [], resumable.names, results); }
         catch (e) {
             setError(e instanceof Error ? e.message : 'La importación se interrumpió.');
             setImportDone(true); setCancelling(false);
@@ -404,10 +406,16 @@ export default function SpreadsheetImportWizard() {
     const sendBatches = async (
         runId: string, toSend: ImportBatchRow[], total: number,
         preResults: RowResult[], nameByIndex: Record<number, string>,
+        priorResults: RowResult[] = [],
     ) => {
         setStep('import'); setImportDone(false); setFailureByIndex({});
         const acc = new Map<number, RowResult>();
+        // Seed with the already-known results from the original run (retry/resume), so the
+        // results view keeps the full picture and counts don't collapse to the subset.
+        for (const p of priorResults) acc.set(p.index, p);
         for (const p of preResults) acc.set(p.index, p);
+        // `total` reflects the WHOLE run (not just the re-sent subset); `done` counts every
+        // row already accounted for (prior + skips), so progress reads e.g. 780/800 → 800/800.
         let done = acc.size;
         setProgress({ done, total });
         setResults([...acc.values()].sort((a, b) => a.index - b.index));
@@ -548,7 +556,10 @@ export default function SpreadsheetImportWizard() {
         setFileName(snap.fileName); // so the running screen shows the file name on resume too
         cancelRef.current = false; setCancelled(false); setCancelling(false);
         try {
-            await sendBatches(snap.runId, snap.rows, snap.rows.length, [], snap.names);
+            // On a cancel-resume the current `results` already hold what got created; keep them so
+            // resume shows the whole run, not just the re-sent rows. On a refresh-resume `results`
+            // is empty (fresh mount) — harmless.
+            await sendBatches(snap.runId, snap.rows, snap.total, [], snap.names, results);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'La importación se interrumpió.');
             setImportDone(true); setCancelling(false);
