@@ -36,9 +36,10 @@ export interface FingerprintInput {
 }
 
 /**
- * Canonical fingerprint string. Empty (`''`) when there's NO identifying content
- * at all — callers must treat an empty fingerprint as "no match" so two
- * content-less rows never collide.
+ * Canonical fingerprint string. Empty (`''`) when there's no content at all, OR
+ * when there's a name but no contact identifier (phone/email/social/id/address) —
+ * callers must treat an empty fingerprint as "no match" so two content-less rows,
+ * or two same-named homonyms with no contact info, never collide.
  */
 export function computeContentFingerprint(input: FingerprintInput): string {
     const name = norm(input.name);
@@ -48,7 +49,11 @@ export function computeContentFingerprint(input: FingerprintInput): string {
     const ids = uniqSorted((input.ids ?? []).map(v => v.replace(/\D/g, '') || norm(v)));
     const addresses = uniqSorted((input.addresses ?? []).map(norm));
 
-    if (!name && !phones.length && !emails.length && !socials.length && !ids.length && !addresses.length) return '';
+    // A name alone is NOT enough to claim two records are "identical" (homonyms). Require at
+    // least one contact identifier; a name-only record returns '' → treated as "no match" →
+    // routed to review/create instead of auto-upsert into a possibly-different person.
+    const hasContact = phones.length || emails.length || socials.length || ids.length || addresses.length;
+    if (!hasContact) return '';
 
     return [
         `n:${name}`,
