@@ -89,7 +89,7 @@ function formatImportDate(ymd: string | null): string {
     return `${+m[3]} ${IMPORT_MONTHS_ES[+m[2] - 1]} ${m[1]}`; // e.g. "1 jun 2015"
 }
 
-type Step = 'upload' | 'confirm' | 'import';
+type Step = 'upload' | 'confirm' | 'dedup' | 'import';
 type Filter = 'all' | 'valid' | 'invalid' | 'warnings';
 
 export default function SpreadsheetImportWizard() {
@@ -142,9 +142,6 @@ export default function SpreadsheetImportWizard() {
     // match; absent = not checked yet), and the per-row create/upsert/skip choice.
     const [matches, setMatches] = useState<Record<number, DuplicateMatch | null>>({});
     const [rowAction, setRowAction] = useState<Record<number, RowAction>>({});
-    // Pre-import confirmation summary (create/update/skip + público/protegido) — gates the
-    // actual write so auto-upsert rows (mutating existing records) aren't committed blind.
-    const [confirmOpen, setConfirmOpen] = useState(false);
     const [detecting, setDetecting] = useState(false);
     const [detectProgress, setDetectProgress] = useState({ done: 0, total: 0 });
     const [detectionDone, setDetectionDone] = useState(false);
@@ -663,15 +660,34 @@ export default function SpreadsheetImportWizard() {
     const fmtEta = (ms: number) => { const s = Math.ceil(ms / 1000); return s < 60 ? `~${s} s` : `~${Math.ceil(s / 60)} min`; };
     const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); };
 
+    // Duplicados step (Step 3): the focused triage is ONLY the selected rows that
+    // actually matched something — everything else auto-creates, so it never
+    // needs the reviewer's attention.
+    const matchedRows = records.filter(r => r.selected && matches[r.index]);
+    const analyzedCount = records.filter(r => r.selected).length;
+    const newCount = analyzedCount - matchedRows.length;
+    // Bulk affordance: apply one action to every identical/exact match at once
+    // (weaker "possible" matches are left for individual review).
+    const applyToAllIdentical = (a: RowAction) => {
+        setRowAction(prev => {
+            const next = { ...prev };
+            for (const row of matchedRows) {
+                const m = matches[row.index];
+                if (m && (m.matchTypes?.includes('identical') || isExactIdentifierMatch(m.matchTypes))) next[row.index] = a;
+            }
+            return next;
+        });
+    };
+
     return (
         <div className="max-w-5xl mx-auto p-4">
             <h1 className="text-2xl font-extrabold text-stone-900 mb-1">Importar adopciones desde planilla</h1>
             <p className="text-sm text-stone-500 mb-6">Subí una planilla (CSV o Excel) en cualquier formato; la IA la interpreta y vos validás/editás los registros antes de importar.</p>
 
             <div className="flex gap-2 mb-6 text-xs font-semibold">
-                {(['upload', 'confirm', 'import'] as Step[]).map((s, i) => (
+                {(['upload', 'confirm', 'dedup', 'import'] as Step[]).map((s, i) => (
                     <span key={s} className={`px-3 py-1 rounded-full ${step === s ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-500'}`}>
-                        {i + 1}. {s === 'upload' ? 'Subir' : s === 'confirm' ? 'Revisar' : 'Importar'}
+                        {i + 1}. {s === 'upload' ? 'Subir' : s === 'confirm' ? 'Revisar' : s === 'dedup' ? 'Duplicados' : 'Importar'}
                     </span>
                 ))}
             </div>
@@ -855,11 +871,6 @@ export default function SpreadsheetImportWizard() {
                             {(filter !== 'all' || typeFilter !== 'all' || ratingFilter !== 'all' || search.trim() !== '') && (
                                 <button onClick={() => { setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setSearch(''); }} className="h-9 px-2 text-sm text-stone-500 hover:text-stone-700">✕ Limpiar filtros</button>
                             )}
-                            {detecting ? (
-                                <span className="text-sm text-teal-700 flex items-center gap-1.5"><span className="inline-block w-3.5 h-3.5 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" aria-hidden />Buscando duplicados… {detectProgress.done}/{detectProgress.total}</span>
-                            ) : (
-                                <button onClick={runDetection} className="h-9 px-2 rounded-lg border border-teal-200 text-sm text-teal-700 bg-teal-50 hover:bg-teal-100" title="Busca cada fila contra los registros existentes (por nombre/teléfono/email/social)">🔍 {detectionDone ? 'Re-buscar duplicados' : 'Buscar duplicados existentes'}</button>
-                            )}
                             <span className="text-sm text-stone-500 ml-auto">Mostrando {filtered.length} de {records.length} · {importable.length} se importarán{selectedWarnings > 0 && <span className="text-amber-600"> · {selectedWarnings} con advertencias</span>}{selectedInvalid > 0 && <span className="text-rose-500"> · {selectedInvalid} con errores</span>}</span>
                         </div>
                         {/* Explainer for the visibility toggle above, with a running count so the
@@ -925,24 +936,102 @@ export default function SpreadsheetImportWizard() {
                         </div>
                     </div>
 
-                    {!detectionDone && !detecting && (
-                        <div className="mt-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800 flex flex-wrap items-center justify-between gap-2">
-                            <span>⚠ No buscaste duplicados: se <b>crearán todos</b> los registros, incluso los que ya existan (podés duplicar registros existentes). No se actualiza nada.</span>
-                            <button onClick={runDetection} className="flex-shrink-0 font-semibold text-amber-800 underline hover:no-underline">Buscar duplicados</button>
-                        </div>
-                    )}
-                    {detectionDone && detectionDegraded && (
-                        <div className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
-                            La búsqueda de duplicados no se completó del todo (error temporal). Algunos registros podrían no haberse comparado — revisá antes de importar o volvé a buscar duplicados.
-                        </div>
-                    )}
                     <div className="flex justify-between mt-4">
                         <button onClick={reset} className="px-4 py-2 text-sm text-stone-500 hover:text-stone-700">← Empezar de nuevo</button>
-                        <button disabled={importable.length === 0} onClick={() => setConfirmOpen(true)} className="px-5 py-2 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700 disabled:opacity-40">
-                            Importar {importable.length} registros →
+                        <button disabled={importable.length === 0} onClick={() => { setStep('dedup'); runDetection(); }} className="px-5 py-2 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700 disabled:opacity-40">
+                            Continuar a duplicados →
                         </button>
                     </div>
                     </>
+                    )}
+                </div>
+            )}
+
+            {step === 'dedup' && (
+                <div>
+                    {detecting && (
+                        <div className="border border-stone-200 rounded-xl p-6">
+                            <div className="text-sm text-teal-700 mb-3 flex items-center gap-2">
+                                <span className="inline-block w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" aria-hidden />
+                                Analizando {detectProgress.total} registros contra tu base…
+                            </div>
+                            <div className="h-2 rounded-full bg-stone-100 overflow-hidden">
+                                <div className="h-full bg-teal-500 transition-all" style={{ width: `${detectProgress.total ? (detectProgress.done / detectProgress.total) * 100 : 0}%` }} />
+                            </div>
+                        </div>
+                    )}
+
+                    {!detecting && detectionDone && (
+                        <>
+                            {/* Summary bar — this IS the folded pre-import confirmation. */}
+                            <div className="mb-3 p-3 rounded-lg bg-teal-50 border border-teal-100 text-sm text-teal-800 flex flex-wrap items-center justify-between gap-2">
+                                <span className="flex flex-wrap items-center gap-x-1">
+                                    <span>🔍 {analyzedCount} analizados · {matchedRows.length} coinciden · {newCount} nuevos ·</span>
+                                    <b className="text-emerald-700">{importSummary.create} a crear</b>
+                                    {importSummary.update > 0 && <>· <b className="text-sky-700">{importSummary.update} a actualizar</b></>}
+                                    {importSummary.skipCount > 0 && <>· <b className="text-amber-700">{importSummary.skipCount} omitidas</b></>}
+                                    <span>· <b style={{ color: 'var(--status-sky-text)' }}>{visibilityCounts.publicCount} públicos</b> · <b className="text-stone-600">{visibilityCounts.protectedCount} protegidos</b></span>
+                                </span>
+                                <button onClick={runDetection} className="flex-shrink-0 font-semibold text-teal-700 hover:underline">Volver a analizar</button>
+                            </div>
+
+                            {detectionDegraded && (
+                                <div className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800 flex flex-wrap items-center justify-between gap-2">
+                                    <span>⚠ La búsqueda de duplicados no se completó del todo (error temporal). Algunos registros podrían no haberse comparado — revisá antes de importar.</span>
+                                    <button onClick={runDetection} className="flex-shrink-0 font-semibold text-amber-800 underline hover:no-underline">Volver a analizar</button>
+                                </div>
+                            )}
+
+                            {matchedRows.length === 0 && !detectionDegraded ? (
+                                <div className="p-4 rounded-xl border border-stone-200 text-sm text-stone-600">
+                                    No encontramos duplicados. Los {analyzedCount} registros se crearán como nuevos.
+                                </div>
+                            ) : matchedRows.length > 0 ? (
+                                <div className="border border-stone-200 rounded-xl overflow-hidden">
+                                    <div className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 bg-stone-50 border-b border-stone-100">
+                                        <span className="text-xs uppercase tracking-wider text-stone-500">Coincidencias a decidir · {matchedRows.length}</span>
+                                        <label className="flex items-center gap-1.5 text-xs text-stone-500">
+                                            Aplicar a todos los idénticos:
+                                            <select value="" onChange={e => { const a = e.target.value as RowAction | ''; if (a) applyToAllIdentical(a); }}
+                                                className="text-xs border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-600">
+                                                <option value="">— elegir —</option>
+                                                <option value="upsert">Actualizar</option>
+                                                <option value="create">Crear</option>
+                                                <option value="skip">Omitir</option>
+                                            </select>
+                                        </label>
+                                    </div>
+                                    <div className="max-h-[420px] overflow-y-auto divide-y divide-stone-100">
+                                        {matchedRows.map(row => {
+                                            const match = matches[row.index]!;
+                                            const isExact = isExactIdentifierMatch(match.matchTypes);
+                                            return (
+                                                <div key={row.index} className="px-4 py-2.5 flex flex-wrap items-center gap-2 text-sm">
+                                                    <span className="font-medium text-stone-800 min-w-0 truncate max-w-[220px]" title={row.eff.name || undefined}>
+                                                        {row.eff.name || <span className="italic text-stone-400">Sin nombre</span>}
+                                                    </span>
+                                                    <div className="flex flex-wrap items-center gap-2 text-xs bg-sky-50 border border-sky-100 rounded-lg px-2.5 py-1.5 flex-1 min-w-[280px]">
+                                                        <MatchBadge match={match} isExact={isExact} />
+                                                        <button type="button" onClick={() => window.open(`/adopter/${match.adopterId}`, '_blank', 'noopener,noreferrer')} className="text-teal-700 hover:underline">Abrir ↗</button>
+                                                        <div className="ml-auto"><ActionToggle action={rowAction[row.index] ?? 'create'} onAction={a => setRowAction(prev => ({ ...prev, [row.index]: a }))} /></div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            <div className="flex items-center justify-between mt-4">
+                                <button onClick={() => setStep('confirm')} className="px-4 py-2 text-sm text-stone-500 hover:text-stone-700">← Volver a revisar</button>
+                                <div className="flex items-center gap-3">
+                                    <span className="text-xs text-stone-400">Los {newCount} se crearán como nuevos</span>
+                                    <button disabled={importable.length === 0} onClick={runImport} className="px-5 py-2 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700 disabled:opacity-40">
+                                        Importar {importable.length} →
+                                    </button>
+                                </div>
+                            </div>
+                        </>
                     )}
                 </div>
             )}
@@ -1033,26 +1122,6 @@ export default function SpreadsheetImportWizard() {
                     )}
                 </div>
             )}
-            {confirmOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setConfirmOpen(false)}>
-                    <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
-                        <h3 className="text-lg font-bold text-stone-900">Confirmar importación</h3>
-                        <ul className="text-sm text-stone-700 space-y-1">
-                            <li><b className="text-emerald-700">{importSummary.create}</b> registros nuevos a crear</li>
-                            {importSummary.update > 0 && <li><b className="text-sky-700">{importSummary.update}</b> registros existentes a actualizar (se agregan datos a un registro ya guardado)</li>}
-                            {importSummary.skipCount > 0 && <li><b className="text-amber-700">{importSummary.skipCount}</b> filas omitidas</li>}
-                            <li className="pt-1 border-t border-stone-100"><b className="text-sky-700">{visibilityCounts.publicCount}</b> públicos · <b className="text-stone-700">{visibilityCounts.protectedCount}</b> protegidos</li>
-                            {detectionDegraded && (
-                                <li className="text-amber-700">⚠ La búsqueda de duplicados no se completó — puede haber duplicados sin detectar.</li>
-                            )}
-                        </ul>
-                        <div className="flex justify-end gap-2 pt-2">
-                            <button onClick={() => setConfirmOpen(false)} className="px-4 py-2 text-sm text-stone-600 hover:bg-stone-100 rounded-lg">Cancelar</button>
-                            <button onClick={() => { setConfirmOpen(false); runImport(); }} className="px-5 py-2 text-sm font-semibold text-white bg-teal-600 rounded-lg hover:bg-teal-700">Importar</button>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
@@ -1065,6 +1134,34 @@ const MATCH_TYPE_LABELS: Record<string, string> = {
 function matchTypeLabels(types: string[]): string {
     const labels = [...new Set(types.map(t => MATCH_TYPE_LABELS[t]).filter(Boolean))];
     return labels.length ? labels.join(', ') : 'datos';
+}
+
+// Shared match badge — used both in the confirm grid's inline sub-row (RowView)
+// and the Duplicados triage list, so the ● Idéntico/○ Posible copy never drifts.
+function MatchBadge({ match, isExact }: { match: DuplicateMatch; isExact: boolean }) {
+    const identical = match.matchTypes?.includes('identical');
+    const strong = identical || isExact;
+    return (
+        <span className={strong ? 'text-sky-800' : 'text-stone-600'}>
+            {identical ? '● Idéntico a' : isExact ? '● Duplicado de' : '○ Posible duplicado de'} <span className="font-semibold">{match.adopterName?.trim() || 'Sin nombre'}</span>
+            <span className="text-stone-500"> · {identical ? 'mismos datos' : `${match.relevancePercent}% · coincide en ${matchTypeLabels(match.matchTypes)}`}</span>
+        </span>
+    );
+}
+
+// Shared Actualizar/Crear/Omitir segmented control — same two call sites as MatchBadge.
+function ActionToggle({ action, onAction }: { action: RowAction; onAction: (a: RowAction) => void }) {
+    return (
+        <div className="inline-flex rounded-lg border border-stone-200 overflow-hidden">
+            {(['upsert', 'create', 'skip'] as RowAction[]).map(a => (
+                <button key={a} type="button" onClick={() => onAction(a)}
+                    className={`px-2 py-0.5 ${action === a ? 'bg-teal-600 text-white' : 'bg-white text-stone-600 hover:bg-stone-50'}`}
+                    title={a === 'upsert' ? 'Actualizar el registro existente (merge aditivo)' : a === 'create' ? 'Crear un registro nuevo igual' : 'No importar esta fila'}>
+                    {a === 'upsert' ? 'Actualizar' : a === 'create' ? 'Crear' : 'Omitir'}
+                </button>
+            ))}
+        </div>
+    );
 }
 
 function RowView({ r, editingField, onEditCell, match, action, onAction, failure, onToggle, onChange }: {
@@ -1201,26 +1298,9 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                     <td></td>
                     <td colSpan={8} className="px-3 pb-2">
                         <div className="flex flex-wrap items-center gap-2 text-xs bg-sky-50 border border-sky-100 rounded-lg px-2.5 py-1.5">
-                            {(() => {
-                                const identical = match.matchTypes?.includes('identical');
-                                const strong = identical || isExact;
-                                return (
-                                    <span className={strong ? 'text-sky-800' : 'text-stone-600'}>
-                                        {identical ? '● Idéntico a' : isExact ? '● Duplicado de' : '○ Posible duplicado de'} <span className="font-semibold">{match.adopterName?.trim() || 'Sin nombre'}</span>
-                                        <span className="text-stone-500"> · {identical ? 'mismos datos' : `${match.relevancePercent}% · coincide en ${matchTypeLabels(match.matchTypes)}`}</span>
-                                    </span>
-                                );
-                            })()}
+                            <MatchBadge match={match} isExact={isExact} />
                             <button type="button" onClick={() => window.open(`/adopter/${match.adopterId}`, '_blank', 'noopener,noreferrer')} className="text-teal-700 hover:underline">Abrir ↗</button>
-                            <div className="ml-auto inline-flex rounded-lg border border-stone-200 overflow-hidden">
-                                {(['upsert', 'create', 'skip'] as RowAction[]).map(a => (
-                                    <button key={a} type="button" onClick={() => onAction(a)}
-                                        className={`px-2 py-0.5 ${action === a ? 'bg-teal-600 text-white' : 'bg-white text-stone-600 hover:bg-stone-50'}`}
-                                        title={a === 'upsert' ? 'Actualizar el registro existente (merge aditivo)' : a === 'create' ? 'Crear un registro nuevo igual' : 'No importar esta fila'}>
-                                        {a === 'upsert' ? 'Actualizar' : a === 'create' ? 'Crear' : 'Omitir'}
-                                    </button>
-                                ))}
-                            </div>
+                            <div className="ml-auto"><ActionToggle action={action} onAction={onAction} /></div>
                         </div>
                     </td>
                 </tr>
