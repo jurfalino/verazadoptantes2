@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.36.0] - 2026-08-17
+
+### Changed — duplicate search is now a mandatory step + review-grid polish
+
+- **Duplicate search is a mandatory Step 3.** The flow is now **Subir → Revisar → Duplicados → Importar**. It was an optional button inside Review that was easy to skip — on an anti-duplicate tool, skipping it is exactly the wrong default. Now Review's button is **"Continuar a duplicados →"**, and the only "Importar" lives at the end of the Duplicados step, so you can't import without passing it.
+  - The step **auto-runs the scan on entry** (progress bar), then shows a **focused triage of only the matches** — each with the existing-record link and the Actualizar / Crear / Omitir choice; the other records auto-create.
+  - The pre-import confirmation is **folded into the step's summary** (create / update / skip · públicos/protegidos), so the separate confirm modal is gone — one fewer click.
+  - Clean states for **0 matches** ("no encontramos duplicados — se crearán como nuevos") and **incomplete search** (warning + "Volver a analizar"); editing in Review and returning re-analyzes.
+- **Review grid polish:** every row now shows its **source spreadsheet row number** (`#N`), and the grid **fits its width** (wider container + constrained contact column + truncated name/animal with tooltips) so it no longer scrolls in two directions on desktop — just vertical, with the sticky header.
+
 ## [2.35.0] - 2026-08-17
 
 ### Changed — import preview is now an editable spreadsheet grid
