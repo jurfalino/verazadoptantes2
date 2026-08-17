@@ -322,6 +322,19 @@ export default function SpreadsheetImportWizard() {
     const selectedInvalid = records.filter(r => r.selected && r.built.errors.length > 0).length;
     const selectedWarnings = records.filter(r => r.selected && r.built.errors.length === 0 && r.built.warnings.length > 0).length;
 
+    // How each selected, importable row will be saved (público vs protegido), so the user
+    // sees the consequence BEFORE importing. Mirrors buildBatchRow's rule: explicit
+    // per-row/bulk choice wins, else anonymous→público / named→protegido.
+    const visibilityCounts = useMemo(() => {
+        let publicCount = 0, protectedCount = 0;
+        for (const r of importable) {
+            const isAnon = !r.eff.name?.trim();
+            const pub = r.eff.isPublic !== undefined ? r.eff.isPublic : isAnon;
+            if (pub) publicCount++; else protectedCount++;
+        }
+        return { publicCount, protectedCount };
+    }, [importable]);
+
     // Look for an existing adopter that matches each selected row, reusing the
     // same duplicate engine the manual form uses (findAdopters, mode 'duplicate').
     // Opt-in (a button), like AI interpretation — 1 lightweight lookup per row,
@@ -828,6 +841,12 @@ export default function SpreadsheetImportWizard() {
                             )}
                             <span className="text-sm text-stone-500 ml-auto">Mostrando {filtered.length} de {records.length} · {importable.length} se importarán{selectedWarnings > 0 && <span className="text-amber-600"> · {selectedWarnings} con advertencias</span>}{selectedInvalid > 0 && <span className="text-rose-500"> · {selectedInvalid} con errores</span>}</span>
                         </div>
+                        {/* Explainer for the visibility toggle above, with a running count so the
+                            público/protegido consequence is visible BEFORE importing. */}
+                        <p className="text-xs text-stone-500 mt-1">
+                            <b style={{ color: 'var(--status-sky-text)' }}>Público</b> = cualquiera puede encontrar este registro al buscar. <b>Protegido</b> = solo vos, tu grupo y administradores.
+                            {' '}Se importarán <b style={{ color: 'var(--status-sky-text)' }}>{visibilityCounts.publicCount} públicos</b> y <b className="text-stone-600">{visibilityCounts.protectedCount} protegidos</b>.
+                        </p>
                     </div>
 
                     <div className="border border-stone-200 rounded-xl overflow-hidden">
@@ -991,6 +1010,8 @@ function RowView({ r, editing, match, action, onAction, failure, onToggle, onEdi
     const warned = built.warnings.length > 0;
     // Effective visibility shown to the reviewer: anonymous rows default público,
     // named rows default protegido, unless overridden per-row or in bulk.
+    // PRODUCT: anon-rows-default-to-público is the intended showcase behavior today;
+    // flipping this default to protected-by-default is a product decision, not made here.
     const isAnon = !eff.name?.trim();
     const isPublicEff = eff.isPublic ?? isAnon;
     return (
@@ -1004,7 +1025,10 @@ function RowView({ r, editing, match, action, onAction, failure, onToggle, onEdi
                         error label is reserved for a row that is actually invalid
                         (no name AND no contact). */}
                     {eff.name || <span className={`italic ${invalid ? 'text-rose-500' : 'text-stone-400'}`}>{invalid ? 'falta' : 'Sin nombre'}</span>}
-                    <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-semibold align-middle ${isPublicEff ? 'bg-emerald-50 text-emerald-700' : 'bg-stone-100 text-stone-500'}`}>
+                    <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-semibold align-middle"
+                        style={isPublicEff
+                            ? { backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }
+                            : { backgroundColor: 'var(--surface-muted)', color: 'var(--text-muted)' }}>
                         {isPublicEff ? 'Público' : 'Protegido'}
                     </span>
                 </td>
