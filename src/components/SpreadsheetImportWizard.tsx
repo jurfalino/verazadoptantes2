@@ -229,9 +229,10 @@ export default function SpreadsheetImportWizard() {
         const rows = resumable.rows.filter(r => failedIdx.has(r.index));
         if (!rows.length) return;
         cancelRef.current = false; setCancelled(false); setCancelling(false);
-        // Keep the full run in view: pass every current result as prior, and the ORIGINAL
-        // total so the tally/counters don't collapse to just the retried rows.
-        try { await sendBatches(resumable.runId, rows, resumable.total, [], resumable.names, results); }
+        // Keep the full run in view: pass every current result as prior so the results
+        // list/final counts don't collapse to just the retried rows. Progress/cancel below
+        // track only this retry batch (see sendBatches).
+        try { await sendBatches(resumable.runId, rows, [], resumable.names, results); }
         catch (e) {
             setError(e instanceof Error ? e.message : 'La importación se interrumpió.');
             setImportDone(true); setCancelling(false);
@@ -404,19 +405,21 @@ export default function SpreadsheetImportWizard() {
     // rows already created under this runId are no-ops (deterministic ids), so a
     // resume only creates what's missing.
     const sendBatches = async (
-        runId: string, toSend: ImportBatchRow[], total: number,
+        runId: string, toSend: ImportBatchRow[],
         preResults: RowResult[], nameByIndex: Record<number, string>,
         priorResults: RowResult[] = [],
     ) => {
         setStep('import'); setImportDone(false); setFailureByIndex({});
         const acc = new Map<number, RowResult>();
-        // Seed with the already-known results from the original run (retry/resume), so the
-        // results view keeps the full picture and counts don't collapse to the subset.
+        // Prior results (retry/resume) seed the RESULTS VIEW + final counts so the whole
+        // run stays visible; the live result for a re-sent index overwrites its prior entry.
         for (const p of priorResults) acc.set(p.index, p);
         for (const p of preResults) acc.set(p.index, p);
-        // `total` reflects the WHOLE run (not just the re-sent subset); `done` counts every
-        // row already accounted for (prior + skips), so progress reads e.g. 780/800 → 800/800.
-        let done = acc.size;
+        // Progress + the cancel guard track THIS send operation (toSend + this call's skips),
+        // NOT the accumulated run — otherwise a retry seeded with prior results reads as
+        // already-100%-done and `done < total` can't detect an interrupted retry.
+        const total = toSend.length + preResults.length;
+        let done = preResults.length;
         setProgress({ done, total });
         setResults([...acc.values()].sort((a, b) => a.index - b.index));
         importStartRef.current = Date.now();
@@ -535,7 +538,7 @@ export default function SpreadsheetImportWizard() {
             const snapshot: ResumeSnapshot = { runId, fileName, total: targets.length, rows: toSend, names: nameByIndex };
             try { localStorage.setItem(RESUME_KEY, JSON.stringify(snapshot)); } catch { /* quota — resume just won't be available */ }
             setResumable(snapshot);
-            await sendBatches(runId, toSend, targets.length, preResults, nameByIndex);
+            await sendBatches(runId, toSend, preResults, nameByIndex);
         } catch (e) {
             // Last-resort terminal state — never leave the screen stuck on "Importando…".
             // Row-level failures are already handled resiliently inside sendBatches.
@@ -559,7 +562,7 @@ export default function SpreadsheetImportWizard() {
             // On a cancel-resume the current `results` already hold what got created; keep them so
             // resume shows the whole run, not just the re-sent rows. On a refresh-resume `results`
             // is empty (fresh mount) — harmless.
-            await sendBatches(snap.runId, snap.rows, snap.total, [], snap.names, results);
+            await sendBatches(snap.runId, snap.rows, [], snap.names, results);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'La importación se interrumpió.');
             setImportDone(true); setCancelling(false);
