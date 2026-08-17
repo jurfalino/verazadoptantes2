@@ -80,7 +80,7 @@ async function createImportedAdopter(db: NonNullable<Db>, actor: string, country
     // so a mid-row Worker kill or a withDbRetry re-run re-attempts only the writes that
     // didn't commit — instead of the old all-or-nothing `if (!existing)` gate that could
     // skip the activity forever (adopter with no activity → no rating; orphan animal).
-    const entries = deserializeContactEntries(row.contactEntries);
+    const entries = deserializeContactEntries(row.contactEntries).map(e => ({ ...e, addedBy: e.addedBy ?? actor }));
     const contactInfoStr = contactEntriesToBlob(entries) || null;
     await db.insert(adopters).values({
         id: newId,
