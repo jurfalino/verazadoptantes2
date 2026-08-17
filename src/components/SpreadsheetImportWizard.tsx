@@ -7,12 +7,30 @@ import { isExactIdentifierMatch } from '@/domain/importMerge';
 import { computeContentFingerprint } from '@/domain/contentFingerprint';
 import { formatDateTimeFull } from '@/lib/dates';
 import { buildImportBody } from '@/lib/importRow';
+import { deserializeContactEntries } from '@/lib/contactEntries';
 import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType } from '@/domain/importRow';
 import {
     TARGET_IMPORT_FIELDS, COMBINED_CONTACT, IGNORE,
     applyColumnMap, emptyMappedRow, guessColumnMap,
     type ColumnMap, type MappedRow,
 } from '@/domain/importFields';
+
+// Group an import row's POST-SPLIT contact entries (combined_contact cells are split
+// inside buildImportBody) so duplicate detection sees the same contacts that will be
+// saved — not the pre-split eff.* arrays (which omit combined_contact values).
+function splitGroupedContacts(eff: MappedRow): { phones: string[]; emails: string[]; socials: string[]; ids: string[]; addresses: string[] } {
+    const g = { phones: [] as string[], emails: [] as string[], socials: [] as string[], ids: [] as string[], addresses: [] as string[] };
+    const built = buildImportBody(eff);
+    for (const e of deserializeContactEntries(built.body?.contactEntries ?? '[]')) {
+        const v = e.value?.trim(); if (!v) continue;
+        if (e.type === 'phone') g.phones.push(v);
+        else if (e.type === 'email') g.emails.push(v);
+        else if (e.type === 'social') g.socials.push(v);
+        else if (e.type === 'id') g.ids.push(v);
+        else if (e.type === 'address') g.addresses.push(v);
+    }
+    return g;
+}
 
 type RowStatus = 'created' | 'updated' | 'skipped' | 'failed';
 interface RowResult { index: number; name: string; status: RowStatus; message?: string; id?: string }
@@ -323,7 +341,8 @@ export default function SpreadsheetImportWizard() {
         // "actualizar" — never a duplicate — and skips the fuzzy call below.
         const fpByIndex: Record<number, string> = {};
         for (const t of targets) {
-            fpByIndex[t.index] = computeContentFingerprint({ name: t.eff.name, phones: t.eff.phones, emails: t.eff.emails, socials: t.eff.socials, ids: t.eff.dnis, addresses: t.eff.addresses });
+            const g = splitGroupedContacts(t.eff);
+            fpByIndex[t.index] = computeContentFingerprint({ name: t.eff.name, ...g });
         }
         const uniqueFps = Array.from(new Set(Object.values(fpByIndex).filter(Boolean)));
         let idMap: Record<string, { adopterId: string; adopterName: string | null }> = {};
@@ -349,10 +368,11 @@ export default function SpreadsheetImportWizard() {
                     // findAdopters extracts id_number tokens from contactInfo (there's
                     // no structured `dnis` input) — without this a same-DNI record only
                     // matches on name (~50%) and never counts as an exact identifier.
+                    const g = splitGroupedContacts(eff);
                     const res = await findAdopters(
                         {
-                            name: eff.name || undefined, phones: eff.phones, emails: eff.emails, socials: eff.socials,
-                            contactInfo: eff.dnis.length ? eff.dnis.map(d => `DNI ${d}`).join('\n') : undefined,
+                            name: eff.name || undefined, phones: g.phones, emails: g.emails, socials: g.socials,
+                            contactInfo: g.ids.length ? g.ids.map(d => `DNI ${d}`).join('\n') : undefined,
                         },
                         { mode: 'duplicate', limit: 1, minRelevance: 5 },
                     );
