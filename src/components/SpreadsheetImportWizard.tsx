@@ -5,7 +5,7 @@ import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
 import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun } from '@/app/actions';
 import { isExactIdentifierMatch } from '@/domain/importMerge';
 import { computeContentFingerprint } from '@/domain/contentFingerprint';
-import { formatDateTimeFull, formatShortDate } from '@/lib/dates';
+import { formatDateTimeFull } from '@/lib/dates';
 import { buildImportBody } from '@/lib/importRow';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType } from '@/domain/importRow';
@@ -78,6 +78,15 @@ function speciesOptionValue(raw: string | undefined): string {
     if (!norm) return '';
     const canon = norm.toLowerCase();
     return SPECIES_OPTIONS.some(o => o.v === canon) ? canon : 'other';
+}
+// Format a normalized YYYY-MM-DD import date for display WITHOUT constructing a Date
+// (new Date("2015-06-01") is UTC-midnight → shows a day early in UTC-negative zones).
+const IMPORT_MONTHS_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+function formatImportDate(ymd: string | null): string {
+    if (!ymd) return '';
+    const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return ymd;
+    return `${+m[3]} ${IMPORT_MONTHS_ES[+m[2] - 1]} ${m[1]}`; // e.g. "1 jun 2015"
 }
 
 type Step = 'upload' | 'confirm' | 'import';
@@ -1167,7 +1176,7 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                     <InlineCell {...cellProps('date')} kind="date" ariaLabel="Editar fecha"
                         value={normDate ?? ''} onCommit={v => onChange({ date: v || undefined })}
                         display={
-                            normDate ? formatShortDate(normDate)
+                            normDate ? formatImportDate(normDate)
                                 : dateUnparseable ? <span className="text-amber-700">{eff.date} <span title={built.warnings.join(' ')}>⚠</span></span>
                                     : <span className="text-stone-400">—</span>
                         } />
