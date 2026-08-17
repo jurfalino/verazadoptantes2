@@ -129,6 +129,9 @@ export default function SpreadsheetImportWizard() {
     // match; absent = not checked yet), and the per-row create/upsert/skip choice.
     const [matches, setMatches] = useState<Record<number, DuplicateMatch | null>>({});
     const [rowAction, setRowAction] = useState<Record<number, RowAction>>({});
+    // Pre-import confirmation summary (create/update/skip + público/protegido) — gates the
+    // actual write so auto-upsert rows (mutating existing records) aren't committed blind.
+    const [confirmOpen, setConfirmOpen] = useState(false);
     const [detecting, setDetecting] = useState(false);
     const [detectProgress, setDetectProgress] = useState({ done: 0, total: 0 });
     const [detectionDone, setDetectionDone] = useState(false);
@@ -334,6 +337,17 @@ export default function SpreadsheetImportWizard() {
         }
         return { publicCount, protectedCount };
     }, [importable]);
+
+    // What the import will actually DO, so the commit is informed (esp. the auto-upsert rows
+    // that mutate existing records). Mirrors buildBatchRow's action resolution.
+    const importSummary = useMemo(() => {
+        let create = 0, update = 0;
+        for (const r of importable) {
+            const action = rowAction[r.index] ?? 'create';
+            if (action === 'upsert') update++; else create++;
+        }
+        return { create, update, skipCount: records.filter(x => x.selected).length - importable.length };
+    }, [importable, rowAction, records]);
 
     // Look for an existing adopter that matches each selected row, reusing the
     // same duplicate engine the manual form uses (findAdopters, mode 'duplicate').
@@ -883,7 +897,7 @@ export default function SpreadsheetImportWizard() {
                     )}
                     <div className="flex justify-between mt-4">
                         <button onClick={reset} className="px-4 py-2 text-sm text-stone-500 hover:text-stone-700">← Empezar de nuevo</button>
-                        <button disabled={importable.length === 0} onClick={runImport} className="px-5 py-2 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700 disabled:opacity-40">
+                        <button disabled={importable.length === 0} onClick={() => setConfirmOpen(true)} className="px-5 py-2 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700 disabled:opacity-40">
                             Importar {importable.length} registros →
                         </button>
                     </div>
@@ -976,6 +990,23 @@ export default function SpreadsheetImportWizard() {
                             </div>
                         </div>
                     )}
+                </div>
+            )}
+            {confirmOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setConfirmOpen(false)}>
+                    <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-lg font-bold text-stone-900">Confirmar importación</h3>
+                        <ul className="text-sm text-stone-700 space-y-1">
+                            <li><b className="text-emerald-700">{importSummary.create}</b> registros nuevos a crear</li>
+                            {importSummary.update > 0 && <li><b className="text-sky-700">{importSummary.update}</b> registros existentes a actualizar (se agregan datos a un registro ya guardado)</li>}
+                            {importSummary.skipCount > 0 && <li><b className="text-amber-700">{importSummary.skipCount}</b> filas omitidas</li>}
+                            <li className="pt-1 border-t border-stone-100"><b className="text-sky-700">{visibilityCounts.publicCount}</b> públicos · <b className="text-stone-700">{visibilityCounts.protectedCount}</b> protegidos</li>
+                        </ul>
+                        <div className="flex justify-end gap-2 pt-2">
+                            <button onClick={() => setConfirmOpen(false)} className="px-4 py-2 text-sm text-stone-600 hover:bg-stone-100 rounded-lg">Cancelar</button>
+                            <button onClick={() => { setConfirmOpen(false); runImport(); }} className="px-5 py-2 text-sm font-semibold text-white bg-teal-600 rounded-lg hover:bg-teal-700">Importar</button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
