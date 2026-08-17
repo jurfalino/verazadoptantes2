@@ -75,47 +75,43 @@ function deterministicAdopterId(runId: string, index: number): string {
 
 async function createImportedAdopter(db: NonNullable<Db>, actor: string, country: string | null, row: ImportBatchRow, runId: string): Promise<string> {
     const newId = deterministicAdopterId(runId, row.index);
-    // Idempotent gate: the adopter's existence marks THIS row (adopter + its one
-    // activity) as already done. A re-sent batch (after a mid-batch Worker throw)
-    // or a withDbRetry re-run therefore never double-creates — the whole row is
-    // skipped. Only tokenization runs unconditionally (it's idempotent — it just
-    // regenerates this adopter's tokens — so a row that died before tokenizing on
-    // a prior attempt still ends up matchable).
-    const existing = await db.select({ id: adopters.id }).from(adopters).where(eq(adopters.id, newId)).get();
-    if (!existing) {
-        // Re-serialize through deserialize so every entry carries an id (matches
-        // the single-create route; downstream per-entry PII ops rely on those ids).
-        const entries = deserializeContactEntries(row.contactEntries);
-        const contactInfoStr = contactEntriesToBlob(entries) || null;
-        await db.insert(adopters).values({
-            id: newId,
-            name: (row.name ?? '').trim(),
-            contactInfo: contactInfoStr,
-            contactEntries: entries.length ? JSON.stringify(entries) : null,
-            familyMembers: null,
-            status: '5',
-            addedBy: actor,
-            sourceUrl: null,
-            country,
-            isPublic: row.isPublic ? 1 : 0,
-            source: 'imported',
-        }).onConflictDoNothing();
-        // The activity — via the same normalized-write path the single-create route uses.
-        await insertRecord(db, {
-            adopterId: newId,
-            animalName: row.adoption.animalName?.trim() || null,
-            species: row.adoption.species || 'other',
-            status: 'completed',
-            rating: row.adoption.rating || 2,
-            recordType: row.adoption.recordType,
-            date: row.adoption.date ? new Date(row.adoption.date) : null,
-            sourceUrl: null,
-            details: row.adoption.details || null,
-            neutered: row.adoption.neutered ?? null,
-            age: row.adoption.age || null,
-            onBehalfOf: row.adoption.onBehalfOf || null,
-        }, actor);
-    }
+    // Each write is INDEPENDENTLY idempotent (deterministic ids + onConflictDoNothing),
+    // so a mid-row Worker kill or a withDbRetry re-run re-attempts only the writes that
+    // didn't commit — instead of the old all-or-nothing `if (!existing)` gate that could
+    // skip the activity forever (adopter with no activity → no rating; orphan animal).
+    const entries = deserializeContactEntries(row.contactEntries);
+    const contactInfoStr = contactEntriesToBlob(entries) || null;
+    await db.insert(adopters).values({
+        id: newId,
+        name: (row.name ?? '').trim(),
+        contactInfo: contactInfoStr,
+        contactEntries: entries.length ? JSON.stringify(entries) : null,
+        familyMembers: null,
+        status: '5',
+        addedBy: actor,
+        sourceUrl: null,
+        country,
+        isPublic: row.isPublic ? 1 : 0,
+        source: 'imported',
+    }).onConflictDoNothing();
+    // Deterministic activity id keyed on (runId,index) so a retry is a DB no-op, not a
+    // duplicate activity — and so a prior attempt that stranded the adopter still gets
+    // its activity written on the next attempt.
+    await insertRecord(db, {
+        id: `${newId}-act`,
+        adopterId: newId,
+        animalName: row.adoption.animalName?.trim() || null,
+        species: row.adoption.species || 'other',
+        status: 'completed',
+        rating: row.adoption.rating || 2,
+        recordType: row.adoption.recordType,
+        date: row.adoption.date ? new Date(row.adoption.date) : null,
+        sourceUrl: null,
+        details: row.adoption.details || null,
+        neutered: row.adoption.neutered ?? null,
+        age: row.adoption.age || null,
+        onBehalfOf: row.adoption.onBehalfOf || null,
+    }, actor);
     await tokenizeAdopter(newId);
     return newId;
 }
