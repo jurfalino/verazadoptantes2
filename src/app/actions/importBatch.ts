@@ -32,6 +32,7 @@ export interface ImportBatchRow {
         animalName: string | null; species: string | null; recordType: string;
         rating: number | null; date: string | null; details: string | null; onBehalfOf: string | null;
         neutered?: number | null; age?: string | null;
+        sex?: string | null; color?: string | null; microchip?: string | null;
     };
     isPublic?: boolean;
     matchedAdopterId?: string | null;
@@ -110,6 +111,9 @@ async function createImportedAdopter(db: NonNullable<Db>, actor: string, country
         details: row.adoption.details || null,
         neutered: row.adoption.neutered ?? null,
         age: row.adoption.age || null,
+        sex: row.adoption.sex || null,
+        color: row.adoption.color || null,
+        microchip: row.adoption.microchip || null,
         onBehalfOf: row.adoption.onBehalfOf || null,
     }, actor);
     await tokenizeAdopter(newId);

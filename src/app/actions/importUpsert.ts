@@ -34,6 +34,7 @@ export interface ImportUpsertInput {
         animalName: string | null; species: string | null; recordType: string;
         rating: number | null; date: string | null; details: string | null; onBehalfOf: string | null;
         neutered?: number | null; age?: string | null;
+        sex?: string | null; color?: string | null; microchip?: string | null;
     };
 }
 
@@ -128,6 +129,9 @@ export async function upsertImportRecord(input: ImportUpsertInput): Promise<Impo
                 onBehalfOf: input.adoption.onBehalfOf,
                 neutered: input.adoption.neutered ?? null,
                 age: input.adoption.age ?? null,
+                sex: input.adoption.sex ?? null,
+                color: input.adoption.color ?? null,
+                microchip: input.adoption.microchip ?? null,
             });
         }
 
