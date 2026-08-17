@@ -331,22 +331,25 @@ export default function SpreadsheetImportWizard() {
     const visibilityCounts = useMemo(() => {
         let publicCount = 0, protectedCount = 0;
         for (const r of importable) {
+            if ((rowAction[r.index] ?? 'create') === 'skip') continue;
             const isAnon = !r.eff.name?.trim();
             const pub = r.eff.isPublic !== undefined ? r.eff.isPublic : isAnon;
             if (pub) publicCount++; else protectedCount++;
         }
         return { publicCount, protectedCount };
-    }, [importable]);
+    }, [importable, rowAction]);
 
     // What the import will actually DO, so the commit is informed (esp. the auto-upsert rows
     // that mutate existing records). Mirrors buildBatchRow's action resolution.
     const importSummary = useMemo(() => {
-        let create = 0, update = 0;
+        let create = 0, update = 0, skipByAction = 0;
         for (const r of importable) {
             const action = rowAction[r.index] ?? 'create';
-            if (action === 'upsert') update++; else create++;
+            if (action === 'upsert') update++;
+            else if (action === 'skip') skipByAction++;
+            else create++;
         }
-        return { create, update, skipCount: records.filter(x => x.selected).length - importable.length };
+        return { create, update, skipCount: (records.filter(x => x.selected).length - importable.length) + skipByAction };
     }, [importable, rowAction, records]);
 
     // Look for an existing adopter that matches each selected row, reusing the
@@ -1001,6 +1004,9 @@ export default function SpreadsheetImportWizard() {
                             {importSummary.update > 0 && <li><b className="text-sky-700">{importSummary.update}</b> registros existentes a actualizar (se agregan datos a un registro ya guardado)</li>}
                             {importSummary.skipCount > 0 && <li><b className="text-amber-700">{importSummary.skipCount}</b> filas omitidas</li>}
                             <li className="pt-1 border-t border-stone-100"><b className="text-sky-700">{visibilityCounts.publicCount}</b> públicos · <b className="text-stone-700">{visibilityCounts.protectedCount}</b> protegidos</li>
+                            {detectionDegraded && (
+                                <li className="text-amber-700">⚠ La búsqueda de duplicados no se completó — puede haber duplicados sin detectar.</li>
+                            )}
                         </ul>
                         <div className="flex justify-end gap-2 pt-2">
                             <button onClick={() => setConfirmOpen(false)} className="px-4 py-2 text-sm text-stone-600 hover:bg-stone-100 rounded-lg">Cancelar</button>
