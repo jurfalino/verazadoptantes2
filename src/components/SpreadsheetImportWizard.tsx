@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
-import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun } from '@/app/actions';
+import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, getMatchContext, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun, type MatchContext } from '@/app/actions';
 import { isExactIdentifierMatch } from '@/domain/importMerge';
 import { computeContentFingerprint } from '@/domain/contentFingerprint';
 import { formatDateTimeFull } from '@/lib/dates';
@@ -45,8 +45,10 @@ const PREV_STATUS_STYLE: Record<string, string> = {
     skipped: 'bg-amber-50 text-amber-700', failed: 'bg-rose-50 text-rose-700',
 };
 /** Per-row choice on the duplicate-aware import: create a new record, update the
- *  matched existing one (upsert), or skip. */
-type RowAction = 'create' | 'upsert' | 'skip';
+ *  matched existing one (upsert), skip, or (weak matches only) 'review' — an
+ *  unresolved default that blocks import until the user picks a real action, so
+ *  nothing weak is ever silently created. */
+type RowAction = 'create' | 'upsert' | 'skip' | 'review';
 
 /** Snapshot persisted to localStorage so a refresh mid-import can resume. */
 interface ResumeSnapshot {
@@ -142,6 +144,11 @@ export default function SpreadsheetImportWizard() {
     // match; absent = not checked yet), and the per-row create/upsert/skip choice.
     const [matches, setMatches] = useState<Record<number, DuplicateMatch | null>>({});
     const [rowAction, setRowAction] = useState<Record<number, RowAction>>({});
+    // "Por qué" expansion on the Duplicados triage row: which row (by index) is
+    // expanded, and a per-adopterId cache of the presence-only match context so
+    // re-expanding a row (or two rows matching the same adopter) never refetches.
+    const [expandedMatchRow, setExpandedMatchRow] = useState<number | null>(null);
+    const [matchContexts, setMatchContexts] = useState<Record<string, MatchContext | 'loading' | 'error'>>({});
     const [detecting, setDetecting] = useState(false);
     const [detectProgress, setDetectProgress] = useState({ done: 0, total: 0 });
     const [detectionDone, setDetectionDone] = useState(false);
@@ -352,14 +359,18 @@ export default function SpreadsheetImportWizard() {
     // What the import will actually DO, so the commit is informed (esp. the auto-upsert rows
     // that mutate existing records). Mirrors buildBatchRow's action resolution.
     const importSummary = useMemo(() => {
-        let create = 0, update = 0, skipByAction = 0;
+        // 'review' rows are unresolved — they're neither a create nor an update yet
+        // (the Importar button is disabled until they're resolved), so they're
+        // counted separately and excluded from the "a crear" bucket.
+        let create = 0, update = 0, skipByAction = 0, review = 0;
         for (const r of importable) {
             const action = rowAction[r.index] ?? 'create';
             if (action === 'upsert') update++;
             else if (action === 'skip') skipByAction++;
+            else if (action === 'review') review++;
             else create++;
         }
-        return { create, update, skipCount: (records.filter(x => x.selected).length - importable.length) + skipByAction };
+        return { create, update, review, skipCount: (records.filter(x => x.selected).length - importable.length) + skipByAction };
     }, [importable, rowAction, records]);
 
     // Look for an existing adopter that matches each selected row, reusing the
@@ -419,9 +430,12 @@ export default function SpreadsheetImportWizard() {
                     const dup = (res.results as DuplicateMatch[]) ?? [];
                     const top = dup[0] ?? null;
                     found[index] = top;
-                    // High confidence (exact identifier) defaults to "actualizar";
-                    // a weaker match still surfaces but defaults to "crear" (review).
-                    actions[index] = top && isExactIdentifierMatch(top.matchTypes) ? 'upsert' : 'create';
+                    // High confidence (exact identifier) defaults to "actualizar"; a
+                    // weaker match (e.g. name-only) defaults to 'review' — unresolved,
+                    // NOT 'create' — so it can't be silently imported as a duplicate.
+                    // No match at all (top === null) isn't shown in triage and imports
+                    // as new, so 'create' here is inert.
+                    actions[index] = top ? (isExactIdentifierMatch(top.matchTypes) ? 'upsert' : 'review') : 'create';
                 } catch {
                     found[index] = null; actions[index] = 'create';
                     detectionHadError = true;
@@ -448,7 +462,12 @@ export default function SpreadsheetImportWizard() {
             try { built = buildImportBody(eff, await aiCleanRowContacts(eff.combinedContacts.join('\n'))); } catch { /* keep deterministic */ }
         }
         const match = matches[index];
-        const action = rowAction[index] ?? 'create';
+        const chosen = rowAction[index] ?? 'create';
+        // Defensive backstop: the Importar gate already blocks sending while any row
+        // is unresolved 'review', but a stray 'review' must NEVER be treated as
+        // create here either — map it to 'skip' (import nothing) so nothing weak
+        // can reach the server as a create.
+        const action: 'create' | 'upsert' | 'skip' = chosen === 'review' ? 'skip' : chosen;
         const name = (action === 'upsert' && match?.adopterName) || built.body?.name || eff.name || `Fila ${index + 1}`;
         if (built.errors.length || !built.body) {
             return { pre: { index, name: eff.name || `Fila ${index + 1}`, status: 'skipped', message: built.errors.join(' ') }, name };
@@ -658,7 +677,7 @@ export default function SpreadsheetImportWizard() {
         return Math.round((elapsed / processed) * remainingRows);
     })();
     const fmtEta = (ms: number) => { const s = Math.ceil(ms / 1000); return s < 60 ? `~${s} s` : `~${Math.ceil(s / 60)} min`; };
-    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); };
+    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); };
 
     // Duplicados step (Step 3): the focused triage is ONLY the selected rows that
     // actually matched something — everything else auto-creates, so it never
@@ -666,6 +685,9 @@ export default function SpreadsheetImportWizard() {
     const matchedRows = records.filter(r => r.selected && matches[r.index]);
     const analyzedCount = records.filter(r => r.selected).length;
     const newCount = analyzedCount - matchedRows.length;
+    // Weak matches default to 'review' (unresolved) — count them so the Importar
+    // button can be gated and the summary can prompt the user to resolve them.
+    const reviewCount = matchedRows.filter(r => (rowAction[r.index] ?? 'create') === 'review').length;
     // Bulk affordance: apply one action to every identical/exact match at once
     // (weaker "possible" matches are left for individual review).
     const applyToAllIdentical = (a: RowAction) => {
@@ -677,6 +699,28 @@ export default function SpreadsheetImportWizard() {
             }
             return next;
         });
+    };
+    // Bulk-resolve every unresolved 'review' row at once — the quick-actions next
+    // to the "⚠ N requieren tu decisión" summary line.
+    const resolveAllReview = (a: 'create' | 'skip') => {
+        setRowAction(prev => {
+            const next = { ...prev };
+            for (const row of matchedRows) {
+                if ((prev[row.index] ?? 'create') === 'review') next[row.index] = a;
+            }
+            return next;
+        });
+    };
+    // Expand/collapse a triage row's "por qué" panel; fetch the presence-only
+    // match context lazily on first expand, cached per adopterId.
+    const toggleMatchExpand = (rowIndex: number, adopterId: string) => {
+        setExpandedMatchRow(prev => prev === rowIndex ? null : rowIndex);
+        if (!(adopterId in matchContexts)) {
+            setMatchContexts(prev => ({ ...prev, [adopterId]: 'loading' }));
+            getMatchContext(adopterId)
+                .then(ctx => setMatchContexts(prev => ({ ...prev, [adopterId]: ctx })))
+                .catch(() => setMatchContexts(prev => ({ ...prev, [adopterId]: 'error' })));
+        }
     };
 
     return (
@@ -983,6 +1027,16 @@ export default function SpreadsheetImportWizard() {
                                 </div>
                             )}
 
+                            {reviewCount > 0 && (
+                                <div className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800 flex flex-wrap items-center justify-between gap-2">
+                                    <span>⚠ {reviewCount} {reviewCount === 1 ? 'coincidencia requiere' : 'coincidencias requieren'} tu decisión</span>
+                                    <div className="flex flex-shrink-0 items-center gap-3">
+                                        <button onClick={() => resolveAllReview('create')} className="font-semibold text-amber-800 underline hover:no-underline">Crear todas como nuevas</button>
+                                        <button onClick={() => resolveAllReview('skip')} className="font-semibold text-amber-800 underline hover:no-underline">Omitir todas</button>
+                                    </div>
+                                </div>
+                            )}
+
                             {matchedRows.length === 0 && !detectionDegraded ? (
                                 <div className="p-4 rounded-xl border border-stone-200 text-sm text-stone-600">
                                     No encontramos duplicados. Los {analyzedCount} registros se crearán como nuevos.
@@ -1006,17 +1060,71 @@ export default function SpreadsheetImportWizard() {
                                         {matchedRows.map(row => {
                                             const match = matches[row.index]!;
                                             const isExact = isExactIdentifierMatch(match.matchTypes);
+                                            const expanded = expandedMatchRow === row.index;
+                                            const ctx = matchContexts[match.adopterId];
+                                            const importedChips: Array<{ t: string; v: string }> = [
+                                                ...row.eff.phones.map(v => ({ t: 'Tel', v })),
+                                                ...row.eff.emails.map(v => ({ t: 'Email', v })),
+                                                ...row.eff.socials.map(v => ({ t: 'Red', v })),
+                                                ...row.eff.dnis.map(v => ({ t: 'DNI', v })),
+                                                ...row.eff.addresses.map(v => ({ t: 'Dir', v })),
+                                            ];
                                             return (
-                                                <div key={row.index} className="px-4 py-2.5 flex flex-wrap items-center gap-2 text-sm">
-                                                    <span className="text-stone-400 text-xs tabular-nums flex-shrink-0">#{row.index + 1}</span>
-                                                    <span className="font-medium text-stone-800 min-w-0 truncate max-w-[220px]" title={row.eff.name || undefined}>
-                                                        {row.eff.name || <span className="italic text-stone-400">Sin nombre</span>}
-                                                    </span>
-                                                    <div className="flex flex-wrap items-center gap-2 text-xs bg-sky-50 border border-sky-100 rounded-lg px-2.5 py-1.5 flex-1 min-w-[280px]">
-                                                        <MatchBadge match={match} isExact={isExact} />
-                                                        <button type="button" onClick={() => window.open(`/adopter/${match.adopterId}`, '_blank', 'noopener,noreferrer')} className="text-teal-700 hover:underline">Abrir ↗</button>
-                                                        <div className="ml-auto"><ActionToggle action={rowAction[row.index] ?? 'create'} onAction={a => setRowAction(prev => ({ ...prev, [row.index]: a }))} /></div>
+                                                <div key={row.index}>
+                                                    <div className="px-4 py-2.5 flex flex-wrap items-center gap-2 text-sm">
+                                                        <button type="button" onClick={() => toggleMatchExpand(row.index, match.adopterId)}
+                                                            aria-expanded={expanded} aria-label="Ver por qué coincidió"
+                                                            className="text-stone-400 hover:text-stone-600 flex-shrink-0 w-4 text-center">{expanded ? '▾' : '▸'}</button>
+                                                        <span className="text-stone-400 text-xs tabular-nums flex-shrink-0">#{row.index + 1}</span>
+                                                        <span className="font-medium text-stone-800 min-w-0 truncate max-w-[220px]" title={row.eff.name || undefined}>
+                                                            {row.eff.name || <span className="italic text-stone-400">Sin nombre</span>}
+                                                        </span>
+                                                        <div className="flex flex-wrap items-center gap-2 text-xs bg-sky-50 border border-sky-100 rounded-lg px-2.5 py-1.5 flex-1 min-w-[280px]">
+                                                            <MatchBadge match={match} isExact={isExact} />
+                                                            <button type="button" onClick={() => window.open(`/adopter/${match.adopterId}`, '_blank', 'noopener,noreferrer')} className="text-teal-700 hover:underline">Abrir ↗</button>
+                                                            <div className="ml-auto"><ActionToggle action={rowAction[row.index] ?? 'create'} onAction={a => setRowAction(prev => ({ ...prev, [row.index]: a }))} /></div>
+                                                        </div>
                                                     </div>
+                                                    {expanded && (
+                                                        <div className="px-4 pb-3 pl-11">
+                                                            <div className="rounded-lg border border-stone-200 bg-stone-50/60 p-3 text-xs space-y-2.5">
+                                                                <div>
+                                                                    <span className="text-stone-500">Coincidió en: </span>
+                                                                    <span className="font-medium text-stone-700">{matchTypeLabels(match.matchTypes)}</span>
+                                                                </div>
+                                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                                    <div>
+                                                                        <div className="text-stone-400 uppercase tracking-wider text-[10px] mb-1">Tu registro (importado)</div>
+                                                                        <div className="font-medium text-stone-800 mb-1">{row.eff.name || <span className="italic text-stone-400">Sin nombre</span>}</div>
+                                                                        {importedChips.length > 0 ? (
+                                                                            <div className="flex flex-wrap gap-1">
+                                                                                {importedChips.map((c, i) => (
+                                                                                    <span key={i} className="inline-flex items-center gap-1 text-[10px] bg-stone-100 rounded px-1.5 py-0.5 max-w-full">
+                                                                                        <span className="uppercase font-semibold text-stone-400 flex-shrink-0">{c.t}</span>
+                                                                                        <span className="text-stone-700 truncate">{c.v}</span>
+                                                                                    </span>
+                                                                                ))}
+                                                                            </div>
+                                                                        ) : <span className="text-stone-400">Sin contacto</span>}
+                                                                    </div>
+                                                                    <div>
+                                                                        <div className="text-stone-400 uppercase tracking-wider text-[10px] mb-1">Registro existente</div>
+                                                                        <div className="font-medium text-stone-800 mb-1">{match.adopterName?.trim() || 'Sin nombre'}</div>
+                                                                        {ctx === undefined || ctx === 'loading' ? (
+                                                                            <span className="text-stone-400">Cargando…</span>
+                                                                        ) : ctx === 'error' || !ctx.ok ? (
+                                                                            <button type="button" onClick={() => window.open(`/adopter/${match.adopterId}`, '_blank', 'noopener,noreferrer')} className="text-teal-700 hover:underline">Abrir ↗</button>
+                                                                        ) : (
+                                                                            <PresenceBadges has={ctx.has} />
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="pt-1 border-t border-stone-200 text-stone-600">
+                                                                    {explainMatchOneLiner(match, ctx === 'loading' || ctx === 'error' ? undefined : ctx)}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             );
                                         })}
@@ -1028,7 +1136,9 @@ export default function SpreadsheetImportWizard() {
                                 <button onClick={() => setStep('confirm')} className="px-4 py-2 text-sm text-stone-500 hover:text-stone-700">← Volver a revisar</button>
                                 <div className="flex items-center gap-3">
                                     <span className="text-xs text-stone-400">Los {newCount} se crearán como nuevos</span>
-                                    <button disabled={importable.length === 0} onClick={runImport} className="px-5 py-2 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700 disabled:opacity-40">
+                                    <button disabled={importable.length === 0 || reviewCount > 0} onClick={runImport}
+                                        title={reviewCount > 0 ? `Resolvé las ${reviewCount} coincidencias marcadas primero` : undefined}
+                                        className="px-5 py-2 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700 disabled:opacity-40">
                                         Importar {importable.length} →
                                     </button>
                                 </div>
@@ -1130,12 +1240,53 @@ export default function SpreadsheetImportWizard() {
 
 // One record row in the confirmation grid: checkbox + summary, expandable to edit.
 const MATCH_TYPE_LABELS: Record<string, string> = {
-    identical: 'todos los datos', phone: 'teléfono', phone_suffix: 'teléfono', email: 'email', social: 'red social',
-    id_number: 'DNI', address_word: 'dirección', name_full: 'nombre', name_word: 'nombre', name_word_fuzzy: 'nombre',
+    identical: 'todos los datos',
+    phone: 'teléfono', phone_suffix: 'teléfono', like_fallback_contact: 'teléfono',
+    email: 'email', social: 'red social', id_number: 'DNI', address_word: 'dirección',
+    name_full: 'nombre', name_word: 'nombre', name_phonetic: 'nombre', name_word_fuzzy: 'nombre', like_fallback_name: 'nombre',
 };
 function matchTypeLabels(types: string[]): string {
     const labels = [...new Set(types.map(t => MATCH_TYPE_LABELS[t]).filter(Boolean))];
     return labels.length ? labels.join(', ') : 'datos';
+}
+// Signal-type groups used by explainMatchOneLiner below (same token vocabulary
+// isExactIdentifierMatch checks, plus the name-ish family it's compared against).
+const NAME_SIGNAL_TYPES = new Set(['name_full', 'name_word', 'name_phonetic', 'name_word_fuzzy', 'like_fallback_name']);
+const STRONG_SIGNAL_TYPES = new Set(['phone', 'phone_suffix', 'like_fallback_contact', 'email', 'id_number', 'social']);
+
+// One-line, derived explanation of WHY a row matched — composed from the matched
+// signal types plus the existing record's presence-only context (never its values).
+function explainMatchOneLiner(match: DuplicateMatch, ctx: MatchContext | undefined): string {
+    const pct = match.relevancePercent;
+    if (match.matchTypes?.includes('identical')) return 'Coincide en todos los datos — prácticamente seguro que es la misma persona.';
+    const nameOnly = match.matchTypes.length > 0 && match.matchTypes.every(t => NAME_SIGNAL_TYPES.has(t));
+    if (nameOnly) {
+        if (ctx?.ok && !ctx.has.phone && !ctx.has.email) {
+            return `Coincide solo en el nombre (${pct}%). El registro existente no tiene teléfono ni email para comparar — podría ser otra persona con el mismo nombre.`;
+        }
+        return `Coincide solo en el nombre (${pct}%) — revisá el contacto antes de decidir.`;
+    }
+    const strongLabels = [...new Set(match.matchTypes.filter(t => STRONG_SIGNAL_TYPES.has(t)).map(t => MATCH_TYPE_LABELS[t]).filter(Boolean))];
+    if (strongLabels.length) return `Coincide en nombre y ${strongLabels.join(', ')} (${pct}%).`;
+    return `Coincide en ${matchTypeLabels(match.matchTypes)} (${pct}%).`;
+}
+
+// Presence-only badges for the EXISTING record — never renders the actual value,
+// only whether that contact TYPE is present (the record may be protected/another
+// org's). Themed colors only: sky = present, stone = absent.
+function PresenceBadges({ has }: { has: MatchContext['has'] }) {
+    const items: Array<[boolean, string]> = [
+        [has.phone, 'teléfono'], [has.email, 'email'], [has.id, 'DNI'], [has.social, 'red'], [has.address, 'dirección'],
+    ];
+    return (
+        <div className="flex flex-wrap gap-1">
+            {items.map(([present, label]) => (
+                <span key={label} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${present ? 'bg-sky-50 text-sky-700' : 'bg-stone-100 text-stone-400'}`}>
+                    {present ? '✓' : '·'} {label}
+                </span>
+            ))}
+        </div>
+    );
 }
 
 // Shared match badge — used both in the confirm grid's inline sub-row (RowView)
@@ -1152,16 +1303,21 @@ function MatchBadge({ match, isExact }: { match: DuplicateMatch; isExact: boolea
 }
 
 // Shared Actualizar/Crear/Omitir segmented control — same two call sites as MatchBadge.
+// A 'review' action (weak match, unresolved default) highlights NONE of the three
+// segments and shows an amber "⚠ Elegí" hint — picking any segment resolves it.
 function ActionToggle({ action, onAction }: { action: RowAction; onAction: (a: RowAction) => void }) {
     return (
-        <div className="inline-flex rounded-lg border border-stone-200 overflow-hidden">
-            {(['upsert', 'create', 'skip'] as RowAction[]).map(a => (
-                <button key={a} type="button" onClick={() => onAction(a)}
-                    className={`px-2 py-0.5 ${action === a ? 'bg-teal-600 text-white' : 'bg-white text-stone-600 hover:bg-stone-50'}`}
-                    title={a === 'upsert' ? 'Actualizar el registro existente (merge aditivo)' : a === 'create' ? 'Crear un registro nuevo igual' : 'No importar esta fila'}>
-                    {a === 'upsert' ? 'Actualizar' : a === 'create' ? 'Crear' : 'Omitir'}
-                </button>
-            ))}
+        <div className="inline-flex items-center gap-1.5">
+            <div className="inline-flex rounded-lg border border-stone-200 overflow-hidden">
+                {(['upsert', 'create', 'skip'] as const).map(a => (
+                    <button key={a} type="button" onClick={() => onAction(a)}
+                        className={`px-2 py-0.5 ${action === a ? 'bg-teal-600 text-white' : 'bg-white text-stone-600 hover:bg-stone-50'}`}
+                        title={a === 'upsert' ? 'Actualizar el registro existente (merge aditivo)' : a === 'create' ? 'Crear un registro nuevo igual' : 'No importar esta fila'}>
+                        {a === 'upsert' ? 'Actualizar' : a === 'create' ? 'Crear' : 'Omitir'}
+                    </button>
+                ))}
+            </div>
+            {action === 'review' && <span className="text-amber-600 text-xs font-semibold whitespace-nowrap">⚠ Elegí</span>}
         </div>
     );
 }
