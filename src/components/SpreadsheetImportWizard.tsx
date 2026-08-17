@@ -1263,7 +1263,7 @@ function InlineCell({ active, onActivate, onDeactivate, value, onCommit, kind, o
     // that shared blur handler to discard instead of commit.
     const skipCommit = useRef(false);
     const commitOnBlur = () => {
-        if (!skipCommit.current) onCommit(draft);
+        if (!skipCommit.current && draft !== value) onCommit(draft);
         skipCommit.current = false;
         onDeactivate();
     };
