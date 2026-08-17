@@ -12,7 +12,7 @@
  * surfacing as a failed row.
  */
 
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { adopters, userProfiles, users, importRunItems, importRuns } from '@/db/schema';
 import { deserializeContactEntries, contactEntriesToBlob } from '@/lib/contactEntries';
@@ -189,8 +189,24 @@ export async function importAdoptersBatch(rows: ImportBatchRow[], runId: string)
         // ≤8 rows/insert: 12 columns × 8 = 96 bound params, under D1's ~100-per-query
         // limit. (40 rows = 480 params silently failed every audit write — see Axiom
         // "importAdoptersBatch: audit write failed" ×33, and 0 rows in /admin/imports.)
+        // Upsert (not do-nothing): a row that was 'failed' on attempt 1 and 'created' on a
+        // retry must overwrite the stale item, or the admin's item-derived counts lie. Still
+        // ≤8 rows/insert (12 cols × 8 = 96 params < D1's ~100 limit).
         for (let i = 0; i < itemRows.length; i += 8) {
-            await db.insert(importRunItems).values(itemRows.slice(i, i + 8)).onConflictDoNothing();
+            await db.insert(importRunItems).values(itemRows.slice(i, i + 8))
+                .onConflictDoUpdate({
+                    target: importRunItems.id,
+                    set: {
+                        adopterId: sql`excluded.adopter_id`,
+                        action: sql`excluded.action`,
+                        status: sql`excluded.status`,
+                        matchedAdopterId: sql`excluded.matched_adopter_id`,
+                        matchedAdopterName: sql`excluded.matched_adopter_name`,
+                        matchConfidence: sql`excluded.match_confidence`,
+                        message: sql`excluded.message`,
+                        createdAt: sql`excluded.created_at`,
+                    },
+                });
         }
     } catch (e) {
         logger.warn('importAdoptersBatch: audit write failed', { runId, error: e instanceof Error ? e.message : String(e) });
