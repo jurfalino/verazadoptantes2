@@ -49,13 +49,30 @@ export function parseCsvFile(file: File): Promise<ParsedSheet> {
     });
 }
 
+/** Convert one xlsx cell (which read-excel-file may hand back as a Date, number, or
+ *  string) into the string the import pipeline expects. Date cells become ISO
+ *  `YYYY-MM-DD` (using UTC parts — the library builds UTC-midnight Dates, so UTC parts
+ *  avoid the local-timezone day-shift), so the day of month survives instead of being
+ *  coarsened to the 1st by the prose date parser. Plain numbers are NOT treated as date
+ *  serials here (ambiguous with phone/DNI columns); only real Date objects convert.
+ *  Bare numeric serials (e.g. "45458") are handled at the review step, not here. */
+export function xlsxCellToString(cell: unknown): string {
+    if (cell instanceof Date && !Number.isNaN(cell.getTime())) {
+        const y = cell.getUTCFullYear().toString().padStart(4, '0');
+        const m = (cell.getUTCMonth() + 1).toString().padStart(2, '0');
+        const d = cell.getUTCDate().toString().padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
+    return (cell ?? '').toString();
+}
+
 /** Parse an .xlsx File (first sheet) into headers + aligned rows. */
 export async function parseXlsxFile(file: File): Promise<ParsedSheet> {
     const { default: readXlsxFile } = await import('read-excel-file/browser');
     const data = (await readXlsxFile(file)) as unknown as unknown[][]; // rows of cells
     if (!data.length) return { headers: [], rows: [], rowCount: 0 };
     const headers = normalizeHeaders(data[0]);
-    const rows = data.slice(1).map((r) => headers.map((_, i) => (r[i] ?? '').toString()));
+    const rows = data.slice(1).map((r) => headers.map((_, i) => xlsxCellToString(r[i])));
     return { headers, rows, rowCount: rows.length };
 }
 
