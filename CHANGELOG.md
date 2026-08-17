@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.35.0] - 2026-08-17
+
+### Changed — import preview is now an editable spreadsheet grid
+
+The review step (before importing) was a 5-column table that collapsed **animal · especie · tipo · rating · fecha** into one raw, untranslated string and hid the editable fields behind a per-row ✎ expand panel — so verifying or fixing a field meant expanding rows one at a time.
+
+- **One column per field** — Nombre · Contacto · Animal · Especie · Tipo · Rating · Fecha · Visibilidad — with **human-readable, translated** values (Perro / Adopción / 5★ / "1 jun 2015" / Público·Protegido badge), so a whole column can be scanned to catch a mis-mapped field.
+- **Click-any-cell-to-edit inline** — a cell becomes its native control (text / select / date-picker) in place and commits on blur or change; no ✎, no expand mode. Only one control is ever in the DOM at a time (stays light on 800-row imports).
+- **Bulk "a todos"** for Rating and Visibilidad moved onto their column headers.
+- Invalid / warning / failed rows show their message **inline** (a sub-row) instead of behind a click.
+- **Timezone-safe dates** — the Fecha column formats `YYYY-MM-DD` directly (no `new Date()` UTC-midnight shift that showed dates a day early in Buenos Aires).
+- The grid scrolls horizontally on small screens; a full card-per-record mobile layout is a tracked Wave 1c follow-up.
+
 ## [2.34.1] - 2026-08-17
 
 ### Import Wave 1a — server write-path correctness (E9, E10, E11)
