@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.34.1] - 2026-08-17
+
+### Import Wave 1a — server write-path correctness (E9, E10, E11)
+
+Fast-follow to 2.34.0, closing the three highest-value residuals from the import audit:
+
+- **Idempotent upsert (E9):** the "actualizar" path added its activity with a fresh random id every time, so a **resume/retry that re-sent an upsert row double-added the activity** (also on a content-match miss from D1 replica lag or a raw-vs-normalized date). Now the activity uses a **deterministic id** (`impups-<runId>-<index>-act`) so a re-send updates in place / no-ops instead of duplicating, and the incoming date is normalized (`toYmd`) so a genuine re-import content-matches on the fast path. This completes Wave 0's premise — resume/retry are now safe end-to-end.
+- **sex/color/microchip preserved (E10):** these were silently dropped on **both** the create and upsert paths (the row type omitted them even though the data was there). Now carried through to the animal record on both paths.
+- **Per-entry contributor (E11):** imported contact entries on the create path are now stamped with `addedBy` (parity with the upsert path), so the importing contributor can later edit/correct their own imported contacts.
+
+Still deferred to Wave 1b/1c (audit-tracked): E12 (concurrency races), E13 (fingerprint phone/id normalization), E16 (US MM/DD dates), E17 (tests for the untested modules), full wizard i18n, mobile polish, `/import/sheet` auth gate.
+
 ## [2.34.0] - 2026-08-16
 
 ### Import Wave 0 — data-integrity + trust fixes (audit remediation)
