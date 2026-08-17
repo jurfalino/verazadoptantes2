@@ -680,7 +680,7 @@ export default function SpreadsheetImportWizard() {
     };
 
     return (
-        <div className="max-w-5xl mx-auto p-4">
+        <div className="max-w-6xl mx-auto p-4">
             <h1 className="text-2xl font-extrabold text-stone-900 mb-1">Importar adopciones desde planilla</h1>
             <p className="text-sm text-stone-500 mb-6">Subí una planilla (CSV o Excel) en cualquier formato; la IA la interpreta y vos validás/editás los registros antes de importar.</p>
 
@@ -888,6 +888,7 @@ export default function SpreadsheetImportWizard() {
                                 <thead className="bg-stone-50 text-stone-500 text-xs uppercase tracking-wider sticky top-0">
                                     <tr>
                                         <th className="px-2 py-2"></th>
+                                        <th className="px-2 py-2 text-right font-normal text-stone-400">#</th>
                                         <th className="text-left px-3 py-2">Nombre</th>
                                         <th className="text-left px-3 py-2">Contacto</th>
                                         <th className="text-left px-3 py-2">Animal</th>
@@ -1007,6 +1008,7 @@ export default function SpreadsheetImportWizard() {
                                             const isExact = isExactIdentifierMatch(match.matchTypes);
                                             return (
                                                 <div key={row.index} className="px-4 py-2.5 flex flex-wrap items-center gap-2 text-sm">
+                                                    <span className="text-stone-400 text-xs tabular-nums flex-shrink-0">#{row.index + 1}</span>
                                                     <span className="font-medium text-stone-800 min-w-0 truncate max-w-[220px]" title={row.eff.name || undefined}>
                                                         {row.eff.name || <span className="italic text-stone-400">Sin nombre</span>}
                                                     </span>
@@ -1211,6 +1213,7 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
         <>
             <tr className={`border-t border-stone-100 ${!selected ? 'opacity-40' : ''} ${(invalid || failure) ? 'bg-rose-50' : ''}`}>
                 <td className="px-2 py-2 text-center"><input type="checkbox" checked={selected} onChange={onToggle} aria-label="Seleccionar fila" /></td>
+                <td className="px-2 py-2 text-right text-stone-400 text-xs tabular-nums whitespace-nowrap align-top">{r.index + 1}</td>
                 <td className="px-3 py-2 font-medium text-stone-800">
                     <InlineCell {...cellProps('name')} kind="text" ariaLabel="Editar nombre"
                         value={eff.name} onCommit={v => onChange({ name: v })}
@@ -1220,14 +1223,16 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                                (matching the rest of the app), NOT the red "falta" — that red
                                error label is reserved for a row that is actually invalid
                                (no name AND no contact). */
-                            eff.name || <span className={`italic ${invalid ? 'text-rose-500' : 'text-stone-400'}`}>{invalid ? 'falta' : 'Sin nombre'}</span>
+                            eff.name
+                                ? <span className="block truncate max-w-[150px]" title={eff.name}>{eff.name}</span>
+                                : <span className={`italic ${invalid ? 'text-rose-500' : 'text-stone-400'}`}>{invalid ? 'falta' : 'Sin nombre'}</span>
                         } />
                 </td>
                 <td className="px-3 py-2 align-top">
                     {contactChips.length === 0 && eff.combinedContacts.length === 0 ? (
                         <span className="text-stone-400">—</span>
                     ) : (
-                        <div className="flex flex-wrap gap-1 max-w-[360px]">
+                        <div className="flex flex-wrap gap-1 max-w-[210px]">
                             {contactChips.map((c, i) => (
                                 <span key={i} className="inline-flex items-center gap-1 max-w-full text-xs bg-stone-100 rounded px-1.5 py-0.5" title={`${c.t}: ${c.v}`}>
                                     <span className="text-[9px] uppercase font-semibold text-stone-400 flex-shrink-0">{c.t}</span>
@@ -1248,7 +1253,11 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                 <td className="px-3 py-2 text-stone-600">
                     <InlineCell {...cellProps('animalName')} kind="text" ariaLabel="Editar animal"
                         value={eff.animalName ?? ''} onCommit={v => onChange({ animalName: v })}
-                        display={eff.animalName || <span className="text-stone-400">—</span>} />
+                        display={
+                            eff.animalName
+                                ? <span className="block truncate max-w-[110px]" title={eff.animalName}>{eff.animalName}</span>
+                                : <span className="text-stone-400">—</span>
+                        } />
                 </td>
                 <td className="px-3 py-2 text-stone-600">
                     <InlineCell {...cellProps('species')} kind="select" ariaLabel="Editar especie"
@@ -1296,7 +1305,7 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
             {match && (
                 <tr className={!selected ? 'opacity-40' : ''}>
                     <td></td>
-                    <td colSpan={8} className="px-3 pb-2">
+                    <td colSpan={9} className="px-3 pb-2">
                         <div className="flex flex-wrap items-center gap-2 text-xs bg-sky-50 border border-sky-100 rounded-lg px-2.5 py-1.5">
                             <MatchBadge match={match} isExact={isExact} />
                             <button type="button" onClick={() => window.open(`/adopter/${match.adopterId}`, '_blank', 'noopener,noreferrer')} className="text-teal-700 hover:underline">Abrir ↗</button>
@@ -1311,7 +1320,7 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
             {hasIssue && (
                 <tr className={!selected ? 'opacity-40' : ''}>
                     <td></td>
-                    <td colSpan={8} className="px-3 pb-2">
+                    <td colSpan={9} className="px-3 pb-2">
                         <div className={`text-xs space-y-0.5 rounded-lg px-2.5 py-1.5 border ${(invalid || failure) ? 'bg-rose-50 border-rose-100' : 'bg-amber-50 border-amber-100'}`}>
                             {invalid && <div className="text-rose-600">{built.errors.join(' ')}</div>}
                             {failure && <div className="text-rose-700 font-medium">✗ Falló al importar: {failure} — corregí el campo y reintentá.</div>}
