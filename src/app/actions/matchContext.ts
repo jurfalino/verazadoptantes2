@@ -23,7 +23,7 @@ export async function getMatchContext(adopterId: string): Promise<MatchContext> 
     try {
         const db = await getDb();
         if (!db) return empty;
-        const row = await db.select({ name: adopters.name, contactEntries: adopters.contactEntries })
+        const row = await db.select({ name: adopters.name, contactEntries: adopters.contactEntries, contactInfo: adopters.contactInfo })
             .from(adopters).where(eq(adopters.id, adopterId)).get();
         if (!row) return empty;
         const has = { phone: false, email: false, id: false, social: false, address: false };
@@ -35,6 +35,13 @@ export async function getMatchContext(adopterId: string): Promise<MatchContext> 
             else if (e.type === 'social') has.social = true;
             else if (e.type === 'address') has.address = true;
         }
+        // Legacy records may only have contactInfo (free-text blob) with contactEntries
+        // null/empty. Scan it for phone/email presence to avoid false-negative "sin
+        // teléfono/email" badges that would contradict a match found via the blob.
+        // Only presence booleans are derived here — the blob itself is never returned or logged.
+        const blob = (row.contactInfo ?? '').toString();
+        if (!has.phone && /\d[\d\s().-]{6,}/.test(blob)) has.phone = true;
+        if (!has.email && /[^\s@]+@[^\s@]+\.[^\s@]+/.test(blob)) has.email = true;
         return { ok: true, name: row.name, has };
     } catch (e) {
         logger.warn('getMatchContext failed', { adopterId, error: e instanceof Error ? e.message : String(e) });
