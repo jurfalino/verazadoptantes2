@@ -1267,7 +1267,12 @@ function explainMatchOneLiner(match: DuplicateMatch, ctx: MatchContext | undefin
         return `Coincide solo en el nombre (${pct}%) — revisá el contacto antes de decidir.`;
     }
     const strongLabels = [...new Set(match.matchTypes.filter(t => STRONG_SIGNAL_TYPES.has(t)).map(t => MATCH_TYPE_LABELS[t]).filter(Boolean))];
-    if (strongLabels.length) return `Coincide en nombre y ${strongLabels.join(', ')} (${pct}%).`;
+    if (strongLabels.length) {
+        const hasName = match.matchTypes.some(t => NAME_SIGNAL_TYPES.has(t));
+        return hasName
+            ? `Coincide en nombre y ${strongLabels.join(', ')} (${pct}%).`
+            : `Coincide en ${strongLabels.join(', ')} (${pct}%).`;
+    }
     return `Coincide en ${matchTypeLabels(match.matchTypes)} (${pct}%).`;
 }
 
