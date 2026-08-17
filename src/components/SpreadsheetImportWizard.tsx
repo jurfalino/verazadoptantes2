@@ -472,7 +472,11 @@ export default function SpreadsheetImportWizard() {
         setImportDone(true);
         setCancelling(false);
 
-        if (cancelRef.current) {
+        // A cancel only "interrupted" the run if work was actually left unsent. If Cancel
+        // arrived after the last batch already drained (done >= total), the run is complete —
+        // finalize it normally instead of leaving it un-closed and mislabelled 'cancelled'.
+        const trulyCancelled = cancelRef.current && done < total;
+        if (trulyCancelled) {
             // Cancelled: keep the resume snapshot and leave the run open (interrupted)
             // so the user can reanudar to finish the rest later. Refresh the list so
             // the interrupted run shows up with its "Reanudar" affordance.
@@ -480,6 +484,7 @@ export default function SpreadsheetImportWizard() {
             getMyImportRuns().then(setMyRuns).catch(() => { /* best-effort */ });
             return;
         }
+        setCancelled(false);
 
         // Items are recorded per-batch server-side; here we just close the run.
         const counts = {
