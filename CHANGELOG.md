@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.37.1] - 2026-08-17
+
+### Fixed — dedup step: consistency with the review grid + dark theme
+
+- **The Duplicados step now reuses the review grid.** It was a bespoke triage list that showed *less* information than the previous (Revisar) screen and used colours that aren't remapped for dark mode, so it looked broken in the dark theme. It now renders each matched record with the **same grid row as step 2** (all fields visible), and the match "por qué"/presence/decision live in the grid row's match sub-row — one presentation, used by both steps (Nielsen consistency & standards).
+- **Dark-theme colours fixed at the token level:** replaced the non-remapped `border-sky-100` / `bg-emerald-50` / `text-emerald-700` / `bg-stone-50/60` and added the missing `--status-emerald-*` theme variables, so the create-green and the match panels render correctly in "Azul Noche". Also fixed the previous-runs drill-down panel's `bg-stone-50/50` (an opacity variant that wasn't dark-remapped).
+
 ## [2.37.0] - 2026-08-17
 
 ### Added — dedup triage explains "por qué" + flags weak matches for review
