@@ -40,9 +40,14 @@ interface PrevRunItem {
     action: string | null; status: string | null; matchedAdopterId: string | null; message: string | null;
 }
 const PREV_ACTION_LABEL: Record<string, string> = { create: 'Crear', upsert: 'Actualizar', skip: 'Omitir' };
-const PREV_STATUS_STYLE: Record<string, string> = {
-    created: 'bg-emerald-50 text-emerald-700', updated: 'bg-sky-50 text-sky-700',
-    skipped: 'bg-amber-50 text-amber-700', failed: 'bg-rose-50 text-rose-700',
+// Inline CSS-var styles (not classNames) — 'created' has no theme-remapped
+// Tailwind emerald equivalent (see globals.css --status-emerald-*), and the
+// other three are kept as vars too for a single consistent lookup shape.
+const PREV_STATUS_STYLE: Record<string, React.CSSProperties> = {
+    created: { backgroundColor: 'var(--status-emerald-bg)', color: 'var(--status-emerald-text)' },
+    updated: { backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' },
+    skipped: { backgroundColor: 'var(--status-warning-bg)', color: 'var(--status-warning-text)' },
+    failed: { backgroundColor: 'var(--status-error-bg)', color: 'var(--status-error-text)' },
 };
 /** Per-row choice on the duplicate-aware import: create a new record, update the
  *  matched existing one (upsert), skip, or (weak matches only) 'review' — an
@@ -784,7 +789,7 @@ export default function SpreadsheetImportWizard() {
                                             <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${stStyle}`}>{st}</span>
                                             <span className="ml-auto text-xs text-stone-500 flex flex-wrap gap-x-2 gap-y-0.5 justify-end">
                                                 {run.total ? <span className="text-stone-400">{run.total} filas</span> : null}
-                                                <span className="text-emerald-700">{created} creados</span>
+                                                <span style={{ color: 'var(--status-emerald-text)' }}>{created} creados</span>
                                                 {updated > 0 && <span className="text-sky-700">{updated} actualizados</span>}
                                                 {skipped > 0 && <span className="text-amber-700">{skipped} omitidos</span>}
                                                 {failed > 0 && <span className="text-rose-700">{failed} fallidos</span>}
@@ -813,7 +818,12 @@ export default function SpreadsheetImportWizard() {
                                                                     ? <a href={`/adopter/${it.adopterId}`} target="_blank" rel="noopener noreferrer" className="text-teal-700 hover:underline">{it.adopterName?.trim() || 'Sin nombre'}</a>
                                                                     : (it.adopterName?.trim() || <span className="italic text-stone-400">Sin nombre</span>)}
                                                             </span>
-                                                            {it.status && <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0 ${PREV_STATUS_STYLE[it.status] ?? 'bg-stone-100 text-stone-500'}`}>{it.status}</span>}
+                                                            {it.status && (
+                                                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0"
+                                                                    style={PREV_STATUS_STYLE[it.status] ?? { backgroundColor: 'var(--surface-muted)', color: 'var(--text-muted)' }}>
+                                                                    {it.status}
+                                                                </span>
+                                                            )}
                                                             {it.matchedAdopterId && (
                                                                 <a href={`/adopter/${it.matchedAdopterId}`} target="_blank" rel="noopener noreferrer" className="text-xs text-teal-700 hover:underline flex-shrink-0">→ registro existente</a>
                                                             )}
@@ -926,60 +936,12 @@ export default function SpreadsheetImportWizard() {
                     </div>
 
                     {/* TODO(wave1c-mobile): reflow to card-per-record ≤sm (single-DOM CSS reflow) */}
-                    <div className="border border-stone-200 rounded-xl overflow-hidden">
-                        <div className="max-h-[420px] overflow-y-auto overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead className="bg-stone-50 text-stone-500 text-xs uppercase tracking-wider sticky top-0">
-                                    <tr>
-                                        <th className="px-2 py-2"></th>
-                                        <th className="px-2 py-2 text-right font-normal text-stone-400">#</th>
-                                        <th className="text-left px-3 py-2">Nombre</th>
-                                        <th className="text-left px-3 py-2">Contacto</th>
-                                        <th className="text-left px-3 py-2">Animal</th>
-                                        <th className="text-left px-3 py-2">Especie</th>
-                                        <th className="text-left px-3 py-2">Tipo</th>
-                                        <th className="text-left px-3 py-2">
-                                            <div className="flex items-center gap-1">
-                                                <span>Rating</span>
-                                                {/* Bulk "a todos" — controlled value="" so it snaps back after firing. */}
-                                                <select value="" onChange={e => { if (e.target.value) setRatingAll(e.target.value === 'clear' ? '' : e.target.value); }}
-                                                    className="normal-case font-normal text-[11px] border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-500" title="Asignar un rating a todos los registros">
-                                                    <option value="">· a todos</option>
-                                                    {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★ a todos</option>)}
-                                                    <option value="clear">Limpiar rating</option>
-                                                </select>
-                                            </div>
-                                        </th>
-                                        <th className="text-left px-3 py-2">Fecha</th>
-                                        <th className="text-left px-3 py-2">
-                                            <div className="flex items-center gap-1">
-                                                <span>Visibilidad</span>
-                                                <select value="" onChange={e => { if (e.target.value) setVisibilityAll(e.target.value === 'public'); }}
-                                                    className="normal-case font-normal text-[11px] border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-500" title="Asignar visibilidad a todos los registros">
-                                                    <option value="">· a todos</option>
-                                                    <option value="public">Todos públicos</option>
-                                                    <option value="protected">Todos protegidos</option>
-                                                </select>
-                                            </div>
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {filtered.map(r => (
-                                        <RowView key={r.index} r={r}
-                                            editingField={editingCell?.index === r.index ? editingCell.field : null}
-                                            onEditCell={field => setEditingCell(field ? { index: r.index, field } : null)}
-                                            match={r.index in matches ? matches[r.index] : undefined}
-                                            action={rowAction[r.index] ?? 'create'}
-                                            onAction={a => setRowAction(prev => ({ ...prev, [r.index]: a }))}
-                                            failure={failureByIndex[r.index]}
-                                            onToggle={() => toggle(r.index)}
-                                            onChange={patch => setOverride(r.index, patch)} />
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+                    <RecordGrid rows={filtered}
+                        editingCell={editingCell} onEditCell={(index, field) => setEditingCell(field ? { index, field } : null)}
+                        matches={matches} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
+                        failureByIndex={failureByIndex} onToggle={toggle} onChange={setOverride}
+                        expandedMatchRow={expandedMatchRow} matchContexts={matchContexts} onToggleWhy={toggleMatchExpand}
+                        onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} />
 
                     <div className="flex justify-between mt-4">
                         <button onClick={reset} className="px-4 py-2 text-sm text-stone-500 hover:text-stone-700">← Empezar de nuevo</button>
@@ -1012,7 +974,7 @@ export default function SpreadsheetImportWizard() {
                             <div className="mb-3 p-3 rounded-lg bg-teal-50 border border-teal-100 text-sm text-teal-800 flex flex-wrap items-center justify-between gap-2">
                                 <span className="flex flex-wrap items-center gap-x-1">
                                     <span>🔍 {analyzedCount} analizados · {matchedRows.length} coinciden · {newCount} nuevos ·</span>
-                                    <b className="text-emerald-700">{importSummary.create} a crear</b>
+                                    <b style={{ color: 'var(--status-emerald-text)' }}>{importSummary.create} a crear</b>
                                     {importSummary.update > 0 && <>· <b className="text-sky-700">{importSummary.update} a actualizar</b></>}
                                     {importSummary.skipCount > 0 && <>· <b className="text-amber-700">{importSummary.skipCount} omitidas</b></>}
                                     <span>· <b style={{ color: 'var(--status-sky-text)' }}>{visibilityCounts.publicCount} públicos</b> · <b className="text-stone-600">{visibilityCounts.protectedCount} protegidos</b></span>
@@ -1042,8 +1004,8 @@ export default function SpreadsheetImportWizard() {
                                     No encontramos duplicados. Los {analyzedCount} registros se crearán como nuevos.
                                 </div>
                             ) : matchedRows.length > 0 ? (
-                                <div className="border border-stone-200 rounded-xl overflow-hidden">
-                                    <div className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 bg-stone-50 border-b border-stone-100">
+                                <>
+                                    <div className="mb-3 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 bg-stone-50 border border-stone-200 rounded-xl">
                                         <span className="text-xs uppercase tracking-wider text-stone-500">Coincidencias a decidir · {matchedRows.length}</span>
                                         <label className="flex items-center gap-1.5 text-xs text-stone-500">
                                             Aplicar a todos los idénticos:
@@ -1056,80 +1018,16 @@ export default function SpreadsheetImportWizard() {
                                             </select>
                                         </label>
                                     </div>
-                                    <div className="max-h-[420px] overflow-y-auto divide-y divide-stone-100">
-                                        {matchedRows.map(row => {
-                                            const match = matches[row.index]!;
-                                            const isExact = isExactIdentifierMatch(match.matchTypes);
-                                            const expanded = expandedMatchRow === row.index;
-                                            const ctx = matchContexts[match.adopterId];
-                                            const importedChips: Array<{ t: string; v: string }> = [
-                                                ...row.eff.phones.map(v => ({ t: 'Tel', v })),
-                                                ...row.eff.emails.map(v => ({ t: 'Email', v })),
-                                                ...row.eff.socials.map(v => ({ t: 'Red', v })),
-                                                ...row.eff.dnis.map(v => ({ t: 'DNI', v })),
-                                                ...row.eff.addresses.map(v => ({ t: 'Dir', v })),
-                                            ];
-                                            return (
-                                                <div key={row.index}>
-                                                    <div className="px-4 py-2.5 flex flex-wrap items-center gap-2 text-sm">
-                                                        <button type="button" onClick={() => toggleMatchExpand(row.index, match.adopterId)}
-                                                            aria-expanded={expanded} aria-label="Ver por qué coincidió"
-                                                            className="text-stone-400 hover:text-stone-600 flex-shrink-0 w-4 text-center">{expanded ? '▾' : '▸'}</button>
-                                                        <span className="text-stone-400 text-xs tabular-nums flex-shrink-0">#{row.index + 1}</span>
-                                                        <span className="font-medium text-stone-800 min-w-0 truncate max-w-[220px]" title={row.eff.name || undefined}>
-                                                            {row.eff.name || <span className="italic text-stone-400">Sin nombre</span>}
-                                                        </span>
-                                                        <div className="flex flex-wrap items-center gap-2 text-xs bg-sky-50 border border-sky-100 rounded-lg px-2.5 py-1.5 flex-1 min-w-[280px]">
-                                                            <MatchBadge match={match} isExact={isExact} />
-                                                            <button type="button" onClick={() => window.open(`/adopter/${match.adopterId}`, '_blank', 'noopener,noreferrer')} className="text-teal-700 hover:underline">Abrir ↗</button>
-                                                            <div className="ml-auto"><ActionToggle action={rowAction[row.index] ?? 'create'} onAction={a => setRowAction(prev => ({ ...prev, [row.index]: a }))} /></div>
-                                                        </div>
-                                                    </div>
-                                                    {expanded && (
-                                                        <div className="px-4 pb-3 pl-11">
-                                                            <div className="rounded-lg border border-stone-200 bg-stone-50/60 p-3 text-xs space-y-2.5">
-                                                                <div>
-                                                                    <span className="text-stone-500">Coincidió en: </span>
-                                                                    <span className="font-medium text-stone-700">{matchTypeLabels(match.matchTypes)}</span>
-                                                                </div>
-                                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                                                    <div>
-                                                                        <div className="text-stone-400 uppercase tracking-wider text-[10px] mb-1">Tu registro (importado)</div>
-                                                                        <div className="font-medium text-stone-800 mb-1">{row.eff.name || <span className="italic text-stone-400">Sin nombre</span>}</div>
-                                                                        {importedChips.length > 0 ? (
-                                                                            <div className="flex flex-wrap gap-1">
-                                                                                {importedChips.map((c, i) => (
-                                                                                    <span key={i} className="inline-flex items-center gap-1 text-[10px] bg-stone-100 rounded px-1.5 py-0.5 max-w-full">
-                                                                                        <span className="uppercase font-semibold text-stone-400 flex-shrink-0">{c.t}</span>
-                                                                                        <span className="text-stone-700 truncate">{c.v}</span>
-                                                                                    </span>
-                                                                                ))}
-                                                                            </div>
-                                                                        ) : <span className="text-stone-400">Sin contacto</span>}
-                                                                    </div>
-                                                                    <div>
-                                                                        <div className="text-stone-400 uppercase tracking-wider text-[10px] mb-1">Registro existente</div>
-                                                                        <div className="font-medium text-stone-800 mb-1">{match.adopterName?.trim() || 'Sin nombre'}</div>
-                                                                        {ctx === undefined || ctx === 'loading' ? (
-                                                                            <span className="text-stone-400">Cargando…</span>
-                                                                        ) : ctx === 'error' || !ctx.ok ? (
-                                                                            <button type="button" onClick={() => window.open(`/adopter/${match.adopterId}`, '_blank', 'noopener,noreferrer')} className="text-teal-700 hover:underline">Abrir ↗</button>
-                                                                        ) : (
-                                                                            <PresenceBadges has={ctx.has} />
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                                <div className="pt-1 border-t border-stone-200 text-stone-600">
-                                                                    {explainMatchOneLiner(match, ctx === 'loading' || ctx === 'error' ? undefined : ctx)}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
+                                    {/* Same grid/RowView as the Revisar step (see RecordGrid), filtered to just the
+                                        matched rows — the match sub-row + "por qué" panel + action toggle live in
+                                        RowView, so a matched record shows identically here and in Revisar. */}
+                                    <RecordGrid rows={matchedRows}
+                                        editingCell={editingCell} onEditCell={(index, field) => setEditingCell(field ? { index, field } : null)}
+                                        matches={matches} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
+                                        failureByIndex={failureByIndex} onToggle={toggle} onChange={setOverride}
+                                        expandedMatchRow={expandedMatchRow} matchContexts={matchContexts} onToggleWhy={toggleMatchExpand}
+                                        onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} />
+                                </>
                             ) : null}
 
                             <div className="flex items-center justify-between mt-4">
@@ -1171,7 +1069,7 @@ export default function SpreadsheetImportWizard() {
                     {fileName && <div className="text-xs text-stone-400 mb-3 truncate" title={fileName}><span aria-hidden>📄</span> {fileName}</div>}
                     <div className="h-3 rounded-full bg-stone-100 overflow-hidden mb-4"><div className="h-full bg-teal-500 transition-all" style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} /></div>
                     <div className="flex gap-3 mb-4 text-sm">
-                        <span className="px-3 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-medium">✅ {tally.created} creados</span>
+                        <span className="px-3 py-1 rounded-lg font-medium" style={{ backgroundColor: 'var(--status-emerald-bg)', color: 'var(--status-emerald-text)' }}>✅ {tally.created} creados</span>
                         {tally.updated > 0 && <span className="px-3 py-1 rounded-lg bg-sky-50 text-sky-700 font-medium">↻ {tally.updated} actualizados</span>}
                         <span className="px-3 py-1 rounded-lg bg-amber-50 text-amber-700 font-medium">⏭️ {tally.skipped} omitidos</span>
                         <span className="px-3 py-1 rounded-lg bg-rose-50 text-rose-700 font-medium">⚠️ {tally.failed} fallidos</span>
@@ -1196,13 +1094,18 @@ export default function SpreadsheetImportWizard() {
                     )}
                     {importDone && (tally.created + tally.updated) > 0 && (
                         <div className="border border-stone-200 rounded-xl overflow-hidden mb-4">
-                            <div className="bg-emerald-50 px-3 py-2 text-xs uppercase tracking-wider text-emerald-700">Registros creados ({tally.created}){tally.updated > 0 && ` y actualizados (${tally.updated})`} — revisalos</div>
+                            <div className="px-3 py-2 text-xs uppercase tracking-wider" style={{ backgroundColor: 'var(--status-emerald-bg)', color: 'var(--status-emerald-text)' }}>Registros creados ({tally.created}){tally.updated > 0 && ` y actualizados (${tally.updated})`} — revisalos</div>
                             <div className="max-h-72 overflow-y-auto">
                                 {results.filter(r => r.status === 'created' || r.status === 'updated').map(r => (
                                     <div key={r.index} className="px-3 py-1.5 text-sm border-t border-stone-100">
                                         <div className="flex gap-2 items-center">
                                             <span className="text-stone-400 w-10 flex-shrink-0">#{r.index + 1}</span>
-                                            <span className={`flex-shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded ${r.status === 'updated' ? 'bg-sky-50 text-sky-700' : 'bg-emerald-50 text-emerald-700'}`}>{r.status === 'updated' ? 'actualizado' : 'creado'}</span>
+                                            <span className="flex-shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                                                style={r.status === 'updated'
+                                                    ? { backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }
+                                                    : { backgroundColor: 'var(--status-emerald-bg)', color: 'var(--status-emerald-text)' }}>
+                                                {r.status === 'updated' ? 'actualizado' : 'creado'}
+                                            </span>
                                             <span className="font-medium text-stone-700 flex-1 truncate">{/^Fila \d+$/.test(r.name) ? <span className="italic text-stone-400">Sin nombre</span> : r.name}{r.status === 'updated' && r.message && <span className="text-stone-400 font-normal"> · {r.message}</span>}</span>
                                             {r.id
                                                 ? <a href={`/adopter/${r.id}`} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 text-teal-600 hover:underline">Ver perfil →</a>
@@ -1327,11 +1230,16 @@ function ActionToggle({ action, onAction }: { action: RowAction; onAction: (a: R
     );
 }
 
-function RowView({ r, editingField, onEditCell, match, action, onAction, failure, onToggle, onChange }: {
+function RowView({ r, editingField, onEditCell, match, action, onAction, failure, onToggle, onChange, expanded, onToggleWhy, matchContext }: {
     r: { index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean };
     editingField: string | null; onEditCell: (field: string | null) => void;
     match?: DuplicateMatch | null; action: RowAction; onAction: (a: RowAction) => void;
     failure?: string; onToggle: () => void; onChange: (p: Partial<MappedRow>) => void;
+    // "Por qué" expansion on the match sub-row below — expand state, the toggle
+    // handler, and the (lazily fetched, parent-cached) presence-only context for
+    // THIS row's match.adopterId. Parent owns the fetch (getMatchContext); RowView
+    // only renders what it's given.
+    expanded?: boolean; onToggleWhy?: () => void; matchContext?: MatchContext | 'loading' | 'error';
 }) {
     const { eff, built, selected } = r;
     const isExact = match ? isExactIdentifierMatch(match.matchTypes) : false;
@@ -1464,16 +1372,66 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                 </td>
             </tr>
             {match && (
-                <tr className={!selected ? 'opacity-40' : ''}>
-                    <td></td>
-                    <td colSpan={9} className="px-3 pb-2">
-                        <div className="flex flex-wrap items-center gap-2 text-xs bg-sky-50 border border-sky-100 rounded-lg px-2.5 py-1.5">
-                            <MatchBadge match={match} isExact={isExact} />
-                            <button type="button" onClick={() => window.open(`/adopter/${match.adopterId}`, '_blank', 'noopener,noreferrer')} className="text-teal-700 hover:underline">Abrir ↗</button>
-                            <div className="ml-auto"><ActionToggle action={action} onAction={onAction} /></div>
-                        </div>
-                    </td>
-                </tr>
+                <>
+                    <tr className={!selected ? 'opacity-40' : ''}>
+                        <td></td>
+                        <td colSpan={9} className="px-3 pb-2">
+                            <div className="flex flex-wrap items-center gap-2 text-xs bg-sky-50 border border-stone-200 rounded-lg px-2.5 py-1.5">
+                                {onToggleWhy && (
+                                    <button type="button" onClick={onToggleWhy}
+                                        aria-expanded={expanded} aria-label="Ver por qué coincidió"
+                                        className="text-stone-400 hover:text-stone-600 flex-shrink-0 w-4 text-center">{expanded ? '▾' : '▸'}</button>
+                                )}
+                                <MatchBadge match={match} isExact={isExact} />
+                                <button type="button" onClick={() => window.open(`/adopter/${match.adopterId}`, '_blank', 'noopener,noreferrer')} className="text-teal-700 hover:underline">Abrir ↗</button>
+                                <div className="ml-auto"><ActionToggle action={action} onAction={onAction} /></div>
+                            </div>
+                        </td>
+                    </tr>
+                    {expanded && (
+                        <tr className={!selected ? 'opacity-40' : ''}>
+                            <td></td>
+                            <td colSpan={9} className="px-3 pb-2">
+                                <div className="rounded-lg border border-stone-200 p-3 text-xs space-y-2.5" style={{ backgroundColor: 'var(--surface-muted)' }}>
+                                    <div>
+                                        <span className="text-stone-500">Coincidió en: </span>
+                                        <span className="font-medium text-stone-700">{matchTypeLabels(match.matchTypes)}</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                            <div className="text-stone-400 uppercase tracking-wider text-[10px] mb-1">Tu registro (importado)</div>
+                                            <div className="font-medium text-stone-800 mb-1">{eff.name || <span className="italic text-stone-400">Sin nombre</span>}</div>
+                                            {contactChips.length > 0 ? (
+                                                <div className="flex flex-wrap gap-1">
+                                                    {contactChips.map((c, i) => (
+                                                        <span key={i} className="inline-flex items-center gap-1 text-[10px] bg-stone-100 rounded px-1.5 py-0.5 max-w-full">
+                                                            <span className="uppercase font-semibold text-stone-400 flex-shrink-0">{c.t}</span>
+                                                            <span className="text-stone-700 truncate">{c.v}</span>
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            ) : <span className="text-stone-400">Sin contacto</span>}
+                                        </div>
+                                        <div>
+                                            <div className="text-stone-400 uppercase tracking-wider text-[10px] mb-1">Registro existente</div>
+                                            <div className="font-medium text-stone-800 mb-1">{match.adopterName?.trim() || 'Sin nombre'}</div>
+                                            {matchContext === undefined || matchContext === 'loading' ? (
+                                                <span className="text-stone-400">Cargando…</span>
+                                            ) : matchContext === 'error' || !matchContext.ok ? (
+                                                <button type="button" onClick={() => window.open(`/adopter/${match.adopterId}`, '_blank', 'noopener,noreferrer')} className="text-teal-700 hover:underline">Abrir ↗</button>
+                                            ) : (
+                                                <PresenceBadges has={matchContext.has} />
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="pt-1 border-t border-stone-200 text-stone-600">
+                                        {explainMatchOneLiner(match, matchContext === 'loading' || matchContext === 'error' ? undefined : matchContext)}
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    )}
+                </>
             )}
             {/* The expand-to-edit panel is gone, so this is the only place errors/
                 warnings/import-failures stay readable without a click — a thin
@@ -1482,7 +1440,7 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                 <tr className={!selected ? 'opacity-40' : ''}>
                     <td></td>
                     <td colSpan={9} className="px-3 pb-2">
-                        <div className={`text-xs space-y-0.5 rounded-lg px-2.5 py-1.5 border ${(invalid || failure) ? 'bg-rose-50 border-rose-100' : 'bg-amber-50 border-amber-100'}`}>
+                        <div className={`text-xs space-y-0.5 rounded-lg px-2.5 py-1.5 border ${(invalid || failure) ? 'bg-rose-50 border-rose-100' : 'bg-amber-50 border-amber-200'}`}>
                             {invalid && <div className="text-rose-600">{built.errors.join(' ')}</div>}
                             {failure && <div className="text-rose-700 font-medium">✗ Falló al importar: {failure} — corregí el campo y reintentá.</div>}
                             {warned && <div className="text-amber-700">{built.warnings.join(' ')} Corregí la fecha/rating arriba, o dejá el registro así (se importa igual).</div>}
@@ -1491,6 +1449,101 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                 </tr>
             )}
         </>
+    );
+}
+
+/** The record grid: header + scrollable table body of `RowView` rows. Shared by
+ *  BOTH the Revisar (confirm) step — all `filtered` rows — and the Duplicados
+ *  (dedup) step — only `matchedRows` — so a record renders identically (same
+ *  fields, same match sub-row, same "por qué" panel) regardless of which step
+ *  it's viewed from. Kept as a top-level component (not a closure defined inside
+ *  SpreadsheetImportWizard's render) so its identity is stable across renders —
+ *  a fresh function identity every render would remount every `RowView`/`InlineCell`
+ *  underneath, dropping in-progress edits. */
+function RecordGrid({
+    rows, editingCell, onEditCell, matches, rowAction, onAction,
+    failureByIndex, onToggle, onChange, expandedMatchRow, matchContexts, onToggleWhy,
+    onRatingAll, onVisibilityAll,
+}: {
+    rows: Array<{ index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean }>;
+    editingCell: { index: number; field: string } | null;
+    onEditCell: (index: number, field: string | null) => void;
+    matches: Record<number, DuplicateMatch | null>;
+    rowAction: Record<number, RowAction>;
+    onAction: (index: number, a: RowAction) => void;
+    failureByIndex: Record<number, string>;
+    onToggle: (index: number) => void;
+    onChange: (index: number, p: Partial<MappedRow>) => void;
+    expandedMatchRow: number | null;
+    matchContexts: Record<string, MatchContext | 'loading' | 'error'>;
+    onToggleWhy: (index: number, adopterId: string) => void;
+    // Bulk "a todos" header selects — same global effect (applies to every parsed
+    // row, not just `rows`) in both steps, matching the pre-existing behavior.
+    onRatingAll: (rating: string) => void;
+    onVisibilityAll: (isPublic: boolean) => void;
+}) {
+    return (
+        <div className="border border-stone-200 rounded-xl overflow-hidden">
+            <div className="max-h-[420px] overflow-y-auto overflow-x-auto">
+                <table className="w-full text-sm">
+                    <thead className="bg-stone-50 text-stone-500 text-xs uppercase tracking-wider sticky top-0">
+                        <tr>
+                            <th className="px-2 py-2"></th>
+                            <th className="px-2 py-2 text-right font-normal text-stone-400">#</th>
+                            <th className="text-left px-3 py-2">Nombre</th>
+                            <th className="text-left px-3 py-2">Contacto</th>
+                            <th className="text-left px-3 py-2">Animal</th>
+                            <th className="text-left px-3 py-2">Especie</th>
+                            <th className="text-left px-3 py-2">Tipo</th>
+                            <th className="text-left px-3 py-2">
+                                <div className="flex items-center gap-1">
+                                    <span>Rating</span>
+                                    {/* Bulk "a todos" — controlled value="" so it snaps back after firing. */}
+                                    <select value="" onChange={e => { if (e.target.value) onRatingAll(e.target.value === 'clear' ? '' : e.target.value); }}
+                                        className="normal-case font-normal text-[11px] border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-500" title="Asignar un rating a todos los registros">
+                                        <option value="">· a todos</option>
+                                        {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★ a todos</option>)}
+                                        <option value="clear">Limpiar rating</option>
+                                    </select>
+                                </div>
+                            </th>
+                            <th className="text-left px-3 py-2">Fecha</th>
+                            <th className="text-left px-3 py-2">
+                                <div className="flex items-center gap-1">
+                                    <span>Visibilidad</span>
+                                    <select value="" onChange={e => { if (e.target.value) onVisibilityAll(e.target.value === 'public'); }}
+                                        className="normal-case font-normal text-[11px] border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-500" title="Asignar visibilidad a todos los registros">
+                                        <option value="">· a todos</option>
+                                        <option value="public">Todos públicos</option>
+                                        <option value="protected">Todos protegidos</option>
+                                    </select>
+                                </div>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.map(r => {
+                            const match = r.index in matches ? matches[r.index] : undefined;
+                            return (
+                                <RowView key={r.index} r={r}
+                                    editingField={editingCell?.index === r.index ? editingCell.field : null}
+                                    onEditCell={field => onEditCell(r.index, field)}
+                                    match={match}
+                                    action={rowAction[r.index] ?? 'create'}
+                                    onAction={a => onAction(r.index, a)}
+                                    failure={failureByIndex[r.index]}
+                                    onToggle={() => onToggle(r.index)}
+                                    onChange={patch => onChange(r.index, patch)}
+                                    expanded={expandedMatchRow === r.index}
+                                    onToggleWhy={match ? () => onToggleWhy(r.index, match.adopterId) : undefined}
+                                    matchContext={match ? matchContexts[match.adopterId] : undefined}
+                                />
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        </div>
     );
 }
 

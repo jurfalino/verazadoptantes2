@@ -66,6 +66,9 @@
   --status-sky-text: #0369a1;
   --status-sky-border: rgba(56, 189, 248, 0.25);
 
+  --status-emerald-bg: rgba(16, 185, 129, 0.1);
+  --status-emerald-text: #047857;
+
   --status-violet-bg: rgba(139, 92, 246, 0.1);
   --status-violet-text: #6d28d9;
   --status-violet-border: rgba(139, 92, 246, 0.25);
@@ -154,6 +157,9 @@
   --status-sky-bg: rgba(56, 189, 248, 0.1);
   --status-sky-text: #38bdf8;
   --status-sky-border: rgba(56, 189, 248, 0.3);
+
+  --status-emerald-bg: rgba(52, 211, 153, 0.14);
+  --status-emerald-text: #34d399;
 
   --status-violet-bg: rgba(139, 92, 246, 0.1);
   --status-violet-text: #a78bfa;
