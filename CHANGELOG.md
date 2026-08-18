@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.39.0] - 2026-08-18
+
+### Changed — import review reframed to adopter identity + interaction record (Motivo never trimmed)
+
+The review row was 11 loose columns that trimmed the **Motivo** — the most important field of a vetting record — to ~150px and hid it behind a click. It's now organized around the real data model:
+
+- **The grid is the adopter (identity):** ☐ · # · Nombre · Contacto · Visibilidad — minimal and scannable.
+- **A full-width line per record holds the whole interaction/record:** `Tipo (dropdown) · Animal · Especie · Rating · Fecha` (all inline-editable) followed by the **complete Motivo** — full wrapping text, never trimmed, clamped to 2 lines with a "ver motivo completo" toggle, editable in place as a textarea.
+- **"más datos"** opens the secondary animal fields (Sexo, Color, Microchip, Edad, Castrado, En nombre de).
+
+Applies to both the review step and the mandatory dedup step (they share the same record layout). Column balance and dark-theme colours audited.
+
 ## [2.38.0] - 2026-08-18
 
 ### Added — the import review grid now shows the Motivo + the other hidden fields
