@@ -105,6 +105,43 @@ export function hasNameMapping(map: ColumnMap): boolean {
     return map.columns.some(c => c.field === 'name');
 }
 
+/** Accent- and case-insensitive header normalization for heuristic matching. */
+function normHeader(h: string): string {
+    return h.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+
+/** Ordered header-name heuristics (most specific first). First match wins. */
+const GUESS_RULES: { field: string; test: RegExp }[] = [
+    { field: 'phone', test: /(^|[^a-z])(tel|phone|celular|cel|whatsapp|wsp|movil)/ },
+    { field: 'email', test: /(e-?mail|correo)/ },
+    { field: 'social', test: /(facebook|instagram|\bfb\b|\big\b|social|perfil)/ },
+    { field: 'dni', test: /(dni|documento|cedula|pasaporte)/ },
+    { field: 'address', test: /(direcc|domicilio|address|localidad|barrio|ciudad|provincia)/ },
+    { field: 'onBehalfOf', test: /(aportante|a nombre|reportad|on behalf)/ },
+    { field: 'rating', test: /(rating|puntaje|score|calificaci)/ },
+    { field: 'date', test: /(fecha|date)/ },
+    { field: 'recordType', test: /(tipo|type|record)/ },
+    { field: 'species', test: /(especie|species)/ },
+    { field: 'animalName', test: /(animal|mascota)/ },
+    { field: 'details', test: /(motivo|detalle|nota|observaci|coment|descripci|details)/ },
+    { field: 'name', test: /(nombre|name|adoptante)/ },
+];
+
+/**
+ * Deterministic, OFFLINE column-map guess from header names (no AI). Used as the
+ * instant default when a sheet is opened, so a well-structured sheet is ready to
+ * import immediately without waiting for AI. The user can correct any field in
+ * the UI, or opt into AI interpretation for genuinely messy sheets. Unmatched
+ * headers → `ignore`.
+ */
+export function guessColumnMap(headers: string[]): ColumnMap {
+    const columns: ColumnAssignment[] = headers.map(h => {
+        const rule = GUESS_RULES.find(r => r.test.test(normHeader(h)));
+        return { column: h, field: rule ? rule.field : IGNORE, confidence: (rule ? 'medium' : 'low') as ColumnAssignment['confidence'] };
+    });
+    return { columns };
+}
+
 /** A spreadsheet row projected onto our schema via a ColumnMap. Contact-type
  *  fields are arrays (several columns may map to the same type); single-value
  *  fields take the first non-empty. `combinedContacts` holds raw messy cells to
@@ -117,6 +154,7 @@ export interface MappedRow {
     addresses: string[];
     dnis: string[];
     combinedContacts: string[];
+    isPublic?: boolean;
     animalName?: string;
     species?: string;
     sex?: string;
@@ -140,10 +178,16 @@ export function emptyMappedRow(): MappedRow {
     return { name: '', phones: [], emails: [], socials: [], addresses: [], dnis: [], combinedContacts: [] };
 }
 
+/** Split a cell that packs several contact values into one, separated by ';' or
+ *  newlines. NOT commas — addresses legitimately contain commas ("Calle 1234,
+ *  Piso 2, Ciudad"). "a@x.com; b@y.com" → ['a@x.com', 'b@y.com']. */
+export function splitMultiValue(v: string): string[] {
+    return v.split(/[;\n]+/).map(s => s.trim()).filter(Boolean);
+}
+
 function strArray(v: unknown): string[] {
-    if (Array.isArray(v)) return v.map(x => (x ?? '').toString().trim()).filter(Boolean);
-    if (typeof v === 'string' && v.trim()) return [v.trim()];
-    return [];
+    const raw = Array.isArray(v) ? v.map(x => (x ?? '').toString()) : (typeof v === 'string' ? [v] : []);
+    return raw.flatMap(splitMultiValue);
 }
 function strOrUndef(v: unknown): string | undefined {
     const s = (v ?? '').toString().trim();
@@ -198,7 +242,9 @@ export function applyColumnMap(map: ColumnMap, headers: string[], row: string[])
 
         if (assign.field === COMBINED_CONTACT) { out.combinedContacts.push(value); continue; }
         const multi = MULTI_CONTACT[assign.field];
-        if (multi) { out[multi].push(value); continue; }
+        // A single cell may pack several values ("a@x.com; b@y.com") — split so
+        // each becomes its own contact entry (own chip in review, stored separately).
+        if (multi) { for (const p of splitMultiValue(value)) out[multi].push(p); continue; }
         // Single-value field: first non-empty wins.
         if (assign.field === 'name') { if (!out.name) out.name = value; continue; }
         const key = assign.field as keyof MappedRow;

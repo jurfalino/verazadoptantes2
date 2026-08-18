@@ -288,6 +288,11 @@ For EACH data row (in order), output ONE JSON object with any of these fields th
 
 RULES:
 - Output exactly one object per input row, in the SAME order (${rows.length} objects).
+- A row may legitimately have NO name — e.g. a blacklist entry identified only by
+  phone, email, social handle or DNI. That is VALID, not junk: still output that
+  row's object with its contacts and every other present field. NEVER return an
+  empty object (or drop a row) just because the name is blank. Only a row that is
+  ENTIRELY empty yields an empty object.
 - Extract ONLY what is present. NEVER invent, guess, or construct data.
 - Keep phone/email/ID values EXACTLY as written — do not reformat or "fix" digits.
 - Omit unknown fields. Any notes/free text in ${lang}.

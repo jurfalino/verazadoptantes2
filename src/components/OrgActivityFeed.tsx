@@ -107,7 +107,7 @@ interface VerbLineProps {
  * row was hard-deleted we fall back to a generic noun so the row still reads.
  */
 function VerbLine({ entry, t, isEs }: VerbLineProps) {
-    const adopterFallback = isEs ? 'un perfil' : 'a profile';
+    const adopterFallback = t('adopter.nameless');
     const deletedPrefix = isEs ? '(eliminado) ' : '(deleted) ';
     const adopterNode = entry.adopterName ? (
         entry.adopterDeleted ? (

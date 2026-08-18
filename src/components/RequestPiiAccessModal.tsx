@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { requestPiiAccess } from '@/app/actions/piiAccess';
+import { adopterDisplayName } from '@/lib/adopterDisplay';
 
 interface RequestPiiAccessModalProps {
     adopterId: string;
@@ -58,7 +59,7 @@ export default function RequestPiiAccessModal({
                     {t('adopter.pii_modal_title')}
                 </h3>
                 <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    {t('adopter.pii_modal_body').replace('{name}', adopterName)}
+                    {t('adopter.pii_modal_body').replace('{name}', adopterDisplayName({ name: adopterName }, t('adopter.nameless')))}
                 </p>
                 <div className="space-y-1.5">
                     <label htmlFor="pii-justification" className="text-sm font-medium block" style={{ color: 'var(--text-primary)' }}>

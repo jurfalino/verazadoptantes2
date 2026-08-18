@@ -3,6 +3,11 @@ import { getDb, resolveDataRequest } from "@/app/actions";
 import { dataRequests, adopters } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { formatShortDate } from '@/lib/dates';
+import { adopterDisplayName } from '@/lib/adopterDisplay';
+
+// Admin UI is English-only (no t()) — 'No name' mirrors the i18n
+// `adopter.nameless` fallback label used on the public/rescuer surfaces.
+const NAMELESS_LABEL = 'No name';
 
 // v2.19.70: delegate to the hardened, admin-gated, logged server action in
 // src/app/actions/admin.ts (mirrors the flags page's handleDismiss → dismissFlag).
@@ -104,7 +109,7 @@ export default async function AdminDataRequestsPage() {
                                             <td className="p-4">
                                                 {r.adopterId ? (
                                                     <a href={`/adopter/${r.adopterId}`} target="_blank" className="text-teal-700 hover:underline text-sm font-medium">
-                                                        {r.adopterName || r.adopterId}
+                                                        {adopterDisplayName({ name: r.adopterName }, NAMELESS_LABEL)}
                                                     </a>
                                                 ) : (
                                                     <span className="text-stone-500 text-sm">General</span>
@@ -162,7 +167,7 @@ export default async function AdminDataRequestsPage() {
                                     {r.adopterId && (
                                         <div className="text-sm mb-1">
                                             <a href={`/adopter/${r.adopterId}`} target="_blank" className="text-teal-700 hover:underline font-medium">
-                                                {r.adopterName || r.adopterId}
+                                                {adopterDisplayName({ name: r.adopterName }, NAMELESS_LABEL)}
                                             </a>
                                         </div>
                                     )}
@@ -224,7 +229,7 @@ export default async function AdminDataRequestsPage() {
                                             <td className="p-4">
                                                 {r.adopterId ? (
                                                     <a href={`/adopter/${r.adopterId}`} target="_blank" className="text-teal-700 hover:underline text-sm">
-                                                        {r.adopterName || r.adopterId}
+                                                        {adopterDisplayName({ name: r.adopterName }, NAMELESS_LABEL)}
                                                     </a>
                                                 ) : (
                                                     <span className="text-stone-500 text-sm">General</span>
@@ -261,7 +266,7 @@ export default async function AdminDataRequestsPage() {
                                     </div>
                                     {r.adopterId && (
                                         <a href={`/adopter/${r.adopterId}`} target="_blank" className="text-teal-700 hover:underline text-sm block mb-1">
-                                            {r.adopterName || r.adopterId}
+                                            {adopterDisplayName({ name: r.adopterName }, NAMELESS_LABEL)}
                                         </a>
                                     )}
                                     <div className="text-xs text-stone-500">

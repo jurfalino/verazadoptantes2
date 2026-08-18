@@ -10,8 +10,10 @@ import React from 'react';
 import type { DiscoveryMatch, SnippetField } from '@/app/actions';
 import { RatingBadge } from './RatingBadge';
 import { RatingExplainer } from './RatingExplainer';
+import { AdopterName } from './AdopterName';
 import { useLanguage } from '@/context/LanguageContext';
 import { formatShortDate } from '@/lib/dates';
+import { isNamelessAdopter } from '@/lib/adopterDisplay';
 
 const SNIPPET_ICONS: Record<SnippetField, string> = {
     name: '👤', contact: '📞', address: '📍',
@@ -158,14 +160,18 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                         far-right edge of the column. min-w-0 still lets a long name shrink
                         and line-clamp; the badge is flex-shrink-0 so it never collapses. */}
                     <div className="flex items-start gap-1.5 min-w-0">
-                        <span className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors line-clamp-2 min-w-0" title={res.adopter.name}>
-                            {/* Highlight matched query tokens directly in the visible name —
-                                works regardless of which field won matchSnippet (and even when
-                                that field was masked/scrubbed). Name is never PII-masked. */}
-                            {nameRanges.length > 0
-                                ? (renderHighlightedSnippet(res.adopter.name, nameRanges) || res.adopter.name)
-                                : res.adopter.name}
-                        </span>
+                        {/* Highlight matched query tokens directly in the visible name —
+                            works regardless of which field won matchSnippet (and even when
+                            that field was masked/scrubbed). Name is never PII-masked. */}
+                        {isNamelessAdopter(res.adopter)
+                            ? <AdopterName adopter={res.adopter} className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors line-clamp-2 min-w-0" title />
+                            : (
+                                <span className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors line-clamp-2 min-w-0" title={res.adopter.name}>
+                                    {nameRanges.length > 0
+                                        ? (renderHighlightedSnippet(res.adopter.name, nameRanges) || res.adopter.name)
+                                        : res.adopter.name}
+                                </span>
+                            )}
                         {/* Visibility badge — mirror of the profile header's 3-state
                             badge (server-computed `visibilityBadge`, no modal on the
                             card): Público (eye/sky), Protegido-sin-acceso (closed

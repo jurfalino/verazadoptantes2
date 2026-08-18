@@ -1,7 +1,55 @@
 import { describe, it, expect } from 'vitest';
-import { parseColumnMap, hasNameMapping, applyColumnMap, parseAiRows, COMBINED_CONTACT, IGNORE } from './importFields';
+import { parseColumnMap, hasNameMapping, applyColumnMap, parseAiRows, guessColumnMap, splitMultiValue, COMBINED_CONTACT, IGNORE } from './importFields';
+
+describe('splitMultiValue', () => {
+    it("splits on ';' and newlines, trims, drops empties", () => {
+        expect(splitMultiValue('a@x.com; b@y.com')).toEqual(['a@x.com', 'b@y.com']);
+        expect(splitMultiValue('11-1111\n22-2222 ; 33-3333')).toEqual(['11-1111', '22-2222', '33-3333']);
+        expect(splitMultiValue('solo@uno.com')).toEqual(['solo@uno.com']);
+    });
+    it('does NOT split on commas (addresses contain them)', () => {
+        expect(splitMultiValue('Calle 1234, Piso 2, Ciudad')).toEqual(['Calle 1234, Piso 2, Ciudad']);
+    });
+});
+
+describe('applyColumnMap — multi-value cells', () => {
+    it('splits a cell packing several values into separate entries', () => {
+        const map = { columns: [{ column: 'Tels', field: 'phone', confidence: 'high' as const }, { column: 'Dir', field: 'address', confidence: 'high' as const }] };
+        const row = applyColumnMap(map, ['Tels', 'Dir'], ['11-1; 11-2 ; 11-3', 'Av. Siempreviva 742, Springfield']);
+        expect(row.phones).toEqual(['11-1', '11-2', '11-3']);
+        expect(row.addresses).toEqual(['Av. Siempreviva 742, Springfield']); // comma NOT split
+    });
+});
 
 const headers = ['Nombre', 'Tel', 'Mail', 'Contacto', 'Mascota', 'Basura'];
+
+describe('guessColumnMap', () => {
+    const field = (m: ReturnType<typeof guessColumnMap>, col: string) => m.columns.find(c => c.column === col)?.field;
+    it('maps the real VANA headers offline (accent/case-insensitive), unknowns → ignore', () => {
+        const m = guessColumnMap(['row_id', 'numero', 'tramo', 'nombre', 'aportante', 'telefonos', 'emails', 'dni', 'facebook', 'direccion', 'fecha', 'tipo', 'rating', 'motivo']);
+        expect(field(m, 'nombre')).toBe('name');
+        expect(field(m, 'telefonos')).toBe('phone');
+        expect(field(m, 'emails')).toBe('email');
+        expect(field(m, 'dni')).toBe('dni');
+        expect(field(m, 'facebook')).toBe('social');
+        expect(field(m, 'direccion')).toBe('address');
+        expect(field(m, 'fecha')).toBe('date');
+        expect(field(m, 'tipo')).toBe('recordType');
+        expect(field(m, 'rating')).toBe('rating');
+        expect(field(m, 'motivo')).toBe('details');
+        expect(field(m, 'aportante')).toBe('onBehalfOf');
+        // Non-field headers are ignored, never misassigned.
+        expect(field(m, 'row_id')).toBe(IGNORE);
+        expect(field(m, 'numero')).toBe(IGNORE);
+        expect(field(m, 'tramo')).toBe(IGNORE);
+    });
+    it('handles accents/case (Teléfono, Correo, Dirección)', () => {
+        const m = guessColumnMap(['Teléfono', 'Correo electrónico', 'Dirección']);
+        expect(field(m, 'Teléfono')).toBe('phone');
+        expect(field(m, 'Correo electrónico')).toBe('email');
+        expect(field(m, 'Dirección')).toBe('address');
+    });
+});
 
 describe('parseColumnMap', () => {
     it('maps a well-formed AI response and preserves header order', () => {

@@ -193,7 +193,13 @@ export async function appendToExistingAdopter(
     }
 }
 
-export async function saveAdopter(data: typeof adopters.$inferInsert) {
+// isPublic is widened to accept a boolean: AdopterForm sends a plain boolean
+// for the anonymous-record visibility toggle (matches saveAdopterSchema's
+// `z.boolean()`), while the DB column itself is a 0/1 integer — the CREATE
+// branch below normalizes it before insert.
+type SaveAdopterInput = Omit<typeof adopters.$inferInsert, 'isPublic'> & { isPublic?: boolean | number };
+
+export async function saveAdopter(data: SaveAdopterInput) {
     // Defense-in-depth: notes field deprecated in v2.12.1-28 (backfilled into
     // observation records). Strip from any incoming payload before validation
     // so legacy clients can't write to it.
@@ -261,6 +267,13 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
             // accepts them — that's how initial data lands.
             delete (data as Record<string, unknown>).contactEntries;
             delete (data as Record<string, unknown>).contactInfo;
+
+            // Defense-in-depth: visibility (isPublic) is only ever set by the
+            // CREATE branch's nameless-record default (see below). The generic
+            // update path must never be able to flip a record's visibility —
+            // strip it here so a stale or malicious payload can't silently
+            // make a named/protected record public through saveAdopter.
+            delete (data as Record<string, unknown>).isPublic;
 
             // Calculate changes
             const changes: Record<string, any> = {};
@@ -355,7 +368,23 @@ export async function saveAdopter(data: typeof adopters.$inferInsert) {
                 addedBy: changedBy, // Added this line
                 country: userCountry,
                 createdAt: new Date(),
-                updatedAt: new Date()
+                updatedAt: new Date(),
+                // v2.31.x: anonymous (no-name) manual records default to
+                // public so their contacts stay findable — an anonymous +
+                // protected record is invisible in search. Named records are
+                // unaffected: data.isPublic is only sent by AdopterForm when
+                // the "No conozco el nombre" opt-in is checked; every other
+                // caller omits it and gets the protected default (0).
+                //
+                // Server-side guard: isPublic is honored ONLY when the name
+                // is also empty. The opt-in checkbox and the name field are
+                // independent client state — a user can check "No conozco el
+                // nombre" and then type a real name before saving, which used
+                // to leave the stale isPublic=true in the payload and silently
+                // publish a named record. The name check here is the actual
+                // security boundary; the client-side gate in AdopterForm is
+                // defense-in-depth, not the source of truth.
+                isPublic: (data.isPublic && !data.name?.trim()) ? 1 : 0,
             });
 
             logger.info('Adopter created', { adopterId: newId, changedBy });

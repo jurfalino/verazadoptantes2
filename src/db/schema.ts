@@ -433,6 +433,43 @@ export const auditLog = sqliteTable("audit_log", {
     createdIdx: index("idx_audit_created").on(table.createdAt),
 }));
 
+// Spreadsheet-import audit — a run header (written when the import starts, so an
+// abandoned run is still visible) plus its per-row items (written at the end).
+// Admin-only view at /admin/imports.
+export const importRuns = sqliteTable("import_runs", {
+    id: text("id").primaryKey(),                 // runId (client-generated)
+    actorEmail: text("actor_email"),             // resolved server-side, not trusted from the client
+    source: text("source"),                      // spreadsheet filename
+    total: integer("total").default(0),          // rows the run set out to import
+    createdCount: integer("created_count").default(0),
+    updatedCount: integer("updated_count").default(0),
+    skippedCount: integer("skipped_count").default(0),
+    failedCount: integer("failed_count").default(0),
+    status: text("status").notNull().default("running"), // 'running' | 'completed'
+    startedAt: integer("started_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    finishedAt: integer("finished_at", { mode: "timestamp" }),
+}, (table) => ({
+    actorIdx: index("idx_import_runs_actor").on(table.actorEmail),
+    startedIdx: index("idx_import_runs_started").on(table.startedAt),
+}));
+
+export const importRunItems = sqliteTable("import_run_items", {
+    id: text("id").primaryKey(),
+    runId: text("run_id").notNull(),
+    rowIndex: integer("row_index"),              // source-row number (1-based, for the admin view)
+    adopterId: text("adopter_id"),               // the created/updated record (null for skip/fail)
+    adopterName: text("adopter_name"),
+    action: text("action"),                      // 'create' | 'upsert' | 'skip'
+    status: text("status"),                      // 'created' | 'updated' | 'skipped' | 'failed'
+    matchedAdopterId: text("matched_adopter_id"),        // the existing record it matched (null if none)
+    matchedAdopterName: text("matched_adopter_name"),
+    matchConfidence: integer("match_confidence"),        // relevancePercent 0–100
+    message: text("message"),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+    runIdx: index("idx_import_run_items_run").on(table.runId),
+}));
+
 // In-App Notifications
 export const notifications = sqliteTable("notifications", {
     id: text("id").primaryKey(),

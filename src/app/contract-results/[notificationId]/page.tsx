@@ -6,6 +6,7 @@ import { notifications, adopters } from '@/db/schema';
 import { eq, or, and, isNull } from 'drizzle-orm';
 import { getUser } from '@/app/actions/_db';
 import { markNotificationRead } from '@/app/actions/notifications';
+import { adopterDisplayName } from '@/lib/adopterDisplay';
 import Link from 'next/link';
 import ContractResultsMatchCard from '@/components/ContractResultsMatchCard';
 import ContractResultsKeepNewButton from '@/components/ContractResultsKeepNewButton';
@@ -119,7 +120,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                     {hasMatches ? '⚠️' : '✅'} Resultados del contrato
                 </h1>
                 <p className="text-sm text-stone-500 mt-1">
-                    {metadata.animalName} — adoptado por {metadata.adopterName}
+                    {metadata.animalName} — adoptado por {adopterDisplayName({ name: metadata.adopterName }, 'Sin nombre')}
                 </p>
             </div>
 

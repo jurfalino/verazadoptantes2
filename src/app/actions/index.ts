@@ -56,3 +56,22 @@ export type { EnrichmentResult } from './enrichAdopters';
 // Admin metrics
 export { fetchMetrics } from './metrics';
 export type { MetricsPayload, MetricCardData } from './metrics';
+
+// Duplicate-aware import upsert
+export { upsertImportRecord } from './importUpsert';
+export type { ImportUpsertInput, ImportUpsertResult } from './importUpsert';
+
+// Import-run audit (admin view)
+export { startImportRun, finishImportRun, getImportRuns, getMyImportRuns, getImportRunItems, getMyImportRunItems } from './importRuns';
+export type { ImportRunItemInput, EnrichedImportRun } from './importRuns';
+
+// Bulk import (batch endpoint — robust against D1 contention)
+export { importAdoptersBatch } from './importBatch';
+export type { ImportBatchRow, ImportBatchResult } from './importBatch';
+
+// On-the-fly identical-record detection for import
+export { matchFingerprints } from './importIdentical';
+
+// Presence-only match context for the import "por qué" panel (PII-safe)
+export { getMatchContext } from './matchContext';
+export type { MatchContext } from './matchContext';

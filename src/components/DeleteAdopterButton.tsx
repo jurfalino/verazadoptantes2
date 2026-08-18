@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useShowToast } from '@/components/ui/Toast';
 import { useLanguage } from '@/context/LanguageContext';
 import { extractErrorId } from '@/lib/errorUtils';
+import { adopterDisplayName } from '@/lib/adopterDisplay';
 
 interface DeleteButtonProps {
     adopterId: string;
@@ -18,7 +19,7 @@ export default function DeleteAdopterButton({ adopterId, adopterName }: DeleteBu
     const { t } = useLanguage();
 
     const handleDelete = async () => {
-        const confirmMsg = t('dialogs.confirm_delete_adopter').replace('{name}', adopterName);
+        const confirmMsg = t('dialogs.confirm_delete_adopter').replace('{name}', adopterDisplayName({ name: adopterName }, t('adopter.nameless')));
         if (!confirm(confirmMsg)) {
             return;
         }

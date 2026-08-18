@@ -10,7 +10,20 @@ import { logAudit } from '@/lib/audit';
 import { getDb, checkIsAdmin, checkIsAdminAsync } from './_db';
 import { deleteAdopterRecords } from './_recordWrite';
 
-export async function runAdminQuery(query: string) {
+export interface AdminQueryResult {
+    rows?: unknown[];
+    meta?: unknown;
+    mutating?: boolean;
+    /** Set when a mutating query was submitted without `confirmed` — the caller
+     *  must confirm and re-submit. The query is NOT executed. */
+    needsConfirmation?: boolean;
+    error?: string;
+}
+
+/** Admin SQL console. Any single statement is allowed; a MUTATING one (anything
+ *  that isn't a plain SELECT/EXPLAIN/read-only CTE) requires `confirmed: true`,
+ *  so a destructive action can't run without a deliberate second step. */
+export async function runAdminQuery(query: string, confirmed?: boolean): Promise<AdminQueryResult> {
     try {
         const session = await auth();
         if (!session?.user?.email || !checkIsAdmin(session.user.email)) {
@@ -18,51 +31,55 @@ export async function runAdminQuery(query: string) {
         }
 
         const q = query.trim();
+        if (!q) return { error: 'Consulta vacía.' };
 
-        // 1. Must start with SELECT (or WITH for CTEs)
-        if (!/^(select|with)\b/i.test(q)) {
-            return { error: 'Only SELECT queries are allowed.' };
+        // One statement at a time — a semicolon anywhere but the very end would be
+        // a second statement (D1's prepared API runs a single statement anyway).
+        const body = q.replace(/;\s*$/, '');
+        if (body.includes(';')) {
+            return { error: 'Una sola sentencia por vez (sin punto y coma en el medio).' };
         }
 
-        // 2. Block multi-statement injection: no semicolons allowed except at the very end
-        const bodyWithoutTrailingSemicolon = q.replace(/;\s*$/, '');
-        if (bodyWithoutTrailingSemicolon.includes(';')) {
-            return { error: 'Multi-statement queries are not allowed.' };
+        // Classify by leading keyword. SELECT/EXPLAIN and read-only CTEs are safe;
+        // everything else (INSERT/UPDATE/DELETE/DROP/ALTER/CREATE/REPLACE/PRAGMA/…)
+        // mutates and must be explicitly confirmed.
+        const leading = (body.match(/^\s*(\w+)/)?.[1] || '').toLowerCase();
+        const isMutating = (leading === 'select' || leading === 'explain')
+            ? false
+            : leading === 'with'
+                ? /\b(insert|update|delete)\b/i.test(body)
+                : true;
+
+        if (isMutating && !confirmed) {
+            return { needsConfirmation: true, mutating: true };
         }
 
-        // 3. Comprehensive deny-list for dangerous keywords (word-boundary matched)
-        const dangerousKeywords = [
-            'INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER', 'CREATE', 'TRUNCATE',
-            'REPLACE', 'UPSERT', 'PRAGMA', 'ATTACH', 'DETACH', 'VACUUM',
-            'REINDEX', 'SAVEPOINT', 'RELEASE', 'ROLLBACK', 'COMMIT', 'BEGIN',
-        ];
-        const dangerPattern = new RegExp(`\\b(${dangerousKeywords.join('|')})\\b`, 'i');
-        if (dangerPattern.test(bodyWithoutTrailingSemicolon)) {
-            return { error: 'Write/administrative operations are not allowed.' };
-        }
-
-        // 4. Execute via D1 prepared statement API directly (not sql.raw)
         const { env } = getRequestContext();
+        let rows: unknown[] = [];
+        let meta: unknown = undefined;
         if (!env?.DB) {
-            // Fallback for local dev: use Drizzle
+            // Local dev fallback via Drizzle.
             const db = await getDb();
             if (!db) return { error: 'Database unavailable' };
-            const rows = await (db as any).all(sql.raw(bodyWithoutTrailingSemicolon));
-            return { rows };
+            rows = await (db as unknown as { all: (q: unknown) => Promise<unknown[]> }).all(sql.raw(body));
+        } else {
+            const result = await env.DB.prepare(body).all();
+            rows = result.results ?? [];
+            meta = result.meta;
         }
 
-        const stmt = env.DB.prepare(bodyWithoutTrailingSemicolon);
-        const result = await stmt.all();
-
-        // 5. Log the query for audit trail
         logAudit({
             userEmail: session.user.email,
             action: 'admin_sql_query',
-            details: { query: bodyWithoutTrailingSemicolon, rowCount: result.results?.length ?? 0 },
+            details: {
+                query: body, mutating: isMutating,
+                rowCount: Array.isArray(rows) ? rows.length : 0,
+                changes: (meta as { changes?: number; rows_written?: number } | undefined)?.changes
+                    ?? (meta as { rows_written?: number } | undefined)?.rows_written,
+            },
         });
 
-        return { rows: result.results ?? [] };
-
+        return { rows, meta, mutating: isMutating };
     } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e);
         return { error: message };

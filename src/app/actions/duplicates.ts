@@ -49,15 +49,21 @@ export async function tokenizeAdopter(adopterId: string): Promise<void> {
         // Delete old tokens for this adopter
         await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, adopterId));
 
-        // Insert new tokens
+        // Insert new tokens in ONE multi-row insert instead of N sequential
+        // round-trips (an adopter has 5–15 tokens; this was the dominant cost of
+        // bulk import). Chunked to stay under SQLite/D1's bound-parameter limit.
         if (tokens.length > 0) {
-            for (const token of tokens) {
-                await db.insert(duplicateTokens).values({
-                    id: crypto.randomUUID(),
-                    adopterId,
-                    tokenType: token.type,
-                    tokenValue: token.value,
-                });
+            const rows = tokens.map(token => ({
+                id: crypto.randomUUID(),
+                adopterId,
+                tokenType: token.type,
+                tokenValue: token.value,
+            }));
+            // ≤24 rows/insert: 4 columns × 24 = 96 bound params, under D1's ~100-per-
+            // query limit. (100 rows = 400 params would fail for records with >25
+            // tokens — compound names + many contacts — silently dropping their tokens.)
+            for (let i = 0; i < rows.length; i += 24) {
+                await db.insert(duplicateTokens).values(rows.slice(i, i + 24));
             }
         }
 

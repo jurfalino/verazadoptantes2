@@ -2,6 +2,240 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.37.1] - 2026-08-17
+
+### Fixed — dedup step: consistency with the review grid + dark theme
+
+- **The Duplicados step now reuses the review grid.** It was a bespoke triage list that showed *less* information than the previous (Revisar) screen and used colours that aren't remapped for dark mode, so it looked broken in the dark theme. It now renders each matched record with the **same grid row as step 2** (all fields visible), and the match "por qué"/presence/decision live in the grid row's match sub-row — one presentation, used by both steps (Nielsen consistency & standards).
+- **Dark-theme colours fixed at the token level:** replaced the non-remapped `border-sky-100` / `bg-emerald-50` / `text-emerald-700` / `bg-stone-50/60` and added the missing `--status-emerald-*` theme variables, so the create-green and the match panels render correctly in "Azul Noche". Also fixed the previous-runs drill-down panel's `bg-stone-50/50` (an opacity variant that wasn't dark-remapped).
+
+## [2.37.0] - 2026-08-17
+
+### Added — dedup triage explains "por qué" + flags weak matches for review
+
+- **"Por qué" on each duplicate match.** Every triage row expands to show why it matched: the matched signals (nombre / teléfono / email / DNI …), **your imported record** (name + contacts), and the **existing record**'s name + **presence badges** (has phone / email / DNI — **presence only, never the values**, since the matched record may be another org's protected record). Plus a one-line explanation, e.g. *"Coincide solo en el nombre (38%) — el registro existente no tiene teléfono ni email; podría ser otra persona con el mismo nombre."* Backed by a new presence-only `getMatchContext` action (reads structured contacts + the legacy contact blob).
+- **Weak matches are flagged for review, not silently created.** A weak match (e.g. name-only) no longer defaults to "Crear" — it becomes an unresolved **⚠ Elegí** state. **Importar is disabled until every flagged match is resolved** (per-row, or the bulk "Crear todas como nuevas" / "Omitir todas"). So an ambiguous same-name record can no longer slip through as a new duplicate — you decide, informed by the "por qué". The no-silent-create guarantee is compiler-enforced.
+
+## [2.36.0] - 2026-08-17
+
+### Changed — duplicate search is now a mandatory step + review-grid polish
+
+- **Duplicate search is a mandatory Step 3.** The flow is now **Subir → Revisar → Duplicados → Importar**. It was an optional button inside Review that was easy to skip — on an anti-duplicate tool, skipping it is exactly the wrong default. Now Review's button is **"Continuar a duplicados →"**, and the only "Importar" lives at the end of the Duplicados step, so you can't import without passing it.
+  - The step **auto-runs the scan on entry** (progress bar), then shows a **focused triage of only the matches** — each with the existing-record link and the Actualizar / Crear / Omitir choice; the other records auto-create.
+  - The pre-import confirmation is **folded into the step's summary** (create / update / skip · públicos/protegidos), so the separate confirm modal is gone — one fewer click.
+  - Clean states for **0 matches** ("no encontramos duplicados — se crearán como nuevos") and **incomplete search** (warning + "Volver a analizar"); editing in Review and returning re-analyzes.
+- **Review grid polish:** every row now shows its **source spreadsheet row number** (`#N`), and the grid **fits its width** (wider container + constrained contact column + truncated name/animal with tooltips) so it no longer scrolls in two directions on desktop — just vertical, with the sticky header.
+
+## [2.35.0] - 2026-08-17
+
+### Changed — import preview is now an editable spreadsheet grid
+
+The review step (before importing) was a 5-column table that collapsed **animal · especie · tipo · rating · fecha** into one raw, untranslated string and hid the editable fields behind a per-row ✎ expand panel — so verifying or fixing a field meant expanding rows one at a time.
+
+- **One column per field** — Nombre · Contacto · Animal · Especie · Tipo · Rating · Fecha · Visibilidad — with **human-readable, translated** values (Perro / Adopción / 5★ / "1 jun 2015" / Público·Protegido badge), so a whole column can be scanned to catch a mis-mapped field.
+- **Click-any-cell-to-edit inline** — a cell becomes its native control (text / select / date-picker) in place and commits on blur or change; no ✎, no expand mode. Only one control is ever in the DOM at a time (stays light on 800-row imports).
+- **Bulk "a todos"** for Rating and Visibilidad moved onto their column headers.
+- Invalid / warning / failed rows show their message **inline** (a sub-row) instead of behind a click.
+- **Timezone-safe dates** — the Fecha column formats `YYYY-MM-DD` directly (no `new Date()` UTC-midnight shift that showed dates a day early in Buenos Aires).
+- The grid scrolls horizontally on small screens; a full card-per-record mobile layout is a tracked Wave 1c follow-up.
+
+## [2.34.1] - 2026-08-17
+
+### Import Wave 1a — server write-path correctness (E9, E10, E11)
+
+Fast-follow to 2.34.0, closing the three highest-value residuals from the import audit:
+
+- **Idempotent upsert (E9):** the "actualizar" path added its activity with a fresh random id every time, so a **resume/retry that re-sent an upsert row double-added the activity** (also on a content-match miss from D1 replica lag or a raw-vs-normalized date). Now the activity uses a **deterministic id** (`impups-<runId>-<index>-act`) so a re-send updates in place / no-ops instead of duplicating, and the incoming date is normalized (`toYmd`) so a genuine re-import content-matches on the fast path. This completes Wave 0's premise — resume/retry are now safe end-to-end.
+- **sex/color/microchip preserved (E10):** these were silently dropped on **both** the create and upsert paths (the row type omitted them even though the data was there). Now carried through to the animal record on both paths.
+- **Per-entry contributor (E11):** imported contact entries on the create path are now stamped with `addedBy` (parity with the upsert path), so the importing contributor can later edit/correct their own imported contacts.
+
+Still deferred to Wave 1b/1c (audit-tracked): E12 (concurrency races), E13 (fingerprint phone/id normalization), E16 (US MM/DD dates), E17 (tests for the untested modules), full wizard i18n, mobile polish, `/import/sheet` auth gate.
+
+## [2.34.0] - 2026-08-16
+
+### Import Wave 0 — data-integrity + trust fixes (audit remediation)
+
+Fixes the 8 engineering + 2 UX blockers from the import audit (`.agents/audits/2026-08-16-import-audit.md`), executed task-by-task with per-task + whole-branch code review.
+
+**Data integrity (server):**
+- **Atomic-safe create (E1):** the adopter, its activity, the animal, and the placement now use **deterministic ids + `onConflictDoNothing`**, so a Worker kill mid-row (or a retry) re-attempts only the un-committed writes — no more adopters stranded with no activity/rating, no orphan animals, no duplicate placements.
+- **Honest audit counts (E7):** per-row audit items now **upsert** — a row that was `failed` on attempt 1 and `created` on retry reports `created` (admin counts no longer lie).
+
+**Duplicate detection:**
+- **Fails closed (E2):** a transient DB error during detection now **surfaces a "búsqueda incompleta" warning** instead of silently reporting "0 duplicados" and creating a full duplicate set.
+- **Detects combined-contact columns (E3):** detection now runs on the **split** contact entries, so a messy single "Contacto" column no longer bypasses dedup and imports duplicates every time.
+- **No homonym auto-merge (E5):** a **name-only** record no longer produces a content fingerprint, so two different people with the same name are routed to review instead of auto-updating the wrong record.
+
+**Dates & parsing:**
+- **Excel dates keep their day (E4):** `.xlsx` date cells now parse to ISO `YYYY-MM-DD` (via UTC parts) instead of being coarsened to the 1st of the month or dropped.
+
+**Import UX / regressions from the recent cancel-resume work:**
+- **Cancel race (E8):** cancelling exactly as the last batch finishes no longer mislabels a completed run as "cancelled"/leaves it un-closed.
+- **Retry/resume keep the full picture (E6):** retrying failed rows no longer wipes the results view or collapses the run's counts to the retried subset.
+- **Visibility is clear before importing (U1):** every review row shows a **blue "Público" / gray "Protegido"** badge (canonical themed treatment), plus an explainer and a running **"N públicos · N protegidos"** count.
+- **Pre-import confirmation (U2):** importing now opens a summary — **crear / actualizar (registros existentes) / omitir · públicos/protegidos** (with a reminder if duplicate detection was incomplete) — before writing anything.
+
+Deferred to Wave 1 (tracked in the audit): E9 (upsert idempotency — a resume that re-sends upsert rows can double-add an activity), full i18n of the wizard, mobile polish, and the `/import/sheet` route auth gate.
+
+## [2.33.9] - 2026-08-16
+
+### Fixed — "Reintentar fallidas" showed a blank screen; now re-sends with progress
+
+- Clicking the failed-rows retry sent the user to the confirm grid (`step='confirm'`), which only renders when `parsed` is present — so after a **resumed** import (no parsed rows) it was a **blank screen: no grid, no progress bar, no cancel**. And server-capacity failures don't have a data error to "correct" anyway.
+- Now the button (relabeled **"↻ Reintentar N fallidas"**) **re-sends just the failed rows** through the normal import screen — real progress bar + cancel — reading the rows from the retained resume snapshot (works for fresh *and* resumed imports). The server skips any already-created rows (idempotent), so only the missing ones are created. The resume snapshot is now **kept whenever rows failed** (cleared only on a clean finish), and the button only shows when a snapshot is available (no dead-click).
+
+## [2.33.8] - 2026-08-16
+
+### Added — import running screen shows the file name + estimated time remaining
+
+- The import progress screen now shows the **file name** being imported (for reference; also on resume). The folder isn't shown because browsers don't expose a file's path to web pages.
+- Added a live **estimated time remaining** (`~N s`/`~N min`) next to the progress count, extrapolated from the observed rate since sending began and refreshed every second.
+
+## [2.33.7] - 2026-08-16
+
+### Fixed — a heavy import batch no longer crashes (and stalls) the whole import
+
+- **Root cause:** on Cloudflare, a heavy batch that hits the Worker CPU/time limit gets the Worker killed at the infra level, so the `importAdoptersBatch` server action **resolves to `undefined`** on the client (it doesn't throw, and logs nothing server-side). The client did `for (const … of await sendResilient(batch))`, and `for…of undefined` threw — aborting the entire import with a toast while the screen stayed stuck on "Importando…" forever.
+- **Fix:** `sendResilient` now treats a non-array resolve exactly like a throw (retry → split → mark the row failed), so one bad batch degrades to per-row failures instead of crashing everything. `runImport`/`resumeImport` are wrapped so the screen **always** reaches a terminal state (never stuck on "Importando…").
+
+### Added — cancel an import safely + resume it
+
+- A **Cancelar** button during the import stops sending further batches (and bails out of the retry/split recursion at once). Already-created rows persist (idempotent, deterministic ids), so a cancel leaves a **resumable** run rather than half-broken data.
+- **Reanudar:** a cancelled/interrupted run can be resumed — from the cancelled screen, the upload-screen banner, or a **Reanudar** button on its row in "Importaciones anteriores". Resume re-sends every row; the server skips the ones already created, so only the missing rows are created. (Same-browser, via the local resume snapshot.)
+
+## [2.33.6] - 2026-08-16
+
+### Added — import accepts a month + year date
+
+- Extends the year-only support (2.33.5): a date cell with **month + year** now maps to the **1st of that month** — numeric `06/2009`, `6-2009`, `2009-06`, `2009/6`, and named `diciembre 2009`, `dic de 2009`, `December 2009`, `março 2009`, `junio de 2015` (es/en/pt, full + abbreviations, accent-insensitive). Numeric forms require a **4-digit year** so ambiguous `12/09` stays null; invalid months (`13/2009`) stay null; a complete date anywhere in the cell still wins. +1 unit test (12 assertions).
+
+## [2.33.5] - 2026-08-16
+
+### Added — import accepts a year-only date
+
+- A date cell that is **only a 4-digit year** (e.g. `2015`) is now accepted and stored as **Jan 1 of that year** (1900–2100), instead of being dropped with a "fecha no reconocida" warning. Imprecise legacy data (like the VANA blacklist) often records just the year; the stored `date` is a timestamp with no partial-date type, so Jan 1 is the standard mapping, and the review's date picker shows `2015-01-01` so the coercion is visible. A complete date anywhere in the cell still wins, so the year inside `14/03/2009` is never treated as year-only.
+
+## [2.33.4] - 2026-08-16
+
+### Added — open the records of a previous import from `/import/sheet`
+
+- Each row in "Importaciones anteriores" is now **clickable** and expands to list that run's audited records — row #, action (Crear/Actualizar/Omitir), the adopter name **linked to its profile** (opens in a new tab), the status badge, a "→ registro existente" link when it matched, and any message. Mirrors the admin `/admin/imports` drill-down.
+- Backed by a new **auth-scoped** `getMyImportRunItems(runId)` — only the run's own actor, an org-mate, or an admin can read a run's items. Unlike the admin view, the matched record shows only a link (not the matched name) to avoid leaking a name from another org's record.
+
+## [2.33.3] - 2026-08-16
+
+### Fixed — "Importaciones anteriores" always showed "0 creados"
+
+- The previous-imports list (in `/import/sheet`) and the admin run list (`/admin/imports`) derived their per-status counts with a **correlated subquery inside a Drizzle `sql` template**, which returned **0 for every run in D1** even when the audited items existed (raw SQL for the same subquery returned the correct 837). Replaced with a **plain `GROUP BY` aggregation merged in JS** (chunked to stay under D1's ~100-param limit) — counts are now correct.
+- **Richer summary:** each run now shows total rows + **creados / actualizados / omitidos / fallidos** (was: created/updated/failed, no skipped). For old runs whose per-row items were never written, it **falls back to the stored header counters** instead of showing a misleading 0.
+
+## [2.33.2] - 2026-08-16
+
+### Changed — admin SQL runner allows writes (with a confirmation gate)
+
+- `/admin/query` was read-only (SELECT/WITH only). It now runs **any single statement**; a **mutating** one (anything that isn't a plain SELECT/EXPLAIN or read-only CTE — INSERT/UPDATE/DELETE/DROP/ALTER/…) is **not executed on the first click** — it returns a confirmation prompt ("⚠ modifica o borra datos"), and only runs after the admin explicitly confirms. Mutating results report the number of rows affected. Still admin-gated and every statement is written to the audit log. One statement at a time (no multi-statement).
+
+## [2.33.1] - 2026-08-16
+
+### Fixed — import audit was silently failing (D1 bound-parameter limit)
+
+- **The per-batch audit write exceeded D1's ~100-bound-parameters-per-query limit** (40 rows × 12 columns = 480 params) and failed on every batch — which is why `/admin/imports` recorded **zero items** despite completed imports (Axiom showed `importAdoptersBatch: audit write failed` ×33). Now chunked to **8 rows/insert** (96 params). The same latent overflow in the duplicate-token write (100 rows × 4 columns = 400 params, which would drop tokens for records with >25 tokens) is chunked to **24 rows/insert**.
+
+## [2.33.0] - 2026-08-15
+
+### Added — import detects IDENTICAL records (never duplicates them)
+
+- **If two records hold the same information — regardless of which fields — the import now recognizes them as the same and updates instead of creating a copy.** On "Buscar duplicados", each row's identifying content (name + all contacts, normalized: accent/case/format/order-independent) is fingerprinted, and one server scan matches it against existing records. An **exact** content match is shown as **"● Idéntico"** and defaults to **Actualizar** — so re-importing, or importing a record that already exists, no longer creates a duplicate.
+- Catches identical records **any** field combination, including **address-only** and **DNI-only** (which the fuzzy matcher couldn't), because it scans existing records rather than relying on the token index. Computed **on the fly** — no stored column, migration, or backfill. The fuzzy match still handles *similar-but-not-identical* rows (defaults to review/create).
+
+## [2.32.9] - 2026-08-15
+
+### Fixed — import duplicate detection now uses the DNI; warn when skipping detection
+
+- **Duplicate detection ignored the DNI.** It passed only name/phone/email/social to the matcher, so a record with an **identical name AND identical document number** scored a weak ~50% (name-only) and — worse — was **not classified as an exact-identifier match**, so it defaulted to *Crear* (duplicate) instead of *Actualizar*. Detection now passes the DNI (labeled, so the matcher extracts it as an `id_number` token); a shared DNI now scores high and defaults to update.
+- **Clarified: without "Buscar duplicados", nothing is deduped.** If you import without running detection, every row is **created** — no upsert, even against records that already exist. The review step now shows a warning to that effect (with a one-click "Buscar duplicados"), so it's a deliberate choice, not a surprise.
+
+## [2.32.8] - 2026-08-15
+
+### Fixed / Added — import-runs audit reliability + user-visible history
+
+- **`/admin/imports` was stuck showing one run as "en curso" forever with zero counts.** Cause: the audit depended on client-side calls that could fail — `startImportRun` (fire-and-forget) could orphan a run, and the old `finishImportRun` wrote all items in one call that hit the Worker limit, so status never flipped and no items were recorded. Now: the **run header is created server-side by the batch** (idempotent) so a run always appears; and the list **derives counts and status live from the items** (accurate even if `finishImportRun` never ran), marking a run that's had no activity for 5 min as **"interrumpida"** instead of a permanent "en curso".
+- **Rescuers can see their own (and their org's) previous imports.** `/import/sheet` now shows an **"Importaciones anteriores"** list on the upload screen — date, file, and created/updated/failed counts with status — via the new `getMyImportRuns` action (scoped to the actor + org-mates). Per-row detail stays admin-only (`/admin/imports`).
+
+## [2.32.7] - 2026-08-15
+
+### Fixed — import: heavy batches no longer fail wholesale ("Falló el lote")
+
+- **Root cause of the mass failures:** a 25-row batch of heavy rows exceeded the Cloudflare Worker CPU/time limit and threw; the client retried the same too-heavy batch 3× (all failing) and marked the **whole batch failed** — even rows that had actually committed (idempotency created them, the client just never got the response).
+- **Fix — adaptive batch splitting:** if a batch still throws after 2 tries, it's **split in half and each half retried**, recursively down to a single row. Idempotent server-side, so re-sending already-created rows is a no-op — a heavy batch just subdivides until it fits, instead of dropping ~25 rows. Initial batch size also lowered (25 → 12).
+- **Fix — the audit now captures failures.** Items are written **per batch, server-side** (deterministic id + `ON CONFLICT DO NOTHING`) instead of all-at-once at the end — the previous single 800-item write itself hit the Worker limit and silently recorded nothing, which is why the failure messages were missing from `/admin/imports`.
+
+## [2.32.6] - 2026-08-15
+
+### Fixed — import speed + resume-across-refresh
+
+- **Much faster.** `tokenizeAdopter` inserted duplicate-detection tokens **one row at a time** (5–15 sequential D1 round-trips per adopter — the dominant cost of a bulk import). It now writes them in **one multi-row insert**, so tokens still exist immediately (no dedup-consistency gap — chosen over *deferring* tokenization, which would leave records invisible to the fast dedup index until a later pass) and per-row write count drops sharply. Benefits every save, not just import.
+- **Resumable after a page refresh.** The import runs in the browser tab; refreshing used to kill it, leaving a half-done run and no safe way to continue (a re-import minted a new run id and duplicated the already-created records). The wizard now persists a resume snapshot; on reload it offers **"Reanudar importación"**, which re-sends the rows under the **same run id** — the server skips everything already created (deterministic ids) and creates only what's missing. The interrupted run is then properly finished in `/admin/imports`.
+
+## [2.32.5] - 2026-08-15
+
+### Fixed — import splits multi-value contact cells
+
+- A cell that packs several contacts into one value (`a@x.com; b@y.com`, multiple phones or addresses separated by `;` or newlines) is now **split into separate entries** at the column-mapping step — so each value shows as its **own chip** in the review grid (no more one crowded chip hiding data) and is **stored as a separate contact entry** (no more all-phones-as-one). Splitting is on `;`/newline only — **not** commas, which addresses legitimately contain.
+
+## [2.32.4] - 2026-08-15
+
+### Fixed / Changed — spreadsheet import robustness + UX (mass-failure fix)
+
+- **Prevents the mass "Failed to fetch" failures.** The import no longer fires one HTTP request per row (~800 concurrent Worker invocations hammering D1 → transient `database is locked` / rate errors → rows failing en masse). Rows are now sent to a **server-side bulk endpoint** (`importAdoptersBatch`) in ~25-row batches at low concurrency; each batch writes **sequentially** with a **transient-error retry wrapped around every write**, so D1 contention is ridden out server-side instead of surfacing as a failed row.
+- **Idempotent — no duplicate records on retry.** Each row's adopter gets a **deterministic id** (from the run id + row index) and the create is existence-gated + `ON CONFLICT DO NOTHING`, so re-sending a batch after a mid-batch Worker timeout can never double-create the adopter or its activity.
+- **Failed rows are actionable and fixable.** After an import, **"✗ Corregir y reintentar N fallidos"** returns you to the review grid with only the failed rows selected; each shows its **server error** (the field that failed) inline and is editable — fix it and re-import just those. Loop until zero.
+- **Preview shows full contact info.** The review grid's contact column no longer truncates to one clipped line — contacts render as **typed chips** (Tel / Email / Red / DNI / Dir) that wrap.
+- **Results show the original spreadsheet row.** Each created / updated / failed record now displays its **source row** (header: value · …) so it's traceable back to the sheet.
+
+## [2.32.3] - 2026-08-15
+
+### Added — import-runs audit for admins (`/admin/imports`)
+
+- Every spreadsheet import is now recorded: **who** ran it, **when**, from which **file**, and — expandable per run — **every created/updated record** with a link to its profile, the **action taken** (Crear / Actualizar / Omitir), the final **status**, and (when it matched an existing record) **which record it matched** with the **confidence %**.
+- Robust recording: the run **header is written when the import starts** (so an abandoned/interrupted run still shows as *en curso*), and the per-row items are written when it finishes with final counts. The actor is resolved **server-side**, never trusted from the client. All recording is best-effort — it never blocks the import.
+- New admin-gated tables `import_runs` + `import_run_items` (migration `0057`), server actions (`startImportRun`/`finishImportRun`/`getImportRuns`/`getImportRunItems`), a new **Importaciones** sidebar entry (es/en/pt), and the `/admin/imports` page.
+
+## [2.32.2] - 2026-08-15
+
+### Added — duplicate-aware spreadsheet import (update instead of duplicate)
+
+- New **"🔍 Buscar duplicados existentes"** step in the import review grid: each row is checked against existing adopters using the same engine the manual form uses (`findAdopters` duplicate mode), keyed on name/phone/email/social.
+- Per matched row the grid shows the **confidence** (% + exact vs. possible + which field matched), an **"Abrir ↗"** link to the existing record in a new tab, and a **Actualizar / Crear / Omitir** selector. Default: an **exact-identifier match** (phone/email/DNI/social) defaults to **Actualizar**; a weaker (name-only) match still surfaces but defaults to **Crear** so you review it.
+- **Actualizar (upsert)** additively merges into the existing record — adds contacts it doesn't have, adds the activity (skipping one equivalent to an existing type+date+details), fills the name only if the existing record is nameless (otherwise adds the incoming name as an **alias**); never overwrites existing data. Rating is untouched (avgRating derives from the added activity). Powered by the new `upsertImportRecord` action + the pure `planRecordMerge` planner.
+- Dateless activities now store a **null** date on both create and upsert paths (instead of fabricating import-time), so re-importing a dateless row dedups its activity rather than duplicating it.
+- **Known limitation:** detection keys on name/phone/email/social — address-only and DNI-only rows are not auto-matched (they default to Crear; no risk of a wrong merge). They can still be deduped afterward via the existing duplicate-candidates review.
+
+## [2.32.1] - 2026-08-15
+
+### Fixed / Changed — spreadsheet import robustness (VANA bulk import)
+
+- **Address now counts as a minimum identifier.** A nameless record known only by a physical address (e.g. a VANA blacklist entry) was accepted by the import grid but **rejected server-side** with a bare "Invalid input" — the min-identifier rule (`hasAnyContact`) counted phone/email/social/id but not `address`, disagreeing with the import's client check. `address` is now a valid identifier everywhere (client, API, manual form), so these records import.
+- **Import errors are actionable.** The API already returned which field failed (`details`), but the wizard threw it away and showed only "Invalid input (id)". It now surfaces the field-level detail, and the API details include the field path.
+- **Transient failures retry.** A row that hit a network blip ("Failed to fetch") or a 5xx during the long run is now retried up to 3× with backoff instead of being marked failed on the first hiccup. A 4xx (validation) is not retried — it's deterministic.
+- **Import is ~5× faster.** Rows now POST with bounded concurrency (5 at a time) instead of strictly one-at-a-time.
+- **Review step shows the created records with links.** The final step now lists every created record (nameless ones as "Sin nombre") with a "Ver perfil →" link to each new profile, alongside the existing not-imported list and error CSV.
+
+## [2.32.0] - 2026-08-14
+
+### Added — adopter profiles without a name
+
+Rescuers can now record an adopter identified only by contact data (phone, email, social, or ID) — motivated by legacy blacklists like VANA-2015 where ~71 of 837 entries are anonymous. The name requirement is replaced by a **minimum-identifier rule: name OR at least one contact**.
+
+- **Unified "Sin nombre" fallback** everywhere an adopter name is shown — a single, honest placeholder (italic, muted, theme-safe), rendered via the new `<AdopterName>` component and `adopterDisplayName()` helper. It is kept **distinct from a deleted adopter** (e.g. `admin/flags` no longer conflates the two). On name-only surfaces, an access-gated **contact sub-identifier** (email › phone › social) is appended for viewers who can see the contact.
+- **Intentional friction on manual create** (`AdopterForm`): the name field is no longer HTML-`required`, but saving with an empty name is never silent — no contact at all is a hard error, and an empty name with contact prompts you to complete it with an explicit **"No conozco el nombre"** opt-in before saving anonymously.
+- **Anonymous records default Público** (with the flag on), with an explicit **Protegido** toggle at manual create and a per-row + bulk visibility control in the spreadsheet-import review step. **Named records always stay Protegido** — enforced server-side, so typing a name after opting into anonymous can never leak a named record as public.
+- Validation relaxed on the three rescuer-authoring paths (manual form + `saveAdopterSchema`, API `createAdopterApiSchema`, and import `validateMappedRow`); **self-submission** (the adopter's own form/contract via `_adopterFactory`) still **requires a name**. No DB migration (`name = ''` satisfies the existing `NOT NULL`).
+- Full i18n (es/en/pt) for the new strings; e2e coverage for the create flow + min-identifier rejection.
+- **Spreadsheet import is instant by default (no more waiting for AI).** Opening a sheet now defaults to a **deterministic, offline column-map** (`guessColumnMap` matches header names — telefonos→Phone, dni→DNI, etc.) so the review grid appears immediately, instead of eagerly running one AI request per ~20 rows over the whole sheet (minutes for a big file) before anything showed — and the old "Mapear columnas" escape hatch only appeared *after* that finished. AI interpretation is now **opt-in** ("🤖 ¿Columnas mezcladas? Interpretar con IA") for genuinely messy sheets.
+- **Import tolerates messy dates/ratings instead of blocking the row.** A present-but-unparseable date or rating is now a **non-blocking warning** (amber ⚠ + a "Con advertencias" filter), not a hard error: the record imports without that field. `normalizeImportDate` also **salvages the first valid date** from a range or prose (`"14/03/2009 - 20/06/2009"` → `2009-03-14`); only a cell with no complete date at all (bare years, "hace un mes", "Feb 23rd") warns. Only the minimum-identifier rule (name OR contact) still blocks.
+- **Visibility badge is now exhaustive.** Fixed a gap (pre-existing in the PII layer, made common by single-contact records): a protected record whose only contact field the viewer had unlocked via search/verify showed **no badge at all**. The resolver now yields a badge for every protected record — green **"Con acceso"** only on full access (owner / org-mate / admin / granted), gray **"Protegido"** for anything less (no access, or a partial search/verify unlock). Applies to both the profile header and the search card (shared resolver).
+
 ## [2.31.8] - 2026-08-14
 
 ### Added — powerful filtering in the spreadsheet-import review step

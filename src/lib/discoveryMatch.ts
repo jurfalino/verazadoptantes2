@@ -62,13 +62,13 @@ export function assembleDiscoveryMatch(
     // Tri-state visibility badge via the shared domain resolver, so the search
     // card mirrors the profile exactly. `visibility` undefined ⇒ gating off for
     // this record ⇒ no badge (same as the profile). Keyed on the positive
-    // `nothingMasked` access signal + the maskable-field count, matching the
-    // profile's `computeVisibilityBadge` inputs.
+    // `nothingMasked` full-access signal: full access ⇒ green, any protected
+    // record without full access ⇒ gray (a search-match unlock is partial, not
+    // full, so it stays "Protegido"). Same inputs as the profile.
     const visibilityBadge = computeVisibilityBadge({
         isPublic: maskOpts.adopterIsPublic,
         gatingOn: !!visibility,
         hasFullAccess: visibility?.nothingMasked,
-        masked: !!(maskResult && maskResult.maskedFieldCount > 0),
     });
 
     if (contactProtected && maskResult) {

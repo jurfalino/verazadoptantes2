@@ -34,9 +34,9 @@ function newId(): string {
     return crypto.randomUUID();
 }
 
-function placementValues(animalId: string, data: RecordData, recordType: string, adopterId: string, actor: string, startedAt: Date | number) {
+function placementValues(animalId: string, data: RecordData, recordType: string, adopterId: string, actor: string, startedAt: Date | number, id: string = newId()) {
     return {
-        id: newId(),
+        id,
         animalId,
         adopterId,
         recordType,
@@ -81,7 +81,7 @@ export async function insertRecord(db: Db, data: RecordData, actor: string): Pro
             onBehalfOf: data.onBehalfOf ?? null,
             sourceUrl: data.sourceUrl ?? null,
             recordedBy: actor,
-        });
+        }).onConflictDoNothing();
         return id;
     }
 
@@ -103,9 +103,9 @@ export async function insertRecord(db: Db, data: RecordData, actor: string): Pro
         createdAt: date as any,
         updatedAt: date as any,
         deletedAt: null,
-    });
+    }).onConflictDoNothing();
     if (isPlacementType(recordType) && data.adopterId) {
-        await db.insert(placements).values(placementValues(animalId, data, recordType, data.adopterId, actor, date));
+        await db.insert(placements).values(placementValues(animalId, data, recordType, data.adopterId, actor, date, `${animalId}-plc`)).onConflictDoNothing();
     }
     return animalId;
 }

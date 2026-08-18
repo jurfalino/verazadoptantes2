@@ -15,6 +15,8 @@ import { useLanguage } from "@/context/LanguageContext";
 import ContactEntriesSection from "@/components/ContactEntriesSection";
 import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
 import type { VisibilityBadge } from "@/domain/visibilityBadge";
+import { hasMinimumIdentifier } from "@/domain/adopterIdentity";
+import { adopterDisplayName, namelessSubIdentifier } from "@/lib/adopterDisplay";
 
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
@@ -162,6 +164,18 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
 
     const [isEditing, setIsEditing] = useState(isNew);
     const [loading, setLoading] = useState(false);
+
+    // Manual-create friction gate (nameless-adopter-profiles design): saving
+    // with an empty name shows a gentle prompt instead of hard-blocking via
+    // HTML `required`. `dontKnowName` is the explicit opt-in that lets the
+    // rescuer proceed with a contact-only record; `nameHint` toggles the
+    // inline prompt/error under the name input. See handleSave.
+    const [dontKnowName, setDontKnowName] = useState(false);
+    const [nameHint, setNameHint] = useState(false);
+    // Anonymous (no-name) records default to Público (findable) so their
+    // contact info isn't invisible; the rescuer can flip this to Protegido.
+    // Only meaningful (and only sent to saveAdopter) when dontKnowName is true.
+    const [anonPublic, setAnonPublic] = useState(true);
 
     // Duplicate detection (create only): while-typing results + save confirmation modal
     const [duplicateResults, setDuplicateResults] = useState<DiscoveryMatch[] | null>(null);
@@ -477,7 +491,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             // Strip them from the saveAdopter payload so the bulk replace path
             // doesn't override what those actions wrote.
             const payload = isNew
-                ? { ...data, contactEntries: JSON.stringify(contactEntries) }
+                ? { ...data, contactEntries: JSON.stringify(contactEntries), ...(dontKnowName && !data.name.trim() ? { isPublic: anonPublic } : {}) }
                 : { ...data, contactEntries: undefined, contactInfo: undefined };
             const res = await saveAdopter(payload);
             // v2.19.43: defensive check. saveAdopter is supposed to either return
@@ -609,7 +623,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         } finally {
             setLoading(false);
         }
-    }, [data, contactEntries, isNew, formPrefill, searchParams, router, t]);
+    }, [data, contactEntries, isNew, formPrefill, searchParams, router, t, dontKnowName, anonPublic]);
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -617,6 +631,15 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             openLogin();
             return;
         }
+        // Manual-create friction gate: no HTML `required` on the name input —
+        // instead a save-time check. Neither name nor any contact → hard
+        // error (can't identify the adopter at all). Name empty but contact
+        // present → gentle prompt with an explicit "No conozco el nombre"
+        // opt-in before the save is allowed through.
+        const nameEmpty = !data.name.trim();
+        const hasContact = hasMinimumIdentifier({ name: data.name, contactEntries: JSON.stringify(contactEntries), contactInfo: data.contactInfo });
+        if (nameEmpty && !hasContact) { setNameHint(true); return; }
+        if (nameEmpty && !dontKnowName) { setNameHint(true); return; }
         if (isNew) {
             // v2.19.65: if the rescuer's input still normalizes to what
             // search already showed them, skip the save-time modal — they're
@@ -878,19 +901,53 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                             <div className="flex items-center justify-between gap-2">
                                 <div className="min-w-0 flex-1">
                                     {isEditing ? (
+                                        <>
                                         <input
                                             type="text"
-                                            required
                                             className="w-full text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight bg-transparent border-b-2 border-teal-300 focus:border-teal-500 outline-none py-0.5 placeholder-stone-500 transition-all"
                                             value={data.name}
-                                            onChange={e => setData({ ...data, name: e.target.value })}
+                                            onChange={e => {
+                                                setData({ ...data, name: e.target.value });
+                                                // Once a real name is typed, this record is no longer
+                                                // nameless — drop the "don't know the name" opt-in (and
+                                                // the empty-name hint) so the anon-public notice/gate in
+                                                // performActualSave stop applying. See the security fix
+                                                // for the named-record-saved-as-public leak.
+                                                if (e.target.value.trim()) { setDontKnowName(false); setNameHint(false); }
+                                            }}
                                             placeholder={t('adopter.placeholder_name_aliases')}
                                             autoFocus
                                         />
+                                        {(nameHint || dontKnowName) && (
+                                            <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                                {nameHint && (
+                                                    <>
+                                                        <p>{t('adopter.name_empty_prompt')}</p>
+                                                        {hasMinimumIdentifier({ name: data.name, contactEntries: JSON.stringify(contactEntries), contactInfo: data.contactInfo })
+                                                            ? (<label className="inline-flex items-center gap-1.5 mt-1 cursor-pointer">
+                                                                 <input type="checkbox" checked={dontKnowName} onChange={(e) => { setDontKnowName(e.target.checked); if (e.target.checked) setNameHint(false); }} />
+                                                                 <span>{t('adopter.dont_know_name')}</span>
+                                                               </label>)
+                                                            : (<p className="text-rose-600 mt-1">{t('adopter.name_or_contact_required')}</p>)}
+                                                    </>
+                                                )}
+                                                {dontKnowName && (
+                                                    <div className="mt-1.5">
+                                                        <p>{t('adopter.anon_public_notice')}</p>
+                                                        <label className="inline-flex items-center gap-1.5 mt-1 cursor-pointer">
+                                                            <input type="checkbox" checked={anonPublic} onChange={(e) => setAnonPublic(e.target.checked)} />
+                                                            <span>{anonPublic ? t('search.public_label') : t('search.protected_label')}</span>
+                                                        </label>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                        </>
                                     ) : (
+                                      <>
                                       <div className="flex items-center gap-2 min-w-0">
                                         {(() => {
-                                        const displayName = !isNew && initialData ? initialData.name : t('adopter.title_new');
+                                        const displayName = !isNew && initialData ? adopterDisplayName(initialData, t('adopter.nameless')) : t('adopter.title_new');
                                         // Initial-only tokens (1-char words separated by whitespace) are
                                         // the visual signature of `partialRevealName` — when present the
                                         // viewer has only the initials of those tokens. Make the whole
@@ -926,6 +983,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                 rootClassName="min-w-0 flex-1"
                                                 inputClassName="w-full text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight bg-transparent border-b-2 border-teal-300 focus:border-teal-500 outline-none py-0.5 placeholder-stone-500 transition-all"
                                                 placeholder={t('adopter.placeholder_name_aliases')}
+                                                emptyLabel={t('adopter.nameless')}
                                                 displayRender={(v) => (
                                                     <h1 className="text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate">{v}</h1>
                                                 )}
@@ -977,6 +1035,18 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                             );
                                         })()}
                                       </div>
+                                      {/* Sub-identifier for a nameless adopter — only when the
+                                          contact reaching this form is unmasked for the viewer
+                                          (isPrivileged); a masked contact would be useless noise. */}
+                                      {!isNew && initialData && !initialData.name?.trim() && isPrivileged && (() => {
+                                          const subId = namelessSubIdentifier(initialData.contactInfo);
+                                          return subId ? (
+                                              <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
+                                                  {subId}
+                                              </p>
+                                          ) : null;
+                                      })()}
+                                      </>
                                     )}
                                 </div>
                                 {/* Actions (right-aligned inline) */}

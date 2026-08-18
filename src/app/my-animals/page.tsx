@@ -1,6 +1,7 @@
 'use client';
 
 import { useLanguage } from '@/context/LanguageContext';
+import { adopterDisplayName } from '@/lib/adopterDisplay';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -373,28 +374,28 @@ export default function MyAnimalsPage() {
                                     )}
 
                                     {/* Adopter info (for adopted view) */}
-                                    {animal.adopterId && animal.adopterName && !isFoster && (
+                                    {animal.adopterId && !isFoster && (
                                         <div className="flex items-center gap-2 mb-3 p-2 bg-teal-50 rounded-lg">
                                             <span className="text-sm">✅</span>
                                             <Link
                                                 href={`/adopter/${animal.adopterId}`}
                                                 className="text-sm font-medium text-teal-700 hover:underline"
                                             >
-                                                {t('dashboard.adopted_by') || 'Adopted by'} {animal.adopterName}
+                                                {t('dashboard.adopted_by') || 'Adopted by'} {adopterDisplayName({ name: animal.adopterName }, t('adopter.nameless'))}
                                             </Link>
                                         </div>
                                     )}
 
                                     {/* Foster ("Tránsito") info — animal is in a
                                         temporary home, still the rescuer's to place. */}
-                                    {isFoster && animal.adopterId && animal.adopterName && (
+                                    {isFoster && animal.adopterId && (
                                         <div className="flex items-center gap-2 mb-3 p-2 bg-indigo-100 rounded-lg">
                                             <span className="text-sm">🤝</span>
                                             <Link
                                                 href={`/adopter/${animal.adopterId}`}
                                                 className="text-sm font-medium text-indigo-800 hover:underline"
                                             >
-                                                {t('dashboard.in_foster_with') || 'In foster with'} {animal.adopterName}
+                                                {t('dashboard.in_foster_with') || 'In foster with'} {adopterDisplayName({ name: animal.adopterName }, t('adopter.nameless'))}
                                             </Link>
                                         </div>
                                     )}
