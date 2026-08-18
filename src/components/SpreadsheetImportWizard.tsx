@@ -1295,6 +1295,14 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
         onDeactivate: () => onEditCell(null),
     });
 
+    // Motivo (eff.details) is shown FULL and un-trimmed in the interaction line
+    // (never a truncated column value). It clamps to 2 lines with a per-row
+    // "ver motivo completo" toggle when long — a local flag is enough here since,
+    // unlike editingCell, only one row's own clamp state is ever relevant at a time.
+    const [motivoExpanded, setMotivoExpanded] = useState(false);
+    const isLongMotivo = (eff.details?.length ?? 0) > 120;
+    const motivoEditing = editingField === 'details';
+
     return (
         <>
             <tr className={`border-t border-stone-100 ${!selected ? 'opacity-40' : ''} ${(invalid || failure) ? 'bg-rose-50' : ''}`}>
@@ -1336,54 +1344,6 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                         </div>
                     )}
                 </td>
-                <td className="px-3 py-2 text-stone-600">
-                    <InlineCell {...cellProps('animalName')} kind="text" ariaLabel="Editar animal"
-                        value={eff.animalName ?? ''} onCommit={v => onChange({ animalName: v })}
-                        display={
-                            eff.animalName
-                                ? <span className="block truncate max-w-[110px]" title={eff.animalName}>{eff.animalName}</span>
-                                : <span className="text-stone-400">—</span>
-                        } />
-                </td>
-                <td className="px-3 py-2 text-stone-600">
-                    <InlineCell {...cellProps('species')} kind="select" ariaLabel="Editar especie"
-                        value={speciesVal} options={SPECIES_OPTIONS.map(o => ({ value: o.v, label: o.l }))}
-                        onCommit={v => onChange({ species: v || undefined })}
-                        display={speciesVal ? speciesLabel : <span className="text-stone-400">—</span>} />
-                </td>
-                <td className="px-3 py-2 text-stone-600">
-                    <InlineCell {...cellProps('recordType')} kind="select" ariaLabel="Editar tipo"
-                        value={typeVal} options={RECORD_TYPES.map(t => ({ value: t, label: RECORD_TYPE_LABELS[t] ?? t }))}
-                        onCommit={v => onChange({ recordType: v })}
-                        display={typeLabel} />
-                </td>
-                <td className="px-3 py-2 text-stone-600">
-                    <InlineCell {...cellProps('rating')} kind="select" ariaLabel="Editar rating"
-                        value={RATING_OPTIONS.includes(eff.rating ?? '') ? (eff.rating ?? '') : ''}
-                        options={[{ value: '', label: '— (auto)' }, ...['1', '2', '3', '4', '5'].map(n => ({ value: n, label: `${n} ★` }))]}
-                        onCommit={v => onChange({ rating: v || undefined })}
-                        display={ratingNorm != null ? `${'★'.repeat(ratingNorm)}` : <span className="text-stone-400">— auto</span>} />
-                </td>
-                <td className="px-3 py-2 text-stone-600">
-                    <InlineCell {...cellProps('date')} kind="date" ariaLabel="Editar fecha"
-                        value={normDate ?? ''} onCommit={v => onChange({ date: v || undefined })}
-                        display={
-                            normDate ? formatImportDate(normDate)
-                                : dateUnparseable ? <span className="text-amber-700">{eff.date} <span title={built.warnings.join(' ')}>⚠</span></span>
-                                    : <span className="text-stone-400">—</span>
-                        } />
-                </td>
-                <td className="px-3 py-2 text-stone-600">
-                    {/* Motivo/notas is long free text — no inline single-line edit here;
-                        the cell is a toggle that opens the "detalles" sub-row below,
-                        where it's edited comfortably alongside the other hidden fields. */}
-                    <button type="button" onClick={onToggleFields} aria-label="Ver/editar motivo y más campos" aria-expanded={!!fieldsExpanded}
-                        className="block w-full text-left rounded px-1 -mx-1">
-                        {eff.details
-                            ? <span className="block max-w-[150px] truncate" title={eff.details}>{eff.details}</span>
-                            : <span className="text-stone-400">—</span>}
-                    </button>
-                </td>
                 <td className="px-3 py-2">
                     <InlineCell {...cellProps('isPublic')} kind="select" ariaLabel="Editar visibilidad"
                         value={isPublicEff ? 'public' : 'protected'}
@@ -1399,18 +1359,87 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                         } />
                 </td>
             </tr>
+            {/* Interaction line — ALWAYS visible under every identity row (this is
+                the record: Tipo/animal/especie/rating/fecha + the full Motivo, never
+                trimmed to a column). Each meta field reuses InlineCell + the SAME
+                lifted editingCell state as the identity row, so only one control is
+                ever live across the whole grid. */}
+            <tr className={!selected ? 'opacity-40' : ''}>
+                <td></td>
+                <td colSpan={4} className="px-3 pb-2">
+                    <div className="border-l-2 border-amber-200 bg-stone-50 rounded-r-lg px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-stone-600">
+                            <InlineCell {...cellProps('recordType')} kind="select" ariaLabel="Editar tipo"
+                                value={typeVal} options={RECORD_TYPES.map(t => ({ value: t, label: RECORD_TYPE_LABELS[t] ?? t }))}
+                                onCommit={v => onChange({ recordType: v })}
+                                display={<span className="font-semibold text-stone-700">{typeLabel}</span>} />
+                            <span>·</span>
+                            <span aria-hidden>🐾</span>
+                            <InlineCell {...cellProps('animalName')} kind="text" ariaLabel="Editar animal"
+                                value={eff.animalName ?? ''} onCommit={v => onChange({ animalName: v })}
+                                display={
+                                    eff.animalName
+                                        ? <span className="truncate max-w-[110px] inline-block align-bottom" title={eff.animalName}>{eff.animalName}</span>
+                                        : <span className="text-stone-400">—</span>
+                                } />
+                            <span>·</span>
+                            <InlineCell {...cellProps('species')} kind="select" ariaLabel="Editar especie"
+                                value={speciesVal} options={SPECIES_OPTIONS.map(o => ({ value: o.v, label: o.l }))}
+                                onCommit={v => onChange({ species: v || undefined })}
+                                display={speciesVal ? speciesLabel : <span className="text-stone-400">—</span>} />
+                            <span>·</span>
+                            <InlineCell {...cellProps('rating')} kind="select" ariaLabel="Editar rating"
+                                value={RATING_OPTIONS.includes(eff.rating ?? '') ? (eff.rating ?? '') : ''}
+                                options={[{ value: '', label: '— (auto)' }, ...['1', '2', '3', '4', '5'].map(n => ({ value: n, label: `${n} ★` }))]}
+                                onCommit={v => onChange({ rating: v || undefined })}
+                                display={ratingNorm != null ? <span className="text-amber-700 font-medium">{'★'.repeat(ratingNorm)}</span> : <span className="text-stone-400">sin rating</span>} />
+                            <span>·</span>
+                            <InlineCell {...cellProps('date')} kind="date" ariaLabel="Editar fecha"
+                                value={normDate ?? ''} onCommit={v => onChange({ date: v || undefined })}
+                                display={
+                                    normDate ? formatImportDate(normDate)
+                                        : dateUnparseable ? <span className="text-amber-700">{eff.date} <span title={built.warnings.join(' ')}>⚠</span></span>
+                                            : <span className="text-stone-400">—</span>
+                                } />
+                            <button type="button" onClick={onToggleFields} aria-expanded={!!fieldsExpanded}
+                                className="ml-auto flex-shrink-0 text-teal-700 hover:underline">
+                                {fieldsExpanded ? 'ocultar más datos' : 'más datos'}
+                            </button>
+                        </div>
+                        <div className="mt-1.5 text-sm">
+                            {motivoEditing ? (
+                                <textarea autoFocus rows={3} defaultValue={eff.details ?? ''}
+                                    aria-label="Editar motivo"
+                                    onBlur={e => { onChange({ details: e.target.value || undefined }); onEditCell(null); }}
+                                    onKeyDown={e => { if (e.key === 'Escape') onEditCell(null); }}
+                                    placeholder="Motivo por el que se registra / notas"
+                                    className="w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white" />
+                            ) : eff.details ? (
+                                <div className="text-stone-700">
+                                    <p className={`whitespace-pre-wrap cursor-text rounded px-1 -mx-1 ${motivoExpanded ? '' : 'line-clamp-2'}`}
+                                        onClick={() => onEditCell('details')} title="Click para editar">
+                                        {eff.details}
+                                    </p>
+                                    {isLongMotivo && (
+                                        <button type="button" onClick={() => setMotivoExpanded(v => !v)} className="mt-0.5 text-xs text-teal-700 hover:underline">
+                                            {motivoExpanded ? 'ver menos' : 'ver motivo completo'}
+                                        </button>
+                                    )}
+                                </div>
+                            ) : (
+                                <button type="button" onClick={() => onEditCell('details')} className="text-left text-stone-400 italic">
+                                    — sin motivo (click para agregar)
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </td>
+            </tr>
             {fieldsExpanded && (
                 <tr className={!selected ? 'opacity-40' : ''}>
                     <td></td>
-                    <td colSpan={10} className="px-3 pb-2">
-                        <div className="rounded-lg border border-stone-200 p-3 text-xs space-y-2.5" style={{ backgroundColor: 'var(--surface-muted)' }}>
-                            <div>
-                                <label htmlFor={`motivo-${r.index}`} className="block text-stone-400 uppercase tracking-wider text-[10px] mb-1">Motivo / notas</label>
-                                <textarea id={`motivo-${r.index}`} rows={3} value={eff.details ?? ''}
-                                    onChange={e => onChange({ details: e.target.value || undefined })}
-                                    placeholder="Motivo por el que se registra / notas"
-                                    className="w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white" />
-                            </div>
+                    <td colSpan={4} className="px-3 pb-2">
+                        <div className="rounded-lg border border-stone-200 p-3 text-xs" style={{ backgroundColor: 'var(--surface-muted)' }}>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                 <div>
                                     <label htmlFor={`obo-${r.index}`} className="block text-stone-400 uppercase tracking-wider text-[10px] mb-1">En nombre de</label>
@@ -1461,7 +1490,7 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                 <>
                     <tr className={!selected ? 'opacity-40' : ''}>
                         <td></td>
-                        <td colSpan={10} className="px-3 pb-2">
+                        <td colSpan={4} className="px-3 pb-2">
                             <div className="flex flex-wrap items-center gap-2 text-xs bg-sky-50 border border-stone-200 rounded-lg px-2.5 py-1.5">
                                 {onToggleWhy && (
                                     <button type="button" onClick={onToggleWhy}
@@ -1477,7 +1506,7 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                     {expanded && (
                         <tr className={!selected ? 'opacity-40' : ''}>
                             <td></td>
-                            <td colSpan={10} className="px-3 pb-2">
+                            <td colSpan={4} className="px-3 pb-2">
                                 <div className="rounded-lg border border-stone-200 p-3 text-xs space-y-2.5" style={{ backgroundColor: 'var(--surface-muted)' }}>
                                     <div>
                                         <span className="text-stone-500">Coincidió en: </span>
@@ -1525,7 +1554,7 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
             {hasIssue && (
                 <tr className={!selected ? 'opacity-40' : ''}>
                     <td></td>
-                    <td colSpan={10} className="px-3 pb-2">
+                    <td colSpan={4} className="px-3 pb-2">
                         <div className={`text-xs space-y-0.5 rounded-lg px-2.5 py-1.5 border ${(invalid || failure) ? 'bg-rose-50 border-rose-100' : 'bg-amber-50 border-amber-200'}`}>
                             {invalid && <div className="text-rose-600">{built.errors.join(' ')}</div>}
                             {failure && <div className="text-rose-700 font-medium">✗ Falló al importar: {failure} — corregí el campo y reintentá.</div>}
@@ -1583,24 +1612,11 @@ function RecordGrid({
                             <th className="px-2 py-2 text-right font-normal text-stone-400">#</th>
                             <th className="text-left px-3 py-2">Nombre</th>
                             <th className="text-left px-3 py-2">Contacto</th>
-                            <th className="text-left px-3 py-2">Animal</th>
-                            <th className="text-left px-3 py-2">Especie</th>
-                            <th className="text-left px-3 py-2">Tipo</th>
                             <th className="text-left px-3 py-2">
-                                <div className="flex items-center gap-1">
-                                    <span>Rating</span>
-                                    {/* Bulk "a todos" — controlled value="" so it snaps back after firing. */}
-                                    <select value="" onChange={e => { if (e.target.value) onRatingAll(e.target.value === 'clear' ? '' : e.target.value); }}
-                                        className="normal-case font-normal text-[11px] border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-500" title="Asignar un rating a todos los registros">
-                                        <option value="">· a todos</option>
-                                        {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★ a todos</option>)}
-                                        <option value="clear">Limpiar rating</option>
-                                    </select>
-                                </div>
-                            </th>
-                            <th className="text-left px-3 py-2">Fecha</th>
-                            <th className="text-left px-3 py-2">Motivo</th>
-                            <th className="text-left px-3 py-2">
+                                {/* Identity grid is 5 columns now (Animal/Especie/Tipo/Rating/Fecha/Motivo
+                                    moved into the per-record interaction line below) — both bulk
+                                    "a todos" affordances (rating, visibilidad) collapse into this
+                                    header since Visibilidad is the only remaining bulk-editable column. */}
                                 <div className="flex items-center gap-1">
                                     <span>Visibilidad</span>
                                     <select value="" onChange={e => { if (e.target.value) onVisibilityAll(e.target.value === 'public'); }}
@@ -1608,6 +1624,13 @@ function RecordGrid({
                                         <option value="">· a todos</option>
                                         <option value="public">Todos públicos</option>
                                         <option value="protected">Todos protegidos</option>
+                                    </select>
+                                    {/* Bulk "a todos" — controlled value="" so it snaps back after firing. */}
+                                    <select value="" onChange={e => { if (e.target.value) onRatingAll(e.target.value === 'clear' ? '' : e.target.value); }}
+                                        className="normal-case font-normal text-[11px] border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-500" title="Asignar un rating a todos los registros">
+                                        <option value="">★ a todos</option>
+                                        {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★ a todos</option>)}
+                                        <option value="clear">Limpiar rating</option>
                                     </select>
                                 </div>
                             </th>
