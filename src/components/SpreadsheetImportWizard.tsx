@@ -802,7 +802,7 @@ export default function SpreadsheetImportWizard() {
                                         )}
                                     </div>
                                     {expandedRun === run.id && (
-                                        <div className="border-t border-stone-100 bg-stone-50/50">
+                                        <div className="border-t border-stone-100 bg-stone-50">
                                             {loadingItems === run.id ? (
                                                 <div className="px-4 py-3 text-sm text-stone-500">Cargando registros…</div>
                                             ) : (runItems[run.id]?.length ?? 0) === 0 ? (
