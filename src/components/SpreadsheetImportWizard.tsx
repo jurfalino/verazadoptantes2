@@ -8,7 +8,7 @@ import { computeContentFingerprint } from '@/domain/contentFingerprint';
 import { formatDateTimeFull } from '@/lib/dates';
 import { buildImportBody } from '@/lib/importRow';
 import { deserializeContactEntries } from '@/lib/contactEntries';
-import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType } from '@/domain/importRow';
+import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType, normalizeNeutered } from '@/domain/importRow';
 import {
     TARGET_IMPORT_FIELDS, COMBINED_CONTACT, IGNORE,
     applyColumnMap, emptyMappedRow, guessColumnMap,
@@ -86,6 +86,13 @@ function speciesOptionValue(raw: string | undefined): string {
     const canon = norm.toLowerCase();
     return SPECIES_OPTIONS.some(o => o.v === canon) ? canon : 'other';
 }
+// Map any raw (possibly messy) neutered string onto the 3-way —/Sí/No select
+// value via normalizeNeutered (the same normalizer buildImportBody uses), so
+// the dropdown reflects what will actually be saved rather than the raw text.
+function neuteredOptionValue(raw: string | undefined): string {
+    const n = normalizeNeutered(raw);
+    return n === 1 ? 'si' : n === 0 ? 'no' : '';
+}
 // Format a normalized YYYY-MM-DD import date for display WITHOUT constructing a Date
 // (new Date("2015-06-01") is UTC-midnight → shows a day early in UTC-negative zones).
 const IMPORT_MONTHS_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
@@ -154,6 +161,9 @@ export default function SpreadsheetImportWizard() {
     // re-expanding a row (or two rows matching the same adopter) never refetches.
     const [expandedMatchRow, setExpandedMatchRow] = useState<number | null>(null);
     const [matchContexts, setMatchContexts] = useState<Record<string, MatchContext | 'loading' | 'error'>>({});
+    // Which row's "detalles / más campos" expand (Motivo + secondary animal/adoption
+    // fields) is open — same one-row-at-a-time pattern as expandedMatchRow above.
+    const [expandedFieldsRow, setExpandedFieldsRow] = useState<number | null>(null);
     const [detecting, setDetecting] = useState(false);
     const [detectProgress, setDetectProgress] = useState({ done: 0, total: 0 });
     const [detectionDone, setDetectionDone] = useState(false);
@@ -682,7 +692,7 @@ export default function SpreadsheetImportWizard() {
         return Math.round((elapsed / processed) * remainingRows);
     })();
     const fmtEta = (ms: number) => { const s = Math.ceil(ms / 1000); return s < 60 ? `~${s} s` : `~${Math.ceil(s / 60)} min`; };
-    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); };
+    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); setExpandedFieldsRow(null); };
 
     // Duplicados step (Step 3): the focused triage is ONLY the selected rows that
     // actually matched something — everything else auto-creates, so it never
@@ -718,6 +728,7 @@ export default function SpreadsheetImportWizard() {
     };
     // Expand/collapse a triage row's "por qué" panel; fetch the presence-only
     // match context lazily on first expand, cached per adopterId.
+    const toggleFieldsExpand = (rowIndex: number) => setExpandedFieldsRow(prev => prev === rowIndex ? null : rowIndex);
     const toggleMatchExpand = (rowIndex: number, adopterId: string) => {
         setExpandedMatchRow(prev => prev === rowIndex ? null : rowIndex);
         if (!(adopterId in matchContexts)) {
@@ -941,6 +952,7 @@ export default function SpreadsheetImportWizard() {
                         matches={matches} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
                         failureByIndex={failureByIndex} onToggle={toggle} onChange={setOverride}
                         expandedMatchRow={expandedMatchRow} matchContexts={matchContexts} onToggleWhy={toggleMatchExpand}
+                        expandedFieldsRow={expandedFieldsRow} onToggleFields={toggleFieldsExpand}
                         onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} />
 
                     <div className="flex justify-between mt-4">
@@ -1026,6 +1038,7 @@ export default function SpreadsheetImportWizard() {
                                         matches={matches} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
                                         failureByIndex={failureByIndex} onToggle={toggle} onChange={setOverride}
                                         expandedMatchRow={expandedMatchRow} matchContexts={matchContexts} onToggleWhy={toggleMatchExpand}
+                                        expandedFieldsRow={expandedFieldsRow} onToggleFields={toggleFieldsExpand}
                                         onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} />
                                 </>
                             ) : null}
@@ -1230,7 +1243,7 @@ function ActionToggle({ action, onAction }: { action: RowAction; onAction: (a: R
     );
 }
 
-function RowView({ r, editingField, onEditCell, match, action, onAction, failure, onToggle, onChange, expanded, onToggleWhy, matchContext }: {
+function RowView({ r, editingField, onEditCell, match, action, onAction, failure, onToggle, onChange, expanded, onToggleWhy, matchContext, fieldsExpanded, onToggleFields }: {
     r: { index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean };
     editingField: string | null; onEditCell: (field: string | null) => void;
     match?: DuplicateMatch | null; action: RowAction; onAction: (a: RowAction) => void;
@@ -1240,6 +1253,10 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
     // THIS row's match.adopterId. Parent owns the fetch (getMatchContext); RowView
     // only renders what it's given.
     expanded?: boolean; onToggleWhy?: () => void; matchContext?: MatchContext | 'loading' | 'error';
+    // "Motivo / más campos" expand — the Motivo cell toggles this sub-row, which
+    // exposes the free-text details textarea + the secondary animal/adoption fields
+    // (onBehalfOf/sex/color/microchip/age/neutered) that are otherwise hidden.
+    fieldsExpanded?: boolean; onToggleFields?: () => void;
 }) {
     const { eff, built, selected } = r;
     const isExact = match ? isExactIdentifierMatch(match.matchTypes) : false;
@@ -1356,6 +1373,17 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                                     : <span className="text-stone-400">—</span>
                         } />
                 </td>
+                <td className="px-3 py-2 text-stone-600">
+                    {/* Motivo/notas is long free text — no inline single-line edit here;
+                        the cell is a toggle that opens the "detalles" sub-row below,
+                        where it's edited comfortably alongside the other hidden fields. */}
+                    <button type="button" onClick={onToggleFields} aria-label="Ver/editar motivo y más campos" aria-expanded={!!fieldsExpanded}
+                        className="block w-full text-left rounded px-1 -mx-1">
+                        {eff.details
+                            ? <span className="block max-w-[150px] truncate" title={eff.details}>{eff.details}</span>
+                            : <span className="text-stone-400">—</span>}
+                    </button>
+                </td>
                 <td className="px-3 py-2">
                     <InlineCell {...cellProps('isPublic')} kind="select" ariaLabel="Editar visibilidad"
                         value={isPublicEff ? 'public' : 'protected'}
@@ -1371,11 +1399,69 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                         } />
                 </td>
             </tr>
+            {fieldsExpanded && (
+                <tr className={!selected ? 'opacity-40' : ''}>
+                    <td></td>
+                    <td colSpan={10} className="px-3 pb-2">
+                        <div className="rounded-lg border border-stone-200 p-3 text-xs space-y-2.5" style={{ backgroundColor: 'var(--surface-muted)' }}>
+                            <div>
+                                <label htmlFor={`motivo-${r.index}`} className="block text-stone-400 uppercase tracking-wider text-[10px] mb-1">Motivo / notas</label>
+                                <textarea id={`motivo-${r.index}`} rows={3} value={eff.details ?? ''}
+                                    onChange={e => onChange({ details: e.target.value || undefined })}
+                                    placeholder="Motivo por el que se registra / notas"
+                                    className="w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white" />
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                <div>
+                                    <label htmlFor={`obo-${r.index}`} className="block text-stone-400 uppercase tracking-wider text-[10px] mb-1">En nombre de</label>
+                                    <input id={`obo-${r.index}`} type="text" value={eff.onBehalfOf ?? ''}
+                                        onChange={e => onChange({ onBehalfOf: e.target.value || undefined })}
+                                        className="w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white" />
+                                </div>
+                                <div>
+                                    <label htmlFor={`sex-${r.index}`} className="block text-stone-400 uppercase tracking-wider text-[10px] mb-1">Sexo</label>
+                                    <input id={`sex-${r.index}`} type="text" value={eff.sex ?? ''}
+                                        onChange={e => onChange({ sex: e.target.value || undefined })}
+                                        className="w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white" />
+                                </div>
+                                <div>
+                                    <label htmlFor={`color-${r.index}`} className="block text-stone-400 uppercase tracking-wider text-[10px] mb-1">Color</label>
+                                    <input id={`color-${r.index}`} type="text" value={eff.color ?? ''}
+                                        onChange={e => onChange({ color: e.target.value || undefined })}
+                                        className="w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white" />
+                                </div>
+                                <div>
+                                    <label htmlFor={`microchip-${r.index}`} className="block text-stone-400 uppercase tracking-wider text-[10px] mb-1">Microchip</label>
+                                    <input id={`microchip-${r.index}`} type="text" value={eff.microchip ?? ''}
+                                        onChange={e => onChange({ microchip: e.target.value || undefined })}
+                                        className="w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white" />
+                                </div>
+                                <div>
+                                    <label htmlFor={`age-${r.index}`} className="block text-stone-400 uppercase tracking-wider text-[10px] mb-1">Edad</label>
+                                    <input id={`age-${r.index}`} type="text" value={eff.age ?? ''}
+                                        onChange={e => onChange({ age: e.target.value || undefined })}
+                                        className="w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white" />
+                                </div>
+                                <div>
+                                    <label htmlFor={`neutered-${r.index}`} className="block text-stone-400 uppercase tracking-wider text-[10px] mb-1">Castrado/a</label>
+                                    <select id={`neutered-${r.index}`} value={neuteredOptionValue(eff.neutered)}
+                                        onChange={e => onChange({ neutered: e.target.value || undefined })}
+                                        className="w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white">
+                                        <option value="">—</option>
+                                        <option value="si">Sí</option>
+                                        <option value="no">No</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            )}
             {match && (
                 <>
                     <tr className={!selected ? 'opacity-40' : ''}>
                         <td></td>
-                        <td colSpan={9} className="px-3 pb-2">
+                        <td colSpan={10} className="px-3 pb-2">
                             <div className="flex flex-wrap items-center gap-2 text-xs bg-sky-50 border border-stone-200 rounded-lg px-2.5 py-1.5">
                                 {onToggleWhy && (
                                     <button type="button" onClick={onToggleWhy}
@@ -1391,7 +1477,7 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                     {expanded && (
                         <tr className={!selected ? 'opacity-40' : ''}>
                             <td></td>
-                            <td colSpan={9} className="px-3 pb-2">
+                            <td colSpan={10} className="px-3 pb-2">
                                 <div className="rounded-lg border border-stone-200 p-3 text-xs space-y-2.5" style={{ backgroundColor: 'var(--surface-muted)' }}>
                                     <div>
                                         <span className="text-stone-500">Coincidió en: </span>
@@ -1439,7 +1525,7 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
             {hasIssue && (
                 <tr className={!selected ? 'opacity-40' : ''}>
                     <td></td>
-                    <td colSpan={9} className="px-3 pb-2">
+                    <td colSpan={10} className="px-3 pb-2">
                         <div className={`text-xs space-y-0.5 rounded-lg px-2.5 py-1.5 border ${(invalid || failure) ? 'bg-rose-50 border-rose-100' : 'bg-amber-50 border-amber-200'}`}>
                             {invalid && <div className="text-rose-600">{built.errors.join(' ')}</div>}
                             {failure && <div className="text-rose-700 font-medium">✗ Falló al importar: {failure} — corregí el campo y reintentá.</div>}
@@ -1463,6 +1549,7 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
 function RecordGrid({
     rows, editingCell, onEditCell, matches, rowAction, onAction,
     failureByIndex, onToggle, onChange, expandedMatchRow, matchContexts, onToggleWhy,
+    expandedFieldsRow, onToggleFields,
     onRatingAll, onVisibilityAll,
 }: {
     rows: Array<{ index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean }>;
@@ -1477,6 +1564,10 @@ function RecordGrid({
     expandedMatchRow: number | null;
     matchContexts: Record<string, MatchContext | 'loading' | 'error'>;
     onToggleWhy: (index: number, adopterId: string) => void;
+    // "Motivo / más campos" expand — same one-row-at-a-time pattern as the match
+    // "por qué" expand above (expandedMatchRow/onToggleWhy).
+    expandedFieldsRow: number | null;
+    onToggleFields: (index: number) => void;
     // Bulk "a todos" header selects — same global effect (applies to every parsed
     // row, not just `rows`) in both steps, matching the pre-existing behavior.
     onRatingAll: (rating: string) => void;
@@ -1508,6 +1599,7 @@ function RecordGrid({
                                 </div>
                             </th>
                             <th className="text-left px-3 py-2">Fecha</th>
+                            <th className="text-left px-3 py-2">Motivo</th>
                             <th className="text-left px-3 py-2">
                                 <div className="flex items-center gap-1">
                                     <span>Visibilidad</span>
@@ -1537,6 +1629,8 @@ function RecordGrid({
                                     expanded={expandedMatchRow === r.index}
                                     onToggleWhy={match ? () => onToggleWhy(r.index, match.adopterId) : undefined}
                                     matchContext={match ? matchContexts[match.adopterId] : undefined}
+                                    fieldsExpanded={expandedFieldsRow === r.index}
+                                    onToggleFields={() => onToggleFields(r.index)}
                                 />
                             );
                         })}
