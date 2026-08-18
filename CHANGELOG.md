@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.39.1] - 2026-08-18
+
+### Fixed — interaction line stacked vertically instead of horizontally
+
+The per-record interaction line (`Tipo · Animal · Especie · Rating · Fecha`) rendered with every field on its own row instead of the intended single horizontal line from the prototype. Root cause: the shared `InlineCell` control renders a `block w-full` button (correct when it fills a table-cell column in the identity grid), but the interaction line is a `flex flex-wrap` row — a full-width flex child forces every sibling onto its own line. Added an `inline` variant to `InlineCell` (auto width, `inline-block`) and applied it to the five interaction-line fields, so they flow horizontally and wrap gracefully. Identity-grid cells are unchanged.
+
 ## [2.39.0] - 2026-08-18
 
 ### Changed — import review reframed to adopter identity + interaction record (Motivo never trimmed)

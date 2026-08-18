@@ -1369,13 +1369,13 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                 <td colSpan={4} className="px-3 pb-2">
                     <div className="border-l-2 border-amber-200 bg-stone-50 rounded-r-lg px-3 py-2">
                         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-stone-600">
-                            <InlineCell {...cellProps('recordType')} kind="select" ariaLabel="Editar tipo"
+                            <InlineCell {...cellProps('recordType')} inline kind="select" ariaLabel="Editar tipo"
                                 value={typeVal} options={RECORD_TYPES.map(t => ({ value: t, label: RECORD_TYPE_LABELS[t] ?? t }))}
                                 onCommit={v => onChange({ recordType: v })}
                                 display={<span className="font-semibold text-stone-700">{typeLabel}</span>} />
                             <span>·</span>
                             <span aria-hidden>🐾</span>
-                            <InlineCell {...cellProps('animalName')} kind="text" ariaLabel="Editar animal"
+                            <InlineCell {...cellProps('animalName')} inline kind="text" ariaLabel="Editar animal"
                                 value={eff.animalName ?? ''} onCommit={v => onChange({ animalName: v })}
                                 display={
                                     eff.animalName
@@ -1383,18 +1383,18 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                                         : <span className="text-stone-400">—</span>
                                 } />
                             <span>·</span>
-                            <InlineCell {...cellProps('species')} kind="select" ariaLabel="Editar especie"
+                            <InlineCell {...cellProps('species')} inline kind="select" ariaLabel="Editar especie"
                                 value={speciesVal} options={SPECIES_OPTIONS.map(o => ({ value: o.v, label: o.l }))}
                                 onCommit={v => onChange({ species: v || undefined })}
                                 display={speciesVal ? speciesLabel : <span className="text-stone-400">—</span>} />
                             <span>·</span>
-                            <InlineCell {...cellProps('rating')} kind="select" ariaLabel="Editar rating"
+                            <InlineCell {...cellProps('rating')} inline kind="select" ariaLabel="Editar rating"
                                 value={RATING_OPTIONS.includes(eff.rating ?? '') ? (eff.rating ?? '') : ''}
                                 options={[{ value: '', label: '— (auto)' }, ...['1', '2', '3', '4', '5'].map(n => ({ value: n, label: `${n} ★` }))]}
                                 onCommit={v => onChange({ rating: v || undefined })}
                                 display={ratingNorm != null ? <span className="text-amber-700 font-medium">{'★'.repeat(ratingNorm)}</span> : <span className="text-stone-400">sin rating</span>} />
                             <span>·</span>
-                            <InlineCell {...cellProps('date')} kind="date" ariaLabel="Editar fecha"
+                            <InlineCell {...cellProps('date')} inline kind="date" ariaLabel="Editar fecha"
                                 value={normDate ?? ''} onCommit={v => onChange({ date: v || undefined })}
                                 display={
                                     normDate ? formatImportDate(normDate)
@@ -1668,10 +1668,15 @@ function RecordGrid({
  *  render across hundreds of rows); edit mode renders the live control ONLY for
  *  the single active cell (lifted `editingCell` state in the parent guarantees
  *  at most one control exists in the DOM at a time — see SpreadsheetImportWizard). */
-function InlineCell({ active, onActivate, onDeactivate, value, onCommit, kind, options, ariaLabel, display }: {
+function InlineCell({ active, onActivate, onDeactivate, value, onCommit, kind, options, ariaLabel, display, inline }: {
     active: boolean; onActivate: () => void; onDeactivate: () => void;
     value: string; onCommit: (v: string) => void; kind: 'text' | 'select' | 'date';
     options?: Array<{ value: string; label: string }>; ariaLabel: string; display: React.ReactNode;
+    // `inline`: auto-width chip for the horizontal interaction line (a flex-wrap
+    // row). The default (`block w-full`) fills a table-cell column in the
+    // identity grid — but inside a flex row a full-width child forces every
+    // sibling onto its own line (the vertical-stacking bug).
+    inline?: boolean;
 }) {
     const [draft, setDraft] = useState(value);
     // Re-seed the draft whenever this cell becomes the active one (or the
@@ -1691,7 +1696,7 @@ function InlineCell({ active, onActivate, onDeactivate, value, onCommit, kind, o
     if (!active) {
         return (
             <button type="button" onClick={onActivate} aria-label={ariaLabel}
-                className="block w-full text-left hover:bg-stone-100 rounded px-1 -mx-1">
+                className={`text-left hover:bg-stone-100 rounded px-1 -mx-1 ${inline ? 'inline-block align-bottom w-auto max-w-full' : 'block w-full'}`}>
                 {display}
             </button>
         );
@@ -1702,7 +1707,7 @@ function InlineCell({ active, onActivate, onDeactivate, value, onCommit, kind, o
             <select autoFocus aria-label={ariaLabel} value={draft}
                 onChange={e => { onCommit(e.target.value); onDeactivate(); }}
                 onBlur={onDeactivate}
-                className="w-full border border-stone-200 rounded px-1 py-0.5 text-sm bg-white">
+                className={`border border-stone-200 rounded px-1 py-0.5 text-sm bg-white ${inline ? 'w-auto' : 'w-full'}`}>
                 {options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
         );
@@ -1716,6 +1721,6 @@ function InlineCell({ active, onActivate, onDeactivate, value, onCommit, kind, o
                 if (e.key === 'Enter') e.currentTarget.blur();
                 else if (e.key === 'Escape') { skipCommit.current = true; e.currentTarget.blur(); }
             }}
-            className="w-full border border-stone-200 rounded px-1 py-0.5 text-sm bg-white" />
+            className={`border border-stone-200 rounded px-1 py-0.5 text-sm bg-white ${inline ? 'w-auto max-w-[150px]' : 'w-full'}`} />
     );
 }
