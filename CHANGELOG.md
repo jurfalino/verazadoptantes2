@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.38.0] - 2026-08-18
+
+### Added — the import review grid now shows the Motivo + the other hidden fields
+
+The editable review grid was showing 11 of the 18 imported fields — the **Motivo/notas** (`details`, the core of a blacklist record) and `onBehalfOf` / `sex` / `color` / `microchip` / `age` / `neutered` were imported but invisible and un-editable, so you couldn't verify or fix them before importing (and, being hidden, garbage went into the Motivo unnoticed).
+
+- A new **"Motivo" column** shows a preview of each record's motive; clicking it opens a per-row **"detalles" panel** with a full-width textarea for the Motivo plus editable fields for **En nombre de / Sexo / Color / Microchip / Edad / Castrado**. All persist through the same per-row edit flow, in both the review step and the mandatory dedup step.
+
 ## [2.37.1] - 2026-08-17
 
 ### Fixed — dedup step: consistency with the review grid + dark theme
