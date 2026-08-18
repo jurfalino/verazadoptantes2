@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.37.0] - 2026-08-17
+
+### Added — dedup triage explains "por qué" + flags weak matches for review
+
+- **"Por qué" on each duplicate match.** Every triage row expands to show why it matched: the matched signals (nombre / teléfono / email / DNI …), **your imported record** (name + contacts), and the **existing record**'s name + **presence badges** (has phone / email / DNI — **presence only, never the values**, since the matched record may be another org's protected record). Plus a one-line explanation, e.g. *"Coincide solo en el nombre (38%) — el registro existente no tiene teléfono ni email; podría ser otra persona con el mismo nombre."* Backed by a new presence-only `getMatchContext` action (reads structured contacts + the legacy contact blob).
+- **Weak matches are flagged for review, not silently created.** A weak match (e.g. name-only) no longer defaults to "Crear" — it becomes an unresolved **⚠ Elegí** state. **Importar is disabled until every flagged match is resolved** (per-row, or the bulk "Crear todas como nuevas" / "Omitir todas"). So an ambiguous same-name record can no longer slip through as a new duplicate — you decide, informed by the "por qué". The no-silent-create guarantee is compiler-enforced.
+
 ## [2.36.0] - 2026-08-17
 
 ### Changed — duplicate search is now a mandatory step + review-grid polish
