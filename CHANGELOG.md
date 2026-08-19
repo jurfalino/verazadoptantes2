@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.39.2] - 2026-08-18
+
+### Fixed — empty interaction fields now self-identify
+
+Empty fields in the interaction line rendered as a bare `—`, so `— · —` gave no clue which was animal, especie or fecha. Following the rating field's existing "sin rating" pattern, empty states now read **sin animal**, **sin especie** and **sin fecha** — each field identifiable even when unset.
+
 ## [2.39.1] - 2026-08-18
 
 ### Fixed — interaction line stacked vertically instead of horizontally

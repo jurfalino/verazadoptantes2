@@ -1380,13 +1380,13 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                                 display={
                                     eff.animalName
                                         ? <span className="truncate max-w-[110px] inline-block align-bottom" title={eff.animalName}>{eff.animalName}</span>
-                                        : <span className="text-stone-400">—</span>
+                                        : <span className="text-stone-400">sin animal</span>
                                 } />
                             <span>·</span>
                             <InlineCell {...cellProps('species')} inline kind="select" ariaLabel="Editar especie"
                                 value={speciesVal} options={SPECIES_OPTIONS.map(o => ({ value: o.v, label: o.l }))}
                                 onCommit={v => onChange({ species: v || undefined })}
-                                display={speciesVal ? speciesLabel : <span className="text-stone-400">—</span>} />
+                                display={speciesVal ? speciesLabel : <span className="text-stone-400">sin especie</span>} />
                             <span>·</span>
                             <InlineCell {...cellProps('rating')} inline kind="select" ariaLabel="Editar rating"
                                 value={RATING_OPTIONS.includes(eff.rating ?? '') ? (eff.rating ?? '') : ''}
@@ -1399,7 +1399,7 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                                 display={
                                     normDate ? formatImportDate(normDate)
                                         : dateUnparseable ? <span className="text-amber-700">{eff.date} <span title={built.warnings.join(' ')}>⚠</span></span>
-                                            : <span className="text-stone-400">—</span>
+                                            : <span className="text-stone-400">sin fecha</span>
                                 } />
                             <button type="button" onClick={onToggleFields} aria-expanded={!!fieldsExpanded}
                                 className="ml-auto flex-shrink-0 text-teal-700 hover:underline">
