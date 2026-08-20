@@ -2,6 +2,50 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.40.0] - 2026-08-20
+
+### Added — "focus mode" to jump straight to the matches that need a decision
+
+The Duplicados step showed all matched rows together, so the weak matches that require a manual decision (⚠ Elegí) were scattered among the auto-resolved "Actualizar" rows and had to be hunted for. The warning banner now carries a **"Ver solo las pendientes (N)"** toggle that collapses the grid to just those rows.
+
+- **Frozen worklist:** engaging focus snapshots the currently-unresolved set, so a row stays visible (its ⚠ badge just clears) as you resolve it, instead of vanishing from under the cursor mid-click.
+- **Live counter** in the sticky banner decrements as you decide; when it reaches zero the banner turns into a green "✓ Todas resueltas — listo para importar" with a "Ver todas" escape, and the Importar button enables.
+- **Clarified the bulk-action asymmetry:** a micro-note explains that bulk "Actualizar" only applies to *identical* matches (the "Aplicar a idénticos" control) — on weak matches each update stays a per-row decision, which is the false-merge the review step exists to prevent. The banner's blanket actions remain the two safe escapes (Crear todas / Omitir todas).
+
+Theme-safe throughout (amber `bg-amber-50/100`, `border-amber-200`, `text-amber-700/800`; success via `--status-emerald-*` vars).
+
+## [2.39.2] - 2026-08-18
+
+### Fixed — empty interaction fields now self-identify
+
+Empty fields in the interaction line rendered as a bare `—`, so `— · —` gave no clue which was animal, especie or fecha. Following the rating field's existing "sin rating" pattern, empty states now read **sin animal**, **sin especie** and **sin fecha** — each field identifiable even when unset.
+
+## [2.39.1] - 2026-08-18
+
+### Fixed — interaction line stacked vertically instead of horizontally
+
+The per-record interaction line (`Tipo · Animal · Especie · Rating · Fecha`) rendered with every field on its own row instead of the intended single horizontal line from the prototype. Root cause: the shared `InlineCell` control renders a `block w-full` button (correct when it fills a table-cell column in the identity grid), but the interaction line is a `flex flex-wrap` row — a full-width flex child forces every sibling onto its own line. Added an `inline` variant to `InlineCell` (auto width, `inline-block`) and applied it to the five interaction-line fields, so they flow horizontally and wrap gracefully. Identity-grid cells are unchanged.
+
+## [2.39.0] - 2026-08-18
+
+### Changed — import review reframed to adopter identity + interaction record (Motivo never trimmed)
+
+The review row was 11 loose columns that trimmed the **Motivo** — the most important field of a vetting record — to ~150px and hid it behind a click. It's now organized around the real data model:
+
+- **The grid is the adopter (identity):** ☐ · # · Nombre · Contacto · Visibilidad — minimal and scannable.
+- **A full-width line per record holds the whole interaction/record:** `Tipo (dropdown) · Animal · Especie · Rating · Fecha` (all inline-editable) followed by the **complete Motivo** — full wrapping text, never trimmed, clamped to 2 lines with a "ver motivo completo" toggle, editable in place as a textarea.
+- **"más datos"** opens the secondary animal fields (Sexo, Color, Microchip, Edad, Castrado, En nombre de).
+
+Applies to both the review step and the mandatory dedup step (they share the same record layout). Column balance and dark-theme colours audited.
+
+## [2.38.0] - 2026-08-18
+
+### Added — the import review grid now shows the Motivo + the other hidden fields
+
+The editable review grid was showing 11 of the 18 imported fields — the **Motivo/notas** (`details`, the core of a blacklist record) and `onBehalfOf` / `sex` / `color` / `microchip` / `age` / `neutered` were imported but invisible and un-editable, so you couldn't verify or fix them before importing (and, being hidden, garbage went into the Motivo unnoticed).
+
+- A new **"Motivo" column** shows a preview of each record's motive; clicking it opens a per-row **"detalles" panel** with a full-width textarea for the Motivo plus editable fields for **En nombre de / Sexo / Color / Microchip / Edad / Castrado**. All persist through the same per-row edit flow, in both the review step and the mandatory dedup step.
+
 ## [2.37.1] - 2026-08-17
 
 ### Fixed — dedup step: consistency with the review grid + dark theme

@@ -8,7 +8,7 @@ import { computeContentFingerprint } from '@/domain/contentFingerprint';
 import { formatDateTimeFull } from '@/lib/dates';
 import { buildImportBody } from '@/lib/importRow';
 import { deserializeContactEntries } from '@/lib/contactEntries';
-import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType } from '@/domain/importRow';
+import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType, normalizeNeutered } from '@/domain/importRow';
 import {
     TARGET_IMPORT_FIELDS, COMBINED_CONTACT, IGNORE,
     applyColumnMap, emptyMappedRow, guessColumnMap,
@@ -86,6 +86,13 @@ function speciesOptionValue(raw: string | undefined): string {
     const canon = norm.toLowerCase();
     return SPECIES_OPTIONS.some(o => o.v === canon) ? canon : 'other';
 }
+// Map any raw (possibly messy) neutered string onto the 3-way —/Sí/No select
+// value via normalizeNeutered (the same normalizer buildImportBody uses), so
+// the dropdown reflects what will actually be saved rather than the raw text.
+function neuteredOptionValue(raw: string | undefined): string {
+    const n = normalizeNeutered(raw);
+    return n === 1 ? 'si' : n === 0 ? 'no' : '';
+}
 // Format a normalized YYYY-MM-DD import date for display WITHOUT constructing a Date
 // (new Date("2015-06-01") is UTC-midnight → shows a day early in UTC-negative zones).
 const IMPORT_MONTHS_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
@@ -154,6 +161,15 @@ export default function SpreadsheetImportWizard() {
     // re-expanding a row (or two rows matching the same adopter) never refetches.
     const [expandedMatchRow, setExpandedMatchRow] = useState<number | null>(null);
     const [matchContexts, setMatchContexts] = useState<Record<string, MatchContext | 'loading' | 'error'>>({});
+    // Which row's "detalles / más campos" expand (Motivo + secondary animal/adoption
+    // fields) is open — same one-row-at-a-time pattern as expandedMatchRow above.
+    const [expandedFieldsRow, setExpandedFieldsRow] = useState<number | null>(null);
+    // Focus mode (Duplicados step): collapse the grid to just the weak-match rows
+    // that still need a decision. `focusWorklist` freezes the set of indices that
+    // were unresolved when focus engaged, so resolving a row keeps it visible (its
+    // ⚠ badge just clears) instead of dropping out from under the cursor mid-click.
+    const [focusPending, setFocusPending] = useState(false);
+    const [focusWorklist, setFocusWorklist] = useState<Set<number> | null>(null);
     const [detecting, setDetecting] = useState(false);
     const [detectProgress, setDetectProgress] = useState({ done: 0, total: 0 });
     const [detectionDone, setDetectionDone] = useState(false);
@@ -682,7 +698,7 @@ export default function SpreadsheetImportWizard() {
         return Math.round((elapsed / processed) * remainingRows);
     })();
     const fmtEta = (ms: number) => { const s = Math.ceil(ms / 1000); return s < 60 ? `~${s} s` : `~${Math.ceil(s / 60)} min`; };
-    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); };
+    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); };
 
     // Duplicados step (Step 3): the focused triage is ONLY the selected rows that
     // actually matched something — everything else auto-creates, so it never
@@ -716,8 +732,25 @@ export default function SpreadsheetImportWizard() {
             return next;
         });
     };
+    // Toggle the "only pending" focus filter. Snapshots the unresolved set on
+    // engage so the worklist is frozen while you clear it; clears on disengage.
+    const toggleFocusPending = () => {
+        setFocusPending(on => {
+            const next = !on;
+            setFocusWorklist(next
+                ? new Set(matchedRows.filter(r => (rowAction[r.index] ?? 'create') === 'review').map(r => r.index))
+                : null);
+            return next;
+        });
+    };
+    // Rows shown in the Duplicados grid: the frozen worklist when focus is on,
+    // otherwise every matched row.
+    const dedupVisibleRows = focusPending && focusWorklist
+        ? matchedRows.filter(r => focusWorklist.has(r.index))
+        : matchedRows;
     // Expand/collapse a triage row's "por qué" panel; fetch the presence-only
     // match context lazily on first expand, cached per adopterId.
+    const toggleFieldsExpand = (rowIndex: number) => setExpandedFieldsRow(prev => prev === rowIndex ? null : rowIndex);
     const toggleMatchExpand = (rowIndex: number, adopterId: string) => {
         setExpandedMatchRow(prev => prev === rowIndex ? null : rowIndex);
         if (!(adopterId in matchContexts)) {
@@ -941,6 +974,7 @@ export default function SpreadsheetImportWizard() {
                         matches={matches} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
                         failureByIndex={failureByIndex} onToggle={toggle} onChange={setOverride}
                         expandedMatchRow={expandedMatchRow} matchContexts={matchContexts} onToggleWhy={toggleMatchExpand}
+                        expandedFieldsRow={expandedFieldsRow} onToggleFields={toggleFieldsExpand}
                         onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} />
 
                     <div className="flex justify-between mt-4">
@@ -990,12 +1024,26 @@ export default function SpreadsheetImportWizard() {
                             )}
 
                             {reviewCount > 0 && (
-                                <div className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800 flex flex-wrap items-center justify-between gap-2">
-                                    <span>⚠ {reviewCount} {reviewCount === 1 ? 'coincidencia requiere' : 'coincidencias requieren'} tu decisión</span>
-                                    <div className="flex flex-shrink-0 items-center gap-3">
-                                        <button onClick={() => resolveAllReview('create')} className="font-semibold text-amber-800 underline hover:no-underline">Crear todas como nuevas</button>
-                                        <button onClick={() => resolveAllReview('skip')} className="font-semibold text-amber-800 underline hover:no-underline">Omitir todas</button>
+                                <div className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800 sticky top-16 z-30 shadow-sm">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <span>⚠ {reviewCount} {reviewCount === 1 ? 'coincidencia requiere' : 'coincidencias requieren'} tu decisión</span>
+                                        <div className="flex flex-shrink-0 flex-wrap items-center gap-3">
+                                            <button onClick={toggleFocusPending} aria-pressed={focusPending}
+                                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-amber-200 font-semibold ${focusPending ? 'bg-amber-100' : ''}`}>
+                                                {focusPending ? '◉ Viendo solo pendientes' : `○ Ver solo las pendientes (${reviewCount})`}
+                                            </button>
+                                            <button onClick={() => resolveAllReview('create')} className="font-semibold text-amber-800 underline hover:no-underline">Crear todas como nuevas</button>
+                                            <button onClick={() => resolveAllReview('skip')} className="font-semibold text-amber-800 underline hover:no-underline">Omitir todas</button>
+                                        </div>
                                     </div>
+                                    <p className="mt-1.5 text-xs text-amber-700">“Actualizar” en bloque solo aplica a coincidencias idénticas (opción “Aplicar a idénticos”, abajo). En estas, cada actualización es una decisión por fila.</p>
+                                </div>
+                            )}
+                            {reviewCount === 0 && focusPending && (
+                                <div className="mb-3 p-3 rounded-lg border text-sm sticky top-16 z-30 shadow-sm flex flex-wrap items-center justify-between gap-2"
+                                    style={{ backgroundColor: 'var(--status-emerald-bg)', color: 'var(--status-emerald-text)', borderColor: 'var(--status-emerald-text)' }}>
+                                    <span>✓ Todas resueltas — listo para importar</span>
+                                    <button onClick={toggleFocusPending} className="font-semibold underline hover:no-underline">Ver todas</button>
                                 </div>
                             )}
 
@@ -1021,11 +1069,12 @@ export default function SpreadsheetImportWizard() {
                                     {/* Same grid/RowView as the Revisar step (see RecordGrid), filtered to just the
                                         matched rows — the match sub-row + "por qué" panel + action toggle live in
                                         RowView, so a matched record shows identically here and in Revisar. */}
-                                    <RecordGrid rows={matchedRows}
+                                    <RecordGrid rows={dedupVisibleRows}
                                         editingCell={editingCell} onEditCell={(index, field) => setEditingCell(field ? { index, field } : null)}
                                         matches={matches} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
                                         failureByIndex={failureByIndex} onToggle={toggle} onChange={setOverride}
                                         expandedMatchRow={expandedMatchRow} matchContexts={matchContexts} onToggleWhy={toggleMatchExpand}
+                                        expandedFieldsRow={expandedFieldsRow} onToggleFields={toggleFieldsExpand}
                                         onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} />
                                 </>
                             ) : null}
@@ -1230,7 +1279,7 @@ function ActionToggle({ action, onAction }: { action: RowAction; onAction: (a: R
     );
 }
 
-function RowView({ r, editingField, onEditCell, match, action, onAction, failure, onToggle, onChange, expanded, onToggleWhy, matchContext }: {
+function RowView({ r, editingField, onEditCell, match, action, onAction, failure, onToggle, onChange, expanded, onToggleWhy, matchContext, fieldsExpanded, onToggleFields }: {
     r: { index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean };
     editingField: string | null; onEditCell: (field: string | null) => void;
     match?: DuplicateMatch | null; action: RowAction; onAction: (a: RowAction) => void;
@@ -1240,6 +1289,10 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
     // THIS row's match.adopterId. Parent owns the fetch (getMatchContext); RowView
     // only renders what it's given.
     expanded?: boolean; onToggleWhy?: () => void; matchContext?: MatchContext | 'loading' | 'error';
+    // "Motivo / más campos" expand — the Motivo cell toggles this sub-row, which
+    // exposes the free-text details textarea + the secondary animal/adoption fields
+    // (onBehalfOf/sex/color/microchip/age/neutered) that are otherwise hidden.
+    fieldsExpanded?: boolean; onToggleFields?: () => void;
 }) {
     const { eff, built, selected } = r;
     const isExact = match ? isExactIdentifierMatch(match.matchTypes) : false;
@@ -1277,6 +1330,14 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
         onActivate: () => onEditCell(field),
         onDeactivate: () => onEditCell(null),
     });
+
+    // Motivo (eff.details) is shown FULL and un-trimmed in the interaction line
+    // (never a truncated column value). It clamps to 2 lines with a per-row
+    // "ver motivo completo" toggle when long — a local flag is enough here since,
+    // unlike editingCell, only one row's own clamp state is ever relevant at a time.
+    const [motivoExpanded, setMotivoExpanded] = useState(false);
+    const isLongMotivo = (eff.details?.length ?? 0) > 120;
+    const motivoEditing = editingField === 'details';
 
     return (
         <>
@@ -1319,43 +1380,6 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                         </div>
                     )}
                 </td>
-                <td className="px-3 py-2 text-stone-600">
-                    <InlineCell {...cellProps('animalName')} kind="text" ariaLabel="Editar animal"
-                        value={eff.animalName ?? ''} onCommit={v => onChange({ animalName: v })}
-                        display={
-                            eff.animalName
-                                ? <span className="block truncate max-w-[110px]" title={eff.animalName}>{eff.animalName}</span>
-                                : <span className="text-stone-400">—</span>
-                        } />
-                </td>
-                <td className="px-3 py-2 text-stone-600">
-                    <InlineCell {...cellProps('species')} kind="select" ariaLabel="Editar especie"
-                        value={speciesVal} options={SPECIES_OPTIONS.map(o => ({ value: o.v, label: o.l }))}
-                        onCommit={v => onChange({ species: v || undefined })}
-                        display={speciesVal ? speciesLabel : <span className="text-stone-400">—</span>} />
-                </td>
-                <td className="px-3 py-2 text-stone-600">
-                    <InlineCell {...cellProps('recordType')} kind="select" ariaLabel="Editar tipo"
-                        value={typeVal} options={RECORD_TYPES.map(t => ({ value: t, label: RECORD_TYPE_LABELS[t] ?? t }))}
-                        onCommit={v => onChange({ recordType: v })}
-                        display={typeLabel} />
-                </td>
-                <td className="px-3 py-2 text-stone-600">
-                    <InlineCell {...cellProps('rating')} kind="select" ariaLabel="Editar rating"
-                        value={RATING_OPTIONS.includes(eff.rating ?? '') ? (eff.rating ?? '') : ''}
-                        options={[{ value: '', label: '— (auto)' }, ...['1', '2', '3', '4', '5'].map(n => ({ value: n, label: `${n} ★` }))]}
-                        onCommit={v => onChange({ rating: v || undefined })}
-                        display={ratingNorm != null ? `${'★'.repeat(ratingNorm)}` : <span className="text-stone-400">— auto</span>} />
-                </td>
-                <td className="px-3 py-2 text-stone-600">
-                    <InlineCell {...cellProps('date')} kind="date" ariaLabel="Editar fecha"
-                        value={normDate ?? ''} onCommit={v => onChange({ date: v || undefined })}
-                        display={
-                            normDate ? formatImportDate(normDate)
-                                : dateUnparseable ? <span className="text-amber-700">{eff.date} <span title={built.warnings.join(' ')}>⚠</span></span>
-                                    : <span className="text-stone-400">—</span>
-                        } />
-                </td>
                 <td className="px-3 py-2">
                     <InlineCell {...cellProps('isPublic')} kind="select" ariaLabel="Editar visibilidad"
                         value={isPublicEff ? 'public' : 'protected'}
@@ -1371,11 +1395,138 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                         } />
                 </td>
             </tr>
+            {/* Interaction line — ALWAYS visible under every identity row (this is
+                the record: Tipo/animal/especie/rating/fecha + the full Motivo, never
+                trimmed to a column). Each meta field reuses InlineCell + the SAME
+                lifted editingCell state as the identity row, so only one control is
+                ever live across the whole grid. */}
+            <tr className={!selected ? 'opacity-40' : ''}>
+                <td></td>
+                <td colSpan={4} className="px-3 pb-2">
+                    <div className="border-l-2 border-amber-200 bg-stone-50 rounded-r-lg px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-stone-600">
+                            <InlineCell {...cellProps('recordType')} inline kind="select" ariaLabel="Editar tipo"
+                                value={typeVal} options={RECORD_TYPES.map(t => ({ value: t, label: RECORD_TYPE_LABELS[t] ?? t }))}
+                                onCommit={v => onChange({ recordType: v })}
+                                display={<span className="font-semibold text-stone-700">{typeLabel}</span>} />
+                            <span>·</span>
+                            <span aria-hidden>🐾</span>
+                            <InlineCell {...cellProps('animalName')} inline kind="text" ariaLabel="Editar animal"
+                                value={eff.animalName ?? ''} onCommit={v => onChange({ animalName: v })}
+                                display={
+                                    eff.animalName
+                                        ? <span className="truncate max-w-[110px] inline-block align-bottom" title={eff.animalName}>{eff.animalName}</span>
+                                        : <span className="text-stone-400">sin animal</span>
+                                } />
+                            <span>·</span>
+                            <InlineCell {...cellProps('species')} inline kind="select" ariaLabel="Editar especie"
+                                value={speciesVal} options={SPECIES_OPTIONS.map(o => ({ value: o.v, label: o.l }))}
+                                onCommit={v => onChange({ species: v || undefined })}
+                                display={speciesVal ? speciesLabel : <span className="text-stone-400">sin especie</span>} />
+                            <span>·</span>
+                            <InlineCell {...cellProps('rating')} inline kind="select" ariaLabel="Editar rating"
+                                value={RATING_OPTIONS.includes(eff.rating ?? '') ? (eff.rating ?? '') : ''}
+                                options={[{ value: '', label: '— (auto)' }, ...['1', '2', '3', '4', '5'].map(n => ({ value: n, label: `${n} ★` }))]}
+                                onCommit={v => onChange({ rating: v || undefined })}
+                                display={ratingNorm != null ? <span className="text-amber-700 font-medium">{'★'.repeat(ratingNorm)}</span> : <span className="text-stone-400">sin rating</span>} />
+                            <span>·</span>
+                            <InlineCell {...cellProps('date')} inline kind="date" ariaLabel="Editar fecha"
+                                value={normDate ?? ''} onCommit={v => onChange({ date: v || undefined })}
+                                display={
+                                    normDate ? formatImportDate(normDate)
+                                        : dateUnparseable ? <span className="text-amber-700">{eff.date} <span title={built.warnings.join(' ')}>⚠</span></span>
+                                            : <span className="text-stone-400">sin fecha</span>
+                                } />
+                            <button type="button" onClick={onToggleFields} aria-expanded={!!fieldsExpanded}
+                                className="ml-auto flex-shrink-0 text-teal-700 hover:underline">
+                                {fieldsExpanded ? 'ocultar más datos' : 'más datos'}
+                            </button>
+                        </div>
+                        <div className="mt-1.5 text-sm">
+                            {motivoEditing ? (
+                                <textarea autoFocus rows={3} defaultValue={eff.details ?? ''}
+                                    aria-label="Editar motivo"
+                                    onBlur={e => { onChange({ details: e.target.value || undefined }); onEditCell(null); }}
+                                    onKeyDown={e => { if (e.key === 'Escape') onEditCell(null); }}
+                                    placeholder="Motivo por el que se registra / notas"
+                                    className="w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white" />
+                            ) : eff.details ? (
+                                <div className="text-stone-700">
+                                    <p className={`whitespace-pre-wrap cursor-text rounded px-1 -mx-1 ${motivoExpanded ? '' : 'line-clamp-2'}`}
+                                        onClick={() => onEditCell('details')} title="Click para editar">
+                                        {eff.details}
+                                    </p>
+                                    {isLongMotivo && (
+                                        <button type="button" onClick={() => setMotivoExpanded(v => !v)} className="mt-0.5 text-xs text-teal-700 hover:underline">
+                                            {motivoExpanded ? 'ver menos' : 'ver motivo completo'}
+                                        </button>
+                                    )}
+                                </div>
+                            ) : (
+                                <button type="button" onClick={() => onEditCell('details')} className="text-left text-stone-400 italic">
+                                    — sin motivo (click para agregar)
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </td>
+            </tr>
+            {fieldsExpanded && (
+                <tr className={!selected ? 'opacity-40' : ''}>
+                    <td></td>
+                    <td colSpan={4} className="px-3 pb-2">
+                        <div className="rounded-lg border border-stone-200 p-3 text-xs" style={{ backgroundColor: 'var(--surface-muted)' }}>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                <div>
+                                    <label htmlFor={`obo-${r.index}`} className="block text-stone-400 uppercase tracking-wider text-[10px] mb-1">En nombre de</label>
+                                    <input id={`obo-${r.index}`} type="text" value={eff.onBehalfOf ?? ''}
+                                        onChange={e => onChange({ onBehalfOf: e.target.value || undefined })}
+                                        className="w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white" />
+                                </div>
+                                <div>
+                                    <label htmlFor={`sex-${r.index}`} className="block text-stone-400 uppercase tracking-wider text-[10px] mb-1">Sexo</label>
+                                    <input id={`sex-${r.index}`} type="text" value={eff.sex ?? ''}
+                                        onChange={e => onChange({ sex: e.target.value || undefined })}
+                                        className="w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white" />
+                                </div>
+                                <div>
+                                    <label htmlFor={`color-${r.index}`} className="block text-stone-400 uppercase tracking-wider text-[10px] mb-1">Color</label>
+                                    <input id={`color-${r.index}`} type="text" value={eff.color ?? ''}
+                                        onChange={e => onChange({ color: e.target.value || undefined })}
+                                        className="w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white" />
+                                </div>
+                                <div>
+                                    <label htmlFor={`microchip-${r.index}`} className="block text-stone-400 uppercase tracking-wider text-[10px] mb-1">Microchip</label>
+                                    <input id={`microchip-${r.index}`} type="text" value={eff.microchip ?? ''}
+                                        onChange={e => onChange({ microchip: e.target.value || undefined })}
+                                        className="w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white" />
+                                </div>
+                                <div>
+                                    <label htmlFor={`age-${r.index}`} className="block text-stone-400 uppercase tracking-wider text-[10px] mb-1">Edad</label>
+                                    <input id={`age-${r.index}`} type="text" value={eff.age ?? ''}
+                                        onChange={e => onChange({ age: e.target.value || undefined })}
+                                        className="w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white" />
+                                </div>
+                                <div>
+                                    <label htmlFor={`neutered-${r.index}`} className="block text-stone-400 uppercase tracking-wider text-[10px] mb-1">Castrado/a</label>
+                                    <select id={`neutered-${r.index}`} value={neuteredOptionValue(eff.neutered)}
+                                        onChange={e => onChange({ neutered: e.target.value || undefined })}
+                                        className="w-full border border-stone-200 rounded px-2 py-1 text-sm bg-white">
+                                        <option value="">—</option>
+                                        <option value="si">Sí</option>
+                                        <option value="no">No</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            )}
             {match && (
                 <>
                     <tr className={!selected ? 'opacity-40' : ''}>
                         <td></td>
-                        <td colSpan={9} className="px-3 pb-2">
+                        <td colSpan={4} className="px-3 pb-2">
                             <div className="flex flex-wrap items-center gap-2 text-xs bg-sky-50 border border-stone-200 rounded-lg px-2.5 py-1.5">
                                 {onToggleWhy && (
                                     <button type="button" onClick={onToggleWhy}
@@ -1391,7 +1542,7 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                     {expanded && (
                         <tr className={!selected ? 'opacity-40' : ''}>
                             <td></td>
-                            <td colSpan={9} className="px-3 pb-2">
+                            <td colSpan={4} className="px-3 pb-2">
                                 <div className="rounded-lg border border-stone-200 p-3 text-xs space-y-2.5" style={{ backgroundColor: 'var(--surface-muted)' }}>
                                     <div>
                                         <span className="text-stone-500">Coincidió en: </span>
@@ -1439,7 +1590,7 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
             {hasIssue && (
                 <tr className={!selected ? 'opacity-40' : ''}>
                     <td></td>
-                    <td colSpan={9} className="px-3 pb-2">
+                    <td colSpan={4} className="px-3 pb-2">
                         <div className={`text-xs space-y-0.5 rounded-lg px-2.5 py-1.5 border ${(invalid || failure) ? 'bg-rose-50 border-rose-100' : 'bg-amber-50 border-amber-200'}`}>
                             {invalid && <div className="text-rose-600">{built.errors.join(' ')}</div>}
                             {failure && <div className="text-rose-700 font-medium">✗ Falló al importar: {failure} — corregí el campo y reintentá.</div>}
@@ -1463,6 +1614,7 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
 function RecordGrid({
     rows, editingCell, onEditCell, matches, rowAction, onAction,
     failureByIndex, onToggle, onChange, expandedMatchRow, matchContexts, onToggleWhy,
+    expandedFieldsRow, onToggleFields,
     onRatingAll, onVisibilityAll,
 }: {
     rows: Array<{ index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean }>;
@@ -1477,6 +1629,10 @@ function RecordGrid({
     expandedMatchRow: number | null;
     matchContexts: Record<string, MatchContext | 'loading' | 'error'>;
     onToggleWhy: (index: number, adopterId: string) => void;
+    // "Motivo / más campos" expand — same one-row-at-a-time pattern as the match
+    // "por qué" expand above (expandedMatchRow/onToggleWhy).
+    expandedFieldsRow: number | null;
+    onToggleFields: (index: number) => void;
     // Bulk "a todos" header selects — same global effect (applies to every parsed
     // row, not just `rows`) in both steps, matching the pre-existing behavior.
     onRatingAll: (rating: string) => void;
@@ -1492,23 +1648,11 @@ function RecordGrid({
                             <th className="px-2 py-2 text-right font-normal text-stone-400">#</th>
                             <th className="text-left px-3 py-2">Nombre</th>
                             <th className="text-left px-3 py-2">Contacto</th>
-                            <th className="text-left px-3 py-2">Animal</th>
-                            <th className="text-left px-3 py-2">Especie</th>
-                            <th className="text-left px-3 py-2">Tipo</th>
                             <th className="text-left px-3 py-2">
-                                <div className="flex items-center gap-1">
-                                    <span>Rating</span>
-                                    {/* Bulk "a todos" — controlled value="" so it snaps back after firing. */}
-                                    <select value="" onChange={e => { if (e.target.value) onRatingAll(e.target.value === 'clear' ? '' : e.target.value); }}
-                                        className="normal-case font-normal text-[11px] border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-500" title="Asignar un rating a todos los registros">
-                                        <option value="">· a todos</option>
-                                        {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★ a todos</option>)}
-                                        <option value="clear">Limpiar rating</option>
-                                    </select>
-                                </div>
-                            </th>
-                            <th className="text-left px-3 py-2">Fecha</th>
-                            <th className="text-left px-3 py-2">
+                                {/* Identity grid is 5 columns now (Animal/Especie/Tipo/Rating/Fecha/Motivo
+                                    moved into the per-record interaction line below) — both bulk
+                                    "a todos" affordances (rating, visibilidad) collapse into this
+                                    header since Visibilidad is the only remaining bulk-editable column. */}
                                 <div className="flex items-center gap-1">
                                     <span>Visibilidad</span>
                                     <select value="" onChange={e => { if (e.target.value) onVisibilityAll(e.target.value === 'public'); }}
@@ -1516,6 +1660,13 @@ function RecordGrid({
                                         <option value="">· a todos</option>
                                         <option value="public">Todos públicos</option>
                                         <option value="protected">Todos protegidos</option>
+                                    </select>
+                                    {/* Bulk "a todos" — controlled value="" so it snaps back after firing. */}
+                                    <select value="" onChange={e => { if (e.target.value) onRatingAll(e.target.value === 'clear' ? '' : e.target.value); }}
+                                        className="normal-case font-normal text-[11px] border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-500" title="Asignar un rating a todos los registros">
+                                        <option value="">★ a todos</option>
+                                        {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★ a todos</option>)}
+                                        <option value="clear">Limpiar rating</option>
                                     </select>
                                 </div>
                             </th>
@@ -1537,6 +1688,8 @@ function RecordGrid({
                                     expanded={expandedMatchRow === r.index}
                                     onToggleWhy={match ? () => onToggleWhy(r.index, match.adopterId) : undefined}
                                     matchContext={match ? matchContexts[match.adopterId] : undefined}
+                                    fieldsExpanded={expandedFieldsRow === r.index}
+                                    onToggleFields={() => onToggleFields(r.index)}
                                 />
                             );
                         })}
@@ -1551,10 +1704,15 @@ function RecordGrid({
  *  render across hundreds of rows); edit mode renders the live control ONLY for
  *  the single active cell (lifted `editingCell` state in the parent guarantees
  *  at most one control exists in the DOM at a time — see SpreadsheetImportWizard). */
-function InlineCell({ active, onActivate, onDeactivate, value, onCommit, kind, options, ariaLabel, display }: {
+function InlineCell({ active, onActivate, onDeactivate, value, onCommit, kind, options, ariaLabel, display, inline }: {
     active: boolean; onActivate: () => void; onDeactivate: () => void;
     value: string; onCommit: (v: string) => void; kind: 'text' | 'select' | 'date';
     options?: Array<{ value: string; label: string }>; ariaLabel: string; display: React.ReactNode;
+    // `inline`: auto-width chip for the horizontal interaction line (a flex-wrap
+    // row). The default (`block w-full`) fills a table-cell column in the
+    // identity grid — but inside a flex row a full-width child forces every
+    // sibling onto its own line (the vertical-stacking bug).
+    inline?: boolean;
 }) {
     const [draft, setDraft] = useState(value);
     // Re-seed the draft whenever this cell becomes the active one (or the
@@ -1574,7 +1732,7 @@ function InlineCell({ active, onActivate, onDeactivate, value, onCommit, kind, o
     if (!active) {
         return (
             <button type="button" onClick={onActivate} aria-label={ariaLabel}
-                className="block w-full text-left hover:bg-stone-100 rounded px-1 -mx-1">
+                className={`text-left hover:bg-stone-100 rounded px-1 -mx-1 ${inline ? 'inline-block align-bottom w-auto max-w-full' : 'block w-full'}`}>
                 {display}
             </button>
         );
@@ -1585,7 +1743,7 @@ function InlineCell({ active, onActivate, onDeactivate, value, onCommit, kind, o
             <select autoFocus aria-label={ariaLabel} value={draft}
                 onChange={e => { onCommit(e.target.value); onDeactivate(); }}
                 onBlur={onDeactivate}
-                className="w-full border border-stone-200 rounded px-1 py-0.5 text-sm bg-white">
+                className={`border border-stone-200 rounded px-1 py-0.5 text-sm bg-white ${inline ? 'w-auto' : 'w-full'}`}>
                 {options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
         );
@@ -1599,6 +1757,6 @@ function InlineCell({ active, onActivate, onDeactivate, value, onCommit, kind, o
                 if (e.key === 'Enter') e.currentTarget.blur();
                 else if (e.key === 'Escape') { skipCommit.current = true; e.currentTarget.blur(); }
             }}
-            className="w-full border border-stone-200 rounded px-1 py-0.5 text-sm bg-white" />
+            className={`border border-stone-200 rounded px-1 py-0.5 text-sm bg-white ${inline ? 'w-auto max-w-[150px]' : 'w-full'}`} />
     );
 }
