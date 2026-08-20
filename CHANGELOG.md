@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.40.0] - 2026-08-20
+
+### Added — "focus mode" to jump straight to the matches that need a decision
+
+The Duplicados step showed all matched rows together, so the weak matches that require a manual decision (⚠ Elegí) were scattered among the auto-resolved "Actualizar" rows and had to be hunted for. The warning banner now carries a **"Ver solo las pendientes (N)"** toggle that collapses the grid to just those rows.
+
+- **Frozen worklist:** engaging focus snapshots the currently-unresolved set, so a row stays visible (its ⚠ badge just clears) as you resolve it, instead of vanishing from under the cursor mid-click.
+- **Live counter** in the sticky banner decrements as you decide; when it reaches zero the banner turns into a green "✓ Todas resueltas — listo para importar" with a "Ver todas" escape, and the Importar button enables.
+- **Clarified the bulk-action asymmetry:** a micro-note explains that bulk "Actualizar" only applies to *identical* matches (the "Aplicar a idénticos" control) — on weak matches each update stays a per-row decision, which is the false-merge the review step exists to prevent. The banner's blanket actions remain the two safe escapes (Crear todas / Omitir todas).
+
+Theme-safe throughout (amber `bg-amber-50/100`, `border-amber-200`, `text-amber-700/800`; success via `--status-emerald-*` vars).
+
 ## [2.39.2] - 2026-08-18
 
 ### Fixed — empty interaction fields now self-identify

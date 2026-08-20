@@ -164,6 +164,12 @@ export default function SpreadsheetImportWizard() {
     // Which row's "detalles / más campos" expand (Motivo + secondary animal/adoption
     // fields) is open — same one-row-at-a-time pattern as expandedMatchRow above.
     const [expandedFieldsRow, setExpandedFieldsRow] = useState<number | null>(null);
+    // Focus mode (Duplicados step): collapse the grid to just the weak-match rows
+    // that still need a decision. `focusWorklist` freezes the set of indices that
+    // were unresolved when focus engaged, so resolving a row keeps it visible (its
+    // ⚠ badge just clears) instead of dropping out from under the cursor mid-click.
+    const [focusPending, setFocusPending] = useState(false);
+    const [focusWorklist, setFocusWorklist] = useState<Set<number> | null>(null);
     const [detecting, setDetecting] = useState(false);
     const [detectProgress, setDetectProgress] = useState({ done: 0, total: 0 });
     const [detectionDone, setDetectionDone] = useState(false);
@@ -692,7 +698,7 @@ export default function SpreadsheetImportWizard() {
         return Math.round((elapsed / processed) * remainingRows);
     })();
     const fmtEta = (ms: number) => { const s = Math.ceil(ms / 1000); return s < 60 ? `~${s} s` : `~${Math.ceil(s / 60)} min`; };
-    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); setExpandedFieldsRow(null); };
+    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); };
 
     // Duplicados step (Step 3): the focused triage is ONLY the selected rows that
     // actually matched something — everything else auto-creates, so it never
@@ -726,6 +732,22 @@ export default function SpreadsheetImportWizard() {
             return next;
         });
     };
+    // Toggle the "only pending" focus filter. Snapshots the unresolved set on
+    // engage so the worklist is frozen while you clear it; clears on disengage.
+    const toggleFocusPending = () => {
+        setFocusPending(on => {
+            const next = !on;
+            setFocusWorklist(next
+                ? new Set(matchedRows.filter(r => (rowAction[r.index] ?? 'create') === 'review').map(r => r.index))
+                : null);
+            return next;
+        });
+    };
+    // Rows shown in the Duplicados grid: the frozen worklist when focus is on,
+    // otherwise every matched row.
+    const dedupVisibleRows = focusPending && focusWorklist
+        ? matchedRows.filter(r => focusWorklist.has(r.index))
+        : matchedRows;
     // Expand/collapse a triage row's "por qué" panel; fetch the presence-only
     // match context lazily on first expand, cached per adopterId.
     const toggleFieldsExpand = (rowIndex: number) => setExpandedFieldsRow(prev => prev === rowIndex ? null : rowIndex);
@@ -1002,12 +1024,26 @@ export default function SpreadsheetImportWizard() {
                             )}
 
                             {reviewCount > 0 && (
-                                <div className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800 flex flex-wrap items-center justify-between gap-2">
-                                    <span>⚠ {reviewCount} {reviewCount === 1 ? 'coincidencia requiere' : 'coincidencias requieren'} tu decisión</span>
-                                    <div className="flex flex-shrink-0 items-center gap-3">
-                                        <button onClick={() => resolveAllReview('create')} className="font-semibold text-amber-800 underline hover:no-underline">Crear todas como nuevas</button>
-                                        <button onClick={() => resolveAllReview('skip')} className="font-semibold text-amber-800 underline hover:no-underline">Omitir todas</button>
+                                <div className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800 sticky top-16 z-30 shadow-sm">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <span>⚠ {reviewCount} {reviewCount === 1 ? 'coincidencia requiere' : 'coincidencias requieren'} tu decisión</span>
+                                        <div className="flex flex-shrink-0 flex-wrap items-center gap-3">
+                                            <button onClick={toggleFocusPending} aria-pressed={focusPending}
+                                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-amber-200 font-semibold ${focusPending ? 'bg-amber-100' : ''}`}>
+                                                {focusPending ? '◉ Viendo solo pendientes' : `○ Ver solo las pendientes (${reviewCount})`}
+                                            </button>
+                                            <button onClick={() => resolveAllReview('create')} className="font-semibold text-amber-800 underline hover:no-underline">Crear todas como nuevas</button>
+                                            <button onClick={() => resolveAllReview('skip')} className="font-semibold text-amber-800 underline hover:no-underline">Omitir todas</button>
+                                        </div>
                                     </div>
+                                    <p className="mt-1.5 text-xs text-amber-700">“Actualizar” en bloque solo aplica a coincidencias idénticas (opción “Aplicar a idénticos”, abajo). En estas, cada actualización es una decisión por fila.</p>
+                                </div>
+                            )}
+                            {reviewCount === 0 && focusPending && (
+                                <div className="mb-3 p-3 rounded-lg border text-sm sticky top-16 z-30 shadow-sm flex flex-wrap items-center justify-between gap-2"
+                                    style={{ backgroundColor: 'var(--status-emerald-bg)', color: 'var(--status-emerald-text)', borderColor: 'var(--status-emerald-text)' }}>
+                                    <span>✓ Todas resueltas — listo para importar</span>
+                                    <button onClick={toggleFocusPending} className="font-semibold underline hover:no-underline">Ver todas</button>
                                 </div>
                             )}
 
@@ -1033,7 +1069,7 @@ export default function SpreadsheetImportWizard() {
                                     {/* Same grid/RowView as the Revisar step (see RecordGrid), filtered to just the
                                         matched rows — the match sub-row + "por qué" panel + action toggle live in
                                         RowView, so a matched record shows identically here and in Revisar. */}
-                                    <RecordGrid rows={matchedRows}
+                                    <RecordGrid rows={dedupVisibleRows}
                                         editingCell={editingCell} onEditCell={(index, field) => setEditingCell(field ? { index, field } : null)}
                                         matches={matches} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
                                         failureByIndex={failureByIndex} onToggle={toggle} onChange={setOverride}

@@ -73,7 +73,10 @@
       "Bash(python3 -)",
       "Bash(grep -vE \"^\\\\.claude/settings\\\\.json$\")",
       "Bash(node /private/tmp/claude-501/-Users-jurfalino-Developer-Personal-verazadoptantes2/fd0ca035-b3f5-4add-919c-b78537970ccf/scratchpad/verify-dup.mjs)",
-      "Bash(echo \"version: $\\(node -p \"require\\('./package.json'\\).version\"\\)\")"
+      "Bash(echo \"version: $\\(node -p \"require\\('./package.json'\\).version\"\\)\")",
+      "Bash(grep -nA2 -B2 -iE \"github|enabledPlugins\" settings.json)",
+      "Bash(python3 *)",
+      "Artifact"
     ]
   }
 }
