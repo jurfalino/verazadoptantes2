@@ -76,7 +76,10 @@
       "Bash(echo \"version: $\\(node -p \"require\\('./package.json'\\).version\"\\)\")",
       "Bash(grep -nA2 -B2 -iE \"github|enabledPlugins\" settings.json)",
       "Bash(python3 *)",
-      "Artifact"
+      "Artifact",
+      "Bash(git pull *)",
+      "Bash(git merge *)",
+      "Bash(echo \"bumped to $\\(node -p \"require\\('./package.json'\\).version\"\\)\")"
     ]
   }
 }

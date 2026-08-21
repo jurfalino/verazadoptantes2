@@ -103,6 +103,21 @@ function formatImportDate(ymd: string | null): string {
     return `${+m[3]} ${IMPORT_MONTHS_ES[+m[2] - 1]} ${m[1]}`; // e.g. "1 jun 2015"
 }
 
+// Shared progress ETA (interpret / dedup / import all share the done/total shape).
+// Estimated ms remaining, extrapolating the observed rate over the rows left.
+// `doneOffset` excludes rows already accounted before timing began (e.g. resumed
+// skips) so the rate reflects only work done this run. Returns null until there's
+// a usable sample (≥1 processed, time elapsed, work remaining).
+function etaMsFrom(done: number, total: number, startMs: number | null, doneOffset = 0): number | null {
+    if (!startMs) return null;
+    const processed = done - doneOffset;
+    const elapsed = Date.now() - startMs;
+    const remaining = total - done;
+    if (processed <= 0 || elapsed <= 0 || remaining <= 0) return null;
+    return Math.round((elapsed / processed) * remaining);
+}
+function fmtEta(ms: number): string { const s = Math.ceil(ms / 1000); return s < 60 ? `~${s} s` : `~${Math.ceil(s / 60)} min`; }
+
 type Step = 'upload' | 'confirm' | 'dedup' | 'import';
 type Filter = 'all' | 'valid' | 'invalid' | 'warnings';
 
@@ -146,6 +161,9 @@ export default function SpreadsheetImportWizard() {
     // countdown (progress alone only updates once per batch).
     const importStartRef = useRef<number | null>(null);
     const importStartDoneRef = useRef(0);
+    // Start timestamps for the interpret and dedup progress ETAs (import has its own above).
+    const interpretStartRef = useRef<number | null>(null);
+    const detectStartRef = useRef<number | null>(null);
     const [, setTick] = useState(0);
     useEffect(() => {
         if (step !== 'import' || importDone) return;
@@ -234,6 +252,7 @@ export default function SpreadsheetImportWizard() {
         if (!parsed) return;
         setError(null); setBusy(true); setMode('ai'); setInterpreted([]);
         try {
+            interpretStartRef.current = Date.now();
             setInterpretProgress({ done: 0, total: parsed.rows.length });
             const CHUNK = 20;
             const acc: MappedRow[] = [];
@@ -401,6 +420,7 @@ export default function SpreadsheetImportWizard() {
     // address-only / DNI-only rows won't match here and default to "crear".
     const runDetection = async () => {
         const targets = records.filter(r => r.selected);
+        detectStartRef.current = Date.now();
         setDetecting(true); setDetectionDone(false); setDetectProgress({ done: 0, total: targets.length });
         setDetectionDegraded(false);
         let detectionHadError = false;
@@ -689,15 +709,9 @@ export default function SpreadsheetImportWizard() {
 
     const tally = { created: results.filter(r => r.status === 'created').length, updated: results.filter(r => r.status === 'updated').length, skipped: results.filter(r => r.status === 'skipped').length, failed: results.filter(r => r.status === 'failed').length };
     // Estimated time remaining, extrapolated from the observed rate since sending began.
-    const etaMs = (() => {
-        if (importDone || cancelling || !importStartRef.current) return null;
-        const processed = progress.done - importStartDoneRef.current;
-        const elapsed = Date.now() - importStartRef.current;
-        const remainingRows = progress.total - progress.done;
-        if (processed <= 0 || elapsed <= 0 || remainingRows <= 0) return null;
-        return Math.round((elapsed / processed) * remainingRows);
-    })();
-    const fmtEta = (ms: number) => { const s = Math.ceil(ms / 1000); return s < 60 ? `~${s} s` : `~${Math.ceil(s / 60)} min`; };
+    const etaMs = (importDone || cancelling) ? null : etaMsFrom(progress.done, progress.total, importStartRef.current, importStartDoneRef.current);
+    const interpretEtaMs = etaMsFrom(interpretProgress.done, interpretProgress.total, interpretStartRef.current);
+    const detectEtaMs = etaMsFrom(detectProgress.done, detectProgress.total, detectStartRef.current);
     const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); };
 
     // Duplicados step (Step 3): the focused triage is ONLY the selected rows that
@@ -887,9 +901,10 @@ export default function SpreadsheetImportWizard() {
                         <div className="border border-stone-200 rounded-xl p-6">
                             <div className="text-sm text-teal-700 mb-3 flex items-center gap-2">
                                 <span className="inline-block w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" aria-hidden />
-                                {mode === 'ai' && interpretProgress.total > 0
-                                    ? `Interpretando ${interpretProgress.total} filas con IA… ${interpretProgress.done}/${interpretProgress.total}`
-                                    : 'Preparando la lista de registros…'}
+                                {mode === 'ai' && interpretProgress.total > 0 ? (
+                                    <>Interpretando {interpretProgress.total} filas con IA… {interpretProgress.done}/{interpretProgress.total}
+                                        {interpretEtaMs != null && <span className="text-stone-400"> · {fmtEta(interpretEtaMs)} restante</span>}</>
+                                ) : 'Preparando la lista de registros…'}
                             </div>
                             {mode === 'ai' && interpretProgress.total > 0 && (
                                 <div className="h-2 rounded-full bg-stone-100 overflow-hidden mb-4"><div className="h-full bg-teal-500 transition-all" style={{ width: `${(interpretProgress.done / interpretProgress.total) * 100}%` }} /></div>
@@ -994,7 +1009,8 @@ export default function SpreadsheetImportWizard() {
                         <div className="border border-stone-200 rounded-xl p-6">
                             <div className="text-sm text-teal-700 mb-3 flex items-center gap-2">
                                 <span className="inline-block w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" aria-hidden />
-                                Analizando {detectProgress.total} registros contra tu base…
+                                Analizando {detectProgress.done}/{detectProgress.total} registros contra tu base…
+                                {detectEtaMs != null && <span className="text-stone-400"> · {fmtEta(detectEtaMs)} restante</span>}
                             </div>
                             <div className="h-2 rounded-full bg-stone-100 overflow-hidden">
                                 <div className="h-full bg-teal-500 transition-all" style={{ width: `${detectProgress.total ? (detectProgress.done / detectProgress.total) * 100 : 0}%` }} />

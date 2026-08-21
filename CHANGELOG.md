@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.40.1] - 2026-08-21
+
+### Added — estimated time remaining on all three import progress bars
+
+The import step already showed an ETA; the interpret (IA) and duplicate-detection steps only showed a count or nothing. Extracted the import step's estimate into a shared `etaMsFrom(done, total, startMs, doneOffset)` + `fmtEta` helper and wired all three progress bars to it. The dedup step now reads e.g. `Analizando 147/214 registros contra tu base… · ~9 s restante`, and the AI-interpret step likewise. The estimate extrapolates the observed rate over the rows remaining and only appears once there's a usable sample.
+
 ## [2.40.0] - 2026-08-20
 
 ### Added — "focus mode" to jump straight to the matches that need a decision
