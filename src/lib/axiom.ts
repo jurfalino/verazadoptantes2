@@ -24,6 +24,12 @@ import { mapSeriesToPoints, type SeriesPoint } from './metricsSeries';
 
 const AXIOM_API = 'https://api.axiom.co/v1/datasets';
 const CACHE_TTL_MS = 5 * 60 * 1000;
+// Hard cap on how long an Axiom metrics query may block. The /admin overview
+// awaits these in the render path; without a bound, one slow/hanging Axiom
+// response runs the Pages Function past its resource limit → Cloudflare 1102
+// takes down the whole page. On timeout we abort and degrade to "metrics
+// unavailable" (the caller's null path), same as any other Axiom failure.
+const AXIOM_QUERY_TIMEOUT_MS = 6000;
 
 interface AxiomConfig {
     dataset: string;
@@ -133,14 +139,29 @@ async function runQuery(body: AxiomQueryBody, config: AxiomConfig): Promise<Axio
     }
 
     const url = `${AXIOM_API}/${encodeURIComponent(config.dataset)}/query?legacy=true`;
-    const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${config.token}`,
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(finalBody),
-    });
+    // Bound the request: on timeout the AbortController fires, `fetch` rejects,
+    // and we return null (degraded) instead of blocking the render until the
+    // Worker is killed (1102). `finally` clears the timer on every path.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), AXIOM_QUERY_TIMEOUT_MS);
+    let res: Response;
+    try {
+        res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${config.token}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(finalBody),
+            signal: controller.signal,
+        });
+    } catch {
+        // Timeout (abort) or network error — degrade to "metrics unavailable"
+        // rather than crashing / hanging the admin page.
+        return null;
+    } finally {
+        clearTimeout(timer);
+    }
     if (!res.ok) {
         // Don't crash the admin page on Axiom failure. Caller treats null as
         // "metrics unavailable" and degrades the section gracefully.
