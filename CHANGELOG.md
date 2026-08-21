@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.40.3] - 2026-08-21
+
+### Fixed — import scan still blocked on Facebook-URL rows ("LIKE pattern too complex")
+
+v2.40.2's retry didn't help a handful of rows because their failure was **deterministic**, not load-induced. Isolated against prod D1: `SELECT … WHERE contact_info LIKE '%https://www.facebook.com/profile.php?id=…%'` fails with **`LIKE or GLOB pattern too complex` (SQLITE_ERROR 7500)** — D1's SQLite rejects the long full-URL LIKE pattern (the same value without the `https://` scheme succeeds). Junk "name" cells (a note + phone as the name) hit it on the `duplicate_tokens` prefix-LIKE too. Those queries in `findAdopters` had **no `.catch()`** (unlike the id fan-out), so one rejected pattern threw the whole call → the row was never compared → import blocked. Now the token-index lookups and the LIKE fallback each **degrade with a logged warning** instead of throwing: the row is still compared via its other tokens (the Facebook handle still matches through the exact-token index), so it's neither dropped nor blocks the import.
+
 ## [2.40.2] - 2026-08-21
 
 ### Fixed — /admin 1102 (Axiom fetch had no timeout)

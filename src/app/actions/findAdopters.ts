@@ -433,7 +433,7 @@ async function runDuplicateMode(
 
     for (const token of rawTokens) {
         let rows: Array<{ adopterId: string; tokenValue: string }>;
-
+        try {
         if (token.type === 'name_word' || token.type === 'name_full') {
             // Prefix-LIKE: catches 'jonathan' when stored as 'jonatan' and vice-versa
             // D1/SQLite safe formulation:
@@ -453,6 +453,15 @@ async function runDuplicateMode(
                     eq(duplicateTokens.tokenValue, token.value),
                 ))
                 .limit(20);
+        }
+        } catch (e) {
+            // A junk "name" field or an over-long value (e.g. a full Facebook
+            // profile URL) can make SQLite reject the LIKE with "pattern too
+            // complex". Degrade this token's lookup instead of throwing the whole
+            // findAdopters call — otherwise the caller (import detection) drops the
+            // row from comparison entirely. Other tokens/strategies still run.
+            logger.warn('findAdopters: token lookup degraded', { tokenType: token.type, error: e instanceof Error ? e.message : String(e) });
+            continue;
         }
 
         for (const m of rows) {
@@ -495,7 +504,14 @@ async function runDuplicateMode(
         if (conditions.length === 0) return;
         const base = and(or(...conditions), isNull(adopters.deletedAt));
         const where = excludeId ? and(base, ne(adopters.id, excludeId)) : base;
-        const likeRows = await db.select({ id: adopters.id }).from(adopters).where(where).limit(20);
+        const likeRows = await db.select({ id: adopters.id }).from(adopters).where(where).limit(20)
+            .catch((e: unknown) => {
+                // Full-scan LIKE on a long/complex value (Facebook URLs) can trip
+                // SQLite's "pattern too complex". Degrade this fallback instead of
+                // throwing the whole call — token-index matches for the row still stand.
+                logger.warn('findAdopters: LIKE fallback degraded', { bucket, error: e instanceof Error ? e.message : String(e) });
+                return [] as Array<{ id: string }>;
+            });
         for (const r of likeRows) {
             if (!matchMap.has(r.id)) matchMap.set(r.id, new Set());
             matchMap.get(r.id)!.add(bucket);
