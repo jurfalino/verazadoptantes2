@@ -38,6 +38,7 @@ interface RowResult { index: number; name: string; status: RowStatus; message?: 
 interface PrevRunItem {
     id: string; rowIndex: number | null; adopterId: string | null; adopterName: string | null;
     action: string | null; status: string | null; matchedAdopterId: string | null; message: string | null;
+    isPublic: number | null;
 }
 const PREV_ACTION_LABEL: Record<string, string> = { create: 'Crear', upsert: 'Actualizar', skip: 'Omitir' };
 // Inline CSS-var styles (not classNames) — 'created' has no theme-remapped
@@ -890,6 +891,14 @@ export default function SpreadsheetImportWizard() {
                                                                     ? <a href={`/adopter/${it.adopterId}`} target="_blank" rel="noopener noreferrer" className="text-teal-700 hover:underline">{it.adopterName?.trim() || 'Sin nombre'}</a>
                                                                     : (it.adopterName?.trim() || <span className="italic text-stone-400">Sin nombre</span>)}
                                                             </span>
+                                                            {it.adopterId && (
+                                                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0"
+                                                                    style={it.isPublic === 1
+                                                                        ? { backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }
+                                                                        : { backgroundColor: 'var(--surface-muted)', color: 'var(--text-muted)' }}>
+                                                                    {it.isPublic === 1 ? 'Público' : 'Protegido'}
+                                                                </span>
+                                                            )}
                                                             {it.status && (
                                                                 <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0"
                                                                     style={PREV_STATUS_STYLE[it.status] ?? { backgroundColor: 'var(--surface-muted)', color: 'var(--text-muted)' }}>

@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.40.5] - 2026-08-21
+
+### Added — Público/Protegido badge in the previous-imports tables
+
+The per-record drill-down of a past import run (both the rescuer view on `/import/sheet` and the admin view at `/admin/imports`) now shows each created/updated record's **Público (sky) / Protegido (gray)** visibility badge, matching the review step. A shared `runItemsWithVisibility` helper left-joins `import_run_items` to `adopters` for `is_public` (one query, D1-safe); skip/fail rows with no `adopterId` show no badge. Theme-safe via `--status-sky-*` / `--surface-muted` vars.
+
 ## [2.40.4] - 2026-08-21
 
 ### Fixed — no obvious way out of the dedup "focus mode"

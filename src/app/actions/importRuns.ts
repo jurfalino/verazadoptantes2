@@ -8,9 +8,9 @@
  * admin-gated.
  */
 
-import { desc, eq, or, sql } from 'drizzle-orm';
+import { desc, eq, or, sql, getTableColumns } from 'drizzle-orm';
 import { getDb, getUser, getIsAdmin } from './_db';
-import { importRuns, importRunItems } from '@/db/schema';
+import { importRuns, importRunItems, adopters } from '@/db/schema';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { getOrgMatesOf } from '@/lib/orgMembership';
 import { logger } from '@/lib/logger';
@@ -163,13 +163,26 @@ export async function getMyImportRuns(): Promise<EnrichedImportRun[]> {
     }
 }
 
+/** A run item joined to its created/updated adopter's record-level visibility
+ *  (is_public), so the previous-imports tables can show the Público/Protegido
+ *  badge per row. isPublic is null for skip/fail rows that have no adopterId. */
+export type ImportRunItemWithVisibility = typeof importRunItems.$inferSelect & { isPublic: number | null };
+
+async function runItemsWithVisibility(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, runId: string): Promise<ImportRunItemWithVisibility[]> {
+    return db.select({ ...getTableColumns(importRunItems), isPublic: adopters.isPublic })
+        .from(importRunItems)
+        .leftJoin(adopters, eq(adopters.id, importRunItems.adopterId))
+        .where(eq(importRunItems.runId, runId))
+        .orderBy(importRunItems.rowIndex);
+}
+
 /** Admin: the per-row items for one run, in source order. */
-export async function getImportRunItems(runId: string): Promise<Array<typeof importRunItems.$inferSelect>> {
+export async function getImportRunItems(runId: string): Promise<ImportRunItemWithVisibility[]> {
     if (!(await getIsAdmin())) return [];
     try {
         const db = await getDb();
         if (!db) return [];
-        return await db.select().from(importRunItems).where(eq(importRunItems.runId, runId)).orderBy(importRunItems.rowIndex);
+        return await runItemsWithVisibility(db, runId);
     } catch (e) {
         logger.warn('getImportRunItems failed', { runId, error: e instanceof Error ? e.message : String(e) });
         return [];
@@ -180,7 +193,7 @@ export async function getImportRunItems(runId: string): Promise<Array<typeof imp
  *  rescuer can drill into a previous import from /import/sheet and open the records
  *  it created. Auth-scoped: only the run's actor, an org-mate, or an admin may read
  *  it; anyone else gets []. */
-export async function getMyImportRunItems(runId: string): Promise<Array<typeof importRunItems.$inferSelect>> {
+export async function getMyImportRunItems(runId: string): Promise<ImportRunItemWithVisibility[]> {
     let actor = '';
     try { actor = await getUser(); } catch { /* anonymous */ }
     if (!isRealActorEmail(actor)) return [];
@@ -194,7 +207,7 @@ export async function getMyImportRunItems(runId: string): Promise<Array<typeof i
             const allowed = new Set(mates.map(m => m.email));
             if (!allowed.has(run.actorEmail ?? '') && !(await getIsAdmin())) return [];
         }
-        return await db.select().from(importRunItems).where(eq(importRunItems.runId, runId)).orderBy(importRunItems.rowIndex);
+        return await runItemsWithVisibility(db, runId);
     } catch (e) {
         logger.warn('getMyImportRunItems failed', { runId, error: e instanceof Error ? e.message : String(e) });
         return [];
