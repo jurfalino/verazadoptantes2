@@ -1073,7 +1073,7 @@ export default function SpreadsheetImportWizard() {
                                         <div className="flex flex-shrink-0 flex-wrap items-center gap-3">
                                             <button onClick={toggleFocusPending} aria-pressed={focusPending}
                                                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-amber-200 font-semibold ${focusPending ? 'bg-amber-100' : ''}`}>
-                                                {focusPending ? '◉ Viendo solo pendientes' : `○ Ver solo las pendientes (${reviewCount})`}
+                                                {focusPending ? '✕ Ver todas las coincidencias' : `○ Ver solo las pendientes (${reviewCount})`}
                                             </button>
                                             <button onClick={() => resolveAllReview('create')} className="font-semibold text-amber-800 underline hover:no-underline">Crear todas como nuevas</button>
                                             <button onClick={() => resolveAllReview('skip')} className="font-semibold text-amber-800 underline hover:no-underline">Omitir todas</button>
@@ -1086,7 +1086,7 @@ export default function SpreadsheetImportWizard() {
                                 <div className="mb-3 p-3 rounded-lg border text-sm sticky top-16 z-30 shadow-sm flex flex-wrap items-center justify-between gap-2"
                                     style={{ backgroundColor: 'var(--status-emerald-bg)', color: 'var(--status-emerald-text)', borderColor: 'var(--status-emerald-text)' }}>
                                     <span>✓ Todas resueltas — listo para importar</span>
-                                    <button onClick={toggleFocusPending} className="font-semibold underline hover:no-underline">Ver todas</button>
+                                    <button onClick={toggleFocusPending} className="flex-shrink-0 font-semibold underline hover:no-underline">✕ Ver todas las coincidencias</button>
                                 </div>
                             )}
 

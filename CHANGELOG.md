@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.40.4] - 2026-08-21
+
+### Fixed — no obvious way out of the dedup "focus mode"
+
+In the Duplicados step, the "Ver solo las pendientes" filter toggled to the label **"◉ Viendo solo pendientes"** while active — a status, not an action, so it didn't read as "click to see all again". Users who filtered to the pending rows and resolved them felt stuck with no way back to the full match list. The toggle now shows the **action** in each state: **"✕ Ver todas las coincidencias"** while focused, "○ Ver solo las pendientes (N)" otherwise. The all-resolved success bar's exit was relabeled to match. (Both exits already rendered — this makes the return-to-all obvious.)
+
 ## [2.40.3] - 2026-08-21
 
 ### Fixed — import scan still blocked on Facebook-URL rows ("LIKE pattern too complex")
