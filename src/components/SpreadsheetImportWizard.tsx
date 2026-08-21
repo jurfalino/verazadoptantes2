@@ -103,6 +103,21 @@ function formatImportDate(ymd: string | null): string {
     return `${+m[3]} ${IMPORT_MONTHS_ES[+m[2] - 1]} ${m[1]}`; // e.g. "1 jun 2015"
 }
 
+// Shared progress ETA (interpret / dedup / import all share the done/total shape).
+// Estimated ms remaining, extrapolating the observed rate over the rows left.
+// `doneOffset` excludes rows already accounted before timing began (e.g. resumed
+// skips) so the rate reflects only work done this run. Returns null until there's
+// a usable sample (≥1 processed, time elapsed, work remaining).
+function etaMsFrom(done: number, total: number, startMs: number | null, doneOffset = 0): number | null {
+    if (!startMs) return null;
+    const processed = done - doneOffset;
+    const elapsed = Date.now() - startMs;
+    const remaining = total - done;
+    if (processed <= 0 || elapsed <= 0 || remaining <= 0) return null;
+    return Math.round((elapsed / processed) * remaining);
+}
+function fmtEta(ms: number): string { const s = Math.ceil(ms / 1000); return s < 60 ? `~${s} s` : `~${Math.ceil(s / 60)} min`; }
+
 type Step = 'upload' | 'confirm' | 'dedup' | 'import';
 type Filter = 'all' | 'valid' | 'invalid' | 'warnings';
 
@@ -146,6 +161,9 @@ export default function SpreadsheetImportWizard() {
     // countdown (progress alone only updates once per batch).
     const importStartRef = useRef<number | null>(null);
     const importStartDoneRef = useRef(0);
+    // Start timestamps for the interpret and dedup progress ETAs (import has its own above).
+    const interpretStartRef = useRef<number | null>(null);
+    const detectStartRef = useRef<number | null>(null);
     const [, setTick] = useState(0);
     useEffect(() => {
         if (step !== 'import' || importDone) return;
@@ -174,6 +192,11 @@ export default function SpreadsheetImportWizard() {
     const [detectProgress, setDetectProgress] = useState({ done: 0, total: 0 });
     const [detectionDone, setDetectionDone] = useState(false);
     const [detectionDegraded, setDetectionDegraded] = useState(false);
+    // Rows whose duplicate lookup errored on every retry — they were NOT compared.
+    // We fail closed: import is blocked while this is non-empty so an uncompared
+    // row never slips in as a new record (a silent duplicate). "Volver a analizar"
+    // clears it once the scan succeeds.
+    const [detectFailedRows, setDetectFailedRows] = useState<Set<number>>(new Set());
     // Server failure message per row index (from the last import) — surfaced in the
     // grid so the user can fix the offending field and retry just the failed rows.
     const [failureByIndex, setFailureByIndex] = useState<Record<number, string>>({});
@@ -234,6 +257,7 @@ export default function SpreadsheetImportWizard() {
         if (!parsed) return;
         setError(null); setBusy(true); setMode('ai'); setInterpreted([]);
         try {
+            interpretStartRef.current = Date.now();
             setInterpretProgress({ done: 0, total: parsed.rows.length });
             const CHUNK = 20;
             const acc: MappedRow[] = [];
@@ -401,9 +425,11 @@ export default function SpreadsheetImportWizard() {
     // address-only / DNI-only rows won't match here and default to "crear".
     const runDetection = async () => {
         const targets = records.filter(r => r.selected);
+        detectStartRef.current = Date.now();
         setDetecting(true); setDetectionDone(false); setDetectProgress({ done: 0, total: targets.length });
-        setDetectionDegraded(false);
+        setDetectionDegraded(false); setDetectFailedRows(new Set());
         let detectionHadError = false;
+        const failedIdx: number[] = [];
         const found: Record<number, DuplicateMatch | null> = {};
         const actions: Record<number, RowAction> = {};
 
@@ -435,37 +461,56 @@ export default function SpreadsheetImportWizard() {
                     done++; setDetectProgress({ done, total: targets.length });
                     continue;
                 }
-                try {
-                    // DNIs go via contactInfo, LABELED ("DNI 12345678"), because
-                    // findAdopters extracts id_number tokens from contactInfo (there's
-                    // no structured `dnis` input) — without this a same-DNI record only
-                    // matches on name (~50%) and never counts as an exact identifier.
-                    const g = splitGroupedContacts(eff);
-                    const res = await findAdopters(
-                        {
-                            name: eff.name || undefined, phones: g.phones, emails: g.emails, socials: g.socials,
-                            contactInfo: g.ids.length ? g.ids.map(d => `DNI ${d}`).join('\n') : undefined,
-                        },
-                        { mode: 'duplicate', limit: 1, minRelevance: 5 },
-                    );
-                    const dup = (res.results as DuplicateMatch[]) ?? [];
-                    const top = dup[0] ?? null;
-                    found[index] = top;
-                    // High confidence (exact identifier) defaults to "actualizar"; a
-                    // weaker match (e.g. name-only) defaults to 'review' — unresolved,
-                    // NOT 'create' — so it can't be silently imported as a duplicate.
-                    // No match at all (top === null) isn't shown in triage and imports
-                    // as new, so 'create' here is inert.
-                    actions[index] = top ? (isExactIdentifierMatch(top.matchTypes) ? 'upsert' : 'review') : 'create';
-                } catch {
-                    found[index] = null; actions[index] = 'create';
+                // DNIs go via contactInfo, LABELED ("DNI 12345678"), because
+                // findAdopters extracts id_number tokens from contactInfo (there's
+                // no structured `dnis` input) — without this a same-DNI record only
+                // matches on name (~50%) and never counts as an exact identifier.
+                const g = splitGroupedContacts(eff);
+                // Retry with backoff: the per-row lookup runs heavy full-scan LIKE
+                // queries and D1 rejects some under the import's concurrent burst
+                // (intermittent "Failed query"). A couple of spaced retries clear
+                // the transient ones so the row isn't dropped from comparison.
+                let compared = false;
+                for (let attempt = 0; attempt < 3 && !compared; attempt++) {
+                    if (attempt > 0) await new Promise(r => setTimeout(r, 300 * attempt));
+                    try {
+                        const res = await findAdopters(
+                            {
+                                name: eff.name || undefined, phones: g.phones, emails: g.emails, socials: g.socials,
+                                contactInfo: g.ids.length ? g.ids.map(d => `DNI ${d}`).join('\n') : undefined,
+                            },
+                            { mode: 'duplicate', limit: 1, minRelevance: 5 },
+                        );
+                        const dup = (res.results as DuplicateMatch[]) ?? [];
+                        const top = dup[0] ?? null;
+                        found[index] = top;
+                        // High confidence (exact identifier) defaults to "actualizar"; a
+                        // weaker match (e.g. name-only) defaults to 'review' — unresolved,
+                        // NOT 'create' — so it can't be silently imported as a duplicate.
+                        // No match at all (top === null) isn't shown in triage and imports
+                        // as new, so 'create' here is inert.
+                        actions[index] = top ? (isExactIdentifierMatch(top.matchTypes) ? 'upsert' : 'review') : 'create';
+                        compared = true;
+                    } catch {
+                        // fall through to the next attempt
+                    }
+                }
+                if (!compared) {
+                    // Fail CLOSED: this row was never compared. Do NOT default to
+                    // 'create' (that would import a possible duplicate unseen) — mark
+                    // it failed so import is blocked until a re-scan compares it.
+                    found[index] = null; actions[index] = 'skip';
+                    failedIdx.push(index);
                     detectionHadError = true;
                 }
                 done++; setDetectProgress({ done, total: targets.length });
             }
         };
-        await Promise.all(Array.from({ length: Math.min(5, targets.length) }, worker));
+        // Concurrency 3 (was 5): fewer simultaneous full-scan LIKE queries eases
+        // the D1 burst that was making per-row lookups fail during large imports.
+        await Promise.all(Array.from({ length: Math.min(3, targets.length) }, worker));
         if (detectionHadError) setDetectionDegraded(true);
+        setDetectFailedRows(new Set(failedIdx));
         setMatches(found);
         // Seed default actions, but never clobber a choice the user already made.
         setRowAction(prev => { const next = { ...actions }; for (const k of Object.keys(prev)) next[+k] = prev[+k]; return next; });
@@ -689,16 +734,10 @@ export default function SpreadsheetImportWizard() {
 
     const tally = { created: results.filter(r => r.status === 'created').length, updated: results.filter(r => r.status === 'updated').length, skipped: results.filter(r => r.status === 'skipped').length, failed: results.filter(r => r.status === 'failed').length };
     // Estimated time remaining, extrapolated from the observed rate since sending began.
-    const etaMs = (() => {
-        if (importDone || cancelling || !importStartRef.current) return null;
-        const processed = progress.done - importStartDoneRef.current;
-        const elapsed = Date.now() - importStartRef.current;
-        const remainingRows = progress.total - progress.done;
-        if (processed <= 0 || elapsed <= 0 || remainingRows <= 0) return null;
-        return Math.round((elapsed / processed) * remainingRows);
-    })();
-    const fmtEta = (ms: number) => { const s = Math.ceil(ms / 1000); return s < 60 ? `~${s} s` : `~${Math.ceil(s / 60)} min`; };
-    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); };
+    const etaMs = (importDone || cancelling) ? null : etaMsFrom(progress.done, progress.total, importStartRef.current, importStartDoneRef.current);
+    const interpretEtaMs = etaMsFrom(interpretProgress.done, interpretProgress.total, interpretStartRef.current);
+    const detectEtaMs = etaMsFrom(detectProgress.done, detectProgress.total, detectStartRef.current);
+    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); setDetectFailedRows(new Set()); };
 
     // Duplicados step (Step 3): the focused triage is ONLY the selected rows that
     // actually matched something — everything else auto-creates, so it never
@@ -887,9 +926,10 @@ export default function SpreadsheetImportWizard() {
                         <div className="border border-stone-200 rounded-xl p-6">
                             <div className="text-sm text-teal-700 mb-3 flex items-center gap-2">
                                 <span className="inline-block w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" aria-hidden />
-                                {mode === 'ai' && interpretProgress.total > 0
-                                    ? `Interpretando ${interpretProgress.total} filas con IA… ${interpretProgress.done}/${interpretProgress.total}`
-                                    : 'Preparando la lista de registros…'}
+                                {mode === 'ai' && interpretProgress.total > 0 ? (
+                                    <>Interpretando {interpretProgress.total} filas con IA… {interpretProgress.done}/{interpretProgress.total}
+                                        {interpretEtaMs != null && <span className="text-stone-400"> · {fmtEta(interpretEtaMs)} restante</span>}</>
+                                ) : 'Preparando la lista de registros…'}
                             </div>
                             {mode === 'ai' && interpretProgress.total > 0 && (
                                 <div className="h-2 rounded-full bg-stone-100 overflow-hidden mb-4"><div className="h-full bg-teal-500 transition-all" style={{ width: `${(interpretProgress.done / interpretProgress.total) * 100}%` }} /></div>
@@ -994,7 +1034,8 @@ export default function SpreadsheetImportWizard() {
                         <div className="border border-stone-200 rounded-xl p-6">
                             <div className="text-sm text-teal-700 mb-3 flex items-center gap-2">
                                 <span className="inline-block w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" aria-hidden />
-                                Analizando {detectProgress.total} registros contra tu base…
+                                Analizando {detectProgress.done}/{detectProgress.total} registros contra tu base…
+                                {detectEtaMs != null && <span className="text-stone-400"> · {fmtEta(detectEtaMs)} restante</span>}
                             </div>
                             <div className="h-2 rounded-full bg-stone-100 overflow-hidden">
                                 <div className="h-full bg-teal-500 transition-all" style={{ width: `${detectProgress.total ? (detectProgress.done / detectProgress.total) * 100 : 0}%` }} />
@@ -1018,7 +1059,9 @@ export default function SpreadsheetImportWizard() {
 
                             {detectionDegraded && (
                                 <div className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800 flex flex-wrap items-center justify-between gap-2">
-                                    <span>⚠ La búsqueda de duplicados no se completó del todo (error temporal). Algunos registros podrían no haberse comparado — revisá antes de importar.</span>
+                                    <span>⚠ {detectFailedRows.size > 0
+                                        ? `${detectFailedRows.size} ${detectFailedRows.size === 1 ? 'registro no se pudo comparar' : 'registros no se pudieron comparar'} (error temporal). El import está bloqueado hasta volver a analizarlos — así ninguno se importa como duplicado sin verificar.`
+                                        : 'La búsqueda de duplicados no se completó del todo (error temporal). Algunos registros podrían no haberse comparado — revisá antes de importar.'}</span>
                                     <button onClick={runDetection} className="flex-shrink-0 font-semibold text-amber-800 underline hover:no-underline">Volver a analizar</button>
                                 </div>
                             )}
@@ -1083,8 +1126,8 @@ export default function SpreadsheetImportWizard() {
                                 <button onClick={() => setStep('confirm')} className="px-4 py-2 text-sm text-stone-500 hover:text-stone-700">← Volver a revisar</button>
                                 <div className="flex items-center gap-3">
                                     <span className="text-xs text-stone-400">Los {newCount} se crearán como nuevos</span>
-                                    <button disabled={importable.length === 0 || reviewCount > 0} onClick={runImport}
-                                        title={reviewCount > 0 ? `Resolvé las ${reviewCount} coincidencias marcadas primero` : undefined}
+                                    <button disabled={importable.length === 0 || reviewCount > 0 || detectFailedRows.size > 0} onClick={runImport}
+                                        title={detectFailedRows.size > 0 ? `Volvé a analizar: ${detectFailedRows.size} sin comparar` : reviewCount > 0 ? `Resolvé las ${reviewCount} coincidencias marcadas primero` : undefined}
                                         className="px-5 py-2 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700 disabled:opacity-40">
                                         Importar {importable.length} →
                                     </button>

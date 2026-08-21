@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.40.2] - 2026-08-21
+
+### Fixed — /admin 1102 (Axiom fetch had no timeout)
+
+The admin overview awaits its Axiom metric queries in the render path. The shared Axiom `fetch` had no timeout, so a slow/hanging Axiom response ran the Pages Function past its resource limit → Cloudflare **Error 1102** took down the whole /admin page (the `.catch(()=>null)` only handles thrown errors, not slowness). Added a 6 s `AbortController` timeout to `runQuery`; on timeout it aborts and returns null, degrading the metrics section to "no disponible" instead of crashing the page.
+
+### Fixed — import duplicate-scan dropped records under load (silent-duplicate risk)
+
+During a large prod import, ~57 `findAdopters failed` errors were traced (via Axiom) to D1 rejecting the fuzzy full-scan `LIKE` queries (`adopters.contact_info`, `duplicate_tokens.token_value`) under the concurrent burst — heaviest on multi-person/multi-contact cells. Those per-row queries had no `.catch()`, so one D1 failure threw the whole `findAdopters` call, leaving the row with `matches[index]=null` → it vanished from the match list and would have imported as a **new duplicate**. Now the per-row lookup **retries up to 3× with backoff**, detection **concurrency drops 5→3** to ease the D1 burst, and rows that still can't be compared **fail closed**: they're tracked, the warning names the count, and **import is blocked** until "Volver a analizar" succeeds — so an uncompared row never slips in as a silent duplicate.
+
+## [2.40.1] - 2026-08-21
+
+### Added — estimated time remaining on all three import progress bars
+
+The import step already showed an ETA; the interpret (IA) and duplicate-detection steps only showed a count or nothing. Extracted the import step's estimate into a shared `etaMsFrom(done, total, startMs, doneOffset)` + `fmtEta` helper and wired all three progress bars to it. The dedup step now reads e.g. `Analizando 147/214 registros contra tu base… · ~9 s restante`, and the AI-interpret step likewise. The estimate extrapolates the observed rate over the rows remaining and only appears once there's a usable sample.
+
 ## [2.40.0] - 2026-08-20
 
 ### Added — "focus mode" to jump straight to the matches that need a decision
