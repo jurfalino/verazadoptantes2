@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.41.0] - 2026-08-21
+
+### Added — intra-spreadsheet dedup: same person on several rows → one profile, many activities
+
+Until now the duplicate scan only compared each import row against the **existing** database, never against the other rows in the same spreadsheet. So a person appearing on several rows (e.g. denounced multiple times, or two adoptions on different dates) created **N duplicate profiles**. Now, at import time, rows that are the **identical person** (same content fingerprint: same name + same contacts) are folded into **one adopter with multiple activity records** — the first row creates the profile, each later twin's activity is attached to it.
+
+- **Server (additive, zero behavior change when unused):** `ImportBatchRow` gains `extraAdoptions?`, and `createImportedAdopter` writes each as its own activity under the one adopter with deterministic ids (`…-act1`, `…-act2`), idempotent on resend just like the primary.
+- **Client:** grouping runs after building the batch and before sending; only exact `create` rows fold — **name-only rows (empty fingerprint) never fold** (no homonym merges), and rows matching an existing record (`upsert`) are untouched. Progress total is unchanged (folded rows move to the results as grouped).
+- **Transparency:** the import screen shows a note — "N filas idénticas se agruparon en M personas: su actividad se sumó a la misma ficha" — and folded rows appear as *omitidas* with a "Agrupado con #X" message.
+- Conservative by design (chosen: identical-only, automatic): fuzzy same-name+shared-contact grouping was deliberately **not** included to avoid false merges.
+
 ## [2.40.5] - 2026-08-21
 
 ### Added — Público/Protegido badge in the previous-imports tables

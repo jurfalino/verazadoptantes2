@@ -150,6 +150,8 @@ export default function SpreadsheetImportWizard() {
     // Import state.
     const [progress, setProgress] = useState({ done: 0, total: 0 });
     const [results, setResults] = useState<RowResult[]>([]);
+    // Intra-spreadsheet dedup summary: how many rows were folded into how many people.
+    const [foldSummary, setFoldSummary] = useState<{ folded: number; people: number } | null>(null);
     const [importDone, setImportDone] = useState(false);
     // Cancel: a ref the send-loop checks between batches (state would be stale in
     // the running closure). Already-sent rows persist (idempotent), so a cancel
@@ -671,7 +673,7 @@ export default function SpreadsheetImportWizard() {
     };
 
     const runImport = async () => {
-        setStep('import'); setImportDone(false); setResults([]); setFailureByIndex({});
+        setStep('import'); setImportDone(false); setResults([]); setFailureByIndex({}); setFoldSummary(null);
         cancelRef.current = false; setCancelled(false); setCancelling(false);
         const targets = records.filter(r => r.selected);
         setProgress({ done: 0, total: targets.length });
@@ -689,12 +691,34 @@ export default function SpreadsheetImportWizard() {
                 if (pre) preResults.push(pre);
                 else if (row) toSend.push(row);
             }
+            // Intra-spreadsheet dedup (auto): fold rows that are the SAME person
+            // (identical content fingerprint) into ONE adopter with several activities
+            // — so someone appearing on multiple rows becomes one profile, not N
+            // duplicates. Only exact 'create' rows fold; name-only rows have an empty
+            // fingerprint and never fold; 'upsert'/'skip' rows are left untouched. The
+            // primary (first/lowest index) keeps its 'create'; each later twin's activity
+            // moves into the primary's extraAdoptions and its row is marked grouped.
+            const fpByIdx: Record<number, string> = {};
+            for (const t of targets) { const g = splitGroupedContacts(t.eff); fpByIdx[t.index] = computeContentFingerprint({ name: t.eff.name, ...g }); }
+            const primaryByFp = new Map<string, ImportBatchRow>();
+            const withExtras = new Set<number>();
+            const grouped: ImportBatchRow[] = [];
+            for (const row of toSend) {
+                const key = row.action === 'create' ? (fpByIdx[row.index] || '') : '';
+                const primary = key ? primaryByFp.get(key) : undefined;
+                if (!key || !primary) { if (key) primaryByFp.set(key, row); grouped.push(row); continue; }
+                (primary.extraAdoptions ??= []).push(row.adoption);
+                withExtras.add(primary.index);
+                preResults.push({ index: row.index, name: nameByIndex[row.index] || `Fila ${row.index + 1}`, status: 'skipped', message: `Agrupado con #${primary.index + 1} — misma persona (su actividad se sumó a esa ficha)` });
+            }
+            const foldedCount = toSend.length - grouped.length;
+            setFoldSummary(foldedCount > 0 ? { folded: foldedCount, people: withExtras.size } : null);
             // Persist a resume snapshot so a refresh or a cancel mid-import can pick up
             // where it left off (only the not-yet-created rows re-run — see sendBatches).
-            const snapshot: ResumeSnapshot = { runId, fileName, total: targets.length, rows: toSend, names: nameByIndex };
+            const snapshot: ResumeSnapshot = { runId, fileName, total: targets.length, rows: grouped, names: nameByIndex };
             try { localStorage.setItem(RESUME_KEY, JSON.stringify(snapshot)); } catch { /* quota — resume just won't be available */ }
             setResumable(snapshot);
-            await sendBatches(runId, toSend, preResults, nameByIndex);
+            await sendBatches(runId, grouped, preResults, nameByIndex);
         } catch (e) {
             // Last-resort terminal state — never leave the screen stuck on "Importando…".
             // Row-level failures are already handled resiliently inside sendBatches.
@@ -738,7 +762,7 @@ export default function SpreadsheetImportWizard() {
     const etaMs = (importDone || cancelling) ? null : etaMsFrom(progress.done, progress.total, importStartRef.current, importStartDoneRef.current);
     const interpretEtaMs = etaMsFrom(interpretProgress.done, interpretProgress.total, interpretStartRef.current);
     const detectEtaMs = etaMsFrom(detectProgress.done, detectProgress.total, detectStartRef.current);
-    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); setDetectFailedRows(new Set()); };
+    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); setDetectFailedRows(new Set()); setFoldSummary(null); };
 
     // Duplicados step (Step 3): the focused triage is ONLY the selected rows that
     // actually matched something — everything else auto-creates, so it never
@@ -1175,6 +1199,11 @@ export default function SpreadsheetImportWizard() {
                         <span className="px-3 py-1 rounded-lg bg-amber-50 text-amber-700 font-medium">⏭️ {tally.skipped} omitidos</span>
                         <span className="px-3 py-1 rounded-lg bg-rose-50 text-rose-700 font-medium">⚠️ {tally.failed} fallidos</span>
                     </div>
+                    {foldSummary && (
+                        <div className="mb-4 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)', border: '1px solid var(--status-sky-border)' }}>
+                            🔗 {foldSummary.folded} {foldSummary.folded === 1 ? 'fila idéntica se agrupó' : 'filas idénticas se agruparon'} en {foldSummary.people} {foldSummary.people === 1 ? 'persona ya presente en el lote' : 'personas ya presentes en el lote'}: en vez de crear duplicados, su actividad se sumó a la misma ficha (por eso figuran como “omitidas”).
+                        </div>
+                    )}
                     {!importDone && <p className="text-xs text-stone-400 mb-4">Puede tardar unos minutos (cada fila se verifica y tokeniza). No cierres la pestaña.</p>}
                     {(tally.skipped + tally.failed) > 0 && (
                         <div className="border border-stone-200 rounded-xl overflow-hidden mb-4">
