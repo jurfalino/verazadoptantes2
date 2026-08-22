@@ -162,3 +162,17 @@ export function rowWarnings(row: MappedRow): string[] {
     }
     return warnings;
 }
+
+/** Parse a YYYY-MM-DD import date to NOON UTC, not `new Date(str)` (= UTC
+ *  midnight). Midnight-UTC renders as the PREVIOUS day in Buenos Aires (UTC-3)
+ *  via formatShortDate's local getDate() — the off-by-one on imported profiles.
+ *  Noon keeps the day correct across every real timezone (matches the manual
+ *  form's parseLocalDate). Falls back to plain parsing for non-ISO strings.
+ *  Lives here (a pure module) — NOT in the 'use server' importBatch.ts, which may
+ *  only export async server actions. */
+export function importDateToNoon(s: string): Date | null {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (m) return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], 12, 0, 0));
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+}

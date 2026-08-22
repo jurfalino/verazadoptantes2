@@ -20,7 +20,7 @@ import { planRecordMerge, type MergeContact } from '@/domain/importMerge';
 import { addContactEntry } from './addContactEntry';
 import { saveAdoption, getAdoptions } from './adoptions';
 import { tokenizeAdopter } from './duplicates';
-import { importDateToNoon } from './importBatch';
+import { importDateToNoon } from '@/domain/importRow';
 import { logger } from '@/lib/logger';
 
 export interface ImportUpsertInput {
