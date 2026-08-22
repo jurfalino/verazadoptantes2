@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.42.1] - 2026-08-22
+
+### Fixed — imported activity dates were one day early on the profile
+
+Import stored activity dates via `new Date("YYYY-MM-DD")` = **UTC midnight**; the profile renders them with `formatShortDate`'s local `getDate()`, so in Buenos Aires (UTC-3) a Jan 3 date showed as **Jan 2**. (The Revisar grid was already correct — it formats the date string directly.) Now both import write paths (create in `importBatch.recordDataFrom` and upsert in `importUpsert`) store the date at **noon UTC** via a shared `importDateToNoon`, matching the manual form's `parseLocalDate` — the day is then correct in every real timezone. A one-time migration (`0058`) shifts the already-imported midnight dates +12h (`placements.started_at` and `adopter_events.date`, scoped to `source='imported'` rows at exact UTC midnight, both stored in seconds) so existing records display the right day too.
+
 ## [2.42.0] - 2026-08-22
 
 ### Added — the review step now shows the grouping (one adopter card, N activities)

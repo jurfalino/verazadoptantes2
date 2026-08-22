@@ -82,6 +82,17 @@ function deterministicAdopterId(runId: string, index: number): string {
 
 /** Map one import adoption + target ids into the insertRecord row shape. Shared by
  *  the primary activity and any folded extra activities (intra-spreadsheet dedup). */
+// Parse a YYYY-MM-DD activity date to NOON UTC, not `new Date(str)` (= UTC
+// midnight). Midnight-UTC displays as the PREVIOUS day in Buenos Aires (UTC-3)
+// via formatShortDate's local getDate() — the off-by-one on imported profiles.
+// Noon keeps the day correct across every real timezone (matches the manual
+// form's parseLocalDate). Falls back to plain parsing for non-ISO strings.
+export function importDateToNoon(s: string): Date | null {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (m) return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], 12, 0, 0));
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+}
 function recordDataFrom(a: ImportAdoption, id: string, adopterId: string) {
     return {
         id, adopterId,
@@ -90,7 +101,7 @@ function recordDataFrom(a: ImportAdoption, id: string, adopterId: string) {
         status: 'completed' as const,
         rating: a.rating || 2,
         recordType: a.recordType,
-        date: a.date ? new Date(a.date) : null,
+        date: a.date ? importDateToNoon(a.date) : null,
         sourceUrl: null,
         details: a.details || null,
         neutered: a.neutered ?? null,
