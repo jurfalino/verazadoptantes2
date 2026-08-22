@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.42.0] - 2026-08-22
+
+### Added — the review step now shows the grouping (one adopter card, N activities)
+
+v2.41.0 folded identical rows into one profile **at import time**, but the review step still listed the source rows — so you couldn't see what would be created. Now the **Revisar** grid groups identical rows (same content fingerprint, matching the import fold) into **one adopter card**: the identity (name/contact/visibilidad) shows once with a **🔗 N actividades** badge, and each source row renders as its own editable activity line labeled "Actividad k · fila #N". WYSIWYG — the review reflects the one-profile-with-N-activities result.
+
+- Extracted the interaction line + "más datos" into a reusable `ActivityBlock`; `RowView` renders one identity + N activity blocks; errors are per-activity.
+- Selection is **per person** (one checkbox per card toggles all its activity rows). Editing a contact that breaks the identity match re-splits the group live.
+- Scope: grouping applies to the **Revisar** step only; the **Duplicados** step stays ungrouped (its matches are per-row against existing records). Ungrouped records render exactly as before.
+
 ## [2.41.0] - 2026-08-21
 
 ### Added — intra-spreadsheet dedup: same person on several rows → one profile, many activities
