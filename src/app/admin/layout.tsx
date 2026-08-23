@@ -10,16 +10,22 @@ export default async function AdminLayout({
     children: React.ReactNode;
 }) {
     const session = await auth();
+    const email = session?.user?.email;
+    const isAdmin = !!email && await isAdminAsync(email);
 
-    // Secure Admin Area
-    if (!session?.user?.email || !await isAdminAsync(session.user.email)) {
+    // Secure Admin Area. Admin-only for now — to enable moderator access, loosen
+    // this to isModeratorOrAdminAsync AND gate each admin-only page server-side
+    // (most are client components, so a middleware/route-group guard, not a
+    // per-page check). `isAdmin` is passed to the sidebar so its nav filters
+    // per role and shows the Mod/🔒 markers for admins.
+    if (!email || !isAdmin) {
         redirect('/');
     }
 
     return (
         <div className="min-h-screen bg-stone-100 lg:flex">
             {/* Sidebar — client component handles mobile drawer behavior */}
-            <AdminSidebar />
+            <AdminSidebar isAdmin={isAdmin} />
 
             {/* Main Content — top padding on mobile for the fixed header bar */}
             <main className="flex-1 overflow-y-auto lg:h-screen p-4 pt-28 lg:p-8 lg:pt-8">

@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.43.0] - 2026-08-23
+
+### Added — admin sidebar grouped into sections + per-item role markers
+
+The admin nav was a flat list of ~20 items. It's now grouped into 5 sections — **Panel · Moderación · Solicitudes · Administración · Sistema y auditoría** — with a `minRole` (`moderator` | `admin`) on each item. In the admin view every item shows its access: a teal **"Mod"** pill = also visible to moderators, a **🔒** = admin-only. The sidebar takes an `isAdmin` prop and, for a moderator, renders only the `moderator` items (admin-only sections drop out entirely). New pages slot into the right section instead of re-growing a flat list.
+
+Scope note: this is the **nav + role model + markers**. The admin area is still gated **admin-only** (`isAdminAsync`) — actually enabling moderator login is a deliberate follow-up (it touches auth: role on the token/session + a middleware/route-group guard for the admin-only pages, most of which are client components). UI role-filtering is never a substitute for that server-side gate.
+
 ## [2.42.3] - 2026-08-22
 
 ### Fixed — import flow now renders on mobile breakpoints
