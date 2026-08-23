@@ -67,6 +67,8 @@ const nextConfig: NextConfig = {
     return [
       // The old process-only FAQ was consolidated into /faq (v2.31).
       { source: '/guia/faq', destination: '/faq', permanent: true },
+      // The metrics dashboard was folded into the overview page (v2.44.1).
+      { source: '/admin/metrics', destination: '/admin', permanent: true },
     ];
   },
   async rewrites() {

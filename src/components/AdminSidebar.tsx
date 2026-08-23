@@ -13,7 +13,6 @@ type NavItem = { href: string; labelKey: string; icon: string; minRole: 'moderat
 const SECTIONS: Array<{ titleKey: string; items: NavItem[] }> = [
     { titleKey: 'nav_sect_panel', items: [
         { href: '/admin', labelKey: 'nav_overview', icon: '📊', minRole: 'moderator' },
-        { href: '/admin/metrics', labelKey: 'nav_metrics', icon: '📈', minRole: 'moderator' },
     ] },
     { titleKey: 'nav_sect_moderation', items: [
         { href: '/admin/flags', labelKey: 'nav_flagged', icon: '🚩', minRole: 'moderator' },

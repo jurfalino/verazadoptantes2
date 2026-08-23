@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.44.1] - 2026-08-23
+
+### Changed — metrics folded into the overview, Resumen loads fast
+
+The standalone `/admin/metrics` page (and its sidebar entry) is gone; its dashboard now lives inside a **collapsible "Métricas" section on the overview page** (`/admin`) that only queries Axiom **when expanded** — so Resumen renders off the cheap DB counters alone instead of blocking on Axiom every load. First expansion lazy-fetches once and caches; the dashboard's 24h/7d/30d toggle re-fetches from there. `/admin/metrics` now 308-redirects to `/admin`.
+
+Where the old eager overview metrics block overlapped the dashboard (errors, active rescuers, latency), the dashboard version wins. The one non-overlapping widget — the **Top errores (7 días)** message list — is preserved inside the collapsible via a new lazy `fetchTopErrors7d` action, so nothing is lost.
+
+### Removed
+
+- **"Migrate old contacts"** (`AdminContactEntriesBackfill`) and **"Complete country"** (`AdminCountryBackfill`) one-shot maintenance widgets removed from the overview page.
+
 ## [2.44.0] - 2026-08-23
 
 ### Added — "Calidad de datos" moderation report
