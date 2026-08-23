@@ -38,6 +38,7 @@ interface RowResult { index: number; name: string; status: RowStatus; message?: 
 interface PrevRunItem {
     id: string; rowIndex: number | null; adopterId: string | null; adopterName: string | null;
     action: string | null; status: string | null; matchedAdopterId: string | null; message: string | null;
+    isPublic: number | null;
 }
 const PREV_ACTION_LABEL: Record<string, string> = { create: 'Crear', upsert: 'Actualizar', skip: 'Omitir' };
 // Inline CSS-var styles (not classNames) — 'created' has no theme-remapped
@@ -149,6 +150,8 @@ export default function SpreadsheetImportWizard() {
     // Import state.
     const [progress, setProgress] = useState({ done: 0, total: 0 });
     const [results, setResults] = useState<RowResult[]>([]);
+    // Intra-spreadsheet dedup summary: how many rows were folded into how many people.
+    const [foldSummary, setFoldSummary] = useState<{ folded: number; people: number } | null>(null);
     const [importDone, setImportDone] = useState(false);
     // Cancel: a ref the send-loop checks between batches (state would be stale in
     // the running closure). Already-sent rows persist (idempotent), so a cancel
@@ -329,7 +332,10 @@ export default function SpreadsheetImportWizard() {
         if (!parsed || !row) return '';
         return parsed.headers.map((h, i) => { const v = (row[i] ?? '').toString().trim(); return v ? `${h}: ${v}` : ''; }).filter(Boolean).join(' · ');
     };
-    const toggle = (i: number) => setDeselected(s => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n; });
+    // Select/deselect one or more rows at once. A single-element call is the old
+    // per-row toggle; a multi-element call is the grouped review's one-checkbox-
+    // per-person toggle (all its activity rows follow together).
+    const setGroupSelected = (idxs: number[], selected: boolean) => setDeselected(s => { const n = new Set(s); for (const i of idxs) { if (selected) n.delete(i); else n.add(i); } return n; });
     // Bulk-set a rating on every row (empty = clear the override, back to the
     // system/AI-determined value).
     const setRatingAll = (rating: string) => {
@@ -670,7 +676,7 @@ export default function SpreadsheetImportWizard() {
     };
 
     const runImport = async () => {
-        setStep('import'); setImportDone(false); setResults([]); setFailureByIndex({});
+        setStep('import'); setImportDone(false); setResults([]); setFailureByIndex({}); setFoldSummary(null);
         cancelRef.current = false; setCancelled(false); setCancelling(false);
         const targets = records.filter(r => r.selected);
         setProgress({ done: 0, total: targets.length });
@@ -688,12 +694,34 @@ export default function SpreadsheetImportWizard() {
                 if (pre) preResults.push(pre);
                 else if (row) toSend.push(row);
             }
+            // Intra-spreadsheet dedup (auto): fold rows that are the SAME person
+            // (identical content fingerprint) into ONE adopter with several activities
+            // — so someone appearing on multiple rows becomes one profile, not N
+            // duplicates. Only exact 'create' rows fold; name-only rows have an empty
+            // fingerprint and never fold; 'upsert'/'skip' rows are left untouched. The
+            // primary (first/lowest index) keeps its 'create'; each later twin's activity
+            // moves into the primary's extraAdoptions and its row is marked grouped.
+            const fpByIdx: Record<number, string> = {};
+            for (const t of targets) { const g = splitGroupedContacts(t.eff); fpByIdx[t.index] = computeContentFingerprint({ name: t.eff.name, ...g }); }
+            const primaryByFp = new Map<string, ImportBatchRow>();
+            const withExtras = new Set<number>();
+            const grouped: ImportBatchRow[] = [];
+            for (const row of toSend) {
+                const key = row.action === 'create' ? (fpByIdx[row.index] || '') : '';
+                const primary = key ? primaryByFp.get(key) : undefined;
+                if (!key || !primary) { if (key) primaryByFp.set(key, row); grouped.push(row); continue; }
+                (primary.extraAdoptions ??= []).push(row.adoption);
+                withExtras.add(primary.index);
+                preResults.push({ index: row.index, name: nameByIndex[row.index] || `Fila ${row.index + 1}`, status: 'skipped', message: `Agrupado con #${primary.index + 1} — misma persona (su actividad se sumó a esa ficha)` });
+            }
+            const foldedCount = toSend.length - grouped.length;
+            setFoldSummary(foldedCount > 0 ? { folded: foldedCount, people: withExtras.size } : null);
             // Persist a resume snapshot so a refresh or a cancel mid-import can pick up
             // where it left off (only the not-yet-created rows re-run — see sendBatches).
-            const snapshot: ResumeSnapshot = { runId, fileName, total: targets.length, rows: toSend, names: nameByIndex };
+            const snapshot: ResumeSnapshot = { runId, fileName, total: targets.length, rows: grouped, names: nameByIndex };
             try { localStorage.setItem(RESUME_KEY, JSON.stringify(snapshot)); } catch { /* quota — resume just won't be available */ }
             setResumable(snapshot);
-            await sendBatches(runId, toSend, preResults, nameByIndex);
+            await sendBatches(runId, grouped, preResults, nameByIndex);
         } catch (e) {
             // Last-resort terminal state — never leave the screen stuck on "Importando…".
             // Row-level failures are already handled resiliently inside sendBatches.
@@ -737,7 +765,7 @@ export default function SpreadsheetImportWizard() {
     const etaMs = (importDone || cancelling) ? null : etaMsFrom(progress.done, progress.total, importStartRef.current, importStartDoneRef.current);
     const interpretEtaMs = etaMsFrom(interpretProgress.done, interpretProgress.total, interpretStartRef.current);
     const detectEtaMs = etaMsFrom(detectProgress.done, detectProgress.total, detectStartRef.current);
-    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); setDetectFailedRows(new Set()); };
+    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); setDetectFailedRows(new Set()); setFoldSummary(null); };
 
     // Duplicados step (Step 3): the focused triage is ONLY the selected rows that
     // actually matched something — everything else auto-creates, so it never
@@ -890,6 +918,14 @@ export default function SpreadsheetImportWizard() {
                                                                     ? <a href={`/adopter/${it.adopterId}`} target="_blank" rel="noopener noreferrer" className="text-teal-700 hover:underline">{it.adopterName?.trim() || 'Sin nombre'}</a>
                                                                     : (it.adopterName?.trim() || <span className="italic text-stone-400">Sin nombre</span>)}
                                                             </span>
+                                                            {it.adopterId && (
+                                                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0"
+                                                                    style={it.isPublic === 1
+                                                                        ? { backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }
+                                                                        : { backgroundColor: 'var(--surface-muted)', color: 'var(--text-muted)' }}>
+                                                                    {it.isPublic === 1 ? 'Público' : 'Protegido'}
+                                                                </span>
+                                                            )}
                                                             {it.status && (
                                                                 <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0"
                                                                     style={PREV_STATUS_STYLE[it.status] ?? { backgroundColor: 'var(--surface-muted)', color: 'var(--text-muted)' }}>
@@ -949,7 +985,7 @@ export default function SpreadsheetImportWizard() {
                         </div>
                     ) : (
                         <div className="border border-stone-200 rounded-xl mb-4">
-                            <div className="px-4 py-2.5 flex items-center justify-between gap-3 text-sm border-b border-stone-100">
+                            <div className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-sm border-b border-stone-100">
                                 <span className="text-stone-600">📋 <span className="font-medium">Mapeo por columnas</span> — instantáneo. Revisá que cada columna apunte al campo correcto.</span>
                                 <button onClick={runAiInterpretation} className="flex-shrink-0 text-teal-700 hover:underline" title="Para planillas desordenadas (varios contactos en una celda, formatos raros)">🤖 ¿Columnas mezcladas? Interpretar con IA</button>
                             </div>
@@ -1009,15 +1045,15 @@ export default function SpreadsheetImportWizard() {
                     </div>
 
                     {/* TODO(wave1c-mobile): reflow to card-per-record ≤sm (single-DOM CSS reflow) */}
-                    <RecordGrid rows={filtered}
+                    <RecordGrid rows={filtered} group
                         editingCell={editingCell} onEditCell={(index, field) => setEditingCell(field ? { index, field } : null)}
                         matches={matches} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
-                        failureByIndex={failureByIndex} onToggle={toggle} onChange={setOverride}
+                        failureByIndex={failureByIndex} onSetSelected={setGroupSelected} onChange={setOverride}
                         expandedMatchRow={expandedMatchRow} matchContexts={matchContexts} onToggleWhy={toggleMatchExpand}
                         expandedFieldsRow={expandedFieldsRow} onToggleFields={toggleFieldsExpand}
                         onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} />
 
-                    <div className="flex justify-between mt-4">
+                    <div className="flex flex-wrap gap-2 justify-between mt-4">
                         <button onClick={reset} className="px-4 py-2 text-sm text-stone-500 hover:text-stone-700">← Empezar de nuevo</button>
                         <button disabled={importable.length === 0} onClick={() => { setStep('dedup'); runDetection(); }} className="px-5 py-2 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700 disabled:opacity-40">
                             Continuar a duplicados →
@@ -1073,7 +1109,7 @@ export default function SpreadsheetImportWizard() {
                                         <div className="flex flex-shrink-0 flex-wrap items-center gap-3">
                                             <button onClick={toggleFocusPending} aria-pressed={focusPending}
                                                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-amber-200 font-semibold ${focusPending ? 'bg-amber-100' : ''}`}>
-                                                {focusPending ? '◉ Viendo solo pendientes' : `○ Ver solo las pendientes (${reviewCount})`}
+                                                {focusPending ? '✕ Ver todas las coincidencias' : `○ Ver solo las pendientes (${reviewCount})`}
                                             </button>
                                             <button onClick={() => resolveAllReview('create')} className="font-semibold text-amber-800 underline hover:no-underline">Crear todas como nuevas</button>
                                             <button onClick={() => resolveAllReview('skip')} className="font-semibold text-amber-800 underline hover:no-underline">Omitir todas</button>
@@ -1086,7 +1122,7 @@ export default function SpreadsheetImportWizard() {
                                 <div className="mb-3 p-3 rounded-lg border text-sm sticky top-16 z-30 shadow-sm flex flex-wrap items-center justify-between gap-2"
                                     style={{ backgroundColor: 'var(--status-emerald-bg)', color: 'var(--status-emerald-text)', borderColor: 'var(--status-emerald-text)' }}>
                                     <span>✓ Todas resueltas — listo para importar</span>
-                                    <button onClick={toggleFocusPending} className="font-semibold underline hover:no-underline">Ver todas</button>
+                                    <button onClick={toggleFocusPending} className="flex-shrink-0 font-semibold underline hover:no-underline">✕ Ver todas las coincidencias</button>
                                 </div>
                             )}
 
@@ -1115,14 +1151,14 @@ export default function SpreadsheetImportWizard() {
                                     <RecordGrid rows={dedupVisibleRows}
                                         editingCell={editingCell} onEditCell={(index, field) => setEditingCell(field ? { index, field } : null)}
                                         matches={matches} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
-                                        failureByIndex={failureByIndex} onToggle={toggle} onChange={setOverride}
+                                        failureByIndex={failureByIndex} onSetSelected={setGroupSelected} onChange={setOverride}
                                         expandedMatchRow={expandedMatchRow} matchContexts={matchContexts} onToggleWhy={toggleMatchExpand}
                                         expandedFieldsRow={expandedFieldsRow} onToggleFields={toggleFieldsExpand}
                                         onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} />
                                 </>
                             ) : null}
 
-                            <div className="flex items-center justify-between mt-4">
+                            <div className="flex flex-wrap gap-2 items-center justify-between mt-4">
                                 <button onClick={() => setStep('confirm')} className="px-4 py-2 text-sm text-stone-500 hover:text-stone-700">← Volver a revisar</button>
                                 <div className="flex items-center gap-3">
                                     <span className="text-xs text-stone-400">Los {newCount} se crearán como nuevos</span>
@@ -1160,12 +1196,17 @@ export default function SpreadsheetImportWizard() {
                     </div>
                     {fileName && <div className="text-xs text-stone-400 mb-3 truncate" title={fileName}><span aria-hidden>📄</span> {fileName}</div>}
                     <div className="h-3 rounded-full bg-stone-100 overflow-hidden mb-4"><div className="h-full bg-teal-500 transition-all" style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} /></div>
-                    <div className="flex gap-3 mb-4 text-sm">
+                    <div className="flex flex-wrap gap-2 mb-4 text-sm">
                         <span className="px-3 py-1 rounded-lg font-medium" style={{ backgroundColor: 'var(--status-emerald-bg)', color: 'var(--status-emerald-text)' }}>✅ {tally.created} creados</span>
                         {tally.updated > 0 && <span className="px-3 py-1 rounded-lg bg-sky-50 text-sky-700 font-medium">↻ {tally.updated} actualizados</span>}
                         <span className="px-3 py-1 rounded-lg bg-amber-50 text-amber-700 font-medium">⏭️ {tally.skipped} omitidos</span>
                         <span className="px-3 py-1 rounded-lg bg-rose-50 text-rose-700 font-medium">⚠️ {tally.failed} fallidos</span>
                     </div>
+                    {foldSummary && (
+                        <div className="mb-4 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)', border: '1px solid var(--status-sky-border)' }}>
+                            🔗 {foldSummary.folded} {foldSummary.folded === 1 ? 'fila idéntica se agrupó' : 'filas idénticas se agruparon'} en {foldSummary.people} {foldSummary.people === 1 ? 'persona ya presente en el lote' : 'personas ya presentes en el lote'}: en vez de crear duplicados, su actividad se sumó a la misma ficha (por eso figuran como “omitidas”).
+                        </div>
+                    )}
                     {!importDone && <p className="text-xs text-stone-400 mb-4">Puede tardar unos minutos (cada fila se verifica y tokeniza). No cierres la pestaña.</p>}
                     {(tally.skipped + tally.failed) > 0 && (
                         <div className="border border-stone-200 rounded-xl overflow-hidden mb-4">
@@ -1175,7 +1216,7 @@ export default function SpreadsheetImportWizard() {
                                     <div key={r.index} className="px-3 py-1.5 text-sm border-t border-stone-100">
                                         <div className="flex gap-2">
                                             <span className="text-stone-400 w-10 flex-shrink-0">#{r.index + 1}</span>
-                                            <span className="font-medium text-stone-700 w-40 flex-shrink-0 truncate">{r.name}</span>
+                                            <span className="font-medium text-stone-700 flex-1 min-w-0 truncate">{r.name}</span>
                                             <span className={`min-w-0 ${r.status === 'failed' ? 'text-rose-600' : 'text-amber-600'}`}>{r.message || r.status}</span>
                                         </div>
                                         {sourceRowText(r.index) && <div className="text-[11px] text-stone-400 truncate pl-12" title={sourceRowText(r.index)}>{sourceRowText(r.index)}</div>}
@@ -1322,42 +1363,16 @@ function ActionToggle({ action, onAction }: { action: RowAction; onAction: (a: R
     );
 }
 
-function RowView({ r, editingField, onEditCell, match, action, onAction, failure, onToggle, onChange, expanded, onToggleWhy, matchContext, fieldsExpanded, onToggleFields }: {
-    r: { index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean };
+/** The activity (interaction) line + "más datos" expand for ONE record. Extracted
+ *  from RowView so a grouped record (intra-spreadsheet dedup) can render N of them
+ *  — one editable activity per source row — under a single shared identity. */
+function ActivityBlock({ r, editingField, onEditCell, onChange, fieldsExpanded, onToggleFields, selected, label }: {
+    r: { index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody> };
     editingField: string | null; onEditCell: (field: string | null) => void;
-    match?: DuplicateMatch | null; action: RowAction; onAction: (a: RowAction) => void;
-    failure?: string; onToggle: () => void; onChange: (p: Partial<MappedRow>) => void;
-    // "Por qué" expansion on the match sub-row below — expand state, the toggle
-    // handler, and the (lazily fetched, parent-cached) presence-only context for
-    // THIS row's match.adopterId. Parent owns the fetch (getMatchContext); RowView
-    // only renders what it's given.
-    expanded?: boolean; onToggleWhy?: () => void; matchContext?: MatchContext | 'loading' | 'error';
-    // "Motivo / más campos" expand — the Motivo cell toggles this sub-row, which
-    // exposes the free-text details textarea + the secondary animal/adoption fields
-    // (onBehalfOf/sex/color/microchip/age/neutered) that are otherwise hidden.
-    fieldsExpanded?: boolean; onToggleFields?: () => void;
+    onChange: (p: Partial<MappedRow>) => void;
+    fieldsExpanded?: boolean; onToggleFields?: () => void; selected: boolean; label?: string;
 }) {
-    const { eff, built, selected } = r;
-    const isExact = match ? isExactIdentifierMatch(match.matchTypes) : false;
-    const contactChips: Array<{ t: string; v: string }> = [
-        ...eff.phones.map(v => ({ t: 'Tel', v })),
-        ...eff.emails.map(v => ({ t: 'Email', v })),
-        ...eff.socials.map(v => ({ t: 'Red', v })),
-        ...eff.dnis.map(v => ({ t: 'DNI', v })),
-        ...eff.addresses.map(v => ({ t: 'Dir', v })),
-    ];
-    const invalid = built.errors.length > 0;
-    const warned = built.warnings.length > 0;
-    const hasIssue = invalid || warned || !!failure;
-    // Effective visibility shown to the reviewer: anonymous rows default público,
-    // named rows default protegido, unless overridden per-row or in bulk.
-    // PRODUCT: anon-rows-default-to-público is the intended showcase behavior today;
-    // flipping this default to protected-by-default is a product decision, not made here.
-    const isAnon = !eff.name?.trim();
-    const isPublicEff = eff.isPublic ?? isAnon;
-
-    // Translated/human-readable display values (the whole point of this grid: every
-    // field visible + readable without expanding a row).
+    const { eff, built } = r;
     const speciesVal = speciesOptionValue(eff.species);
     const speciesLabel = speciesVal ? (SPECIES_OPTIONS.find(o => o.v === speciesVal)?.l ?? '—') : '—';
     const typeVal = normalizeRecordType(eff.recordType);
@@ -1365,87 +1380,20 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
     const ratingNorm = normalizeRating(eff.rating);
     const normDate = normalizeImportDate(eff.date);
     const dateUnparseable = !normDate && !!eff.date;
-
-    // Small helper so every field-cell wires the same active/activate/deactivate
-    // triple against the lifted editingCell state (see the parent's setEditingCell).
     const cellProps = (field: string) => ({
         active: editingField === field,
         onActivate: () => onEditCell(field),
         onDeactivate: () => onEditCell(null),
     });
-
-    // Motivo (eff.details) is shown FULL and un-trimmed in the interaction line
-    // (never a truncated column value). It clamps to 2 lines with a per-row
-    // "ver motivo completo" toggle when long — a local flag is enough here since,
-    // unlike editingCell, only one row's own clamp state is ever relevant at a time.
     const [motivoExpanded, setMotivoExpanded] = useState(false);
     const isLongMotivo = (eff.details?.length ?? 0) > 120;
     const motivoEditing = editingField === 'details';
-
     return (
         <>
-            <tr className={`border-t border-stone-100 ${!selected ? 'opacity-40' : ''} ${(invalid || failure) ? 'bg-rose-50' : ''}`}>
-                <td className="px-2 py-2 text-center"><input type="checkbox" checked={selected} onChange={onToggle} aria-label="Seleccionar fila" /></td>
-                <td className="px-2 py-2 text-right text-stone-400 text-xs tabular-nums whitespace-nowrap align-top">{r.index + 1}</td>
-                <td className="px-3 py-2 font-medium text-stone-800">
-                    <InlineCell {...cellProps('name')} kind="text" ariaLabel="Editar nombre"
-                        value={eff.name} onCommit={v => onChange({ name: v })}
-                        display={
-                            /* Empty name is allowed (min-identifier: name OR contact). A
-                               nameless-but-valid row shows the muted "Sin nombre" fallback
-                               (matching the rest of the app), NOT the red "falta" — that red
-                               error label is reserved for a row that is actually invalid
-                               (no name AND no contact). */
-                            eff.name
-                                ? <span className="block truncate max-w-[150px]" title={eff.name}>{eff.name}</span>
-                                : <span className={`italic ${invalid ? 'text-rose-500' : 'text-stone-400'}`}>{invalid ? 'falta' : 'Sin nombre'}</span>
-                        } />
-                </td>
-                <td className="px-3 py-2 align-top">
-                    {contactChips.length === 0 && eff.combinedContacts.length === 0 ? (
-                        <span className="text-stone-400">—</span>
-                    ) : (
-                        <div className="flex flex-wrap gap-1 max-w-[210px]">
-                            {contactChips.map((c, i) => (
-                                <span key={i} className="inline-flex items-center gap-1 max-w-full text-xs bg-stone-100 rounded px-1.5 py-0.5" title={`${c.t}: ${c.v}`}>
-                                    <span className="text-[9px] uppercase font-semibold text-stone-400 flex-shrink-0">{c.t}</span>
-                                    <span className="text-stone-700 truncate">{c.v}</span>
-                                </span>
-                            ))}
-                            {eff.combinedContacts.length > 0 && (
-                                <span className="inline-flex items-center text-indigo-600 self-center" title="se separará al importar">
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                                    </svg>
-                                </span>
-                            )}
-                        </div>
-                    )}
-                </td>
-                <td className="px-3 py-2">
-                    <InlineCell {...cellProps('isPublic')} kind="select" ariaLabel="Editar visibilidad"
-                        value={isPublicEff ? 'public' : 'protected'}
-                        options={[{ value: 'public', label: 'Público' }, { value: 'protected', label: 'Protegido' }]}
-                        onCommit={v => onChange({ isPublic: v === 'public' })}
-                        display={
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
-                                style={isPublicEff
-                                    ? { backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }
-                                    : { backgroundColor: 'var(--surface-muted)', color: 'var(--text-muted)' }}>
-                                {isPublicEff ? 'Público' : 'Protegido'}
-                            </span>
-                        } />
-                </td>
-            </tr>
-            {/* Interaction line — ALWAYS visible under every identity row (this is
-                the record: Tipo/animal/especie/rating/fecha + the full Motivo, never
-                trimmed to a column). Each meta field reuses InlineCell + the SAME
-                lifted editingCell state as the identity row, so only one control is
-                ever live across the whole grid. */}
             <tr className={!selected ? 'opacity-40' : ''}>
                 <td></td>
                 <td colSpan={4} className="px-3 pb-2">
+                    {label && <div className="text-[10px] uppercase tracking-wider text-stone-400 mb-1 pl-1">{label}</div>}
                     <div className="border-l-2 border-amber-200 bg-stone-50 rounded-r-lg px-3 py-2">
                         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-stone-600">
                             <InlineCell {...cellProps('recordType')} inline kind="select" ariaLabel="Editar tipo"
@@ -1565,6 +1513,120 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                     </td>
                 </tr>
             )}
+        </>
+    );
+}
+
+function RowView({ members, editingCell, onEditCell, onChange, match, action, onAction, failureByIndex, onToggleGroup, expanded, onToggleWhy, matchContext, expandedFieldsRow, onToggleFields }: {
+    members: Array<{ index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean }>;
+    editingCell: { index: number; field: string } | null; onEditCell: (index: number, field: string | null) => void;
+    onChange: (index: number, p: Partial<MappedRow>) => void;
+    match?: DuplicateMatch | null; action: RowAction; onAction: (a: RowAction) => void;
+    failureByIndex: Record<number, string>; onToggleGroup: () => void;
+    // "Por qué" expansion on the match sub-row below (group-level, keyed to primary).
+    expanded?: boolean; onToggleWhy?: () => void; matchContext?: MatchContext | 'loading' | 'error';
+    // "Motivo / más campos" expand — per activity (keyed by each member's index).
+    expandedFieldsRow: number | null; onToggleFields: (index: number) => void;
+}) {
+    const primary = members[0];
+    const grouped = members.length > 1;
+    const { eff, built, selected } = primary;
+    const isExact = match ? isExactIdentifierMatch(match.matchTypes) : false;
+    const contactChips: Array<{ t: string; v: string }> = [
+        ...eff.phones.map(v => ({ t: 'Tel', v })),
+        ...eff.emails.map(v => ({ t: 'Email', v })),
+        ...eff.socials.map(v => ({ t: 'Red', v })),
+        ...eff.dnis.map(v => ({ t: 'DNI', v })),
+        ...eff.addresses.map(v => ({ t: 'Dir', v })),
+    ];
+    const invalid = built.errors.length > 0;
+    const primaryFailure = failureByIndex[primary.index];
+    // Effective visibility shown to the reviewer: anonymous rows default público,
+    // named rows default protegido, unless overridden per-row or in bulk.
+    const isAnon = !eff.name?.trim();
+    const isPublicEff = eff.isPublic ?? isAnon;
+    // Identity cells edit the PRIMARY record, keyed against the lifted editingCell.
+    const cellProps = (field: string) => ({
+        active: editingCell?.index === primary.index && editingCell.field === field,
+        onActivate: () => onEditCell(primary.index, field),
+        onDeactivate: () => onEditCell(primary.index, null),
+    });
+
+    return (
+        <>
+            <tr className={`border-t border-stone-100 ${!selected ? 'opacity-40' : ''} ${(invalid || primaryFailure) ? 'bg-rose-50' : ''}`}>
+                <td className="px-2 py-2 text-center"><input type="checkbox" checked={selected} onChange={onToggleGroup} aria-label="Seleccionar persona" /></td>
+                <td className="px-2 py-2 text-right text-stone-400 text-xs tabular-nums whitespace-nowrap align-top">{primary.index + 1}</td>
+                <td className="px-3 py-2 font-medium text-stone-800">
+                    <InlineCell {...cellProps('name')} kind="text" ariaLabel="Editar nombre"
+                        value={eff.name} onCommit={v => onChange(primary.index, { name: v })}
+                        display={
+                            /* Empty name is allowed (min-identifier: name OR contact). A
+                               nameless-but-valid row shows the muted "Sin nombre" fallback
+                               (matching the rest of the app), NOT the red "falta" — that red
+                               error label is reserved for a row that is actually invalid
+                               (no name AND no contact). */
+                            eff.name
+                                ? <span className="block truncate max-w-[150px]" title={eff.name}>{eff.name}</span>
+                                : <span className={`italic ${invalid ? 'text-rose-500' : 'text-stone-400'}`}>{invalid ? 'falta' : 'Sin nombre'}</span>
+                        } />
+                </td>
+                <td className="px-3 py-2 align-top">
+                    {contactChips.length === 0 && eff.combinedContacts.length === 0 ? (
+                        <span className="text-stone-400">—</span>
+                    ) : (
+                        <div className="flex flex-wrap gap-1 max-w-[210px]">
+                            {contactChips.map((c, i) => (
+                                <span key={i} className="inline-flex items-center gap-1 max-w-full text-xs bg-stone-100 rounded px-1.5 py-0.5" title={`${c.t}: ${c.v}`}>
+                                    <span className="text-[9px] uppercase font-semibold text-stone-400 flex-shrink-0">{c.t}</span>
+                                    <span className="text-stone-700 truncate">{c.v}</span>
+                                </span>
+                            ))}
+                            {eff.combinedContacts.length > 0 && (
+                                <span className="inline-flex items-center text-indigo-600 self-center" title="se separará al importar">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                                    </svg>
+                                </span>
+                            )}
+                        </div>
+                    )}
+                </td>
+                <td className="px-3 py-2">
+                    <InlineCell {...cellProps('isPublic')} kind="select" ariaLabel="Editar visibilidad"
+                        value={isPublicEff ? 'public' : 'protected'}
+                        options={[{ value: 'public', label: 'Público' }, { value: 'protected', label: 'Protegido' }]}
+                        onCommit={v => onChange(primary.index, { isPublic: v === 'public' })}
+                        display={
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                                style={isPublicEff
+                                    ? { backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }
+                                    : { backgroundColor: 'var(--surface-muted)', color: 'var(--text-muted)' }}>
+                                {isPublicEff ? 'Público' : 'Protegido'}
+                            </span>
+                        } />
+                    {grouped && (
+                        <span className="ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                            style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }}>
+                            🔗 {members.length} actividades
+                        </span>
+                    )}
+                </td>
+            </tr>
+            {/* One editable activity line per grouped member (intra-spreadsheet dedup):
+                a single identity above, its N activities stacked here. For an ungrouped
+                record `members` is a singleton, so this renders exactly one line. */}
+            {members.map((m, k) => (
+                <ActivityBlock key={m.index} r={m}
+                    editingField={editingCell?.index === m.index ? editingCell.field : null}
+                    onEditCell={f => onEditCell(m.index, f)}
+                    onChange={p => onChange(m.index, p)}
+                    fieldsExpanded={expandedFieldsRow === m.index}
+                    onToggleFields={() => onToggleFields(m.index)}
+                    selected={selected}
+                    label={grouped ? `Actividad ${k + 1} · fila #${m.index + 1}` : undefined} />
+            ))}
             {match && (
                 <>
                     <tr className={!selected ? 'opacity-40' : ''}>
@@ -1627,21 +1689,26 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
                     )}
                 </>
             )}
-            {/* The expand-to-edit panel is gone, so this is the only place errors/
-                warnings/import-failures stay readable without a click — a thin
-                sub-row (styled like the duplicate-match sub-row above). */}
-            {hasIssue && (
-                <tr className={!selected ? 'opacity-40' : ''}>
-                    <td></td>
-                    <td colSpan={4} className="px-3 pb-2">
-                        <div className={`text-xs space-y-0.5 rounded-lg px-2.5 py-1.5 border ${(invalid || failure) ? 'bg-rose-50 border-rose-100' : 'bg-amber-50 border-amber-200'}`}>
-                            {invalid && <div className="text-rose-600">{built.errors.join(' ')}</div>}
-                            {failure && <div className="text-rose-700 font-medium">✗ Falló al importar: {failure} — corregí el campo y reintentá.</div>}
-                            {warned && <div className="text-amber-700">{built.warnings.join(' ')} Corregí la fecha/rating arriba, o dejá el registro así (se importa igual).</div>}
-                        </div>
-                    </td>
-                </tr>
-            )}
+            {/* Errors/warnings/import-failures — one thin sub-row per member that has
+                an issue (styled like the duplicate-match sub-row above). */}
+            {members.map(m => {
+                const f = failureByIndex[m.index];
+                const inv = m.built.errors.length > 0;
+                const warn = m.built.warnings.length > 0;
+                if (!inv && !warn && !f) return null;
+                return (
+                    <tr key={`err-${m.index}`} className={!selected ? 'opacity-40' : ''}>
+                        <td></td>
+                        <td colSpan={4} className="px-3 pb-2">
+                            <div className={`text-xs space-y-0.5 rounded-lg px-2.5 py-1.5 border ${(inv || f) ? 'bg-rose-50 border-rose-100' : 'bg-amber-50 border-amber-200'}`}>
+                                {inv && <div className="text-rose-600">{m.built.errors.join(' ')}</div>}
+                                {f && <div className="text-rose-700 font-medium">✗ Falló al importar: {f} — corregí el campo y reintentá.</div>}
+                                {warn && <div className="text-amber-700">{m.built.warnings.join(' ')} Corregí la fecha/rating arriba, o dejá el registro así (se importa igual).</div>}
+                            </div>
+                        </td>
+                    </tr>
+                );
+            })}
         </>
     );
 }
@@ -1656,9 +1723,9 @@ function RowView({ r, editingField, onEditCell, match, action, onAction, failure
  *  underneath, dropping in-progress edits. */
 function RecordGrid({
     rows, editingCell, onEditCell, matches, rowAction, onAction,
-    failureByIndex, onToggle, onChange, expandedMatchRow, matchContexts, onToggleWhy,
+    failureByIndex, onSetSelected, onChange, expandedMatchRow, matchContexts, onToggleWhy,
     expandedFieldsRow, onToggleFields,
-    onRatingAll, onVisibilityAll,
+    onRatingAll, onVisibilityAll, group,
 }: {
     rows: Array<{ index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean }>;
     editingCell: { index: number; field: string } | null;
@@ -1667,7 +1734,7 @@ function RecordGrid({
     rowAction: Record<number, RowAction>;
     onAction: (index: number, a: RowAction) => void;
     failureByIndex: Record<number, string>;
-    onToggle: (index: number) => void;
+    onSetSelected: (indices: number[], selected: boolean) => void;
     onChange: (index: number, p: Partial<MappedRow>) => void;
     expandedMatchRow: number | null;
     matchContexts: Record<string, MatchContext | 'loading' | 'error'>;
@@ -1680,59 +1747,77 @@ function RecordGrid({
     // row, not just `rows`) in both steps, matching the pre-existing behavior.
     onRatingAll: (rating: string) => void;
     onVisibilityAll: (isPublic: boolean) => void;
+    // When true (Revisar step), identical rows (same content fingerprint) collapse
+    // into ONE record showing N stacked activities — matching the import-time fold.
+    group?: boolean;
 }) {
+    // Group identical rows (same content fingerprint) into one record with N
+    // activities; ungrouped ⇒ each row is its own singleton group.
+    const groups: Array<typeof rows> = group ? (() => {
+        const byFp = new Map<string, typeof rows>();
+        const order: Array<typeof rows> = [];
+        for (const r of rows) {
+            const g = splitGroupedContacts(r.eff);
+            const fp = computeContentFingerprint({ name: r.eff.name, ...g });
+            if (!fp) { order.push([r]); continue; }
+            const existing = byFp.get(fp);
+            if (existing) { existing.push(r); }
+            else { const grp = [r]; byFp.set(fp, grp); order.push(grp); }
+        }
+        return order;
+    })() : rows.map(r => [r]);
     return (
         <div className="border border-stone-200 rounded-xl overflow-hidden">
-            <div className="max-h-[420px] overflow-y-auto overflow-x-auto">
-                <table className="w-full text-sm">
+            {/* Bulk "a todos" bar — always visible (desktop + mobile), since the table
+                header that used to hold these is hidden on mobile. */}
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-stone-200 bg-stone-50 text-[11px] text-stone-500">
+                <span className="uppercase tracking-wider">Aplicar a todos:</span>
+                <select value="" onChange={e => { if (e.target.value) onVisibilityAll(e.target.value === 'public'); }}
+                    className="normal-case font-normal border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-600" title="Asignar visibilidad a todos los registros">
+                    <option value="">Visibilidad…</option>
+                    <option value="public">Todos públicos</option>
+                    <option value="protected">Todos protegidos</option>
+                </select>
+                <select value="" onChange={e => { if (e.target.value) onRatingAll(e.target.value === 'clear' ? '' : e.target.value); }}
+                    className="normal-case font-normal border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-600" title="Asignar un rating a todos los registros">
+                    <option value="">Rating…</option>
+                    {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★ a todos</option>)}
+                    <option value="clear">Limpiar rating</option>
+                </select>
+            </div>
+            <div className="import-grid-scroll max-h-[420px] overflow-y-auto overflow-x-auto">
+                <table className="import-grid w-full text-sm">
                     <thead className="bg-stone-50 text-stone-500 text-xs uppercase tracking-wider sticky top-0">
                         <tr>
                             <th className="px-2 py-2"></th>
                             <th className="px-2 py-2 text-right font-normal text-stone-400">#</th>
                             <th className="text-left px-3 py-2">Nombre</th>
                             <th className="text-left px-3 py-2">Contacto</th>
-                            <th className="text-left px-3 py-2">
-                                {/* Identity grid is 5 columns now (Animal/Especie/Tipo/Rating/Fecha/Motivo
-                                    moved into the per-record interaction line below) — both bulk
-                                    "a todos" affordances (rating, visibilidad) collapse into this
-                                    header since Visibilidad is the only remaining bulk-editable column. */}
-                                <div className="flex items-center gap-1">
-                                    <span>Visibilidad</span>
-                                    <select value="" onChange={e => { if (e.target.value) onVisibilityAll(e.target.value === 'public'); }}
-                                        className="normal-case font-normal text-[11px] border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-500" title="Asignar visibilidad a todos los registros">
-                                        <option value="">· a todos</option>
-                                        <option value="public">Todos públicos</option>
-                                        <option value="protected">Todos protegidos</option>
-                                    </select>
-                                    {/* Bulk "a todos" — controlled value="" so it snaps back after firing. */}
-                                    <select value="" onChange={e => { if (e.target.value) onRatingAll(e.target.value === 'clear' ? '' : e.target.value); }}
-                                        className="normal-case font-normal text-[11px] border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-500" title="Asignar un rating a todos los registros">
-                                        <option value="">★ a todos</option>
-                                        {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★ a todos</option>)}
-                                        <option value="clear">Limpiar rating</option>
-                                    </select>
-                                </div>
-                            </th>
+                            {/* Bulk "a todos" selects moved OUT of this header into the bar
+                                above the table — the header is display:none on mobile (grid
+                                linearization), so they'd be unreachable there. */}
+                            <th className="text-left px-3 py-2">Visibilidad</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {rows.map(r => {
-                            const match = r.index in matches ? matches[r.index] : undefined;
+                        {groups.map(members => {
+                            const primary = members[0];
+                            const match = primary.index in matches ? matches[primary.index] : undefined;
                             return (
-                                <RowView key={r.index} r={r}
-                                    editingField={editingCell?.index === r.index ? editingCell.field : null}
-                                    onEditCell={field => onEditCell(r.index, field)}
+                                <RowView key={primary.index} members={members}
+                                    editingCell={editingCell}
+                                    onEditCell={onEditCell}
+                                    onChange={onChange}
                                     match={match}
-                                    action={rowAction[r.index] ?? 'create'}
-                                    onAction={a => onAction(r.index, a)}
-                                    failure={failureByIndex[r.index]}
-                                    onToggle={() => onToggle(r.index)}
-                                    onChange={patch => onChange(r.index, patch)}
-                                    expanded={expandedMatchRow === r.index}
-                                    onToggleWhy={match ? () => onToggleWhy(r.index, match.adopterId) : undefined}
+                                    action={rowAction[primary.index] ?? 'create'}
+                                    onAction={a => onAction(primary.index, a)}
+                                    failureByIndex={failureByIndex}
+                                    onToggleGroup={() => onSetSelected(members.map(m => m.index), !primary.selected)}
+                                    expanded={expandedMatchRow === primary.index}
+                                    onToggleWhy={match ? () => onToggleWhy(primary.index, match.adopterId) : undefined}
                                     matchContext={match ? matchContexts[match.adopterId] : undefined}
-                                    fieldsExpanded={expandedFieldsRow === r.index}
-                                    onToggleFields={() => onToggleFields(r.index)}
+                                    expandedFieldsRow={expandedFieldsRow}
+                                    onToggleFields={onToggleFields}
                                 />
                             );
                         })}

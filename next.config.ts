@@ -67,6 +67,12 @@ const nextConfig: NextConfig = {
     return [
       // The old process-only FAQ was consolidated into /faq (v2.31).
       { source: '/guia/faq', destination: '/faq', permanent: true },
+      // The metrics dashboard was folded into the overview page (v2.44.1).
+      { source: '/admin/metrics', destination: '/admin', permanent: true },
+      // Duplicate detection moved into the Calidad de datos report (v2.44.2).
+      { source: '/admin/duplicates', destination: '/admin/data-quality', permanent: true },
+      // Flagged-content review moved into the Calidad de datos report (v2.44.3).
+      { source: '/admin/flags', destination: '/admin/data-quality', permanent: true },
     ];
   },
   async rewrites() {

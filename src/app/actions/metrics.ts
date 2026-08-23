@@ -1,6 +1,6 @@
 'use server';
 
-import { getTimeSeries, getPriorTotal, getWindowTotal, windowIso, getTraceLatencies, getAxiomDeepLinkUrl, METRICS, type MetricKey, type TraceLatency } from '@/lib/axiom';
+import { getTimeSeries, getPriorTotal, getWindowTotal, windowIso, getTraceLatencies, getTopErrors, getAxiomDeepLinkUrl, METRICS, type MetricKey, type TraceLatency } from '@/lib/axiom';
 import { computeTrend, type Window } from '@/lib/metricsTime';
 import { sumSeries } from '@/lib/metricsShape';
 import type { SeriesPoint } from '@/lib/metricsSeries';
@@ -67,4 +67,36 @@ export async function fetchMetrics(window: Window): Promise<MetricsPayload> {
     });
 
     return { window, cards, latencies, latencyDeepLink: getAxiomDeepLinkUrl() };
+}
+
+export interface TopErrorItem {
+    message: string;
+    count: number;
+    /** Axiom deep-link filtered to this exact error message (null if unconfigured). */
+    link: string | null;
+}
+
+export interface TopErrorsPayload {
+    /** null = Axiom unavailable; [] = no errors in the window. */
+    items: TopErrorItem[] | null;
+    allLink: string | null;
+}
+
+/**
+ * The one metrics widget the /admin/metrics dashboard doesn't have: the list of
+ * the top error messages in the last 7 days (the dashboard only shows an error
+ * COUNT). Fetched lazily alongside `fetchMetrics` when the Resumen "Métricas"
+ * section is expanded, so nothing from the old eager overview block is lost.
+ */
+export async function fetchTopErrors7d(): Promise<TopErrorsPayload> {
+    const w = windowIso('7d');
+    const raw = await getTopErrors({ ...w, limit: 5 }).catch((e) => {
+        logger.warn('fetchTopErrors7d: getTopErrors failed', { error: e instanceof Error ? e.message : String(e) });
+        return null;
+    });
+    const items = raw == null ? null : raw.map((e) => {
+        const escaped = e.message.replace(/"/g, '\\"');
+        return { message: e.message, count: e.count, link: getAxiomDeepLinkUrl({ filter: `level=="error" message=="${escaped}"` }) };
+    });
+    return { items, allLink: getAxiomDeepLinkUrl({ filter: 'level=="error"' }) };
 }

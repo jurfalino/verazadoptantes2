@@ -1943,3 +1943,27 @@ button {
     --text-sm--line-height: 1.3rem;
   }
 }
+
+/* ── Import review/dedup grid: linearize the 5-column table into a stacked,
+   card-ish list on mobile (<640px) so it never scrolls in two axes. Pure
+   layout — no palette. `:has(> td:nth-child(5))` targets the identity row
+   (5 cells) vs the colSpan sub-rows (activity/match/error, 2 cells). ── */
+@media (max-width: 639px) {
+  .import-grid-scroll { max-height: none !important; overflow: visible !important; }
+  .import-grid,
+  .import-grid thead,
+  .import-grid tbody,
+  .import-grid tr,
+  .import-grid td { display: block; width: auto; }
+  .import-grid thead { display: none; }
+  /* identity row: flow its cells inline, wrapping; a thick top edge separates records */
+  .import-grid tr:has(> td:nth-child(5)) {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem;
+    padding: 0.5rem 0.5rem 0.25rem;
+    border-top: 6px solid var(--surface-base);
+  }
+  .import-grid tr:has(> td:nth-child(5)) > td { padding: 0; width: auto; }
+  /* sub-rows span full width; drop the leading spacer cell of the colSpan pair */
+  .import-grid tr:not(:has(> td:nth-child(5))) > td:first-child { display: none; }
+  .import-grid tr:not(:has(> td:nth-child(5))) > td { padding-left: 0.5rem; padding-right: 0.5rem; }
+}

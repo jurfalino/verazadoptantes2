@@ -20,6 +20,7 @@ import { planRecordMerge, type MergeContact } from '@/domain/importMerge';
 import { addContactEntry } from './addContactEntry';
 import { saveAdoption, getAdoptions } from './adoptions';
 import { tokenizeAdopter } from './duplicates';
+import { importDateToNoon } from '@/domain/importRow';
 import { logger } from '@/lib/logger';
 
 export interface ImportUpsertInput {
@@ -124,7 +125,7 @@ export async function upsertImportRecord(input: ImportUpsertInput): Promise<Impo
                 animalName: input.adoption.animalName,
                 species: input.adoption.species,
                 rating: input.adoption.rating,
-                date: input.adoption.date ? new Date(input.adoption.date) : null,
+                date: input.adoption.date ? importDateToNoon(input.adoption.date) : null,
                 details: input.adoption.details,
                 onBehalfOf: input.adoption.onBehalfOf,
                 neutered: input.adoption.neutered ?? null,

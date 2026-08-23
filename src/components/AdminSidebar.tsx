@@ -5,30 +5,43 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 
-const NAV_ITEMS: Array<{ href: string; labelKey: string; icon: string; special?: boolean }> = [
-    { href: '/admin', labelKey: 'nav_overview', icon: '📊' },
-    { href: '/admin/metrics', labelKey: 'nav_metrics', icon: '📈' },
-    { href: '/admin/flags', labelKey: 'nav_flagged', icon: '🚩' },
-    { href: '/admin/duplicates', labelKey: 'nav_duplicates', icon: '🔍' },
-    { href: '/admin/imports', labelKey: 'nav_imports', icon: '📥' },
-    { href: '/admin/adopters', labelKey: 'nav_adopters_list', icon: '👤' },
-    { href: '/admin/query', labelKey: 'nav_sql', icon: '⚡', special: true },
-    { href: '/admin/config', labelKey: 'nav_config', icon: '⚙️' },
-    { href: '/admin/walkthrough', labelKey: 'nav_walkthrough', icon: '🎯' },
-    { href: '/admin/data-requests', labelKey: 'nav_data_requests', icon: '📬' },
-    { href: '/admin/deleted', labelKey: 'nav_deleted', icon: '🗑️' },
-    { href: '/admin/pii-requests', labelKey: 'nav_pii_requests', icon: '🔒' },
-    { href: '/admin/notifications', labelKey: 'nav_communications', icon: '📡' },
-    { href: '/admin/users', labelKey: 'nav_users', icon: '👥' },
-    { href: '/admin/organizations', labelKey: 'nav_organizations', icon: '🏢' },
-    { href: '/admin/audit', labelKey: 'nav_audit_log', icon: '📋' },
-    { href: '/admin/blocked-logins', labelKey: 'nav_blocked_logins', icon: '🚫' },
-    { href: '/admin/health', labelKey: 'nav_system_health', icon: '🩺' },
-    { href: '/admin/data', labelKey: 'nav_data_migration', icon: '📦' },
-    { href: '/admin/business-logic', labelKey: 'nav_business_logic', icon: '📖' },
+// Grouped nav. `minRole` gates BOTH the moderator's filtered view (they see only
+// 'moderator' items) and the admin's per-item marker (Mod pill vs 🔒). Sections
+// whose items all get filtered out don't render. NOTE: this only drives the UI —
+// actual access control for admin-only pages must be enforced server-side.
+type NavItem = { href: string; labelKey: string; icon: string; minRole: 'moderator' | 'admin'; special?: boolean };
+const SECTIONS: Array<{ titleKey: string; items: NavItem[] }> = [
+    { titleKey: 'nav_sect_panel', items: [
+        { href: '/admin', labelKey: 'nav_overview', icon: '📊', minRole: 'moderator' },
+    ] },
+    { titleKey: 'nav_sect_moderation', items: [
+        { href: '/admin/data-quality', labelKey: 'nav_data_quality', icon: '🧹', minRole: 'moderator' },
+        { href: '/admin/adopters', labelKey: 'nav_adopters_list', icon: '👤', minRole: 'moderator' },
+        { href: '/admin/imports', labelKey: 'nav_imports', icon: '📥', minRole: 'moderator' },
+        { href: '/admin/deleted', labelKey: 'nav_deleted', icon: '🗑️', minRole: 'moderator' },
+    ] },
+    { titleKey: 'nav_sect_requests', items: [
+        { href: '/admin/data-requests', labelKey: 'nav_data_requests', icon: '📬', minRole: 'moderator' },
+        { href: '/admin/pii-requests', labelKey: 'nav_pii_requests', icon: '🔒', minRole: 'moderator' },
+    ] },
+    { titleKey: 'nav_sect_admin', items: [
+        { href: '/admin/users', labelKey: 'nav_users', icon: '👥', minRole: 'admin' },
+        { href: '/admin/organizations', labelKey: 'nav_organizations', icon: '🏢', minRole: 'admin' },
+        { href: '/admin/config', labelKey: 'nav_config', icon: '⚙️', minRole: 'admin' },
+        { href: '/admin/notifications', labelKey: 'nav_communications', icon: '📡', minRole: 'admin' },
+        { href: '/admin/walkthrough', labelKey: 'nav_walkthrough', icon: '🎯', minRole: 'admin' },
+    ] },
+    { titleKey: 'nav_sect_system', items: [
+        { href: '/admin/audit', labelKey: 'nav_audit_log', icon: '📋', minRole: 'admin' },
+        { href: '/admin/blocked-logins', labelKey: 'nav_blocked_logins', icon: '🚫', minRole: 'admin' },
+        { href: '/admin/health', labelKey: 'nav_system_health', icon: '🩺', minRole: 'admin' },
+        { href: '/admin/data', labelKey: 'nav_data_migration', icon: '📦', minRole: 'admin' },
+        { href: '/admin/business-logic', labelKey: 'nav_business_logic', icon: '📖', minRole: 'admin' },
+        { href: '/admin/query', labelKey: 'nav_sql', icon: '⚡', minRole: 'admin', special: true },
+    ] },
 ];
 
-export default function AdminSidebar() {
+export default function AdminSidebar({ isAdmin }: { isAdmin: boolean }) {
     const [open, setOpen] = useState(false);
     const pathname = usePathname();
     const { t } = useLanguage();
@@ -70,7 +83,7 @@ export default function AdminSidebar() {
                 fixed top-16 left-0 z-50 h-[calc(100%-4rem)] w-64 bg-stone-900 text-stone-300 flex-shrink-0
                 transition-transform duration-300 ease-in-out
                 ${open ? 'translate-x-0' : '-translate-x-full'}
-                lg:top-0 lg:h-full lg:translate-x-0 lg:static lg:z-auto
+                lg:sticky lg:top-16 lg:self-start lg:h-[calc(100vh-4rem)] lg:overflow-y-auto lg:translate-x-0 lg:z-auto
             `}>
                 <div className="p-6 flex items-center justify-between">
                     <div>
@@ -88,24 +101,39 @@ export default function AdminSidebar() {
                         </svg>
                     </button>
                 </div>
-                <nav className="mt-2 px-4 space-y-1">
-                    {NAV_ITEMS.map(item => (
-                        <Link
-                            key={item.href}
-                            href={item.href}
-                            onClick={() => setOpen(false)}
-                            className={`
-                                block px-4 py-2.5 rounded-lg transition-colors text-sm
-                                ${isActive(item.href)
-                                    ? 'bg-stone-800 text-white font-medium'
-                                    : 'hover:bg-stone-800 hover:text-white'
-                                }
-                                ${item.special ? 'text-amber-500/80 hover:text-amber-400' : ''}
-                            `}
-                        >
-                            {item.icon} {t(`admin.${item.labelKey}`)}
-                        </Link>
-                    ))}
+                <nav className="mt-2 px-4 space-y-4">
+                    {SECTIONS.map(section => {
+                        // Moderators see only 'moderator' items; admins see all. A section
+                        // with nothing visible is dropped entirely.
+                        const items = section.items.filter(i => isAdmin || i.minRole === 'moderator');
+                        if (items.length === 0) return null;
+                        return (
+                            <div key={section.titleKey} className="space-y-1">
+                                <div className="px-4 text-[10px] font-semibold uppercase tracking-wider text-stone-500">{t(`admin.${section.titleKey}`)}</div>
+                                {items.map(item => (
+                                    <Link
+                                        key={item.href}
+                                        href={item.href}
+                                        onClick={() => setOpen(false)}
+                                        className={`
+                                            flex items-center justify-between gap-2 px-4 py-2.5 rounded-lg transition-colors text-sm
+                                            ${isActive(item.href)
+                                                ? 'bg-stone-800 text-white font-medium'
+                                                : 'hover:bg-stone-800 hover:text-white'
+                                            }
+                                            ${item.special ? 'text-amber-500/80 hover:text-amber-400' : ''}
+                                        `}
+                                    >
+                                        <span className="min-w-0 truncate">{item.icon} {t(`admin.${item.labelKey}`)}</span>
+                                        {/* Marker only in the admin view: which items a moderator also sees. */}
+                                        {isAdmin && (item.minRole === 'moderator'
+                                            ? <span className="flex-shrink-0 text-[9px] font-bold text-teal-300 bg-teal-500/15 border border-teal-500/30 rounded-full px-1.5 py-px" title={t('admin.nav_mod_accessible')}>Mod</span>
+                                            : <span className="flex-shrink-0 text-stone-600 text-xs" title={t('admin.nav_admin_only')} aria-label={t('admin.nav_admin_only')}>🔒</span>)}
+                                    </Link>
+                                ))}
+                            </div>
+                        );
+                    })}
 
                     <div className="pt-6 mt-6 border-t border-stone-800 space-y-1">
                         {/* Keystatic CMS link removed in v2.14.9-19 — Keystatic

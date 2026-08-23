@@ -22,7 +22,7 @@ function runState(run: ImportRun): 'completed' | 'interrupted' | 'running' {
 interface ImportRunItem {
     id: string; runId: string; rowIndex: number | null; adopterId: string | null; adopterName: string | null;
     action: string | null; status: string | null; matchedAdopterId: string | null; matchedAdopterName: string | null;
-    matchConfidence: number | null; message: string | null;
+    matchConfidence: number | null; message: string | null; isPublic: number | null;
 }
 
 const ACTION_LABEL: Record<string, string> = { create: 'Crear', upsert: 'Actualizar', skip: 'Omitir' };
@@ -108,6 +108,14 @@ export default function AdminImportsPage() {
                                                             ? <a href={`/adopter/${it.adopterId}`} target="_blank" rel="noopener noreferrer" className="text-teal-700 hover:underline">{it.adopterName?.trim() || 'Sin nombre'}</a>
                                                             : (it.adopterName?.trim() || <span className="italic text-stone-400">Sin nombre</span>)}
                                                     </span>
+                                                    {it.adopterId && (
+                                                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0"
+                                                            style={it.isPublic === 1
+                                                                ? { backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }
+                                                                : { backgroundColor: 'var(--surface-muted)', color: 'var(--text-muted)' }}>
+                                                            {it.isPublic === 1 ? 'Público' : 'Protegido'}
+                                                        </span>
+                                                    )}
                                                     {it.status && <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0 ${STATUS_STYLE[it.status] ?? 'bg-stone-100 text-stone-500'}`}>{it.status}</span>}
                                                     {it.matchedAdopterId && (
                                                         <span className="text-xs text-stone-500 flex-shrink-0">

@@ -4,6 +4,13 @@ import { useState, useEffect, useCallback } from 'react';
 import DuplicateMergeModal from '@/components/DuplicateMergeModal';
 import { useLanguage } from '@/context/LanguageContext';
 
+/**
+ * Duplicate-detection review panel. Moved from the standalone `/admin/duplicates`
+ * page into the "Duplicados" tab of the Calidad de datos report (v2.44.2): the
+ * fuzzy candidate queue (name similarity + shared contact) plus user-flagged
+ * pairs, with merge / dismiss / scan. Backed by /api/admin/duplicates*.
+ */
+
 interface DuplicateCandidate {
     id: string;
     adopter1Id: string;
@@ -45,7 +52,7 @@ interface Counts {
     userFlagged: number;
 }
 
-export default function DuplicatesPage() {
+export default function DuplicatesPanel() {
     const { t } = useLanguage();
     const [userFlagged, setUserFlagged] = useState<UserFlagged[]>([]);
     const [candidates, setCandidates] = useState<DuplicateCandidate[]>([]);
@@ -151,16 +158,13 @@ export default function DuplicatesPage() {
 
     return (
         <div className="space-y-6">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div>
-                    <h1 className="text-2xl font-semibold text-stone-900">🔍 Duplicate Detection</h1>
-                    <p className="text-sm text-stone-500 mt-1">Find and merge duplicate adopter profiles</p>
-                </div>
+            {/* Compact header — the "Duplicados" tab label is the heading; keep only the Scan action. */}
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+                <p className="text-sm text-stone-500">Candidatos por similitud de nombre + contacto compartido, más los reportados por usuarios.</p>
                 <button
                     onClick={handleScan}
                     disabled={scanning}
-                    className="px-5 py-2.5 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700 disabled:opacity-50 transition-colors self-start sm:self-auto"
+                    className="px-5 py-2.5 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700 disabled:opacity-50 transition-colors"
                 >
                     {scanning ? '⏳ Scanning...' : '🔄 Scan Now'}
                 </button>

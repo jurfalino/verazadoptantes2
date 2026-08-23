@@ -18,22 +18,29 @@ import { adopters, userProfiles, users, importRunItems, importRuns } from '@/db/
 import { deserializeContactEntries, contactEntriesToBlob } from '@/lib/contactEntries';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { insertRecord } from './_recordWrite';
+import { importDateToNoon } from '@/domain/importRow';
 import { tokenizeAdopter } from './duplicates';
 import { upsertImportRecord } from './importUpsert';
 import { logger } from '@/lib/logger';
 
+export interface ImportAdoption {
+    animalName: string | null; species: string | null; recordType: string;
+    rating: number | null; date: string | null; details: string | null; onBehalfOf: string | null;
+    neutered?: number | null; age?: string | null;
+    sex?: string | null; color?: string | null; microchip?: string | null;
+}
 export interface ImportBatchRow {
     index: number;
     action: 'create' | 'upsert' | 'skip';
     name?: string | null;
     /** JSON ContactEntry[] */
     contactEntries: string;
-    adoption: {
-        animalName: string | null; species: string | null; recordType: string;
-        rating: number | null; date: string | null; details: string | null; onBehalfOf: string | null;
-        neutered?: number | null; age?: string | null;
-        sex?: string | null; color?: string | null; microchip?: string | null;
-    };
+    adoption: ImportAdoption;
+    /** Intra-spreadsheet dedup: additional activities to attach to THIS same
+     *  adopter when several spreadsheet rows are the identical person (same
+     *  content fingerprint) — one profile with N activities instead of N
+     *  duplicate profiles. Only meaningful on 'create'; ignored otherwise. */
+    extraAdoptions?: ImportAdoption[];
     isPublic?: boolean;
     matchedAdopterId?: string | null;
     matchedAdopterName?: string | null;
@@ -74,6 +81,28 @@ function deterministicAdopterId(runId: string, index: number): string {
     return runId.slice(0, 28) + index.toString(16).padStart(8, '0').slice(-8);
 }
 
+/** Map one import adoption + target ids into the insertRecord row shape. Shared by
+ *  the primary activity and any folded extra activities (intra-spreadsheet dedup). */
+function recordDataFrom(a: ImportAdoption, id: string, adopterId: string) {
+    return {
+        id, adopterId,
+        animalName: a.animalName?.trim() || null,
+        species: a.species || 'other',
+        status: 'completed' as const,
+        rating: a.rating || 2,
+        recordType: a.recordType,
+        date: a.date ? importDateToNoon(a.date) : null,
+        sourceUrl: null,
+        details: a.details || null,
+        neutered: a.neutered ?? null,
+        age: a.age || null,
+        sex: a.sex || null,
+        color: a.color || null,
+        microchip: a.microchip || null,
+        onBehalfOf: a.onBehalfOf || null,
+    };
+}
+
 async function createImportedAdopter(db: NonNullable<Db>, actor: string, country: string | null, row: ImportBatchRow, runId: string): Promise<string> {
     const newId = deterministicAdopterId(runId, row.index);
     // Each write is INDEPENDENTLY idempotent (deterministic ids + onConflictDoNothing),
@@ -98,24 +127,14 @@ async function createImportedAdopter(db: NonNullable<Db>, actor: string, country
     // Deterministic activity id keyed on (runId,index) so a retry is a DB no-op, not a
     // duplicate activity — and so a prior attempt that stranded the adopter still gets
     // its activity written on the next attempt.
-    await insertRecord(db, {
-        id: `${newId}-act`,
-        adopterId: newId,
-        animalName: row.adoption.animalName?.trim() || null,
-        species: row.adoption.species || 'other',
-        status: 'completed',
-        rating: row.adoption.rating || 2,
-        recordType: row.adoption.recordType,
-        date: row.adoption.date ? new Date(row.adoption.date) : null,
-        sourceUrl: null,
-        details: row.adoption.details || null,
-        neutered: row.adoption.neutered ?? null,
-        age: row.adoption.age || null,
-        sex: row.adoption.sex || null,
-        color: row.adoption.color || null,
-        microchip: row.adoption.microchip || null,
-        onBehalfOf: row.adoption.onBehalfOf || null,
-    }, actor);
+    await insertRecord(db, recordDataFrom(row.adoption, `${newId}-act`, newId), actor);
+    // Intra-spreadsheet dedup: extra activities of the same person (folded client-
+    // side) become their own records under this one adopter. Deterministic ids keep
+    // a resend idempotent, exactly like the primary activity above.
+    const extras = row.extraAdoptions ?? [];
+    for (let k = 0; k < extras.length; k++) {
+        await insertRecord(db, recordDataFrom(extras[k], `${newId}-act${k + 1}`, newId), actor);
+    }
     await tokenizeAdopter(newId);
     return newId;
 }

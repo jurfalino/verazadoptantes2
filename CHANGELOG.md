@@ -2,6 +2,116 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.44.4] - 2026-08-23
+
+### Fixed — double scrollbar on admin screens
+
+Admin pages showed two vertical scrollbars. The admin `<main>` was its own `overflow-y-auto lg:h-screen` scroll pane (a full 100vh) nested **inside** the global layout that already scrolls (a sticky 64px nav + `min-h-screen` + footer) — so both the document and `<main>` scrolled. Removed `<main>`'s independent scroller (now `flex-1 min-w-0`, flows with the document) and made the admin sidebar **sticky** (`lg:sticky lg:top-16 lg:h-[calc(100vh-4rem)]`, self-scrolling only if its own content overflows) so it still stays put with a single page scrollbar.
+
+## [2.44.3] - 2026-08-23
+
+### Changed — flagged-content review folded into Calidad de datos
+
+The standalone `/admin/flags` page (and its sidebar entry) is gone; the user-flag review is now the **"Contenido reportado" tab** of the Calidad de datos report, lazy-mounted on first visit. New: a **filter by motivo (reason)** shown as pills, each with its **total count**, **preselected to `duplicate`** (plus a "Todos" option). View is mod+admin; **Descartar (dismiss) stays admin-only** (moderators see flags but can't dismiss — surfaced with an error if attempted). `/admin/flags` 308-redirects to `/admin/data-quality`.
+
+Calidad de datos now has three tabs: **Contacto en notas · Duplicados · Contenido reportado**. Backed by a new `getReportedFlags` action.
+
+## [2.44.2] - 2026-08-23
+
+### Changed — duplicate detection folded into Calidad de datos
+
+The standalone `/admin/duplicates` page (and its sidebar entry) is gone; the full duplicate-detection panel — fuzzy system candidates + user-flagged pairs, with Scan / Merge / Dismiss and the merge modal — now lives in the **"Duplicados" tab** of the Calidad de datos report, lazy-mounted on first visit. `/admin/duplicates` 308-redirects to `/admin/data-quality`.
+
+Replaces the old exact-name **"Duplicados probables" (Query 2)** tab, which was removed: the fuzzy engine is strictly better here — it catches near-name pairs (e.g. "Test Adopter — All Flags" ↔ "Test Adopter — Duplicate Match", 95% on a shared phone) that the exact-name SQL missed. The `getDataQualityReport` action now returns only the PII-in-notes list.
+
+## [2.44.1] - 2026-08-23
+
+### Changed — metrics folded into the overview, Resumen loads fast
+
+The standalone `/admin/metrics` page (and its sidebar entry) is gone; its dashboard now lives inside a **collapsible "Métricas" section on the overview page** (`/admin`) that only queries Axiom **when expanded** — so Resumen renders off the cheap DB counters alone instead of blocking on Axiom every load. First expansion lazy-fetches once and caches; the dashboard's 24h/7d/30d toggle re-fetches from there. `/admin/metrics` now 308-redirects to `/admin`.
+
+Where the old eager overview metrics block overlapped the dashboard (errors, active rescuers, latency), the dashboard version wins. The one non-overlapping widget — the **Top errores (7 días)** message list — is preserved inside the collapsible via a new lazy `fetchTopErrors7d` action, so nothing is lost.
+
+### Removed
+
+- **"Migrate old contacts"** (`AdminContactEntriesBackfill`) and **"Complete country"** (`AdminCountryBackfill`) one-shot maintenance widgets removed from the overview page.
+
+## [2.44.0] - 2026-08-23
+
+### Added — "Calidad de datos" moderation report
+
+New admin/moderator page at **`/admin/data-quality`** (Moderación section, mod + admin) surfacing two live, self-clearing cleanup lists, backed by the read-only server action `getDataQualityReport`:
+
+- **Contacto en notas** — adopters whose activity notes (`adopter_events.details`) contain the adopter's own contact info (phone / social / address), which belongs in structured fields. Each row: name → ficha, PII-type badges, note preview, "Abrir ficha".
+- **Duplicados probables** — pairs with the EXACT same name that also share ≥1 contact token (phone/email/social/address) via `duplicate_tokens`. High-signal merge candidates: Registro A ↔ B with shared values, "Fusionar" → `/admin/duplicates`.
+
+No schema and no resolution tracking: both queries run on demand and a row drops off once the note is cleaned or the pair merged. `is_demo = 0` excludes walkthrough demo records. Client-side search (accent-insensitive) + tab counts.
+
+## [2.43.1] - 2026-08-23
+
+### Added — moderator access to the admin console (server-enforced)
+
+Phase 2 of the admin-roles work: moderators can now enter the console and reach only the moderator pages. The `admin/layout.tsx` entry gate loosens from `isAdminAsync` to **`isModeratorOrAdminAsync`** (moderators + admins in), and the 11 admin-only pages move under a new **`(admin-only)` route group** whose layout enforces **`isAdminAsync`** — a moderator hitting an admin-only URL (`/admin/users`, `/admin/config`, `/admin/query`, …) is redirected server-side to `/admin`. The route group keeps every URL unchanged and, being a server boundary, protects the admin-only pages that are client components (which can't run their own auth check). Uses the canonical `isAdminAsync` (bootstrap list + DB role), so bootstrap admins are never wrongly blocked. No `auth.ts`/middleware changes.
+
+## [2.43.0] - 2026-08-23
+
+### Added — admin sidebar grouped into sections + per-item role markers
+
+The admin nav was a flat list of ~20 items. It's now grouped into 5 sections — **Panel · Moderación · Solicitudes · Administración · Sistema y auditoría** — with a `minRole` (`moderator` | `admin`) on each item. In the admin view every item shows its access: a teal **"Mod"** pill = also visible to moderators, a **🔒** = admin-only. The sidebar takes an `isAdmin` prop and, for a moderator, renders only the `moderator` items (admin-only sections drop out entirely). New pages slot into the right section instead of re-growing a flat list.
+
+Scope note: this is the **nav + role model + markers**. The admin area is still gated **admin-only** (`isAdminAsync`) — actually enabling moderator login is a deliberate follow-up (it touches auth: role on the token/session + a middleware/route-group guard for the admin-only pages, most of which are client components). UI role-filtering is never a substitute for that server-side gate.
+
+## [2.42.3] - 2026-08-22
+
+### Fixed — import flow now renders on mobile breakpoints
+
+The wizard was desktop-only (a 5-column `<table>` + rows/toolbars with no `flex-wrap`), so on phones it scrolled in two axes and overflowed. Mobile pass (all `<640px`, desktop untouched):
+
+- **Review/Duplicados grid:** the table **linearizes into a stacked, card-ish list** on mobile (globals.css `@media` on `.import-grid`, using `:has(> td:nth-child(5))` to flow the identity row's cells inline-wrapping and full-width the activity/match/error sub-rows) — no more horizontal scroll; the inner 420px scroll is released so the list flows in the page.
+- **Bulk "a todos" selects** moved out of the `<thead>` (which is hidden on mobile) into an always-visible bar above the grid.
+- `flex-wrap` added where rows overflowed: the **Importar tally** (4 pills), the **Revisar/Duplicados footers**, and the **mapeo header** (text + "Interpretar con IA").
+- Previous-imports drill-down: the record name's fixed `w-40` → `flex-1 min-w-0` so it stops overflowing.
+- No desktop or logic changes.
+
+## [2.42.2] - 2026-08-22
+
+### Fixed — imported activity dates were one day early on the profile
+
+Import stored activity dates via `new Date("YYYY-MM-DD")` = **UTC midnight**; the profile renders them with `formatShortDate`'s local `getDate()`, so in Buenos Aires (UTC-3) a Jan 3 date showed as **Jan 2**. (The Revisar grid was already correct — it formats the date string directly.) Now both import write paths (create in `importBatch.recordDataFrom` and upsert in `importUpsert`) store the date at **noon UTC** via a shared `importDateToNoon`, matching the manual form's `parseLocalDate` — the day is then correct in every real timezone. A one-time migration (`0058`) shifts the already-imported midnight dates +12h (`placements.started_at` and `adopter_events.date`, scoped to `source='imported'` rows at exact UTC midnight, both stored in seconds) so existing records display the right day too. (`importDateToNoon` lives in the pure `domain/importRow` module — a `'use server'` file may only export async server actions, which broke the 2.42.1 build.)
+
+## [2.42.0] - 2026-08-22
+
+### Added — the review step now shows the grouping (one adopter card, N activities)
+
+v2.41.0 folded identical rows into one profile **at import time**, but the review step still listed the source rows — so you couldn't see what would be created. Now the **Revisar** grid groups identical rows (same content fingerprint, matching the import fold) into **one adopter card**: the identity (name/contact/visibilidad) shows once with a **🔗 N actividades** badge, and each source row renders as its own editable activity line labeled "Actividad k · fila #N". WYSIWYG — the review reflects the one-profile-with-N-activities result.
+
+- Extracted the interaction line + "más datos" into a reusable `ActivityBlock`; `RowView` renders one identity + N activity blocks; errors are per-activity.
+- Selection is **per person** (one checkbox per card toggles all its activity rows). Editing a contact that breaks the identity match re-splits the group live.
+- Scope: grouping applies to the **Revisar** step only; the **Duplicados** step stays ungrouped (its matches are per-row against existing records). Ungrouped records render exactly as before.
+
+## [2.41.0] - 2026-08-21
+
+### Added — intra-spreadsheet dedup: same person on several rows → one profile, many activities
+
+Until now the duplicate scan only compared each import row against the **existing** database, never against the other rows in the same spreadsheet. So a person appearing on several rows (e.g. denounced multiple times, or two adoptions on different dates) created **N duplicate profiles**. Now, at import time, rows that are the **identical person** (same content fingerprint: same name + same contacts) are folded into **one adopter with multiple activity records** — the first row creates the profile, each later twin's activity is attached to it.
+
+- **Server (additive, zero behavior change when unused):** `ImportBatchRow` gains `extraAdoptions?`, and `createImportedAdopter` writes each as its own activity under the one adopter with deterministic ids (`…-act1`, `…-act2`), idempotent on resend just like the primary.
+- **Client:** grouping runs after building the batch and before sending; only exact `create` rows fold — **name-only rows (empty fingerprint) never fold** (no homonym merges), and rows matching an existing record (`upsert`) are untouched. Progress total is unchanged (folded rows move to the results as grouped).
+- **Transparency:** the import screen shows a note — "N filas idénticas se agruparon en M personas: su actividad se sumó a la misma ficha" — and folded rows appear as *omitidas* with a "Agrupado con #X" message.
+- Conservative by design (chosen: identical-only, automatic): fuzzy same-name+shared-contact grouping was deliberately **not** included to avoid false merges.
+
+## [2.40.5] - 2026-08-21
+
+### Added — Público/Protegido badge in the previous-imports tables
+
+The per-record drill-down of a past import run (both the rescuer view on `/import/sheet` and the admin view at `/admin/imports`) now shows each created/updated record's **Público (sky) / Protegido (gray)** visibility badge, matching the review step. A shared `runItemsWithVisibility` helper left-joins `import_run_items` to `adopters` for `is_public` (one query, D1-safe); skip/fail rows with no `adopterId` show no badge. Theme-safe via `--status-sky-*` / `--surface-muted` vars.
+
+## [2.40.4] - 2026-08-21
+
+### Fixed — no obvious way out of the dedup "focus mode"
+
+In the Duplicados step, the "Ver solo las pendientes" filter toggled to the label **"◉ Viendo solo pendientes"** while active — a status, not an action, so it didn't read as "click to see all again". Users who filtered to the pending rows and resolved them felt stuck with no way back to the full match list. The toggle now shows the **action** in each state: **"✕ Ver todas las coincidencias"** while focused, "○ Ver solo las pendientes (N)" otherwise. The all-resolved success bar's exit was relabeled to match. (Both exits already rendered — this makes the return-to-all obvious.)
+
 ## [2.40.3] - 2026-08-21
 
 ### Fixed — import scan still blocked on Facebook-URL rows ("LIKE pattern too complex")
