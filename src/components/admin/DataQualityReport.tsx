@@ -2,21 +2,15 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import type { DataQualityReport as ReportData, PiiNoteRow, DupPair } from '@/app/actions/dataQuality';
+import type { DataQualityReport as ReportData, PiiNoteRow } from '@/app/actions/dataQuality';
+import DuplicatesPanel from './DuplicatesPanel';
 
 // Accent-insensitive, case-insensitive normalization for the search box.
 const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
-const TYPE_LABEL: Record<string, string> = {
-    phone: '📞', email: '✉️', social: '🔗', address_word: '📍',
-};
-
-function shortId(id: string) {
-    return id.length > 8 ? `…${id.slice(-6)}` : id;
-}
-
 export default function DataQualityReport({ data }: { data: ReportData }) {
     const [tab, setTab] = useState<'pii' | 'dup'>('pii');
+    const [visitedDup, setVisitedDup] = useState(false);
     const [q, setQ] = useState('');
     const nq = norm(q.trim());
 
@@ -24,11 +18,6 @@ export default function DataQualityReport({ data }: { data: ReportData }) {
         if (!nq) return data.pii;
         return data.pii.filter(r => norm(r.name).includes(nq) || norm(r.note).includes(nq));
     }, [data.pii, nq]);
-
-    const dups = useMemo<DupPair[]>(() => {
-        if (!nq) return data.dups;
-        return data.dups.filter(p => norm(p.name).includes(nq) || p.shared.some(s => norm(s.value).includes(nq)));
-    }, [data.dups, nq]);
 
     const piiTotals = useMemo(() => data.pii.reduce((acc, r) => {
         if (r.hasPhone) acc.phone++;
@@ -45,15 +34,22 @@ export default function DataQualityReport({ data }: { data: ReportData }) {
         );
     }
 
-    const TabBtn = ({ id, label, n }: { id: 'pii' | 'dup'; label: string; n: number }) => (
+    const selectTab = (id: 'pii' | 'dup') => {
+        setTab(id);
+        if (id === 'dup') setVisitedDup(true);
+    };
+
+    const TabBtn = ({ id, label, n }: { id: 'pii' | 'dup'; label: string; n?: number }) => (
         <button
-            onClick={() => setTab(id)}
+            onClick={() => selectTab(id)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-sm font-semibold border-b-2 -mb-px transition-colors ${
                 tab === id ? 'text-stone-900 border-teal-600' : 'text-stone-500 border-transparent hover:text-stone-700'
             }`}
         >
             {label}
-            <span className={`text-[11px] font-bold rounded-full px-2 py-px ${tab === id ? 'bg-teal-600 text-white' : 'bg-stone-200 text-stone-500'}`}>{n}</span>
+            {n !== undefined && (
+                <span className={`text-[11px] font-bold rounded-full px-2 py-px ${tab === id ? 'bg-teal-600 text-white' : 'bg-stone-200 text-stone-500'}`}>{n}</span>
+            )}
         </button>
     );
 
@@ -62,96 +58,59 @@ export default function DataQualityReport({ data }: { data: ReportData }) {
             {/* Tabs */}
             <div className="flex gap-1 border-b border-stone-200 mb-4 flex-wrap">
                 <TabBtn id="pii" label="Contacto en notas" n={data.pii.length} />
-                <TabBtn id="dup" label="Duplicados probables" n={data.dups.length} />
-            </div>
-
-            {/* Toolbar */}
-            <div className="flex items-center gap-3 mb-4 flex-wrap">
-                <div className="relative flex-1 min-w-[180px]">
-                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <circle cx="11" cy="11" r="8" strokeWidth={2} /><path strokeLinecap="round" strokeWidth={2} d="m21 21-4.3-4.3" />
-                    </svg>
-                    <input
-                        value={q}
-                        onChange={e => setQ(e.target.value)}
-                        placeholder={tab === 'pii' ? 'Buscar por nombre o contenido de la nota…' : 'Buscar por nombre o contacto…'}
-                        className="w-full pl-9 pr-3 py-2 rounded-lg border border-stone-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500"
-                    />
-                </div>
-                <span className="text-xs text-stone-500">
-                    {tab === 'pii'
-                        ? `${data.pii.length} registros · 📞 ${piiTotals.phone} · 🔗 ${piiTotals.social} · 📍 ${piiTotals.address}`
-                        : `${data.dups.length} pares · mismo nombre + contacto compartido`}
-                </span>
+                <TabBtn id="dup" label="Duplicados" />
             </div>
 
             {/* ── Tab 1: PII in notes ── */}
             {tab === 'pii' && (
-                pii.length === 0 ? <Empty q={q} clean="Sin registros con contacto en las notas. 🎉" />
-                : <div className="space-y-2.5">
-                    {pii.map(r => (
-                        <div key={r.adopterId} className="bg-white border border-stone-200 rounded-xl p-4 flex gap-4 items-start">
-                            <div className="min-w-0 flex-1">
-                                <Link href={`/adopter/${r.adopterId}`} target="_blank" className="font-semibold text-[15px] text-stone-900 hover:text-teal-700 hover:underline">
-                                    {r.name || <span className="italic text-stone-400">Sin nombre</span>}
+                <>
+                    <div className="flex items-center gap-3 mb-4 flex-wrap">
+                        <div className="relative flex-1 min-w-[180px]">
+                            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <circle cx="11" cy="11" r="8" strokeWidth={2} /><path strokeLinecap="round" strokeWidth={2} d="m21 21-4.3-4.3" />
+                            </svg>
+                            <input
+                                value={q}
+                                onChange={e => setQ(e.target.value)}
+                                placeholder="Buscar por nombre o contenido de la nota…"
+                                className="w-full pl-9 pr-3 py-2 rounded-lg border border-stone-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500"
+                            />
+                        </div>
+                        <span className="text-xs text-stone-500">
+                            {`${data.pii.length} registros · 📞 ${piiTotals.phone} · 🔗 ${piiTotals.social} · 📍 ${piiTotals.address}`}
+                        </span>
+                    </div>
+
+                    {pii.length === 0 ? <Empty q={q} clean="Sin registros con contacto en las notas. 🎉" />
+                    : <div className="space-y-2.5">
+                        {pii.map(r => (
+                            <div key={r.adopterId} className="bg-white border border-stone-200 rounded-xl p-4 flex gap-4 items-start">
+                                <div className="min-w-0 flex-1">
+                                    <Link href={`/adopter/${r.adopterId}`} target="_blank" className="font-semibold text-[15px] text-stone-900 hover:text-teal-700 hover:underline">
+                                        {r.name || <span className="italic text-stone-400">Sin nombre</span>}
+                                    </Link>
+                                    <div className="flex gap-1.5 flex-wrap my-1.5">
+                                        {r.hasPhone && <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200">📞 Teléfono</span>}
+                                        {r.hasSocial && <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">🔗 Social</span>}
+                                        {r.hasAddress && <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">📍 Dirección</span>}
+                                    </div>
+                                    <p className="text-[13px] text-stone-500 bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1.5 line-clamp-2 whitespace-pre-wrap">{r.note}</p>
+                                </div>
+                                <Link href={`/adopter/${r.adopterId}`} target="_blank" className="flex-shrink-0 text-xs font-semibold px-3 py-2 rounded-lg bg-teal-600 text-white hover:bg-teal-700 whitespace-nowrap">
+                                    Abrir ficha ↗
                                 </Link>
-                                <div className="flex gap-1.5 flex-wrap my-1.5">
-                                    {r.hasPhone && <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200">📞 Teléfono</span>}
-                                    {r.hasSocial && <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">🔗 Social</span>}
-                                    {r.hasAddress && <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">📍 Dirección</span>}
-                                </div>
-                                <p className="text-[13px] text-stone-500 bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1.5 line-clamp-2 whitespace-pre-wrap">{r.note}</p>
                             </div>
-                            <Link href={`/adopter/${r.adopterId}`} target="_blank" className="flex-shrink-0 text-xs font-semibold px-3 py-2 rounded-lg bg-teal-600 text-white hover:bg-teal-700 whitespace-nowrap">
-                                Abrir ficha ↗
-                            </Link>
-                        </div>
-                    ))}
-                </div>
+                        ))}
+                    </div>}
+                </>
             )}
 
-            {/* ── Tab 2: likely duplicates ── */}
-            {tab === 'dup' && (
-                dups.length === 0 ? <Empty q={q} clean="Sin duplicados probables. 🎉" />
-                : <div className="space-y-2.5">
-                    {dups.map(p => (
-                        <div key={`${p.idA}|${p.idB}`} className="bg-white border border-stone-200 rounded-xl p-4 flex gap-4 items-start flex-col sm:flex-row">
-                            <div className="min-w-0 flex-1 w-full">
-                                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-2 sm:gap-3 items-stretch">
-                                    <Candidate label="Registro A" id={p.idA} name={p.name} />
-                                    <div className="hidden sm:flex items-center justify-center text-stone-400 text-xs font-bold">↔</div>
-                                    <Candidate label="Registro B" id={p.idB} name={p.name} />
-                                </div>
-                                <div className="mt-2 text-xs text-stone-500 flex gap-1.5 flex-wrap items-center">
-                                    Comparten:
-                                    {p.shared.map((s, i) => (
-                                        <span key={i} className="font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 border border-teal-200">
-                                            {TYPE_LABEL[s.type] ?? s.type} {s.value}
-                                        </span>
-                                    ))}
-                                </div>
-                            </div>
-                            <div className="flex flex-row sm:flex-col gap-1.5 flex-shrink-0 w-full sm:w-auto">
-                                <Link href="/admin/duplicates" className="flex-1 text-center text-xs font-semibold px-3 py-2 rounded-lg bg-teal-600 text-white hover:bg-teal-700 whitespace-nowrap">Fusionar →</Link>
-                                <Link href={`/adopter/${p.idA}`} target="_blank" className="flex-1 text-center text-xs font-semibold px-3 py-2 rounded-lg border border-stone-200 text-stone-700 hover:border-teal-500 whitespace-nowrap">Abrir A ↗</Link>
-                                <Link href={`/adopter/${p.idB}`} target="_blank" className="flex-1 text-center text-xs font-semibold px-3 py-2 rounded-lg border border-stone-200 text-stone-700 hover:border-teal-500 whitespace-nowrap">Abrir B ↗</Link>
-                            </div>
-                        </div>
-                    ))}
+            {/* ── Tab 2: duplicate detection (lazy — mounts on first visit, stays mounted) ── */}
+            {visitedDup && (
+                <div className={tab === 'dup' ? '' : 'hidden'}>
+                    <DuplicatesPanel />
                 </div>
             )}
-        </div>
-    );
-}
-
-function Candidate({ label, id, name }: { label: string; id: string; name: string }) {
-    return (
-        <div className="border border-stone-200 rounded-lg px-3 py-2 bg-stone-50 min-w-0">
-            <div className="text-[10px] uppercase tracking-wide text-stone-400 font-bold">{label}</div>
-            <Link href={`/adopter/${id}`} target="_blank" className="block font-semibold text-[13px] text-stone-900 hover:text-teal-700 hover:underline break-words">
-                {name || <span className="italic text-stone-400">Sin nombre</span>}
-            </Link>
-            <div className="text-[11px] text-stone-400 mt-0.5 font-mono">{shortId(id)}</div>
         </div>
     );
 }

@@ -7,20 +7,18 @@ import { logger } from '@/lib/logger';
 import { getDb, checkIsModeratorOrAdminAsync } from './_db';
 
 /**
- * "Calidad de datos" moderation report (v2.44.0). Two live, self-clearing
- * lists that surface records likely needing cleanup:
+ * "Calidad de datos" moderation report.
  *
- *   1. PII in notes — adopters whose activity notes (`adopter_events.details`)
- *      contain the adopter's own contact info (phone / social / address). These
- *      belong in structured contact fields, not free-text notes.
- *   2. Likely duplicates — pairs with the EXACT same name that also share at
- *      least one contact token (phone/email/social/address). High-signal merge
- *      candidates, distinct from the general `/admin/duplicates` queue.
+ * PII in notes — adopters whose activity notes (`adopter_events.details`)
+ * contain the adopter's own contact info (phone / social / address), which
+ * belongs in structured contact fields, not free-text notes. Read-only, runs on
+ * demand (no cache): a row drops off once the note is cleaned. Gated to
+ * moderators + admins; `is_demo = 0` excludes walkthrough demo records.
  *
- * Both queries are read-only and run on demand (no cache, no resolution
- * tracking): a row drops off automatically once the note is cleaned or the
- * pair is merged. Gated to moderators + admins. The SQL mirrors the validated
- * ad-hoc audit queries; `is_demo = 0` excludes walkthrough demo records.
+ * Duplicate detection lives in the page's second tab (DuplicatesPanel → the
+ * fuzzy `/api/admin/duplicates` queue), which supersedes the old exact-name
+ * Query-2 that used to live here (v2.44.2): the fuzzy engine catches near-name
+ * pairs the exact-match SQL missed.
  */
 
 export interface PiiNoteRow {
@@ -33,21 +31,8 @@ export interface PiiNoteRow {
     note: string;
 }
 
-export interface DupSharedContact {
-    type: string;   // phone | email | social | address_word
-    value: string;
-}
-
-export interface DupPair {
-    name: string;
-    idA: string;
-    idB: string;
-    shared: DupSharedContact[];
-}
-
 export interface DataQualityReport {
     pii: PiiNoteRow[];
-    dups: DupPair[];
     error?: string;
 }
 
@@ -68,24 +53,6 @@ WHERE e.details IS NOT NULL AND (
   OR lower(e.details) LIKE '%barrio%' OR lower(e.details) LIKE '%calle %' OR lower(e.details) LIKE '%avenida%'
 )
 GROUP BY e.adopter_id, a.name
-ORDER BY a.name
-`.trim();
-
-// One row per shared token per name-matched pair (a < b dedupes the pair);
-// grouped into pairs in JS below.
-const DUP_SQL = `
-SELECT a.name AS name, t1.adopter_id AS idA, t2.adopter_id AS idB,
-  t1.token_type AS sharedType, t1.token_value AS sharedValue
-FROM duplicate_tokens t1
-JOIN duplicate_tokens t2
-  ON t1.token_type = t2.token_type
-  AND t1.token_value = t2.token_value
-  AND t1.adopter_id < t2.adopter_id
-JOIN adopters a ON a.id = t1.adopter_id AND a.deleted_at IS NULL AND a.is_demo = 0
-JOIN adopters b ON b.id = t2.adopter_id AND b.deleted_at IS NULL AND b.is_demo = 0
-WHERE t1.token_type IN ('phone','email','social','address_word')
-  AND a.name IS NOT NULL AND trim(a.name) <> ''
-  AND lower(trim(a.name)) = lower(trim(b.name))
 ORDER BY a.name
 `.trim();
 
@@ -112,14 +79,10 @@ export async function getDataQualityReport(): Promise<DataQualityReport> {
     try {
         if (!email || !(await checkIsModeratorOrAdminAsync(email))) {
             logger.warn('getDataQualityReport: unauthorized', { user: email });
-            return { pii: [], dups: [], error: 'Unauthorized' };
+            return { pii: [], error: 'Unauthorized' };
         }
 
-        const [piiRows, dupRows] = await Promise.all([
-            runReadonly(PII_SQL),
-            runReadonly(DUP_SQL),
-        ]);
-
+        const piiRows = await runReadonly(PII_SQL);
         const pii: PiiNoteRow[] = piiRows.map((r) => ({
             adopterId: String(r.adopterId ?? ''),
             name: (r.name as string) ?? '',
@@ -129,25 +92,10 @@ export async function getDataQualityReport(): Promise<DataQualityReport> {
             note: (r.note as string) ?? '',
         }));
 
-        // Collapse the per-token rows into one entry per pair.
-        const pairMap = new Map<string, DupPair>();
-        for (const r of dupRows) {
-            const idA = String(r.idA ?? '');
-            const idB = String(r.idB ?? '');
-            const key = `${idA}|${idB}`;
-            let pair = pairMap.get(key);
-            if (!pair) {
-                pair = { name: (r.name as string) ?? '', idA, idB, shared: [] };
-                pairMap.set(key, pair);
-            }
-            pair.shared.push({ type: String(r.sharedType ?? ''), value: String(r.sharedValue ?? '') });
-        }
-        const dups = Array.from(pairMap.values());
-
-        logger.info('getDataQualityReport: served', { user: email, piiCount: pii.length, dupPairs: dups.length });
-        return { pii, dups };
+        logger.info('getDataQualityReport: served', { user: email, piiCount: pii.length });
+        return { pii };
     } catch (e) {
         const errorId = logger.error('getDataQualityReport: failed', { user: email, error: e instanceof Error ? e.message : String(e) });
-        return { pii: [], dups: [], error: errorId };
+        return { pii: [], error: errorId };
     }
 }

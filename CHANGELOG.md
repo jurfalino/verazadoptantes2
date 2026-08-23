@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.44.2] - 2026-08-23
+
+### Changed — duplicate detection folded into Calidad de datos
+
+The standalone `/admin/duplicates` page (and its sidebar entry) is gone; the full duplicate-detection panel — fuzzy system candidates + user-flagged pairs, with Scan / Merge / Dismiss and the merge modal — now lives in the **"Duplicados" tab** of the Calidad de datos report, lazy-mounted on first visit. `/admin/duplicates` 308-redirects to `/admin/data-quality`.
+
+Replaces the old exact-name **"Duplicados probables" (Query 2)** tab, which was removed: the fuzzy engine is strictly better here — it catches near-name pairs (e.g. "Test Adopter — All Flags" ↔ "Test Adopter — Duplicate Match", 95% on a shared phone) that the exact-name SQL missed. The `getDataQualityReport` action now returns only the PII-in-notes list.
+
 ## [2.44.1] - 2026-08-23
 
 ### Changed — metrics folded into the overview, Resumen loads fast
