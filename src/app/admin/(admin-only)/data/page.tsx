@@ -9,6 +9,7 @@ import {
     tablesInGroup,
     type TableGroupKey,
 } from '@/lib/dataMigrationManifest';
+import AdminDangerZone from '@/components/AdminDangerZone';
 
 interface ImportResult {
     success: boolean;
@@ -345,6 +346,13 @@ export default function DataMigrationPage() {
                     <p className="mt-3 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{importError}</p>
                 )}
             </section>
+
+            {/* Danger Zone — relocated here (admin-only, bottom of the migration
+                screen) from the mod-accessible overview so purge-all sits behind
+                the least-trafficked admin page rather than the dashboard. */}
+            <div className="pt-4 border-t border-stone-200">
+                <AdminDangerZone />
+            </div>
         </div>
     );
 }

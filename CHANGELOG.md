@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.44.6] - 2026-08-23
+
+### Changed — Danger Zone relocated; PII notes editable in place
+
+- **Purge-all moved off the dashboard.** The Danger Zone (purge all data) is gone from the mod-accessible admin overview and now sits at the **bottom of the admin-only Data Migration page** (`/admin/data`) — least-trafficked spot, admin-only route group.
+- **Editable notes in Calidad de datos → Contacto en notas.** The truncated, non-scrollable note preview is replaced by a full **editable textarea** (resizable, scrolls) with **Guardar / Descartar cambios**, so an admin/mod can strip the PII and save without opening the ficha. The tab now lists **one row per note** (per `adopter_events` row) instead of a grouped blob, so each edit maps to its own event. New `updateEventDetails` action (mod+admin, audited; edits only `adopter_events.details`, not a token source).
+
 ## [2.44.5] - 2026-08-23
 
 ### Fixed — folded import rows falsely reported as "Filas no importadas"

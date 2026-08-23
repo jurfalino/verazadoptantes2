@@ -2,9 +2,10 @@
 
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { sql, eq, desc } from 'drizzle-orm';
-import { adopterFlags, adopters } from '@/db/schema';
+import { adopterFlags, adopters, adopterEvents } from '@/db/schema';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
+import { logAudit } from '@/lib/audit';
 import { getDb, checkIsModeratorOrAdminAsync } from './_db';
 
 /**
@@ -23,12 +24,14 @@ import { getDb, checkIsModeratorOrAdminAsync } from './_db';
  */
 
 export interface PiiNoteRow {
+    /** The adopter_events row this note belongs to — the edit target. */
+    eventId: string;
     adopterId: string;
     name: string;
     hasPhone: boolean;
     hasSocial: boolean;
     hasAddress: boolean;
-    /** Concatenated PII-bearing note(s) for this adopter — preview only. */
+    /** The event's own note (`adopter_events.details`) — editable inline. */
     note: string;
 }
 
@@ -37,13 +40,14 @@ export interface DataQualityReport {
     error?: string;
 }
 
-// One row per adopter (grouped), flags OR-ed across their events.
+// One row per PII-bearing EVENT (not grouped) so each note maps to its own
+// adopter_events.id and can be edited/saved inline.
 const PII_SQL = `
-SELECT e.adopter_id AS adopterId, a.name AS name,
-  MAX(CASE WHEN e.details GLOB '*[0-9][0-9][0-9][0-9][0-9][0-9][0-9]*' OR e.details GLOB '*[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9]*' THEN 1 ELSE 0 END) AS hasPhone,
-  MAX(CASE WHEN lower(e.details) LIKE '%facebook%' OR lower(e.details) LIKE '%instagram%' OR lower(e.details) LIKE '%http%' OR lower(e.details) LIKE '%wa.me%' THEN 1 ELSE 0 END) AS hasSocial,
-  MAX(CASE WHEN lower(e.details) LIKE '%barrio%' OR lower(e.details) LIKE '%calle %' OR lower(e.details) LIKE '%avenida%' THEN 1 ELSE 0 END) AS hasAddress,
-  group_concat(e.details, '  ·  ') AS note
+SELECT e.id AS eventId, e.adopter_id AS adopterId, a.name AS name,
+  CASE WHEN e.details GLOB '*[0-9][0-9][0-9][0-9][0-9][0-9][0-9]*' OR e.details GLOB '*[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9]*' THEN 1 ELSE 0 END AS hasPhone,
+  CASE WHEN lower(e.details) LIKE '%facebook%' OR lower(e.details) LIKE '%instagram%' OR lower(e.details) LIKE '%http%' OR lower(e.details) LIKE '%wa.me%' THEN 1 ELSE 0 END AS hasSocial,
+  CASE WHEN lower(e.details) LIKE '%barrio%' OR lower(e.details) LIKE '%calle %' OR lower(e.details) LIKE '%avenida%' THEN 1 ELSE 0 END AS hasAddress,
+  e.details AS note
 FROM adopter_events e
 JOIN adopters a ON a.id = e.adopter_id AND a.deleted_at IS NULL AND a.is_demo = 0
 WHERE e.details IS NOT NULL AND (
@@ -53,7 +57,6 @@ WHERE e.details IS NOT NULL AND (
   OR lower(e.details) LIKE '%http%' OR lower(e.details) LIKE '%wa.me%'
   OR lower(e.details) LIKE '%barrio%' OR lower(e.details) LIKE '%calle %' OR lower(e.details) LIKE '%avenida%'
 )
-GROUP BY e.adopter_id, a.name
 ORDER BY a.name
 `.trim();
 
@@ -85,6 +88,7 @@ export async function getDataQualityReport(): Promise<DataQualityReport> {
 
         const piiRows = await runReadonly(PII_SQL);
         const pii: PiiNoteRow[] = piiRows.map((r) => ({
+            eventId: String(r.eventId ?? ''),
             adopterId: String(r.adopterId ?? ''),
             name: (r.name as string) ?? '',
             hasPhone: Number(r.hasPhone) === 1,
@@ -98,6 +102,35 @@ export async function getDataQualityReport(): Promise<DataQualityReport> {
     } catch (e) {
         const errorId = logger.error('getDataQualityReport: failed', { user: email, error: e instanceof Error ? e.message : String(e) });
         return { pii: [], error: errorId };
+    }
+}
+
+/**
+ * Save an edited activity note from the "Contacto en notas" tab (moderators +
+ * admins) so PII can be cleaned in place. Only touches `adopter_events.details`
+ * — not a token source, so no re-tokenization needed. Empty → NULL. Audited
+ * (event id only; never the note content, which may hold PII).
+ */
+export async function updateEventDetails(eventId: string, details: string): Promise<{ success: boolean; error?: string }> {
+    const session = await auth();
+    const email = session?.user?.email;
+    try {
+        if (!email || !(await checkIsModeratorOrAdminAsync(email))) {
+            logger.warn('updateEventDetails: unauthorized', { user: email, eventId });
+            return { success: false, error: 'Unauthorized' };
+        }
+        if (!eventId) return { success: false, error: 'Missing event id' };
+        const db = await getDb();
+        if (!db) return { success: false, error: 'No database' };
+
+        const trimmed = details.trim();
+        await db.update(adopterEvents).set({ details: trimmed || null }).where(eq(adopterEvents.id, eventId));
+        logAudit({ userEmail: email, action: 'data_quality_edit_note', details: { eventId, length: trimmed.length } });
+        logger.info('updateEventDetails: saved', { user: email, eventId });
+        return { success: true };
+    } catch (e) {
+        const errorId = logger.error('updateEventDetails: failed', { user: email, eventId, error: e instanceof Error ? e.message : String(e) });
+        return { success: false, error: errorId };
     }
 }
 
