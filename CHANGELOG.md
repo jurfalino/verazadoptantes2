@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.44.5] - 2026-08-23
+
+### Fixed — folded import rows falsely reported as "Filas no importadas"
+
+When the sheet-import wizard folds two+ rows for the same person into one adopter (intra-batch dedup), the extra rows' activities ARE imported into that adopter — but the twin rows were tagged `status: 'skipped'`, so they surfaced under the red **"Filas no importadas"** error list (which shows every skipped/failed row), reading as a failure. Introduced a distinct `'grouped'` row status: folded rows now count as **🔗 agrupados** (a positive tally chip), get their own "Agrupados" list, are excluded from the not-imported section and the error CSV, and no longer inflate the skipped count. The fold-summary banner reworded ("Sí se importaron — figuran como 'agrupadas', no como errores"). Zero-count skipped/failed tally chips are now hidden.
+
 ## [2.44.4] - 2026-08-23
 
 ### Fixed — double scrollbar on admin screens
