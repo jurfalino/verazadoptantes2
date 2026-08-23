@@ -71,6 +71,8 @@ const nextConfig: NextConfig = {
       { source: '/admin/metrics', destination: '/admin', permanent: true },
       // Duplicate detection moved into the Calidad de datos report (v2.44.2).
       { source: '/admin/duplicates', destination: '/admin/data-quality', permanent: true },
+      // Flagged-content review moved into the Calidad de datos report (v2.44.3).
+      { source: '/admin/flags', destination: '/admin/data-quality', permanent: true },
     ];
   },
   async rewrites() {

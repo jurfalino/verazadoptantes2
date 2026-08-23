@@ -1,7 +1,8 @@
 'use server';
 
 import { getRequestContext } from '@cloudflare/next-on-pages';
-import { sql } from 'drizzle-orm';
+import { sql, eq, desc } from 'drizzle-orm';
+import { adopterFlags, adopters } from '@/db/schema';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { getDb, checkIsModeratorOrAdminAsync } from './_db';
@@ -97,5 +98,72 @@ export async function getDataQualityReport(): Promise<DataQualityReport> {
     } catch (e) {
         const errorId = logger.error('getDataQualityReport: failed', { user: email, error: e instanceof Error ? e.message : String(e) });
         return { pii: [], error: errorId };
+    }
+}
+
+export interface ReportedFlagRow {
+    id: string;
+    reason: string;
+    details: string | null;
+    flaggedBy: string | null;
+    /** Epoch ms (serializable for the client), or null. */
+    createdAt: number | null;
+    adopterId: string;
+    adopterName: string | null;
+    /** false = the flagged adopter row was deleted (vs a nameless-but-present adopter). */
+    adopterFound: boolean;
+}
+
+/**
+ * User-reported flags for the "Contenido reportado" tab (moved from
+ * /admin/flags). Mod + admin may view; DISMISS is admin-only (see dismissFlag).
+ * The client filters/counts by reason (default 'duplicate').
+ */
+export async function getReportedFlags(): Promise<{ flags: ReportedFlagRow[]; error?: string }> {
+    const session = await auth();
+    const email = session?.user?.email;
+    try {
+        if (!email || !(await checkIsModeratorOrAdminAsync(email))) {
+            logger.warn('getReportedFlags: unauthorized', { user: email });
+            return { flags: [], error: 'Unauthorized' };
+        }
+        const db = await getDb();
+        if (!db) return { flags: [], error: 'Database unavailable' };
+
+        const rows = await db.select({
+            id: adopterFlags.id,
+            reason: adopterFlags.reason,
+            details: adopterFlags.details,
+            flaggedBy: adopterFlags.flaggedBy,
+            createdAt: adopterFlags.createdAt,
+            adopterId: adopterFlags.adopterId,
+            adopterName: adopters.name,
+            adopterFound: adopters.id,
+        })
+            .from(adopterFlags)
+            .leftJoin(adopters, eq(adopterFlags.adopterId, adopters.id))
+            .orderBy(desc(adopterFlags.createdAt))
+            .all();
+
+        type FlagQueryRow = {
+            id: string; reason: string; details: string | null; flaggedBy: string | null;
+            createdAt: Date | number | null; adopterId: string; adopterName: string | null; adopterFound: string | null;
+        };
+        const flags: ReportedFlagRow[] = (rows as FlagQueryRow[]).map((r) => ({
+            id: r.id,
+            reason: r.reason,
+            details: r.details ?? null,
+            flaggedBy: r.flaggedBy ?? null,
+            createdAt: r.createdAt ? new Date(r.createdAt).getTime() : null,
+            adopterId: r.adopterId,
+            adopterName: r.adopterName ?? null,
+            adopterFound: r.adopterFound != null,
+        }));
+
+        logger.info('getReportedFlags: served', { user: email, flagCount: flags.length });
+        return { flags };
+    } catch (e) {
+        const errorId = logger.error('getReportedFlags: failed', { user: email, error: e instanceof Error ? e.message : String(e) });
+        return { flags: [], error: errorId };
     }
 }

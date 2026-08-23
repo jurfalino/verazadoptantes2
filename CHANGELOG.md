@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.44.3] - 2026-08-23
+
+### Changed — flagged-content review folded into Calidad de datos
+
+The standalone `/admin/flags` page (and its sidebar entry) is gone; the user-flag review is now the **"Contenido reportado" tab** of the Calidad de datos report, lazy-mounted on first visit. New: a **filter by motivo (reason)** shown as pills, each with its **total count**, **preselected to `duplicate`** (plus a "Todos" option). View is mod+admin; **Descartar (dismiss) stays admin-only** (moderators see flags but can't dismiss — surfaced with an error if attempted). `/admin/flags` 308-redirects to `/admin/data-quality`.
+
+Calidad de datos now has three tabs: **Contacto en notas · Duplicados · Contenido reportado**. Backed by a new `getReportedFlags` action.
+
 ## [2.44.2] - 2026-08-23
 
 ### Changed — duplicate detection folded into Calidad de datos

@@ -4,13 +4,15 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { DataQualityReport as ReportData, PiiNoteRow } from '@/app/actions/dataQuality';
 import DuplicatesPanel from './DuplicatesPanel';
+import ReportedContentPanel from './ReportedContentPanel';
 
 // Accent-insensitive, case-insensitive normalization for the search box.
 const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
 export default function DataQualityReport({ data }: { data: ReportData }) {
-    const [tab, setTab] = useState<'pii' | 'dup'>('pii');
+    const [tab, setTab] = useState<'pii' | 'dup' | 'flags'>('pii');
     const [visitedDup, setVisitedDup] = useState(false);
+    const [visitedFlags, setVisitedFlags] = useState(false);
     const [q, setQ] = useState('');
     const nq = norm(q.trim());
 
@@ -34,12 +36,13 @@ export default function DataQualityReport({ data }: { data: ReportData }) {
         );
     }
 
-    const selectTab = (id: 'pii' | 'dup') => {
+    const selectTab = (id: 'pii' | 'dup' | 'flags') => {
         setTab(id);
         if (id === 'dup') setVisitedDup(true);
+        if (id === 'flags') setVisitedFlags(true);
     };
 
-    const TabBtn = ({ id, label, n }: { id: 'pii' | 'dup'; label: string; n?: number }) => (
+    const TabBtn = ({ id, label, n }: { id: 'pii' | 'dup' | 'flags'; label: string; n?: number }) => (
         <button
             onClick={() => selectTab(id)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-sm font-semibold border-b-2 -mb-px transition-colors ${
@@ -59,6 +62,7 @@ export default function DataQualityReport({ data }: { data: ReportData }) {
             <div className="flex gap-1 border-b border-stone-200 mb-4 flex-wrap">
                 <TabBtn id="pii" label="Contacto en notas" n={data.pii.length} />
                 <TabBtn id="dup" label="Duplicados" />
+                <TabBtn id="flags" label="Contenido reportado" />
             </div>
 
             {/* ── Tab 1: PII in notes ── */}
@@ -109,6 +113,13 @@ export default function DataQualityReport({ data }: { data: ReportData }) {
             {visitedDup && (
                 <div className={tab === 'dup' ? '' : 'hidden'}>
                     <DuplicatesPanel />
+                </div>
+            )}
+
+            {/* ── Tab 3: reported content / flags (lazy) ── */}
+            {visitedFlags && (
+                <div className={tab === 'flags' ? '' : 'hidden'}>
+                    <ReportedContentPanel />
                 </div>
             )}
         </div>
