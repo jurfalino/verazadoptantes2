@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.44.4] - 2026-08-23
+
+### Fixed — double scrollbar on admin screens
+
+Admin pages showed two vertical scrollbars. The admin `<main>` was its own `overflow-y-auto lg:h-screen` scroll pane (a full 100vh) nested **inside** the global layout that already scrolls (a sticky 64px nav + `min-h-screen` + footer) — so both the document and `<main>` scrolled. Removed `<main>`'s independent scroller (now `flex-1 min-w-0`, flows with the document) and made the admin sidebar **sticky** (`lg:sticky lg:top-16 lg:h-[calc(100vh-4rem)]`, self-scrolling only if its own content overflows) so it still stays put with a single page scrollbar.
+
 ## [2.44.3] - 2026-08-23
 
 ### Changed — flagged-content review folded into Calidad de datos

@@ -27,8 +27,12 @@ export default async function AdminLayout({
             {/* Sidebar — client component handles mobile drawer behavior */}
             <AdminSidebar isAdmin={isAdmin} />
 
-            {/* Main Content — top padding on mobile for the fixed header bar */}
-            <main className="flex-1 overflow-y-auto lg:h-screen p-4 pt-28 lg:p-8 lg:pt-8">
+            {/* Main content. NOT its own scroll pane — the document scrolls as one.
+                A prior `overflow-y-auto lg:h-screen` here created a SECOND 100vh
+                scroller nested under the global sticky nav, so admin screens showed
+                two scrollbars. The sidebar is sticky (below) so it still stays put.
+                Top padding on mobile clears the fixed admin header bar. */}
+            <main className="flex-1 min-w-0 p-4 pt-28 lg:p-8 lg:pt-8">
                 <AdminEnvWarnings />
                 {children}
             </main>

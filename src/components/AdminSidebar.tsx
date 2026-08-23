@@ -83,7 +83,7 @@ export default function AdminSidebar({ isAdmin }: { isAdmin: boolean }) {
                 fixed top-16 left-0 z-50 h-[calc(100%-4rem)] w-64 bg-stone-900 text-stone-300 flex-shrink-0
                 transition-transform duration-300 ease-in-out
                 ${open ? 'translate-x-0' : '-translate-x-full'}
-                lg:top-0 lg:h-full lg:translate-x-0 lg:static lg:z-auto
+                lg:sticky lg:top-16 lg:self-start lg:h-[calc(100vh-4rem)] lg:overflow-y-auto lg:translate-x-0 lg:z-auto
             `}>
                 <div className="p-6 flex items-center justify-between">
                     <div>
