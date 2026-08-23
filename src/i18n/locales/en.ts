@@ -86,6 +86,7 @@ export const en = {
         metric_latency_sub: 'per trace',
         nav_flagged: 'Flagged Content',
         nav_duplicates: 'Duplicates',
+        nav_data_quality: 'Data quality',
         nav_adopters_list: 'Adopters List',
         nav_sql: 'SQL Runner',
         nav_config: 'Configuration',

@@ -79,7 +79,13 @@
       "Artifact",
       "Bash(git pull *)",
       "Bash(git merge *)",
-      "Bash(echo \"bumped to $\\(node -p \"require\\('./package.json'\\).version\"\\)\")"
+      "Bash(echo \"bumped to $\\(node -p \"require\\('./package.json'\\).version\"\\)\")",
+      "Bash(grep -rA30 \"CREATE VIEW.*adoptions\\\\|CREATE VIEW \\\\\"adoptions\\\\\"\\\\|CREATE VIEW adoptions\" drizzle/)",
+      "mcp__cloudflare-observability__workers_list",
+      "mcp__cloudflare-observability__query_worker_observability",
+      "Bash(grep -nA20 \"export async function isAdminAsync\" src/config/admins.ts)",
+      "Bash(grep -nA14 'sqliteTable\\(\"error_reports\"' src/db/schema.ts)",
+      "Bash(bash /private/tmp/claude-501/-Users-jurfalino-Developer-Personal-verazadoptantes2/fd0ca035-b3f5-4add-919c-b78537970ccf/scratchpad/promote-2403.sh)"
     ]
   }
 }

@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.44.0] - 2026-08-23
+
+### Added — "Calidad de datos" moderation report
+
+New admin/moderator page at **`/admin/data-quality`** (Moderación section, mod + admin) surfacing two live, self-clearing cleanup lists, backed by the read-only server action `getDataQualityReport`:
+
+- **Contacto en notas** — adopters whose activity notes (`adopter_events.details`) contain the adopter's own contact info (phone / social / address), which belongs in structured fields. Each row: name → ficha, PII-type badges, note preview, "Abrir ficha".
+- **Duplicados probables** — pairs with the EXACT same name that also share ≥1 contact token (phone/email/social/address) via `duplicate_tokens`. High-signal merge candidates: Registro A ↔ B with shared values, "Fusionar" → `/admin/duplicates`.
+
+No schema and no resolution tracking: both queries run on demand and a row drops off once the note is cleaned or the pair merged. `is_demo = 0` excludes walkthrough demo records. Client-side search (accent-insensitive) + tab counts.
+
 ## [2.43.1] - 2026-08-23
 
 ### Added — moderator access to the admin console (server-enforced)

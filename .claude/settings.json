@@ -1,6 +1,8 @@
 {
   "permissions": {
+    "defaultMode": "acceptEdits",
     "allow": [
+      "Bash(*)",
       "Bash(npx tsc --noEmit)",
       "Bash(npx tsc --noEmit *)",
       "Bash(npm run lint)",
@@ -15,7 +17,10 @@
       "Bash(npx eslint *)",
       "Bash(npx next *)",
       "Bash(npx playwright *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(git fetch)",
+      "Bash(git fetch *)",
+      "mcp__claude_ai_Google_Drive__read_file_content"
     ]
   }
 }

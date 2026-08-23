@@ -20,6 +20,7 @@ const SECTIONS: Array<{ titleKey: string; items: NavItem[] }> = [
         { href: '/admin/duplicates', labelKey: 'nav_duplicates', icon: '🔍', minRole: 'moderator' },
         { href: '/admin/adopters', labelKey: 'nav_adopters_list', icon: '👤', minRole: 'moderator' },
         { href: '/admin/imports', labelKey: 'nav_imports', icon: '📥', minRole: 'moderator' },
+        { href: '/admin/data-quality', labelKey: 'nav_data_quality', icon: '🧹', minRole: 'moderator' },
         { href: '/admin/deleted', labelKey: 'nav_deleted', icon: '🗑️', minRole: 'moderator' },
     ] },
     { titleKey: 'nav_sect_requests', items: [

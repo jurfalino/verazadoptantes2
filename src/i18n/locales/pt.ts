@@ -86,6 +86,7 @@ export const pt = {
         metric_latency_sub: 'por traço',
         nav_flagged: 'Conteúdo denunciado',
         nav_duplicates: 'Duplicados',
+        nav_data_quality: 'Qualidade de dados',
         nav_adopters_list: 'Lista de adotantes',
         nav_sql: 'Console SQL',
         nav_config: 'Configuração',
