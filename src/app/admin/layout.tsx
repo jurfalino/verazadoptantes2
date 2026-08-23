@@ -1,5 +1,5 @@
 import { auth } from "@/auth";
-import { isAdminAsync } from "@/config/admins";
+import { isAdminAsync, isModeratorOrAdminAsync } from "@/config/admins";
 import { redirect } from 'next/navigation';
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminEnvWarnings from "@/components/AdminEnvWarnings";
@@ -11,16 +11,16 @@ export default async function AdminLayout({
 }) {
     const session = await auth();
     const email = session?.user?.email;
-    const isAdmin = !!email && await isAdminAsync(email);
 
-    // Secure Admin Area. Admin-only for now — to enable moderator access, loosen
-    // this to isModeratorOrAdminAsync AND gate each admin-only page server-side
-    // (most are client components, so a middleware/route-group guard, not a
-    // per-page check). `isAdmin` is passed to the sidebar so its nav filters
-    // per role and shows the Mod/🔒 markers for admins.
-    if (!email || !isAdmin) {
+    // Entry gate: moderators AND admins may enter the console. The ADMIN-ONLY
+    // pages are further narrowed by the (admin-only) route-group layout's
+    // isAdminAsync guard — so a moderator can only reach the moderator pages.
+    if (!email || !(await isModeratorOrAdminAsync(email))) {
         redirect('/');
     }
+    // Drives the sidebar: admins see every section + per-item Mod/🔒 markers;
+    // moderators see only the moderator sections.
+    const isAdmin = await isAdminAsync(email);
 
     return (
         <div className="min-h-screen bg-stone-100 lg:flex">

@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.43.1] - 2026-08-23
+
+### Added — moderator access to the admin console (server-enforced)
+
+Phase 2 of the admin-roles work: moderators can now enter the console and reach only the moderator pages. The `admin/layout.tsx` entry gate loosens from `isAdminAsync` to **`isModeratorOrAdminAsync`** (moderators + admins in), and the 11 admin-only pages move under a new **`(admin-only)` route group** whose layout enforces **`isAdminAsync`** — a moderator hitting an admin-only URL (`/admin/users`, `/admin/config`, `/admin/query`, …) is redirected server-side to `/admin`. The route group keeps every URL unchanged and, being a server boundary, protects the admin-only pages that are client components (which can't run their own auth check). Uses the canonical `isAdminAsync` (bootstrap list + DB role), so bootstrap admins are never wrongly blocked. No `auth.ts`/middleware changes.
+
 ## [2.43.0] - 2026-08-23
 
 ### Added — admin sidebar grouped into sections + per-item role markers
