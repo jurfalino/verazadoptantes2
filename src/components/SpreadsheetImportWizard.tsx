@@ -985,7 +985,7 @@ export default function SpreadsheetImportWizard() {
                         </div>
                     ) : (
                         <div className="border border-stone-200 rounded-xl mb-4">
-                            <div className="px-4 py-2.5 flex items-center justify-between gap-3 text-sm border-b border-stone-100">
+                            <div className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-sm border-b border-stone-100">
                                 <span className="text-stone-600">📋 <span className="font-medium">Mapeo por columnas</span> — instantáneo. Revisá que cada columna apunte al campo correcto.</span>
                                 <button onClick={runAiInterpretation} className="flex-shrink-0 text-teal-700 hover:underline" title="Para planillas desordenadas (varios contactos en una celda, formatos raros)">🤖 ¿Columnas mezcladas? Interpretar con IA</button>
                             </div>
@@ -1053,7 +1053,7 @@ export default function SpreadsheetImportWizard() {
                         expandedFieldsRow={expandedFieldsRow} onToggleFields={toggleFieldsExpand}
                         onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} />
 
-                    <div className="flex justify-between mt-4">
+                    <div className="flex flex-wrap gap-2 justify-between mt-4">
                         <button onClick={reset} className="px-4 py-2 text-sm text-stone-500 hover:text-stone-700">← Empezar de nuevo</button>
                         <button disabled={importable.length === 0} onClick={() => { setStep('dedup'); runDetection(); }} className="px-5 py-2 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700 disabled:opacity-40">
                             Continuar a duplicados →
@@ -1158,7 +1158,7 @@ export default function SpreadsheetImportWizard() {
                                 </>
                             ) : null}
 
-                            <div className="flex items-center justify-between mt-4">
+                            <div className="flex flex-wrap gap-2 items-center justify-between mt-4">
                                 <button onClick={() => setStep('confirm')} className="px-4 py-2 text-sm text-stone-500 hover:text-stone-700">← Volver a revisar</button>
                                 <div className="flex items-center gap-3">
                                     <span className="text-xs text-stone-400">Los {newCount} se crearán como nuevos</span>
@@ -1196,7 +1196,7 @@ export default function SpreadsheetImportWizard() {
                     </div>
                     {fileName && <div className="text-xs text-stone-400 mb-3 truncate" title={fileName}><span aria-hidden>📄</span> {fileName}</div>}
                     <div className="h-3 rounded-full bg-stone-100 overflow-hidden mb-4"><div className="h-full bg-teal-500 transition-all" style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} /></div>
-                    <div className="flex gap-3 mb-4 text-sm">
+                    <div className="flex flex-wrap gap-2 mb-4 text-sm">
                         <span className="px-3 py-1 rounded-lg font-medium" style={{ backgroundColor: 'var(--status-emerald-bg)', color: 'var(--status-emerald-text)' }}>✅ {tally.created} creados</span>
                         {tally.updated > 0 && <span className="px-3 py-1 rounded-lg bg-sky-50 text-sky-700 font-medium">↻ {tally.updated} actualizados</span>}
                         <span className="px-3 py-1 rounded-lg bg-amber-50 text-amber-700 font-medium">⏭️ {tally.skipped} omitidos</span>
@@ -1216,7 +1216,7 @@ export default function SpreadsheetImportWizard() {
                                     <div key={r.index} className="px-3 py-1.5 text-sm border-t border-stone-100">
                                         <div className="flex gap-2">
                                             <span className="text-stone-400 w-10 flex-shrink-0">#{r.index + 1}</span>
-                                            <span className="font-medium text-stone-700 w-40 flex-shrink-0 truncate">{r.name}</span>
+                                            <span className="font-medium text-stone-700 flex-1 min-w-0 truncate">{r.name}</span>
                                             <span className={`min-w-0 ${r.status === 'failed' ? 'text-rose-600' : 'text-amber-600'}`}>{r.message || r.status}</span>
                                         </div>
                                         {sourceRowText(r.index) && <div className="text-[11px] text-stone-400 truncate pl-12" title={sourceRowText(r.index)}>{sourceRowText(r.index)}</div>}
@@ -1768,36 +1768,35 @@ function RecordGrid({
     })() : rows.map(r => [r]);
     return (
         <div className="border border-stone-200 rounded-xl overflow-hidden">
-            <div className="max-h-[420px] overflow-y-auto overflow-x-auto">
-                <table className="w-full text-sm">
+            {/* Bulk "a todos" bar — always visible (desktop + mobile), since the table
+                header that used to hold these is hidden on mobile. */}
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-stone-200 bg-stone-50 text-[11px] text-stone-500">
+                <span className="uppercase tracking-wider">Aplicar a todos:</span>
+                <select value="" onChange={e => { if (e.target.value) onVisibilityAll(e.target.value === 'public'); }}
+                    className="normal-case font-normal border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-600" title="Asignar visibilidad a todos los registros">
+                    <option value="">Visibilidad…</option>
+                    <option value="public">Todos públicos</option>
+                    <option value="protected">Todos protegidos</option>
+                </select>
+                <select value="" onChange={e => { if (e.target.value) onRatingAll(e.target.value === 'clear' ? '' : e.target.value); }}
+                    className="normal-case font-normal border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-600" title="Asignar un rating a todos los registros">
+                    <option value="">Rating…</option>
+                    {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★ a todos</option>)}
+                    <option value="clear">Limpiar rating</option>
+                </select>
+            </div>
+            <div className="import-grid-scroll max-h-[420px] overflow-y-auto overflow-x-auto">
+                <table className="import-grid w-full text-sm">
                     <thead className="bg-stone-50 text-stone-500 text-xs uppercase tracking-wider sticky top-0">
                         <tr>
                             <th className="px-2 py-2"></th>
                             <th className="px-2 py-2 text-right font-normal text-stone-400">#</th>
                             <th className="text-left px-3 py-2">Nombre</th>
                             <th className="text-left px-3 py-2">Contacto</th>
-                            <th className="text-left px-3 py-2">
-                                {/* Identity grid is 5 columns now (Animal/Especie/Tipo/Rating/Fecha/Motivo
-                                    moved into the per-record interaction line below) — both bulk
-                                    "a todos" affordances (rating, visibilidad) collapse into this
-                                    header since Visibilidad is the only remaining bulk-editable column. */}
-                                <div className="flex items-center gap-1">
-                                    <span>Visibilidad</span>
-                                    <select value="" onChange={e => { if (e.target.value) onVisibilityAll(e.target.value === 'public'); }}
-                                        className="normal-case font-normal text-[11px] border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-500" title="Asignar visibilidad a todos los registros">
-                                        <option value="">· a todos</option>
-                                        <option value="public">Todos públicos</option>
-                                        <option value="protected">Todos protegidos</option>
-                                    </select>
-                                    {/* Bulk "a todos" — controlled value="" so it snaps back after firing. */}
-                                    <select value="" onChange={e => { if (e.target.value) onRatingAll(e.target.value === 'clear' ? '' : e.target.value); }}
-                                        className="normal-case font-normal text-[11px] border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-500" title="Asignar un rating a todos los registros">
-                                        <option value="">★ a todos</option>
-                                        {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★ a todos</option>)}
-                                        <option value="clear">Limpiar rating</option>
-                                    </select>
-                                </div>
-                            </th>
+                            {/* Bulk "a todos" selects moved OUT of this header into the bar
+                                above the table — the header is display:none on mobile (grid
+                                linearization), so they'd be unreachable there. */}
+                            <th className="text-left px-3 py-2">Visibilidad</th>
                         </tr>
                     </thead>
                     <tbody>

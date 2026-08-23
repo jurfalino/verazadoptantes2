@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.42.3] - 2026-08-22
+
+### Fixed — import flow now renders on mobile breakpoints
+
+The wizard was desktop-only (a 5-column `<table>` + rows/toolbars with no `flex-wrap`), so on phones it scrolled in two axes and overflowed. Mobile pass (all `<640px`, desktop untouched):
+
+- **Review/Duplicados grid:** the table **linearizes into a stacked, card-ish list** on mobile (globals.css `@media` on `.import-grid`, using `:has(> td:nth-child(5))` to flow the identity row's cells inline-wrapping and full-width the activity/match/error sub-rows) — no more horizontal scroll; the inner 420px scroll is released so the list flows in the page.
+- **Bulk "a todos" selects** moved out of the `<thead>` (which is hidden on mobile) into an always-visible bar above the grid.
+- `flex-wrap` added where rows overflowed: the **Importar tally** (4 pills), the **Revisar/Duplicados footers**, and the **mapeo header** (text + "Interpretar con IA").
+- Previous-imports drill-down: the record name's fixed `w-40` → `flex-1 min-w-0` so it stops overflowing.
+- No desktop or logic changes.
+
 ## [2.42.2] - 2026-08-22
 
 ### Fixed — imported activity dates were one day early on the profile
