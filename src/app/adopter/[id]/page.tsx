@@ -1,5 +1,5 @@
 export const runtime = 'edge';
-import { redirect } from 'next/navigation';
+import { redirect, notFound } from 'next/navigation';
 import { getAdopter, getHistory, getAdoptions, getImages, getAllAdopterImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getIsModeratorOrAdmin, getAdoptionConfig, getDuplicateCandidates, hasPendingDeletionRequest } from '@/app/actions';
 import { resolveUserNames } from '@/app/actions/userNames';
 import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
@@ -111,6 +111,15 @@ export default async function AdopterPage({
             });
             return [];
         });
+    }
+
+    // A non-`create` id that resolves to no adopter is a 404 — NOT the empty
+    // creation form (only id === 'create' is the new-profile flow). getAdopter
+    // returns null both for a genuinely missing row and for a transient fetch
+    // failure; a 404 is the correct, safe response for both (far better than
+    // silently rendering a blank "create" page for a bogus URL).
+    if (!isNew && !adopter) {
+        notFound();
     }
 
     let formPrefill = null;

@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.44.8] - 2026-08-23
+
+### Fixed — `/adopter/{bogus-id}` showed the creation form instead of 404
+
+Only `id === 'create'` is the new-profile flow; any other id that resolves to no adopter now returns a proper **404** (`notFound()` → the styled `not-found.tsx`) instead of silently rendering the empty "create" form. Applies to genuinely missing rows and transient fetch failures alike.
+
 ## [2.44.7] - 2026-08-23
 
 ### Added — "Eliminación solicitada" banner on the profile
