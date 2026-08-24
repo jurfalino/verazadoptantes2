@@ -13,6 +13,8 @@ import LoginModal from '@/components/LoginModal';
 import { ToastProvider } from '@/components/ui/Toast';
 import ClientErrorReporter from '@/components/ClientErrorReporter';
 import InstallPrompt from '@/components/InstallPrompt';
+import SplashScreen from '@/components/SplashScreen';
+import AppleSplashLinks from '@/components/AppleSplashLinks';
 import Footer from '@/components/Footer';
 import { CountryConfirmBanner } from '@/components/CountryConfirmBanner';
 import ZarazIdentify from '@/components/ZarazIdentify';
@@ -127,11 +129,16 @@ export default async function RootLayout({
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        {/* iOS PWA launch images (brand-teal + white logo) */}
+        <AppleSplashLinks />
         {/* Structured Data — JSON-LD for SEO and AI citability */}
         <WebApplicationJsonLd />
         <OrganizationJsonLd />
       </head>
       <body className={inter.className}>
+        {/* Brand first-paint splash — covers the pre-hydration flash in a browser
+            tab, matches the iOS launch image, fades out on hydration. */}
+        <SplashScreen />
         <SessionProvider session={session ?? undefined} refetchOnWindowFocus={true} refetchInterval={5 * 60}>
           <ZarazIdentify />
           <ClarityScript />
