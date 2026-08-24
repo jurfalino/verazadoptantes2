@@ -382,6 +382,21 @@ async function runDuplicateMode(
         }
     }
 
+    // Aliases ("aka") + family/household members are first-class names — probe by
+    // them exactly like the primary name (an abuser may adopt under a relative's
+    // or an alias name). Mirrors extractTokens, which indexes the stored side the
+    // same way. Dormant until a caller supplies these fields.
+    for (const src of [...(input.aliases ?? []), input.familyMembers ?? '']) {
+        if (!src) continue;
+        const normalized = normalizeText(src);
+        if (normalized.length >= 3) {
+            rawTokens.push({ type: 'name_full', value: normalized });
+            for (const word of normalized.split(/\s+/)) {
+                if (word.length >= 3) rawTokens.push({ type: 'name_word', value: word });
+            }
+        }
+    }
+
     // Harvest IDs / phones / emails / socials across ALL free-text input fields so a
     // phone typed in the name field (or address) doesn't fragment into name_word
     // tokens. Mirrors the tokenizer's all-text concatenation. IDs are extracted
@@ -390,6 +405,8 @@ async function runDuplicateMode(
     const allInputText = [
         input.contactInfo || '',
         input.name || '',
+        (input.aliases ?? []).join('\n'),
+        input.familyMembers || '',
     ].join('\n');
     const ids = extractIds(allInputText);
     for (const id of ids) rawTokens.push({ type: 'id_number', value: id });
