@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.44.10] - 2026-08-23
+
+### Fixed — `/my-animals/new?edit=…` 500'd for large rescuers
+
+The edit page fetched the **entire** `/api/my-animals?view=all` list and `.find()`-ed the one animal. For a rescuer with 1,000+ records the API enriched every row with 2–3 D1 queries each (images / adopter name / applicants) — thousands of subrequests in a single request, past Cloudflare's Workers subrequest limit → 500 (error `9dcb6c77`). Now the edit page fetches **only the target animal** via a new `?id=` param (single-row path in the route). Also hardened the per-row enrichment: each sub-query fails **open** (degrades that row + logs a warn) so one transient D1 hiccup can no longer reject the whole route.
+
 ## [2.44.9] - 2026-08-23
 
 ### Added — branded launch splash (iOS + browser first-paint)
