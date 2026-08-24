@@ -1,6 +1,6 @@
 export const runtime = 'edge';
 import { redirect } from 'next/navigation';
-import { getAdopter, getHistory, getAdoptions, getImages, getAllAdopterImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getIsModeratorOrAdmin, getAdoptionConfig, getDuplicateCandidates } from '@/app/actions';
+import { getAdopter, getHistory, getAdoptions, getImages, getAllAdopterImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getIsModeratorOrAdmin, getAdoptionConfig, getDuplicateCandidates, hasPendingDeletionRequest } from '@/app/actions';
 import { resolveUserNames } from '@/app/actions/userNames';
 import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
 import { getAdopterPiiContext } from '@/app/actions/piiAccess';
@@ -74,6 +74,7 @@ export default async function AdopterPage({
     let avgRating = null;
     let dupCandidates: any[] = [];
     let piiContext: AdopterPiiContext | null = null;
+    let deletionRequested = false;
 
     if (!isNew) {
         // Per-fetch fallback: if any single query throws (e.g. transient D1 outage), the page
@@ -88,7 +89,7 @@ export default async function AdopterPage({
             });
             return def;
         };
-        [adopter, history, adoptions, images, allImages, flags, stats, avgRating, availableAnimals, dupCandidates, piiContext] = await Promise.all([
+        [adopter, history, adoptions, images, allImages, flags, stats, avgRating, availableAnimals, dupCandidates, piiContext, deletionRequested] = await Promise.all([
             getAdopter(id).catch(fallback('getAdopter', null)),
             getHistory(id).catch(fallback<any[]>('getHistory', [])),
             getAdoptions(id).catch(fallback<any[]>('getAdoptions', [])),
@@ -100,6 +101,7 @@ export default async function AdopterPage({
             getAvailableAnimals().catch(fallback<any[]>('getAvailableAnimals', [])),
             getDuplicateCandidates(id).catch(fallback<any[]>('getDuplicateCandidates', [])),
             getAdopterPiiContext(id).catch(fallback<AdopterPiiContext | null>('getAdopterPiiContext', null)),
+            hasPendingDeletionRequest(id).catch(fallback<boolean>('hasPendingDeletionRequest', false)),
         ]);
     } else {
         availableAnimals = await getAvailableAnimals().catch(e => {
@@ -164,6 +166,9 @@ export default async function AdopterPage({
         })(),
     ]);
     const canViewAudit = isModeratorOrAdmin || isOrgMateOfOwner;
+    // "Removal requested" banner: only the record owner + admins/moderators (the
+    // people who act on it) see it — not unrelated viewers.
+    const showDeletionRequested = deletionRequested && (isModeratorOrAdmin || (!!currentUser && adopter?.addedBy === currentUser));
 
     return (
         <AdopterProfileV2
@@ -188,6 +193,7 @@ export default async function AdopterPage({
             formPrefill={formPrefill}
             userNameMap={userNameMap}
             piiContext={piiContext}
+            showDeletionRequested={showDeletionRequested}
         />
     );
 }

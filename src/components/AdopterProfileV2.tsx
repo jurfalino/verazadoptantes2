@@ -68,9 +68,11 @@ interface AdopterProfileV2Props {
     formPrefill?: FormSubmissionPrefill | null;
     userNameMap?: Record<string, string>;
     piiContext?: AdopterPiiContext | null;
+    /** Show the "removal requested" banner (already gated to owner + admin/mod by the page). */
+    showDeletionRequested?: boolean;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false }: AdopterProfileV2Props) {
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const toast = useShowToast();
@@ -411,6 +413,20 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     is plumbed through here so the parent-owned verify popover
                     still opens when a non-privileged viewer taps a hidden
                     chip on a PII-gated profile. */}
+                {/* "Eliminación solicitada" banner (Option B) — shown above the
+                    header only to the owner + admins/moderators (gated by the
+                    page). No requester identity or date, per product decision. */}
+                {showDeletionRequested && !isNew && (
+                    <div className="mb-4 flex gap-3 items-start rounded-2xl border px-4 py-3" style={{ backgroundColor: 'var(--status-warning-bg)', borderColor: 'var(--status-warning-border)' }}>
+                        <svg className="w-5 h-5 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} style={{ color: 'var(--status-warning-text)' }}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+                        </svg>
+                        <p className="text-sm" style={{ color: 'var(--status-warning-text)' }}>
+                            <span className="font-semibold">{t('adopter.deletion_requested_title')}</span> {t('adopter.deletion_requested_body')}
+                        </p>
+                    </div>
+                )}
+
                 <AdopterForm
                     initialData={displayedAdopter}
                     currentUser={currentUser}

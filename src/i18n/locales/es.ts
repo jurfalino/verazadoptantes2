@@ -793,6 +793,8 @@ export const es = {
         delete_collab_forms: 'formularios',
         delete_request_btn: 'Solicitar eliminación',
         delete_request_success: 'Solicitud de eliminación enviada. El equipo la revisará.',
+        deletion_requested_title: 'Eliminación solicitada.',
+        deletion_requested_body: 'El equipo de administración revisará la solicitud.',
         delete_success: 'Registro eliminado correctamente.',
         delete_error_check: 'No se pudo verificar el estado de eliminación.',
         delete_error_failed: 'No se pudo eliminar el registro.',

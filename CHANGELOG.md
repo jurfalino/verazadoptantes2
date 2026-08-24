@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.44.7] - 2026-08-23
+
+### Added — "Eliminación solicitada" banner on the profile
+
+When a profile has a pending owner-initiated deletion request (`data_requests` type `deletion`, status `pending`), the profile now shows an amber alert banner above the header: **"Eliminación solicitada. El equipo de administración revisará la solicitud."** No requester identity or date — just the status. Shown only to the **record owner + admins/moderators** (the people who act on it), not unrelated viewers. Backed by a new read-only `hasPendingDeletionRequest` action (fails closed to false). i18n in es/en/pt.
+
 ## [2.44.6] - 2026-08-23
 
 ### Changed — Danger Zone relocated; PII notes editable in place
