@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.44.13] - 2026-08-23
+
+### Added — protected/public filter in Calidad de datos › Contacto en notas
+
+The PII-in-notes tab now has a **Todos / 🔒 Protegidos** filter (with counts), so admins can focus on the records where a contact detail in the note actually defeats masking — a protected (`is_public=0`) record. Each row also shows a **🔒 Protegido / 👁 Público** chip. Defaults to Todos.
+
 ## [2.44.12] - 2026-08-23
 
 ### Changed — aliases + family members matched as first-class names (search & dedup)

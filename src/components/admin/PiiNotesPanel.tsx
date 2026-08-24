@@ -19,12 +19,18 @@ export default function PiiNotesPanel({ rows }: { rows: PiiNoteRow[] }) {
     const [drafts, setDrafts] = useState<Record<string, string>>({});
     const [saving, setSaving] = useState<string | null>(null);
     const [q, setQ] = useState('');
+    const [vis, setVis] = useState<'all' | 'protected'>('all');
     const nq = norm(q.trim());
 
+    const protectedCount = useMemo(() => items.filter(r => r.isProtected).length, [items]);
+
     const visible = useMemo(() => {
-        if (!nq) return items;
-        return items.filter(r => norm(r.name).includes(nq) || norm(r.note).includes(nq));
-    }, [items, nq]);
+        return items.filter(r => {
+            if (vis === 'protected' && !r.isProtected) return false;
+            if (nq && !(norm(r.name).includes(nq) || norm(r.note).includes(nq))) return false;
+            return true;
+        });
+    }, [items, nq, vis]);
 
     const totals = useMemo(() => items.reduce((a, r) => {
         if (r.hasPhone) a.phone++;
@@ -69,14 +75,18 @@ export default function PiiNotesPanel({ rows }: { rows: PiiNoteRow[] }) {
                         className="w-full pl-9 pr-3 py-2 rounded-lg border border-stone-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500"
                     />
                 </div>
+                <div className="flex items-center gap-1.5">
+                    <VisPill label="Todos" count={items.length} active={vis === 'all'} onClick={() => setVis('all')} />
+                    <VisPill label="🔒 Protegidos" count={protectedCount} active={vis === 'protected'} onClick={() => setVis('protected')} />
+                </div>
                 <span className="text-xs text-stone-500">
-                    {`${items.length} notas · 📞 ${totals.phone} · 🔗 ${totals.social} · 📍 ${totals.address}`}
+                    {`📞 ${totals.phone} · 🔗 ${totals.social} · 📍 ${totals.address}`}
                 </span>
             </div>
 
             {visible.length === 0 ? (
                 <div className="text-center text-sm text-stone-500 bg-white border border-stone-200 rounded-xl py-10">
-                    {q.trim() ? `Sin resultados para “${q.trim()}”.` : 'Sin notas con contacto. 🎉'}
+                    {q.trim() ? `Sin resultados para “${q.trim()}”.` : vis === 'protected' ? 'Sin notas con contacto en registros protegidos. 🎉' : 'Sin notas con contacto. 🎉'}
                 </div>
             ) : (
                 <div className="space-y-2.5">
@@ -91,6 +101,9 @@ export default function PiiNotesPanel({ rows }: { rows: PiiNoteRow[] }) {
                                             {r.name || <span className="italic text-stone-400">Sin nombre</span>}
                                         </Link>
                                         <div className="flex gap-1.5 flex-wrap mt-1.5">
+                                            {r.isProtected
+                                                ? <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 border border-stone-200">🔒 Protegido</span>
+                                                : <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">👁 Público</span>}
                                             {r.hasPhone && <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200">📞 Teléfono</span>}
                                             {r.hasSocial && <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">🔗 Social</span>}
                                             {r.hasAddress && <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">📍 Dirección</span>}
@@ -132,5 +145,19 @@ export default function PiiNotesPanel({ rows }: { rows: PiiNoteRow[] }) {
                 </div>
             )}
         </>
+    );
+}
+
+
+function VisPill({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
+    return (
+        <button
+            onClick={onClick}
+            className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors whitespace-nowrap ${
+                active ? 'bg-teal-600 border-teal-600 text-white' : 'bg-white border-stone-300 text-stone-600 hover:border-teal-400'
+            }`}
+        >
+            {label} <span className={active ? 'text-white/80' : 'text-stone-400'}>({count})</span>
+        </button>
     );
 }
