@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.44.14] - 2026-08-24
+
+### Fixed — search card credited the surname instead of the family-member match
+
+Searching e.g. "Manuel Urfalino" surfaced the right record (Manuel is a family member) but the result card's "why matched" snippet showed only the surname, not the family match. Cause: a **partial** name match (1 of 2 query tokens) claimed the snippet at its *full* nominal weight, tying with — and beating (it runs first) — a later **full-phrase** family match of equal weight. Now a partial match's snippet priority uses its **actual scaled strength**, so a half-matched surname can't out-rank a full-phrase family/contact/address match. Scoring is unchanged; only which snippet the card shows.
+
 ## [2.44.13] - 2026-08-23
 
 ### Added — protected/public filter in Calidad de datos › Contacto en notas
