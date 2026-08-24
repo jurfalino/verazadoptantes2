@@ -36,8 +36,18 @@ export async function GET(request: NextRequest) {
         const { adoptions, adopterImages, adopters } = await import('@/db/schema');
         const { eq, sql, and, or, isNull, isNotNull } = await import('drizzle-orm');
 
+        // Edit mode fetches ONE animal by id. Without this, the edit page pulled
+        // the whole `view=all` list and enriched every row (2–3 D1 queries each) —
+        // for a large rescuer (1000+ records) that's thousands of subrequests in
+        // one request → past Cloudflare's Workers subrequest limit → 500.
+        const idParam = searchParams.get('id');
+
         let results;
-        if (view === 'adopted') {
+        if (idParam) {
+            results = await db.select().from(adoptions)
+                .where(and(eq(adoptions.addedBy, userEmail), eq(adoptions.id, idParam)))
+                .all();
+        } else if (view === 'adopted') {
             // Animals that have been adopted (recordType = 'adoption', linked to an adopter)
             results = await db.select().from(adoptions)
                 .where(and(
@@ -87,6 +97,9 @@ export async function GET(request: NextRequest) {
         // list of people who applied via the customized form.
         const enriched = await Promise.all(
             results.map(async (animal: typeof adoptions.$inferSelect) => {
+                // Each per-row sub-query fails OPEN (degrade this row, log a warn)
+                // so one transient D1 hiccup can't reject the whole Promise.all and
+                // 500 the entire route (CLAUDE.md D1-fallback convention).
                 const images = await db.select({
                     id: adopterImages.id,
                     url: adopterImages.url,
@@ -95,20 +108,31 @@ export async function GET(request: NextRequest) {
                     .from(adopterImages)
                     .where(eq(adopterImages.adoptionId, animal.id))
                     .limit(5)
-                    .all();
+                    .all()
+                    .catch((e: unknown) => {
+                        logger.warn('my-animals: images fallback', { animalId: animal.id, userEmail, view, error: e instanceof Error ? e.message : String(e) });
+                        return [] as { id: string; url: string; caption: string | null }[];
+                    });
 
                 let adopterName: string | null = null;
                 if (animal.adopterId) {
                     const adopter = await db.select({ name: adopters.name })
                         .from(adopters)
                         .where(eq(adopters.id, animal.adopterId))
-                        .get();
+                        .get()
+                        .catch((e: unknown) => {
+                            logger.warn('my-animals: adopter-name fallback', { animalId: animal.id, adopterId: animal.adopterId, userEmail, view, error: e instanceof Error ? e.message : String(e) });
+                            return undefined;
+                        });
                     adopterName = adopter?.name || null;
                 }
 
                 // Only fetch applicants for "available" animals — the card
                 // disclosure isn't useful once the animal has been adopted.
-                const applicants = animal.adopterId ? [] : await getApplicantsForAnimal(animal.id);
+                const applicants = animal.adopterId ? [] : await getApplicantsForAnimal(animal.id).catch((e: unknown) => {
+                    logger.warn('my-animals: applicants fallback', { animalId: animal.id, userEmail, view, error: e instanceof Error ? e.message : String(e) });
+                    return [];
+                });
 
                 return { ...animal, images, adopterName, applicants };
             })

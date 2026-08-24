@@ -56,20 +56,23 @@ export async function GET(request: Request) {
             createdAt: adopterFlags.createdAt,
         })
             .from(adopterFlags)
-            .where(eq(adopterFlags.reason, 'duplicate'));
+            .where(eq(adopterFlags.reason, 'duplicate'))
+            // Bound the per-row enrichment fan-out below (each row = 4 D1 queries);
+            // uncapped this could exceed the Workers subrequest limit and 500.
+            .limit(100);
 
         // Enrich user-flagged with adopter names + computed avgRating.
         const userFlaggedEnriched = await Promise.all(
             userFlagged.map(async (flag: typeof userFlagged[number]) => {
                 const [adopter1, adopter2, avg1, avg2] = await Promise.all([
                     db.select({ name: adopters.name, contactInfo: adopters.contactInfo })
-                        .from(adopters).where(eq(adopters.id, flag.adopterId)).get(),
+                        .from(adopters).where(eq(adopters.id, flag.adopterId)).get().catch(() => undefined),
                     flag.targetAdopterId
                         ? db.select({ name: adopters.name, contactInfo: adopters.contactInfo })
-                            .from(adopters).where(eq(adopters.id, flag.targetAdopterId)).get()
+                            .from(adopters).where(eq(adopters.id, flag.targetAdopterId)).get().catch(() => undefined)
                         : null,
-                    avgRatingFor(db, flag.adopterId),
-                    avgRatingFor(db, flag.targetAdopterId),
+                    avgRatingFor(db, flag.adopterId).catch(() => null),
+                    avgRatingFor(db, flag.targetAdopterId).catch(() => null),
                 ]);
                 return {
                     ...flag,
@@ -97,11 +100,11 @@ export async function GET(request: Request) {
             candidates.map(async (c: typeof candidates[number]) => {
                 const [adopter1, adopter2, avg1, avg2] = await Promise.all([
                     db.select({ name: adopters.name, contactInfo: adopters.contactInfo })
-                        .from(adopters).where(eq(adopters.id, c.adopter1Id)).get(),
+                        .from(adopters).where(eq(adopters.id, c.adopter1Id)).get().catch(() => undefined),
                     db.select({ name: adopters.name, contactInfo: adopters.contactInfo })
-                        .from(adopters).where(eq(adopters.id, c.adopter2Id)).get(),
-                    avgRatingFor(db, c.adopter1Id),
-                    avgRatingFor(db, c.adopter2Id),
+                        .from(adopters).where(eq(adopters.id, c.adopter2Id)).get().catch(() => undefined),
+                    avgRatingFor(db, c.adopter1Id).catch(() => null),
+                    avgRatingFor(db, c.adopter2Id).catch(() => null),
                 ]);
                 return {
                     ...c,

@@ -793,6 +793,8 @@ export const pt = {
         delete_collab_forms: 'formulários',
         delete_request_btn: 'Solicitar exclusão',
         delete_request_success: 'Solicitação de exclusão enviada. A equipe irá revisá-la.',
+        deletion_requested_title: 'Remoção solicitada.',
+        deletion_requested_body: 'A equipe de administração vai revisar a solicitação.',
         delete_success: 'Registro excluído com sucesso.',
         delete_error_check: 'Não foi possível verificar o status de exclusão.',
         delete_error_failed: 'Não foi possível excluir o registro.',

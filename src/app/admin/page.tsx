@@ -2,7 +2,6 @@ export const runtime = 'edge';
 import { getDb } from "@/app/actions";
 import { adopters, adoptions, adopterFlags } from "@/db/schema";
 import { count, isNull, and, ne } from "drizzle-orm";
-import AdminDangerZone from "@/components/AdminDangerZone";
 import AdminMetricsCollapsible from "@/components/admin/AdminMetricsCollapsible";
 import { FLAG_REASONS } from "@/domain/constants";
 
@@ -55,9 +54,6 @@ export default async function AdminOverviewPage() {
             {/* Métricas — the /admin/metrics dashboard, folded in here as a
                 collapsible that only queries Axiom when expanded (v2.44.1). */}
             <AdminMetricsCollapsible />
-
-            {/* Danger Zone */}
-            <AdminDangerZone />
         </div>
     );
 }

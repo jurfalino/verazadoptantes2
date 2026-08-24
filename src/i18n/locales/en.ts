@@ -786,6 +786,8 @@ export const en = {
         delete_collab_forms: 'forms',
         delete_request_btn: 'Request deletion',
         delete_request_success: 'Deletion request submitted. The team will review it.',
+        deletion_requested_title: 'Removal requested.',
+        deletion_requested_body: 'The admin team will review the request.',
         delete_success: 'Record deleted successfully.',
         delete_error_check: 'Could not verify deletion status.',
         delete_error_failed: 'Could not delete the record.',

@@ -81,7 +81,10 @@ export default function NewAnimalPage() {
         async function fetchAnimal() {
             setLoadingData(true);
             try {
-                const res = await fetch(`/api/my-animals?view=all`);
+                // Fetch ONLY the animal being edited — not the whole list. Pulling
+                // `view=all` and .find()-ing here 500'd for large rescuers (the API
+                // enriched every record → past the Workers subrequest limit).
+                const res = await fetch(`/api/my-animals?id=${encodeURIComponent(editId!)}`);
                 if (!res.ok) {
                     const body = await res.json().catch(() => ({})) as { error?: string; errorId?: string };
                     throw new Error(body.error ? `${body.error} (Error ID: ${body.errorId || 'n/a'})` : 'Failed to fetch animals');

@@ -32,7 +32,10 @@ function splitGroupedContacts(eff: MappedRow): { phones: string[]; emails: strin
     return g;
 }
 
-type RowStatus = 'created' | 'updated' | 'skipped' | 'failed';
+// 'grouped' = an intra-batch twin whose activity was folded into another row's
+// adopter (same person on multiple rows). It IS imported — just not as its own
+// profile — so it must NOT count as skipped/failed or show under "no importadas".
+type RowStatus = 'created' | 'updated' | 'skipped' | 'failed' | 'grouped';
 interface RowResult { index: number; name: string; status: RowStatus; message?: string; id?: string }
 /** One audited row from a previous run (drill-down on the upload screen). */
 interface PrevRunItem {
@@ -712,7 +715,7 @@ export default function SpreadsheetImportWizard() {
                 if (!key || !primary) { if (key) primaryByFp.set(key, row); grouped.push(row); continue; }
                 (primary.extraAdoptions ??= []).push(row.adoption);
                 withExtras.add(primary.index);
-                preResults.push({ index: row.index, name: nameByIndex[row.index] || `Fila ${row.index + 1}`, status: 'skipped', message: `Agrupado con #${primary.index + 1} — misma persona (su actividad se sumó a esa ficha)` });
+                preResults.push({ index: row.index, name: nameByIndex[row.index] || `Fila ${row.index + 1}`, status: 'grouped', message: `Agrupado con #${primary.index + 1} — misma persona (su actividad se sumó a esa ficha)` });
             }
             const foldedCount = toSend.length - grouped.length;
             setFoldSummary(foldedCount > 0 ? { folded: foldedCount, people: withExtras.size } : null);
@@ -760,7 +763,7 @@ export default function SpreadsheetImportWizard() {
         const a = document.createElement('a'); a.href = url; a.download = 'errores-importacion.csv'; a.click(); URL.revokeObjectURL(url);
     };
 
-    const tally = { created: results.filter(r => r.status === 'created').length, updated: results.filter(r => r.status === 'updated').length, skipped: results.filter(r => r.status === 'skipped').length, failed: results.filter(r => r.status === 'failed').length };
+    const tally = { created: results.filter(r => r.status === 'created').length, updated: results.filter(r => r.status === 'updated').length, grouped: results.filter(r => r.status === 'grouped').length, skipped: results.filter(r => r.status === 'skipped').length, failed: results.filter(r => r.status === 'failed').length };
     // Estimated time remaining, extrapolated from the observed rate since sending began.
     const etaMs = (importDone || cancelling) ? null : etaMsFrom(progress.done, progress.total, importStartRef.current, importStartDoneRef.current);
     const interpretEtaMs = etaMsFrom(interpretProgress.done, interpretProgress.total, interpretStartRef.current);
@@ -1199,12 +1202,13 @@ export default function SpreadsheetImportWizard() {
                     <div className="flex flex-wrap gap-2 mb-4 text-sm">
                         <span className="px-3 py-1 rounded-lg font-medium" style={{ backgroundColor: 'var(--status-emerald-bg)', color: 'var(--status-emerald-text)' }}>✅ {tally.created} creados</span>
                         {tally.updated > 0 && <span className="px-3 py-1 rounded-lg bg-sky-50 text-sky-700 font-medium">↻ {tally.updated} actualizados</span>}
-                        <span className="px-3 py-1 rounded-lg bg-amber-50 text-amber-700 font-medium">⏭️ {tally.skipped} omitidos</span>
-                        <span className="px-3 py-1 rounded-lg bg-rose-50 text-rose-700 font-medium">⚠️ {tally.failed} fallidos</span>
+                        {tally.grouped > 0 && <span className="px-3 py-1 rounded-lg font-medium" style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }}>🔗 {tally.grouped} agrupados</span>}
+                        {tally.skipped > 0 && <span className="px-3 py-1 rounded-lg bg-amber-50 text-amber-700 font-medium">⏭️ {tally.skipped} omitidos</span>}
+                        {tally.failed > 0 && <span className="px-3 py-1 rounded-lg bg-rose-50 text-rose-700 font-medium">⚠️ {tally.failed} fallidos</span>}
                     </div>
                     {foldSummary && (
                         <div className="mb-4 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)', border: '1px solid var(--status-sky-border)' }}>
-                            🔗 {foldSummary.folded} {foldSummary.folded === 1 ? 'fila idéntica se agrupó' : 'filas idénticas se agruparon'} en {foldSummary.people} {foldSummary.people === 1 ? 'persona ya presente en el lote' : 'personas ya presentes en el lote'}: en vez de crear duplicados, su actividad se sumó a la misma ficha (por eso figuran como “omitidas”).
+                            🔗 {foldSummary.folded} {foldSummary.folded === 1 ? 'fila idéntica se agrupó' : 'filas idénticas se agruparon'} en {foldSummary.people} {foldSummary.people === 1 ? 'persona ya presente en el lote' : 'personas ya presentes en el lote'}: en vez de crear duplicados, su actividad se sumó a la misma ficha. Sí se importaron — figuran como “agrupadas”, no como errores.
                         </div>
                     )}
                     {!importDone && <p className="text-xs text-stone-400 mb-4">Puede tardar unos minutos (cada fila se verifica y tokeniza). No cierres la pestaña.</p>}
@@ -1220,6 +1224,22 @@ export default function SpreadsheetImportWizard() {
                                             <span className={`min-w-0 ${r.status === 'failed' ? 'text-rose-600' : 'text-amber-600'}`}>{r.message || r.status}</span>
                                         </div>
                                         {sourceRowText(r.index) && <div className="text-[11px] text-stone-400 truncate pl-12" title={sourceRowText(r.index)}>{sourceRowText(r.index)}</div>}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    {importDone && tally.grouped > 0 && (
+                        <div className="border border-stone-200 rounded-xl overflow-hidden mb-4">
+                            <div className="px-3 py-2 text-xs uppercase tracking-wider" style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }}>Agrupados ({tally.grouped}) — misma persona, su actividad se sumó a otra ficha del lote</div>
+                            <div className="max-h-48 overflow-y-auto">
+                                {results.filter(r => r.status === 'grouped').map(r => (
+                                    <div key={r.index} className="px-3 py-1.5 text-sm border-t border-stone-100">
+                                        <div className="flex gap-2">
+                                            <span className="text-stone-400 w-10 flex-shrink-0">#{r.index + 1}</span>
+                                            <span className="font-medium text-stone-700 flex-1 min-w-0 truncate">{r.name}</span>
+                                            <span className="min-w-0 truncate" style={{ color: 'var(--status-sky-text)' }}>{r.message}</span>
+                                        </div>
                                     </div>
                                 ))}
                             </div>

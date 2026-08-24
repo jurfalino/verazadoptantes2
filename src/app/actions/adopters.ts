@@ -747,3 +747,26 @@ export async function requestAdopterDeletion(adopterId: string) {
     }
 }
 
+/**
+ * True if this adopter has a pending owner-initiated deletion request. Read-only
+ * existence check (no auth — the caller decides who sees the resulting banner).
+ * Fails closed to false so a query error never fabricates a "removal requested".
+ */
+export async function hasPendingDeletionRequest(adopterId: string): Promise<boolean> {
+    try {
+        const db = await getDb();
+        if (!db) return false;
+        const { dataRequests } = await import('@/db/schema');
+        const row = await db.select({ id: dataRequests.id }).from(dataRequests)
+            .where(and(
+                eq(dataRequests.adopterId, adopterId),
+                eq(dataRequests.requestType, 'deletion'),
+                eq(dataRequests.status, 'pending'),
+            )).get();
+        return !!row;
+    } catch (e) {
+        logger.warn('hasPendingDeletionRequest failed', { adopterId, error: e instanceof Error ? e.message : String(e) });
+        return false;
+    }
+}
+
