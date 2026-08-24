@@ -443,32 +443,61 @@ export async function getMyAdoptions(filter: 'all' | 'adoption' | 'adoption_requ
 
         const results = await query.all();
 
-        // Fetch images and adopter name for each adoption
-        const adoptionsWithDetails = [];
-        for (const adoption of results) {
-            // Fetch images
-            const images = await db.select({
+        // Enrich images + adopter names via CHUNKED IN() batches instead of 2
+        // queries per row. A large rescuer's list would otherwise fire hundreds
+        // of D1 subrequests in one request (past Cloudflare's Workers subrequest
+        // limit -> 500), the same class of bug fixed in /api/my-animals. Mirrors
+        // getMyAdopters' batched enrichment above.
+        const adoptionIds = results.map((r: typeof results[number]) => r.id);
+        const adopterIds = Array.from(new Set(
+            results.map((r: typeof results[number]) => r.adopterId).filter((x: string | null): x is string => !!x)
+        ));
+
+        const imagesByAdoption = new Map<string, { id: string; url: string; caption: string | null }[]>();
+        for (const idChunk of chunk(adoptionIds, D1_IN_CHUNK)) {
+            const inList = sql.join(idChunk.map((id) => sql`${id}`), sql`, `);
+            const imgs = await db.select({
+                adoptionId: adopterImages.adoptionId,
                 id: adopterImages.id,
                 url: adopterImages.url,
-                caption: adopterImages.caption
+                caption: adopterImages.caption,
             })
                 .from(adopterImages)
-                .where(eq(adopterImages.adoptionId, adoption.id))
-                .limit(DASHBOARD_RECENT_ACTIVITY_LIMIT)
-                .all();
-
-            // Fetch adopter name if linked
-            let adopterName: string | null = null;
-            if (adoption.adopterId) {
-                const adopter = await db.select({ name: adopters.name })
-                    .from(adopters)
-                    .where(eq(adopters.id, adoption.adopterId))
-                    .get();
-                adopterName = adopter?.name || null;
+                .where(sql`${adopterImages.adoptionId} IN (${inList})`)
+                .all()
+                .catch((e: unknown) => {
+                    logger.warn('getMyAdoptions: images chunk fallback', { userEmail, error: e instanceof Error ? e.message : String(e) });
+                    return [] as { adoptionId: string | null; id: string; url: string; caption: string | null }[];
+                });
+            for (const img of imgs) {
+                if (!img.adoptionId) continue;
+                const arr = imagesByAdoption.get(img.adoptionId) ?? [];
+                if (arr.length < DASHBOARD_RECENT_ACTIVITY_LIMIT) {
+                    arr.push({ id: img.id, url: img.url, caption: img.caption });
+                    imagesByAdoption.set(img.adoptionId, arr);
+                }
             }
-
-            adoptionsWithDetails.push({ ...adoption, images, adopterName });
         }
+
+        const nameByAdopter = new Map<string, string>();
+        for (const idChunk of chunk(adopterIds, D1_IN_CHUNK)) {
+            const inList = sql.join(idChunk.map((id) => sql`${id}`), sql`, `);
+            const names = await db.select({ id: adopters.id, name: adopters.name })
+                .from(adopters)
+                .where(sql`${adopters.id} IN (${inList})`)
+                .all()
+                .catch((e: unknown) => {
+                    logger.warn('getMyAdoptions: names chunk fallback', { userEmail, error: e instanceof Error ? e.message : String(e) });
+                    return [] as { id: string; name: string | null }[];
+                });
+            for (const n of names) { if (n.name) nameByAdopter.set(n.id, n.name); }
+        }
+
+        const adoptionsWithDetails = results.map((adoption: typeof results[number]) => ({
+            ...adoption,
+            images: imagesByAdoption.get(adoption.id) ?? [],
+            adopterName: adoption.adopterId ? (nameByAdopter.get(adoption.adopterId) ?? null) : null,
+        }));
 
         return adoptionsWithDetails;
     } catch (error) {

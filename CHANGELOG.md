@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.44.11] - 2026-08-23
+
+### Fixed — more per-row D1 fan-outs that could 500 heavy users
+
+Audited the codebase for the same class of bug as v2.44.10 (a user-sized list enriched with per-row D1 queries → past Cloudflare's Workers subrequest limit). Fixed the two HIGH-risk siblings:
+
+- **`getMyAdoptions` (`/my-adoptions`)** — was firing 2 D1 queries per row (images + adopter name) over the viewer's entire, uncapped org activity list. Now batched via chunked `IN (…)` (images grouped + capped per record, names looked up in bulk), mirroring the existing `getMyAdopters` pattern. Each chunk fails open with a logged warn.
+- **`GET /api/admin/duplicates`** — the user-flagged block enriched every flag with 4 nested queries, uncapped and with no per-item catch. Bounded the query (`limit 100`) and made each sub-query fail open; applied the same fail-open hardening to the (already-capped) system-candidates block.
+
+The rest of the audited fan-outs are bounded, paginated, already batched into `IN`-list queries, or protected by per-item `.catch` (documented, no change needed).
+
 ## [2.44.10] - 2026-08-23
 
 ### Fixed — `/my-animals/new?edit=…` 500'd for large rescuers
