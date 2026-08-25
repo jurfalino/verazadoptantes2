@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.46.1] - 2026-08-25
+
+### Fixed — social/phone metadata on edit + dedup flooding on platform words
+
+- **Editing a contact entry** now shows the social platform picker + phone WhatsApp/Telegram toggles, not just when adding one. `ContactEntriesSection`'s inline edit carries `platform`/`apps` through the draft, the `updateContactEntry` payload, and local mode.
+- **Duplicate-hint flooding:** typing a bare platform word or domain in a social field ("insta", "instagram", "facebook.com", "Facebook:") matched every record with that network. The dedup LIKE-fallback now runs on the social **handle** (`socialLikeNeedle`), skipping bare domains and platform stopwords — so only a specific handle produces matches.
+
 ## [2.46.0] - 2026-08-25
 
 ### Added — mark WhatsApp / Telegram on a phone number

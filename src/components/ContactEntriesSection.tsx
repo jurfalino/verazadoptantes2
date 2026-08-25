@@ -86,6 +86,8 @@ interface EditDraft {
     value: string;
     streetAndNumber: string;
     locality: string;
+    platform?: SocialPlatform | null;
+    apps?: MessagingApp[];
 }
 
 function socialHref(value: string): string | null {
@@ -157,7 +159,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
 
     // Edit state — the id of the entry currently being edited (one at a time).
     const [editingId, setEditingId] = useState<string | null>(null);
-    const [editDraft, setEditDraft] = useState<EditDraft>({ value: '', streetAndNumber: '', locality: '' });
+    const [editDraft, setEditDraft] = useState<EditDraft>({ value: '', streetAndNumber: '', locality: '', platform: null, apps: [] });
     const [editBusy, setEditBusy] = useState(false);
 
     // Optimistic delete state. While `pendingDeleteId` is set, that entry is
@@ -358,12 +360,14 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
             value: entry.value,
             streetAndNumber: entry.type === 'address' ? deriveStreet(entry) : (entry.streetAndNumber ?? ''),
             locality: entry.type === 'address' ? deriveLocality(entry) : (entry.locality ?? ''),
+            platform: entry.type === 'social' ? (entry.platform ?? detectSocialPlatform(entry.value)) : null,
+            apps: entry.type === 'phone' ? (entry.apps ?? []) : [],
         });
     }
 
     function cancelEdit() {
         setEditingId(null);
-        setEditDraft({ value: '', streetAndNumber: '', locality: '' });
+        setEditDraft({ value: '', streetAndNumber: '', locality: '', platform: null, apps: [] });
     }
 
     async function commitEdit(entry: ContactEntry) {
@@ -372,6 +376,11 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
             ? (editDraft.streetAndNumber.trim().length > 0 || editDraft.locality.trim().length > 0)
             : editDraft.value.trim().length > 0;
         if (!hasContent) return;
+        const editPlatform: SocialPlatform | null = entry.type === 'social'
+            ? (detectSocialPlatform(editDraft.value) ?? editDraft.platform ?? null) : null;
+        const editApps: MessagingApp[] = entry.type === 'phone' ? (editDraft.apps ?? []) : [];
+        // A social must have a network before it can be saved.
+        if (entry.type === 'social' && editDraft.value.trim().length > 0 && !editPlatform) return;
 
         // Local mode: build the updated entry in place, emit.
         if (isLocalMode) {
@@ -388,6 +397,8 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                     type: entry.type,
                     value: editDraft.value.trim(),
                     ...(entry.label ? { label: entry.label } : {}),
+                    ...(editPlatform ? { platform: editPlatform } : {}),
+                    ...(editApps.length ? { apps: editApps } : {}),
                 };
             onChange!(entries.map(e => (e.id === entry.id ? updated : e)));
             cancelEdit();
@@ -403,7 +414,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                     streetAndNumber: editDraft.streetAndNumber.trim() || undefined,
                     locality: editDraft.locality.trim() || undefined,
                 }
-                : { adopterId: adopterId!, entryId: entry.id, value: editDraft.value.trim() };
+                : { adopterId: adopterId!, entryId: entry.id, value: editDraft.value.trim(), ...(editPlatform ? { platform: editPlatform } : {}), ...(editApps.length ? { apps: editApps } : {}) };
             const res = await updateContactEntry(payload);
             if (res.ok) {
                 cancelEdit();
@@ -662,6 +673,21 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                     autoFocus
                                                 />
                                             )}
+                                            {entry.type === 'social' && editDraft.value.trim().length > 0 && (() => {
+                                                const det = detectSocialPlatform(editDraft.value);
+                                                return (
+                                                    <div>
+                                                        {!det && <div className="text-xs font-semibold text-stone-700 mb-1.5">{t('adopter.ce_social_which')} <span className="text-red-600">*</span></div>}
+                                                        <SocialPlatformPicker value={det ?? editDraft.platform ?? null} locked={!!det} onChange={(pl) => setEditDraft({ ...editDraft, platform: pl })} />
+                                                    </div>
+                                                );
+                                            })()}
+                                            {entry.type === 'phone' && editDraft.value.trim().length > 0 && (
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className="text-xs font-semibold text-stone-500">{t('adopter.ce_phone_apps')}</span>
+                                                    <PhoneAppsToggle value={editDraft.apps ?? []} onChange={(apps) => setEditDraft({ ...editDraft, apps })} />
+                                                </div>
+                                            )}
                                             <div className="flex items-center gap-2 justify-end">
                                                 <button
                                                     type="button"
@@ -674,7 +700,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                 <button
                                                     type="button"
                                                     onClick={() => commitEdit(entry)}
-                                                    disabled={editBusy}
+                                                    disabled={editBusy || (entry.type === 'social' && editDraft.value.trim().length > 0 && !(detectSocialPlatform(editDraft.value) ?? editDraft.platform))}
                                                     className="inline-flex items-center gap-1 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
                                                     data-testid="ce-edit-save"
                                                 >

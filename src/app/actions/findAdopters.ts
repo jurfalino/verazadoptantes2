@@ -361,6 +361,27 @@ function buildProfileSearchConditions(tokens: string[]) {
 
 // ── Duplicate mode engine ─────────────────────────────────────────────────────
 
+/**
+ * Needle for the social LIKE-fallback: reduce a social value to its HANDLE so
+ * a bare platform word/domain ("instagram", "facebook.com", "insta") can't
+ * substring-match every record that merely has that network. Returns null when
+ * there's no specific handle (a bare domain, or a platform stopword) so the
+ * fallback is skipped for it. A real handle ("juanp", "andrea.bobcik") is kept.
+ */
+const SOCIAL_STOPWORDS = new Set(['instagram', 'insta', 'facebook', 'face', 'fb', 'tiktok', 'tik', 'twitter', 'x', 'threads', 'thread', 'social', 'profile', 'com', 'www']);
+function socialLikeNeedle(value: string): string | null {
+    let v = (value || '').toLowerCase().trim().replace(/^@+/, '');
+    v = v.replace(/^https?:\/\//, '').replace(/^www\./, '');
+    const m = v.match(/^([a-z0-9.-]+\.[a-z]{2,})(?:\/(.*))?$/);
+    if (m) {
+        const path = (m[2] || '').replace(/[/?#].*$/, '').replace(/\/+$/, '');
+        if (!path) return null; // bare domain, no handle
+        v = (path.split('/').filter(Boolean).pop() || '').replace(/^@+/, '');
+    }
+    if (!v || v.length < 4 || SOCIAL_STOPWORDS.has(v)) return null;
+    return v;
+}
+
 async function runDuplicateMode(
     input: FindAdoptersInput,
     options: FindAdoptersOptions,
@@ -511,7 +532,8 @@ async function runDuplicateMode(
         if (email.includes('@')) contactLikeConditions.push(like(adopters.contactInfo, `%${escapeLike(email.toLowerCase())}%`));
     }
     for (const social of socials) {
-        if (social.length >= 4) contactLikeConditions.push(like(adopters.contactInfo, `%${escapeLike(social)}%`));
+        const needle = socialLikeNeedle(social);
+        if (needle) contactLikeConditions.push(like(adopters.contactInfo, `%${escapeLike(needle)}%`));
     }
 
     const runLikeFallback = async (
