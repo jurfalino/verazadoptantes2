@@ -964,7 +964,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                     onClick={onMaskedNameClick}
                                                     aria-label={t('adopter.pii_masked_name_aria') || displayName}
                                                     title={t('adopter.pii_masked_name_title') || ''}
-                                                    className="min-w-0 text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate text-left hover:underline underline-offset-4 decoration-teal-400 transition-colors cursor-pointer"
+                                                    className="min-w-0 text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight break-words text-left hover:underline underline-offset-4 decoration-teal-400 transition-colors cursor-pointer"
                                                 >
                                                     {displayName}
                                                 </button>
@@ -985,7 +985,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                 placeholder={t('adopter.placeholder_name_aliases')}
                                                 emptyLabel={t('adopter.nameless')}
                                                 displayRender={(v) => (
-                                                    <h1 className="text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate">{v}</h1>
+                                                    <h1 className="text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight break-words">{v}</h1>
                                                 )}
                                             />
                                         );

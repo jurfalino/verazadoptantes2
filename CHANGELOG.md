@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.46.2] - 2026-08-25
+
+### Fixed — profile name truncated on mobile
+
+The adopter name in the profile header used `truncate` (single-line + ellipsis), so a long name got cut on narrow screens. It now **wraps** (`break-words`); the inline visibility badge is `flex-none`, so it stays put beside the wrapped name.
+
 ## [2.46.1] - 2026-08-25
 
 ### Fixed — social/phone metadata on edit + dedup flooding on platform words
