@@ -10,9 +10,11 @@ import {
     isRawAddress,
     deriveStreet,
     deriveLocality,
+    detectSocialPlatform,
     type ContactEntry,
     type ContactEntryType,
 } from '@/lib/contactEntries';
+import { SocialPlatformPicker } from '@/components/SocialPlatformPicker';
 
 interface ContactEntriesInputProps {
     entries: ContactEntry[];
@@ -212,6 +214,36 @@ export default function ContactEntriesInput({ entries, onChange }: ContactEntrie
                                                     : t('adopter.ce_address_paste_toggle')}
                                             </button>
                                         )}
+                                    </div>
+                                ) : entry.type === 'social' ? (
+                                    <div className="flex-1 min-w-0 space-y-1.5">
+                                        <input
+                                            type="text"
+                                            value={entry.value}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                const det = detectSocialPlatform(val);
+                                                updateEntry(i, det ? { value: val, platform: det } : { value: val });
+                                            }}
+                                            placeholder={t('adopter.ce_input_ph_social')}
+                                            disabled={isMasked}
+                                            data-testid="contact-entry-value"
+                                            className="w-full rounded-lg border border-teal-200 bg-white text-teal-900 text-sm px-3 py-1.5 outline-none focus:border-teal-500 disabled:bg-stone-100 disabled:text-stone-500 disabled:cursor-not-allowed"
+                                        />
+                                        {!isMasked && entry.value.trim().length > 0 && (() => {
+                                            const det = detectSocialPlatform(entry.value);
+                                            return (
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    {!det && <span className="text-[11px] font-semibold text-red-600">{t('adopter.ce_social_which')} *</span>}
+                                                    <SocialPlatformPicker
+                                                        value={det ?? entry.platform ?? null}
+                                                        locked={!!det}
+                                                        onChange={(pl) => updateEntry(i, { platform: pl })}
+                                                        size={18}
+                                                    />
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                 ) : (
                                     <input

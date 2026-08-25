@@ -16,6 +16,49 @@ import { extractEmails, extractSocials, extractIds, stripIdsFromText, isPlacehol
 
 export type ContactEntryType = 'phone' | 'email' | 'social' | 'id' | 'address' | 'alias' | 'other';
 
+export type SocialPlatform = 'facebook' | 'instagram' | 'tiktok' | 'x' | 'threads' | 'other';
+
+/** Ordered list for the picker; `host` builds a link from a bare handle. */
+export const SOCIAL_PLATFORMS: ReadonlyArray<{ key: SocialPlatform; label: string; host: string | null }> = [
+    { key: 'facebook', label: 'Facebook', host: 'facebook.com' },
+    { key: 'instagram', label: 'Instagram', host: 'instagram.com' },
+    { key: 'tiktok', label: 'TikTok', host: 'tiktok.com' },
+    { key: 'x', label: 'X', host: 'x.com' },
+    { key: 'threads', label: 'Threads', host: 'threads.net' },
+    { key: 'other', label: 'Otra', host: null },
+];
+const SOCIAL_PLATFORM_KEYS: SocialPlatform[] = SOCIAL_PLATFORMS.map(p => p.key);
+
+/** Deduce the network from a social value. URL/host -> platform; null for a bare handle or an unrecognized URL. */
+export function detectSocialPlatform(value: string | null | undefined): SocialPlatform | null {
+    const v = (value || '').trim().toLowerCase();
+    if (!v) return null;
+    if (/(?:^|\/\/|\.)(?:facebook\.com|fb\.com|fb\.me)\b/.test(v)) return 'facebook';
+    if (/(?:instagram\.com|instagr\.am)\b/.test(v)) return 'instagram';
+    if (/tiktok\.com\b/.test(v)) return 'tiktok';
+    if (/(?:^|\.)(?:x\.com|twitter\.com|t\.co)\b/.test(v)) return 'x';
+    if (/threads\.(?:net|com)\b/.test(v)) return 'threads';
+    return null;
+}
+
+/** Resolve a social value to a URL. Full URLs pass through; a bare handle -> https://<host>/<handle>. */
+export function socialUrl(value: string, platform?: SocialPlatform | null): string | null {
+    const v = (value || '').trim();
+    if (!v) return null;
+    if (/^https?:\/\//i.test(v)) return v;
+    if (/^[\w-]+(\.[\w-]+)+\//.test(v)) return `https://${v}`;
+    const host = SOCIAL_PLATFORMS.find(p => p.key === platform)?.host;
+    return host ? `https://${host}/${v.replace(/^@+/, '')}` : null;
+}
+
+/** Read + validate a stored social entry's platform; deduce from the value when absent. */
+function readSocialPlatform(e: { type: ContactEntryType; value: string; platform?: unknown }): { platform?: SocialPlatform } {
+    if (e.type !== 'social') return {};
+    const stored = SOCIAL_PLATFORM_KEYS.includes(e.platform as SocialPlatform) ? (e.platform as SocialPlatform) : null;
+    const p = stored ?? detectSocialPlatform(e.value);
+    return p ? { platform: p } : {};
+}
+
 export interface ContactEntry {
     type: ContactEntryType;
     /**
@@ -56,6 +99,8 @@ export interface ContactEntry {
     value: string;
     /** Optional display label, e.g. "DNI" / "Documento" for an id entry. */
     label?: string;
+    /** For type='social' only: which network this is. Deduced from a URL or picked by the user. */
+    platform?: SocialPlatform;
     /**
      * Display-only flag set by the PII-masking layer (src/lib/piiAccess.ts)
      * when this entry's value is hidden from the viewer. Never persisted —
@@ -224,7 +269,9 @@ function dedupe(entries: ContactEntry[]): ContactEntry[] {
     const seen = new Set<string>();
     const out: ContactEntry[] = [];
     for (const e of entries) {
-        const key = `${e.type}|${normalizeEntryValue(e.type, e.value)}`;
+        const key = e.type === 'social'
+            ? `social|${normalizeEntryValue('social', e.value)}|${e.platform ?? ''}`
+            : `${e.type}|${normalizeEntryValue(e.type, e.value)}`;
         if (seen.has(key)) continue;
         seen.add(key);
         out.push(e);
@@ -359,7 +406,7 @@ interface ContactParts {
     ids?: Array<string | { value: string; label?: string }>;
     phones?: Array<string | null | undefined>;
     emails?: Array<string | null | undefined>;
-    socials?: Array<string | null | undefined>;
+    socials?: Array<string | { value: string; platform?: SocialPlatform } | null | undefined>;
     addresses?: Array<string | null | undefined>;
 }
 
@@ -378,7 +425,12 @@ export function buildContactEntries(parts: ContactParts): ContactEntry[] {
     }
     for (const p of parts.phones ?? []) if (p?.trim()) entries.push({ type: 'phone', value: p.trim() });
     for (const e of parts.emails ?? []) if (e?.trim()) entries.push({ type: 'email', value: e.trim() });
-    for (const s of parts.socials ?? []) if (s?.trim()) entries.push({ type: 'social', value: s.trim() });
+    for (const s of parts.socials ?? []) {
+        const val = typeof s === 'string' ? s : s?.value;
+        if (!val?.trim()) continue;
+        const platform = (typeof s === 'object' && s?.platform) ? s.platform : (detectSocialPlatform(val) ?? undefined);
+        entries.push({ type: 'social', value: val.trim(), ...(platform ? { platform } : {}) });
+    }
     for (const a of parts.addresses ?? []) if (a?.trim()) entries.push({ type: 'address', value: a.trim() });
     return dedupe(entries);
 }
@@ -423,6 +475,7 @@ export function deserializeContactEntries(json: string | null | undefined): Cont
                 type: e.type,
                 value: e.value.slice(0, MAX_VALUE_LEN[e.type]),
                 ...(e.label ? { label: String(e.label).slice(0, MAX_LABEL_LEN) } : {}),
+                ...readSocialPlatform(e),
                 ...(e.masked === true ? { masked: true } : {}),
                 // Per-entry contributor attribution (v2.16.0-9+). Length-capped
                 // defensively; undefined if absent (most pre-existing rows).

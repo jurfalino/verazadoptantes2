@@ -10,6 +10,7 @@ import {
     deserializeContactEntries,
     contactEntriesToBlob,
     joinedAddressValue,
+    detectSocialPlatform,
     type ContactEntry,
 } from '@/lib/contactEntries';
 import { tokenizeAdopter } from './duplicates';
@@ -98,6 +99,11 @@ export async function updateContactEntry(
                 value,
                 ...(original.label ? { label: original.label } : {}),
                 ...(original.addedBy ? { addedBy: original.addedBy } : {}),
+                // Re-deduce the social network from the new value (URL); keep the
+                // prior platform for a bare handle.
+                ...(original.type === 'social' && (detectSocialPlatform(value) ?? original.platform)
+                    ? { platform: detectSocialPlatform(value) ?? original.platform }
+                    : {}),
             };
 
         const newValueHash = hashEntryValue(updated.type, updated.value);

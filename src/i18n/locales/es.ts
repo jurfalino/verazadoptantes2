@@ -608,6 +608,7 @@ export const es = {
         ce_input_ph_social: '@usuario o URL',
         ce_input_ph_id: 'DNI / Documento',
         ce_input_ph_address: 'Calle, ciudad, provincia',
+        ce_social_which: '¿Qué red social es?',
         ce_input_ph_other: 'Notas…',
         ce_input_ph_locality: 'Ciudad / Localidad',
         ce_alias_ph: 'Otro nombre por el que se conoce a esta persona',

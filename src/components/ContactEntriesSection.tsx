@@ -8,7 +8,9 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { deriveStreet, deriveLocality, type ContactEntry, type ContactEntryType } from '@/lib/contactEntries';
+import { deriveStreet, deriveLocality, detectSocialPlatform, socialUrl, type ContactEntry, type ContactEntryType, type SocialPlatform } from '@/lib/contactEntries';
+import { SocialPlatformPicker } from '@/components/SocialPlatformPicker';
+import { SocialLogo } from '@/components/SocialLogo';
 import { addContactEntry } from '@/app/actions/addContactEntry';
 import { updateContactEntry } from '@/app/actions/updateContactEntry';
 import { removeContactEntry } from '@/app/actions/removeContactEntry';
@@ -137,6 +139,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
     const [composerValue, setComposerValue] = useState('');
     const [composerStreet, setComposerStreet] = useState('');
     const [composerLocality, setComposerLocality] = useState('');
+    const [composerPlatform, setComposerPlatform] = useState<SocialPlatform | null>(null);
     const [composerBusy, setComposerBusy] = useState(false);
     // Debounced value handed to <DuplicateHint>. 500ms idle keeps server load
     // low and avoids flashing while typing. Local mode skips this entirely:
@@ -202,6 +205,11 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         setComposerStage('pick-type');
     }
 
+    // Social platform: deduced from a URL (locked) or picked by the user.
+    const socialDetected = composerType === 'social' ? detectSocialPlatform(composerValue) : null;
+    const effectiveSocialPlatform: SocialPlatform | null = socialDetected ?? composerPlatform;
+    const socialNeedsPlatform = composerType === 'social' && composerValue.trim().length > 0 && !effectiveSocialPlatform;
+
     function buildNewEntry(): ContactEntry {
         if (composerType === 'address') {
             return {
@@ -211,6 +219,9 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                 streetAndNumber: composerStreet.trim() || undefined,
                 locality: composerLocality.trim() || undefined,
             };
+        }
+        if (composerType === 'social') {
+            return { id: crypto.randomUUID(), type: 'social', value: composerValue.trim(), ...(effectiveSocialPlatform ? { platform: effectiveSocialPlatform } : {}) };
         }
         return { id: crypto.randomUUID(), type: composerType, value: composerValue.trim() };
     }
@@ -228,6 +239,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         setComposerValue('');
         setComposerStreet('');
         setComposerLocality('');
+        setComposerPlatform(null);
     }
 
     /**
@@ -241,7 +253,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
      * without doubling up.
      */
     async function commitComposer({ silent = false } = {}): Promise<{ ok: boolean }> {
-        if (!composerHasContent() || composerBusy) return { ok: false };
+        if (!composerHasContent() || composerBusy || socialNeedsPlatform) return { ok: false };
 
         // Local mode (new-adopter creation): mutate in place, emit via onChange.
         // No server action; the parent batches everything through saveAdopter
@@ -264,7 +276,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                     streetAndNumber: composerStreet.trim() || undefined,
                     locality: composerLocality.trim() || undefined,
                 }
-                : { adopterId: adopterId!, type: composerType, value: composerValue.trim() };
+                : { adopterId: adopterId!, type: composerType, value: composerValue.trim(), ...(composerType === 'social' && effectiveSocialPlatform ? { platform: effectiveSocialPlatform } : {}) };
             const res = await addContactEntry(payload);
             if (res.ok) {
                 clearComposerInputs();
@@ -491,14 +503,15 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
             );
         }
         if (entry.type === 'social') {
-            const href = socialHref(entry.value);
-            return href ? (
-                <a href={href} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
-                    {entry.value}
-                </a>
+            const href = socialUrl(entry.value, entry.platform) ?? socialHref(entry.value);
+            const inner = href ? (
+                <a href={href} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>{entry.value}</a>
             ) : (
                 <span className="text-stone-800">{entry.value}</span>
             );
+            return entry.platform ? (
+                <span className="inline-flex items-center gap-1.5"><SocialLogo platform={entry.platform} size={15} />{inner}</span>
+            ) : inner;
         }
         if (entry.type === 'other') {
             return <span className="text-stone-700">{renderTextWithLinks(entry.value)}</span>;
@@ -819,6 +832,20 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 autoFocus
                             />
                         )}
+                        {composerType === 'social' && composerValue.trim().length > 0 && (
+                            <div className="mt-2">
+                                {!socialDetected && (
+                                    <div className="text-xs font-semibold text-stone-700 mb-1.5">
+                                        {t('adopter.ce_social_which')} <span className="text-red-600">*</span>
+                                    </div>
+                                )}
+                                <SocialPlatformPicker
+                                    value={effectiveSocialPlatform}
+                                    locked={!!socialDetected}
+                                    onChange={setComposerPlatform}
+                                />
+                            </div>
+                        )}
                         {/* Cross-record duplicate warning. Renders nothing for
                             local mode, non-strong types, empty values, or
                             when no high-confidence match exists on another
@@ -848,7 +875,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                             <button
                                 type="button"
                                 onClick={handleAdd}
-                                disabled={composerBusy}
+                                disabled={composerBusy || socialNeedsPlatform}
                                 className="inline-flex items-center gap-1 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
                                 data-testid="ce-composer-submit"
                             >

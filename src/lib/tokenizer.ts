@@ -188,6 +188,10 @@ const SOCIAL_PATTERNS = [
     /(?<![a-zA-Z0-9])@[a-zA-Z0-9._]{3,30}/g,
     // Instagram URLs
     /(?:https?:\/\/)?(?:www\.)?instagram\.com\/[a-zA-Z0-9._]+/gi,
+    // TikTok / X (Twitter) / Threads profile URLs
+    /(?:https?:\/\/)?(?:www\.)?tiktok\.com\/@?[a-zA-Z0-9._]+/gi,
+    /(?:https?:\/\/)?(?:www\.)?(?:x\.com|twitter\.com)\/[a-zA-Z0-9._]+/gi,
+    /(?:https?:\/\/)?(?:www\.)?threads\.(?:net|com)\/@?[a-zA-Z0-9._]+/gi,
 ];
 
 /** Extract social media handles/URLs from free text */

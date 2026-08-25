@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.45.0] - 2026-08-24
+
+### Added — capture which social network a contact is
+
+Social contact entries now record the network (`facebook | instagram | tiktok | x | threads | other`). If the value is a **URL** the platform is deduced and locked; if it's plain text, the user must pick it from a **logo picker** (real inline-SVG brand logos, no labels). The chip shows the network logo and builds a proper link from a bare handle.
+
+- **Model:** `platform?` on `ContactEntry`; `detectSocialPlatform()` + `socialUrl()`; `deserializeContactEntries` preserves it and **deduces-on-read** for old rows (no migration); `buildContactEntries` + the dedupe key + the `addContactEntry`/`updateContactEntry` Zod schemas carry it.
+- **UI (both interactive surfaces):** the manual ficha composer (`ContactEntriesSection`) and the import wizard row editor (`ContactEntriesInput`) — new `SocialPlatformPicker` + `SocialLogo` components.
+- **Ingestion:** `extractSocials` now also recognizes **TikTok / X / Threads** URLs (only FB/IG before); import, contract, and form paths auto-deduce server-side.
+
+Known limitation (unchanged): the ImportWizard social-URL "merge into existing" (`/api/adopters/[id]/add-record`) and `mergeAdopters` are blob-only and don't carry structured platform.
+
 ## [2.44.14] - 2026-08-24
 
 ### Fixed — search card credited the surname instead of the family-member match

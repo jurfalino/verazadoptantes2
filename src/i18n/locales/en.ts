@@ -607,6 +607,7 @@ export const en = {
         ce_input_ph_social: '@handle or URL',
         ce_input_ph_id: 'DNI / Document number',
         ce_input_ph_address: 'Street, city, province',
+        ce_social_which: 'Which network is it?',
         ce_input_ph_other: 'Notes…',
         ce_input_ph_locality: 'City / Locality',
         ce_alias_ph: 'Another name this person goes by',
