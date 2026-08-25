@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { deriveStreet, deriveLocality, detectSocialPlatform, socialUrl, phoneAppUrl, type ContactEntry, type ContactEntryType, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
+import { deriveStreet, deriveLocality, detectSocialPlatform, socialUrl, phoneAppUrl, SOCIAL_PLATFORMS, type ContactEntry, type ContactEntryType, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
 import { SocialPlatformPicker } from '@/components/SocialPlatformPicker';
 import { SocialLogo } from '@/components/SocialLogo';
 import { PhoneAppsToggle } from '@/components/PhoneAppsToggle';
@@ -32,6 +32,22 @@ const TYPE_ICON: Record<ContactEntryType, LucideIcon> = {
 
 /** Read order — actionable contact methods first, aliases near top (name-like), notes last. */
 const DISPLAY_ORDER: ContactEntryType[] = ['alias', 'phone', 'email', 'social', 'address', 'id', 'other'];
+
+/** Per-network brand label (Facebook / Instagram / ...), keyed by platform. */
+const SOCIAL_LABEL = Object.fromEntries(SOCIAL_PLATFORMS.map(p => [p.key, p.label])) as Record<SocialPlatform, string>;
+
+/**
+ * A social entry that should render with its OWN network icon + name (Facebook,
+ * Instagram, TikTok, X, Threads) instead of the generic "@ Red social" row.
+ * Returns null only for a non-social entry or the 'other'/undetected network.
+ * Masked rows still get the branded icon + name — only the handle value is
+ * hidden; which network it is isn't treated as PII.
+ */
+function brandedSocialPlatform(entry: ContactEntry): Exclude<SocialPlatform, 'other'> | null {
+    if (entry.type !== 'social') return null;
+    const p = entry.platform;
+    return p && p !== 'other' ? (p as Exclude<SocialPlatform, 'other'>) : null;
+}
 
 /** Types offered in the add composer chip row. `other` is not contributable
  *  through this surface (notes belong on the activity record, not contact). */
@@ -538,8 +554,11 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
             ) : (
                 <span className="text-stone-800">{entry.value}</span>
             );
-            return entry.platform ? (
-                <span className="inline-flex items-center gap-1.5"><SocialLogo platform={entry.platform} size={15} />{inner}</span>
+            // Branded networks now carry their icon + name in the row's leading
+            // icon + label, so the value shows only the handle. 'other' keeps its
+            // inline generic-link mark (its row stays "@ Red social").
+            return entry.platform === 'other' ? (
+                <span className="inline-flex items-center gap-1.5"><SocialLogo platform="other" size={15} />{inner}</span>
             ) : inner;
         }
         if (entry.type === 'other') {
@@ -627,6 +646,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
             {sorted.length > 0 && (
                 <ul className="space-y-1.5">
                     {sorted.map(entry => {
+                        const branded = brandedSocialPlatform(entry);
                         const Icon = TYPE_ICON[entry.type];
                         const isEditing = editingId === entry.id;
                         return (
@@ -636,8 +656,10 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 data-testid="ce-chip"
                                 data-entry-type={entry.type}
                             >
-                                <Icon className="w-4 h-4 mt-0.5 shrink-0 text-teal-600" aria-hidden="true" />
-                                <span className="w-24 shrink-0 text-stone-500">{labelFor(entry)}</span>
+                                {branded
+                                    ? <SocialLogo platform={branded} size={16} className="mt-0.5 shrink-0" />
+                                    : <Icon className="w-4 h-4 mt-0.5 shrink-0 text-teal-600" aria-hidden="true" />}
+                                <span className="w-24 shrink-0 text-stone-500">{branded ? SOCIAL_LABEL[branded] : labelFor(entry)}</span>
                                 <div className="flex-1 min-w-0">
                                     {isEditing ? (
                                         <div className="space-y-2">

@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.46.4] - 2026-08-25
+
+### Changed — social rows show the real network (icon + name) in the profile
+
+An adopter's social contact rows now render with the network's own logo and name (Facebook, Instagram, TikTok, X, Threads) instead of a generic `@ Red social` label followed by a second brand icon. The `other`/undetected network keeps the generic `@ Red social` + link mark. Masked rows still get the branded icon + name — only the handle value is hidden. Display-only; one file (`ContactEntriesSection`).
+
 ## [2.46.3] - 2026-08-25
 
 ### Fixed — profile name cramped on mobile; badge clutter while editing the name
