@@ -208,12 +208,13 @@ export async function POST(_request: Request) {
                 const adopterAdoptions = await db.select({ onBehalfOf: adoptions.onBehalfOf })
                     .from(adoptions).where(eq(adoptions.adopterId, adopter.id));
 
-                // Aliases tokenize as name_words (see extractTokens docs).
-                const aliases = deserializeContactEntries(adopter.contactEntries)
-                    .filter(e => e.type === 'alias')
-                    .map(e => e.value);
+                // Aliases tokenize as name_words (see extractTokens docs); structured
+                // socials carry `platform` so the tokenizer emits `social`=`platform|handle`.
+                const entries = deserializeContactEntries(adopter.contactEntries);
+                const aliases = entries.filter(e => e.type === 'alias').map(e => e.value);
+                const socials = entries.filter(e => e.type === 'social').map(e => ({ value: e.value, platform: e.platform ?? null }));
 
-                const tokens = extractTokens(adopter, adopterAdoptions, aliases);
+                const tokens = extractTokens(adopter, adopterAdoptions, aliases, socials);
 
                 // Replace tokens
                 await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, adopter.id));
@@ -230,6 +231,13 @@ export async function POST(_request: Request) {
                 tokenized++;
             }
 
+            // A social handle shared by more than this many adopters is almost
+            // certainly a shared/rescuer contact mis-entered across records (not a
+            // real duplicate). Skip pair generation for it — otherwise one handle on
+            // N records spawns C(N,2) false candidates. See dedup spec §4 (#3-revised).
+            const SHARED_SOCIAL_HANDLE_CAP = 8;
+            let skippedSharedHandles = 0;
+
             // Step 3: Find shared tokens (GROUP BY)
             const sharedTokens = await db.select({
                 tokenType: duplicateTokens.tokenType,
@@ -245,6 +253,11 @@ export async function POST(_request: Request) {
             const pairSignals = new Map<string, { types: Set<string>; values: Record<string, string[]>; }>();
 
             for (const row of sharedTokens) {
+                // Rescuer/shared social handle on many records → skip (spec §4).
+                if ((row.tokenType === 'social' || row.tokenType === 'social_handle') && row.count > SHARED_SOCIAL_HANDLE_CAP) {
+                    skippedSharedHandles++;
+                    continue;
+                }
                 const ids = row.adopterIds.split(',').sort();
 
                 // Generate all pairs from the group
@@ -258,11 +271,15 @@ export async function POST(_request: Request) {
 
                         const signal = pairSignals.get(pairKey)!;
                         // Deduplicate phone and phone_suffix into single "phone" category
-                        const category = row.tokenType === 'phone_suffix' ? 'phone' : row.tokenType;
+                        const category = row.tokenType === 'phone_suffix' ? 'phone' : row.tokenType === 'social_handle' ? 'social' : row.tokenType;
                         signal.types.add(category);
 
                         if (!signal.values[category]) signal.values[category] = [];
-                        signal.values[category].push(row.tokenValue);
+                        // Store the human-readable handle, not the internal
+                        // `platform|handle` token, so the merge UI never shows "facebook|juan".
+                        signal.values[category].push(
+                            row.tokenType === 'social' ? row.tokenValue.slice(row.tokenValue.indexOf('|') + 1) : row.tokenValue,
+                        );
                     }
                 }
             }
@@ -354,6 +371,7 @@ export async function POST(_request: Request) {
                 tokenized,
                 sharedTokenGroups: sharedTokens.length,
                 newCandidates,
+                skippedSharedHandles, // high-count social handles excluded (shared/rescuer contacts)
                 user: session.user.email,
             });
 

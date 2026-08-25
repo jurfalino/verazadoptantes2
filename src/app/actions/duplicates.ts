@@ -5,7 +5,7 @@ import { eq, or, and, inArray } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { getDb } from './_db';
 import { reassignAdopterRecords } from './_recordWrite';
-import { extractTokens, computeTokenHash, normalizeText, extractPhones, extractEmails, extractSocials, type Token } from '@/lib/tokenizer';
+import { extractTokens, computeTokenHash, normalizeText, extractPhones, extractEmails, extractSocials, normalizeSocialHandle, detectSocialPlatformFromValue, type Token } from '@/lib/tokenizer';
 import { normalizeConfidence, confidenceBand, fuzzyNameScore, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 
@@ -39,12 +39,15 @@ export async function tokenizeAdopter(adopterId: string): Promise<void> {
 
         // Aliases (contactEntries with type='alias') tokenize as name_words so
         // searching for an alternate name finds the adopter.
-        const aliases = deserializeContactEntries(adopter.contactEntries)
-            .filter(e => e.type === 'alias')
-            .map(e => e.value);
+        const entries = deserializeContactEntries(adopter.contactEntries);
+        const aliases = entries.filter(e => e.type === 'alias').map(e => e.value);
+        // Structured socials carry `platform` → the tokenizer emits the precise
+        // `social`=`platform|handle` token, not just the handle. Mirror the aliases
+        // pattern (caller deserializes to avoid the tokenizer→contactEntries cycle).
+        const socials = entries.filter(e => e.type === 'social').map(e => ({ value: e.value, platform: e.platform ?? null }));
 
         // Extract tokens
-        const tokens: Token[] = extractTokens(adopter, adopterAdoptions, aliases);
+        const tokens: Token[] = extractTokens(adopter, adopterAdoptions, aliases, socials);
 
         // Delete old tokens for this adopter
         await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, adopterId));
@@ -777,7 +780,15 @@ export async function checkTokenDuplicates(data: {
             tokens.push({ type: 'email', value: email.toLowerCase().trim() });
         }
         for (const social of socials) {
-            tokens.push({ type: 'social', value: social.toLowerCase().trim() });
+            // Dual social tokens, matching the index (see tokenizer.normalizeSocialHandle):
+            // platform-agnostic `social_handle` always, plus `social`=`platform|handle`
+            // when the value's URL reveals the network.
+            const raw = social.toLowerCase().trim();
+            const platform = detectSocialPlatformFromValue(raw);
+            const handle = normalizeSocialHandle(raw, platform);
+            if (!handle) continue;
+            tokens.push({ type: 'social_handle', value: handle });
+            if (platform) tokens.push({ type: 'social', value: `${platform}|${handle}` });
         }
 
         if (tokens.length === 0) {

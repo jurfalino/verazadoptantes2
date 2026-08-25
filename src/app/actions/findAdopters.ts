@@ -29,7 +29,7 @@ import type {
 } from './types';
 import { enrichAdopters } from './enrichAdopters';
 import { normalizeConfidence, fuzzyNameScore, SEARCH_SCORE_CEILING, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
-import { normalizeText, extractPhones, extractEmails, extractSocials, isPlaceholderPhone, extractIds, stripIdsFromText } from '@/lib/tokenizer';
+import { normalizeText, extractPhones, extractEmails, extractSocials, isPlaceholderPhone, extractIds, stripIdsFromText, normalizeSocialHandle, detectSocialPlatformFromValue } from '@/lib/tokenizer';
 import { count } from 'drizzle-orm';
 import { matchSearchEntries, matchSearchNameTokens, hashNameToken, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
 import { assembleDiscoveryMatch } from '@/lib/discoveryMatch';
@@ -372,13 +372,20 @@ const SOCIAL_STOPWORDS = new Set(['instagram', 'insta', 'facebook', 'face', 'fb'
 function socialLikeNeedle(value: string): string | null {
     let v = (value || '').toLowerCase().trim().replace(/^@+/, '');
     v = v.replace(/^https?:\/\//, '').replace(/^www\./, '');
-    const m = v.match(/^([a-z0-9.-]+\.[a-z]{2,})(?:\/(.*))?$/);
-    if (m) {
-        const path = (m[2] || '').replace(/[/?#].*$/, '').replace(/\/+$/, '');
+    // Facebook numeric profile: the searchable token in the contact_info blob is
+    // the id digits (stored as "...id=N"), NOT a path segment. Without this a
+    // profile.php URL reduces to the garbage needle "profile.php" that LIKE-matches
+    // every numeric FB profile (the latent bug flagged in the dedup spec).
+    const fbNum = v.match(/(?:profile\.php\?id=|\/people\/[^/]*\/)(\d{5,})/) || v.match(/\bid=(\d{5,})\b/);
+    if (fbNum) return fbNum[1];
+    if (v.includes('/')) {
+        const path = v.slice(v.indexOf('/') + 1).replace(/[?#].*$/, '').replace(/\/+$/, '');
         if (!path) return null; // bare domain, no handle
         v = (path.split('/').filter(Boolean).pop() || '').replace(/^@+/, '');
+    } else if (detectSocialPlatformFromValue(v)) {
+        return null; // bare social domain (e.g. "instagram.com"), no handle
     }
-    if (!v || v.length < 4 || SOCIAL_STOPWORDS.has(v)) return null;
+    if (!v || v.length < 4 || v === 'profile.php' || SOCIAL_STOPWORDS.has(v)) return null;
     return v;
 }
 
@@ -447,7 +454,18 @@ async function runDuplicateMode(
         }
     }
     for (const email of emails) rawTokens.push({ type: 'email', value: email.toLowerCase().trim() });
-    for (const social of socials) rawTokens.push({ type: 'social', value: social.toLowerCase().trim() });
+    // Build the SAME dual tokens the index uses (see tokenizer.normalizeSocialHandle):
+    // platform-agnostic `social_handle` always, plus `social`=`platform|handle` when
+    // the value is a URL that reveals the network. A bare-handle query yields only
+    // `social_handle`, which still matches a platform-scoped stored record.
+    for (const social of socials) {
+        const raw = social.toLowerCase().trim();
+        const platform = detectSocialPlatformFromValue(raw);
+        const handle = normalizeSocialHandle(raw, platform);
+        if (!handle) continue;
+        rawTokens.push({ type: 'social_handle', value: handle });
+        if (platform) rawTokens.push({ type: 'social', value: `${platform}|${handle}` });
+    }
 
     if (rawTokens.length === 0) return [];
 
@@ -599,7 +617,7 @@ async function runDuplicateMode(
     }
 
     const weights: Record<string, number> = {
-        phone: 3, phone_suffix: 2, email: 3, social: 3,
+        phone: 3, phone_suffix: 2, email: 3, social: 3, social_handle: 3,
         name_full: 2, name_phonetic: 1.5, name_word: 1,
         address_word: 1, source_url: 3,
         // v2.19.24: split former 'like_fallback'. Contact-info fallback is a
@@ -616,7 +634,7 @@ async function runDuplicateMode(
     // Name signals (full, word, phonetic, fuzzy, name-column LIKE) are
     // population-level coincidences when isolated.
     const STRONG_SIGNAL_TYPES = new Set([
-        'phone', 'phone_suffix', 'email', 'social', 'id_number', 'source_url',
+        'phone', 'phone_suffix', 'email', 'social', 'social_handle', 'id_number', 'source_url',
         'like_fallback_contact',
     ]);
     const NAME_SIGNAL_TYPES = new Set([
@@ -624,7 +642,7 @@ async function runDuplicateMode(
         'like_fallback_name',
     ]);
     const hasStrongInputSignal = rawTokens.some(t =>
-        ['phone', 'email', 'social', 'id_number'].includes(t.type),
+        ['phone', 'email', 'social', 'social_handle', 'id_number'].includes(t.type),
     );
 
     // Popularity down-ranking: tokens shared by many records are weak identity signals.
@@ -671,7 +689,21 @@ async function runDuplicateMode(
         // plus a flat weight contribution for types that have no captured value (like_fallback).
         let score = 0;
         const typesWithValues = new Set(matchValues.map(v => v.type));
-        for (const v of matchValues) score += adjustedWeight(v.type, v.value);
+        // Social scoring: `social` (platform|handle) and `social_handle` (handle) can
+        // both fire for the SAME handle — count each distinct handle ONCE at the
+        // social tier (max, not sum) so a same-platform match doesn't double to 6.
+        // See dedup spec §4.
+        const countedSocialHandles = new Set<string>();
+        for (const v of matchValues) {
+            if (v.type === 'social' || v.type === 'social_handle') {
+                const handle = v.type === 'social' ? v.value.slice(v.value.indexOf('|') + 1) : v.value;
+                if (countedSocialHandles.has(handle)) continue;
+                countedSocialHandles.add(handle);
+                score += adjustedWeight('social', v.value);
+                continue;
+            }
+            score += adjustedWeight(v.type, v.value);
+        }
         for (const t of types) {
             if (!typesWithValues.has(t)) score += weights[t] || 1; // e.g. like_fallback
         }

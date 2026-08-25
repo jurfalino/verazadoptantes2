@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.47.0] - 2026-08-25
+
+### Changed — platform-aware social duplicate detection (dual token) · TOKENIZER_VERSION v4
+
+Social handles now index as a **dual token**: `social` = `platform|handle` (precise same-account match) plus `social_handle` = `handle` (always, so a bare-handle search/import query still matches). A shared handle normalizer (`normalizeSocialHandle`) is used by both the index and the query, so equivalent forms (URL ↔ `@handle`) match on the fast token index instead of only the LIKE fallback. **Facebook** keys on the numeric profile id from the URL (`profile.php?id=N` → `id:N`), fixing a latent bug where every numeric-id FB profile collapsed to the token `profile.php`. A social handle shared by >8 records is skipped during batch candidate generation (rescuer-contact guard). Phase v1b of the social dedup plan.
+
+**⚠️ Post-deploy:** bump is `TOKENIZER_VERSION v3→v4`; run **Admin → Duplicates → "Scan Now"** to re-tokenize all records so social matching uses the new tokens.
+
 ## [2.46.5] - 2026-08-25
 
 ### Changed — network-first social composer (adopter contact entries)

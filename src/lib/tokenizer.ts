@@ -6,7 +6,7 @@
  * adopters that share identifiers (phones, emails, names, etc.)
  */
 
-export type TokenType = 'name_full' | 'name_word' | 'phone' | 'phone_suffix' | 'email' | 'social' | 'address_word' | 'source_url' | 'id_number';
+export type TokenType = 'name_full' | 'name_word' | 'phone' | 'phone_suffix' | 'email' | 'social' | 'social_handle' | 'address_word' | 'source_url' | 'id_number';
 
 export interface Token {
     type: TokenType;
@@ -205,6 +205,63 @@ export function extractSocials(text: string): string[] {
     return [...new Set(results)];
 }
 
+/**
+ * Detect the social network from a value's URL/host. Mirrors
+ * `contactEntries.detectSocialPlatform`, duplicated here so the tokenizer stays
+ * free of the contactEntries import (documented circular dependency). Returns
+ * null for a bare handle (no host to key on).
+ */
+export function detectSocialPlatformFromValue(value: string): 'facebook' | 'instagram' | 'tiktok' | 'x' | 'threads' | null {
+    const v = (value || '').trim().toLowerCase();
+    if (!v) return null;
+    if (/(?:^|\/\/|\.)(?:facebook\.com|fb\.com|fb\.me)\b/.test(v)) return 'facebook';
+    if (/(?:instagram\.com|instagr\.am)\b/.test(v)) return 'instagram';
+    if (/tiktok\.com\b/.test(v)) return 'tiktok';
+    if (/(?:^|\.)(?:x\.com|twitter\.com|t\.co)\b/.test(v)) return 'x';
+    if (/threads\.(?:net|com)\b/.test(v)) return 'threads';
+    return null;
+}
+
+/**
+ * Reduce a social value (URL or @handle) to its stable handle/id — the single
+ * source of truth shared by the tokenizer (index) and findAdopters (query).
+ *
+ * Facebook is the exception: its identity is usually the numeric profile id in
+ * the URL (`profile.php?id=N` or `/people/.../N`), not a path segment — a naive
+ * "last path segment" rule would collapse every numeric-id FB profile to the
+ * garbage handle "profile.php". IG/TikTok/X/Threads put the username in the last
+ * path segment. Returns null when no handle is derivable (bare domain, <3 chars).
+ * `platform` (from a structured entry) lets a host-less bare handle resolve
+ * correctly (e.g. a bare "@juan" saved under a Facebook entry).
+ */
+export function normalizeSocialHandle(value: string, platform?: string | null): string | null {
+    let v = (value || '').toLowerCase().trim();
+    if (!v) return null;
+    const url = v.replace(/^https?:\/\//, '').replace(/^www\.|^m\.|^web\./, '');
+    const isFb = /^(facebook\.com|fb\.com|fb\.me)\b/.test(url) || platform === 'facebook';
+    if (isFb) {
+        const numeric = url.match(/(?:profile\.php\?id=|\/people\/[^/]*\/)(\d{5,})/) || value.match(/\bid=(\d{5,})\b/);
+        if (numeric) return `id:${numeric[1]}`;
+        const vanity = url.match(/^(?:facebook\.com|fb\.com|fb\.me)\/([a-z0-9.]+)/);
+        if (vanity && vanity[1] !== 'profile.php') return vanity[1].replace(/^@+/, '');
+        if (!url.includes('/') && !url.includes('.com')) return v.replace(/^@+/, '') || null;
+        return null;
+    }
+    v = v.replace(/^@+/, '').replace(/^https?:\/\//, '').replace(/^www\./, '');
+    // Only strip a host when there is an actual path (a slash). A bare handle can
+    // legitimately contain dots (e.g. "maria.gonzalez" — the most common Instagram
+    // form) and must NOT be misread as a domain (that returned null before).
+    if (v.includes('/')) {
+        const path = v.slice(v.indexOf('/') + 1).replace(/[?#].*$/, '').replace(/\/+$/, '');
+        if (!path) return null; // host with no path segment (bare domain)
+        v = (path.split('/').filter(Boolean).pop() || '').replace(/^@+/, '');
+    } else if (detectSocialPlatformFromValue(v)) {
+        return null; // a bare social domain (e.g. "instagram.com") carries no handle
+    }
+    if (!v || v.length < 3) return null;
+    return v;
+}
+
 // ── Name Word Extraction ─────────────────────────────────────────
 
 const MIN_NAME_WORD_LENGTH = 3;
@@ -266,7 +323,7 @@ export function extractAddressWords(text: string): string[] {
  *     hash still matched the old extractor output and Scan skipped them,
  *     keeping the bogus @gmail.com social tokens alive.
  */
-const TOKENIZER_VERSION = 'v3'; // v3: aliases + family emit name_full (v2.44.x)
+const TOKENIZER_VERSION = 'v4'; // v4: dual social tokens (social=platform|handle + social_handle), platform-aware handle normalization (v2.4x)
 
 /** Compute a simple hash of all tokenizable fields for freshness tracking */
 export function computeTokenHash(adopter: {
@@ -319,7 +376,7 @@ interface AdoptionData {
  * own name. Callers deserialize `adopter.contactEntries` themselves to avoid the
  * tokenizer → contactEntries circular import.
  */
-export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], aliases?: string[]): Token[] {
+export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], aliases?: string[], socials?: Array<{ value: string; platform?: string | null }>): Token[] {
     const tokens: Token[] = [];
     const seen = new Set<string>();
 
@@ -389,7 +446,23 @@ export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], 
     for (const suffix of extractPhoneSuffixes(phones)) add('phone_suffix', suffix);
 
     for (const email of extractEmails(allText)) add('email', email);
-    for (const social of extractSocials(allText)) add('social', social);
+    // Social tokens — DUAL emission (see normalizeSocialHandle): a platform-agnostic
+    // `social_handle` (always, so a bare-handle query still matches) plus a precise
+    // `social` = `platform|handle` when the network is known. Sources: structured
+    // contactEntries socials (carry `platform`) + socials harvested from the blob.
+    const socialSources: Array<{ value: string; platform?: string | null }> = [
+        ...(socials ?? []),
+        ...extractSocials(allText).map(v => ({ value: v, platform: null as string | null })),
+    ];
+    for (const src of socialSources) {
+        const platform = (src.platform && src.platform !== 'other')
+            ? src.platform
+            : detectSocialPlatformFromValue(src.value);
+        const handle = normalizeSocialHandle(src.value, platform);
+        if (!handle) continue;
+        add('social_handle', handle);
+        if (platform) add('social', `${platform}|${handle}`);
+    }
 
     // 6. Address words
     for (const word of extractAddressWords(adopter.addressInfo || '')) {

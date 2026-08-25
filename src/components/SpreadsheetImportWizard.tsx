@@ -1298,7 +1298,7 @@ export default function SpreadsheetImportWizard() {
 const MATCH_TYPE_LABELS: Record<string, string> = {
     identical: 'todos los datos',
     phone: 'teléfono', phone_suffix: 'teléfono', like_fallback_contact: 'teléfono',
-    email: 'email', social: 'red social', id_number: 'DNI', address_word: 'dirección',
+    email: 'email', social: 'red social', social_handle: 'red social', id_number: 'DNI', address_word: 'dirección',
     name_full: 'nombre', name_word: 'nombre', name_phonetic: 'nombre', name_word_fuzzy: 'nombre', like_fallback_name: 'nombre',
 };
 function matchTypeLabels(types: string[]): string {
@@ -1308,7 +1308,7 @@ function matchTypeLabels(types: string[]): string {
 // Signal-type groups used by explainMatchOneLiner below (same token vocabulary
 // isExactIdentifierMatch checks, plus the name-ish family it's compared against).
 const NAME_SIGNAL_TYPES = new Set(['name_full', 'name_word', 'name_phonetic', 'name_word_fuzzy', 'like_fallback_name']);
-const STRONG_SIGNAL_TYPES = new Set(['phone', 'phone_suffix', 'like_fallback_contact', 'email', 'id_number', 'social']);
+const STRONG_SIGNAL_TYPES = new Set(['phone', 'phone_suffix', 'like_fallback_contact', 'email', 'id_number', 'social', 'social_handle']);
 
 // One-line, derived explanation of WHY a row matched — composed from the matched
 // signal types plus the existing record's presence-only context (never its values).
