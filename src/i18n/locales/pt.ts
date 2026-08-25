@@ -609,6 +609,7 @@ export const pt = {
         ce_input_ph_id: 'DNI / Documento',
         ce_input_ph_address: 'Rua, cidade, estado',
         ce_social_which: 'Qual rede social é?',
+        ce_phone_apps: 'Mensageria:',
         ce_input_ph_other: 'Notas…',
         ce_input_ph_locality: 'Cidade / Localidade',
         ce_alias_ph: 'Outro nome pelo qual essa pessoa é conhecida',

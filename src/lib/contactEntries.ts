@@ -59,6 +59,29 @@ function readSocialPlatform(e: { type: ContactEntryType; value: string; platform
     return p ? { platform: p } : {};
 }
 
+export type MessagingApp = 'whatsapp' | 'telegram';
+
+/** Messaging apps a phone number can be reached on (manual, multi-select). */
+export const MESSAGING_APPS: ReadonlyArray<{ key: MessagingApp; label: string }> = [
+    { key: 'whatsapp', label: 'WhatsApp' },
+    { key: 'telegram', label: 'Telegram' },
+];
+const MESSAGING_APP_KEYS: MessagingApp[] = ['whatsapp', 'telegram'];
+
+/** Deep link for a phone value on a messaging app; null when the number is too short. */
+export function phoneAppUrl(app: MessagingApp, value: string): string | null {
+    const d = (value || '').replace(/\D/g, '');
+    if (d.length < 6) return null;
+    return app === 'whatsapp' ? `https://wa.me/${d}` : `https://t.me/+${d}`;
+}
+
+/** Read + validate a stored phone entry's messaging apps. */
+function readPhoneApps(e: { type: ContactEntryType; apps?: unknown }): { apps?: MessagingApp[] } {
+    if (e.type !== 'phone' || !Array.isArray(e.apps)) return {};
+    const apps = [...new Set(e.apps.filter((a): a is MessagingApp => MESSAGING_APP_KEYS.includes(a as MessagingApp)))];
+    return apps.length ? { apps } : {};
+}
+
 export interface ContactEntry {
     type: ContactEntryType;
     /**
@@ -101,6 +124,8 @@ export interface ContactEntry {
     label?: string;
     /** For type='social' only: which network this is. Deduced from a URL or picked by the user. */
     platform?: SocialPlatform;
+    /** For type='phone' only: messaging apps the adopter uses on this number (manual toggle). */
+    apps?: MessagingApp[];
     /**
      * Display-only flag set by the PII-masking layer (src/lib/piiAccess.ts)
      * when this entry's value is hidden from the viewer. Never persisted —
@@ -404,7 +429,7 @@ export function contactEntriesToBlob(entries: ContactEntry[] | null | undefined)
 interface ContactParts {
     /** Personal IDs — strings, or {value,label} when the label is known. */
     ids?: Array<string | { value: string; label?: string }>;
-    phones?: Array<string | null | undefined>;
+    phones?: Array<string | { value: string; apps?: MessagingApp[] } | null | undefined>;
     emails?: Array<string | null | undefined>;
     socials?: Array<string | { value: string; platform?: SocialPlatform } | null | undefined>;
     addresses?: Array<string | null | undefined>;
@@ -423,7 +448,12 @@ export function buildContactEntries(parts: ContactParts): ContactEntry[] {
             entries.push({ type: 'id', value: id.value.trim(), ...(id.label?.trim() ? { label: id.label.trim() } : {}) });
         }
     }
-    for (const p of parts.phones ?? []) if (p?.trim()) entries.push({ type: 'phone', value: p.trim() });
+    for (const p of parts.phones ?? []) {
+        const val = typeof p === 'string' ? p : p?.value;
+        if (!val?.trim()) continue;
+        const apps = (typeof p === 'object' && p?.apps?.length) ? [...new Set(p.apps)] : undefined;
+        entries.push({ type: 'phone', value: val.trim(), ...(apps ? { apps } : {}) });
+    }
     for (const e of parts.emails ?? []) if (e?.trim()) entries.push({ type: 'email', value: e.trim() });
     for (const s of parts.socials ?? []) {
         const val = typeof s === 'string' ? s : s?.value;
@@ -476,6 +506,7 @@ export function deserializeContactEntries(json: string | null | undefined): Cont
                 value: e.value.slice(0, MAX_VALUE_LEN[e.type]),
                 ...(e.label ? { label: String(e.label).slice(0, MAX_LABEL_LEN) } : {}),
                 ...readSocialPlatform(e),
+                ...readPhoneApps(e),
                 ...(e.masked === true ? { masked: true } : {}),
                 // Per-entry contributor attribution (v2.16.0-9+). Length-capped
                 // defensively; undefined if absent (most pre-existing rows).

@@ -15,6 +15,7 @@ import {
     type ContactEntryType,
 } from '@/lib/contactEntries';
 import { SocialPlatformPicker } from '@/components/SocialPlatformPicker';
+import { PhoneAppsToggle } from '@/components/PhoneAppsToggle';
 
 interface ContactEntriesInputProps {
     entries: ContactEntry[];
@@ -244,6 +245,21 @@ export default function ContactEntriesInput({ entries, onChange }: ContactEntrie
                                                 </div>
                                             );
                                         })()}
+                                    </div>
+                                ) : entry.type === 'phone' ? (
+                                    <div className="flex-1 min-w-0 space-y-1.5">
+                                        <input
+                                            type="text"
+                                            value={entry.value}
+                                            onChange={e => updateEntry(i, { value: e.target.value })}
+                                            placeholder={t('adopter.ce_input_ph_phone')}
+                                            disabled={isMasked}
+                                            data-testid="contact-entry-value"
+                                            className="w-full rounded-lg border border-teal-200 bg-white text-teal-900 text-sm px-3 py-1.5 outline-none focus:border-teal-500 disabled:bg-stone-100 disabled:text-stone-500 disabled:cursor-not-allowed"
+                                        />
+                                        {!isMasked && entry.value.trim().length > 0 && (
+                                            <PhoneAppsToggle value={entry.apps ?? []} onChange={(apps) => updateEntry(i, { apps })} size={16} />
+                                        )}
                                     </div>
                                 ) : (
                                     <input

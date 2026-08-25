@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.46.0] - 2026-08-25
+
+### Added — mark WhatsApp / Telegram on a phone number
+
+Phone contact entries can now record which messaging apps the adopter uses (`whatsapp` and/or `telegram`, or neither) — a manual multi-toggle (no auto-detection; the rescuer ticks them). The phone chip shows the app logos and links to `wa.me` / `t.me`.
+
+- **Model:** `apps?: ('whatsapp'|'telegram')[]` on the phone `ContactEntry`; preserved through `deserializeContactEntries`, `buildContactEntries`, and the `addContactEntry`/`updateContactEntry` Zod schemas. New `phoneAppUrl()`.
+- **UI (both interactive surfaces):** the manual ficha composer (`ContactEntriesSection`) and the import wizard row editor (`ContactEntriesInput`), via new `MessagingLogo` + `PhoneAppsToggle` components (real inline-SVG WhatsApp/Telegram logos).
+- No DB migration (lives in the `contactEntries` JSON). Same known blob-only limitation on `add-record` merge / `mergeAdopters`.
+
 ## [2.45.0] - 2026-08-24
 
 ### Added — capture which social network a contact is

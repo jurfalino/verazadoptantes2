@@ -104,6 +104,10 @@ export async function updateContactEntry(
                 ...(original.type === 'social' && (detectSocialPlatform(value) ?? original.platform)
                     ? { platform: detectSocialPlatform(value) ?? original.platform }
                     : {}),
+                // Preserve messaging apps on a phone (picker sends `apps`; else keep).
+                ...(original.type === 'phone' && ((parsed.data.apps ?? original.apps)?.length)
+                    ? { apps: parsed.data.apps ?? original.apps }
+                    : {}),
             };
 
         const newValueHash = hashEntryValue(updated.type, updated.value);

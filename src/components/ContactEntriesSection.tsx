@@ -8,9 +8,11 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { deriveStreet, deriveLocality, detectSocialPlatform, socialUrl, type ContactEntry, type ContactEntryType, type SocialPlatform } from '@/lib/contactEntries';
+import { deriveStreet, deriveLocality, detectSocialPlatform, socialUrl, phoneAppUrl, type ContactEntry, type ContactEntryType, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
 import { SocialPlatformPicker } from '@/components/SocialPlatformPicker';
 import { SocialLogo } from '@/components/SocialLogo';
+import { PhoneAppsToggle } from '@/components/PhoneAppsToggle';
+import { MessagingLogo } from '@/components/MessagingLogo';
 import { addContactEntry } from '@/app/actions/addContactEntry';
 import { updateContactEntry } from '@/app/actions/updateContactEntry';
 import { removeContactEntry } from '@/app/actions/removeContactEntry';
@@ -140,6 +142,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
     const [composerStreet, setComposerStreet] = useState('');
     const [composerLocality, setComposerLocality] = useState('');
     const [composerPlatform, setComposerPlatform] = useState<SocialPlatform | null>(null);
+    const [composerApps, setComposerApps] = useState<MessagingApp[]>([]);
     const [composerBusy, setComposerBusy] = useState(false);
     // Debounced value handed to <DuplicateHint>. 500ms idle keeps server load
     // low and avoids flashing while typing. Local mode skips this entirely:
@@ -223,6 +226,9 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         if (composerType === 'social') {
             return { id: crypto.randomUUID(), type: 'social', value: composerValue.trim(), ...(effectiveSocialPlatform ? { platform: effectiveSocialPlatform } : {}) };
         }
+        if (composerType === 'phone') {
+            return { id: crypto.randomUUID(), type: 'phone', value: composerValue.trim(), ...(composerApps.length ? { apps: composerApps } : {}) };
+        }
         return { id: crypto.randomUUID(), type: composerType, value: composerValue.trim() };
     }
 
@@ -240,6 +246,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         setComposerStreet('');
         setComposerLocality('');
         setComposerPlatform(null);
+        setComposerApps([]);
     }
 
     /**
@@ -276,7 +283,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                     streetAndNumber: composerStreet.trim() || undefined,
                     locality: composerLocality.trim() || undefined,
                 }
-                : { adopterId: adopterId!, type: composerType, value: composerValue.trim(), ...(composerType === 'social' && effectiveSocialPlatform ? { platform: effectiveSocialPlatform } : {}) };
+                : { adopterId: adopterId!, type: composerType, value: composerValue.trim(), ...(composerType === 'social' && effectiveSocialPlatform ? { platform: effectiveSocialPlatform } : {}), ...(composerType === 'phone' && composerApps.length ? { apps: composerApps } : {}) };
             const res = await addContactEntry(payload);
             if (res.ok) {
                 clearComposerInputs();
@@ -480,10 +487,21 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
             );
         }
         if (entry.type === 'phone') {
+            const tel = (
+                <a href={`tel:${entry.value.replace(/[^\d+]/g, '')}`} className={LINK_CLASS}>{entry.value}</a>
+            );
+            if (!entry.apps?.length) return tel;
             return (
-                <a href={`tel:${entry.value.replace(/[^\d+]/g, '')}`} className={LINK_CLASS}>
-                    {entry.value}
-                </a>
+                <span className="inline-flex items-center gap-1.5 flex-wrap">
+                    {tel}
+                    {entry.apps.map(app => {
+                        const u = phoneAppUrl(app, entry.value);
+                        const logo = <MessagingLogo app={app} size={15} />;
+                        return u
+                            ? <a key={app} href={u} target="_blank" rel="noopener noreferrer" title={app === 'whatsapp' ? 'WhatsApp' : 'Telegram'} className="inline-flex">{logo}</a>
+                            : <span key={app} title={app === 'whatsapp' ? 'WhatsApp' : 'Telegram'}>{logo}</span>;
+                    })}
+                </span>
             );
         }
         if (entry.type === 'email') {
@@ -844,6 +862,12 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                     locked={!!socialDetected}
                                     onChange={setComposerPlatform}
                                 />
+                            </div>
+                        )}
+                        {composerType === 'phone' && composerValue.trim().length > 0 && (
+                            <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                <span className="text-xs font-semibold text-stone-500">{t('adopter.ce_phone_apps')}</span>
+                                <PhoneAppsToggle value={composerApps} onChange={setComposerApps} />
                             </div>
                         )}
                         {/* Cross-record duplicate warning. Renders nothing for
