@@ -2,6 +2,29 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.44.14] - 2026-08-24
+
+### Fixed — search card credited the surname instead of the family-member match
+
+Searching e.g. "Manuel Urfalino" surfaced the right record (Manuel is a family member) but the result card's "why matched" snippet showed only the surname, not the family match. Cause: a **partial** name match (1 of 2 query tokens) claimed the snippet at its *full* nominal weight, tying with — and beating (it runs first) — a later **full-phrase** family match of equal weight. Now a partial match's snippet priority uses its **actual scaled strength**, so a half-matched surname can't out-rank a full-phrase family/contact/address match. Scoring is unchanged; only which snippet the card shows.
+
+## [2.44.13] - 2026-08-23
+
+### Added — protected/public filter in Calidad de datos › Contacto en notas
+
+The PII-in-notes tab now has a **Todos / 🔒 Protegidos** filter (with counts), so admins can focus on the records where a contact detail in the note actually defeats masking — a protected (`is_public=0`) record. Each row also shows a **🔒 Protegido / 👁 Público** chip. Defaults to Todos.
+
+## [2.44.12] - 2026-08-23
+
+### Changed — aliases + family members matched as first-class names (search & dedup)
+
+Aliases ("aka", `contactEntries` type='alias') and family/household members (`familyMembers`) are name-like: an abuser may try to adopt under a relative's or an alias name, so those names must be as searchable and match-triggering as the adopter's own name.
+
+- **Tokenizer (indexing side — the real win):** `extractTokens` now emits **`name_full`** tokens for aliases and family members (not just per-word `name_word`). So an exact full-name match on an alias or family member now scores at full-name weight — the same as the primary name — across search's name-token index and the admin duplicate scan. `TOKENIZER_VERSION` bumped v2→v3 so existing records re-tokenize (on next save or admin "Scan Now") and pick up the new tokens.
+- **Dedup engine (input side):** `FindAdoptersInput` gained `aliases` + `familyMembers`; `runDuplicateMode` now tokenizes them (name_full + name_word) and harvests any embedded phone/email, so a record can probe existing records by its *own* aliases/family, exactly like its name. Additive and inert for current callers (none pass these yet) — ready for a caller to supply them.
+
+Note: the abuser-uses-a-relative's-name case was already caught via the stored-side index + admin scan; this makes those matches full-weight and closes the input-side gap.
+
 ## [2.44.11] - 2026-08-23
 
 ### Fixed — more per-row D1 fan-outs that could 500 heavy users

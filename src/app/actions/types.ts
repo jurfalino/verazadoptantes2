@@ -120,6 +120,10 @@ export interface FindAdoptersInput {
     emails?: string[];
     /** Pre-parsed social handles. Skips extraction from contactInfo when supplied. */
     socials?: string[];
+    /** Alias ("aka") names — contactEntries type='alias' values. Tokenised as name_full + name_word, exactly like `name`. */
+    aliases?: string[];
+    /** Family / household members (free text). Tokenised as name_full + name_word, exactly like `name`. */
+    familyMembers?: string;
     /**
      * Exclude this adopter ID from results.
      * Used by the contract route to exclude the just-created adopter from its own match.

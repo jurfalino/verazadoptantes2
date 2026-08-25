@@ -31,6 +31,8 @@ export interface PiiNoteRow {
     hasPhone: boolean;
     hasSocial: boolean;
     hasAddress: boolean;
+    /** true = record is Protegido (is_public=0); false = Público. */
+    isProtected: boolean;
     /** The event's own note (`adopter_events.details`) — editable inline. */
     note: string;
 }
@@ -43,7 +45,7 @@ export interface DataQualityReport {
 // One row per PII-bearing EVENT (not grouped) so each note maps to its own
 // adopter_events.id and can be edited/saved inline.
 const PII_SQL = `
-SELECT e.id AS eventId, e.adopter_id AS adopterId, a.name AS name,
+SELECT e.id AS eventId, e.adopter_id AS adopterId, a.name AS name, a.is_public AS isPublic,
   CASE WHEN e.details GLOB '*[0-9][0-9][0-9][0-9][0-9][0-9][0-9]*' OR e.details GLOB '*[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9]*' THEN 1 ELSE 0 END AS hasPhone,
   CASE WHEN lower(e.details) LIKE '%facebook%' OR lower(e.details) LIKE '%instagram%' OR lower(e.details) LIKE '%http%' OR lower(e.details) LIKE '%wa.me%' THEN 1 ELSE 0 END AS hasSocial,
   CASE WHEN lower(e.details) LIKE '%barrio%' OR lower(e.details) LIKE '%calle %' OR lower(e.details) LIKE '%avenida%' THEN 1 ELSE 0 END AS hasAddress,
@@ -94,6 +96,7 @@ export async function getDataQualityReport(): Promise<DataQualityReport> {
             hasPhone: Number(r.hasPhone) === 1,
             hasSocial: Number(r.hasSocial) === 1,
             hasAddress: Number(r.hasAddress) === 1,
+            isProtected: Number(r.isPublic) !== 1,
             note: (r.note as string) ?? '',
         }));
 

@@ -262,7 +262,7 @@ export function extractAddressWords(text: string): string[] {
  *     hash still matched the old extractor output and Scan skipped them,
  *     keeping the bogus @gmail.com social tokens alive.
  */
-const TOKENIZER_VERSION = 'v2';
+const TOKENIZER_VERSION = 'v3'; // v3: aliases + family emit name_full (v2.44.x)
 
 /** Compute a simple hash of all tokenizable fields for freshness tracking */
 export function computeTokenHash(adopter: {
@@ -308,9 +308,11 @@ interface AdoptionData {
  * Returns a deduplicated array of tokens.
  *
  * `aliases` (optional): values of `contactEntries` rows with `type='alias'`.
- * Tokenized as name_words (and added to the `name_full` candidate set when
- * the canonical name is empty) so searching for an alias finds the adopter.
- * Callers deserialize `adopter.contactEntries` themselves to avoid the
+ * Aliases (aka) AND family/household members are treated as FIRST-CLASS names —
+ * emitted as both name_full (exact, high-weight) and name_word — because an
+ * abuser may try to adopt under a relative's or an alias name, so those names
+ * must be searchable and must raise duplicate matches exactly like the record's
+ * own name. Callers deserialize `adopter.contactEntries` themselves to avoid the
  * tokenizer → contactEntries circular import.
  */
 export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], aliases?: string[]): Token[] {
@@ -325,12 +327,14 @@ export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], 
         }
     }
 
-    // 1. Full normalized name
-    if (adopter.name) {
-        const fullName = normalizeText(adopter.name);
-        if (fullName.length >= MIN_NAME_WORD_LENGTH) {
-            add('name_full', fullName);
-        }
+    // 1. Full normalized name(s) — the canonical name PLUS aliases and family
+    //    members, all treated as first-class names (an abuser may adopt under a
+    //    relative's or alias name). name_full = exact, high-weight match.
+    const fullNameSources = [adopter.name, adopter.familyMembers, ...(aliases ?? [])];
+    for (const src of fullNameSources) {
+        if (!src) continue;
+        const fullName = normalizeText(src);
+        if (fullName.length >= MIN_NAME_WORD_LENGTH) add('name_full', fullName);
     }
 
     // 2. Name words — from name, familyMembers, adoption.onBehalfOf, and

@@ -382,6 +382,21 @@ async function runDuplicateMode(
         }
     }
 
+    // Aliases ("aka") + family/household members are first-class names — probe by
+    // them exactly like the primary name (an abuser may adopt under a relative's
+    // or an alias name). Mirrors extractTokens, which indexes the stored side the
+    // same way. Dormant until a caller supplies these fields.
+    for (const src of [...(input.aliases ?? []), input.familyMembers ?? '']) {
+        if (!src) continue;
+        const normalized = normalizeText(src);
+        if (normalized.length >= 3) {
+            rawTokens.push({ type: 'name_full', value: normalized });
+            for (const word of normalized.split(/\s+/)) {
+                if (word.length >= 3) rawTokens.push({ type: 'name_word', value: word });
+            }
+        }
+    }
+
     // Harvest IDs / phones / emails / socials across ALL free-text input fields so a
     // phone typed in the name field (or address) doesn't fragment into name_word
     // tokens. Mirrors the tokenizer's all-text concatenation. IDs are extracted
@@ -390,6 +405,8 @@ async function runDuplicateMode(
     const allInputText = [
         input.contactInfo || '',
         input.name || '',
+        (input.aliases ?? []).join('\n'),
+        input.familyMembers || '',
     ].join('\n');
     const ids = extractIds(allInputText);
     for (const id of ids) rawTokens.push({ type: 'id_number', value: id });
@@ -898,9 +915,12 @@ async function runDiscoveryMode(
             if (s && WEIGHTS.name_tokens > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.name_tokens; }
         } else if (isMultiToken && anyTokenMatch(nlNorm, tokensNorm)) {
             const m = countTokenMatches(nlNorm, tokensNorm);
-            score += Math.round(WEIGHTS.name_partial * (m / tokens.length)); matchTypes.push('name_partial');
+            const w = Math.round(WEIGHTS.name_partial * (m / tokens.length));
+            score += w; matchTypes.push('name_partial');
             const s = buildSnippet('name', a.name, normalizedQuery, tokens);
-            if (s && WEIGHTS.name_partial > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.name_partial; }
+            // Snippet priority = ACTUAL (scaled) strength, so a half-matched
+            // name partial can't out-rank a full-phrase family/contact match.
+            if (s && w > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = w; }
         }
 
         // Contact
@@ -910,9 +930,12 @@ async function runDiscoveryMode(
             if (s && WEIGHTS.contact > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.contact; }
         } else if (isMultiToken && anyTokenMatch(a.contactInfo, tokens)) {
             const m = countTokenMatches(a.contactInfo, tokens);
-            score += Math.round(WEIGHTS.contact_partial * (m / tokens.length)); matchTypes.push('contact_partial');
+            const w = Math.round(WEIGHTS.contact_partial * (m / tokens.length));
+            score += w; matchTypes.push('contact_partial');
             const s = buildSnippet('contact', a.contactInfo, normalizedQuery, tokens);
-            if (s && WEIGHTS.contact_partial > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.contact_partial; }
+            // Snippet priority = ACTUAL (scaled) strength, so a half-matched
+            // name partial can't out-rank a full-phrase family/contact match.
+            if (s && w > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = w; }
         }
 
         // Address
@@ -922,9 +945,12 @@ async function runDiscoveryMode(
             if (s && WEIGHTS.address > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.address; }
         } else if (isMultiToken && anyTokenMatch(a.addressInfo, tokens)) {
             const m = countTokenMatches(a.addressInfo, tokens);
-            score += Math.round(WEIGHTS.address_partial * (m / tokens.length)); matchTypes.push('address_partial');
+            const w = Math.round(WEIGHTS.address_partial * (m / tokens.length));
+            score += w; matchTypes.push('address_partial');
             const s = buildSnippet('address', a.addressInfo, normalizedQuery, tokens);
-            if (s && WEIGHTS.address_partial > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.address_partial; }
+            // Snippet priority = ACTUAL (scaled) strength, so a half-matched
+            // name partial can't out-rank a full-phrase family/contact match.
+            if (s && w > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = w; }
         }
 
         // Family
@@ -934,9 +960,12 @@ async function runDiscoveryMode(
             if (s && WEIGHTS.family > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.family; }
         } else if (isMultiToken && anyTokenMatch(a.familyMembers, tokens)) {
             const m = countTokenMatches(a.familyMembers, tokens);
-            score += Math.round(WEIGHTS.family_partial * (m / tokens.length)); matchTypes.push('family_partial');
+            const w = Math.round(WEIGHTS.family_partial * (m / tokens.length));
+            score += w; matchTypes.push('family_partial');
             const s = buildSnippet('family', a.familyMembers, normalizedQuery, tokens);
-            if (s && WEIGHTS.family_partial > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.family_partial; }
+            // Snippet priority = ACTUAL (scaled) strength, so a half-matched
+            // name partial can't out-rank a full-phrase family/contact match.
+            if (s && w > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = w; }
         }
 
         // Deep search — re-verify the SQL LIKE hit with word-boundary token matching
