@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.46.5] - 2026-08-25
+
+### Changed — network-first social composer (adopter contact entries)
+
+Adding/editing a social contact now shows the network picker **first** (before typing), and the input placeholder adapts to the chosen network: `@usuario o enlace` for Instagram/TikTok/X/Threads, and `facebook.com/usuario o enlace del perfil` for Facebook (nudges the profile link, whose numeric ID is Facebook's stable identifier — improves future duplicate matching). Pasting a recognizable URL still auto-detects and locks the platform. Phase v1a of the social dedup-tokenization plan (`.agents/plans/2026-08-25-social-dedup-tokenization.md`).
+
 ## [2.46.4] - 2026-08-25
 
 ### Changed — social rows show the real network (icon + name) in the profile

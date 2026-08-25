@@ -866,6 +866,22 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 ↺ {t('adopter.ce_compose_change_type')}
                             </button>
                         </div>
+                        {/* Network-first: pick the social network before typing so the
+                            input can show a per-network placeholder (Facebook nudges the
+                            profile link → captures the numeric id). Locked to "auto" when
+                            a pasted URL already reveals the platform. */}
+                        {composerType === 'social' && (
+                            <div className="mb-1">
+                                <div className="text-xs font-semibold text-stone-700 mb-1.5">
+                                    {t('adopter.ce_social_which')}{!socialDetected && <span className="text-red-600"> *</span>}
+                                </div>
+                                <SocialPlatformPicker
+                                    value={effectiveSocialPlatform}
+                                    locked={!!socialDetected}
+                                    onChange={setComposerPlatform}
+                                />
+                            </div>
+                        )}
                         {composerType === 'address' ? (
                             <div className="space-y-2">
                                 <input
@@ -889,7 +905,9 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 type="text"
                                 value={composerValue}
                                 onChange={e => setComposerValue(e.target.value)}
-                                placeholder={placeholderFor(composerType)}
+                                placeholder={composerType === 'social'
+                                    ? (effectiveSocialPlatform ? t(`adopter.ce_input_ph_social_${effectiveSocialPlatform}`) : t('adopter.ce_input_ph_social'))
+                                    : placeholderFor(composerType)}
                                 onKeyDown={e => {
                                     if (e.key === 'Enter') { e.preventDefault(); handleAdd(); }
                                     if (e.key === 'Escape') { e.preventDefault(); resetComposer(); }
@@ -897,20 +915,6 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm"
                                 autoFocus
                             />
-                        )}
-                        {composerType === 'social' && composerValue.trim().length > 0 && (
-                            <div className="mt-2">
-                                {!socialDetected && (
-                                    <div className="text-xs font-semibold text-stone-700 mb-1.5">
-                                        {t('adopter.ce_social_which')} <span className="text-red-600">*</span>
-                                    </div>
-                                )}
-                                <SocialPlatformPicker
-                                    value={effectiveSocialPlatform}
-                                    locked={!!socialDetected}
-                                    onChange={setComposerPlatform}
-                                />
-                            </div>
                         )}
                         {composerType === 'phone' && composerValue.trim().length > 0 && (
                             <div className="mt-2 flex items-center gap-2 flex-wrap">
