@@ -33,12 +33,15 @@ interface Props {
     rootClassName?: string;
     /** data-testid for the pencil button (edit affordance), for e2e targeting. */
     editButtonTestId?: string;
+    /** Fires when this field enters/leaves its inline-edit state, so a parent can
+     *  react (e.g. hide a sibling badge while the name is being edited). */
+    onEditingChange?: (editing: boolean) => void;
 }
 
 export function InlineEditField({
     value, onSave, canEdit, multiline = false, required = false,
     placeholder, ariaLabel, displayRender, emptyLabel, displayClassName, inputClassName,
-    rootClassName, editButtonTestId,
+    rootClassName, editButtonTestId, onEditingChange,
 }: Props) {
     const { t } = useLanguage();
     const [editing, setEditing] = useState(false);
@@ -47,6 +50,7 @@ export function InlineEditField({
     const inputRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
 
     useEffect(() => { if (!editing) setDraft(value); }, [value, editing]);
+    useEffect(() => { onEditingChange?.(editing); }, [editing, onEditingChange]);
 
     function startEdit() { if (!canEdit) return; setDraft(value); setEditing(true); }
     function cancelEdit() { setDraft(value); setEditing(false); }

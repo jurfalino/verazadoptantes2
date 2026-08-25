@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.46.3] - 2026-08-25
+
+### Fixed — profile name cramped on mobile; badge clutter while editing the name
+
+- On mobile the visibility badge (Público/Protegido) now **stacks below** the name instead of sitting inline, so a long name uses the full column width (was squeezed into ~170px beside the badge). Inline again at `sm+` — desktop unchanged.
+- While the name is being **inline-edited**, the badge collapses to **icon-only** (drops the Público/Protegido label) so the input owns the row. The rating is untouched. Added an opt-in `onEditingChange` callback to `InlineEditField`.
+
 ## [2.46.2] - 2026-08-25
 
 ### Fixed — profile name truncated on mobile

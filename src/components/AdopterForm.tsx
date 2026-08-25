@@ -163,6 +163,10 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     }, [adoptions, requestsPeriodDays]);
 
     const [isEditing, setIsEditing] = useState(isNew);
+    // True while the name's inline field is in edit mode — collapses the sibling
+    // visibility badge to icon-only (drops the Público/Protegido label) so the
+    // name input owns the row. The rating is untouched (it lives outside this block).
+    const [nameEditing, setNameEditing] = useState(false);
     const [loading, setLoading] = useState(false);
 
     // Manual-create friction gate (nameless-adopter-profiles design): saving
@@ -945,7 +949,10 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                         </>
                                     ) : (
                                       <>
-                                      <div className="flex items-center gap-2 min-w-0">
+                                      {/* Mobile: stack the visibility badge BELOW the name so a long
+                                          name gets the full column width (it was cramped into ~170px
+                                          beside the inline badge). Inline again at sm+ (room to spare). */}
+                                      <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-2 min-w-0">
                                         {(() => {
                                         const displayName = !isNew && initialData ? adopterDisplayName(initialData, t('adopter.nameless')) : t('adopter.title_new');
                                         // Initial-only tokens (1-char words separated by whitespace) are
@@ -979,6 +986,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                 required
                                                 ariaLabel={displayName}
                                                 editButtonTestId="name-edit-btn"
+                                                onEditingChange={setNameEditing}
                                                 onSave={(next) => saveField('name', next)}
                                                 rootClassName="min-w-0 flex-1"
                                                 inputClassName="w-full text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight bg-transparent border-b-2 border-teal-300 focus:border-teal-500 outline-none py-0.5 placeholder-stone-500 transition-all"
@@ -1006,7 +1014,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                             <path d="M2.5 12S6 5.5 12 5.5s9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" />
                                                             <circle cx="12" cy="12" r="3" />
                                                         </svg>
-                                                        {t('search.public_label')}
+                                                        {!nameEditing && t('search.public_label')}
                                                     </button>
                                                 );
                                             }
@@ -1018,7 +1026,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                             <rect x="3.5" y="11" width="17" height="10" rx="2" />
                                                             <path d="M7.5 11V7a4.5 4.5 0 0 1 8.5-2" />
                                                         </svg>
-                                                        {t('search.protected_unlocked_label')}
+                                                        {!nameEditing && t('search.protected_unlocked_label')}
                                                     </button>
                                                 );
                                             }
@@ -1030,7 +1038,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                         <rect x="3.5" y="11" width="17" height="10" rx="2" />
                                                         <path d="M7.5 11V7.5a4.5 4.5 0 0 1 9 0V11" />
                                                     </svg>
-                                                    {t('search.protected_label')}
+                                                    {!nameEditing && t('search.protected_label')}
                                                 </button>
                                             );
                                         })()}
