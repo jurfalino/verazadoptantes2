@@ -49,7 +49,7 @@ export interface ExtraContacts {
     ids?: string[];
 }
 
-export function buildImportBody(row: MappedRow, extra?: ExtraContacts): BuiltRow {
+export function buildImportBody(row: MappedRow, extra?: ExtraContacts, dateOrder: 'dmy' | 'mdy' = 'dmy'): BuiltRow {
     const errors = validateMappedRow(row);
     const warnings = rowWarnings(row);
 
@@ -78,7 +78,7 @@ export function buildImportBody(row: MappedRow, extra?: ExtraContacts): BuiltRow
             species: normalizeSpecies(row.species),
             recordType: normalizeRecordType(row.recordType),
             rating: normalizeRating(row.rating),
-            date: normalizeImportDate(row.date),
+            date: normalizeImportDate(row.date, dateOrder),
             sex: row.sex?.trim() || null,
             neutered: normalizeNeutered(row.neutered),
             color: row.color?.trim() || null,

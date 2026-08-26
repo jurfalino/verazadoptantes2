@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeRating, normalizeImportDate, normalizeSpecies, normalizeRecordType, normalizeNeutered, validateMappedRow, rowWarnings } from './importRow';
+import { normalizeRating, normalizeImportDate, inferDateOrder, normalizeSpecies, normalizeRecordType, normalizeNeutered, validateMappedRow, rowWarnings } from './importRow';
 import type { MappedRow } from './importFields';
 
 function row(o: Partial<MappedRow>): MappedRow {
@@ -112,5 +112,43 @@ describe('validateMappedRow — nameless', () => {
     });
     it('rejects when name AND all contact are empty', () => {
         expect(validateMappedRow({ ...empty } as MappedRow)).toContain('Falta el nombre y el contacto del adoptante.');
+    });
+});
+
+
+describe('normalizeImportDate — US MM/DD/YYYY (audit E16)', () => {
+    it('recovers a US month-first date that day-first used to DROP', () => {
+        // 03/14/2009: 14 cannot be a month → must be day → month-first. Was null.
+        expect(normalizeImportDate('03/14/2009')).toBe('2009-03-14');
+        expect(normalizeImportDate('12/25/2020')).toBe('2020-12-25');
+    });
+    it('keeps day-first for the ambiguous ≤12/≤12 case by default (es locale)', () => {
+        expect(normalizeImportDate('12/05/2009')).toBe('2009-05-12'); // day-first default
+    });
+    it('honors an explicit month-first order for the ambiguous case', () => {
+        expect(normalizeImportDate('12/05/2009', 'mdy')).toBe('2009-12-05');
+        expect(normalizeImportDate('01/02/2009', 'mdy')).toBe('2009-01-02');
+        expect(normalizeImportDate('01/02/2009', 'dmy')).toBe('2009-02-01');
+    });
+    it('unambiguous day-first (day>12) ignores an mdy hint', () => {
+        expect(normalizeImportDate('25/12/2020', 'mdy')).toBe('2020-12-25');
+    });
+    it('still returns null for a genuinely impossible date', () => {
+        expect(normalizeImportDate('45/13/2024', 'mdy')).toBeNull();
+    });
+});
+
+describe('inferDateOrder (audit E16)', () => {
+    it('infers month-first when a cell has day>12 in the second position', () => {
+        expect(inferDateOrder(['03/14/2009', '12/05/2009', '01/02/2010'])).toBe('mdy');
+    });
+    it('infers day-first when a cell has day>12 in the first position', () => {
+        expect(inferDateOrder(['14/03/2009', '12/05/2009'])).toBe('dmy');
+    });
+    it('returns ambiguous when no cell proves a layout', () => {
+        expect(inferDateOrder(['12/05/2009', '01/02/2010', undefined, 'ayer'])).toBe('ambiguous');
+    });
+    it('takes the majority under conflicting evidence', () => {
+        expect(inferDateOrder(['14/03/2009', '15/03/2009', '03/14/2009'])).toBe('dmy'); // 2 dmy vs 1 mdy
     });
 });

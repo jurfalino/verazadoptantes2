@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.47.3] - 2026-08-25
+
+### Fixed — US MM/DD/YYYY import dates dropped or mis-parsed (audit E16)
+
+Import date parsing was hard day-first, so a US `MM/DD/YYYY` sheet **dropped** any date with day>12 (`03/14/2009` → null) and **silently mis-dated** the rest (`12/05/2009` → May 12). Now: (1) a per-cell floor recovers impossible day-first dates by retrying month-first (no more dropped dates); (2) `inferDateOrder` detects the sheet's day-first vs month-first layout from its own unambiguous dates and applies it consistently; (3) the review step shows a **D/M/A ↔ M/D/A** toggle (with the detected/ambiguous state) to override. Added a 9-case unit suite (also chips at E17). Day-first (es) remains the default when there's no evidence.
+
 ## [2.47.2] - 2026-08-25
 
 ### Changed — network-first social entry in the ImportWizard grid

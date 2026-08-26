@@ -28,7 +28,7 @@ export function normalizeRating(raw: string | undefined): number | null {
  *  resolved date so the coercion is visible. Both are fallbacks: a complete date
  *  anywhere in the cell always wins. Returns null when no date is present ("hace un
  *  mes", "Feb 23rd", …). */
-export function normalizeImportDate(raw: string | undefined): string | null {
+export function normalizeImportDate(raw: string | undefined, order: 'dmy' | 'mdy' = 'dmy'): string | null {
     if (!raw) return null;
     const s = String(raw).trim();
     const candidates: { idx: number; val: string | null }[] = [];
@@ -38,7 +38,20 @@ export function normalizeImportDate(raw: string | undefined): string | null {
     if (dmy) {
         let year = +dmy[3];
         if (year < 100) year += year < 50 ? 2000 : 1900;
-        candidates.push({ idx: dmy.index ?? Infinity, val: ymd(year, +dmy[2], +dmy[1]) }); // day-first
+        const a = +dmy[1], b = +dmy[2];
+        const dayFirst = ymd(year, b, a);   // a=day,  b=month
+        const monthFirst = ymd(year, a, b); // a=month, b=day
+        // Disambiguate where a component proves the layout (a value >12 can only be
+        // the day); otherwise honor `order` (default day-first, es locale).
+        let val: string | null;
+        if (a > 12 && b <= 12) val = dayFirst;        // a can only be a day
+        else if (b > 12 && a <= 12) val = monthFirst; // b can only be a day → month-first
+        else val = order === 'mdy' ? monthFirst : dayFirst;
+        // Impossibility floor: never DROP a recoverable date — if the chosen reading
+        // is invalid but the other parses, use the other. Fixes US MM/DD/YYYY dates
+        // (e.g. 03/14/2009) that day-first used to turn into null. (audit E16)
+        if (!val) val = dayFirst ?? monthFirst;
+        candidates.push({ idx: dmy.index ?? Infinity, val });
     }
     // Earliest-positioned valid date wins (an ISO prefix beats a later dmy match).
     const valid = candidates.filter(c => c.val).sort((a, b) => a.idx - b.idx);
@@ -54,6 +67,29 @@ export function normalizeImportDate(raw: string | undefined): string | null {
     }
     return null;
 }
+/**
+ * Infer whether a sheet's numeric D/M/Y column is day-first ('dmy') or month-first
+ * ('mdy') from UNAMBIGUOUS evidence: a component > 12 can only be the day. Returns
+ * 'ambiguous' when no cell proves either layout (caller defaults to day-first, es);
+ * mixed evidence → the majority. Pure — the wizard runs it once over the mapped
+ * date column, then passes the winner into normalizeImportDate. (audit E16)
+ */
+export function inferDateOrder(cells: Array<string | null | undefined>): 'dmy' | 'mdy' | 'ambiguous' {
+    let dmy = 0, mdy = 0;
+    for (const raw of cells) {
+        if (!raw) continue;
+        const m = String(raw).match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+        if (!m) continue;
+        const a = +m[1], b = +m[2];
+        if (a > 12 && b <= 12) dmy++;
+        else if (b > 12 && a <= 12) mdy++;
+    }
+    if (dmy === 0 && mdy === 0) return 'ambiguous';
+    if (mdy === 0) return 'dmy';
+    if (dmy === 0) return 'mdy';
+    return dmy >= mdy ? 'dmy' : 'mdy';
+}
+
 function ymd(y: number, m: number, d: number): string | null {
     if (m < 1 || m > 12 || d < 1 || d > 31) return null;
     return `${y.toString().padStart(4, '0')}-${m.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}`;
