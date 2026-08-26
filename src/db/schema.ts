@@ -11,7 +11,8 @@ export const adopters = sqliteTable("adopters", {
     // every new/edited row; null on rows last saved before this column existed.
     contactEntries: text("contact_entries"),
     addressInfo: text("address_info"), // Stores physical addresses
-    familyMembers: text("family_members"), // Stores household members / aliases
+    familyMembers: text("family_members"), // Legacy free-text household members (deprecated; kept for read + manual "Convertir")
+    householdMembers: text("household_members"), // JSON: HouseholdMember[] — structured people w/ own contactEntries (src/lib/householdMembers.ts)
     notes: text("notes"), // Free-text observations, age, behavior, etc.
 
     // Metadata
