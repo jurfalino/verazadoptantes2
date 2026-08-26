@@ -218,31 +218,43 @@ export default function ContactEntriesInput({ entries, onChange }: ContactEntrie
                                     </div>
                                 ) : entry.type === 'social' ? (
                                     <div className="flex-1 min-w-0 space-y-1.5">
-                                        <input
-                                            type="text"
-                                            value={entry.value}
-                                            onChange={e => {
-                                                const val = e.target.value;
-                                                const det = detectSocialPlatform(val);
-                                                updateEntry(i, det ? { value: val, platform: det } : { value: val });
-                                            }}
-                                            placeholder={t('adopter.ce_input_ph_social')}
-                                            disabled={isMasked}
-                                            data-testid="contact-entry-value"
-                                            className="w-full rounded-lg border border-teal-200 bg-white text-teal-900 text-sm px-3 py-1.5 outline-none focus:border-teal-500 disabled:bg-stone-100 disabled:text-stone-500 disabled:cursor-not-allowed"
-                                        />
-                                        {!isMasked && entry.value.trim().length > 0 && (() => {
+                                        {(() => {
+                                            // Network-first (mirrors the manual composer): pick the
+                                            // network before/above the value so the placeholder can
+                                            // adapt per network (Facebook nudges the profile link,
+                                            // whose numeric id is FB's stable dedup identifier). A
+                                            // pasted URL still auto-detects + locks the platform.
                                             const det = detectSocialPlatform(entry.value);
+                                            const eff = det ?? entry.platform ?? null;
                                             return (
-                                                <div className="flex items-center gap-2 flex-wrap">
-                                                    {!det && <span className="text-[11px] font-semibold text-red-600">{t('adopter.ce_social_which')} *</span>}
-                                                    <SocialPlatformPicker
-                                                        value={det ?? entry.platform ?? null}
-                                                        locked={!!det}
-                                                        onChange={(pl) => updateEntry(i, { platform: pl })}
-                                                        size={18}
+                                                <>
+                                                    {!isMasked && (
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className="text-[11px] font-semibold text-stone-600">
+                                                                {t('adopter.ce_social_which')}{!det && <span className="text-red-600"> *</span>}
+                                                            </span>
+                                                            <SocialPlatformPicker
+                                                                value={eff}
+                                                                locked={!!det}
+                                                                onChange={(pl) => updateEntry(i, { platform: pl })}
+                                                                size={18}
+                                                            />
+                                                        </div>
+                                                    )}
+                                                    <input
+                                                        type="text"
+                                                        value={entry.value}
+                                                        onChange={e => {
+                                                            const val = e.target.value;
+                                                            const d = detectSocialPlatform(val);
+                                                            updateEntry(i, d ? { value: val, platform: d } : { value: val });
+                                                        }}
+                                                        placeholder={eff ? t(`adopter.ce_input_ph_social_${eff}`) : t('adopter.ce_input_ph_social')}
+                                                        disabled={isMasked}
+                                                        data-testid="contact-entry-value"
+                                                        className="w-full rounded-lg border border-teal-200 bg-white text-teal-900 text-sm px-3 py-1.5 outline-none focus:border-teal-500 disabled:bg-stone-100 disabled:text-stone-500 disabled:cursor-not-allowed"
                                                     />
-                                                </div>
+                                                </>
                                             );
                                         })()}
                                     </div>

@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.47.2] - 2026-08-25
+
+### Changed — network-first social entry in the ImportWizard grid
+
+The bulk-edit import grid (`ContactEntriesInput`) now matches the manual composer: a social row shows the network picker **above** the value with the "¿Qué red social es?" prompt, and the input placeholder adapts per network (`@usuario o enlace`, or `facebook.com/usuario o enlace del perfil`). A pasted URL still auto-detects and locks. Closes the import-grid gap so sheet imports capture `platform` the same way the composer does, feeding the platform-aware dual-token dedup (esp. Facebook numeric IDs).
+
 ## [2.47.1] - 2026-08-25
 
 ### Added — shared/rescuer-contact warning when adding a social
