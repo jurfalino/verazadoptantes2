@@ -693,7 +693,7 @@ export const pt = {
         ce_type_id: 'Documento',
         ce_type_address: 'Endereço',
         ce_type_other: 'Nota',
-        ce_type_alias: 'Conhecido(a) como',
+        ce_type_alias: 'Outro nome/identidade',
         ce_empty: 'Ainda não há dados de contato. Adicione um.',
         ce_masked: 'oculto',
         pii_protected_title: 'Dados de contato protegidos',

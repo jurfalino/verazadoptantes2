@@ -686,7 +686,7 @@ export const en = {
         ce_type_id: 'ID',
         ce_type_address: 'Address',
         ce_type_other: 'Note',
-        ce_type_alias: 'Also known as',
+        ce_type_alias: 'Other name/identity',
         ce_empty: 'No contact entries yet. Add one.',
         ce_masked: 'hidden',
         pii_protected_title: 'Contact details are protected',

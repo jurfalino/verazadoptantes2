@@ -171,7 +171,7 @@ export const TYPE_LABEL: Record<Exclude<ContactEntryType, 'other'>, string> = {
     social: 'Redes',
     id: 'Documento',
     address: 'Dirección',
-    alias: 'Conocido/a como',
+    alias: 'Otro nombre/identidad',
 };
 
 /** Order entries appear in the derived blob. */

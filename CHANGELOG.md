@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.47.8] - 2026-08-26
+
+### Changed — alias contact label "Conocido/a como" → "Otro nombre/identidad"
+
+Relabels the alias contact-entry type to better convey that it captures an alternate name/identity a person uses (load-bearing for abuse detection), not just a nickname. Updated es/en/pt (`ce_type_alias`) and the derived-blob label (`TYPE_LABEL.alias`). Copy-only.
+
 ## [2.47.7] - 2026-08-26
 
 ### Fixed — address: a city-only entry showed the city in the street field on re-edit
