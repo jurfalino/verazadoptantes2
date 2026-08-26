@@ -212,6 +212,11 @@ export const adopterEvents = sqliteTable("adopter_events", {
     sourceUrl: text("source_url"),
     recordedBy: text("recorded_by").default("anonymous"),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    // Moderation: when set, this note was reviewed as a FALSE POSITIVE in the
+    // "Contacto en notas" data-quality report and is excluded from it. Cleared
+    // when the note is edited so a materially changed note is re-reviewed. See
+    // src/app/actions/dataQuality.ts.
+    piiDismissedAt: integer("pii_dismissed_at", { mode: "timestamp" }),
 }, (table) => ({
     adopterIdx: index("idx_events_adopter").on(table.adopterId),
     animalIdx: index("idx_events_animal").on(table.animalId),

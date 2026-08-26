@@ -59,6 +59,7 @@ WHERE e.details IS NOT NULL AND (
   OR lower(e.details) LIKE '%http%' OR lower(e.details) LIKE '%wa.me%'
   OR lower(e.details) LIKE '%barrio%' OR lower(e.details) LIKE '%calle %' OR lower(e.details) LIKE '%avenida%'
 )
+  AND e.pii_dismissed_at IS NULL
 ORDER BY a.name
 `.trim();
 
@@ -127,7 +128,7 @@ export async function updateEventDetails(eventId: string, details: string): Prom
         if (!db) return { success: false, error: 'No database' };
 
         const trimmed = details.trim();
-        await db.update(adopterEvents).set({ details: trimmed || null }).where(eq(adopterEvents.id, eventId));
+        await db.update(adopterEvents).set({ details: trimmed || null, piiDismissedAt: null }).where(eq(adopterEvents.id, eventId));
         logAudit({ userEmail: email, action: 'data_quality_edit_note', details: { eventId, length: trimmed.length } });
         logger.info('updateEventDetails: saved', { user: email, eventId });
         return { success: true };
@@ -201,5 +202,54 @@ export async function getReportedFlags(): Promise<{ flags: ReportedFlagRow[]; er
     } catch (e) {
         const errorId = logger.error('getReportedFlags: failed', { user: email, error: e instanceof Error ? e.message : String(e) });
         return { flags: [], error: errorId };
+    }
+}
+
+
+/**
+ * Mark a "Contacto en notas" row as a reviewed FALSE POSITIVE (e.g. "de la calle"
+ * tripping the address heuristic). Sets `adopter_events.pii_dismissed_at` so the
+ * row drops off the report without changing the note text. Moderators + admins.
+ * Reversible via `undismissPiiNote`; also auto-cleared if the note is later edited.
+ */
+export async function dismissPiiNote(eventId: string): Promise<{ success: boolean; error?: string }> {
+    const session = await auth();
+    const email = session?.user?.email;
+    try {
+        if (!email || !(await checkIsModeratorOrAdminAsync(email))) {
+            logger.warn('dismissPiiNote: unauthorized', { user: email, eventId });
+            return { success: false, error: 'Unauthorized' };
+        }
+        if (!eventId) return { success: false, error: 'Missing event id' };
+        const db = await getDb();
+        if (!db) return { success: false, error: 'No database' };
+        await db.update(adopterEvents).set({ piiDismissedAt: new Date() }).where(eq(adopterEvents.id, eventId));
+        logAudit({ userEmail: email, action: 'data_quality_dismiss_note', details: { eventId } });
+        logger.info('dismissPiiNote: dismissed', { user: email, eventId });
+        return { success: true };
+    } catch (e) {
+        const errorId = logger.error('dismissPiiNote: failed', { user: email, eventId, error: e instanceof Error ? e.message : String(e) });
+        return { success: false, error: errorId };
+    }
+}
+
+/** Undo a `dismissPiiNote` — the row reappears in the report. Moderators + admins. */
+export async function undismissPiiNote(eventId: string): Promise<{ success: boolean; error?: string }> {
+    const session = await auth();
+    const email = session?.user?.email;
+    try {
+        if (!email || !(await checkIsModeratorOrAdminAsync(email))) {
+            logger.warn('undismissPiiNote: unauthorized', { user: email, eventId });
+            return { success: false, error: 'Unauthorized' };
+        }
+        if (!eventId) return { success: false, error: 'Missing event id' };
+        const db = await getDb();
+        if (!db) return { success: false, error: 'No database' };
+        await db.update(adopterEvents).set({ piiDismissedAt: null }).where(eq(adopterEvents.id, eventId));
+        logAudit({ userEmail: email, action: 'data_quality_undismiss_note', details: { eventId } });
+        return { success: true };
+    } catch (e) {
+        const errorId = logger.error('undismissPiiNote: failed', { user: email, eventId, error: e instanceof Error ? e.message : String(e) });
+        return { success: false, error: errorId };
     }
 }

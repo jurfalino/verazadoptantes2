@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { updateEventDetails, type PiiNoteRow } from '@/app/actions/dataQuality';
+import { updateEventDetails, dismissPiiNote, undismissPiiNote, type PiiNoteRow } from '@/app/actions/dataQuality';
+import { detectNotePii, noteHasPii } from '@/domain/notePii';
 import { useShowToast } from '@/components/ui/Toast';
 
 // Accent-insensitive, case-insensitive normalization for the search box.
@@ -48,7 +49,16 @@ export default function PiiNotesPanel({ rows }: { rows: PiiNoteRow[] }) {
         try {
             const res = await updateEventDetails(r.eventId, val);
             if (res?.success) {
-                setItems(prev => prev.map(x => (x.eventId === r.eventId ? { ...x, note: val } : x)));
+                // Cleaned of all PII heuristics → drop the row from the report right
+                // away (no reload). Otherwise keep it, refreshing the type badges.
+                if (!noteHasPii(val)) {
+                    setItems(prev => prev.filter(x => x.eventId !== r.eventId));
+                } else {
+                    const f = detectNotePii(val);
+                    setItems(prev => prev.map(x => (x.eventId === r.eventId
+                        ? { ...x, note: val, hasPhone: f.hasPhone, hasSocial: f.hasSocial, hasAddress: f.hasAddress }
+                        : x)));
+                }
                 setDrafts(prev => { const n = { ...prev }; delete n[r.eventId]; return n; });
                 toast.success('Guardado', 'La nota se actualizó.');
             } else {
@@ -56,6 +66,29 @@ export default function PiiNotesPanel({ rows }: { rows: PiiNoteRow[] }) {
             }
         } catch (e) {
             toast.error('No se pudo guardar', e instanceof Error ? e.message : 'Error inesperado.');
+        } finally {
+            setSaving(null);
+        }
+    }
+
+    async function dismiss(r: PiiNoteRow) {
+        setSaving(r.eventId);
+        try {
+            const res = await dismissPiiNote(r.eventId);
+            if (res?.success) {
+                setItems(prev => prev.filter(x => x.eventId !== r.eventId));
+                toast.success('Descartado', 'Marcado como falso positivo — no volverá a aparecer.', {
+                    label: 'Deshacer',
+                    onClick: async () => {
+                        const u = await undismissPiiNote(r.eventId);
+                        if (u?.success) setItems(prev => (prev.some(x => x.eventId === r.eventId) ? prev : [...prev, r]));
+                    },
+                });
+            } else {
+                toast.error('No se pudo descartar', res?.error === 'Unauthorized' ? 'No tenés permiso.' : 'Intentá de nuevo.', res?.error && res.error !== 'Unauthorized' ? res.error : undefined);
+            }
+        } catch (e) {
+            toast.error('No se pudo descartar', e instanceof Error ? e.message : 'Error inesperado.');
         } finally {
             setSaving(null);
         }
@@ -121,7 +154,16 @@ export default function PiiNotesPanel({ rows }: { rows: PiiNoteRow[] }) {
                                     spellCheck={false}
                                 />
 
-                                <div className="flex items-center justify-end gap-2 mt-2">
+                                <div className="flex items-center justify-between gap-2 mt-2">
+                                    <button
+                                        onClick={() => dismiss(r)}
+                                        disabled={busy}
+                                        title="No es dato de contacto (p. ej. “de la calle”). Lo saca del reporte; se puede deshacer."
+                                        className="text-xs font-semibold px-3 py-1.5 rounded-lg text-stone-500 hover:text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                                    >
+                                        Falso positivo
+                                    </button>
+                                    <div className="flex items-center gap-2">
                                     {dirty && (
                                         <button
                                             onClick={() => setDrafts(prev => { const n = { ...prev }; delete n[r.eventId]; return n; })}
@@ -138,6 +180,7 @@ export default function PiiNotesPanel({ rows }: { rows: PiiNoteRow[] }) {
                                     >
                                         {busy ? 'Guardando…' : 'Guardar'}
                                     </button>
+                                    </div>
                                 </div>
                             </div>
                         );

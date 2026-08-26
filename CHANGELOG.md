@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.47.4] - 2026-08-26
+
+### Added — "Contacto en notas" report: drop-on-save + "Falso positivo" dismiss
+
+The data-quality PII-in-notes report was a pure live query with no way to clear a row without a full page reload, and no way to suppress a false positive (e.g. a note saying "un gatito de la **calle**" tripping the address heuristic). Now:
+- **Drop-on-save:** saving a note that no longer matches any PII heuristic removes its row immediately (shared `detectNotePii` mirrors the SQL; +unit tests).
+- **"Falso positivo" dismiss:** marks a reviewed note as a false positive (new nullable `adopter_events.pii_dismissed_at`) so it drops off the report without altering the note; reversible via a "Deshacer" toast, and auto-cleared if the note is later edited (re-review). Moderators + admins; audited.
+
+**DB migration:** `0059_pii_note_dismiss.sql` (adds `adopter_events.pii_dismissed_at`).
+
 ## [2.47.3] - 2026-08-25
 
 ### Fixed — US MM/DD/YYYY import dates dropped or mis-parsed (audit E16)
