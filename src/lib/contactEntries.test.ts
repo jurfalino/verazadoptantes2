@@ -467,3 +467,32 @@ describe('social handle normalization (v2.16.0-14)', () => {
         expect(merged).toHaveLength(2);
     });
 });
+
+describe('address street/locality round-trip (regression: empty street)', () => {
+    it('keeps an empty street empty on re-edit when only a city was entered', () => {
+        // Repro: street empty, city "Buenos Aires". joinedAddressValue drops the
+        // empty street so `value` has no comma; deserialize drops the empty street.
+        // Before the fix, deriveStreet parsed `value` and put the city in street.
+        const json = JSON.stringify([{ type: 'address', value: 'Buenos Aires', streetAndNumber: '', locality: 'Buenos Aires' }]);
+        const [entry] = deserializeContactEntries(json);
+        expect(deriveStreet(entry)).toBe('');
+        expect(deriveLocality(entry)).toBe('Buenos Aires');
+    });
+    it('round-trips a full structured address', () => {
+        const json = JSON.stringify([{ type: 'address', value: 'Cordoba 450, CABA', streetAndNumber: 'Cordoba 450', locality: 'CABA' }]);
+        const [entry] = deserializeContactEntries(json);
+        expect(deriveStreet(entry)).toBe('Cordoba 450');
+        expect(deriveLocality(entry)).toBe('CABA');
+    });
+    it('street filled + empty city round-trips correctly', () => {
+        const json = JSON.stringify([{ type: 'address', value: 'Cordoba 450', streetAndNumber: 'Cordoba 450', locality: '' }]);
+        const [entry] = deserializeContactEntries(json);
+        expect(deriveStreet(entry)).toBe('Cordoba 450');
+        expect(deriveLocality(entry)).toBe('');
+    });
+    it('legacy single-value (comma) still splits into street + locality', () => {
+        const [entry] = deserializeContactEntries(JSON.stringify([{ type: 'address', value: 'Cordoba 450, CABA' }]));
+        expect(deriveStreet(entry)).toBe('Cordoba 450');
+        expect(deriveLocality(entry)).toBe('CABA');
+    });
+});

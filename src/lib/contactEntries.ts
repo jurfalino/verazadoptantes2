@@ -277,6 +277,12 @@ export function deriveStableLegacyId(type: ContactEntryType, value: string): str
  */
 export function deriveStreet(entry: ContactEntry): string {
     if (typeof entry.streetAndNumber === 'string') return entry.streetAndNumber;
+    // Structured entry (a locality is present) with no stored street → the street
+    // was legitimately empty. Do NOT parse `value`: when the street is empty,
+    // `joinedAddressValue` drops it and `value` has no comma, so the comma-split
+    // fallback below would wrongly place the locality into the street field.
+    if (typeof entry.locality === 'string') return '';
+    // Legacy single-value entry: split on the first comma.
     const v = entry.value || '';
     const firstComma = v.indexOf(',');
     return firstComma > 0 ? v.slice(0, firstComma).trim() : v.trim();

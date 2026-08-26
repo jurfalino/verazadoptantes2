@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.47.7] - 2026-08-26
+
+### Fixed — address: a city-only entry showed the city in the street field on re-edit
+
+Entering only a city (leaving street empty) and re-editing put the city in the **street** field. Cause: `joinedAddressValue` drops the empty street, so the canonical `value` has no comma; on re-edit `deriveStreet` fell back to comma-splitting `value` and returned the whole thing (the city) as the street. `deriveStreet` now returns an empty street for a structured entry (when a `locality` is present) instead of parsing `value`. Legacy single-value addresses are unchanged. +4 round-trip tests (closes the deferred address round-trip test debt).
+
 ## [2.47.6] - 2026-08-26
 
 ### Added — data-quality report scan instrumentation
