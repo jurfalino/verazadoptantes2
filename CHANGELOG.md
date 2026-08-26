@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.47.1] - 2026-08-25
+
+### Added — shared/rescuer-contact warning when adding a social
+
+When a social handle being added already appears on more than 8 records, the composer's duplicate hint now shows a data-quality warning ("this contact is on N records — the adopter's, or a rescuer's own?") instead of offering to flag those records as duplicates. Complements the batch-generation guard shipped in 2.47.0. Phase v2 of the social dedup plan.
+
 ## [2.47.0] - 2026-08-25
 
 ### Changed — platform-aware social duplicate detection (dual token) · TOKENIZER_VERSION v4

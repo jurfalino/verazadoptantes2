@@ -1,7 +1,7 @@
 'use server';
 
 import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, adopterStats, duplicateTokens, duplicateCandidates, auditLog } from '@/db/schema';
-import { eq, or, and, inArray } from 'drizzle-orm';
+import { eq, or, and, inArray, sql } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { getDb } from './_db';
 import { reassignAdopterRecords } from './_recordWrite';
@@ -914,5 +914,29 @@ export async function checkTokenDuplicates(data: {
             error: error instanceof Error ? error.message : String(error),
         });
         return [];
+    }
+}
+
+
+/**
+ * Count how many distinct adopters carry a given social handle (via the
+ * `social_handle` token index). Used by the composer's DuplicateHint to warn
+ * when a handle is on MANY records — usually a rescuer's own contact mis-entered
+ * on adopters, not a real duplicate (dedup spec §4, #3-revised). Advisory:
+ * returns 0 on any failure (never blocks the composer).
+ */
+export async function countAdoptersBySocialHandle(value: string): Promise<number> {
+    try {
+        const handle = normalizeSocialHandle(value, detectSocialPlatformFromValue(value));
+        if (!handle) return 0;
+        const db = await getDb();
+        if (!db) return 0;
+        const rows = await db.select({ n: sql<number>`COUNT(DISTINCT ${duplicateTokens.adopterId})` })
+            .from(duplicateTokens)
+            .where(and(eq(duplicateTokens.tokenType, 'social_handle'), eq(duplicateTokens.tokenValue, handle)));
+        return rows[0]?.n ?? 0;
+    } catch (e) {
+        logger.warn('countAdoptersBySocialHandle: query failed', { error: e instanceof Error ? e.message : String(e) });
+        return 0;
     }
 }
