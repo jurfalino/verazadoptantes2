@@ -29,3 +29,22 @@ export function noteHasPii(note: string | null | undefined): boolean {
     const f = detectNotePii(note);
     return f.hasPhone || f.hasSocial || f.hasAddress;
 }
+
+
+/**
+ * Stable content hash of a note (FNV-1a, 8 hex chars). Used to tie a "Falso
+ * positivo" dismissal to the EXACT reviewed text: the report suppresses a row
+ * only while the current note still hashes to the dismissed value, so ANY later
+ * edit (through any write path) automatically re-surfaces it for review. Keeps
+ * the dismissal content-bound instead of event-id-bound. Deterministic; a
+ * collision at worst keeps one edited note suppressed and is astronomically rare.
+ */
+export function noteHash(note: string | null | undefined): string {
+    const s = note ?? '';
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 0x01000193);
+    }
+    return (h >>> 0).toString(16).padStart(8, '0');
+}

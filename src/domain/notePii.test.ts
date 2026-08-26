@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectNotePii, noteHasPii } from './notePii';
+import { detectNotePii, noteHasPii, noteHash } from './notePii';
 
 describe('detectNotePii', () => {
     it('flags a phone (7+ digits or NNNN-NNN)', () => {
@@ -24,5 +24,17 @@ describe('detectNotePii', () => {
         expect(noteHasPii('quiere una gata ya castrada')).toBe(false);
         expect(noteHasPii('')).toBe(false);
         expect(noteHasPii(null)).toBe(false);
+    });
+});
+
+describe('noteHash (dismissal is content-bound)', () => {
+    it('is deterministic and stable for the same text', () => {
+        expect(noteHash('un gatito de la calle')).toBe(noteHash('un gatito de la calle'));
+        expect(noteHash(null)).toBe(noteHash(''));
+    });
+    it('changes when the note changes (so an edited note re-surfaces)', () => {
+        const before = noteHash('un gatito de la calle');
+        const after = noteHash('un gatito de la calle. tel 1145678901');
+        expect(after).not.toBe(before);
     });
 });

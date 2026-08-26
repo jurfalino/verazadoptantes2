@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.47.5] - 2026-08-26
+
+### Fixed — "Contacto en notas" dismiss hardening (EM review P1/P2)
+
+- **P1 — dismiss is now content-bound.** A false-positive dismissal stored only an event-id flag, so editing the note through the profile edit path (`_recordWrite.updateRecord`) could permanently hide *added* PII. Dismissal now stores a hash of the reviewed note (`pii_dismissed_hash`); the report suppresses a row only while the note is unchanged, so any edit through any write path re-surfaces it automatically.
+- **P2 — single source of truth.** `detectNotePii` is now the authority for report membership (the SQL is a documented coarse prefilter); the three duplicate `CASE` pattern columns were removed. `updateEventDetails` returns the authoritative flags so drop-on-save no longer guesses client-side.
+- **P2 — undo failures surface.** An `undismissPiiNote` failure now shows an error toast (with errorId) instead of silently leaving the note hidden.
+
+**DB migration:** `0060_pii_dismiss_hash.sql` (adds `adopter_events.pii_dismissed_hash`).
+
 ## [2.47.4] - 2026-08-26
 
 ### Added — "Contacto en notas" report: drop-on-save + "Falso positivo" dismiss

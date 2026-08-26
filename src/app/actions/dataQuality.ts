@@ -7,6 +7,7 @@ import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, checkIsModeratorOrAdminAsync } from './_db';
+import { detectNotePii, noteHash, type NotePiiFlags } from '@/domain/notePii';
 
 /**
  * "Calidad de datos" moderation report.
@@ -44,11 +45,13 @@ export interface DataQualityReport {
 
 // One row per PII-bearing EVENT (not grouped) so each note maps to its own
 // adopter_events.id and can be edited/saved inline.
+// Coarse DB-side PREFILTER only. The AUTHORITY for what counts as PII in a note
+// is `detectNotePii` (src/domain/notePii.ts), applied in JS below — single source
+// of truth. This WHERE must stay a SUPERSET of detectNotePii so nothing is dropped
+// before the JS check. Dismissal is content-bound and also resolved in JS (hash).
 const PII_SQL = `
 SELECT e.id AS eventId, e.adopter_id AS adopterId, a.name AS name, a.is_public AS isPublic,
-  CASE WHEN e.details GLOB '*[0-9][0-9][0-9][0-9][0-9][0-9][0-9]*' OR e.details GLOB '*[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9]*' THEN 1 ELSE 0 END AS hasPhone,
-  CASE WHEN lower(e.details) LIKE '%facebook%' OR lower(e.details) LIKE '%instagram%' OR lower(e.details) LIKE '%http%' OR lower(e.details) LIKE '%wa.me%' THEN 1 ELSE 0 END AS hasSocial,
-  CASE WHEN lower(e.details) LIKE '%barrio%' OR lower(e.details) LIKE '%calle %' OR lower(e.details) LIKE '%avenida%' THEN 1 ELSE 0 END AS hasAddress,
+  e.pii_dismissed_hash AS piiDismissedHash,
   e.details AS note
 FROM adopter_events e
 JOIN adopters a ON a.id = e.adopter_id AND a.deleted_at IS NULL AND a.is_demo = 0
@@ -59,7 +62,6 @@ WHERE e.details IS NOT NULL AND (
   OR lower(e.details) LIKE '%http%' OR lower(e.details) LIKE '%wa.me%'
   OR lower(e.details) LIKE '%barrio%' OR lower(e.details) LIKE '%calle %' OR lower(e.details) LIKE '%avenida%'
 )
-  AND e.pii_dismissed_at IS NULL
 ORDER BY a.name
 `.trim();
 
@@ -90,16 +92,27 @@ export async function getDataQualityReport(): Promise<DataQualityReport> {
         }
 
         const piiRows = await runReadonly(PII_SQL);
-        const pii: PiiNoteRow[] = piiRows.map((r) => ({
-            eventId: String(r.eventId ?? ''),
-            adopterId: String(r.adopterId ?? ''),
-            name: (r.name as string) ?? '',
-            hasPhone: Number(r.hasPhone) === 1,
-            hasSocial: Number(r.hasSocial) === 1,
-            hasAddress: Number(r.hasAddress) === 1,
-            isProtected: Number(r.isPublic) !== 1,
-            note: (r.note as string) ?? '',
-        }));
+        const pii: PiiNoteRow[] = [];
+        for (const r of piiRows) {
+            const note = (r.note as string) ?? '';
+            const flags = detectNotePii(note); // authority (SQL was only a prefilter)
+            if (!flags.hasPhone && !flags.hasSocial && !flags.hasAddress) continue;
+            // Content-bound dismissal: suppress only while the note is UNCHANGED
+            // since it was reviewed. Any edit (any write path) changes the hash →
+            // the row re-appears automatically.
+            const dismissedHash = (r.piiDismissedHash as string) || null;
+            if (dismissedHash && dismissedHash === noteHash(note)) continue;
+            pii.push({
+                eventId: String(r.eventId ?? ''),
+                adopterId: String(r.adopterId ?? ''),
+                name: (r.name as string) ?? '',
+                hasPhone: flags.hasPhone,
+                hasSocial: flags.hasSocial,
+                hasAddress: flags.hasAddress,
+                isProtected: Number(r.isPublic) !== 1,
+                note,
+            });
+        }
 
         logger.info('getDataQualityReport: served', { user: email, piiCount: pii.length });
         return { pii };
@@ -115,7 +128,7 @@ export async function getDataQualityReport(): Promise<DataQualityReport> {
  * — not a token source, so no re-tokenization needed. Empty → NULL. Audited
  * (event id only; never the note content, which may hold PII).
  */
-export async function updateEventDetails(eventId: string, details: string): Promise<{ success: boolean; error?: string }> {
+export async function updateEventDetails(eventId: string, details: string): Promise<{ success: boolean; error?: string; flags?: NotePiiFlags }> {
     const session = await auth();
     const email = session?.user?.email;
     try {
@@ -128,10 +141,13 @@ export async function updateEventDetails(eventId: string, details: string): Prom
         if (!db) return { success: false, error: 'No database' };
 
         const trimmed = details.trim();
-        await db.update(adopterEvents).set({ details: trimmed || null, piiDismissedAt: null }).where(eq(adopterEvents.id, eventId));
+        await db.update(adopterEvents).set({ details: trimmed || null, piiDismissedAt: null, piiDismissedHash: null }).where(eq(adopterEvents.id, eventId));
         logAudit({ userEmail: email, action: 'data_quality_edit_note', details: { eventId, length: trimmed.length } });
         logger.info('updateEventDetails: saved', { user: email, eventId });
-        return { success: true };
+        // Server is the authority for whether the saved note still qualifies for
+        // the report (single source of truth = detectNotePii). The panel uses this
+        // to drop the row / refresh badges without a reload.
+        return { success: true, flags: detectNotePii(trimmed) };
     } catch (e) {
         const errorId = logger.error('updateEventDetails: failed', { user: email, eventId, error: e instanceof Error ? e.message : String(e) });
         return { success: false, error: errorId };
@@ -223,7 +239,12 @@ export async function dismissPiiNote(eventId: string): Promise<{ success: boolea
         if (!eventId) return { success: false, error: 'Missing event id' };
         const db = await getDb();
         if (!db) return { success: false, error: 'No database' };
-        await db.update(adopterEvents).set({ piiDismissedAt: new Date() }).where(eq(adopterEvents.id, eventId));
+        // Hash the CURRENT persisted note so the dismissal only holds while the
+        // note is unchanged (content-bound — survives no write path, re-surfaces
+        // on any edit). Fetch server-side; never trust a client-supplied note.
+        const rows = await db.select({ details: adopterEvents.details }).from(adopterEvents).where(eq(adopterEvents.id, eventId)).limit(1);
+        if (!rows.length) return { success: false, error: 'Not found' };
+        await db.update(adopterEvents).set({ piiDismissedAt: new Date(), piiDismissedHash: noteHash(rows[0].details ?? '') }).where(eq(adopterEvents.id, eventId));
         logAudit({ userEmail: email, action: 'data_quality_dismiss_note', details: { eventId } });
         logger.info('dismissPiiNote: dismissed', { user: email, eventId });
         return { success: true };
@@ -245,7 +266,7 @@ export async function undismissPiiNote(eventId: string): Promise<{ success: bool
         if (!eventId) return { success: false, error: 'Missing event id' };
         const db = await getDb();
         if (!db) return { success: false, error: 'No database' };
-        await db.update(adopterEvents).set({ piiDismissedAt: null }).where(eq(adopterEvents.id, eventId));
+        await db.update(adopterEvents).set({ piiDismissedAt: null, piiDismissedHash: null }).where(eq(adopterEvents.id, eventId));
         logAudit({ userEmail: email, action: 'data_quality_undismiss_note', details: { eventId } });
         return { success: true };
     } catch (e) {

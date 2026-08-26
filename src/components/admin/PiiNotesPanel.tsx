@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { updateEventDetails, dismissPiiNote, undismissPiiNote, type PiiNoteRow } from '@/app/actions/dataQuality';
-import { detectNotePii, noteHasPii } from '@/domain/notePii';
+import { detectNotePii } from '@/domain/notePii';
 import { useShowToast } from '@/components/ui/Toast';
 
 // Accent-insensitive, case-insensitive normalization for the search box.
@@ -49,12 +49,13 @@ export default function PiiNotesPanel({ rows }: { rows: PiiNoteRow[] }) {
         try {
             const res = await updateEventDetails(r.eventId, val);
             if (res?.success) {
-                // Cleaned of all PII heuristics → drop the row from the report right
-                // away (no reload). Otherwise keep it, refreshing the type badges.
-                if (!noteHasPii(val)) {
+                // Use the SERVER's authoritative flags (single source = detectNotePii);
+                // fall back to the client copy only if the action didn't return them.
+                const f = res.flags ?? detectNotePii(val);
+                if (!f.hasPhone && !f.hasSocial && !f.hasAddress) {
+                    // No PII left → drop the row from the report immediately (no reload).
                     setItems(prev => prev.filter(x => x.eventId !== r.eventId));
                 } else {
-                    const f = detectNotePii(val);
                     setItems(prev => prev.map(x => (x.eventId === r.eventId
                         ? { ...x, note: val, hasPhone: f.hasPhone, hasSocial: f.hasSocial, hasAddress: f.hasAddress }
                         : x)));
@@ -80,8 +81,16 @@ export default function PiiNotesPanel({ rows }: { rows: PiiNoteRow[] }) {
                 toast.success('Descartado', 'Marcado como falso positivo — no volverá a aparecer.', {
                     label: 'Deshacer',
                     onClick: async () => {
-                        const u = await undismissPiiNote(r.eventId);
-                        if (u?.success) setItems(prev => (prev.some(x => x.eventId === r.eventId) ? prev : [...prev, r]));
+                        try {
+                            const u = await undismissPiiNote(r.eventId);
+                            if (u?.success) {
+                                setItems(prev => (prev.some(x => x.eventId === r.eventId) ? prev : [...prev, r]));
+                            } else {
+                                toast.error('No se pudo deshacer', u?.error === 'Unauthorized' ? 'No tenés permiso.' : 'Intentá de nuevo.', u?.error && u.error !== 'Unauthorized' ? u.error : undefined);
+                            }
+                        } catch (e) {
+                            toast.error('No se pudo deshacer', e instanceof Error ? e.message : 'Error inesperado.');
+                        }
                     },
                 });
             } else {

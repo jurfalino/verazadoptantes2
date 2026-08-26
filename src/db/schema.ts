@@ -217,6 +217,11 @@ export const adopterEvents = sqliteTable("adopter_events", {
     // when the note is edited so a materially changed note is re-reviewed. See
     // src/app/actions/dataQuality.ts.
     piiDismissedAt: integer("pii_dismissed_at", { mode: "timestamp" }),
+    // Content hash (notePii.noteHash) of the note AT dismissal — the report
+    // suppresses the row only while the current note still hashes to this, so any
+    // later edit through any write path auto-re-surfaces it. Content-bound, not
+    // event-id-bound (fixes hiding PII added after a dismissal).
+    piiDismissedHash: text("pii_dismissed_hash"),
 }, (table) => ({
     adopterIdx: index("idx_events_adopter").on(table.adopterId),
     animalIdx: index("idx_events_animal").on(table.animalId),
