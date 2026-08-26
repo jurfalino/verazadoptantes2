@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.47.6] - 2026-08-26
+
+### Added — data-quality report scan instrumentation
+
+`getDataQualityReport` now logs the D1 `rows_read` (full-scan cost), D1 query `duration`, wall `durationMs`, and prefilter-vs-final row counts. Turns "when does the report need the indexed `has_pii` design (P3.3)?" into a measured signal — revisit when p95 `dbMs`/`durationMs` crosses ~250ms — instead of a guessed row threshold.
+
 ## [2.47.5] - 2026-08-26
 
 ### Fixed — "Contacto en notas" dismiss hardening (EM review P1/P2)

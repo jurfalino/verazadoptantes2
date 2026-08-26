@@ -65,8 +65,17 @@ WHERE e.details IS NOT NULL AND (
 ORDER BY a.name
 `.trim();
 
-async function runReadonly(query: string): Promise<Record<string, unknown>[]> {
-    let env: { DB?: { prepare: (q: string) => { all: () => Promise<{ results?: unknown[] }> } } } | undefined;
+interface ReadonlyResult {
+    rows: Record<string, unknown>[];
+    /** D1's authoritative full-scan cost — the metric that decides when the report
+     *  needs the indexed `has_pii` design (dedup spec P3.3). Null in local dev. */
+    rowsRead: number | null;
+    /** D1-reported query time (ms). Null in local dev. */
+    dbMs: number | null;
+}
+
+async function runReadonly(query: string): Promise<ReadonlyResult> {
+    let env: { DB?: { prepare: (q: string) => { all: () => Promise<{ results?: unknown[]; meta?: { rows_read?: number; duration?: number } }> } } } | undefined;
     try {
         env = getRequestContext().env as typeof env;
     } catch {
@@ -74,12 +83,17 @@ async function runReadonly(query: string): Promise<Record<string, unknown>[]> {
     }
     if (env?.DB) {
         const res = await env.DB.prepare(query).all();
-        return (res.results ?? []) as Record<string, unknown>[];
+        return {
+            rows: (res.results ?? []) as Record<string, unknown>[],
+            rowsRead: res.meta?.rows_read ?? null,
+            dbMs: res.meta?.duration ?? null,
+        };
     }
-    // Local dev fallback via Drizzle (better-sqlite3).
+    // Local dev fallback via Drizzle (better-sqlite3) — no D1 meta available.
     const db = await getDb();
     if (!db) throw new Error('Database unavailable');
-    return await (db as unknown as { all: (q: unknown) => Promise<Record<string, unknown>[]> }).all(sql.raw(query));
+    const rows = await (db as unknown as { all: (q: unknown) => Promise<Record<string, unknown>[]> }).all(sql.raw(query));
+    return { rows, rowsRead: null, dbMs: null };
 }
 
 export async function getDataQualityReport(): Promise<DataQualityReport> {
@@ -91,7 +105,8 @@ export async function getDataQualityReport(): Promise<DataQualityReport> {
             return { pii: [], error: 'Unauthorized' };
         }
 
-        const piiRows = await runReadonly(PII_SQL);
+        const t0 = Date.now();
+        const { rows: piiRows, rowsRead, dbMs } = await runReadonly(PII_SQL);
         const pii: PiiNoteRow[] = [];
         for (const r of piiRows) {
             const note = (r.note as string) ?? '';
@@ -114,7 +129,14 @@ export async function getDataQualityReport(): Promise<DataQualityReport> {
             });
         }
 
-        logger.info('getDataQualityReport: served', { user: email, piiCount: pii.length });
+        logger.info('getDataQualityReport: served', {
+            user: email,
+            piiCount: pii.length,          // rows shown after JS authority + dismissal filter
+            prefilterRows: piiRows.length, // rows the SQL prefilter returned (processed in JS)
+            rowsRead,                      // D1 full-scan rows read — the P3.3 trigger metric
+            dbMs,                          // D1-reported query time (ms)
+            durationMs: Date.now() - t0,   // wall time incl. JS processing
+        });
         return { pii };
     } catch (e) {
         const errorId = logger.error('getDataQualityReport: failed', { user: email, error: e instanceof Error ? e.message : String(e) });
