@@ -9,6 +9,7 @@ import { isAdminAsync } from '@/config/admins';
 import { logger } from '@/lib/logger';
 import { extractTokens, computeTokenHash } from '@/lib/tokenizer';
 import { deserializeContactEntries } from '@/lib/contactEntries';
+import { deserializeHouseholdMembers } from '@/lib/householdMembers';
 import { computeAvgRating } from '@/domain/ratings';
 
 /**
@@ -191,6 +192,7 @@ export async function POST(_request: Request) {
                 contactInfo: adopters.contactInfo,
                 addressInfo: adopters.addressInfo,
                 familyMembers: adopters.familyMembers,
+                householdMembers: adopters.householdMembers,
                 sourceUrl: adopters.sourceUrl,
                 tokenHash: adopters.tokenHash,
             })
@@ -213,8 +215,9 @@ export async function POST(_request: Request) {
                 const entries = deserializeContactEntries(adopter.contactEntries);
                 const aliases = entries.filter(e => e.type === 'alias').map(e => e.value);
                 const socials = entries.filter(e => e.type === 'social').map(e => ({ value: e.value, platform: e.platform ?? null }));
+                const household = deserializeHouseholdMembers(adopter.householdMembers).map(m => ({ name: m.name, contactEntries: m.contactEntries }));
 
-                const tokens = extractTokens(adopter, adopterAdoptions, aliases, socials);
+                const tokens = extractTokens(adopter, adopterAdoptions, aliases, socials, household);
 
                 // Replace tokens
                 await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, adopter.id));

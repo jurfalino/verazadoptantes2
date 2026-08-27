@@ -13,7 +13,9 @@ import type { DiscoveryMatch } from "@/app/actions";
 import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
 import ContactEntriesSection from "@/components/ContactEntriesSection";
+import HouseholdSection from "@/components/HouseholdSection";
 import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
+import { deserializeHouseholdMembers } from "@/lib/householdMembers";
 import type { VisibilityBadge } from "@/domain/visibilityBadge";
 import { hasMinimumIdentifier } from "@/domain/adopterIdentity";
 import { adopterDisplayName, namelessSubIdentifier } from "@/lib/adopterDisplay";
@@ -167,6 +169,17 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     // visibility badge to icon-only (drops the Público/Protegido label) so the
     // name input owns the row. The rating is untouched (it lives outside this block).
     const [nameEditing, setNameEditing] = useState(false);
+    // ENABLE_HOUSEHOLD_MEMBERS (public flag): swaps the free-text family field for
+    // the structured HouseholdSection on saved profiles. Read once from /api/config.
+    const [enableHousehold, setEnableHousehold] = useState(false);
+    useEffect(() => {
+        let active = true;
+        fetch('/api/config').then(r => r.json()).then((d) => {
+            const cfg = d as { config?: Record<string, string> };
+            if (active && cfg?.config?.ENABLE_HOUSEHOLD_MEMBERS === 'true') setEnableHousehold(true);
+        }).catch(() => { /* flag stays off */ });
+        return () => { active = false; };
+    }, []);
     const [loading, setLoading] = useState(false);
 
     // Manual-create friction gate (nameless-adopter-profiles design): saving
@@ -1310,7 +1323,13 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                     {/* Family Members (Full Width) */}
                     <div className="md:col-span-2">
                         <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.family_members')}</h3>
-                        {isNew ? (
+                        {!isNew && enableHousehold && adopterId ? (
+                            <HouseholdSection
+                                adopterId={adopterId}
+                                initialMembers={deserializeHouseholdMembers(initialData?.householdMembers)}
+                                canEdit={canEdit}
+                            />
+                        ) : isNew ? (
                             <textarea
                                 rows={2}
                                 className="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-y min-h-[60px]"

@@ -6,6 +6,7 @@ import { logger } from '@/lib/logger';
 import { getDb } from './_db';
 import { reassignAdopterRecords } from './_recordWrite';
 import { extractTokens, computeTokenHash, normalizeText, extractPhones, extractEmails, extractSocials, normalizeSocialHandle, detectSocialPlatformFromValue, type Token } from '@/lib/tokenizer';
+import { deserializeHouseholdMembers } from '@/lib/householdMembers';
 import { normalizeConfidence, confidenceBand, fuzzyNameScore, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 
@@ -45,9 +46,11 @@ export async function tokenizeAdopter(adopterId: string): Promise<void> {
         // `social`=`platform|handle` token, not just the handle. Mirror the aliases
         // pattern (caller deserializes to avoid the tokenizer→contactEntries cycle).
         const socials = entries.filter(e => e.type === 'social').map(e => ({ value: e.value, platform: e.platform ?? null }));
+        // Household members: names + their contacts feed name/phone/email/social/id tokens.
+        const household = deserializeHouseholdMembers(adopter.householdMembers).map(m => ({ name: m.name, contactEntries: m.contactEntries }));
 
         // Extract tokens
-        const tokens: Token[] = extractTokens(adopter, adopterAdoptions, aliases, socials);
+        const tokens: Token[] = extractTokens(adopter, adopterAdoptions, aliases, socials, household);
 
         // Delete old tokens for this adopter
         await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, adopterId));

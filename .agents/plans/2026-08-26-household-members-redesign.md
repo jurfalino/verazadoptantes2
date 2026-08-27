@@ -213,3 +213,22 @@ Gated by a DB-backed flag added to `FEATURE_FLAGS` (`src/config/features.ts`),
 - **Modify:** `src/db/schema.ts` (column); `addContactEntry`/`updateContactEntry`/`removeContactEntry` (+`memberId`); `src/lib/piiAccess.ts` (`maskAdopterContact`, `matchSearchEntries`, `matchSearchNameTokens`); `src/lib/tokenizer.ts` (`extractTokens` household param) + `duplicates.ts` + `api/admin/duplicates/route.ts` + `findFormDuplicates.ts`; `AdopterForm.tsx:1312` (swap the section); `ContactEntriesSection` (accept `memberId`, pass through the CRUD calls); `src/i18n/locales/{es,en,pt}.ts`.
 - **Flag:** `src/config/features.ts` (`ENABLE_HOUSEHOLD_MEMBERS`) + the `/api/config` public-flag list (non-admin visible).
 - **Ops:** flip `ENABLE_HOUSEHOLD_MEMBERS` in Admin UI (staging → prod); admin "Scan Now" after Phase 4 (TOKENIZER_VERSION bump).
+
+
+---
+
+## 9. v1 scope notes (during implementation)
+
+- **Household editing is gated to owner ∨ admin ∨ org-mate** (the `saveAdopter`
+  mutation model), NOT the open-contribution model `addContactEntry` uses for the
+  titular. Simpler + closes the PII surface (only privileged editors, who see
+  unmasked anyway, touch household — no contribution grants needed). Dedicated
+  actions in `householdMembers.ts` rather than branching the titular contact CRUD
+  (safer than destabilizing the battle-tested titular flow). Open collaborative
+  household contribution = follow-up.
+- **PII:** `maskHouseholdMembers` (security) is complete. Household in the
+  **per-entry search-match / verify grant** flow is deferred — moot in v1 because
+  a masked viewer cannot add a household contact (gated), so their only unlock
+  path is the **record-scoped request flow**, which already reveals household
+  (`maskHouseholdMembers` passes through on `nothingMasked`). Follow-up if
+  per-entry household grants are wanted.

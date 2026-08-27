@@ -69,6 +69,9 @@ export const FEATURE_FLAGS = {
     // v2.22.0: first-run click-Next demo modal teaching how to search an adopter,
     // over three mocked records. Public + admin-togglable. Default off.
     ENABLE_GUIDED_WALKTHROUGH: false,
+    // Structured household/family members (name+relationship+own contacts) —
+    // replaces the free-text family section. Household redesign (2026-08).
+    ENABLE_HOUSEHOLD_MEMBERS: false,
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;
@@ -162,6 +165,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         SHOWCASE_ORG_VISIBLE: false,
         SHOWCASE_USER_VISIBLE: false,
         ENABLE_GUIDED_WALKTHROUGH: false,
+        ENABLE_HOUSEHOLD_MEMBERS: false,
     };
 
     for (const flag of Object.keys(FEATURE_FLAGS) as FeatureFlag[]) {

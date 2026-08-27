@@ -323,7 +323,7 @@ export function extractAddressWords(text: string): string[] {
  *     hash still matched the old extractor output and Scan skipped them,
  *     keeping the bogus @gmail.com social tokens alive.
  */
-const TOKENIZER_VERSION = 'v4'; // v4: dual social tokens (social=platform|handle + social_handle), platform-aware handle normalization (v2.4x)
+const TOKENIZER_VERSION = 'v5'; // v5: structured household members (names + contacts) feed tokens (household redesign)
 
 /** Compute a simple hash of all tokenizable fields for freshness tracking */
 export function computeTokenHash(adopter: {
@@ -331,6 +331,7 @@ export function computeTokenHash(adopter: {
     contactInfo?: string | null;
     addressInfo?: string | null;
     familyMembers?: string | null;
+    householdMembers?: string | null;
     sourceUrl?: string | null;
 }): string {
     const parts = [
@@ -339,6 +340,7 @@ export function computeTokenHash(adopter: {
         adopter.contactInfo || '',
         adopter.addressInfo || '',
         adopter.familyMembers || '',
+        adopter.householdMembers || '',
         adopter.sourceUrl || '',
     ].join('|');
 
@@ -376,7 +378,10 @@ interface AdoptionData {
  * own name. Callers deserialize `adopter.contactEntries` themselves to avoid the
  * tokenizer → contactEntries circular import.
  */
-export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], aliases?: string[], socials?: Array<{ value: string; platform?: string | null }>): Token[] {
+type HouseholdTokenInput = Array<{ name: string; contactEntries: Array<{ type: string; value: string; platform?: string | null }> }>;
+export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], aliases?: string[], socials?: Array<{ value: string; platform?: string | null }>, household?: HouseholdTokenInput): Token[] {
+    const householdMembers = household ?? [];
+    const householdNames = householdMembers.map(m => m.name).filter(Boolean);
     const tokens: Token[] = [];
     const seen = new Set<string>();
 
@@ -391,7 +396,7 @@ export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], 
     // 1. Full normalized name(s) — the canonical name PLUS aliases and family
     //    members, all treated as first-class names (an abuser may adopt under a
     //    relative's or alias name). name_full = exact, high-weight match.
-    const fullNameSources = [adopter.name, adopter.familyMembers, ...(aliases ?? [])];
+    const fullNameSources = [adopter.name, adopter.familyMembers, ...(aliases ?? []), ...householdNames];
     for (const src of fullNameSources) {
         if (!src) continue;
         const fullName = normalizeText(src);
@@ -416,6 +421,9 @@ export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], 
             if (alias) nameSources.push(alias);
         }
     }
+    // Household member names are first-class name tokens too (a relative's name
+    // is a real abuse vector — a household phone/handle links records).
+    for (const hn of householdNames) nameSources.push(hn);
     for (const source of nameSources) {
         if (source) {
             for (const word of extractNameWords(source)) {
@@ -431,11 +439,15 @@ export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], 
     // Ordering matters: extract IDs first (labeled DNI / RUT / CURP / …), then
     // strip those substrings before phone extraction so a "DNI: 12345678" doesn't
     // also tokenize as a phone.
+    const householdContactText = householdMembers
+        .flatMap(m => m.contactEntries.filter(e => e.type !== 'social').map(e => e.value))
+        .join('\n');
     const allText = [
         adopter.contactInfo || '',
         adopter.name || '',
         adopter.addressInfo || '',
         adopter.familyMembers || '',
+        householdContactText,
     ].join('\n');
 
     for (const id of extractIds(allText)) add('id_number', id);
@@ -452,6 +464,7 @@ export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], 
     // contactEntries socials (carry `platform`) + socials harvested from the blob.
     const socialSources: Array<{ value: string; platform?: string | null }> = [
         ...(socials ?? []),
+        ...householdMembers.flatMap(m => m.contactEntries.filter(e => e.type === 'social').map(e => ({ value: e.value, platform: e.platform ?? null }))),
         ...extractSocials(allText).map(v => ({ value: v, platform: null as string | null })),
     ];
     for (const src of socialSources) {

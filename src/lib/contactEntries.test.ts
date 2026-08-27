@@ -228,9 +228,9 @@ describe('mergeContactEntries', () => {
 });
 
 describe('alias contact entries', () => {
-    it('writes an alias entry to the blob under the Conocido/a como label', () => {
+    it('writes an alias entry to the blob under the Otro nombre/identidad label', () => {
         const blob = contactEntriesToBlob([{ type: 'alias', value: 'Juan Garcia' }]);
-        expect(blob).toContain('Conocido/a como: Juan Garcia');
+        expect(blob).toContain('Otro nombre/identidad: Juan Garcia');
     });
 
     it('round-trips an alias entry through deserialize', () => {
