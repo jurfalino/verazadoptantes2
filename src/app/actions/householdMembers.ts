@@ -221,7 +221,7 @@ export async function addMemberContactEntry(
 }
 
 export async function updateMemberContactEntry(
-    input: { adopterId: string; memberId: string; entryId: string; value: string; streetAndNumber?: string; locality?: string; apps?: MessagingApp[] },
+    input: { adopterId: string; memberId: string; entryId: string; value: string; streetAndNumber?: string; locality?: string; platform?: SocialPlatform; apps?: MessagingApp[] },
 ): Promise<{ ok: true } | Err> {
     const actor = await authActor();
     if (!actor) return { ok: false, error: 'Not authenticated' };
@@ -236,7 +236,7 @@ export async function updateMemberContactEntry(
         const original = m.contactEntries[idx];
         m.contactEntries[idx] = buildEntry(
             actor, original.type, String(input.value || '').trim(),
-            { streetAndNumber: input.streetAndNumber, locality: input.locality, platform: original.platform, apps: input.apps ?? original.apps },
+            { streetAndNumber: input.streetAndNumber, locality: input.locality, platform: input.platform ?? original.platform, apps: input.apps ?? original.apps },
             { id: original.id!, addedBy: original.addedBy },
         );
         if (!await persist(r.db, adopterId, r.members, r.target.updatedAt)) return CONCURRENT;

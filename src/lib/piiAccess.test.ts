@@ -421,6 +421,9 @@ describe('maskAdopterContact', () => {
         { type: 'phone', value: '1123456789' },
         { type: 'email', value: 'a@b.com' },
     ]);
+    const householdJson = JSON.stringify([
+        { id: 'hm-1', name: 'María Gómez', relationship: 'parent', contactEntries: [{ id: 'ce-1', type: 'phone', value: '1123456789' }] },
+    ]);
 
     it('leaves a privileged viewer unmasked with count 0', () => {
         const r = maskAdopterContact(
@@ -430,6 +433,27 @@ describe('maskAdopterContact', () => {
         expect(r.maskedFieldCount).toBe(0);
         expect(r.contactEntries).toBe(entriesJson);
         expect(r.addressInfo).toBe('Calle 1');
+    });
+
+    it('masks household member contacts + partial-reveals member names (leak-fix regression)', () => {
+        const r = maskAdopterContact(
+            { contactInfo: null, contactEntries: null, addressInfo: null, householdMembers: householdJson },
+            vis({}),
+        );
+        expect(r.householdMembers).not.toBeNull();
+        expect(r.householdMembers).not.toContain('1123456789'); // raw member phone must be gone
+        const members = JSON.parse(r.householdMembers as string);
+        expect(members[0].contactEntries[0].masked).toBe(true);
+        expect(members[0].name).not.toBe('María Gómez'); // partial-revealed
+        expect(members[0].relationship).toBe('parent');   // relationship stays visible
+    });
+
+    it('leaves household unmasked for a privileged viewer', () => {
+        const r = maskAdopterContact(
+            { contactInfo: null, contactEntries: null, addressInfo: null, householdMembers: householdJson },
+            vis({ nothingMasked: true }),
+        );
+        expect(r.householdMembers).toBe(householdJson);
     });
 
     it('partial-reveals structured entries plus the address column', () => {

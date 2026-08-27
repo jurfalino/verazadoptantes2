@@ -130,6 +130,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             contactInfo: masked.contactInfo,
             contactEntries: masked.contactEntries,
             addressInfo: masked.addressInfo,
+            householdMembers: masked.householdMembers,
         };
     }, [previewAsStranger, adopter]);
 

@@ -15,7 +15,7 @@ import {
     parseBlobToContactEntries,
     mergeContactEntries,
 } from '@/lib/contactEntries';
-import { canEditAdopterRecord, maskAdopterContact, maskHouseholdMembers, redactHistoryChanges, renderName } from '@/lib/piiAccess';
+import { canEditAdopterRecord, maskAdopterContact, redactHistoryChanges, renderName } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, resolveAdopterVisibility, buildMaskOptions } from '@/lib/piiAccessServer';
 
 
@@ -62,7 +62,8 @@ async function getAdopterImpl(id: string) {
                 // familyMembers → hidden (PII).
                 adopter.name = renderName(adopter.name, visibility, undefined, maskOpts);
                 adopter.familyMembers = null;
-                adopter.householdMembers = maskHouseholdMembers(adopter.householdMembers, visibility, maskOpts).json;
+                // Household masking is now part of maskAdopterContact (above).
+                adopter.householdMembers = masked.householdMembers;
             }
         }
         return adopter;

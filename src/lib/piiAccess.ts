@@ -625,6 +625,7 @@ export interface MaskableAdopter {
     contactInfo?: string | null;
     contactEntries?: string | null;
     addressInfo?: string | null;
+    householdMembers?: string | null;
 }
 
 export interface AdopterContactMask {
@@ -632,6 +633,8 @@ export interface AdopterContactMask {
     /** Re-serialized ContactEntry[] JSON — masked entries carry `masked: true`. */
     contactEntries: string | null;
     addressInfo: string | null;
+    /** Masked household members JSON (each member's contacts masked, names partial-revealed). */
+    householdMembers: string | null;
     /** Distinct contact fields hidden from this viewer — drives the banner / "N protected" copy. */
     maskedFieldCount: number;
 }
@@ -696,7 +699,7 @@ export function maskAdopterContact(
     // Either privileged (owner / editor / admin / all-contact grant) or the
     // whole adopter is admin-flagged public — pass everything through.
     if (visibility.nothingMasked || options.adopterIsPublic) {
-        return { contactInfo, contactEntries: contactEntriesJson, addressInfo, maskedFieldCount: 0 };
+        return { contactInfo, contactEntries: contactEntriesJson, addressInfo, householdMembers: adopter.householdMembers ?? null, maskedFieldCount: 0 };
     }
 
     // Source entries: prefer structured contactEntries; for legacy rows parse
@@ -728,10 +731,17 @@ export function maskAdopterContact(
         maskedFieldCount++;
     }
 
+    // Household members — mask each member's contacts + partial-reveal names with
+    // the SAME verdict. Lives here so EVERY maskAdopterContact caller (search,
+    // duplicate detection, preview) inherits it — not just getAdopter.
+    const maskedHousehold = maskHouseholdMembers(adopter.householdMembers, visibility, options);
+    maskedFieldCount += maskedHousehold.maskedFieldCount;
+
     return {
         contactInfo: maskedContactInfo,
         contactEntries: parsed.length > 0 ? JSON.stringify(maskedEntries) : contactEntriesJson,
         addressInfo: maskedAddress,
+        householdMembers: maskedHousehold.json,
         maskedFieldCount,
     };
 }

@@ -107,9 +107,9 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit }:
     }
     async function saveEditContact(m: MemberUI, ce: CEditing) {
         const d = ce.draft; if (!d) return;
-        const res = await run(() => updateMemberContactEntry({ adopterId, memberId: m.id, entryId: ce.id!, value: d.value.trim(), apps: d.apps }));
+        const platform = ce.type === 'social' ? (detectSocialPlatform(d.value) ?? d.platform ?? ce.platform ?? undefined) : ce.platform;
+        const res = await run(() => updateMemberContactEntry({ adopterId, memberId: m.id, entryId: ce.id!, value: d.value.trim(), platform: platform ?? undefined, apps: d.apps }));
         if (!res) return;
-        const platform = ce.type === 'social' ? (detectSocialPlatform(d.value) ?? ce.platform) : ce.platform;
         patch(m.id, { contactEntries: m.contactEntries.map(e => e.id === ce.id ? { ...e, value: d.value.trim(), platform, apps: d.apps, editing: false, draft: undefined } as CEditing : e) });
         router.refresh();
     }
@@ -203,13 +203,13 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit }:
                                 <p className="text-[11px] font-bold uppercase tracking-wide text-stone-500 mb-2">{t('adopter.hh_contacts')}</p>
                                 {m.contactEntries.length > 0 && (
                                     <ul className="space-y-1.5 mb-2">
-                                        {(m.contactEntries as CEditing[]).map(ce => ce.editing ? (
-                                            <li key={ce.id}>{editor(m, ce.draft!, up => patch(m.id, { contactEntries: m.contactEntries.map(e => e.id === ce.id ? { ...e, draft: { ...(e as CEditing).draft!, ...up } } as CEditing : e) }), () => saveEditContact(m, ce), () => patch(m.id, { contactEntries: m.contactEntries.map(e => e.id === ce.id ? { ...e, editing: false, draft: undefined } as CEditing : e) }))}</li>
+                                        {(m.contactEntries as CEditing[]).map((ce, ci) => ce.editing ? (
+                                            <li key={`${ce.id}-${ci}`}>{editor(m, ce.draft!, up => patch(m.id, { contactEntries: m.contactEntries.map(e => e.id === ce.id ? { ...e, draft: { ...(e as CEditing).draft!, ...up } } as CEditing : e) }), () => saveEditContact(m, ce), () => patch(m.id, { contactEntries: m.contactEntries.map(e => e.id === ce.id ? { ...e, editing: false, draft: undefined } as CEditing : e) }))}</li>
                                         ) : (() => {
                                             const branded = ce.type === 'social' && ce.platform && ce.platform !== 'other' && !ce.masked;
                                             const Icon = TYPE_ICON[ce.type];
                                             return (
-                                                <li key={ce.id} className="group flex items-center gap-2 text-sm">
+                                                <li key={`${ce.id}-${ci}`} className="group flex items-center gap-2 text-sm">
                                                     {branded ? <SocialLogo platform={ce.platform!} size={16} className="shrink-0" /> : <Icon className="w-4 h-4 shrink-0 text-teal-600" />}
                                                     <span className="w-20 shrink-0 text-stone-500 text-xs">{branded ? '' : t(`adopter.ce_type_${ce.type}`)}</span>
                                                     <span className={`flex-1 min-w-0 truncate ${ce.masked ? 'text-stone-400 select-none' : 'text-stone-800'}`}>{ce.value}</span>

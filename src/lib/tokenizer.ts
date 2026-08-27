@@ -382,6 +382,8 @@ type HouseholdTokenInput = Array<{ name: string; contactEntries: Array<{ type: s
 export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], aliases?: string[], socials?: Array<{ value: string; platform?: string | null }>, household?: HouseholdTokenInput): Token[] {
     const householdMembers = household ?? [];
     const householdNames = householdMembers.map(m => m.name).filter(Boolean);
+    // A member's alias-type contact is an alternate NAME (like the titular's aliases).
+    const householdAliasNames = householdMembers.flatMap(m => m.contactEntries.filter(e => e.type === 'alias').map(e => e.value)).filter(Boolean);
     const tokens: Token[] = [];
     const seen = new Set<string>();
 
@@ -396,7 +398,7 @@ export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], 
     // 1. Full normalized name(s) — the canonical name PLUS aliases and family
     //    members, all treated as first-class names (an abuser may adopt under a
     //    relative's or alias name). name_full = exact, high-weight match.
-    const fullNameSources = [adopter.name, adopter.familyMembers, ...(aliases ?? []), ...householdNames];
+    const fullNameSources = [adopter.name, adopter.familyMembers, ...(aliases ?? []), ...householdNames, ...householdAliasNames];
     for (const src of fullNameSources) {
         if (!src) continue;
         const fullName = normalizeText(src);
@@ -424,6 +426,7 @@ export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], 
     // Household member names are first-class name tokens too (a relative's name
     // is a real abuse vector — a household phone/handle links records).
     for (const hn of householdNames) nameSources.push(hn);
+    for (const ha of householdAliasNames) nameSources.push(ha);
     for (const source of nameSources) {
         if (source) {
             for (const word of extractNameWords(source)) {
