@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.48.0] - 2026-08-26
+
+### Added — structured household / family members (behind `ENABLE_HOUSEHOLD_MEMBERS`)
+
+Replaces the free-text "Familiares / Convivientes" field with **structured people**: each household member has a name, a relationship (incl. *Desconocida*), and their **own contact entries** — added/edited with the same composer as the titular adopter (network-first social, WhatsApp/Telegram), with explicit save per person and per contact.
+
+- **PII:** household contacts inherit the record's público/protegido verdict — masked (and member names partial-revealed, relationship kept) inside `maskAdopterContact`, so every surface (profile, search, duplicate detection, preview) is covered.
+- **Duplicate detection:** member names + contacts now tokenize (a shared household phone/handle links records — abuse detection). `TOKENIZER_VERSION v5`.
+- **Storage:** new `adopters.household_members` JSON column (migration `0061`); legacy `family_members` retained.
+- **Gating:** household editing is owner/admin/org-mate.
+
+Ships **dark** (flag OFF). Data model + actions + PII + dedup + UI. `@`-review caught and fixed a critical pre-flip PII leak in the search/duplicate path before shipping.
+
+**⚠️ Post-deploy:** run **Admin → Duplicates → "Scan Now"** (`v5` re-tokenize), then flip **`ENABLE_HOUSEHOLD_MEMBERS`** ON in the Admin UI (staging → prod) when ready.
+
 ## [2.47.8] - 2026-08-26
 
 ### Changed — alias contact label "Conocido/a como" → "Otro nombre/identidad"
