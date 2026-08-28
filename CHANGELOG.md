@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.48.1] - 2026-08-26
+
+### Fixed — ENABLE_HOUSEHOLD_MEMBERS toggle missing from Admin → Config
+
+The admin config page renders a hand-curated flag list, so the new `ENABLE_HOUSEHOLD_MEMBERS` flag (added to `FEATURE_FLAGS` + the public config in 2.48.0) never showed a toggle. Added it to the admin page's flag list + defaults + type, and its label/description i18n (es/en/pt). The flag can now be toggled from the Admin UI.
+
 ## [2.48.0] - 2026-08-26
 
 ### Added — structured household / family members (behind `ENABLE_HOUSEHOLD_MEMBERS`)

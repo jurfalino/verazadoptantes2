@@ -154,6 +154,8 @@ export const en = {
         flag_desc_showcase_user: 'On /my-animals, show the public /user/[handle] link for the user to share their personal catalog. Off by default.',
         flag_label_guided_walkthrough: 'Guided walkthrough',
         flag_desc_guided_walkthrough: 'Auto-launch a one-time spotlight tour for new users that guides them to search an adopter by name and read the result. Also shows a "Show me how to search" button on the homepage. Default off.',
+        flag_label_household_members: 'Structured household members',
+        flag_desc_household_members: 'Replaces the free-text family field with structured people (name, relationship, and their own contact details), PII-protected and deduplicated like the adopter. Off by default.',
         instagram_section_title: 'Instagram URL (public)',
         instagram_section_desc: 'Link to the Instagram profile shown in the empty-state of the public catalog and the animal detail page. Leave blank to hide.',
         gemini_model_section_title: 'Default Gemini model',
