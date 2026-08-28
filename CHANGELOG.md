@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.48.2] - 2026-08-26
+
+### Fixed — HouseholdSection not respecting the color theme
+
+The new household section used a gradient avatar and a `/60` opacity on the member-card background — neither is remapped by the `[data-theme]` rules, so they rendered raw (a light card in a dark theme). Swapped to the themed `bg-teal-600` avatar and `bg-stone-50` card, matching the titular contact section. The rest of the palette already used themed tokens.
+
 ## [2.48.1] - 2026-08-26
 
 ### Fixed — ENABLE_HOUSEHOLD_MEMBERS toggle missing from Admin → Config

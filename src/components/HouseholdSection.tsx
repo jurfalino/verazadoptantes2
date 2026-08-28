@@ -160,7 +160,7 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit }:
         <div className="space-y-3">
             {members.length === 0 && !canEdit && <p className="text-sm text-stone-500 italic">{t('adopter.no_family')}</p>}
             {members.map(m => (
-                <div key={m.id} className="border border-stone-200 rounded-xl p-3.5 bg-stone-50/60">
+                <div key={m.id} className="border border-stone-200 rounded-xl p-3.5 bg-stone-50">
                     {m.editing ? (
                         <div className="space-y-2">
                             <div className="flex gap-2 flex-wrap">
@@ -184,7 +184,7 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit }:
                     ) : (
                         <>
                             <div className="flex items-start gap-2.5">
-                                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-teal-500 to-cyan-600 text-white font-bold text-sm flex items-center justify-center shrink-0">{(m.name.trim()[0] || '?').toUpperCase()}</div>
+                                <div className="w-9 h-9 rounded-lg bg-teal-600 text-white font-bold text-sm flex items-center justify-center shrink-0">{(m.name.trim()[0] || '?').toUpperCase()}</div>
                                 <div className="min-w-0 flex-1">
                                     <div className="font-semibold text-[15px] text-stone-900 break-words">{m.name || <span className="italic text-stone-400">{t('adopter.hh_name')}</span>}</div>
                                     <div className={`text-xs ${m.relationship ? 'text-stone-500' : 'text-stone-400 italic'}`}>
