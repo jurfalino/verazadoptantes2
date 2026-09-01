@@ -447,6 +447,11 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
 
     function startDelete(entry: ContactEntry) {
         if (!entry.id) return;
+        // The 5s undo bar below is easy to miss (quiet stone-100, above the
+        // chip list rather than next to the chip), so deletion also confirms
+        // up front. Both stay: confirm prevents the accidental click, the undo
+        // window still covers a confirmed-then-regretted one.
+        if (!confirm(t('dialogs.confirm_delete_contact').replace('{value}', entry.value))) return;
         // If something is currently being edited, cancel — the user shouldn't
         // be able to edit a chip that's about to disappear.
         if (editingId === entry.id) cancelEdit();

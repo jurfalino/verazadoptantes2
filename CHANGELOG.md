@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.48.3] - 2026-09-01
+
+### Fixed — deleting contact details asked for no confirmation
+
+Deleting a contact entry on a household member (`HouseholdSection`) fired `removeMemberContactEntry` straight from the click with no confirmation and no undo, and removing a whole member did the same — silently taking all of that person's contact entries with it.
+
+The main contact section (`ContactEntriesSection`) was less exposed than it looked: it already had an optimistic delete with a 5-second undo window. But the undo bar is `bg-stone-100` and renders *above* the chip list rather than beside the chip that vanished, so in practice it goes unnoticed and reads as an unconfirmed delete.
+
+All three paths now confirm before deleting, using the existing `confirm()` + `dialogs.*` pattern. The undo bar stays — confirm prevents the accidental click, the 5s window still covers a confirmed-then-regretted one, and the server call fires only after it expires.
+
+The member prompt warns that contact entries go too. It has a separate unnamed variant because `isMeaningfulMember` persists a member carrying only a relationship or only a contact, so the name can legitimately be blank and quoting it would render `¿Eliminar a ""?`.
+
+Household members are behind `ENABLE_HOUSEHOLD_MEMBERS` (default off), so the unprotected paths were not reachable in production.
+
 ## [2.48.2] - 2026-08-26
 
 ### Fixed — HouseholdSection not respecting the color theme
