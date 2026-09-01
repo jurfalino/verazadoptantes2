@@ -19,6 +19,7 @@ import Footer from '@/components/Footer';
 import { CountryConfirmBanner } from '@/components/CountryConfirmBanner';
 import ZarazIdentify from '@/components/ZarazIdentify';
 import ClarityScript from '@/components/ClarityScript';
+import PostHogProvider from '@/components/PostHogProvider';
 import { WebApplicationJsonLd, OrganizationJsonLd } from '@/components/JsonLd';
 import ChatWidget from '@/components/ChatWidget';
 import { getFeatureFlag } from '@/config/features';
@@ -102,6 +103,16 @@ export default async function RootLayout({
     logger.warn('Layout chat-flag lookup failed', { error: e instanceof Error ? e.message : String(e) });
   }
 
+  // PostHog session replay + analytics. Same DB → env → default resolution as
+  // the chat flag. Falls closed to false: telemetry off is the correct
+  // degraded state, and a D1 hiccup must not take down every page render.
+  let posthogEnabled = false;
+  try {
+    posthogEnabled = await getFeatureFlag('ENABLE_POSTHOG');
+  } catch (e) {
+    logger.warn('Layout posthog-flag lookup failed', { error: e instanceof Error ? e.message : String(e) });
+  }
+
 
   return (
     <html lang="es" suppressHydrationWarning>
@@ -142,6 +153,10 @@ export default async function RootLayout({
         <SessionProvider session={session ?? undefined} refetchOnWindowFocus={true} refetchInterval={5 * 60}>
           <ZarazIdentify />
           <ClarityScript />
+          <PostHogProvider
+            enabled={posthogEnabled}
+            projectKey={process.env.POSTHOG_PROJECT_KEY ?? null}
+          />
           <LanguageProvider>
             <ThemeProvider>
               <ToastProvider>
