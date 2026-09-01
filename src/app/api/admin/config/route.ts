@@ -49,6 +49,7 @@ export async function GET() {
             ENABLE_ANIMALS_FOR_ADOPTION: config['ENABLE_ANIMALS_FOR_ADOPTION'] || 'false',
             ENABLE_SEARCH_CARD_METADATA: config['ENABLE_SEARCH_CARD_METADATA'] || 'true',
             ENABLE_CHAT_WIDGET: config['ENABLE_CHAT_WIDGET'] || 'false',
+            ENABLE_POSTHOG: config['ENABLE_POSTHOG'] || 'false',
             ENABLE_MILESTONE_BADGE: config['ENABLE_MILESTONE_BADGE'] || 'true',
             ENABLE_QUICK_ACCESS_STRIP: config['ENABLE_QUICK_ACCESS_STRIP'] || 'true',
             ENABLE_CONTACT_PASTE: config['ENABLE_CONTACT_PASTE'] || 'true',
