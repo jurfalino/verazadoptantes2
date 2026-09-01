@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.0] - 2026-09-01
+
+### Added — PostHog session replay + product analytics (behind `ENABLE_POSTHOG`, default off)
+
+Clarity masks the contents of every `<input>` in **all** masking modes and, per its docs, that "can't be customized" — so search terms were unreadable in replays and no Clarity setting could change it. PostHog records them natively.
+
+Runs in **parallel** with Clarity and Amplitude; it replaces neither yet. Unlike both of those, PostHog is an app-code dependency rather than a Zaraz tool — Zaraz's PostHog component is server-side only and cannot do session replay.
+
+All traffic goes through a same-origin `/ingest/*` edge route handler (`src/app/ingest/[...path]/route.ts`) proxying to the US region. Same-origin means zero CSP changes and no adblock blind spot. It is a route handler rather than a Next.js rewrite because `@cloudflare/next-on-pages` was archived in September 2025 and external rewrites on it once silently dropped query parameters — a failure that would look like "no data arrived". The URL mapping is a pure, unit-tested function in `src/lib/posthogProxy.ts`. Cost: each replay batch is a Pages Function invocation.
+
+Masking behaviour was verified against `posthog-js` 1.424.1 source rather than the docs: on web, `maskAllInputs` defaults to `true` and `maskTextSelector` defaults to `undefined`. The "all text is masked by default" language in PostHog's documentation applies to the mobile SDKs, not web.
+
+**Privacy:** recording is deliberately unmasked — search terms, adopter forms and profile pages record in cleartext (user decision 2026-09-01; rationale recorded in `.agents/plans/2026-09-01-posthog-integration.md`, D1). `input[type="password"]` remains masked by rrweb.
+
+Also reverts the v2.48.3 Clarity `search_query` custom tag, which was a workaround for the limitation PostHog does not have. v2.48.3 was never deployed.
+
 ## [2.48.2] - 2026-08-26
 
 ### Fixed — HouseholdSection not respecting the color theme
