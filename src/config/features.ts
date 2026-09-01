@@ -18,6 +18,14 @@ export const FEATURE_FLAGS = {
     ENABLE_ANIMALS_FOR_ADOPTION: false,
     ENABLE_SEARCH_CARD_METADATA: true,
     ENABLE_CHAT_WIDGET: false,
+    // PostHog session replay + product analytics (v2.49.0). Runs in PARALLEL
+    // with Clarity and Amplitude — it replaces neither yet. Unlike those two
+    // (loaded by Zaraz), PostHog is an app-code dependency: Zaraz's PostHog
+    // component is server-side only and cannot do session replay.
+    // Recording is UNMASKED by explicit decision — see the privacy note in
+    // .agents/plans/2026-09-01-posthog-integration.md (D1).
+    // Default off — server-side only, deliberately NOT in PUBLIC_FLAG_KEYS.
+    ENABLE_POSTHOG: false,
     ENABLE_MILESTONE_BADGE: true,
     ENABLE_QUICK_ACCESS_STRIP: true,
     // Paste box in the adopter contact editor (bulk paste + auto-categorize).
@@ -153,6 +161,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         ENABLE_ANIMALS_FOR_ADOPTION: false,
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,
+        ENABLE_POSTHOG: false,
         ENABLE_MILESTONE_BADGE: true,
         ENABLE_QUICK_ACCESS_STRIP: true,
         ENABLE_CONTACT_PASTE: true,

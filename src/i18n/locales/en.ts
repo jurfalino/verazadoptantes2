@@ -130,6 +130,8 @@ export const en = {
         telegram_saved: 'Telegram configuration updated.',
         flag_label_chat_widget: 'Support Chat Widget',
         flag_desc_chat_widget: 'Floating chat icon at bottom-right that routes visitor messages to the admin\'s Telegram. Requires TELEGRAM_BOT_TOKEN + TELEGRAM_WEBHOOK_SECRET set as Cloudflare secrets and TELEGRAM_ADMIN_CHAT_ID below. See docs/CHAT_SETUP.md.',
+        flag_label_posthog: 'PostHog (session recording)',
+        flag_desc_posthog: 'Records sessions and product analytics. Runs in parallel with Clarity, does not replace it. Requires POSTHOG_PROJECT_KEY set in Cloudflare Pages. Recording does NOT mask typed input.',
         flag_label_milestone_badge: 'Milestone Badge',
         flag_desc_milestone_badge: 'Show the "Completed X adoptions" progress bar on the homepage for authenticated users.',
         flag_label_quick_access_strip: 'Quick Access Strip',

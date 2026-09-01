@@ -130,6 +130,8 @@ export const es = {
         telegram_saved: 'Configuración de Telegram actualizada.',
         flag_label_chat_widget: 'Widget de soporte por chat',
         flag_desc_chat_widget: 'Burbuja flotante en la esquina inferior derecha que enruta los mensajes al Telegram del admin. Requiere TELEGRAM_BOT_TOKEN + TELEGRAM_WEBHOOK_SECRET configurados como secretos de Cloudflare y TELEGRAM_ADMIN_CHAT_ID abajo. Ver docs/CHAT_SETUP.md.',
+        flag_label_posthog: 'PostHog (grabación de sesiones)',
+        flag_desc_posthog: 'Graba sesiones y analítica de producto. Corre en paralelo con Clarity, no lo reemplaza. Requiere POSTHOG_PROJECT_KEY configurado en Cloudflare Pages. La grabación NO enmascara lo que se escribe.',
         flag_label_milestone_badge: 'Insignia de hitos',
         flag_desc_milestone_badge: 'Mostrar la barra de progreso "Completaste X adopciones" en la portada para usuarios autenticados.',
         flag_label_quick_access_strip: 'Tira de acceso rápido',
