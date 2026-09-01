@@ -7,7 +7,8 @@ import {
     Pencil, Trash2, Check, X, Plus, type LucideIcon,
 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
-import { useShowToast } from '@/components/ui/Toast';
+import { useShowToast, useToast } from '@/components/ui/Toast';
+import { useUndoableDelete, UNDO_DELAY_MS } from '@/hooks/useUndoableDelete';
 import { deriveStreet, deriveLocality, detectSocialPlatform, socialUrl, phoneAppUrl, SOCIAL_PLATFORMS, type ContactEntry, type ContactEntryType, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
 import { SocialPlatformPicker } from '@/components/SocialPlatformPicker';
 import { SocialLogo } from '@/components/SocialLogo';
@@ -54,8 +55,6 @@ function brandedSocialPlatform(entry: ContactEntry): Exclude<SocialPlatform, 'ot
 const COMPOSABLE_TYPES: ContactEntryType[] = ['phone', 'email', 'social', 'id', 'address', 'alias'];
 
 const LINK_CLASS = 'text-teal-700 hover:underline';
-
-const UNDO_DELAY_MS = 5000;
 
 interface Props {
     entries: ContactEntry[];
@@ -117,6 +116,10 @@ function socialHref(value: string): string | null {
 export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick, adopterIsPublic = false, hidePublicMicrocopy = false }: Props) {
     const { t } = useLanguage();
     const toast = useShowToast();
+    // Raw showToast (not the useShowToast helpers) so the undo toast can carry
+    // an action AND a finite duration — `success()` hardcodes duration 0 when
+    // an action is present, which would leave it on screen after the window.
+    const { showToast } = useToast();
     const router = useRouter();
     const isLocalMode = !!onChange;
 
@@ -178,14 +181,29 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
     const [editDraft, setEditDraft] = useState<EditDraft>({ value: '', streetAndNumber: '', locality: '', platform: null, apps: [] });
     const [editBusy, setEditBusy] = useState(false);
 
-    // Optimistic delete state. While `pendingDeleteId` is set, that entry is
-    // hidden from the list and an inline undo bar is shown; on timer expiry
-    // removeContactEntry fires, on Deshacer click the timer is cleared.
-    const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-    const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    useEffect(() => () => {
-        if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
-    }, []);
+    // Optimistic delete. While an entry is pending it is hidden from the list
+    // and a toast offers Undo; on expiry removeContactEntry fires. The undo
+    // affordance moved from an inline stone-100 bar to the toast system in
+    // v2.48.4 — the bar rendered above the chip list rather than where the chip
+    // vanished and went unnoticed, which read as "delete asks for nothing".
+    const { pending: pendingDeleteId, schedule: scheduleDelete, undo: undoDelete } =
+        useUndoableDelete<string>(async (entryId) => {
+            // Local mode: emit the filtered array, done.
+            if (isLocalMode) {
+                onChange!(entries.filter(e => e.id !== entryId));
+                return;
+            }
+            try {
+                const res = await removeContactEntry({ adopterId: adopterId!, entryId });
+                if (!res.ok) {
+                    toast.error(t('errors.generic'), res.error || t('adopter.ce_delete_error'));
+                    return;
+                }
+                router.refresh();
+            } catch (e) {
+                toast.error(t('errors.generic'), t('adopter.ce_delete_error'), extractErrorId(e));
+            }
+        });
 
     // Focus restoration — when the composer closes (either after a successful
     // add or after Cancelar), return focus to the trigger button so keyboard
@@ -364,9 +382,10 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
 
     function startEdit(entry: ContactEntry) {
         if (!entry.id) return;
-        // Cancel any pending delete first so the user doesn't accidentally
-        // lose the entry they just opened.
-        cancelPendingDelete();
+        // Deliberately does NOT touch a pending delete. `visibleEntries` filters
+        // the pending entry out of the rendered list, so this can only ever be
+        // reached for a *different* entry — and cancelling there would resurrect
+        // a deletion the user asked for. (The old call was vestigial.)
         setEditingId(entry.id);
         // For address entries: when the legacy single-`value` shape is the
         // only thing present, fall back through deriveStreet / deriveLocality
@@ -447,51 +466,21 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
 
     function startDelete(entry: ContactEntry) {
         if (!entry.id) return;
-        // The 5s undo bar below is easy to miss (quiet stone-100, above the
-        // chip list rather than next to the chip), so deletion also confirms
-        // up front. Both stay: confirm prevents the accidental click, the undo
-        // window still covers a confirmed-then-regretted one.
-        if (!confirm(t('dialogs.confirm_delete_contact').replace('{value}', entry.value))) return;
         // If something is currently being edited, cancel — the user shouldn't
         // be able to edit a chip that's about to disappear.
         if (editingId === entry.id) cancelEdit();
-        // Cancel any other in-flight delete first; chain them serially.
-        cancelPendingDelete();
-        setPendingDeleteId(entry.id);
-        const entryIdToDelete = entry.id;
-        deleteTimerRef.current = setTimeout(async () => {
-            deleteTimerRef.current = null;
-
-            // Local mode: emit the filtered array, done.
-            if (isLocalMode) {
-                onChange!(entries.filter(e => e.id !== entryIdToDelete));
-                setPendingDeleteId(null);
-                return;
-            }
-
-            try {
-                const res = await removeContactEntry({ adopterId: adopterId!, entryId: entryIdToDelete });
-                if (!res.ok) {
-                    // Restore on server failure.
-                    setPendingDeleteId(null);
-                    toast.error(t('errors.generic'), res.error || t('adopter.ce_delete_error'));
-                    return;
-                }
-                setPendingDeleteId(null);
-                router.refresh();
-            } catch (e) {
-                setPendingDeleteId(null);
-                toast.error(t('errors.generic'), t('adopter.ce_delete_error'), extractErrorId(e));
-            }
-        }, UNDO_DELAY_MS);
-    }
-
-    function cancelPendingDelete() {
-        if (deleteTimerRef.current) {
-            clearTimeout(deleteTimerRef.current);
-            deleteTimerRef.current = null;
-        }
-        setPendingDeleteId(null);
+        // No confirm() dialog: this is a frequent, reversible action, so undo
+        // beats a gate users learn to click through. The token keeps an older
+        // toast's Undo from cancelling a newer delete.
+        const token = scheduleDelete(entry.id);
+        showToast({
+            type: 'info',
+            title: t('adopter.ce_delete_toast'),
+            action: { label: t('adopter.ce_undo'), onClick: () => undoDelete(token) },
+            // Matches the undo window exactly: the toast must not outlive the
+            // chance to act on it. `toast.success` would force duration 0 here.
+            duration: UNDO_DELAY_MS,
+        });
     }
 
     function renderValueReadOnly(entry: ContactEntry) {
@@ -631,20 +620,6 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                     )}
                     <span>{t(microcopyKey as never)}</span>
                 </p>
-            )}
-
-            {/* Inline undo bar shown while a delete is in its 5-second window. */}
-            {pendingDeleteId && (
-                <div className="flex items-center justify-between gap-3 bg-stone-100 border border-stone-200 rounded-md px-3 py-2 text-sm">
-                    <span className="text-stone-700">{t('adopter.ce_delete_toast')}</span>
-                    <button
-                        type="button"
-                        onClick={cancelPendingDelete}
-                        className="font-medium text-teal-700 hover:text-teal-900"
-                    >
-                        {t('adopter.ce_undo')}
-                    </button>
-                </div>
             )}
 
             {/* Chip list. */}

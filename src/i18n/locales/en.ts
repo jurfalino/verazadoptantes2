@@ -373,7 +373,6 @@ export const en = {
         animal_deleted: 'Animal deleted',
     },
     dialogs: {
-        confirm_delete_contact: 'Delete the contact "{value}"?',
         confirm_delete_member: 'Remove "{name}" from the household? All of their contact details will be deleted too.',
         confirm_delete_member_unnamed: 'Remove this household member? All of their contact details will be deleted too.',
         confirm_delete_media: 'Delete this media?',

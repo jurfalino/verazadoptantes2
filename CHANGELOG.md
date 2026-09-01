@@ -2,6 +2,27 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.1] - 2026-09-01
+
+### Changed — contact-entry deletion uses undo instead of a confirm dialog
+
+v2.48.3 put a native `confirm()` on all three contact-delete paths. That was the wrong pattern for two of them. Confirmation dialogs decay — users learn to click through them, so a gate on a frequent, reversible action taxes every correct deletion without reliably catching the wrong one. The modern rule is confirm the irreversible, undo the reversible.
+
+Split by blast radius:
+
+- **Contact entries** (adopter's own list, and each household member's) — no dialog. The entry disappears immediately and a toast offers "Deshacer" for 5 seconds; the server call fires only when that window closes.
+- **Deleting a whole household member** — keeps `confirm()`. It takes a person plus all of their contact entries, which is not comparably reversible.
+
+The undo affordance moved from an inline `bg-stone-100` bar to the existing toast system. The bar had been there since the feature shipped, but it rendered *above* the chip list rather than where the chip vanished, so it went unnoticed — which is what made deletion feel unguarded in the first place. The toast is theme-aware, unlike `confirm()`, which ignores the `[data-theme]` palette entirely.
+
+Sequencing now lives in `src/lib/undoQueue.ts` (pure, 12 unit tests) behind the `useUndoableDelete` hook, because the naive version had three defects:
+
+- **Scheduling a second delete now commits the first rather than cancelling it.** The old inline code cancelled despite a comment claiming it chained serially, so deleting two entries within the undo window silently lost the first — it just reappeared.
+- **Undo is keyed to a token.** Toasts stack and outlive the action that raised them, so without it an older toast's Undo would cancel a *newer* delete.
+- **Unmount commits rather than drops.** The toast is rendered by the layout-level provider and survives navigation, so cancelling on unmount would leave a "deleted — undo" toast for a delete that never happened.
+
+Also removes a vestigial `cancelPendingDelete()` from `startEdit`: a pending entry is filtered out of the rendered list, so that call could only ever have cancelled a *different* entry's intentional deletion.
+
 ## [2.49.0] - 2026-09-01
 
 ### Added — PostHog session replay + product analytics (behind `ENABLE_POSTHOG`, default off)

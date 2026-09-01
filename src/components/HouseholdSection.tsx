@@ -13,7 +13,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Phone, Mail, AtSign, IdCard, MapPin, UserRound, Pencil, Trash2, Plus, Check, X } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
-import { useShowToast } from '@/components/ui/Toast';
+import { useShowToast, useToast } from '@/components/ui/Toast';
+import { useUndoableDelete, UNDO_DELAY_MS } from '@/hooks/useUndoableDelete';
 import { SocialPlatformPicker } from '@/components/SocialPlatformPicker';
 import { SocialLogo } from '@/components/SocialLogo';
 import { PhoneAppsToggle } from '@/components/PhoneAppsToggle';
@@ -42,12 +43,27 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit }:
 }) {
     const { t } = useLanguage();
     const toast = useShowToast();
+    // Raw showToast so the undo toast gets an action AND a finite duration —
+    // the useShowToast helpers force duration 0 whenever an action is present.
+    const { showToast } = useToast();
     const router = useRouter();
     const [members, setMembers] = useState<MemberUI[]>(() => initialMembers.map(m => ({ ...m })));
     const [busy, setBusy] = useState(false);
 
     const relLabel = (r: Relationship | null | undefined) => r ? t(`adopter.hh_rel_${r}`) : '';
     const patch = (id: string, up: Partial<MemberUI>) => setMembers(prev => prev.map(m => m.id === id ? { ...m, ...up } : m));
+    // Optimistic contact-entry delete with an undo toast. Keyed on
+    // member+entry because the section owns several members' lists at once.
+    const {
+        pending: pendingContactDelete,
+        schedule: scheduleContactDelete,
+        undo: undoContactDelete,
+    } = useUndoableDelete<{ memberId: string; entryId: string }>(async ({ memberId, entryId }) => {
+        const res = await run(() => removeMemberContactEntry({ adopterId, memberId, entryId }));
+        if (!res) return;
+        router.refresh();
+    });
+
     async function run<T extends { ok: boolean; error?: string }>(fn: () => Promise<T>): Promise<Extract<T, { ok: true }> | null> {
         setBusy(true);
         try {
@@ -123,13 +139,24 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit }:
         patch(m.id, { contactEntries: m.contactEntries.map(e => e.id === ce.id ? { ...e, value: d.value.trim(), platform, apps: d.apps, editing: false, draft: undefined } as CEditing : e) });
         router.refresh();
     }
-    async function deleteContact(m: MemberUI, ce: CEditing) {
-        // Same wording as the main contact section — one concept, one prompt.
-        if (!confirm(t('dialogs.confirm_delete_contact').replace('{value}', ce.value))) return;
-        const res = await run(() => removeMemberContactEntry({ adopterId, memberId: m.id, entryId: ce.id! }));
-        if (!res) return;
-        patch(m.id, { contactEntries: m.contactEntries.filter(e => e.id !== ce.id) });
-        router.refresh();
+    /** A contact entry in its undo window is hidden, exactly like the chip list. */
+    function visibleContacts(m: MemberUI) {
+        if (!pendingContactDelete || pendingContactDelete.memberId !== m.id) return m.contactEntries;
+        return m.contactEntries.filter(e => e.id !== pendingContactDelete.entryId);
+    }
+
+    function deleteContact(m: MemberUI, ce: CEditing) {
+        if (!ce.id) return;
+        // Undo, not confirm — same treatment as the adopter's own contact list
+        // (Nielsen #4: one concept, one behaviour). Deleting a whole member
+        // still confirms, because that is not comparably reversible.
+        const token = scheduleContactDelete({ memberId: m.id, entryId: ce.id });
+        showToast({
+            type: 'info',
+            title: t('adopter.ce_delete_toast'),
+            action: { label: t('adopter.ce_undo'), onClick: () => undoContactDelete(token) },
+            duration: UNDO_DELAY_MS,
+        });
     }
 
     const contactPlaceholder = (d: Draft) => {
@@ -213,9 +240,9 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit }:
                             {/* contacts */}
                             <div className="mt-3 pt-3 border-t border-dashed border-stone-200">
                                 <p className="text-[11px] font-bold uppercase tracking-wide text-stone-500 mb-2">{t('adopter.hh_contacts')}</p>
-                                {m.contactEntries.length > 0 && (
+                                {visibleContacts(m).length > 0 && (
                                     <ul className="space-y-1.5 mb-2">
-                                        {(m.contactEntries as CEditing[]).map((ce, ci) => ce.editing ? (
+                                        {(visibleContacts(m) as CEditing[]).map((ce, ci) => ce.editing ? (
                                             <li key={`${ce.id}-${ci}`}>{editor(m, ce.draft!, up => patch(m.id, { contactEntries: m.contactEntries.map(e => e.id === ce.id ? { ...e, draft: { ...(e as CEditing).draft!, ...up } } as CEditing : e) }), () => saveEditContact(m, ce), () => patch(m.id, { contactEntries: m.contactEntries.map(e => e.id === ce.id ? { ...e, editing: false, draft: undefined } as CEditing : e) }))}</li>
                                         ) : (() => {
                                             const branded = ce.type === 'social' && ce.platform && ce.platform !== 'other' && !ce.masked;
