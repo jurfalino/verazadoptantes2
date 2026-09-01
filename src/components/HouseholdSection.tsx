@@ -84,6 +84,16 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit }:
         else patch(m.id, { editing: false, draftName: undefined, draftRel: undefined });
     }
     async function deleteMember(m: MemberUI) {
+        // Removing a member takes all of their contact entries with them, so
+        // this warns about the blast radius rather than just naming the person.
+        // A member is persistable with only a relationship or only a contact
+        // (see isMeaningfulMember), so the name can legitimately be blank —
+        // quoting it would render '¿Eliminar a ""?'.
+        const memberName = m.name?.trim();
+        const prompt = memberName
+            ? t('dialogs.confirm_delete_member').replace('{name}', memberName)
+            : t('dialogs.confirm_delete_member_unnamed');
+        if (!confirm(prompt)) return;
         const res = await run(() => removeHouseholdMember({ adopterId, memberId: m.id }));
         if (!res) return;
         setMembers(prev => prev.filter(x => x.id !== m.id));
@@ -114,6 +124,8 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit }:
         router.refresh();
     }
     async function deleteContact(m: MemberUI, ce: CEditing) {
+        // Same wording as the main contact section — one concept, one prompt.
+        if (!confirm(t('dialogs.confirm_delete_contact').replace('{value}', ce.value))) return;
         const res = await run(() => removeMemberContactEntry({ adopterId, memberId: m.id, entryId: ce.id! }));
         if (!res) return;
         patch(m.id, { contactEntries: m.contactEntries.filter(e => e.id !== ce.id) });

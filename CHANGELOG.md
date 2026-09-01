@@ -16,7 +16,20 @@ Masking behaviour was verified against `posthog-js` 1.424.1 source rather than t
 
 **Privacy:** recording is deliberately unmasked — search terms, adopter forms and profile pages record in cleartext (user decision 2026-09-01; rationale recorded in `.agents/plans/2026-09-01-posthog-integration.md`, D1). `input[type="password"]` remains masked by rrweb.
 
-Also reverts the v2.48.3 Clarity `search_query` custom tag, which was a workaround for the limitation PostHog does not have. v2.48.3 was never deployed.
+An earlier, unreleased attempt at this problem added a Clarity `search_query` custom tag as a workaround. It was never committed or deployed, and was dropped in favour of this change — PostHog does not have the limitation it worked around. (The `2.48.3` version number was subsequently reused for the contact-delete confirmation fix below.)
+## [2.48.3] - 2026-09-01
+
+### Fixed — deleting contact details asked for no confirmation
+
+Deleting a contact entry on a household member (`HouseholdSection`) fired `removeMemberContactEntry` straight from the click with no confirmation and no undo, and removing a whole member did the same — silently taking all of that person's contact entries with it.
+
+The main contact section (`ContactEntriesSection`) was less exposed than it looked: it already had an optimistic delete with a 5-second undo window. But the undo bar is `bg-stone-100` and renders *above* the chip list rather than beside the chip that vanished, so in practice it goes unnoticed and reads as an unconfirmed delete.
+
+All three paths now confirm before deleting, using the existing `confirm()` + `dialogs.*` pattern. The undo bar stays — confirm prevents the accidental click, the 5s window still covers a confirmed-then-regretted one, and the server call fires only after it expires.
+
+The member prompt warns that contact entries go too. It has a separate unnamed variant because `isMeaningfulMember` persists a member carrying only a relationship or only a contact, so the name can legitimately be blank and quoting it would render `¿Eliminar a ""?`.
+
+Household members are behind `ENABLE_HOUSEHOLD_MEMBERS` (default off), so the unprotected paths were not reachable in production.
 
 ## [2.48.2] - 2026-08-26
 

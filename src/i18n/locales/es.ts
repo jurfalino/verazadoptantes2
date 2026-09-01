@@ -372,6 +372,9 @@ export const es = {
         animal_deleted: 'Animal eliminado',
     },
     dialogs: {
+        confirm_delete_contact: '¿Eliminar el contacto "{value}"?',
+        confirm_delete_member: '¿Eliminar a "{name}" del grupo familiar? También se eliminarán todos sus datos de contacto.',
+        confirm_delete_member_unnamed: '¿Eliminar a este integrante del grupo familiar? También se eliminarán todos sus datos de contacto.',
         confirm_delete_media: '¿Eliminar este archivo?',
         confirm_delete_record: '¿Estás seguro de eliminar este registro? Esta acción no se puede deshacer.',
         confirm_delete_adopter: '¿Estás seguro de eliminar permanentemente a "{name}" y todos sus datos?',
