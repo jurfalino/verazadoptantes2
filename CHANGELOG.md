@@ -2,6 +2,27 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.8] - 2026-09-02
+
+### Changed — the duplicate Scan is now loss-free: candidates rebuild under a staging status and swap in atomically
+
+Detection used to `DELETE FROM duplicate_candidates WHERE status='pending'` **before** recomputing, then re-insert over the following ~1,150 statements. A failure anywhere in that window left the review queue emptied and not rebuilt — the one genuinely destructive step in the whole scan, and the reason "just retry it" was not free.
+
+The new set is now built under `status = 'rebuilding'`, invisible to the UI (the GET filters on pending/dismissed/merged), and swapped in only once it is complete:
+
+```sql
+DELETE FROM duplicate_candidates WHERE status = 'pending';
+UPDATE duplicate_candidates SET status = 'pending' WHERE status = 'rebuilding';
+```
+
+Both run inside D1's atomic `batch()` — the same mechanism `api/admin/users` uses for multi-table deletes — so the queue is never momentarily empty. A death at any earlier point leaves existing `pending` rows completely untouched; the next run clears the orphaned `rebuilding` rows and starts clean.
+
+`status` is free-form text with no CHECK constraint, so this needed no migration.
+
+Verified locally against the 1,224-record production dataset: 1,147 pending before, 1,147 after, zero orphans, and the atomic path (not the fallback) is the one that executes. Separately verified the recovery path by planting orphaned `rebuilding` rows mid-flight — `pending` stayed intact at 1,147 throughout and the orphans were cleared on the next run.
+
+**Cost:** roughly 1,150 extra `rows_written` per full scan (~6%), since promoting the staged set is an UPDATE on top of the INSERT. Worth it to remove the only irreversible step.
+
 ## [2.49.7] - 2026-09-02
 
 ### Fixed — the final scan batch inserted candidates one at a time and was killed at production scale

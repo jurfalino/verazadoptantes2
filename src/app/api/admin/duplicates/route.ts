@@ -11,6 +11,7 @@ import { extractTokens, computeTokenHash } from '@/lib/tokenizer';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { deserializeHouseholdMembers } from '@/lib/householdMembers';
 import { computeAvgRating } from '@/domain/ratings';
+import { getRequestContext } from '@cloudflare/next-on-pages';
 
 /**
  * Compute the average activity rating for an adopter. Cheap D1-safe lookup —
@@ -487,8 +488,20 @@ export async function POST(request: Request) {
 
             const dismissedKeys = new Set(existingPairs.map((p: typeof existingPairs[number]) => `${p.adopter1Id}|${p.adopter2Id}`));
 
-            // Delete existing pending candidates (will be re-computed)
-            await db.delete(duplicateCandidates).where(eq(duplicateCandidates.status, 'pending'));
+            // Build the new candidate set under a staging status, then swap it in
+            // at the end (see the swap below). Previously this deleted `pending`
+            // up front and re-inserted over the following ~1,150 statements — so
+            // a Worker killed anywhere in that window left the queue emptied and
+            // not rebuilt. Existing `pending` rows are now untouched until the
+            // new set is complete.
+            //
+            // `status` is free-form text with no CHECK constraint, so 'rebuilding'
+            // needs no migration. Nothing reads it: the GET filters on
+            // pending/dismissed/merged, so partial rows stay invisible.
+            const REBUILDING = 'rebuilding';
+
+            // Clear leftovers from a previous run that died mid-rebuild.
+            await db.delete(duplicateCandidates).where(eq(duplicateCandidates.status, REBUILDING));
 
             /** Buffered candidate rows, flushed in chunks after scoring. */
             const candidateRows: (typeof duplicateCandidates.$inferInsert)[] = [];
@@ -526,6 +539,7 @@ export async function POST(request: Request) {
                     matchValues: JSON.stringify(signal.values),
                     score,
                     confidence,
+                    status: REBUILDING,
                     detectedAt: new Date(),
                 });
 
@@ -547,6 +561,37 @@ export async function POST(request: Request) {
             for (let i = 0; i < candidateRows.length; i += CANDIDATE_INSERT_CHUNK) {
                 await db.insert(duplicateCandidates)
                     .values(candidateRows.slice(i, i + CANDIDATE_INSERT_CHUNK));
+            }
+
+            // Swap the rebuilt set in. Both statements go through D1's atomic
+            // `batch()` so the queue is never momentarily empty — the same
+            // pattern `api/admin/users` uses for multi-table deletes.
+            //
+            // Falls back to two sequential statements where the request context
+            // isn't available (local dev). That leaves a one-statement window
+            // rather than the ~1,150-statement one this replaces, and the
+            // fallback path never runs on Cloudflare.
+            let swapped = false;
+            try {
+                const { env } = getRequestContext();
+                const D1 = (env as { DB?: D1Database })?.DB;
+                if (D1?.batch) {
+                    await D1.batch([
+                        D1.prepare(`DELETE FROM duplicate_candidates WHERE status = 'pending'`),
+                        D1.prepare(`UPDATE duplicate_candidates SET status = 'pending' WHERE status = ?`).bind(REBUILDING),
+                    ]);
+                    swapped = true;
+                }
+            } catch (e) {
+                logger.warn('Duplicate scan: atomic swap unavailable, falling back', {
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            }
+            if (!swapped) {
+                await db.delete(duplicateCandidates).where(eq(duplicateCandidates.status, 'pending'));
+                await db.update(duplicateCandidates)
+                    .set({ status: 'pending' })
+                    .where(eq(duplicateCandidates.status, REBUILDING));
             }
 
             // Release lock & store timestamp
