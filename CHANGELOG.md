@@ -2,6 +2,25 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.6] - 2026-09-02
+
+### Fixed — Scan crashed mid-run: the multi-row token insert exceeded D1's bound-parameter cap
+
+**D1 caps bound parameters at 100 per query.** The multi-row token insert introduced in 2.49.4 binds 4 columns per row, so it breaks above 25 tokens on a single profile. It died on a real record whose notes tokenize into 20+ `name_word` entries — 27 rows × 4 = **108 bindings** — killing the scan several batches in.
+
+Token inserts are now chunked at 20 rows (80 bindings). Typical records still take one insert; only the verbose tail takes two.
+
+Two things let this through, both worth recording:
+
+- **It was sized against the wrong data.** The chunk size was reasoned from `duplicate_tokens`, whose maximum was 26 — but those counts were produced by the **v3** tokenizer, and v5 deliberately emits more. The real v5 maximum is 27, just over the cap.
+- **Local testing used the 78-record fixture set**, which contains no profile verbose enough to trigger it. The failure only appears against production-shaped data.
+
+Verified against the full 1,224-record production dataset locally: **25 batches, remaining → 0, done**. 7,564 tokens across 1,220 adopters, zero records left untokenized, and the record that broke it now carries all 27 tokens across two inserts with no loss.
+
+### Fixed — the Scan POST discarded its own errorId
+
+On failure it returned a bare `{ error: 'Scan failed' }`. The `errorId` existed only in Axiom and the underlying message was dropped entirely, so a mid-run failure could not be diagnosed from the UI — which is exactly how the bug above presented. It now returns `errorId` and `message`, matching the GET handler. That change is what surfaced the root cause within one run.
+
 ## [2.49.5] - 2026-09-02
 
 ### Fixed — the `ENABLE_HOUSEHOLD_MEMBERS` toggle showed OFF while the feature was ON

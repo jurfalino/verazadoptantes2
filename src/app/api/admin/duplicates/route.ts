@@ -211,6 +211,23 @@ const SCAN_BATCH_DEFAULT = 50;
 const SCAN_BATCH_MAX = 200;
 
 /**
+ * Rows per multi-row token insert.
+ *
+ * **D1 caps bound parameters at 100 per query.** `duplicate_tokens` binds 4
+ * columns per row, so 25 rows is the hard ceiling and 20 leaves margin.
+ *
+ * This is not theoretical. v2.49.4 inserted every token in one statement and
+ * died on a real profile whose notes tokenize into 20+ `name_word` entries:
+ * 27 rows × 4 = 108 bindings, over the cap, mid-scan. It survived local testing
+ * because the 78-record fixture set contains no profile that verbose.
+ *
+ * Note the v5 tokenizer emits MORE tokens than v3, so sizing this off existing
+ * `duplicate_tokens` counts understates it — that is how 27 slipped past a
+ * measured maximum of 26.
+ */
+const TOKEN_INSERT_CHUNK = 20;
+
+/**
  * A `running` lock older than this is treated as abandoned and reclaimed.
  *
  * Load-bearing: when a Worker is hard-killed (subrequest ceiling, CPU limit)
@@ -342,13 +359,15 @@ export async function POST(request: Request) {
                 // calls per record, and the subrequest ceiling is what kills this
                 // endpoint at scale.
                 await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, adopter.id));
-                if (tokens.length > 0) {
-                    await db.insert(duplicateTokens).values(tokens.map(token => ({
-                        id: crypto.randomUUID(),
-                        adopterId: adopter.id,
-                        tokenType: token.type,
-                        tokenValue: token.value,
-                    })));
+                for (let i = 0; i < tokens.length; i += TOKEN_INSERT_CHUNK) {
+                    await db.insert(duplicateTokens).values(
+                        tokens.slice(i, i + TOKEN_INSERT_CHUNK).map(token => ({
+                            id: crypto.randomUUID(),
+                            adopterId: adopter.id,
+                            tokenType: token.type,
+                            tokenValue: token.value,
+                        })),
+                    );
                 }
 
                 await db.update(adopters).set({ tokenHash: newHash }).where(eq(adopters.id, adopter.id));
@@ -542,7 +561,18 @@ export async function POST(request: Request) {
             throw scanError;
         }
     } catch (error) {
-        logger.error('Duplicate scan failed', error);
-        return NextResponse.json({ error: 'Scan failed' }, { status: 500 });
+        // Return errorId + message like the GET above does. Returning a bare
+        // "Scan failed" threw away the only handle on the actual fault: the
+        // admin saw nothing actionable and the errorId existed only in Axiom,
+        // so a mid-run failure could not be diagnosed from the UI at all.
+        // Admin-only endpoint — surfacing the message is fine.
+        const errorId = logger.error('Duplicate scan failed', error instanceof Error ? error : new Error(String(error)), {
+            user: session.user.email,
+        });
+        return NextResponse.json({
+            error: 'Scan failed',
+            errorId,
+            message: error instanceof Error ? error.message : String(error),
+        }, { status: 500 });
     }
 }
