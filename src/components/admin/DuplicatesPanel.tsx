@@ -60,6 +60,8 @@ export default function DuplicatesPanel() {
     const [loading, setLoading] = useState(true);
     const [scanning, setScanning] = useState(false);
     const [scanResult, setScanResult] = useState<string | null>(null);
+    // -1 = unknown (the server could not compute it), not zero.
+    const [staleCount, setStaleCount] = useState<number>(-1);
     const [mergeTarget, setMergeTarget] = useState<{ a1: any; a2: any; matchTypes: string[]; candidateId?: string; flagId?: string } | null>(null);
     const [statusFilter, setStatusFilter] = useState<'pending' | 'dismissed' | 'merged'>('pending');
 
@@ -68,10 +70,11 @@ export default function DuplicatesPanel() {
         try {
             const res = await fetch(`/api/admin/duplicates?status=${statusFilter}`);
             if (!res.ok) throw new Error('Failed to fetch');
-            const data = await res.json() as { userFlagged?: UserFlagged[]; candidates?: DuplicateCandidate[]; counts?: Counts };
+            const data = await res.json() as { userFlagged?: UserFlagged[]; candidates?: DuplicateCandidate[]; counts?: Counts; staleCount?: number };
             setUserFlagged(data.userFlagged || []);
             setCandidates(data.candidates || []);
             setCounts(data.counts || { pending: 0, dismissed: 0, merged: 0, userFlagged: 0 });
+            setStaleCount(typeof data.staleCount === 'number' ? data.staleCount : -1);
         } catch (error) {
             console.error('Failed to load duplicates:', error);
         } finally {
@@ -103,13 +106,28 @@ export default function DuplicatesPanel() {
         try {
             for (let batch = 0; batch < maxBatches; batch++) {
                 const res = await fetch('/api/admin/duplicates', { method: 'POST' });
-                const data = await res.json() as {
+
+                // Read as text first. A Worker killed mid-request (subrequest
+                // ceiling, CPU limit) returns an HTML/plain error page, and
+                // calling res.json() on that throws — which used to land in the
+                // catch below as a bare "Scan failed", hiding both the status
+                // code and the fact that the run had died rather than errored.
+                const raw = await res.text();
+                let data: {
                     done?: boolean; tokenized?: number; remaining?: number;
                     staleBefore?: number; newCandidates?: number; error?: string;
-                };
+                } = {};
+                try { data = JSON.parse(raw); } catch {
+                    setScanResult(
+                        `❌ HTTP ${res.status} — the scan worker died mid-batch` +
+                        `${totalTokenized ? ` after ${totalTokenized} profiles` : ''}. ` +
+                        `Try a smaller batch. Response: ${raw.slice(0, 120)}`
+                    );
+                    return;
+                }
 
                 if (!res.ok) {
-                    setScanResult(`❌ ${data.error}${totalTokenized ? ` (${totalTokenized} tokenized before the failure)` : ''}`);
+                    setScanResult(`❌ HTTP ${res.status}: ${data.error ?? 'unknown error'}${totalTokenized ? ` (${totalTokenized} tokenized before the failure)` : ''}`);
                     return;
                 }
 
@@ -198,7 +216,19 @@ export default function DuplicatesPanel() {
         <div className="space-y-6">
             {/* Compact header — the "Duplicados" tab label is the heading; keep only the Scan action. */}
             <div className="flex items-center justify-between gap-3 flex-wrap">
-                <p className="text-sm text-stone-500">Candidatos por similitud de nombre + contacto compartido, más los reportados por usuarios.</p>
+                <div className="text-sm text-stone-500">
+                    <p>Candidatos por similitud de nombre + contacto compartido, más los reportados por usuarios.</p>
+                    {/* Pending re-tokenization. Only meaningful signal for "is the
+                        scan finished?" — see the staleCount comment in the API. */}
+                    {!loading && staleCount > 0 && (
+                        <p className="mt-1 font-medium text-amber-700">
+                            {staleCount} perfil{staleCount === 1 ? '' : 'es'} pendiente{staleCount === 1 ? '' : 's'} de re-tokenizar
+                        </p>
+                    )}
+                    {!loading && staleCount === 0 && (
+                        <p className="mt-1 font-medium text-teal-700">Todos los perfiles están tokenizados</p>
+                    )}
+                </div>
                 <button
                     onClick={handleScan}
                     disabled={scanning}

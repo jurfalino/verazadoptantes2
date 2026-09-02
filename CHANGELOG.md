@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.4] - 2026-09-02
+
+### Fixed — Scan died on the first click at production scale, said only "Scan failed", and wedged itself
+
+2.49.3 batched the scan but sized the batch off the *average* 6.1 tokens per record. Cost per record was `2 + tokenCount`, and the real maximum is **26** — so a batch of 100 could cost ~3x its estimate and blow the Worker's ~1000-subrequest ceiling. Against the production dataset it was hard-killed on the very first batch. Four separate defects, all now fixed:
+
+**1. Per-record cost is now fixed at 3 D1 calls, not `2 + tokenCount`.** Tokens insert as one multi-row statement instead of one call each, and adoptions are fetched once per batch and grouped in memory instead of one query per record. The adoptions query is deliberately unfiltered — D1 does not expand array parameters in `IN (...)`, so a filtered version would be silently wrong. Removing the variance matters more than the raw reduction: batch cost is now predictable.
+
+**2. Batch default 100 → 50**, cap 400 → 200. At 3 calls/record that is ~150 subrequests, roughly 6x under the ceiling. Deliberately not shaving it — the loop is automatic, so extra batches cost seconds while one over-large batch costs the whole run.
+
+**3. A hard-killed Worker no longer wedges the feature.** No `catch` runs on a subrequest kill, so the scan lock stayed `running` forever and every later attempt 409'd — staging needed a manual `UPDATE` to recover. A `running` lock older than 5 minutes is now reclaimed automatically. A genuinely concurrent scan still gets 409, now with `retryInMs`.
+
+**4. The client no longer hides the failure.** It called `res.json()` *before* checking `res.ok`, so a killed Worker's non-JSON error page threw in the parse and surfaced as a bare "Scan failed" — no status, no indication the run had died rather than errored. The response is now read as text first, with the HTTP status and body reported.
+
+### Added — pending re-tokenization count
+
+Staleness is `token_hash !== computeTokenHash(record)`, computed in app code, so no SQL query can answer "how many are left?" — the only way to check was to run another batch. The GET now returns `staleCount` and the panel shows "N perfiles pendientes de re-tokenizar" before you click, and "Todos los perfiles están tokenizados" when done. Reports `-1` for unknown rather than lying with `0` if the count fails, and never fails the panel.
+
+Verified against a dev server with every record forced stale: 8 batches, multi-row insert working on D1, **335 candidates — identical to the pre-optimization run**, so the same tokens are produced with a third of the queries. Lock behaviour confirmed both ways (fresh → 409, 10-minute-old → reclaimed). `staleCount` tracked 78 → 58 → 0 across a scan.
+
 ## [2.49.3] - 2026-09-02
 
 ### Changed — duplicate Scan runs in batches, so a tokenizer bump can't exceed the Worker's limits

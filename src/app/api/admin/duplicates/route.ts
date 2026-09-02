@@ -127,9 +127,40 @@ export async function GET(request: Request) {
             db.select({ count: sql<number>`COUNT(*)` }).from(duplicateCandidates).where(eq(duplicateCandidates.status, 'merged')),
         ]);
 
+        // How many records still need re-tokenizing. Staleness is
+        // `token_hash !== computeTokenHash(record)` and that hash is computed in
+        // app code, so no SQL query can answer this — without surfacing it here
+        // there is NO way to see scan progress except by running another batch,
+        // which is exactly the wrong tool for "did it finish?".
+        //
+        // One extra select of the hashable columns; hashing is pure and
+        // in-memory. This endpoint is admin-only and low-traffic.
+        let staleCount = 0;
+        try {
+            const hashable = await db.select({
+                name: adopters.name,
+                contactInfo: adopters.contactInfo,
+                addressInfo: adopters.addressInfo,
+                familyMembers: adopters.familyMembers,
+                householdMembers: adopters.householdMembers,
+                sourceUrl: adopters.sourceUrl,
+                tokenHash: adopters.tokenHash,
+            }).from(adopters).where(isNull(adopters.deletedAt));
+            for (const a of hashable) {
+                if (a.tokenHash !== computeTokenHash(a)) staleCount++;
+            }
+        } catch (e) {
+            // Never fail the whole panel over a progress counter.
+            logger.warn('Duplicate list: stale count failed', {
+                error: e instanceof Error ? e.message : String(e),
+            });
+            staleCount = -1; // -1 = unknown, so the UI can say so rather than lie with 0
+        }
+
         return NextResponse.json({
             userFlagged: userFlaggedEnriched,
             candidates: candidatesEnriched,
+            staleCount,
             counts: {
                 pending: pendingCount[0]?.count || 0,
                 dismissed: dismissedCount[0]?.count || 0,
@@ -160,18 +191,36 @@ export async function GET(request: Request) {
 /**
  * How many stale records one Scan call re-tokenizes.
  *
- * Each record costs ~9 D1 calls (1 select for its adoptions + 1 delete + ~6
- * token inserts + 1 hash update), and a Worker has a hard subrequest ceiling —
- * the same constraint the `.limit(100)` on the GET above exists for. Uncapped,
- * a tokenizer-version bump makes EVERY record stale at once (1,146 in prod as
- * of v2.49), which is ~10k subrequests and dies partway through.
+ * A Worker has a hard subrequest ceiling (~1000), and a tokenizer-version bump
+ * makes EVERY record stale at once — 1,146 in production as of v2.49.
  *
- * Writes are committed per record inside the loop, so a batched scan makes real
- * progress and the caller simply calls again until `done`. 100 × ~9 ≈ 900,
- * under the 1000 ceiling with room for the surrounding queries.
+ * Cost per record is now FIXED at 3 D1 calls (delete + one multi-row token
+ * insert + hash update). That fixed-ness is the point: it used to be
+ * `2 + tokenCount`, and with a real-world max of 26 tokens on one record, a
+ * batch sized off the 6.1 average could quietly cost 3x its estimate. v2.49.3
+ * shipped a batch of 100 on that average and was hard-killed on the first click
+ * against production-scale data — no catch block runs on a subrequest kill, so
+ * it also left the scan lock wedged at `running` (see SCAN_LOCK_STALE_MS).
+ *
+ * 50 × 3 = 150, plus a handful of surrounding queries. Deliberately ~6x under
+ * the ceiling rather than shaving it: the loop is automatic, so more batches
+ * costs a few seconds, while one over-large batch costs a failed run. Callers
+ * that want fewer round trips can pass `?limit=` up to SCAN_BATCH_MAX.
  */
-const SCAN_BATCH_DEFAULT = 100;
-const SCAN_BATCH_MAX = 400;
+const SCAN_BATCH_DEFAULT = 50;
+const SCAN_BATCH_MAX = 200;
+
+/**
+ * A `running` lock older than this is treated as abandoned and reclaimed.
+ *
+ * Load-bearing: when a Worker is hard-killed (subrequest ceiling, CPU limit)
+ * the `catch` below never runs, so the lock stays `running` forever and every
+ * subsequent scan 409s. That happened on staging 2026-09-02 and needed a manual
+ * UPDATE to recover — unacceptable for a production runbook step.
+ *
+ * Generous relative to a batch (seconds), so it cannot reclaim a live scan.
+ */
+const SCAN_LOCK_STALE_MS = 5 * 60 * 1000;
 
 export async function POST(request: Request) {
     const session = await auth();
@@ -186,7 +235,18 @@ export async function POST(request: Request) {
         // Check scan lock
         const lockRow = await db.select().from(appConfig).where(eq(appConfig.key, 'duplicate_scan_status')).get();
         if (lockRow?.value === 'running') {
-            return NextResponse.json({ error: 'Scan already in progress' }, { status: 409 });
+            // Reclaim an abandoned lock rather than 409 forever — a hard-killed
+            // Worker leaves this set with no catch block to clear it.
+            const lockAgeMs = lockRow.updatedAt ? Date.now() - new Date(lockRow.updatedAt).getTime() : Infinity;
+            if (lockAgeMs < SCAN_LOCK_STALE_MS) {
+                return NextResponse.json({
+                    error: 'Scan already in progress',
+                    retryInMs: SCAN_LOCK_STALE_MS - lockAgeMs,
+                }, { status: 409 });
+            }
+            logger.warn('Duplicate scan: reclaiming stale lock', {
+                lockAgeMs, staleAfterMs: SCAN_LOCK_STALE_MS, user: session.user.email,
+            });
         }
 
         // Set lock
@@ -235,6 +295,30 @@ export async function POST(request: Request) {
             const batchIds = new Set(staleIds.slice(0, batchLimit));
             const remaining = Math.max(0, staleBefore - batchIds.size);
 
+            // Adoptions feed `onBehalfOf` tokens. Fetched ONCE for the whole
+            // batch and grouped in memory rather than one query per record —
+            // that alone was `batchLimit` subrequests, and the subrequest
+            // ceiling is the binding constraint on this endpoint.
+            //
+            // Deliberately NOT filtered by adopter id: D1 does not expand array
+            // parameters in `IN (...)` (see docs/D1_COMPATIBILITY.md), so a
+            // filtered version would either be silently wrong or need the
+            // per-record fan-out back. One unfiltered scan of a ~1.2k-row view
+            // is cheaper and correct.
+            const adoptionsByAdopter = new Map<string, { onBehalfOf: string | null }[]>();
+            {
+                const rows = await db.select({
+                    adopterId: adoptions.adopterId,
+                    onBehalfOf: adoptions.onBehalfOf,
+                }).from(adoptions);
+                for (const row of rows) {
+                    if (!row.adopterId) continue;
+                    const list = adoptionsByAdopter.get(row.adopterId);
+                    if (list) list.push({ onBehalfOf: row.onBehalfOf });
+                    else adoptionsByAdopter.set(row.adopterId, [{ onBehalfOf: row.onBehalfOf }]);
+                }
+            }
+
             // Step 2: Tokenize stale records (this batch only)
             for (const adopter of staleAdopters) {
                 if (!batchIds.has(adopter.id)) continue;
@@ -242,8 +326,7 @@ export async function POST(request: Request) {
                 if (adopter.tokenHash === newHash) continue; // Fresh, skip
 
                 // Fetch adoptions for onBehalfOf
-                const adopterAdoptions = await db.select({ onBehalfOf: adoptions.onBehalfOf })
-                    .from(adoptions).where(eq(adoptions.adopterId, adopter.id));
+                const adopterAdoptions = adoptionsByAdopter.get(adopter.id) ?? [];
 
                 // Aliases tokenize as name_words (see extractTokens docs); structured
                 // socials carry `platform` so the tokenizer emits `social`=`platform|handle`.
@@ -254,15 +337,18 @@ export async function POST(request: Request) {
 
                 const tokens = extractTokens(adopter, adopterAdoptions, aliases, socials, household);
 
-                // Replace tokens
+                // Replace tokens. ONE multi-row insert, not one per token: at ~6
+                // tokens per record that is the difference between ~8 and ~3 D1
+                // calls per record, and the subrequest ceiling is what kills this
+                // endpoint at scale.
                 await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, adopter.id));
-                for (const token of tokens) {
-                    await db.insert(duplicateTokens).values({
+                if (tokens.length > 0) {
+                    await db.insert(duplicateTokens).values(tokens.map(token => ({
                         id: crypto.randomUUID(),
                         adopterId: adopter.id,
                         tokenType: token.type,
                         tokenValue: token.value,
-                    });
+                    })));
                 }
 
                 await db.update(adopters).set({ tokenHash: newHash }).where(eq(adopters.id, adopter.id));
