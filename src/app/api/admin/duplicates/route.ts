@@ -157,7 +157,23 @@ export async function GET(request: Request) {
  * POST /api/admin/duplicates
  * Scan: refresh stale tokens, find shared tokens, score pairs, insert candidates
  */
-export async function POST(_request: Request) {
+/**
+ * How many stale records one Scan call re-tokenizes.
+ *
+ * Each record costs ~9 D1 calls (1 select for its adoptions + 1 delete + ~6
+ * token inserts + 1 hash update), and a Worker has a hard subrequest ceiling —
+ * the same constraint the `.limit(100)` on the GET above exists for. Uncapped,
+ * a tokenizer-version bump makes EVERY record stale at once (1,146 in prod as
+ * of v2.49), which is ~10k subrequests and dies partway through.
+ *
+ * Writes are committed per record inside the loop, so a batched scan makes real
+ * progress and the caller simply calls again until `done`. 100 × ~9 ≈ 900,
+ * under the 1000 ceiling with room for the surrounding queries.
+ */
+const SCAN_BATCH_DEFAULT = 100;
+const SCAN_BATCH_MAX = 400;
+
+export async function POST(request: Request) {
     const session = await auth();
     if (!session?.user?.email || !await isAdminAsync(session.user.email)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -201,8 +217,27 @@ export async function POST(_request: Request) {
 
             let tokenized = 0;
 
-            // Step 2: Tokenize stale records
+            // Batch size for this call. Clamped so a bad query string can't
+            // reinstate the unbounded behaviour this exists to prevent.
+            const requestedLimit = Number(new URL(request.url).searchParams.get('limit'));
+            const batchLimit = Number.isFinite(requestedLimit) && requestedLimit > 0
+                ? Math.min(Math.floor(requestedLimit), SCAN_BATCH_MAX)
+                : SCAN_BATCH_DEFAULT;
+
+            // How many records are stale before this batch runs. Hashing is
+            // pure and in-memory, so counting up front is free and lets the
+            // caller show real progress instead of guessing.
+            const staleIds: string[] = [];
+            for (const a of staleAdopters) {
+                if (a.tokenHash !== computeTokenHash(a)) staleIds.push(a.id);
+            }
+            const staleBefore = staleIds.length;
+            const batchIds = new Set(staleIds.slice(0, batchLimit));
+            const remaining = Math.max(0, staleBefore - batchIds.size);
+
+            // Step 2: Tokenize stale records (this batch only)
             for (const adopter of staleAdopters) {
+                if (!batchIds.has(adopter.id)) continue;
                 const newHash = computeTokenHash(adopter);
                 if (adopter.tokenHash === newHash) continue; // Fresh, skip
 
@@ -232,6 +267,34 @@ export async function POST(_request: Request) {
 
                 await db.update(adopters).set({ tokenHash: newHash }).where(eq(adopters.id, adopter.id));
                 tokenized++;
+            }
+
+            // More stale records left — stop here and let the caller call again.
+            // Steps 3-5 below (GROUP BY over duplicate_tokens, pair scoring,
+            // candidate insertion) are the expensive tail AND would operate on a
+            // half-retokenized token set, producing candidates that get
+            // recomputed on the next batch anyway. Deferring them to the final
+            // batch keeps intermediate calls cheap and their results meaningful.
+            //
+            // The lock MUST be released before returning or the next batch gets
+            // a 409 and the loop stalls at whatever progress it reached.
+            if (remaining > 0) {
+                await db.update(appConfig).set({ value: 'idle', updatedAt: new Date() })
+                    .where(eq(appConfig.key, 'duplicate_scan_status'));
+
+                logger.info('Duplicate scan batch complete', {
+                    staleBefore, tokenized, remaining, user: session.user.email,
+                });
+
+                return NextResponse.json({
+                    success: true,
+                    done: false,
+                    totalAdopters: staleAdopters.length,
+                    staleBefore,
+                    tokenized,
+                    remaining,
+                    newCandidates: 0,
+                });
             }
 
             // A social handle shared by more than this many adopters is almost
@@ -380,8 +443,11 @@ export async function POST(_request: Request) {
 
             return NextResponse.json({
                 success: true,
+                done: true,
                 totalAdopters: staleAdopters.length,
+                staleBefore,
                 tokenized,
+                remaining: 0,
                 newCandidates,
             });
         } catch (scanError) {

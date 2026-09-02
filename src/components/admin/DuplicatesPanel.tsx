@@ -81,20 +81,58 @@ export default function DuplicatesPanel() {
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
+    /**
+     * The scan re-tokenizes in batches (the endpoint caps each call so a Worker
+     * can't blow its subrequest ceiling), so one click loops until `done`.
+     *
+     * This matters on a TOKENIZER_VERSION bump, which marks every record stale
+     * at once — 1,146 in production as of v2.49, i.e. ~12 batches. Doing that by
+     * hand means clicking until the counter stops moving, with no way to tell
+     * "finished" from "silently stopped early".
+     *
+     * `maxBatches` is a safety stop: if `remaining` ever fails to decrease, the
+     * loop would otherwise spin forever against the same records.
+     */
     async function handleScan() {
         setScanning(true);
         setScanResult(null);
+        const maxBatches = 100;
+        let totalTokenized = 0;
+        let lastRemaining = Infinity;
+
         try {
-            const res = await fetch('/api/admin/duplicates', { method: 'POST' });
-            const data = await res.json() as { tokenized?: number; newCandidates?: number; error?: string };
-            if (res.ok) {
-                setScanResult(`✅ Scan complete: ${data.tokenized} profiles tokenized, ${data.newCandidates} new candidates found`);
-                fetchData();
-            } else {
-                setScanResult(`❌ ${data.error}`);
+            for (let batch = 0; batch < maxBatches; batch++) {
+                const res = await fetch('/api/admin/duplicates', { method: 'POST' });
+                const data = await res.json() as {
+                    done?: boolean; tokenized?: number; remaining?: number;
+                    staleBefore?: number; newCandidates?: number; error?: string;
+                };
+
+                if (!res.ok) {
+                    setScanResult(`❌ ${data.error}${totalTokenized ? ` (${totalTokenized} tokenized before the failure)` : ''}`);
+                    return;
+                }
+
+                totalTokenized += data.tokenized ?? 0;
+                const remaining = data.remaining ?? 0;
+
+                if (data.done) {
+                    setScanResult(`✅ Scan complete: ${totalTokenized} profiles tokenized, ${data.newCandidates} new candidates found`);
+                    fetchData();
+                    return;
+                }
+
+                // No forward progress — stop rather than hammer the endpoint.
+                if (remaining >= lastRemaining) {
+                    setScanResult(`⚠️ Scan stalled with ${remaining} profiles left (${totalTokenized} done). Try again.`);
+                    return;
+                }
+                lastRemaining = remaining;
+                setScanResult(`⏳ Re-tokenizing… ${totalTokenized} done, ${remaining} to go`);
             }
-        } catch (error) {
-            setScanResult('❌ Scan failed');
+            setScanResult(`⚠️ Stopped after ${maxBatches} batches (${totalTokenized} tokenized). Run Scan again to continue.`);
+        } catch {
+            setScanResult(`❌ Scan failed${totalTokenized ? ` after ${totalTokenized} profiles` : ''}`);
         } finally {
             setScanning(false);
         }

@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.3] - 2026-09-02
+
+### Changed — duplicate Scan runs in batches, so a tokenizer bump can't exceed the Worker's limits
+
+`POST /api/admin/duplicates` selected **every** non-deleted adopter and re-tokenized them in one request. Each record costs ~9 D1 calls (1 select for its adoptions, 1 delete, ~6 token inserts, 1 hash update), so with production's 1,146 records a `TOKENIZER_VERSION` bump — which marks every record stale at once — meant ~10,000 subrequests in a single invocation. It would die partway through, roughly every 110 records. The `GET` handler already carried a `.limit(100)` for exactly this reason; the `POST` never got one.
+
+The endpoint now takes `?limit=N` (default 100, hard-capped at 400) and returns `done`, `remaining` and `staleBefore` alongside `tokenized`. Writes were already committed per record inside the loop, so batches make real, durable progress.
+
+Pair detection (the `GROUP BY` over `duplicate_tokens`, pair scoring and candidate insertion) is **deferred to the final batch**. Running it mid-pass was both the expensive tail and meaningless — it operated on a half-retokenized token set whose candidates the next batch would recompute anyway. The scan lock is released before each intermediate return; leaving it held would 409 the next batch and stall the run.
+
+The admin panel now loops automatically until `done`, showing "Re-tokenizing… N done, M to go", with a stall guard that stops if `remaining` ever fails to decrease. One click instead of a dozen, and it can no longer be mistaken for finished when it stopped early.
+
+Verified end-to-end against a dev server with all records forced stale: 16 batches at `limit=5`, every batch respecting the cap, `remaining` strictly decreasing, zero candidates on intermediate batches, and detection running only on the final one.
+
 ## [2.49.2] - 2026-09-01
 
 ### Fixed — deleted contact detail flashed back before disappearing again
