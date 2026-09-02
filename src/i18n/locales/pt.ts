@@ -372,8 +372,11 @@ export const pt = {
         animal_deleted: 'Animal excluído',
     },
     dialogs: {
-        confirm_delete_member: 'Remover "{name}" do grupo familiar? Todos os seus dados de contato também serão excluídos.',
-        confirm_delete_member_unnamed: 'Remover este integrante do grupo familiar? Todos os seus dados de contato também serão excluídos.',
+        confirm_delete_member: 'Remover "{name}" do grupo familiar?',
+        confirm_delete_member_unnamed: 'Remover este integrante do grupo familiar?',
+        confirm_delete_contact: 'Excluir "{value}"?',
+        confirm_delete_contact_note: 'Este dado de contato será removido do perfil.',
+        confirm_delete_member_note: 'Todos os seus dados de contato também serão excluídos.',
         confirm_delete_media: 'Excluir este arquivo?',
         confirm_delete_record: 'Tem certeza de que deseja excluir este registro? Esta ação não pode ser desfeita.',
         confirm_delete_adopter: 'Tem certeza de que deseja excluir permanentemente "{name}" e todos os seus dados?',

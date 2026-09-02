@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.2] - 2026-09-01
+
+### Fixed — deleted contact detail flashed back before disappearing again
+
+Deleting a contact detail made the row vanish, **reappear**, then vanish a second time. Cause was the undo queue introduced in 2.49.1: it cleared the "hidden" flag *before* awaiting the server call, so the row was un-hidden while `removeContactEntry` was still in flight and only left for good once `router.refresh()` landed.
+
+The row now stays hidden from the moment deletion is confirmed until the refreshed server data no longer contains it, and is restored only if the delete actually fails. `router.refresh()` is fire-and-forget, so an effect watching `entries` releases the local hidden-state rather than a timer guessing at it.
+
+### Changed — confirmation dialog replaces the undo pattern (reverts 2.49.1)
+
+2.49.1 replaced the delete confirmation with an undo toast. That was the wrong call for this product: reverted to an explicit confirmation, per the original request.
+
+All three delete paths now open a real dialog — the adopter's own contact entries, a household member's contact entries, and removing a whole household member. New `ui/ConfirmDialog` rather than native `confirm()`, because `confirm()` cannot be labelled ("Eliminar" instead of "OK", which is what people actually read) and cannot be themed — it renders in browser chrome and ignores the `[data-theme]` palette entirely. Focus lands on Cancel so a stray Enter does nothing, Escape cancels, and the confirm button is styled destructive.
+
+Removes `useUndoableDelete`, `lib/undoQueue.ts` and its tests along with the pattern.
+
 ## [2.49.1] - 2026-09-01
 
 ### Changed — contact-entry deletion uses undo instead of a confirm dialog

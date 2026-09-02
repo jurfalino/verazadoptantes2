@@ -13,8 +13,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Phone, Mail, AtSign, IdCard, MapPin, UserRound, Pencil, Trash2, Plus, Check, X } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
-import { useShowToast, useToast } from '@/components/ui/Toast';
-import { useUndoableDelete, UNDO_DELAY_MS } from '@/hooks/useUndoableDelete';
+import { useShowToast } from '@/components/ui/Toast';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { SocialPlatformPicker } from '@/components/SocialPlatformPicker';
 import { SocialLogo } from '@/components/SocialLogo';
 import { PhoneAppsToggle } from '@/components/PhoneAppsToggle';
@@ -43,27 +43,18 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit }:
 }) {
     const { t } = useLanguage();
     const toast = useShowToast();
-    // Raw showToast so the undo toast gets an action AND a finite duration —
-    // the useShowToast helpers force duration 0 whenever an action is present.
-    const { showToast } = useToast();
     const router = useRouter();
     const [members, setMembers] = useState<MemberUI[]>(() => initialMembers.map(m => ({ ...m })));
     const [busy, setBusy] = useState(false);
+    // One dialog serves both delete paths; `kind` picks the copy.
+    const [confirmTarget, setConfirmTarget] = useState<
+        | { kind: 'member'; member: MemberUI }
+        | { kind: 'contact'; member: MemberUI; entry: CEditing }
+        | null
+    >(null);
 
     const relLabel = (r: Relationship | null | undefined) => r ? t(`adopter.hh_rel_${r}`) : '';
     const patch = (id: string, up: Partial<MemberUI>) => setMembers(prev => prev.map(m => m.id === id ? { ...m, ...up } : m));
-    // Optimistic contact-entry delete with an undo toast. Keyed on
-    // member+entry because the section owns several members' lists at once.
-    const {
-        pending: pendingContactDelete,
-        schedule: scheduleContactDelete,
-        undo: undoContactDelete,
-    } = useUndoableDelete<{ memberId: string; entryId: string }>(async ({ memberId, entryId }) => {
-        const res = await run(() => removeMemberContactEntry({ adopterId, memberId, entryId }));
-        if (!res) return;
-        router.refresh();
-    });
-
     async function run<T extends { ok: boolean; error?: string }>(fn: () => Promise<T>): Promise<Extract<T, { ok: true }> | null> {
         setBusy(true);
         try {
@@ -99,21 +90,8 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit }:
         if ((m as MemberUI & { isNew?: boolean }).isNew) setMembers(prev => prev.filter(x => x.id !== m.id));
         else patch(m.id, { editing: false, draftName: undefined, draftRel: undefined });
     }
-    async function deleteMember(m: MemberUI) {
-        // Removing a member takes all of their contact entries with them, so
-        // this warns about the blast radius rather than just naming the person.
-        // A member is persistable with only a relationship or only a contact
-        // (see isMeaningfulMember), so the name can legitimately be blank —
-        // quoting it would render '¿Eliminar a ""?'.
-        const memberName = m.name?.trim();
-        const prompt = memberName
-            ? t('dialogs.confirm_delete_member').replace('{name}', memberName)
-            : t('dialogs.confirm_delete_member_unnamed');
-        if (!confirm(prompt)) return;
-        const res = await run(() => removeHouseholdMember({ adopterId, memberId: m.id }));
-        if (!res) return;
-        setMembers(prev => prev.filter(x => x.id !== m.id));
-        router.refresh();
+    function deleteMember(m: MemberUI) {
+        setConfirmTarget({ kind: 'member', member: m });
     }
 
     // ── contact ops ──
@@ -139,24 +117,33 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit }:
         patch(m.id, { contactEntries: m.contactEntries.map(e => e.id === ce.id ? { ...e, value: d.value.trim(), platform, apps: d.apps, editing: false, draft: undefined } as CEditing : e) });
         router.refresh();
     }
-    /** A contact entry in its undo window is hidden, exactly like the chip list. */
-    function visibleContacts(m: MemberUI) {
-        if (!pendingContactDelete || pendingContactDelete.memberId !== m.id) return m.contactEntries;
-        return m.contactEntries.filter(e => e.id !== pendingContactDelete.entryId);
-    }
-
     function deleteContact(m: MemberUI, ce: CEditing) {
         if (!ce.id) return;
-        // Undo, not confirm — same treatment as the adopter's own contact list
-        // (Nielsen #4: one concept, one behaviour). Deleting a whole member
-        // still confirms, because that is not comparably reversible.
-        const token = scheduleContactDelete({ memberId: m.id, entryId: ce.id });
-        showToast({
-            type: 'info',
-            title: t('adopter.ce_delete_toast'),
-            action: { label: t('adopter.ce_undo'), onClick: () => undoContactDelete(token) },
-            duration: UNDO_DELAY_MS,
-        });
+        setConfirmTarget({ kind: 'contact', member: m, entry: ce });
+    }
+
+    /**
+     * Runs the confirmed deletion. Local `members` state is the source of truth
+     * for this list, so the row is removed from it in the same commit that
+     * closes the dialog — there is no window where the row can flash back while
+     * `router.refresh()` is still in flight.
+     */
+    async function runConfirmedDelete() {
+        const target = confirmTarget;
+        if (!target) return;
+
+        if (target.kind === 'member') {
+            const res = await run(() => removeHouseholdMember({ adopterId, memberId: target.member.id }));
+            if (!res) { setConfirmTarget(null); return; }
+            setMembers(prev => prev.filter(x => x.id !== target.member.id));
+        } else {
+            const m = target.member;
+            const res = await run(() => removeMemberContactEntry({ adopterId, memberId: m.id, entryId: target.entry.id! }));
+            if (!res) { setConfirmTarget(null); return; }
+            patch(m.id, { contactEntries: m.contactEntries.filter(e => e.id !== target.entry.id) });
+        }
+        setConfirmTarget(null);
+        router.refresh();
     }
 
     const contactPlaceholder = (d: Draft) => {
@@ -240,9 +227,9 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit }:
                             {/* contacts */}
                             <div className="mt-3 pt-3 border-t border-dashed border-stone-200">
                                 <p className="text-[11px] font-bold uppercase tracking-wide text-stone-500 mb-2">{t('adopter.hh_contacts')}</p>
-                                {visibleContacts(m).length > 0 && (
+                                {m.contactEntries.length > 0 && (
                                     <ul className="space-y-1.5 mb-2">
-                                        {(visibleContacts(m) as CEditing[]).map((ce, ci) => ce.editing ? (
+                                        {(m.contactEntries as CEditing[]).map((ce, ci) => ce.editing ? (
                                             <li key={`${ce.id}-${ci}`}>{editor(m, ce.draft!, up => patch(m.id, { contactEntries: m.contactEntries.map(e => e.id === ce.id ? { ...e, draft: { ...(e as CEditing).draft!, ...up } } as CEditing : e) }), () => saveEditContact(m, ce), () => patch(m.id, { contactEntries: m.contactEntries.map(e => e.id === ce.id ? { ...e, editing: false, draft: undefined } as CEditing : e) }))}</li>
                                         ) : (() => {
                                             const branded = ce.type === 'social' && ce.platform && ce.platform !== 'other' && !ce.masked;
@@ -288,6 +275,25 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit }:
                     <Plus className="w-4 h-4" />{t('adopter.hh_cta_add')}
                 </button>
             )}
+
+            <ConfirmDialog
+                open={!!confirmTarget}
+                busy={busy}
+                title={
+                    confirmTarget?.kind === 'contact'
+                        ? t('dialogs.confirm_delete_contact').replace('{value}', confirmTarget.entry.value)
+                        : confirmTarget?.member.name?.trim()
+                            ? t('dialogs.confirm_delete_member').replace('{name}', confirmTarget.member.name.trim())
+                            : t('dialogs.confirm_delete_member_unnamed')
+                }
+                message={
+                    confirmTarget?.kind === 'contact'
+                        ? t('dialogs.confirm_delete_contact_note')
+                        : t('dialogs.confirm_delete_member_note')
+                }
+                onConfirm={runConfirmedDelete}
+                onCancel={() => setConfirmTarget(null)}
+            />
         </div>
     );
 }

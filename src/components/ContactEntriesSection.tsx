@@ -7,8 +7,8 @@ import {
     Pencil, Trash2, Check, X, Plus, type LucideIcon,
 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
-import { useShowToast, useToast } from '@/components/ui/Toast';
-import { useUndoableDelete, UNDO_DELAY_MS } from '@/hooks/useUndoableDelete';
+import { useShowToast } from '@/components/ui/Toast';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { deriveStreet, deriveLocality, detectSocialPlatform, socialUrl, phoneAppUrl, SOCIAL_PLATFORMS, type ContactEntry, type ContactEntryType, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
 import { SocialPlatformPicker } from '@/components/SocialPlatformPicker';
 import { SocialLogo } from '@/components/SocialLogo';
@@ -116,10 +116,6 @@ function socialHref(value: string): string | null {
 export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick, adopterIsPublic = false, hidePublicMicrocopy = false }: Props) {
     const { t } = useLanguage();
     const toast = useShowToast();
-    // Raw showToast (not the useShowToast helpers) so the undo toast can carry
-    // an action AND a finite duration — `success()` hardcodes duration 0 when
-    // an action is present, which would leave it on screen after the window.
-    const { showToast } = useToast();
     const router = useRouter();
     const isLocalMode = !!onChange;
 
@@ -181,29 +177,17 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
     const [editDraft, setEditDraft] = useState<EditDraft>({ value: '', streetAndNumber: '', locality: '', platform: null, apps: [] });
     const [editBusy, setEditBusy] = useState(false);
 
-    // Optimistic delete. While an entry is pending it is hidden from the list
-    // and a toast offers Undo; on expiry removeContactEntry fires. The undo
-    // affordance moved from an inline stone-100 bar to the toast system in
-    // v2.48.4 — the bar rendered above the chip list rather than where the chip
-    // vanished and went unnoticed, which read as "delete asks for nothing".
-    const { pending: pendingDeleteId, schedule: scheduleDelete, undo: undoDelete } =
-        useUndoableDelete<string>(async (entryId) => {
-            // Local mode: emit the filtered array, done.
-            if (isLocalMode) {
-                onChange!(entries.filter(e => e.id !== entryId));
-                return;
-            }
-            try {
-                const res = await removeContactEntry({ adopterId: adopterId!, entryId });
-                if (!res.ok) {
-                    toast.error(t('errors.generic'), res.error || t('adopter.ce_delete_error'));
-                    return;
-                }
-                router.refresh();
-            } catch (e) {
-                toast.error(t('errors.generic'), t('adopter.ce_delete_error'), extractErrorId(e));
-            }
-        });
+    // Deletion is gated by a confirmation dialog. `deletingId` hides the row
+    // from the moment the user confirms and is released ONLY when the refreshed
+    // server data no longer contains it (see the effect below) or the delete
+    // fails. Clearing it any earlier makes the row flash back into the list
+    // while the request is still in flight.
+    const [confirmDeleteTarget, setConfirmDeleteTarget] = useState<ContactEntry | null>(null);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (deletingId && !entries.some(e => e.id === deletingId)) setDeletingId(null);
+    }, [entries, deletingId]);
 
     // Focus restoration — when the composer closes (either after a successful
     // add or after Cancelar), return focus to the trigger button so keyboard
@@ -219,7 +203,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         wasComposerOpenRef.current = isOpenNow;
     }, [composerStage]);
 
-    const visibleEntries = entries.filter(e => e.id !== pendingDeleteId);
+    const visibleEntries = entries.filter(e => e.id !== deletingId);
     const sorted = [...visibleEntries].sort(
         (a, b) => DISPLAY_ORDER.indexOf(a.type) - DISPLAY_ORDER.indexOf(b.type),
     );
@@ -469,18 +453,39 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         // If something is currently being edited, cancel — the user shouldn't
         // be able to edit a chip that's about to disappear.
         if (editingId === entry.id) cancelEdit();
-        // No confirm() dialog: this is a frequent, reversible action, so undo
-        // beats a gate users learn to click through. The token keeps an older
-        // toast's Undo from cancelling a newer delete.
-        const token = scheduleDelete(entry.id);
-        showToast({
-            type: 'info',
-            title: t('adopter.ce_delete_toast'),
-            action: { label: t('adopter.ce_undo'), onClick: () => undoDelete(token) },
-            // Matches the undo window exactly: the toast must not outlive the
-            // chance to act on it. `toast.success` would force duration 0 here.
-            duration: UNDO_DELAY_MS,
-        });
+        setConfirmDeleteTarget(entry);
+    }
+
+    async function confirmDelete() {
+        const entry = confirmDeleteTarget;
+        if (!entry?.id) return;
+        const entryId = entry.id;
+        setConfirmDeleteTarget(null);
+        setDeletingId(entryId);
+
+        // Local mode: emit the filtered array. The parent owns the list, so the
+        // row is gone from `entries` on the next render and the effect above
+        // releases `deletingId`.
+        if (isLocalMode) {
+            onChange!(entries.filter(e => e.id !== entryId));
+            return;
+        }
+
+        try {
+            const res = await removeContactEntry({ adopterId: adopterId!, entryId });
+            if (!res.ok) {
+                setDeletingId(null); // restore the row — it was not deleted
+                toast.error(t('errors.generic'), res.error || t('adopter.ce_delete_error'));
+                return;
+            }
+            // Deliberately does NOT clear deletingId: `router.refresh()` is
+            // fire-and-forget, so the row must stay hidden until the new server
+            // data lands. The effect above clears it then.
+            router.refresh();
+        } catch (e) {
+            setDeletingId(null);
+            toast.error(t('errors.generic'), t('adopter.ce_delete_error'), extractErrorId(e));
+        }
     }
 
     function renderValueReadOnly(entry: ContactEntry) {
@@ -753,7 +758,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                 primary affordance instead of a faint link tucked at the
                 bottom. Suppressed when an undo bar is up (the deleted entry's
                 temporary absence isn't an empty state). */}
-            {sorted.length === 0 && !pendingDeleteId && composerStage === 'closed' && (
+            {sorted.length === 0 && !deletingId && composerStage === 'closed' && (
                 <p className="text-sm text-stone-500 italic">{t('adopter.ce_empty')}</p>
             )}
 
@@ -941,6 +946,14 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                     </div>
                 )}
             </div>
+
+            <ConfirmDialog
+                open={!!confirmDeleteTarget}
+                title={t('dialogs.confirm_delete_contact').replace('{value}', confirmDeleteTarget?.value ?? '')}
+                message={t('dialogs.confirm_delete_contact_note')}
+                onConfirm={confirmDelete}
+                onCancel={() => setConfirmDeleteTarget(null)}
+            />
         </div>
     );
 }
