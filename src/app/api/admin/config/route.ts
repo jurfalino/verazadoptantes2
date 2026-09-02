@@ -81,6 +81,11 @@ export async function GET() {
             SHOWCASE_USER_VISIBLE: config['SHOWCASE_USER_VISIBLE'] || 'false',
             INSTAGRAM_URL: config['INSTAGRAM_URL'] || '',
             ENABLE_GUIDED_WALKTHROUGH: config['ENABLE_GUIDED_WALKTHROUGH'] || 'false',
+            // Missing here since 2.48.0 — the toggle rendered OFF regardless of
+            // the DB value and clicks alternated true/false instead of setting
+            // it, so enabling the feature could silently disable it. Third
+            // instance of this bug; see the v2.19.48 note above.
+            ENABLE_HOUSEHOLD_MEMBERS: config['ENABLE_HOUSEHOLD_MEMBERS'] || 'false',
             // Telegram support chat — chat_id is non-sensitive and returned
             // verbatim. The bot token and webhook secret are sensitive: never
             // returned to the client. Instead we expose a *_SET indicator so

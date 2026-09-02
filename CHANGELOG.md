@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.5] - 2026-09-02
+
+### Fixed — the `ENABLE_HOUSEHOLD_MEMBERS` toggle showed OFF while the feature was ON
+
+`/api/admin/config` hand-enumerates the flags it echoes, and `ENABLE_HOUSEHOLD_MEMBERS` was never added when the flag shipped in 2.48.0. v2.48.1 added the toggle to the admin *page*, so it rendered — but the GET still omitted the value, so the panel hydrated it as `undefined === 'true'` → `false` and it always displayed OFF.
+
+Confirmed on staging: `app_config` held `ENABLE_HOUSEHOLD_MEMBERS = 'true'` while the toggle read OFF. The feature was live — which is why the household section rendered during testing — with the switch contradicting it.
+
+The failure mode is worse than a wrong label. The click handler sends `!current`, and `current` was permanently `false`: the first click sends `true` (a silent no-op when it is already on) and the second sends `false`, **disabling the feature while the admin believes they are enabling it.**
+
+Third occurrence of this exact bug — `ENABLE_PUBLIC_PROFILES` and `ENABLE_CLEAN_HOMEPAGE` sat in the same state for weeks before v2.19.48. The structural fix is to derive the echoed list from `FEATURE_FLAGS` instead of hand-enumerating it (three of the six places collapse into one source of truth); deferred, and still worth doing.
+
 ## [2.49.4] - 2026-09-02
 
 ### Fixed — Scan died on the first click at production scale, said only "Scan failed", and wedged itself
