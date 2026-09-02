@@ -228,6 +228,12 @@ const SCAN_BATCH_MAX = 200;
 const TOKEN_INSERT_CHUNK = 20;
 
 /**
+ * Rows per multi-row candidate insert. `duplicate_candidates` binds 8 columns,
+ * so D1's 100-parameter cap allows 12 rows; 10 leaves margin.
+ */
+const CANDIDATE_INSERT_CHUNK = 10;
+
+/**
  * A `running` lock older than this is treated as abandoned and reclaimed.
  *
  * Load-bearing: when a Worker is hard-killed (subrequest ceiling, CPU limit)
@@ -484,6 +490,9 @@ export async function POST(request: Request) {
             // Delete existing pending candidates (will be re-computed)
             await db.delete(duplicateCandidates).where(eq(duplicateCandidates.status, 'pending'));
 
+            /** Buffered candidate rows, flushed in chunks after scoring. */
+            const candidateRows: (typeof duplicateCandidates.$inferInsert)[] = [];
+
             for (const [pairKey, signal] of pairSignals) {
                 if (dismissedKeys.has(pairKey)) continue;
 
@@ -507,7 +516,9 @@ export async function POST(request: Request) {
                 const confidence = score >= 50 ? 'high' : score >= 25 ? 'medium' : 'low';
                 const [id1, id2] = pairKey.split('|');
 
-                await db.insert(duplicateCandidates).values({
+                // Collected, not inserted one at a time — see the chunked write
+                // below. Scoring above is pure, so this loop costs no D1 calls.
+                candidateRows.push({
                     id: crypto.randomUUID(),
                     adopter1Id: id1,
                     adopter2Id: id2,
@@ -519,6 +530,23 @@ export async function POST(request: Request) {
                 });
 
                 newCandidates++;
+            }
+
+            // Write candidates in chunks. This loop used to `await db.insert`
+            // once per candidate: at production scale that is ~1,150 subrequests
+            // in a single request, well past the Worker ceiling, and it killed
+            // the final batch of every full scan.
+            //
+            // 8 columns per row against D1's 100-bound-parameter cap gives a
+            // hard maximum of 12 rows; 10 leaves margin. ~1,150 candidates
+            // becomes ~115 statements instead of ~1,150.
+            //
+            // This was invisible locally: miniflare does NOT enforce the
+            // subrequest ceiling, so the unbounded version passed a full
+            // 1,224-record run on this machine and died on staging.
+            for (let i = 0; i < candidateRows.length; i += CANDIDATE_INSERT_CHUNK) {
+                await db.insert(duplicateCandidates)
+                    .values(candidateRows.slice(i, i + CANDIDATE_INSERT_CHUNK));
             }
 
             // Release lock & store timestamp

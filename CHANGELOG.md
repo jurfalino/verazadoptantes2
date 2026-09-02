@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.7] - 2026-09-02
+
+### Fixed — the final scan batch inserted candidates one at a time and was killed at production scale
+
+Pair detection ran `await db.insert(duplicateCandidates)` once per candidate in an unbounded loop. At production scale that is **~1,150 subrequests in a single request**, far past the Worker ceiling, so the final batch of every full scan was hard-killed — after inserting most candidates but before writing `duplicate_scan_last_run` or releasing the lock. Symptom: the scan looks finished (candidates appear) while `duplicate_scan_status` stays `running` and `duplicate_scan_last_run` never advances.
+
+Candidates now write in chunks of 10 (8 columns × 10 = 80 bindings, under D1's 100-parameter cap): ~115 statements instead of ~1,150. Final-batch budget is now roughly 272 subrequests against a ceiling of 1,000.
+
+**Why this survived local verification, and why that matters:** miniflare does **not** enforce Cloudflare's subrequest ceiling. The unbounded version passed a full 1,224-record run locally and died on staging. Local runs can prove this endpoint's *correctness* — the chunked version produces 1,147 candidates, identical to the unbounded one — but they cannot prove it fits the ceiling. **Only a real Worker can.** Any future change to this endpoint's query volume needs a staging run, not a local one.
+
+This is the third distinct limit hit in this endpoint: the tokenize loop's subrequest count (2.49.4), the token insert's bound parameters (2.49.6), and now the candidate insert's subrequest count.
+
 ## [2.49.6] - 2026-09-02
 
 ### Fixed — Scan crashed mid-run: the multi-row token insert exceeded D1's bound-parameter cap
