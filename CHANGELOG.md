@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.9] - 2026-09-02
+
+### Fixed — a failed scan could still look successful in the admin UI
+
+`duplicate_scan_last_run` and `duplicate_scan_status` were written by the scan but **never read by the GET and never displayed**. The authoritative record of whether a run finished existed only in D1, reachable by hand-querying it.
+
+That produced a genuinely deceptive state, and it fooled us during the staging rehearsal. When a scan finishes tokenizing and then dies during pair detection:
+
+- `staleCount` reads **0**, so the panel says *"Todos los perfiles están tokenizados"* — true, but only about tokenizing
+- the candidate queue **fills**, because detection inserted before dying
+- meanwhile `duplicate_scan_status` sits at `running` and `duplicate_scan_last_run` is months stale
+
+Both visible signals said success; the only signal that said otherwise was invisible.
+
+The GET now returns `scan: { status, lastRun }` and the panel renders it. `lastRun` advances **only** in the completion block, so it is the one trustworthy indicator that a whole run finished — candidates appearing is not. A non-`idle` status shows in amber alongside it.
+
+Reproduced staging's exact failure state locally and confirmed the panel now reads *"Última exploración completa: 14/5/2026 · la última no terminó (estado: running)"* while `staleCount` still reports 0 and the queue still shows 1,147 candidates.
+
 ## [2.49.8] - 2026-09-02
 
 ### Changed — the duplicate Scan is now loss-free: candidates rebuild under a staging status and swap in atomically

@@ -158,10 +158,42 @@ export async function GET(request: Request) {
             staleCount = -1; // -1 = unknown, so the UI can say so rather than lie with 0
         }
 
+        // Whether the LAST scan actually finished. `duplicate_scan_last_run` is
+        // written only by the completion block, so it is the authoritative
+        // marker — and it was previously written but never surfaced anywhere.
+        //
+        // This gap is what made a failed scan look successful: detection dies
+        // after inserting candidates, the queue fills, `staleCount` reads 0
+        // because tokenizing DID finish, and the panel cheerfully reports
+        // everything tokenized. Meanwhile the status sits at 'running'/'error'
+        // and last-run is months stale, visible only by querying D1 by hand.
+        let scan: { status: string | null; lastRun: string | null } = { status: null, lastRun: null };
+        try {
+            const rows = await db.select({ key: appConfig.key, value: appConfig.value })
+                .from(appConfig)
+                .where(or(
+                    eq(appConfig.key, 'duplicate_scan_status'),
+                    eq(appConfig.key, 'duplicate_scan_last_run'),
+                ));
+            const byKey = new Map<string, string>();
+            for (const r of rows as Array<{ key: string; value: string | null }>) {
+                if (r.value != null) byKey.set(r.key, String(r.value));
+            }
+            scan = {
+                status: byKey.get('duplicate_scan_status') ?? null,
+                lastRun: byKey.get('duplicate_scan_last_run') ?? null,
+            };
+        } catch (e) {
+            logger.warn('Duplicate list: scan status read failed', {
+                error: e instanceof Error ? e.message : String(e),
+            });
+        }
+
         return NextResponse.json({
             userFlagged: userFlaggedEnriched,
             candidates: candidatesEnriched,
             staleCount,
+            scan,
             counts: {
                 pending: pendingCount[0]?.count || 0,
                 dismissed: dismissedCount[0]?.count || 0,

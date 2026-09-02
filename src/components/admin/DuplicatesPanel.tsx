@@ -62,6 +62,10 @@ export default function DuplicatesPanel() {
     const [scanResult, setScanResult] = useState<string | null>(null);
     // -1 = unknown (the server could not compute it), not zero.
     const [staleCount, setStaleCount] = useState<number>(-1);
+    // Completion state of the LAST scan. `lastRun` only advances when a scan
+    // reaches its completion block, so it is the one trustworthy signal that a
+    // run finished — candidates appearing is not.
+    const [scan, setScan] = useState<{ status: string | null; lastRun: string | null }>({ status: null, lastRun: null });
     const [mergeTarget, setMergeTarget] = useState<{ a1: any; a2: any; matchTypes: string[]; candidateId?: string; flagId?: string } | null>(null);
     const [statusFilter, setStatusFilter] = useState<'pending' | 'dismissed' | 'merged'>('pending');
 
@@ -70,11 +74,12 @@ export default function DuplicatesPanel() {
         try {
             const res = await fetch(`/api/admin/duplicates?status=${statusFilter}`);
             if (!res.ok) throw new Error('Failed to fetch');
-            const data = await res.json() as { userFlagged?: UserFlagged[]; candidates?: DuplicateCandidate[]; counts?: Counts; staleCount?: number };
+            const data = await res.json() as { userFlagged?: UserFlagged[]; candidates?: DuplicateCandidate[]; counts?: Counts; staleCount?: number; scan?: { status: string | null; lastRun: string | null } };
             setUserFlagged(data.userFlagged || []);
             setCandidates(data.candidates || []);
             setCounts(data.counts || { pending: 0, dismissed: 0, merged: 0, userFlagged: 0 });
             setStaleCount(typeof data.staleCount === 'number' ? data.staleCount : -1);
+            setScan(data.scan ?? { status: null, lastRun: null });
         } catch (error) {
             console.error('Failed to load duplicates:', error);
         } finally {
@@ -227,6 +232,24 @@ export default function DuplicatesPanel() {
                     )}
                     {!loading && staleCount === 0 && (
                         <p className="mt-1 font-medium text-teal-700">Todos los perfiles están tokenizados</p>
+                    )}
+                    {/* Completion state of the LAST scan.
+                        Load-bearing: `staleCount === 0` only means TOKENIZING
+                        finished. A scan that tokenized everything and then died
+                        during pair detection leaves the line above reading
+                        "todos tokenizados" while the candidate rebuild failed —
+                        which is exactly how a dead scan passed for a successful
+                        one. `lastRun` advances only in the completion block, so
+                        it is the one signal that the whole run finished. */}
+                    {!loading && (
+                        <p className={`mt-1 ${scan.status === 'idle' ? 'text-stone-500' : 'font-medium text-amber-700'}`}>
+                            {scan.lastRun
+                                ? `Última exploración completa: ${new Date(scan.lastRun).toLocaleString('es-AR')}`
+                                : 'Nunca se completó una exploración'}
+                            {scan.status && scan.status !== 'idle' && (
+                                <> · la última no terminó (estado: {scan.status})</>
+                            )}
+                        </p>
                     )}
                 </div>
                 <button
