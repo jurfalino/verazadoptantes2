@@ -27,6 +27,45 @@ await Promise.all(ids.map(id =>
 ### Why This Happens
 D1's prepared statement handling doesn't expand arrays. When you pass `[id1, id2, id3]`, it becomes `IN (?)` with a single bound value instead of `IN (?, ?, ?)` with three values.
 
+### ❌ More Than 100 Bound Parameters In One Query
+
+**D1 rejects any query binding more than 100 parameters.** This bites hardest on
+multi-row inserts, where the count is `rows × columns` and scales with data you
+don't control.
+
+```typescript
+// ❌ BREAKS once `tokens` exceeds 25 (4 columns × 26 rows = 104 bindings)
+await db.insert(duplicateTokens).values(tokens.map(t => ({
+    id: crypto.randomUUID(), adopterId, tokenType: t.type, tokenValue: t.value,
+})));
+
+// ✅ CORRECT — chunk so each statement stays under the cap
+const CHUNK = 20; // 20 × 4 = 80 bindings, with margin
+for (let i = 0; i < tokens.length; i += CHUNK) {
+    await db.insert(duplicateTokens).values(
+        tokens.slice(i, i + CHUNK).map(t => ({ /* ... */ })),
+    );
+}
+```
+
+Multi-row inserts are still worth doing — one statement per 20 rows beats one per
+row against the Worker subrequest ceiling. Just size the chunk as
+`floor(100 / columnCount)` with margin, not by how many rows you expect.
+
+**How this failed in practice (v2.49.4 → v2.49.6):** the duplicate Scan inserted
+every token for a profile in one statement. It worked for ~1,200 records and then
+died on one whose notes tokenize into 20+ `name_word` entries — 27 rows × 4 = 108
+bindings. Two traps worth avoiding:
+
+- **Don't size the chunk from existing row counts.** The maximum in
+  `duplicate_tokens` was 26, but those rows came from the *previous* tokenizer
+  version; the new one emitted 27. Size from the parameter cap, not from data.
+- **Fixture sets hide this.** The 78-record local fixtures contain no profile
+  verbose enough to trigger it. Only production-shaped data does.
+
+Symptom: `Failed query: insert into "…" values (?, ?, …), (?, ?, …), …` with a
+long `params:` list. Count the `?` — over 100 is your answer.
+
 ## Performance Patterns
 
 ### Parallel Queries Per Record
