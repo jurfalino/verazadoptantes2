@@ -38,7 +38,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { findAdopters, grantSearchMatchAccess, flagAdopterAsDuplicate, type DuplicateMatch } from '@/app/actions';
+import { findAdopters, grantSearchMatchAccess, flagAdopterAsDuplicate, countAdoptersBySocialHandle, type DuplicateMatch } from '@/app/actions';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
@@ -70,6 +70,9 @@ const MAX_RESULTS = 3;
 // if it's a coincidence. We keep 5% as a sanity floor so a 0-score artefact
 // can't surface.
 const MIN_RELEVANCE = 5;
+// A social handle on more than this many records is almost certainly a shared /
+// rescuer contact mis-entered on adopters, not a real duplicate (dedup spec §4).
+const SHARED_HANDLE_WARN = 8;
 
 function buildInput(type: ContactEntryType, value: string, excludeAdopterId?: string) {
     const v = value.trim();
@@ -92,6 +95,7 @@ export default function DuplicateHint({ type, value, excludeAdopterId, onMatch, 
     const { t } = useLanguage();
     const toast = useShowToast();
     const [matches, setMatches] = useState<DuplicateMatch[]>([]);
+    const [handleCount, setHandleCount] = useState(0);
     const [loading, setLoading] = useState(false);
     const [viewing, setViewing] = useState<string | null>(null);
     const [flagging, setFlagging] = useState<string | null>(null);
@@ -111,6 +115,7 @@ export default function DuplicateHint({ type, value, excludeAdopterId, onMatch, 
         const v = value.trim();
         if (!v || !STRONG_TYPES.has(type)) {
             setMatches([]);
+            setHandleCount(0);
             setLoading(false);
             return;
         }
@@ -136,6 +141,14 @@ export default function DuplicateHint({ type, value, excludeAdopterId, onMatch, 
                 if (ctl.signal.aborted) return;
                 const dup = (res.results as DuplicateMatch[]) ?? [];
                 setMatches(dup);
+                // For socials, also learn how many records share this handle so a
+                // shared/rescuer contact can be surfaced differently (see below).
+                if (type === 'social') {
+                    const c = await countAdoptersBySocialHandle(v);
+                    if (!ctl.signal.aborted) setHandleCount(c);
+                } else if (!ctl.signal.aborted) {
+                    setHandleCount(0);
+                }
             } catch {
                 if (!ctl.signal.aborted) setMatches([]);
             } finally {
@@ -153,6 +166,23 @@ export default function DuplicateHint({ type, value, excludeAdopterId, onMatch, 
             <div className={`flex items-center gap-2 text-xs text-stone-500 ${className ?? ''}`}>
                 <span className="inline-block w-3 h-3 border-2 border-stone-400 border-t-transparent rounded-full animate-spin" aria-hidden />
                 <span>{t('adopter.dup_hint_checking') || 'Buscando coincidencias...'}</span>
+            </div>
+        );
+    }
+
+    // Shared/rescuer contact: a handle on many records is a data-quality signal,
+    // not a merge suggestion — warn instead of offering to flag them as duplicates.
+    if (type === 'social' && handleCount > SHARED_HANDLE_WARN) {
+        const msg = (t('adopter.dup_hint_shared_handle')
+            || 'Este contacto figura en {n} registros — puede ser un contacto compartido, no del adoptante.')
+            .replace('{n}', String(handleCount));
+        return (
+            <div className={`flex items-start gap-2 text-xs rounded-md border border-amber-200 bg-amber-50 text-amber-800 px-2.5 py-2 ${className ?? ''}`} role="status">
+                <svg className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+                    <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                <span>{msg}</span>
             </div>
         );
     }

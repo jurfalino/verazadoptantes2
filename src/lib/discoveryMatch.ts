@@ -78,6 +78,7 @@ export function assembleDiscoveryMatch(
             contactInfo: maskResult.contactInfo,
             contactEntries: maskResult.contactEntries,
             addressInfo: maskResult.addressInfo,
+            householdMembers: maskResult.householdMembers, // masked household (was leaking raw)
             familyMembers: null, // PII — hidden from non-privileged viewers
         };
         if (snippet && (snippet.field === 'contact' || snippet.field === 'address' || snippet.field === 'adoption')) {

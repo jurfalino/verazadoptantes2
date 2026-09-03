@@ -13,6 +13,8 @@ import {
     joinedAddressValue,
     parseBlobToContactEntries,
     type ContactEntry,
+    type SocialPlatform,
+    type MessagingApp,
 } from '@/lib/contactEntries';
 import { tokenizeAdopter } from './duplicates';
 import { hashEntryValue, isRealActorEmail } from '@/lib/piiAccess';
@@ -53,7 +55,7 @@ import { getAdopterApprovers, requestPiiAccess } from './piiAccess';
 export type AddContactEntryStatus = 'appended' | 'unlocked_existing' | 'no_change';
 
 export async function addContactEntry(
-    input: { adopterId: string; type: ContactEntry['type']; value: string; streetAndNumber?: string; locality?: string },
+    input: { adopterId: string; type: ContactEntry['type']; value: string; streetAndNumber?: string; locality?: string; platform?: SocialPlatform; apps?: MessagingApp[] },
 ): Promise<{ ok: true; adopterId: string; appended: boolean; status: AddContactEntryStatus; autoRequestFiled: boolean } | { ok: false; error: string }> {
     const parsed = addContactEntrySchema.safeParse(input);
     if (!parsed.success) return { ok: false, error: 'Invalid input' };
@@ -80,7 +82,7 @@ export async function addContactEntry(
                 locality: parsed.data.locality || undefined,
                 addedBy: actor,
             }
-            : { id: crypto.randomUUID(), type, value, addedBy: actor };
+            : { id: crypto.randomUUID(), type, value, addedBy: actor, ...(type === 'social' && parsed.data.platform ? { platform: parsed.data.platform } : {}), ...(type === 'phone' && parsed.data.apps?.length ? { apps: parsed.data.apps } : {}) };
 
         // Lazy legacy-row migration: rows that pre-date the structured
         // contactEntries column have NULL contactEntries but a populated

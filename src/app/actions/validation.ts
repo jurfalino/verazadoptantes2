@@ -38,6 +38,8 @@ export const addContactEntrySchema = z.object({
     value: z.string().min(1).max(500),
     streetAndNumber: z.string().max(500).optional(),
     locality: z.string().max(500).optional(),
+    platform: z.enum(['facebook', 'instagram', 'tiktok', 'x', 'threads', 'other']).optional(),
+    apps: z.array(z.enum(['whatsapp', 'telegram'])).optional(),
 });
 
 // updateContactEntry — owner+admin only. Mutates an existing entry identified
@@ -48,6 +50,8 @@ export const updateContactEntrySchema = z.object({
     value: z.string().min(1).max(500),
     streetAndNumber: z.string().max(500).optional(),
     locality: z.string().max(500).optional(),
+    platform: z.enum(['facebook', 'instagram', 'tiktok', 'x', 'threads', 'other']).optional(),
+    apps: z.array(z.enum(['whatsapp', 'telegram'])).optional(),
 });
 
 // removeContactEntry — owner+admin only. Removes an existing entry by id.

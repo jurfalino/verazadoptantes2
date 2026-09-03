@@ -1,6 +1,6 @@
 {
   "name": "buenadoptante",
-  "version": "2.44.14",
+  "version": "2.49.9",
   "private": true,
   "scripts": {
     "dev": "set NODE_OPTIONS=--max-old-space-size=2048 --expose-gc&& next dev",
@@ -23,6 +23,7 @@
     "next": "15.1.6",
     "next-auth": "5.0.0-beta.30",
     "papaparse": "^5.5.4",
+    "posthog-js": "^1.424.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "read-excel-file": "^9.2.0",

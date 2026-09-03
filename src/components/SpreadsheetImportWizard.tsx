@@ -7,6 +7,7 @@ import { isExactIdentifierMatch } from '@/domain/importMerge';
 import { computeContentFingerprint } from '@/domain/contentFingerprint';
 import { formatDateTimeFull } from '@/lib/dates';
 import { buildImportBody } from '@/lib/importRow';
+import { inferDateOrder } from '@/domain/importRow';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType, normalizeNeutered } from '@/domain/importRow';
 import {
@@ -140,6 +141,8 @@ export default function SpreadsheetImportWizard() {
     // Confirmation-grid state.
     const [overrides, setOverrides] = useState<Record<number, Partial<MappedRow>>>({});
     const [deselected, setDeselected] = useState<Set<number>>(new Set());
+    // Manual override for date interpretation (audit E16); null = use the inferred order.
+    const [dateOrderOverride, setDateOrderOverride] = useState<'dmy' | 'mdy' | null>(null);
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState<Filter>('all');
     const [typeFilter, setTypeFilter] = useState<string>('all');     // recordType, or 'all'
@@ -359,17 +362,32 @@ export default function SpreadsheetImportWizard() {
         });
     };
 
-    // Derive final records (AI interpretation OR column mapping, + per-row edits).
-    const records = useMemo(() => {
-        if (!parsed) return [];
+    // Derive the effective rows (AI interpretation OR column mapping, + per-row
+    // edits). Kept separate from `built` so date-order inference (which reads the
+    // raw date cells) doesn't create a cycle with the order-dependent build.
+    const effs = useMemo(() => {
+        if (!parsed) return [] as Array<{ index: number; eff: MappedRow }>;
+        const EMPTY: MappedRow = { name: '', phones: [], emails: [], socials: [], addresses: [], dnis: [], combinedContacts: [] };
         return parsed.rows.map((row, i) => {
             const base: MappedRow = mode === 'ai'
-                ? (interpreted[i] ?? { name: '', phones: [], emails: [], socials: [], addresses: [], dnis: [], combinedContacts: [] })
-                : (map ? applyColumnMap(map, parsed.headers, row) : { name: '', phones: [], emails: [], socials: [], addresses: [], dnis: [], combinedContacts: [] });
-            const eff: MappedRow = { ...base, ...(overrides[i] || {}) };
-            return { index: i, eff, built: buildImportBody(eff), selected: !deselected.has(i) };
+                ? (interpreted[i] ?? EMPTY)
+                : (map ? applyColumnMap(map, parsed.headers, row) : EMPTY);
+            return { index: i, eff: { ...base, ...(overrides[i] || {}) } as MappedRow };
         });
-    }, [parsed, mode, interpreted, map, overrides, deselected]);
+    }, [parsed, mode, interpreted, map, overrides]);
+
+    // Date-order (audit E16): infer day-first vs month-first from the sheet's own
+    // unambiguous dates; the user can override for the ambiguous case.
+    const inferredDateOrder = useMemo(() => inferDateOrder(effs.map(e => e.eff.date)), [effs]);
+    const effectiveDateOrder: 'dmy' | 'mdy' = dateOrderOverride ?? (inferredDateOrder === 'ambiguous' ? 'dmy' : inferredDateOrder);
+    const hasSlashDates = useMemo(
+        () => effs.some(e => e.eff.date && /\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}/.test(String(e.eff.date))),
+        [effs],
+    );
+
+    const records = useMemo(() => effs.map(({ index, eff }) => ({
+        index, eff, built: buildImportBody(eff, undefined, effectiveDateOrder), selected: !deselected.has(index),
+    })), [effs, effectiveDateOrder, deselected]);
 
     const filtered = useMemo(() => records.filter(r => {
         if (filter === 'valid' && r.built.errors.length) return false;
@@ -1012,6 +1030,30 @@ export default function SpreadsheetImportWizard() {
                         </div>
                     )}
 
+                    {/* Date format (audit E16): dates are read day-first (D/M/A) by
+                        default; inferred from the sheet's own unambiguous dates, with a
+                        manual override for the ambiguous case. */}
+                    {hasSlashDates && (
+                        <div className="flex items-center gap-2 flex-wrap mb-2 text-xs">
+                            <span className="text-stone-500">Formato de fecha:</span>
+                            <div className="inline-flex rounded-lg border border-stone-200 overflow-hidden">
+                                <button type="button" onClick={() => setDateOrderOverride('dmy')}
+                                    className={`px-2.5 h-7 font-medium transition-colors ${effectiveDateOrder === 'dmy' ? 'bg-teal-600 text-white' : 'bg-white text-stone-600 hover:bg-stone-50'}`}>D/M/A</button>
+                                <button type="button" onClick={() => setDateOrderOverride('mdy')}
+                                    className={`px-2.5 h-7 font-medium transition-colors border-l border-stone-200 ${effectiveDateOrder === 'mdy' ? 'bg-teal-600 text-white' : 'bg-white text-stone-600 hover:bg-stone-50'}`}>M/D/A</button>
+                            </div>
+                            {dateOrderOverride === null && inferredDateOrder !== 'ambiguous' && (
+                                <span className="text-teal-700">detectado automáticamente</span>
+                            )}
+                            {dateOrderOverride === null && inferredDateOrder === 'ambiguous' && (
+                                <span className="text-amber-700">formato ambiguo — asumiendo D/M/A</span>
+                            )}
+                            {dateOrderOverride !== null && (
+                                <button type="button" onClick={() => setDateOrderOverride(null)} className="text-stone-400 hover:text-stone-600 underline">volver a auto</button>
+                            )}
+                        </div>
+                    )}
+
                     {/* Toolbar: type-ahead search (all fields) + filters (validez/tipo/rating) + bulk-rating + counts */}
                     <div className="space-y-2 mb-3">
                         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar en todos los campos (nombre, contacto, animal, motivo…)" className="w-full h-9 px-3 rounded-lg border border-stone-200 text-sm outline-none focus:border-teal-400" />
@@ -1298,7 +1340,7 @@ export default function SpreadsheetImportWizard() {
 const MATCH_TYPE_LABELS: Record<string, string> = {
     identical: 'todos los datos',
     phone: 'teléfono', phone_suffix: 'teléfono', like_fallback_contact: 'teléfono',
-    email: 'email', social: 'red social', id_number: 'DNI', address_word: 'dirección',
+    email: 'email', social: 'red social', social_handle: 'red social', id_number: 'DNI', address_word: 'dirección',
     name_full: 'nombre', name_word: 'nombre', name_phonetic: 'nombre', name_word_fuzzy: 'nombre', like_fallback_name: 'nombre',
 };
 function matchTypeLabels(types: string[]): string {
@@ -1308,7 +1350,7 @@ function matchTypeLabels(types: string[]): string {
 // Signal-type groups used by explainMatchOneLiner below (same token vocabulary
 // isExactIdentifierMatch checks, plus the name-ish family it's compared against).
 const NAME_SIGNAL_TYPES = new Set(['name_full', 'name_word', 'name_phonetic', 'name_word_fuzzy', 'like_fallback_name']);
-const STRONG_SIGNAL_TYPES = new Set(['phone', 'phone_suffix', 'like_fallback_contact', 'email', 'id_number', 'social']);
+const STRONG_SIGNAL_TYPES = new Set(['phone', 'phone_suffix', 'like_fallback_contact', 'email', 'id_number', 'social', 'social_handle']);
 
 // One-line, derived explanation of WHY a row matched — composed from the matched
 // signal types plus the existing record's presence-only context (never its values).

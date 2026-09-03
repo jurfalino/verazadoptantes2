@@ -158,6 +158,7 @@ export function demoAdopterRow(f: DemoFixture): AdopterRow {
         contactEntries: contactEntriesJson,
         addressInfo: f.addressInfo,
         familyMembers: null,
+        householdMembers: null,
         notes: null,
         createdAt: DEMO_CREATED_AT,
         updatedAt: DEMO_UPDATED_AT,

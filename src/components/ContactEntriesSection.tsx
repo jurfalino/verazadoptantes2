@@ -8,7 +8,12 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { deriveStreet, deriveLocality, type ContactEntry, type ContactEntryType } from '@/lib/contactEntries';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import { deriveStreet, deriveLocality, detectSocialPlatform, socialUrl, phoneAppUrl, SOCIAL_PLATFORMS, type ContactEntry, type ContactEntryType, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
+import { SocialPlatformPicker } from '@/components/SocialPlatformPicker';
+import { SocialLogo } from '@/components/SocialLogo';
+import { PhoneAppsToggle } from '@/components/PhoneAppsToggle';
+import { MessagingLogo } from '@/components/MessagingLogo';
 import { addContactEntry } from '@/app/actions/addContactEntry';
 import { updateContactEntry } from '@/app/actions/updateContactEntry';
 import { removeContactEntry } from '@/app/actions/removeContactEntry';
@@ -29,13 +34,27 @@ const TYPE_ICON: Record<ContactEntryType, LucideIcon> = {
 /** Read order — actionable contact methods first, aliases near top (name-like), notes last. */
 const DISPLAY_ORDER: ContactEntryType[] = ['alias', 'phone', 'email', 'social', 'address', 'id', 'other'];
 
+/** Per-network brand label (Facebook / Instagram / ...), keyed by platform. */
+const SOCIAL_LABEL = Object.fromEntries(SOCIAL_PLATFORMS.map(p => [p.key, p.label])) as Record<SocialPlatform, string>;
+
+/**
+ * A social entry that should render with its OWN network icon + name (Facebook,
+ * Instagram, TikTok, X, Threads) instead of the generic "@ Red social" row.
+ * Returns null only for a non-social entry or the 'other'/undetected network.
+ * Masked rows still get the branded icon + name — only the handle value is
+ * hidden; which network it is isn't treated as PII.
+ */
+function brandedSocialPlatform(entry: ContactEntry): Exclude<SocialPlatform, 'other'> | null {
+    if (entry.type !== 'social') return null;
+    const p = entry.platform;
+    return p && p !== 'other' ? (p as Exclude<SocialPlatform, 'other'>) : null;
+}
+
 /** Types offered in the add composer chip row. `other` is not contributable
  *  through this surface (notes belong on the activity record, not contact). */
 const COMPOSABLE_TYPES: ContactEntryType[] = ['phone', 'email', 'social', 'id', 'address', 'alias'];
 
 const LINK_CLASS = 'text-teal-700 hover:underline';
-
-const UNDO_DELAY_MS = 5000;
 
 interface Props {
     entries: ContactEntry[];
@@ -82,6 +101,8 @@ interface EditDraft {
     value: string;
     streetAndNumber: string;
     locality: string;
+    platform?: SocialPlatform | null;
+    apps?: MessagingApp[];
 }
 
 function socialHref(value: string): string | null {
@@ -137,6 +158,8 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
     const [composerValue, setComposerValue] = useState('');
     const [composerStreet, setComposerStreet] = useState('');
     const [composerLocality, setComposerLocality] = useState('');
+    const [composerPlatform, setComposerPlatform] = useState<SocialPlatform | null>(null);
+    const [composerApps, setComposerApps] = useState<MessagingApp[]>([]);
     const [composerBusy, setComposerBusy] = useState(false);
     // Debounced value handed to <DuplicateHint>. 500ms idle keeps server load
     // low and avoids flashing while typing. Local mode skips this entirely:
@@ -151,17 +174,20 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
 
     // Edit state — the id of the entry currently being edited (one at a time).
     const [editingId, setEditingId] = useState<string | null>(null);
-    const [editDraft, setEditDraft] = useState<EditDraft>({ value: '', streetAndNumber: '', locality: '' });
+    const [editDraft, setEditDraft] = useState<EditDraft>({ value: '', streetAndNumber: '', locality: '', platform: null, apps: [] });
     const [editBusy, setEditBusy] = useState(false);
 
-    // Optimistic delete state. While `pendingDeleteId` is set, that entry is
-    // hidden from the list and an inline undo bar is shown; on timer expiry
-    // removeContactEntry fires, on Deshacer click the timer is cleared.
-    const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-    const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    useEffect(() => () => {
-        if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
-    }, []);
+    // Deletion is gated by a confirmation dialog. `deletingId` hides the row
+    // from the moment the user confirms and is released ONLY when the refreshed
+    // server data no longer contains it (see the effect below) or the delete
+    // fails. Clearing it any earlier makes the row flash back into the list
+    // while the request is still in flight.
+    const [confirmDeleteTarget, setConfirmDeleteTarget] = useState<ContactEntry | null>(null);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (deletingId && !entries.some(e => e.id === deletingId)) setDeletingId(null);
+    }, [entries, deletingId]);
 
     // Focus restoration — when the composer closes (either after a successful
     // add or after Cancelar), return focus to the trigger button so keyboard
@@ -177,7 +203,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         wasComposerOpenRef.current = isOpenNow;
     }, [composerStage]);
 
-    const visibleEntries = entries.filter(e => e.id !== pendingDeleteId);
+    const visibleEntries = entries.filter(e => e.id !== deletingId);
     const sorted = [...visibleEntries].sort(
         (a, b) => DISPLAY_ORDER.indexOf(a.type) - DISPLAY_ORDER.indexOf(b.type),
     );
@@ -202,6 +228,11 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         setComposerStage('pick-type');
     }
 
+    // Social platform: deduced from a URL (locked) or picked by the user.
+    const socialDetected = composerType === 'social' ? detectSocialPlatform(composerValue) : null;
+    const effectiveSocialPlatform: SocialPlatform | null = socialDetected ?? composerPlatform;
+    const socialNeedsPlatform = composerType === 'social' && composerValue.trim().length > 0 && !effectiveSocialPlatform;
+
     function buildNewEntry(): ContactEntry {
         if (composerType === 'address') {
             return {
@@ -211,6 +242,12 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                 streetAndNumber: composerStreet.trim() || undefined,
                 locality: composerLocality.trim() || undefined,
             };
+        }
+        if (composerType === 'social') {
+            return { id: crypto.randomUUID(), type: 'social', value: composerValue.trim(), ...(effectiveSocialPlatform ? { platform: effectiveSocialPlatform } : {}) };
+        }
+        if (composerType === 'phone') {
+            return { id: crypto.randomUUID(), type: 'phone', value: composerValue.trim(), ...(composerApps.length ? { apps: composerApps } : {}) };
         }
         return { id: crypto.randomUUID(), type: composerType, value: composerValue.trim() };
     }
@@ -228,6 +265,8 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         setComposerValue('');
         setComposerStreet('');
         setComposerLocality('');
+        setComposerPlatform(null);
+        setComposerApps([]);
     }
 
     /**
@@ -241,7 +280,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
      * without doubling up.
      */
     async function commitComposer({ silent = false } = {}): Promise<{ ok: boolean }> {
-        if (!composerHasContent() || composerBusy) return { ok: false };
+        if (!composerHasContent() || composerBusy || socialNeedsPlatform) return { ok: false };
 
         // Local mode (new-adopter creation): mutate in place, emit via onChange.
         // No server action; the parent batches everything through saveAdopter
@@ -264,7 +303,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                     streetAndNumber: composerStreet.trim() || undefined,
                     locality: composerLocality.trim() || undefined,
                 }
-                : { adopterId: adopterId!, type: composerType, value: composerValue.trim() };
+                : { adopterId: adopterId!, type: composerType, value: composerValue.trim(), ...(composerType === 'social' && effectiveSocialPlatform ? { platform: effectiveSocialPlatform } : {}), ...(composerType === 'phone' && composerApps.length ? { apps: composerApps } : {}) };
             const res = await addContactEntry(payload);
             if (res.ok) {
                 clearComposerInputs();
@@ -327,9 +366,10 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
 
     function startEdit(entry: ContactEntry) {
         if (!entry.id) return;
-        // Cancel any pending delete first so the user doesn't accidentally
-        // lose the entry they just opened.
-        cancelPendingDelete();
+        // Deliberately does NOT touch a pending delete. `visibleEntries` filters
+        // the pending entry out of the rendered list, so this can only ever be
+        // reached for a *different* entry — and cancelling there would resurrect
+        // a deletion the user asked for. (The old call was vestigial.)
         setEditingId(entry.id);
         // For address entries: when the legacy single-`value` shape is the
         // only thing present, fall back through deriveStreet / deriveLocality
@@ -339,12 +379,14 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
             value: entry.value,
             streetAndNumber: entry.type === 'address' ? deriveStreet(entry) : (entry.streetAndNumber ?? ''),
             locality: entry.type === 'address' ? deriveLocality(entry) : (entry.locality ?? ''),
+            platform: entry.type === 'social' ? (entry.platform ?? detectSocialPlatform(entry.value)) : null,
+            apps: entry.type === 'phone' ? (entry.apps ?? []) : [],
         });
     }
 
     function cancelEdit() {
         setEditingId(null);
-        setEditDraft({ value: '', streetAndNumber: '', locality: '' });
+        setEditDraft({ value: '', streetAndNumber: '', locality: '', platform: null, apps: [] });
     }
 
     async function commitEdit(entry: ContactEntry) {
@@ -353,6 +395,11 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
             ? (editDraft.streetAndNumber.trim().length > 0 || editDraft.locality.trim().length > 0)
             : editDraft.value.trim().length > 0;
         if (!hasContent) return;
+        const editPlatform: SocialPlatform | null = entry.type === 'social'
+            ? (detectSocialPlatform(editDraft.value) ?? editDraft.platform ?? null) : null;
+        const editApps: MessagingApp[] = entry.type === 'phone' ? (editDraft.apps ?? []) : [];
+        // A social must have a network before it can be saved.
+        if (entry.type === 'social' && editDraft.value.trim().length > 0 && !editPlatform) return;
 
         // Local mode: build the updated entry in place, emit.
         if (isLocalMode) {
@@ -369,6 +416,8 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                     type: entry.type,
                     value: editDraft.value.trim(),
                     ...(entry.label ? { label: entry.label } : {}),
+                    ...(editPlatform ? { platform: editPlatform } : {}),
+                    ...(editApps.length ? { apps: editApps } : {}),
                 };
             onChange!(entries.map(e => (e.id === entry.id ? updated : e)));
             cancelEdit();
@@ -384,7 +433,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                     streetAndNumber: editDraft.streetAndNumber.trim() || undefined,
                     locality: editDraft.locality.trim() || undefined,
                 }
-                : { adopterId: adopterId!, entryId: entry.id, value: editDraft.value.trim() };
+                : { adopterId: adopterId!, entryId: entry.id, value: editDraft.value.trim(), ...(editPlatform ? { platform: editPlatform } : {}), ...(editApps.length ? { apps: editApps } : {}) };
             const res = await updateContactEntry(payload);
             if (res.ok) {
                 cancelEdit();
@@ -404,43 +453,39 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         // If something is currently being edited, cancel — the user shouldn't
         // be able to edit a chip that's about to disappear.
         if (editingId === entry.id) cancelEdit();
-        // Cancel any other in-flight delete first; chain them serially.
-        cancelPendingDelete();
-        setPendingDeleteId(entry.id);
-        const entryIdToDelete = entry.id;
-        deleteTimerRef.current = setTimeout(async () => {
-            deleteTimerRef.current = null;
-
-            // Local mode: emit the filtered array, done.
-            if (isLocalMode) {
-                onChange!(entries.filter(e => e.id !== entryIdToDelete));
-                setPendingDeleteId(null);
-                return;
-            }
-
-            try {
-                const res = await removeContactEntry({ adopterId: adopterId!, entryId: entryIdToDelete });
-                if (!res.ok) {
-                    // Restore on server failure.
-                    setPendingDeleteId(null);
-                    toast.error(t('errors.generic'), res.error || t('adopter.ce_delete_error'));
-                    return;
-                }
-                setPendingDeleteId(null);
-                router.refresh();
-            } catch (e) {
-                setPendingDeleteId(null);
-                toast.error(t('errors.generic'), t('adopter.ce_delete_error'), extractErrorId(e));
-            }
-        }, UNDO_DELAY_MS);
+        setConfirmDeleteTarget(entry);
     }
 
-    function cancelPendingDelete() {
-        if (deleteTimerRef.current) {
-            clearTimeout(deleteTimerRef.current);
-            deleteTimerRef.current = null;
+    async function confirmDelete() {
+        const entry = confirmDeleteTarget;
+        if (!entry?.id) return;
+        const entryId = entry.id;
+        setConfirmDeleteTarget(null);
+        setDeletingId(entryId);
+
+        // Local mode: emit the filtered array. The parent owns the list, so the
+        // row is gone from `entries` on the next render and the effect above
+        // releases `deletingId`.
+        if (isLocalMode) {
+            onChange!(entries.filter(e => e.id !== entryId));
+            return;
         }
-        setPendingDeleteId(null);
+
+        try {
+            const res = await removeContactEntry({ adopterId: adopterId!, entryId });
+            if (!res.ok) {
+                setDeletingId(null); // restore the row — it was not deleted
+                toast.error(t('errors.generic'), res.error || t('adopter.ce_delete_error'));
+                return;
+            }
+            // Deliberately does NOT clear deletingId: `router.refresh()` is
+            // fire-and-forget, so the row must stay hidden until the new server
+            // data lands. The effect above clears it then.
+            router.refresh();
+        } catch (e) {
+            setDeletingId(null);
+            toast.error(t('errors.generic'), t('adopter.ce_delete_error'), extractErrorId(e));
+        }
     }
 
     function renderValueReadOnly(entry: ContactEntry) {
@@ -468,10 +513,21 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
             );
         }
         if (entry.type === 'phone') {
+            const tel = (
+                <a href={`tel:${entry.value.replace(/[^\d+]/g, '')}`} className={LINK_CLASS}>{entry.value}</a>
+            );
+            if (!entry.apps?.length) return tel;
             return (
-                <a href={`tel:${entry.value.replace(/[^\d+]/g, '')}`} className={LINK_CLASS}>
-                    {entry.value}
-                </a>
+                <span className="inline-flex items-center gap-1.5 flex-wrap">
+                    {tel}
+                    {entry.apps.map(app => {
+                        const u = phoneAppUrl(app, entry.value);
+                        const logo = <MessagingLogo app={app} size={15} />;
+                        return u
+                            ? <a key={app} href={u} target="_blank" rel="noopener noreferrer" title={app === 'whatsapp' ? 'WhatsApp' : 'Telegram'} className="inline-flex">{logo}</a>
+                            : <span key={app} title={app === 'whatsapp' ? 'WhatsApp' : 'Telegram'}>{logo}</span>;
+                    })}
+                </span>
             );
         }
         if (entry.type === 'email') {
@@ -491,14 +547,18 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
             );
         }
         if (entry.type === 'social') {
-            const href = socialHref(entry.value);
-            return href ? (
-                <a href={href} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
-                    {entry.value}
-                </a>
+            const href = socialUrl(entry.value, entry.platform) ?? socialHref(entry.value);
+            const inner = href ? (
+                <a href={href} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>{entry.value}</a>
             ) : (
                 <span className="text-stone-800">{entry.value}</span>
             );
+            // Branded networks now carry their icon + name in the row's leading
+            // icon + label, so the value shows only the handle. 'other' keeps its
+            // inline generic-link mark (its row stays "@ Red social").
+            return entry.platform === 'other' ? (
+                <span className="inline-flex items-center gap-1.5"><SocialLogo platform="other" size={15} />{inner}</span>
+            ) : inner;
         }
         if (entry.type === 'other') {
             return <span className="text-stone-700">{renderTextWithLinks(entry.value)}</span>;
@@ -567,24 +627,11 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                 </p>
             )}
 
-            {/* Inline undo bar shown while a delete is in its 5-second window. */}
-            {pendingDeleteId && (
-                <div className="flex items-center justify-between gap-3 bg-stone-100 border border-stone-200 rounded-md px-3 py-2 text-sm">
-                    <span className="text-stone-700">{t('adopter.ce_delete_toast')}</span>
-                    <button
-                        type="button"
-                        onClick={cancelPendingDelete}
-                        className="font-medium text-teal-700 hover:text-teal-900"
-                    >
-                        {t('adopter.ce_undo')}
-                    </button>
-                </div>
-            )}
-
             {/* Chip list. */}
             {sorted.length > 0 && (
                 <ul className="space-y-1.5">
                     {sorted.map(entry => {
+                        const branded = brandedSocialPlatform(entry);
                         const Icon = TYPE_ICON[entry.type];
                         const isEditing = editingId === entry.id;
                         return (
@@ -594,8 +641,10 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 data-testid="ce-chip"
                                 data-entry-type={entry.type}
                             >
-                                <Icon className="w-4 h-4 mt-0.5 shrink-0 text-teal-600" aria-hidden="true" />
-                                <span className="w-24 shrink-0 text-stone-500">{labelFor(entry)}</span>
+                                {branded
+                                    ? <SocialLogo platform={branded} size={16} className="mt-0.5 shrink-0" />
+                                    : <Icon className="w-4 h-4 mt-0.5 shrink-0 text-teal-600" aria-hidden="true" />}
+                                <span className="w-24 shrink-0 text-stone-500">{branded ? SOCIAL_LABEL[branded] : labelFor(entry)}</span>
                                 <div className="flex-1 min-w-0">
                                     {isEditing ? (
                                         <div className="space-y-2">
@@ -631,6 +680,21 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                     autoFocus
                                                 />
                                             )}
+                                            {entry.type === 'social' && editDraft.value.trim().length > 0 && (() => {
+                                                const det = detectSocialPlatform(editDraft.value);
+                                                return (
+                                                    <div>
+                                                        {!det && <div className="text-xs font-semibold text-stone-700 mb-1.5">{t('adopter.ce_social_which')} <span className="text-red-600">*</span></div>}
+                                                        <SocialPlatformPicker value={det ?? editDraft.platform ?? null} locked={!!det} onChange={(pl) => setEditDraft({ ...editDraft, platform: pl })} />
+                                                    </div>
+                                                );
+                                            })()}
+                                            {entry.type === 'phone' && editDraft.value.trim().length > 0 && (
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className="text-xs font-semibold text-stone-500">{t('adopter.ce_phone_apps')}</span>
+                                                    <PhoneAppsToggle value={editDraft.apps ?? []} onChange={(apps) => setEditDraft({ ...editDraft, apps })} />
+                                                </div>
+                                            )}
                                             <div className="flex items-center gap-2 justify-end">
                                                 <button
                                                     type="button"
@@ -643,7 +707,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                 <button
                                                     type="button"
                                                     onClick={() => commitEdit(entry)}
-                                                    disabled={editBusy}
+                                                    disabled={editBusy || (entry.type === 'social' && editDraft.value.trim().length > 0 && !(detectSocialPlatform(editDraft.value) ?? editDraft.platform))}
                                                     className="inline-flex items-center gap-1 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
                                                     data-testid="ce-edit-save"
                                                 >
@@ -694,7 +758,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                 primary affordance instead of a faint link tucked at the
                 bottom. Suppressed when an undo bar is up (the deleted entry's
                 temporary absence isn't an empty state). */}
-            {sorted.length === 0 && !pendingDeleteId && composerStage === 'closed' && (
+            {sorted.length === 0 && !deletingId && composerStage === 'closed' && (
                 <p className="text-sm text-stone-500 italic">{t('adopter.ce_empty')}</p>
             )}
 
@@ -787,6 +851,22 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 ↺ {t('adopter.ce_compose_change_type')}
                             </button>
                         </div>
+                        {/* Network-first: pick the social network before typing so the
+                            input can show a per-network placeholder (Facebook nudges the
+                            profile link → captures the numeric id). Locked to "auto" when
+                            a pasted URL already reveals the platform. */}
+                        {composerType === 'social' && (
+                            <div className="mb-1">
+                                <div className="text-xs font-semibold text-stone-700 mb-1.5">
+                                    {t('adopter.ce_social_which')}{!socialDetected && <span className="text-red-600"> *</span>}
+                                </div>
+                                <SocialPlatformPicker
+                                    value={effectiveSocialPlatform}
+                                    locked={!!socialDetected}
+                                    onChange={setComposerPlatform}
+                                />
+                            </div>
+                        )}
                         {composerType === 'address' ? (
                             <div className="space-y-2">
                                 <input
@@ -810,7 +890,9 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 type="text"
                                 value={composerValue}
                                 onChange={e => setComposerValue(e.target.value)}
-                                placeholder={placeholderFor(composerType)}
+                                placeholder={composerType === 'social'
+                                    ? (effectiveSocialPlatform ? t(`adopter.ce_input_ph_social_${effectiveSocialPlatform}`) : t('adopter.ce_input_ph_social'))
+                                    : placeholderFor(composerType)}
                                 onKeyDown={e => {
                                     if (e.key === 'Enter') { e.preventDefault(); handleAdd(); }
                                     if (e.key === 'Escape') { e.preventDefault(); resetComposer(); }
@@ -818,6 +900,12 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm"
                                 autoFocus
                             />
+                        )}
+                        {composerType === 'phone' && composerValue.trim().length > 0 && (
+                            <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                <span className="text-xs font-semibold text-stone-500">{t('adopter.ce_phone_apps')}</span>
+                                <PhoneAppsToggle value={composerApps} onChange={setComposerApps} />
+                            </div>
                         )}
                         {/* Cross-record duplicate warning. Renders nothing for
                             local mode, non-strong types, empty values, or
@@ -848,7 +936,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                             <button
                                 type="button"
                                 onClick={handleAdd}
-                                disabled={composerBusy}
+                                disabled={composerBusy || socialNeedsPlatform}
                                 className="inline-flex items-center gap-1 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
                                 data-testid="ce-composer-submit"
                             >
@@ -858,6 +946,14 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                     </div>
                 )}
             </div>
+
+            <ConfirmDialog
+                open={!!confirmDeleteTarget}
+                title={t('dialogs.confirm_delete_contact').replace('{value}', confirmDeleteTarget?.value ?? '')}
+                message={t('dialogs.confirm_delete_contact_note')}
+                onConfirm={confirmDelete}
+                onCancel={() => setConfirmDeleteTarget(null)}
+            />
         </div>
     );
 }

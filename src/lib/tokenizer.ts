@@ -6,7 +6,7 @@
  * adopters that share identifiers (phones, emails, names, etc.)
  */
 
-export type TokenType = 'name_full' | 'name_word' | 'phone' | 'phone_suffix' | 'email' | 'social' | 'address_word' | 'source_url' | 'id_number';
+export type TokenType = 'name_full' | 'name_word' | 'phone' | 'phone_suffix' | 'email' | 'social' | 'social_handle' | 'address_word' | 'source_url' | 'id_number';
 
 export interface Token {
     type: TokenType;
@@ -188,6 +188,10 @@ const SOCIAL_PATTERNS = [
     /(?<![a-zA-Z0-9])@[a-zA-Z0-9._]{3,30}/g,
     // Instagram URLs
     /(?:https?:\/\/)?(?:www\.)?instagram\.com\/[a-zA-Z0-9._]+/gi,
+    // TikTok / X (Twitter) / Threads profile URLs
+    /(?:https?:\/\/)?(?:www\.)?tiktok\.com\/@?[a-zA-Z0-9._]+/gi,
+    /(?:https?:\/\/)?(?:www\.)?(?:x\.com|twitter\.com)\/[a-zA-Z0-9._]+/gi,
+    /(?:https?:\/\/)?(?:www\.)?threads\.(?:net|com)\/@?[a-zA-Z0-9._]+/gi,
 ];
 
 /** Extract social media handles/URLs from free text */
@@ -199,6 +203,63 @@ export function extractSocials(text: string): string[] {
         results.push(...matches.map(m => m.toLowerCase().replace(/^https?:\/\/(www\.)?/, '')));
     }
     return [...new Set(results)];
+}
+
+/**
+ * Detect the social network from a value's URL/host. Mirrors
+ * `contactEntries.detectSocialPlatform`, duplicated here so the tokenizer stays
+ * free of the contactEntries import (documented circular dependency). Returns
+ * null for a bare handle (no host to key on).
+ */
+export function detectSocialPlatformFromValue(value: string): 'facebook' | 'instagram' | 'tiktok' | 'x' | 'threads' | null {
+    const v = (value || '').trim().toLowerCase();
+    if (!v) return null;
+    if (/(?:^|\/\/|\.)(?:facebook\.com|fb\.com|fb\.me)\b/.test(v)) return 'facebook';
+    if (/(?:instagram\.com|instagr\.am)\b/.test(v)) return 'instagram';
+    if (/tiktok\.com\b/.test(v)) return 'tiktok';
+    if (/(?:^|\.)(?:x\.com|twitter\.com|t\.co)\b/.test(v)) return 'x';
+    if (/threads\.(?:net|com)\b/.test(v)) return 'threads';
+    return null;
+}
+
+/**
+ * Reduce a social value (URL or @handle) to its stable handle/id — the single
+ * source of truth shared by the tokenizer (index) and findAdopters (query).
+ *
+ * Facebook is the exception: its identity is usually the numeric profile id in
+ * the URL (`profile.php?id=N` or `/people/.../N`), not a path segment — a naive
+ * "last path segment" rule would collapse every numeric-id FB profile to the
+ * garbage handle "profile.php". IG/TikTok/X/Threads put the username in the last
+ * path segment. Returns null when no handle is derivable (bare domain, <3 chars).
+ * `platform` (from a structured entry) lets a host-less bare handle resolve
+ * correctly (e.g. a bare "@juan" saved under a Facebook entry).
+ */
+export function normalizeSocialHandle(value: string, platform?: string | null): string | null {
+    let v = (value || '').toLowerCase().trim();
+    if (!v) return null;
+    const url = v.replace(/^https?:\/\//, '').replace(/^www\.|^m\.|^web\./, '');
+    const isFb = /^(facebook\.com|fb\.com|fb\.me)\b/.test(url) || platform === 'facebook';
+    if (isFb) {
+        const numeric = url.match(/(?:profile\.php\?id=|\/people\/[^/]*\/)(\d{5,})/) || value.match(/\bid=(\d{5,})\b/);
+        if (numeric) return `id:${numeric[1]}`;
+        const vanity = url.match(/^(?:facebook\.com|fb\.com|fb\.me)\/([a-z0-9.]+)/);
+        if (vanity && vanity[1] !== 'profile.php') return vanity[1].replace(/^@+/, '');
+        if (!url.includes('/') && !url.includes('.com')) return v.replace(/^@+/, '') || null;
+        return null;
+    }
+    v = v.replace(/^@+/, '').replace(/^https?:\/\//, '').replace(/^www\./, '');
+    // Only strip a host when there is an actual path (a slash). A bare handle can
+    // legitimately contain dots (e.g. "maria.gonzalez" — the most common Instagram
+    // form) and must NOT be misread as a domain (that returned null before).
+    if (v.includes('/')) {
+        const path = v.slice(v.indexOf('/') + 1).replace(/[?#].*$/, '').replace(/\/+$/, '');
+        if (!path) return null; // host with no path segment (bare domain)
+        v = (path.split('/').filter(Boolean).pop() || '').replace(/^@+/, '');
+    } else if (detectSocialPlatformFromValue(v)) {
+        return null; // a bare social domain (e.g. "instagram.com") carries no handle
+    }
+    if (!v || v.length < 3) return null;
+    return v;
 }
 
 // ── Name Word Extraction ─────────────────────────────────────────
@@ -262,7 +323,7 @@ export function extractAddressWords(text: string): string[] {
  *     hash still matched the old extractor output and Scan skipped them,
  *     keeping the bogus @gmail.com social tokens alive.
  */
-const TOKENIZER_VERSION = 'v3'; // v3: aliases + family emit name_full (v2.44.x)
+const TOKENIZER_VERSION = 'v5'; // v5: structured household members (names + contacts) feed tokens (household redesign)
 
 /** Compute a simple hash of all tokenizable fields for freshness tracking */
 export function computeTokenHash(adopter: {
@@ -270,6 +331,7 @@ export function computeTokenHash(adopter: {
     contactInfo?: string | null;
     addressInfo?: string | null;
     familyMembers?: string | null;
+    householdMembers?: string | null;
     sourceUrl?: string | null;
 }): string {
     const parts = [
@@ -278,6 +340,7 @@ export function computeTokenHash(adopter: {
         adopter.contactInfo || '',
         adopter.addressInfo || '',
         adopter.familyMembers || '',
+        adopter.householdMembers || '',
         adopter.sourceUrl || '',
     ].join('|');
 
@@ -315,7 +378,12 @@ interface AdoptionData {
  * own name. Callers deserialize `adopter.contactEntries` themselves to avoid the
  * tokenizer → contactEntries circular import.
  */
-export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], aliases?: string[]): Token[] {
+type HouseholdTokenInput = Array<{ name: string; contactEntries: Array<{ type: string; value: string; platform?: string | null }> }>;
+export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], aliases?: string[], socials?: Array<{ value: string; platform?: string | null }>, household?: HouseholdTokenInput): Token[] {
+    const householdMembers = household ?? [];
+    const householdNames = householdMembers.map(m => m.name).filter(Boolean);
+    // A member's alias-type contact is an alternate NAME (like the titular's aliases).
+    const householdAliasNames = householdMembers.flatMap(m => m.contactEntries.filter(e => e.type === 'alias').map(e => e.value)).filter(Boolean);
     const tokens: Token[] = [];
     const seen = new Set<string>();
 
@@ -330,7 +398,7 @@ export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], 
     // 1. Full normalized name(s) — the canonical name PLUS aliases and family
     //    members, all treated as first-class names (an abuser may adopt under a
     //    relative's or alias name). name_full = exact, high-weight match.
-    const fullNameSources = [adopter.name, adopter.familyMembers, ...(aliases ?? [])];
+    const fullNameSources = [adopter.name, adopter.familyMembers, ...(aliases ?? []), ...householdNames, ...householdAliasNames];
     for (const src of fullNameSources) {
         if (!src) continue;
         const fullName = normalizeText(src);
@@ -355,6 +423,10 @@ export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], 
             if (alias) nameSources.push(alias);
         }
     }
+    // Household member names are first-class name tokens too (a relative's name
+    // is a real abuse vector — a household phone/handle links records).
+    for (const hn of householdNames) nameSources.push(hn);
+    for (const ha of householdAliasNames) nameSources.push(ha);
     for (const source of nameSources) {
         if (source) {
             for (const word of extractNameWords(source)) {
@@ -370,11 +442,15 @@ export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], 
     // Ordering matters: extract IDs first (labeled DNI / RUT / CURP / …), then
     // strip those substrings before phone extraction so a "DNI: 12345678" doesn't
     // also tokenize as a phone.
+    const householdContactText = householdMembers
+        .flatMap(m => m.contactEntries.filter(e => e.type !== 'social').map(e => e.value))
+        .join('\n');
     const allText = [
         adopter.contactInfo || '',
         adopter.name || '',
         adopter.addressInfo || '',
         adopter.familyMembers || '',
+        householdContactText,
     ].join('\n');
 
     for (const id of extractIds(allText)) add('id_number', id);
@@ -385,7 +461,24 @@ export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], 
     for (const suffix of extractPhoneSuffixes(phones)) add('phone_suffix', suffix);
 
     for (const email of extractEmails(allText)) add('email', email);
-    for (const social of extractSocials(allText)) add('social', social);
+    // Social tokens — DUAL emission (see normalizeSocialHandle): a platform-agnostic
+    // `social_handle` (always, so a bare-handle query still matches) plus a precise
+    // `social` = `platform|handle` when the network is known. Sources: structured
+    // contactEntries socials (carry `platform`) + socials harvested from the blob.
+    const socialSources: Array<{ value: string; platform?: string | null }> = [
+        ...(socials ?? []),
+        ...householdMembers.flatMap(m => m.contactEntries.filter(e => e.type === 'social').map(e => ({ value: e.value, platform: e.platform ?? null }))),
+        ...extractSocials(allText).map(v => ({ value: v, platform: null as string | null })),
+    ];
+    for (const src of socialSources) {
+        const platform = (src.platform && src.platform !== 'other')
+            ? src.platform
+            : detectSocialPlatformFromValue(src.value);
+        const handle = normalizeSocialHandle(src.value, platform);
+        if (!handle) continue;
+        add('social_handle', handle);
+        if (platform) add('social', `${platform}|${handle}`);
+    }
 
     // 6. Address words
     for (const word of extractAddressWords(adopter.addressInfo || '')) {

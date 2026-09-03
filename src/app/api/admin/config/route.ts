@@ -49,6 +49,7 @@ export async function GET() {
             ENABLE_ANIMALS_FOR_ADOPTION: config['ENABLE_ANIMALS_FOR_ADOPTION'] || 'false',
             ENABLE_SEARCH_CARD_METADATA: config['ENABLE_SEARCH_CARD_METADATA'] || 'true',
             ENABLE_CHAT_WIDGET: config['ENABLE_CHAT_WIDGET'] || 'false',
+            ENABLE_POSTHOG: config['ENABLE_POSTHOG'] || 'false',
             ENABLE_MILESTONE_BADGE: config['ENABLE_MILESTONE_BADGE'] || 'true',
             ENABLE_QUICK_ACCESS_STRIP: config['ENABLE_QUICK_ACCESS_STRIP'] || 'true',
             ENABLE_CONTACT_PASTE: config['ENABLE_CONTACT_PASTE'] || 'true',
@@ -80,6 +81,11 @@ export async function GET() {
             SHOWCASE_USER_VISIBLE: config['SHOWCASE_USER_VISIBLE'] || 'false',
             INSTAGRAM_URL: config['INSTAGRAM_URL'] || '',
             ENABLE_GUIDED_WALKTHROUGH: config['ENABLE_GUIDED_WALKTHROUGH'] || 'false',
+            // Missing here since 2.48.0 — the toggle rendered OFF regardless of
+            // the DB value and clicks alternated true/false instead of setting
+            // it, so enabling the feature could silently disable it. Third
+            // instance of this bug; see the v2.19.48 note above.
+            ENABLE_HOUSEHOLD_MEMBERS: config['ENABLE_HOUSEHOLD_MEMBERS'] || 'false',
             // Telegram support chat — chat_id is non-sensitive and returned
             // verbatim. The bot token and webhook secret are sensitive: never
             // returned to the client. Instead we expose a *_SET indicator so

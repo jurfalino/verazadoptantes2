@@ -11,7 +11,8 @@ export const adopters = sqliteTable("adopters", {
     // every new/edited row; null on rows last saved before this column existed.
     contactEntries: text("contact_entries"),
     addressInfo: text("address_info"), // Stores physical addresses
-    familyMembers: text("family_members"), // Stores household members / aliases
+    familyMembers: text("family_members"), // Legacy free-text household members (deprecated; kept for read + manual "Convertir")
+    householdMembers: text("household_members"), // JSON: HouseholdMember[] — structured people w/ own contactEntries (src/lib/householdMembers.ts)
     notes: text("notes"), // Free-text observations, age, behavior, etc.
 
     // Metadata
@@ -212,6 +213,16 @@ export const adopterEvents = sqliteTable("adopter_events", {
     sourceUrl: text("source_url"),
     recordedBy: text("recorded_by").default("anonymous"),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    // Moderation: when set, this note was reviewed as a FALSE POSITIVE in the
+    // "Contacto en notas" data-quality report and is excluded from it. Cleared
+    // when the note is edited so a materially changed note is re-reviewed. See
+    // src/app/actions/dataQuality.ts.
+    piiDismissedAt: integer("pii_dismissed_at", { mode: "timestamp" }),
+    // Content hash (notePii.noteHash) of the note AT dismissal — the report
+    // suppresses the row only while the current note still hashes to this, so any
+    // later edit through any write path auto-re-surfaces it. Content-bound, not
+    // event-id-bound (fixes hiding PII added after a dismissal).
+    piiDismissedHash: text("pii_dismissed_hash"),
 }, (table) => ({
     adopterIdx: index("idx_events_adopter").on(table.adopterId),
     animalIdx: index("idx_events_animal").on(table.animalId),

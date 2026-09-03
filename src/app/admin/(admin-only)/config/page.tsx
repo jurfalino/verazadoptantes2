@@ -31,6 +31,7 @@ interface ConfigData {
         ENABLE_ANIMALS_FOR_ADOPTION?: string;
         ENABLE_SEARCH_CARD_METADATA?: string;
         ENABLE_CHAT_WIDGET?: string;
+        ENABLE_POSTHOG?: string;
         ENABLE_MILESTONE_BADGE?: string;
         ENABLE_QUICK_ACCESS_STRIP?: string;
         ENABLE_CONTACT_PASTE?: string;
@@ -45,6 +46,7 @@ interface ConfigData {
         SHOWCASE_USER_VISIBLE?: string;
         INSTAGRAM_URL?: string;
         ENABLE_GUIDED_WALKTHROUGH?: string;
+        ENABLE_HOUSEHOLD_MEMBERS?: string;
         TELEGRAM_ADMIN_CHAT_ID?: string;
         TELEGRAM_BOT_TOKEN_SET?: string;
         TELEGRAM_WEBHOOK_SECRET_SET?: string;
@@ -66,6 +68,7 @@ const FEATURE_FLAGS = [
     { key: 'ENABLE_ANIMALS_FOR_ADOPTION', labelKey: 'flag_label_animals_for_adoption', descKey: 'flag_desc_animals_for_adoption' },
     { key: 'ENABLE_SEARCH_CARD_METADATA', labelKey: 'flag_label_search_card_metadata', descKey: 'flag_desc_search_card_metadata' },
     { key: 'ENABLE_CHAT_WIDGET', labelKey: 'flag_label_chat_widget', descKey: 'flag_desc_chat_widget' },
+    { key: 'ENABLE_POSTHOG', labelKey: 'flag_label_posthog', descKey: 'flag_desc_posthog' },
     { key: 'ENABLE_MILESTONE_BADGE', labelKey: 'flag_label_milestone_badge', descKey: 'flag_desc_milestone_badge' },
     { key: 'ENABLE_QUICK_ACCESS_STRIP', labelKey: 'flag_label_quick_access_strip', descKey: 'flag_desc_quick_access_strip' },
     { key: 'ENABLE_CONTACT_PASTE', labelKey: 'flag_label_contact_paste', descKey: 'flag_desc_contact_paste' },
@@ -78,6 +81,7 @@ const FEATURE_FLAGS = [
     { key: 'SHOWCASE_ORG_VISIBLE', labelKey: 'flag_label_showcase_org', descKey: 'flag_desc_showcase_org' },
     { key: 'SHOWCASE_USER_VISIBLE', labelKey: 'flag_label_showcase_user', descKey: 'flag_desc_showcase_user' },
     { key: 'ENABLE_GUIDED_WALKTHROUGH', labelKey: 'flag_label_guided_walkthrough', descKey: 'flag_desc_guided_walkthrough' },
+    { key: 'ENABLE_HOUSEHOLD_MEMBERS', labelKey: 'flag_label_household_members', descKey: 'flag_desc_household_members' },
 ];
 
 export default function AdminConfigPage() {
@@ -94,6 +98,7 @@ export default function AdminConfigPage() {
         ENABLE_ANIMALS_FOR_ADOPTION: false,
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,
+        ENABLE_POSTHOG: false,
         ENABLE_MILESTONE_BADGE: true,
         ENABLE_QUICK_ACCESS_STRIP: true,
         ENABLE_CONTACT_PASTE: true,
@@ -106,6 +111,7 @@ export default function AdminConfigPage() {
         SHOWCASE_ORG_VISIBLE: false,
         SHOWCASE_USER_VISIBLE: false,
         ENABLE_GUIDED_WALKTHROUGH: false,
+        ENABLE_HOUSEHOLD_MEMBERS: false,
     });
     const [instagramUrl, setInstagramUrl] = useState('');
     const [savingInstagram, setSavingInstagram] = useState(false);
@@ -153,6 +159,7 @@ export default function AdminConfigPage() {
                         ENABLE_ANIMALS_FOR_ADOPTION: data.config?.ENABLE_ANIMALS_FOR_ADOPTION === 'true',
                         ENABLE_SEARCH_CARD_METADATA: data.config?.ENABLE_SEARCH_CARD_METADATA !== 'false',
                         ENABLE_CHAT_WIDGET: data.config?.ENABLE_CHAT_WIDGET === 'true',
+                        ENABLE_POSTHOG: data.config?.ENABLE_POSTHOG === 'true',
                         ENABLE_MILESTONE_BADGE: data.config?.ENABLE_MILESTONE_BADGE !== 'false',
                         ENABLE_QUICK_ACCESS_STRIP: data.config?.ENABLE_QUICK_ACCESS_STRIP !== 'false',
                         ENABLE_CONTACT_PASTE: data.config?.ENABLE_CONTACT_PASTE !== 'false',

@@ -2,6 +2,333 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.9] - 2026-09-02
+
+### Fixed — a failed scan could still look successful in the admin UI
+
+`duplicate_scan_last_run` and `duplicate_scan_status` were written by the scan but **never read by the GET and never displayed**. The authoritative record of whether a run finished existed only in D1, reachable by hand-querying it.
+
+That produced a genuinely deceptive state, and it fooled us during the staging rehearsal. When a scan finishes tokenizing and then dies during pair detection:
+
+- `staleCount` reads **0**, so the panel says *"Todos los perfiles están tokenizados"* — true, but only about tokenizing
+- the candidate queue **fills**, because detection inserted before dying
+- meanwhile `duplicate_scan_status` sits at `running` and `duplicate_scan_last_run` is months stale
+
+Both visible signals said success; the only signal that said otherwise was invisible.
+
+The GET now returns `scan: { status, lastRun }` and the panel renders it. `lastRun` advances **only** in the completion block, so it is the one trustworthy indicator that a whole run finished — candidates appearing is not. A non-`idle` status shows in amber alongside it.
+
+Reproduced staging's exact failure state locally and confirmed the panel now reads *"Última exploración completa: 14/5/2026 · la última no terminó (estado: running)"* while `staleCount` still reports 0 and the queue still shows 1,147 candidates.
+
+## [2.49.8] - 2026-09-02
+
+### Changed — the duplicate Scan is now loss-free: candidates rebuild under a staging status and swap in atomically
+
+Detection used to `DELETE FROM duplicate_candidates WHERE status='pending'` **before** recomputing, then re-insert over the following ~1,150 statements. A failure anywhere in that window left the review queue emptied and not rebuilt — the one genuinely destructive step in the whole scan, and the reason "just retry it" was not free.
+
+The new set is now built under `status = 'rebuilding'`, invisible to the UI (the GET filters on pending/dismissed/merged), and swapped in only once it is complete:
+
+```sql
+DELETE FROM duplicate_candidates WHERE status = 'pending';
+UPDATE duplicate_candidates SET status = 'pending' WHERE status = 'rebuilding';
+```
+
+Both run inside D1's atomic `batch()` — the same mechanism `api/admin/users` uses for multi-table deletes — so the queue is never momentarily empty. A death at any earlier point leaves existing `pending` rows completely untouched; the next run clears the orphaned `rebuilding` rows and starts clean.
+
+`status` is free-form text with no CHECK constraint, so this needed no migration.
+
+Verified locally against the 1,224-record production dataset: 1,147 pending before, 1,147 after, zero orphans, and the atomic path (not the fallback) is the one that executes. Separately verified the recovery path by planting orphaned `rebuilding` rows mid-flight — `pending` stayed intact at 1,147 throughout and the orphans were cleared on the next run.
+
+**Cost:** roughly 1,150 extra `rows_written` per full scan (~6%), since promoting the staged set is an UPDATE on top of the INSERT. Worth it to remove the only irreversible step.
+
+## [2.49.7] - 2026-09-02
+
+### Fixed — the final scan batch inserted candidates one at a time and was killed at production scale
+
+Pair detection ran `await db.insert(duplicateCandidates)` once per candidate in an unbounded loop. At production scale that is **~1,150 subrequests in a single request**, far past the Worker ceiling, so the final batch of every full scan was hard-killed — after inserting most candidates but before writing `duplicate_scan_last_run` or releasing the lock. Symptom: the scan looks finished (candidates appear) while `duplicate_scan_status` stays `running` and `duplicate_scan_last_run` never advances.
+
+Candidates now write in chunks of 10 (8 columns × 10 = 80 bindings, under D1's 100-parameter cap): ~115 statements instead of ~1,150. Final-batch budget is now roughly 272 subrequests against a ceiling of 1,000.
+
+**Why this survived local verification, and why that matters:** miniflare does **not** enforce Cloudflare's subrequest ceiling. The unbounded version passed a full 1,224-record run locally and died on staging. Local runs can prove this endpoint's *correctness* — the chunked version produces 1,147 candidates, identical to the unbounded one — but they cannot prove it fits the ceiling. **Only a real Worker can.** Any future change to this endpoint's query volume needs a staging run, not a local one.
+
+This is the third distinct limit hit in this endpoint: the tokenize loop's subrequest count (2.49.4), the token insert's bound parameters (2.49.6), and now the candidate insert's subrequest count.
+
+## [2.49.6] - 2026-09-02
+
+### Fixed — Scan crashed mid-run: the multi-row token insert exceeded D1's bound-parameter cap
+
+**D1 caps bound parameters at 100 per query.** The multi-row token insert introduced in 2.49.4 binds 4 columns per row, so it breaks above 25 tokens on a single profile. It died on a real record whose notes tokenize into 20+ `name_word` entries — 27 rows × 4 = **108 bindings** — killing the scan several batches in.
+
+Token inserts are now chunked at 20 rows (80 bindings). Typical records still take one insert; only the verbose tail takes two.
+
+Two things let this through, both worth recording:
+
+- **It was sized against the wrong data.** The chunk size was reasoned from `duplicate_tokens`, whose maximum was 26 — but those counts were produced by the **v3** tokenizer, and v5 deliberately emits more. The real v5 maximum is 27, just over the cap.
+- **Local testing used the 78-record fixture set**, which contains no profile verbose enough to trigger it. The failure only appears against production-shaped data.
+
+Verified against the full 1,224-record production dataset locally: **25 batches, remaining → 0, done**. 7,564 tokens across 1,220 adopters, zero records left untokenized, and the record that broke it now carries all 27 tokens across two inserts with no loss.
+
+### Fixed — the Scan POST discarded its own errorId
+
+On failure it returned a bare `{ error: 'Scan failed' }`. The `errorId` existed only in Axiom and the underlying message was dropped entirely, so a mid-run failure could not be diagnosed from the UI — which is exactly how the bug above presented. It now returns `errorId` and `message`, matching the GET handler. That change is what surfaced the root cause within one run.
+
+## [2.49.5] - 2026-09-02
+
+### Fixed — the `ENABLE_HOUSEHOLD_MEMBERS` toggle showed OFF while the feature was ON
+
+`/api/admin/config` hand-enumerates the flags it echoes, and `ENABLE_HOUSEHOLD_MEMBERS` was never added when the flag shipped in 2.48.0. v2.48.1 added the toggle to the admin *page*, so it rendered — but the GET still omitted the value, so the panel hydrated it as `undefined === 'true'` → `false` and it always displayed OFF.
+
+Confirmed on staging: `app_config` held `ENABLE_HOUSEHOLD_MEMBERS = 'true'` while the toggle read OFF. The feature was live — which is why the household section rendered during testing — with the switch contradicting it.
+
+The failure mode is worse than a wrong label. The click handler sends `!current`, and `current` was permanently `false`: the first click sends `true` (a silent no-op when it is already on) and the second sends `false`, **disabling the feature while the admin believes they are enabling it.**
+
+Third occurrence of this exact bug — `ENABLE_PUBLIC_PROFILES` and `ENABLE_CLEAN_HOMEPAGE` sat in the same state for weeks before v2.19.48. The structural fix is to derive the echoed list from `FEATURE_FLAGS` instead of hand-enumerating it (three of the six places collapse into one source of truth); deferred, and still worth doing.
+
+## [2.49.4] - 2026-09-02
+
+### Fixed — Scan died on the first click at production scale, said only "Scan failed", and wedged itself
+
+2.49.3 batched the scan but sized the batch off the *average* 6.1 tokens per record. Cost per record was `2 + tokenCount`, and the real maximum is **26** — so a batch of 100 could cost ~3x its estimate and blow the Worker's ~1000-subrequest ceiling. Against the production dataset it was hard-killed on the very first batch. Four separate defects, all now fixed:
+
+**1. Per-record cost is now fixed at 3 D1 calls, not `2 + tokenCount`.** Tokens insert as one multi-row statement instead of one call each, and adoptions are fetched once per batch and grouped in memory instead of one query per record. The adoptions query is deliberately unfiltered — D1 does not expand array parameters in `IN (...)`, so a filtered version would be silently wrong. Removing the variance matters more than the raw reduction: batch cost is now predictable.
+
+**2. Batch default 100 → 50**, cap 400 → 200. At 3 calls/record that is ~150 subrequests, roughly 6x under the ceiling. Deliberately not shaving it — the loop is automatic, so extra batches cost seconds while one over-large batch costs the whole run.
+
+**3. A hard-killed Worker no longer wedges the feature.** No `catch` runs on a subrequest kill, so the scan lock stayed `running` forever and every later attempt 409'd — staging needed a manual `UPDATE` to recover. A `running` lock older than 5 minutes is now reclaimed automatically. A genuinely concurrent scan still gets 409, now with `retryInMs`.
+
+**4. The client no longer hides the failure.** It called `res.json()` *before* checking `res.ok`, so a killed Worker's non-JSON error page threw in the parse and surfaced as a bare "Scan failed" — no status, no indication the run had died rather than errored. The response is now read as text first, with the HTTP status and body reported.
+
+### Added — pending re-tokenization count
+
+Staleness is `token_hash !== computeTokenHash(record)`, computed in app code, so no SQL query can answer "how many are left?" — the only way to check was to run another batch. The GET now returns `staleCount` and the panel shows "N perfiles pendientes de re-tokenizar" before you click, and "Todos los perfiles están tokenizados" when done. Reports `-1` for unknown rather than lying with `0` if the count fails, and never fails the panel.
+
+Verified against a dev server with every record forced stale: 8 batches, multi-row insert working on D1, **335 candidates — identical to the pre-optimization run**, so the same tokens are produced with a third of the queries. Lock behaviour confirmed both ways (fresh → 409, 10-minute-old → reclaimed). `staleCount` tracked 78 → 58 → 0 across a scan.
+
+## [2.49.3] - 2026-09-02
+
+### Changed — duplicate Scan runs in batches, so a tokenizer bump can't exceed the Worker's limits
+
+`POST /api/admin/duplicates` selected **every** non-deleted adopter and re-tokenized them in one request. Each record costs ~9 D1 calls (1 select for its adoptions, 1 delete, ~6 token inserts, 1 hash update), so with production's 1,146 records a `TOKENIZER_VERSION` bump — which marks every record stale at once — meant ~10,000 subrequests in a single invocation. It would die partway through, roughly every 110 records. The `GET` handler already carried a `.limit(100)` for exactly this reason; the `POST` never got one.
+
+The endpoint now takes `?limit=N` (default 100, hard-capped at 400) and returns `done`, `remaining` and `staleBefore` alongside `tokenized`. Writes were already committed per record inside the loop, so batches make real, durable progress.
+
+Pair detection (the `GROUP BY` over `duplicate_tokens`, pair scoring and candidate insertion) is **deferred to the final batch**. Running it mid-pass was both the expensive tail and meaningless — it operated on a half-retokenized token set whose candidates the next batch would recompute anyway. The scan lock is released before each intermediate return; leaving it held would 409 the next batch and stall the run.
+
+The admin panel now loops automatically until `done`, showing "Re-tokenizing… N done, M to go", with a stall guard that stops if `remaining` ever fails to decrease. One click instead of a dozen, and it can no longer be mistaken for finished when it stopped early.
+
+Verified end-to-end against a dev server with all records forced stale: 16 batches at `limit=5`, every batch respecting the cap, `remaining` strictly decreasing, zero candidates on intermediate batches, and detection running only on the final one.
+
+## [2.49.2] - 2026-09-01
+
+### Fixed — deleted contact detail flashed back before disappearing again
+
+Deleting a contact detail made the row vanish, **reappear**, then vanish a second time. Cause was the undo queue introduced in 2.49.1: it cleared the "hidden" flag *before* awaiting the server call, so the row was un-hidden while `removeContactEntry` was still in flight and only left for good once `router.refresh()` landed.
+
+The row now stays hidden from the moment deletion is confirmed until the refreshed server data no longer contains it, and is restored only if the delete actually fails. `router.refresh()` is fire-and-forget, so an effect watching `entries` releases the local hidden-state rather than a timer guessing at it.
+
+### Changed — confirmation dialog replaces the undo pattern (reverts 2.49.1)
+
+2.49.1 replaced the delete confirmation with an undo toast. That was the wrong call for this product: reverted to an explicit confirmation, per the original request.
+
+All three delete paths now open a real dialog — the adopter's own contact entries, a household member's contact entries, and removing a whole household member. New `ui/ConfirmDialog` rather than native `confirm()`, because `confirm()` cannot be labelled ("Eliminar" instead of "OK", which is what people actually read) and cannot be themed — it renders in browser chrome and ignores the `[data-theme]` palette entirely. Focus lands on Cancel so a stray Enter does nothing, Escape cancels, and the confirm button is styled destructive.
+
+Removes `useUndoableDelete`, `lib/undoQueue.ts` and its tests along with the pattern.
+
+## [2.49.1] - 2026-09-01
+
+### Changed — contact-entry deletion uses undo instead of a confirm dialog
+
+v2.48.3 put a native `confirm()` on all three contact-delete paths. That was the wrong pattern for two of them. Confirmation dialogs decay — users learn to click through them, so a gate on a frequent, reversible action taxes every correct deletion without reliably catching the wrong one. The modern rule is confirm the irreversible, undo the reversible.
+
+Split by blast radius:
+
+- **Contact entries** (adopter's own list, and each household member's) — no dialog. The entry disappears immediately and a toast offers "Deshacer" for 5 seconds; the server call fires only when that window closes.
+- **Deleting a whole household member** — keeps `confirm()`. It takes a person plus all of their contact entries, which is not comparably reversible.
+
+The undo affordance moved from an inline `bg-stone-100` bar to the existing toast system. The bar had been there since the feature shipped, but it rendered *above* the chip list rather than where the chip vanished, so it went unnoticed — which is what made deletion feel unguarded in the first place. The toast is theme-aware, unlike `confirm()`, which ignores the `[data-theme]` palette entirely.
+
+Sequencing now lives in `src/lib/undoQueue.ts` (pure, 12 unit tests) behind the `useUndoableDelete` hook, because the naive version had three defects:
+
+- **Scheduling a second delete now commits the first rather than cancelling it.** The old inline code cancelled despite a comment claiming it chained serially, so deleting two entries within the undo window silently lost the first — it just reappeared.
+- **Undo is keyed to a token.** Toasts stack and outlive the action that raised them, so without it an older toast's Undo would cancel a *newer* delete.
+- **Unmount commits rather than drops.** The toast is rendered by the layout-level provider and survives navigation, so cancelling on unmount would leave a "deleted — undo" toast for a delete that never happened.
+
+Also removes a vestigial `cancelPendingDelete()` from `startEdit`: a pending entry is filtered out of the rendered list, so that call could only ever have cancelled a *different* entry's intentional deletion.
+
+## [2.49.0] - 2026-09-01
+
+### Added — PostHog session replay + product analytics (behind `ENABLE_POSTHOG`, default off)
+
+Clarity masks the contents of every `<input>` in **all** masking modes and, per its docs, that "can't be customized" — so search terms were unreadable in replays and no Clarity setting could change it. PostHog records them natively.
+
+Runs in **parallel** with Clarity and Amplitude; it replaces neither yet. Unlike both of those, PostHog is an app-code dependency rather than a Zaraz tool — Zaraz's PostHog component is server-side only and cannot do session replay.
+
+All traffic goes through a same-origin `/ingest/*` edge route handler (`src/app/ingest/[...path]/route.ts`) proxying to the US region. Same-origin means zero CSP changes and no adblock blind spot. It is a route handler rather than a Next.js rewrite because `@cloudflare/next-on-pages` was archived in September 2025 and external rewrites on it once silently dropped query parameters — a failure that would look like "no data arrived". The URL mapping is a pure, unit-tested function in `src/lib/posthogProxy.ts`. Cost: each replay batch is a Pages Function invocation.
+
+Masking behaviour was verified against `posthog-js` 1.424.1 source rather than the docs: on web, `maskAllInputs` defaults to `true` and `maskTextSelector` defaults to `undefined`. The "all text is masked by default" language in PostHog's documentation applies to the mobile SDKs, not web.
+
+**Privacy:** recording is deliberately unmasked — search terms, adopter forms and profile pages record in cleartext (user decision 2026-09-01; rationale recorded in `.agents/plans/2026-09-01-posthog-integration.md`, D1). `input[type="password"]` remains masked by rrweb.
+
+An earlier, unreleased attempt at this problem added a Clarity `search_query` custom tag as a workaround. It was never committed or deployed, and was dropped in favour of this change — PostHog does not have the limitation it worked around. (The `2.48.3` version number was subsequently reused for the contact-delete confirmation fix below.)
+## [2.48.3] - 2026-09-01
+
+### Fixed — deleting contact details asked for no confirmation
+
+Deleting a contact entry on a household member (`HouseholdSection`) fired `removeMemberContactEntry` straight from the click with no confirmation and no undo, and removing a whole member did the same — silently taking all of that person's contact entries with it.
+
+The main contact section (`ContactEntriesSection`) was less exposed than it looked: it already had an optimistic delete with a 5-second undo window. But the undo bar is `bg-stone-100` and renders *above* the chip list rather than beside the chip that vanished, so in practice it goes unnoticed and reads as an unconfirmed delete.
+
+All three paths now confirm before deleting, using the existing `confirm()` + `dialogs.*` pattern. The undo bar stays — confirm prevents the accidental click, the 5s window still covers a confirmed-then-regretted one, and the server call fires only after it expires.
+
+The member prompt warns that contact entries go too. It has a separate unnamed variant because `isMeaningfulMember` persists a member carrying only a relationship or only a contact, so the name can legitimately be blank and quoting it would render `¿Eliminar a ""?`.
+
+Household members are behind `ENABLE_HOUSEHOLD_MEMBERS` (default off), so the unprotected paths were not reachable in production.
+
+## [2.48.2] - 2026-08-26
+
+### Fixed — HouseholdSection not respecting the color theme
+
+The new household section used a gradient avatar and a `/60` opacity on the member-card background — neither is remapped by the `[data-theme]` rules, so they rendered raw (a light card in a dark theme). Swapped to the themed `bg-teal-600` avatar and `bg-stone-50` card, matching the titular contact section. The rest of the palette already used themed tokens.
+
+## [2.48.1] - 2026-08-26
+
+### Fixed — ENABLE_HOUSEHOLD_MEMBERS toggle missing from Admin → Config
+
+The admin config page renders a hand-curated flag list, so the new `ENABLE_HOUSEHOLD_MEMBERS` flag (added to `FEATURE_FLAGS` + the public config in 2.48.0) never showed a toggle. Added it to the admin page's flag list + defaults + type, and its label/description i18n (es/en/pt). The flag can now be toggled from the Admin UI.
+
+## [2.48.0] - 2026-08-26
+
+### Added — structured household / family members (behind `ENABLE_HOUSEHOLD_MEMBERS`)
+
+Replaces the free-text "Familiares / Convivientes" field with **structured people**: each household member has a name, a relationship (incl. *Desconocida*), and their **own contact entries** — added/edited with the same composer as the titular adopter (network-first social, WhatsApp/Telegram), with explicit save per person and per contact.
+
+- **PII:** household contacts inherit the record's público/protegido verdict — masked (and member names partial-revealed, relationship kept) inside `maskAdopterContact`, so every surface (profile, search, duplicate detection, preview) is covered.
+- **Duplicate detection:** member names + contacts now tokenize (a shared household phone/handle links records — abuse detection). `TOKENIZER_VERSION v5`.
+- **Storage:** new `adopters.household_members` JSON column (migration `0061`); legacy `family_members` retained.
+- **Gating:** household editing is owner/admin/org-mate.
+
+Ships **dark** (flag OFF). Data model + actions + PII + dedup + UI. `@`-review caught and fixed a critical pre-flip PII leak in the search/duplicate path before shipping.
+
+**⚠️ Post-deploy:** run **Admin → Duplicates → "Scan Now"** (`v5` re-tokenize), then flip **`ENABLE_HOUSEHOLD_MEMBERS`** ON in the Admin UI (staging → prod) when ready.
+
+## [2.47.8] - 2026-08-26
+
+### Changed — alias contact label "Conocido/a como" → "Otro nombre/identidad"
+
+Relabels the alias contact-entry type to better convey that it captures an alternate name/identity a person uses (load-bearing for abuse detection), not just a nickname. Updated es/en/pt (`ce_type_alias`) and the derived-blob label (`TYPE_LABEL.alias`). Copy-only.
+
+## [2.47.7] - 2026-08-26
+
+### Fixed — address: a city-only entry showed the city in the street field on re-edit
+
+Entering only a city (leaving street empty) and re-editing put the city in the **street** field. Cause: `joinedAddressValue` drops the empty street, so the canonical `value` has no comma; on re-edit `deriveStreet` fell back to comma-splitting `value` and returned the whole thing (the city) as the street. `deriveStreet` now returns an empty street for a structured entry (when a `locality` is present) instead of parsing `value`. Legacy single-value addresses are unchanged. +4 round-trip tests (closes the deferred address round-trip test debt).
+
+## [2.47.6] - 2026-08-26
+
+### Added — data-quality report scan instrumentation
+
+`getDataQualityReport` now logs the D1 `rows_read` (full-scan cost), D1 query `duration`, wall `durationMs`, and prefilter-vs-final row counts. Turns "when does the report need the indexed `has_pii` design (P3.3)?" into a measured signal — revisit when p95 `dbMs`/`durationMs` crosses ~250ms — instead of a guessed row threshold.
+
+## [2.47.5] - 2026-08-26
+
+### Fixed — "Contacto en notas" dismiss hardening (EM review P1/P2)
+
+- **P1 — dismiss is now content-bound.** A false-positive dismissal stored only an event-id flag, so editing the note through the profile edit path (`_recordWrite.updateRecord`) could permanently hide *added* PII. Dismissal now stores a hash of the reviewed note (`pii_dismissed_hash`); the report suppresses a row only while the note is unchanged, so any edit through any write path re-surfaces it automatically.
+- **P2 — single source of truth.** `detectNotePii` is now the authority for report membership (the SQL is a documented coarse prefilter); the three duplicate `CASE` pattern columns were removed. `updateEventDetails` returns the authoritative flags so drop-on-save no longer guesses client-side.
+- **P2 — undo failures surface.** An `undismissPiiNote` failure now shows an error toast (with errorId) instead of silently leaving the note hidden.
+
+**DB migration:** `0060_pii_dismiss_hash.sql` (adds `adopter_events.pii_dismissed_hash`).
+
+## [2.47.4] - 2026-08-26
+
+### Added — "Contacto en notas" report: drop-on-save + "Falso positivo" dismiss
+
+The data-quality PII-in-notes report was a pure live query with no way to clear a row without a full page reload, and no way to suppress a false positive (e.g. a note saying "un gatito de la **calle**" tripping the address heuristic). Now:
+- **Drop-on-save:** saving a note that no longer matches any PII heuristic removes its row immediately (shared `detectNotePii` mirrors the SQL; +unit tests).
+- **"Falso positivo" dismiss:** marks a reviewed note as a false positive (new nullable `adopter_events.pii_dismissed_at`) so it drops off the report without altering the note; reversible via a "Deshacer" toast, and auto-cleared if the note is later edited (re-review). Moderators + admins; audited.
+
+**DB migration:** `0059_pii_note_dismiss.sql` (adds `adopter_events.pii_dismissed_at`).
+
+## [2.47.3] - 2026-08-25
+
+### Fixed — US MM/DD/YYYY import dates dropped or mis-parsed (audit E16)
+
+Import date parsing was hard day-first, so a US `MM/DD/YYYY` sheet **dropped** any date with day>12 (`03/14/2009` → null) and **silently mis-dated** the rest (`12/05/2009` → May 12). Now: (1) a per-cell floor recovers impossible day-first dates by retrying month-first (no more dropped dates); (2) `inferDateOrder` detects the sheet's day-first vs month-first layout from its own unambiguous dates and applies it consistently; (3) the review step shows a **D/M/A ↔ M/D/A** toggle (with the detected/ambiguous state) to override. Added a 9-case unit suite (also chips at E17). Day-first (es) remains the default when there's no evidence.
+
+## [2.47.2] - 2026-08-25
+
+### Changed — network-first social entry in the ImportWizard grid
+
+The bulk-edit import grid (`ContactEntriesInput`) now matches the manual composer: a social row shows the network picker **above** the value with the "¿Qué red social es?" prompt, and the input placeholder adapts per network (`@usuario o enlace`, or `facebook.com/usuario o enlace del perfil`). A pasted URL still auto-detects and locks. Closes the import-grid gap so sheet imports capture `platform` the same way the composer does, feeding the platform-aware dual-token dedup (esp. Facebook numeric IDs).
+
+## [2.47.1] - 2026-08-25
+
+### Added — shared/rescuer-contact warning when adding a social
+
+When a social handle being added already appears on more than 8 records, the composer's duplicate hint now shows a data-quality warning ("this contact is on N records — the adopter's, or a rescuer's own?") instead of offering to flag those records as duplicates. Complements the batch-generation guard shipped in 2.47.0. Phase v2 of the social dedup plan.
+
+## [2.47.0] - 2026-08-25
+
+### Changed — platform-aware social duplicate detection (dual token) · TOKENIZER_VERSION v4
+
+Social handles now index as a **dual token**: `social` = `platform|handle` (precise same-account match) plus `social_handle` = `handle` (always, so a bare-handle search/import query still matches). A shared handle normalizer (`normalizeSocialHandle`) is used by both the index and the query, so equivalent forms (URL ↔ `@handle`) match on the fast token index instead of only the LIKE fallback. **Facebook** keys on the numeric profile id from the URL (`profile.php?id=N` → `id:N`), fixing a latent bug where every numeric-id FB profile collapsed to the token `profile.php`. A social handle shared by >8 records is skipped during batch candidate generation (rescuer-contact guard). Phase v1b of the social dedup plan.
+
+**⚠️ Post-deploy:** bump is `TOKENIZER_VERSION v3→v4`; run **Admin → Duplicates → "Scan Now"** to re-tokenize all records so social matching uses the new tokens.
+
+## [2.46.5] - 2026-08-25
+
+### Changed — network-first social composer (adopter contact entries)
+
+Adding/editing a social contact now shows the network picker **first** (before typing), and the input placeholder adapts to the chosen network: `@usuario o enlace` for Instagram/TikTok/X/Threads, and `facebook.com/usuario o enlace del perfil` for Facebook (nudges the profile link, whose numeric ID is Facebook's stable identifier — improves future duplicate matching). Pasting a recognizable URL still auto-detects and locks the platform. Phase v1a of the social dedup-tokenization plan (`.agents/plans/2026-08-25-social-dedup-tokenization.md`).
+
+## [2.46.4] - 2026-08-25
+
+### Changed — social rows show the real network (icon + name) in the profile
+
+An adopter's social contact rows now render with the network's own logo and name (Facebook, Instagram, TikTok, X, Threads) instead of a generic `@ Red social` label followed by a second brand icon. The `other`/undetected network keeps the generic `@ Red social` + link mark. Masked rows still get the branded icon + name — only the handle value is hidden. Display-only; one file (`ContactEntriesSection`).
+
+## [2.46.3] - 2026-08-25
+
+### Fixed — profile name cramped on mobile; badge clutter while editing the name
+
+- On mobile the visibility badge (Público/Protegido) now **stacks below** the name instead of sitting inline, so a long name uses the full column width (was squeezed into ~170px beside the badge). Inline again at `sm+` — desktop unchanged.
+- While the name is being **inline-edited**, the badge collapses to **icon-only** (drops the Público/Protegido label) so the input owns the row. The rating is untouched. Added an opt-in `onEditingChange` callback to `InlineEditField`.
+
+## [2.46.2] - 2026-08-25
+
+### Fixed — profile name truncated on mobile
+
+The adopter name in the profile header used `truncate` (single-line + ellipsis), so a long name got cut on narrow screens. It now **wraps** (`break-words`); the inline visibility badge is `flex-none`, so it stays put beside the wrapped name.
+
+## [2.46.1] - 2026-08-25
+
+### Fixed — social/phone metadata on edit + dedup flooding on platform words
+
+- **Editing a contact entry** now shows the social platform picker + phone WhatsApp/Telegram toggles, not just when adding one. `ContactEntriesSection`'s inline edit carries `platform`/`apps` through the draft, the `updateContactEntry` payload, and local mode.
+- **Duplicate-hint flooding:** typing a bare platform word or domain in a social field ("insta", "instagram", "facebook.com", "Facebook:") matched every record with that network. The dedup LIKE-fallback now runs on the social **handle** (`socialLikeNeedle`), skipping bare domains and platform stopwords — so only a specific handle produces matches.
+
+## [2.46.0] - 2026-08-25
+
+### Added — mark WhatsApp / Telegram on a phone number
+
+Phone contact entries can now record which messaging apps the adopter uses (`whatsapp` and/or `telegram`, or neither) — a manual multi-toggle (no auto-detection; the rescuer ticks them). The phone chip shows the app logos and links to `wa.me` / `t.me`.
+
+- **Model:** `apps?: ('whatsapp'|'telegram')[]` on the phone `ContactEntry`; preserved through `deserializeContactEntries`, `buildContactEntries`, and the `addContactEntry`/`updateContactEntry` Zod schemas. New `phoneAppUrl()`.
+- **UI (both interactive surfaces):** the manual ficha composer (`ContactEntriesSection`) and the import wizard row editor (`ContactEntriesInput`), via new `MessagingLogo` + `PhoneAppsToggle` components (real inline-SVG WhatsApp/Telegram logos).
+- No DB migration (lives in the `contactEntries` JSON). Same known blob-only limitation on `add-record` merge / `mergeAdopters`.
+
+## [2.45.0] - 2026-08-24
+
+### Added — capture which social network a contact is
+
+Social contact entries now record the network (`facebook | instagram | tiktok | x | threads | other`). If the value is a **URL** the platform is deduced and locked; if it's plain text, the user must pick it from a **logo picker** (real inline-SVG brand logos, no labels). The chip shows the network logo and builds a proper link from a bare handle.
+
+- **Model:** `platform?` on `ContactEntry`; `detectSocialPlatform()` + `socialUrl()`; `deserializeContactEntries` preserves it and **deduces-on-read** for old rows (no migration); `buildContactEntries` + the dedupe key + the `addContactEntry`/`updateContactEntry` Zod schemas carry it.
+- **UI (both interactive surfaces):** the manual ficha composer (`ContactEntriesSection`) and the import wizard row editor (`ContactEntriesInput`) — new `SocialPlatformPicker` + `SocialLogo` components.
+- **Ingestion:** `extractSocials` now also recognizes **TikTok / X / Threads** URLs (only FB/IG before); import, contract, and form paths auto-deduce server-side.
+
+Known limitation (unchanged): the ImportWizard social-URL "merge into existing" (`/api/adopters/[id]/add-record`) and `mergeAdopters` are blob-only and don't carry structured platform.
+
 ## [2.44.14] - 2026-08-24
 
 ### Fixed — search card credited the surname instead of the family-member match

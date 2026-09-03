@@ -18,6 +18,7 @@ import { appConfig } from '@/db/schema';
 import { logger } from '@/lib/logger';
 
 export const PUBLIC_FLAG_KEYS = [
+    'ENABLE_HOUSEHOLD_MEMBERS',
     'ENABLE_CONTENT_IMPORT',
     'ENABLE_CONTACT_IMPORT',
     'ENABLE_GOOGLE_CONTACTS_IMPORT',

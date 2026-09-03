@@ -43,7 +43,8 @@ export { getMyAdopters, getMyAdoptions } from './dashboard';
 export { runAdminQuery, deleteAdopter, resolveDataRequest, listDeletedAdopters, restoreAdopter, purgeAdopter, purgeDeletedAdopters, purgeAllData, backfillLegacyContactEntries, backfillAdopterCountries, setAdopterPublic, transferAdopterOwnership } from './admin';
 
 // Duplicates
-export { getDuplicateCandidates, checkTokenDuplicates } from './duplicates';
+export { getDuplicateCandidates, checkTokenDuplicates, countAdoptersBySocialHandle } from './duplicates';
+export { addHouseholdMember, updateHouseholdMember, removeHouseholdMember, addMemberContactEntry, updateMemberContactEntry, removeMemberContactEntry } from './householdMembers';
 export type { DuplicateCandidate, TokenMatchResult } from './duplicates';
 export { flagAdopterAsDuplicate } from './flagAdopterAsDuplicate';
 

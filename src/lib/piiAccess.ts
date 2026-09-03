@@ -14,6 +14,7 @@ import {
     parseBlobToContactEntries,
     normalizeEntryValue,
 } from './contactEntries';
+import { deserializeHouseholdMembers, serializeHouseholdMembers, type HouseholdMember } from './householdMembers';
 import { PHONE_SEARCH_MIN_DIGITS } from '@/config/constants';
 import { normalizeText, extractAddressWords } from './tokenizer';
 
@@ -624,6 +625,7 @@ export interface MaskableAdopter {
     contactInfo?: string | null;
     contactEntries?: string | null;
     addressInfo?: string | null;
+    householdMembers?: string | null;
 }
 
 export interface AdopterContactMask {
@@ -631,6 +633,8 @@ export interface AdopterContactMask {
     /** Re-serialized ContactEntry[] JSON — masked entries carry `masked: true`. */
     contactEntries: string | null;
     addressInfo: string | null;
+    /** Masked household members JSON (each member's contacts masked, names partial-revealed). */
+    householdMembers: string | null;
     /** Distinct contact fields hidden from this viewer — drives the banner / "N protected" copy. */
     maskedFieldCount: number;
 }
@@ -695,7 +699,7 @@ export function maskAdopterContact(
     // Either privileged (owner / editor / admin / all-contact grant) or the
     // whole adopter is admin-flagged public — pass everything through.
     if (visibility.nothingMasked || options.adopterIsPublic) {
-        return { contactInfo, contactEntries: contactEntriesJson, addressInfo, maskedFieldCount: 0 };
+        return { contactInfo, contactEntries: contactEntriesJson, addressInfo, householdMembers: adopter.householdMembers ?? null, maskedFieldCount: 0 };
     }
 
     // Source entries: prefer structured contactEntries; for legacy rows parse
@@ -727,12 +731,54 @@ export function maskAdopterContact(
         maskedFieldCount++;
     }
 
+    // Household members — mask each member's contacts + partial-reveal names with
+    // the SAME verdict. Lives here so EVERY maskAdopterContact caller (search,
+    // duplicate detection, preview) inherits it — not just getAdopter.
+    const maskedHousehold = maskHouseholdMembers(adopter.householdMembers, visibility, options);
+    maskedFieldCount += maskedHousehold.maskedFieldCount;
+
     return {
         contactInfo: maskedContactInfo,
         contactEntries: parsed.length > 0 ? JSON.stringify(maskedEntries) : contactEntriesJson,
         addressInfo: maskedAddress,
+        householdMembers: maskedHousehold.json,
         maskedFieldCount,
     };
+}
+
+/** Masked household result — parallels AdopterContactMask for the family section. */
+export interface HouseholdMask {
+    /** Masked members (name partial-revealed, contacts masked) for direct render. */
+    members: HouseholdMember[];
+    /** Serialized masked members, for passing as a prop like `contactEntries`. */
+    json: string | null;
+    maskedFieldCount: number;
+}
+
+/**
+ * Mask a record's structured household members with the SAME visibility verdict
+ * as the titular's contacts — household inherits the record's público/protegido
+ * status (there is no per-member visibility). Each member's name is
+ * partial-revealed and each contact entry masked exactly like the titular's;
+ * the relationship stays visible (metadata, not PII). Privileged viewers or an
+ * admin-public record pass through unmasked. See the household redesign spec.
+ */
+export function maskHouseholdMembers(
+    json: string | null | undefined,
+    visibility: Visibility,
+    options: MaskContactOptions = {},
+): HouseholdMask {
+    const members = deserializeHouseholdMembers(json);
+    if (members.length === 0 || visibility.nothingMasked || options.adopterIsPublic) {
+        return { members, json: json ?? null, maskedFieldCount: 0 };
+    }
+    let maskedFieldCount = 0;
+    const masked = members.map(m => {
+        const { entries, maskedCount } = maskContactEntries(m.contactEntries, visibility, options);
+        maskedFieldCount += maskedCount;
+        return { ...m, name: m.name ? partialRevealName(m.name) : m.name, contactEntries: entries };
+    });
+    return { members: masked, json: serializeHouseholdMembers(masked), maskedFieldCount };
 }
 
 // ── History redaction ─────────────────────────────────────────────────────────

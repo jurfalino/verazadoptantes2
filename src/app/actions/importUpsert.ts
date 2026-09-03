@@ -14,7 +14,7 @@
 import { eq } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { adopters } from '@/db/schema';
-import { deserializeContactEntries, type ContactEntry } from '@/lib/contactEntries';
+import { deserializeContactEntries, detectSocialPlatform, type ContactEntry } from '@/lib/contactEntries';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { planRecordMerge, type MergeContact } from '@/domain/importMerge';
 import { addContactEntry } from './addContactEntry';
@@ -98,7 +98,7 @@ export async function upsertImportRecord(input: ImportUpsertInput): Promise<Impo
 
         let addedContacts = 0;
         for (const c of plan.contactsToAdd) {
-            const res = await addContactEntry({ adopterId: input.adopterId, type: c.type as ContactEntry['type'], value: c.value, streetAndNumber: c.streetAndNumber, locality: c.locality });
+            const res = await addContactEntry({ adopterId: input.adopterId, type: c.type as ContactEntry['type'], value: c.value, streetAndNumber: c.streetAndNumber, locality: c.locality, ...(c.type === 'social' ? { platform: detectSocialPlatform(c.value) ?? undefined } : {}) });
             if (res.ok && res.appended) addedContacts++;
         }
 

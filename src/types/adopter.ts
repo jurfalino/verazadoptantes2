@@ -11,6 +11,7 @@ export interface Adopter {
     contactEntries?: string | null;
     addressInfo?: string | null;
     familyMembers?: string | null;
+    householdMembers?: string | null;
     notes?: string | null;
     status?: string | null;
     addedBy?: string | null;

@@ -62,6 +62,8 @@ async function getAdopterImpl(id: string) {
                 // familyMembers → hidden (PII).
                 adopter.name = renderName(adopter.name, visibility, undefined, maskOpts);
                 adopter.familyMembers = null;
+                // Household masking is now part of maskAdopterContact (above).
+                adopter.householdMembers = masked.householdMembers;
             }
         }
         return adopter;

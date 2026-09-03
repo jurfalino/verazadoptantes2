@@ -13,7 +13,9 @@ import type { DiscoveryMatch } from "@/app/actions";
 import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
 import ContactEntriesSection from "@/components/ContactEntriesSection";
+import HouseholdSection from "@/components/HouseholdSection";
 import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
+import { deserializeHouseholdMembers } from "@/lib/householdMembers";
 import type { VisibilityBadge } from "@/domain/visibilityBadge";
 import { hasMinimumIdentifier } from "@/domain/adopterIdentity";
 import { adopterDisplayName, namelessSubIdentifier } from "@/lib/adopterDisplay";
@@ -163,6 +165,21 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     }, [adoptions, requestsPeriodDays]);
 
     const [isEditing, setIsEditing] = useState(isNew);
+    // True while the name's inline field is in edit mode — collapses the sibling
+    // visibility badge to icon-only (drops the Público/Protegido label) so the
+    // name input owns the row. The rating is untouched (it lives outside this block).
+    const [nameEditing, setNameEditing] = useState(false);
+    // ENABLE_HOUSEHOLD_MEMBERS (public flag): swaps the free-text family field for
+    // the structured HouseholdSection on saved profiles. Read once from /api/config.
+    const [enableHousehold, setEnableHousehold] = useState(false);
+    useEffect(() => {
+        let active = true;
+        fetch('/api/config').then(r => r.json()).then((d) => {
+            const cfg = d as { config?: Record<string, string> };
+            if (active && cfg?.config?.ENABLE_HOUSEHOLD_MEMBERS === 'true') setEnableHousehold(true);
+        }).catch(() => { /* flag stays off */ });
+        return () => { active = false; };
+    }, []);
     const [loading, setLoading] = useState(false);
 
     // Manual-create friction gate (nameless-adopter-profiles design): saving
@@ -945,7 +962,10 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                         </>
                                     ) : (
                                       <>
-                                      <div className="flex items-center gap-2 min-w-0">
+                                      {/* Mobile: stack the visibility badge BELOW the name so a long
+                                          name gets the full column width (it was cramped into ~170px
+                                          beside the inline badge). Inline again at sm+ (room to spare). */}
+                                      <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-2 min-w-0">
                                         {(() => {
                                         const displayName = !isNew && initialData ? adopterDisplayName(initialData, t('adopter.nameless')) : t('adopter.title_new');
                                         // Initial-only tokens (1-char words separated by whitespace) are
@@ -964,7 +984,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                     onClick={onMaskedNameClick}
                                                     aria-label={t('adopter.pii_masked_name_aria') || displayName}
                                                     title={t('adopter.pii_masked_name_title') || ''}
-                                                    className="min-w-0 text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate text-left hover:underline underline-offset-4 decoration-teal-400 transition-colors cursor-pointer"
+                                                    className="min-w-0 text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight break-words text-left hover:underline underline-offset-4 decoration-teal-400 transition-colors cursor-pointer"
                                                 >
                                                     {displayName}
                                                 </button>
@@ -979,13 +999,14 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                 required
                                                 ariaLabel={displayName}
                                                 editButtonTestId="name-edit-btn"
+                                                onEditingChange={setNameEditing}
                                                 onSave={(next) => saveField('name', next)}
                                                 rootClassName="min-w-0 flex-1"
                                                 inputClassName="w-full text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight bg-transparent border-b-2 border-teal-300 focus:border-teal-500 outline-none py-0.5 placeholder-stone-500 transition-all"
                                                 placeholder={t('adopter.placeholder_name_aliases')}
                                                 emptyLabel={t('adopter.nameless')}
                                                 displayRender={(v) => (
-                                                    <h1 className="text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight truncate">{v}</h1>
+                                                    <h1 className="text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight break-words">{v}</h1>
                                                 )}
                                             />
                                         );
@@ -1006,7 +1027,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                             <path d="M2.5 12S6 5.5 12 5.5s9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" />
                                                             <circle cx="12" cy="12" r="3" />
                                                         </svg>
-                                                        {t('search.public_label')}
+                                                        {!nameEditing && t('search.public_label')}
                                                     </button>
                                                 );
                                             }
@@ -1018,7 +1039,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                             <rect x="3.5" y="11" width="17" height="10" rx="2" />
                                                             <path d="M7.5 11V7a4.5 4.5 0 0 1 8.5-2" />
                                                         </svg>
-                                                        {t('search.protected_unlocked_label')}
+                                                        {!nameEditing && t('search.protected_unlocked_label')}
                                                     </button>
                                                 );
                                             }
@@ -1030,7 +1051,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                         <rect x="3.5" y="11" width="17" height="10" rx="2" />
                                                         <path d="M7.5 11V7.5a4.5 4.5 0 0 1 9 0V11" />
                                                     </svg>
-                                                    {t('search.protected_label')}
+                                                    {!nameEditing && t('search.protected_label')}
                                                 </button>
                                             );
                                         })()}
@@ -1302,7 +1323,13 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                     {/* Family Members (Full Width) */}
                     <div className="md:col-span-2">
                         <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.family_members')}</h3>
-                        {isNew ? (
+                        {!isNew && enableHousehold && adopterId ? (
+                            <HouseholdSection
+                                adopterId={adopterId}
+                                initialMembers={deserializeHouseholdMembers(initialData?.householdMembers)}
+                                canEdit={canEdit}
+                            />
+                        ) : isNew ? (
                             <textarea
                                 rows={2}
                                 className="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-y min-h-[60px]"

@@ -60,6 +60,12 @@ export default function DuplicatesPanel() {
     const [loading, setLoading] = useState(true);
     const [scanning, setScanning] = useState(false);
     const [scanResult, setScanResult] = useState<string | null>(null);
+    // -1 = unknown (the server could not compute it), not zero.
+    const [staleCount, setStaleCount] = useState<number>(-1);
+    // Completion state of the LAST scan. `lastRun` only advances when a scan
+    // reaches its completion block, so it is the one trustworthy signal that a
+    // run finished — candidates appearing is not.
+    const [scan, setScan] = useState<{ status: string | null; lastRun: string | null }>({ status: null, lastRun: null });
     const [mergeTarget, setMergeTarget] = useState<{ a1: any; a2: any; matchTypes: string[]; candidateId?: string; flagId?: string } | null>(null);
     const [statusFilter, setStatusFilter] = useState<'pending' | 'dismissed' | 'merged'>('pending');
 
@@ -68,10 +74,12 @@ export default function DuplicatesPanel() {
         try {
             const res = await fetch(`/api/admin/duplicates?status=${statusFilter}`);
             if (!res.ok) throw new Error('Failed to fetch');
-            const data = await res.json() as { userFlagged?: UserFlagged[]; candidates?: DuplicateCandidate[]; counts?: Counts };
+            const data = await res.json() as { userFlagged?: UserFlagged[]; candidates?: DuplicateCandidate[]; counts?: Counts; staleCount?: number; scan?: { status: string | null; lastRun: string | null } };
             setUserFlagged(data.userFlagged || []);
             setCandidates(data.candidates || []);
             setCounts(data.counts || { pending: 0, dismissed: 0, merged: 0, userFlagged: 0 });
+            setStaleCount(typeof data.staleCount === 'number' ? data.staleCount : -1);
+            setScan(data.scan ?? { status: null, lastRun: null });
         } catch (error) {
             console.error('Failed to load duplicates:', error);
         } finally {
@@ -81,20 +89,73 @@ export default function DuplicatesPanel() {
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
+    /**
+     * The scan re-tokenizes in batches (the endpoint caps each call so a Worker
+     * can't blow its subrequest ceiling), so one click loops until `done`.
+     *
+     * This matters on a TOKENIZER_VERSION bump, which marks every record stale
+     * at once — 1,146 in production as of v2.49, i.e. ~12 batches. Doing that by
+     * hand means clicking until the counter stops moving, with no way to tell
+     * "finished" from "silently stopped early".
+     *
+     * `maxBatches` is a safety stop: if `remaining` ever fails to decrease, the
+     * loop would otherwise spin forever against the same records.
+     */
     async function handleScan() {
         setScanning(true);
         setScanResult(null);
+        const maxBatches = 100;
+        let totalTokenized = 0;
+        let lastRemaining = Infinity;
+
         try {
-            const res = await fetch('/api/admin/duplicates', { method: 'POST' });
-            const data = await res.json() as { tokenized?: number; newCandidates?: number; error?: string };
-            if (res.ok) {
-                setScanResult(`✅ Scan complete: ${data.tokenized} profiles tokenized, ${data.newCandidates} new candidates found`);
-                fetchData();
-            } else {
-                setScanResult(`❌ ${data.error}`);
+            for (let batch = 0; batch < maxBatches; batch++) {
+                const res = await fetch('/api/admin/duplicates', { method: 'POST' });
+
+                // Read as text first. A Worker killed mid-request (subrequest
+                // ceiling, CPU limit) returns an HTML/plain error page, and
+                // calling res.json() on that throws — which used to land in the
+                // catch below as a bare "Scan failed", hiding both the status
+                // code and the fact that the run had died rather than errored.
+                const raw = await res.text();
+                let data: {
+                    done?: boolean; tokenized?: number; remaining?: number;
+                    staleBefore?: number; newCandidates?: number; error?: string;
+                } = {};
+                try { data = JSON.parse(raw); } catch {
+                    setScanResult(
+                        `❌ HTTP ${res.status} — the scan worker died mid-batch` +
+                        `${totalTokenized ? ` after ${totalTokenized} profiles` : ''}. ` +
+                        `Try a smaller batch. Response: ${raw.slice(0, 120)}`
+                    );
+                    return;
+                }
+
+                if (!res.ok) {
+                    setScanResult(`❌ HTTP ${res.status}: ${data.error ?? 'unknown error'}${totalTokenized ? ` (${totalTokenized} tokenized before the failure)` : ''}`);
+                    return;
+                }
+
+                totalTokenized += data.tokenized ?? 0;
+                const remaining = data.remaining ?? 0;
+
+                if (data.done) {
+                    setScanResult(`✅ Scan complete: ${totalTokenized} profiles tokenized, ${data.newCandidates} new candidates found`);
+                    fetchData();
+                    return;
+                }
+
+                // No forward progress — stop rather than hammer the endpoint.
+                if (remaining >= lastRemaining) {
+                    setScanResult(`⚠️ Scan stalled with ${remaining} profiles left (${totalTokenized} done). Try again.`);
+                    return;
+                }
+                lastRemaining = remaining;
+                setScanResult(`⏳ Re-tokenizing… ${totalTokenized} done, ${remaining} to go`);
             }
-        } catch (error) {
-            setScanResult('❌ Scan failed');
+            setScanResult(`⚠️ Stopped after ${maxBatches} batches (${totalTokenized} tokenized). Run Scan again to continue.`);
+        } catch {
+            setScanResult(`❌ Scan failed${totalTokenized ? ` after ${totalTokenized} profiles` : ''}`);
         } finally {
             setScanning(false);
         }
@@ -160,7 +221,37 @@ export default function DuplicatesPanel() {
         <div className="space-y-6">
             {/* Compact header — the "Duplicados" tab label is the heading; keep only the Scan action. */}
             <div className="flex items-center justify-between gap-3 flex-wrap">
-                <p className="text-sm text-stone-500">Candidatos por similitud de nombre + contacto compartido, más los reportados por usuarios.</p>
+                <div className="text-sm text-stone-500">
+                    <p>Candidatos por similitud de nombre + contacto compartido, más los reportados por usuarios.</p>
+                    {/* Pending re-tokenization. Only meaningful signal for "is the
+                        scan finished?" — see the staleCount comment in the API. */}
+                    {!loading && staleCount > 0 && (
+                        <p className="mt-1 font-medium text-amber-700">
+                            {staleCount} perfil{staleCount === 1 ? '' : 'es'} pendiente{staleCount === 1 ? '' : 's'} de re-tokenizar
+                        </p>
+                    )}
+                    {!loading && staleCount === 0 && (
+                        <p className="mt-1 font-medium text-teal-700">Todos los perfiles están tokenizados</p>
+                    )}
+                    {/* Completion state of the LAST scan.
+                        Load-bearing: `staleCount === 0` only means TOKENIZING
+                        finished. A scan that tokenized everything and then died
+                        during pair detection leaves the line above reading
+                        "todos tokenizados" while the candidate rebuild failed —
+                        which is exactly how a dead scan passed for a successful
+                        one. `lastRun` advances only in the completion block, so
+                        it is the one signal that the whole run finished. */}
+                    {!loading && (
+                        <p className={`mt-1 ${scan.status === 'idle' ? 'text-stone-500' : 'font-medium text-amber-700'}`}>
+                            {scan.lastRun
+                                ? `Última exploración completa: ${new Date(scan.lastRun).toLocaleString('es-AR')}`
+                                : 'Nunca se completó una exploración'}
+                            {scan.status && scan.status !== 'idle' && (
+                                <> · la última no terminó (estado: {scan.status})</>
+                            )}
+                        </p>
+                    )}
+                </div>
                 <button
                     onClick={handleScan}
                     disabled={scanning}
