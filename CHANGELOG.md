@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.10] - 2026-09-03
+
+### Fixed — deleting an adopter from the profile returned a 500 (`DELETE` against a view)
+
+`deleteOwnAdopter` — the delete button at the bottom of an adopter profile, used by owners and admins — ran `DELETE FROM adoptions` as part of its cascade. `adoptions` has been a **view** since migration 0056 (the animals/placements normalization) and has no `INSTEAD OF` triggers, so SQLite rejects the statement outright:
+
+```
+Error: cannot modify adoptions because it is a view
+```
+
+The server action threw, and the request surfaced as `POST /adopter/<id> → 500`.
+
+It now calls `deleteAdopterRecords(db, adopterId)`, which cuts the real underlying tables (`placements`, `adopter_events`) — exactly what `deleteAdoption` and `/api/admin/delete-adopter` already do. Animals are deliberately left alone; they are the rescuer's inventory, and only their placements are severed. That matches the existing helper's contract.
+
+**This was pre-existing, not introduced by 2.49.x** — the identical line is in 2.44.14. It has been broken for every owner-delete since `adoptions` became a view. The normalization migrated `deleteAdoption` and the admin API route but missed this third path; a sweep confirms it was the **only** remaining write to the view anywhere in the codebase.
+
+Note the two delete buttons take different routes and fail differently: `DeleteAdopterButton` POSTs to `/api/admin/delete-adopter`, while the profile's own button invokes this server action and so POSTs to `/adopter/<id>`. The URL in the network tab is what distinguishes them.
+
 ## [2.49.9] - 2026-09-02
 
 ### Fixed — a failed scan could still look successful in the admin UI

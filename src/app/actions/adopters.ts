@@ -17,6 +17,7 @@ import {
 } from '@/lib/contactEntries';
 import { canEditAdopterRecord, maskAdopterContact, redactHistoryChanges, renderName } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, resolveAdopterVisibility, buildMaskOptions } from '@/lib/piiAccessServer';
+import { deleteAdopterRecords } from '@/app/actions/_recordWrite';
 
 
 export async function getAdopter(id: string) {
@@ -664,7 +665,14 @@ export async function deleteOwnAdopter(adopterId: string) {
         const { duplicateTokens, duplicateCandidates } = await import('@/db/schema');
 
         await Promise.all([
-            db.delete(adoptionsTable).where(eq(adoptionsTable.adopterId, adopterId)),
+            // `adoptions` is a VIEW since migration 0056 (the animals/placements
+            // normalization) and has no INSTEAD OF triggers, so `DELETE FROM
+            // adoptions` is rejected outright by SQLite — the whole action threw
+            // and owner-delete returned a 500. `deleteAdopterRecords` cuts the
+            // real underlying tables (placements + adopter_events), which is what
+            // `deleteAdoption` and /api/admin/delete-adopter already do; this
+            // path was simply missed in that migration.
+            deleteAdopterRecords(db, adopterId),
             db.delete(adopterImages).where(eq(adopterImages.adopterId, adopterId)),
             db.delete(adopterHistory).where(eq(adopterHistory.adopterId, adopterId)),
             db.delete(adopterFlags).where(eq(adopterFlags.adopterId, adopterId)),
