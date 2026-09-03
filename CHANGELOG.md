@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.15] - 2026-09-03
+
+### Fixed — "Pegar como texto" did nothing on a newly added address
+
+`isRawAddress` decided which editor to render for an address, and it tested `!!entry.raw` — truthiness. Toggling into raw-paste mode on a **freshly added, still-empty** address sets `raw: ''`, which reads as falsy, so the predicate returned false, the component kept rendering the structured street/locality fields, and the button appeared completely dead.
+
+It only worked on an address that already had text — which is the case least likely to be tried first, so the feature looked broken to anyone adding a new address.
+
+The predicate now tests `typeof entry.raw === 'string'`. This is a **mode** flag, and an empty string is a legitimate state: the user switched to paste and has not typed yet. That also matches the function's own docblock, which already described it as "the raw-paste escape-hatch shape" rather than a content check — the implementation had drifted from its stated contract.
+
+Safe to change: `isRawAddress` has exactly three consumers, all in `ContactEntriesInput`, all driving this one toggle.
+
+Covered by 8 tests, including the empty-raw case and a full structured → raw → structured round trip. Verified they fail against the previous implementation on exactly the two cases that describe the bug.
+
 ## [2.49.14] - 2026-09-03
 
 ### Fixed — homepage search could not find a name with a one-character typo
