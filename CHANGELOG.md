@@ -2,6 +2,27 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.14] - 2026-09-03
+
+### Fixed — homepage search could not find a name with a one-character typo
+
+Searching "jonatan daniel fernandez" did not surface the stored "jonathan daniel fernandez". Name scoring compared tokens by exact substring, so `jonatan` matched nothing in `jonathan`: the record fell past `name_exact` (100), `name_contains` (50) and `name_tokens` (35) down to `name_partial` at `round(20 × 2/3)` = **13/100**. The most distinctive token in the query contributed zero, and two common words — `daniel`, `fernandez` — carried the entire result.
+
+Name tokens now tolerate edit distance, scaled by length: 0 for ≤4 characters, 1 for 5–7, 2 for 8+. Short names stay strict because one edit there usually means a *different* person (`jose`/`rose`, `ana`/`ada`, `luis`/`luiz`), while at 7+ characters it is nearly always a typo.
+
+The record now satisfies `allNameTokensMatch` and scores **35** instead of 13 — a 5× gap over the single-token noise it was previously tied up with:
+
+```
+ 35  name_tokens        jonathan daniel fernandez   (was 13)
+  7  name_partial 1/3   Daniela Catania
+  7  name_partial 1/3   Daniel Pedernera
+  7  name_partial 1/3   Jonatan Giménez
+```
+
+**Precision now comes from ranking, not from refusing to match.** `daniel`~`daniela` does match, and that is fine: a fuzzy hit still goes through the `m / tokens.length` scaling, so one-of-three scores 7 against this record's 35. The earlier framing — that search should stay exact for precision while dedup stayed loose for recall — was wrong. Dropping a *different person* is precision; dropping the *same name misspelled* is a false negative, and no amount of tightness makes that correct.
+
+Tolerance is applied to the **name branch only**. `anyTokenMatch`/`countTokenMatches` are shared with `contactInfo`, `addressInfo` and `familyMembers`, where edit distance would make phone numbers and email addresses collide; those keep exact semantics. The matchers live in `lib/scoring.ts` beside `levenshtein` — pure, and covered by 12 tests including the short-name cases that must *not* match.
+
 ## [2.49.13] - 2026-09-03
 
 ### Fixed — import dedup silently dropped the best match on common name stems

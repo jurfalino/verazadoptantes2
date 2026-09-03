@@ -28,7 +28,7 @@ import type {
     DiscoveryMatch, DuplicateMatch, MatchSnippet,
 } from './types';
 import { enrichAdopters } from './enrichAdopters';
-import { normalizeConfidence, fuzzyNameScore, SEARCH_SCORE_CEILING, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
+import { normalizeConfidence, fuzzyNameScore, nameTokenMatches, SEARCH_SCORE_CEILING, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 import { normalizeText, extractPhones, extractEmails, extractSocials, isPlaceholderPhone, extractIds, stripIdsFromText, normalizeSocialHandle, detectSocialPlatformFromValue } from '@/lib/tokenizer';
 import { count } from 'drizzle-orm';
 import { matchSearchEntries, matchSearchNameTokens, hashNameToken, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
@@ -87,12 +87,6 @@ function tokenInText(lowercasedText: string, token: string): boolean {
     return new RegExp(`(?:^|[^a-z0-9])${escapeRegExp(t)}`).test(lowercasedText);
 }
 
-function allTokensMatch(text: string | null | undefined, tokens: string[]): boolean {
-    if (!text) return false;
-    const l = text.toLowerCase();
-    return tokens.every(t => tokenInText(l, t));
-}
-
 function anyTokenMatch(text: string | null | undefined, tokens: string[]): boolean {
     if (!text) return false;
     const l = text.toLowerCase();
@@ -103,6 +97,24 @@ function countTokenMatches(text: string | null | undefined, tokens: string[]): n
     if (!text) return 0;
     const l = text.toLowerCase();
     return tokens.filter(t => tokenInText(l, t)).length;
+}
+
+function allNameTokensMatch(text: string | null | undefined, tokens: string[]): boolean {
+    if (!text) return false;
+    const l = text.toLowerCase();
+    return tokens.every(t => nameTokenMatches(l, t));
+}
+
+function anyNameTokenMatch(text: string | null | undefined, tokens: string[]): boolean {
+    if (!text) return false;
+    const l = text.toLowerCase();
+    return tokens.some(t => nameTokenMatches(l, t));
+}
+
+function countNameTokenMatches(text: string | null | undefined, tokens: string[]): number {
+    if (!text) return 0;
+    const l = text.toLowerCase();
+    return tokens.filter(t => nameTokenMatches(l, t)).length;
 }
 
 // ── Snippet extraction ────────────────────────────────────────────────────────
@@ -979,12 +991,12 @@ async function runDiscoveryMode(
             score += WEIGHTS.name_contains; matchTypes.push('name_contains');
             const s = buildSnippet('name', a.name, normalizedQuery, tokens);
             if (s && WEIGHTS.name_contains > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.name_contains; }
-        } else if (isMultiToken && allTokensMatch(nlNorm, tokensNorm)) {
+        } else if (isMultiToken && allNameTokensMatch(nlNorm, tokensNorm)) {
             score += WEIGHTS.name_tokens; matchTypes.push('name_tokens');
             const s = buildSnippet('name', a.name, normalizedQuery, tokens);
             if (s && WEIGHTS.name_tokens > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.name_tokens; }
-        } else if (isMultiToken && anyTokenMatch(nlNorm, tokensNorm)) {
-            const m = countTokenMatches(nlNorm, tokensNorm);
+        } else if (isMultiToken && anyNameTokenMatch(nlNorm, tokensNorm)) {
+            const m = countNameTokenMatches(nlNorm, tokensNorm);
             const w = Math.round(WEIGHTS.name_partial * (m / tokens.length));
             score += w; matchTypes.push('name_partial');
             const s = buildSnippet('name', a.name, normalizedQuery, tokens);
