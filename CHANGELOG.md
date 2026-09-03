@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.11] - 2026-09-03
+
+### Added — regression guard: nothing may write to a SQL view
+
+`src/db/viewWrites.test.ts` fails the build if any `db.delete/update/insert`, or raw `DELETE`/`UPDATE`/`INSERT`, targets a view. Nothing else catches this class: it type-checks (drizzle sees a table), lints clean, and only fails at runtime against a real database — which is how the `deleteOwnAdopter` 500 survived from migration 0056 to v2.49.10.
+
+Two details that make it actually work:
+
+- **Views are parsed from `drizzle/*.sql`**, not hardcoded, so a future table→view conversion is covered automatically. A sanity assertion fails if that list ever comes back empty, so the guard cannot silently pass forever.
+- **Aliases are resolved.** The real bug was `const { adoptions: adoptionsTable } = await import('@/db/schema')` followed by `db.delete(adoptionsTable)`. A search for `delete(adoptions` misses it entirely; the test tracks `name:` and `as` rebindings.
+
+Verified by reintroducing the bug in its original aliased form and confirming the test fails with `src/app/actions/adopters.ts:675 — .delete(adoptionsTable) writes to view "adoptions"`, then restoring the fix and confirming green.
+
 ## [2.49.10] - 2026-09-03
 
 ### Fixed — deleting an adopter from the profile returned a 500 (`DELETE` against a view)
