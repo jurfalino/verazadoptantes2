@@ -44,6 +44,16 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
     const closingRef = useRef<HTMLDivElement>(null);
     /** Desktop only: the card drops its stacked layout once scrolling starts. */
     const [condensed, setCondensed] = useState(false);
+    /**
+     * The query that produced the results currently on screen — NOT what is in the
+     * box right now.
+     *
+     * `query` updates on every keystroke, so anything describing the results has to
+     * read this instead: typing after a search used to re-highlight the old cards
+     * live, and, worse, rewrote each result's `?q=` link so a post-signin
+     * match-and-grant replay would run a search that never produced that match.
+     */
+    const [submittedQuery, setSubmittedQuery] = useState('');
     /** The floating alta exists only while the closing block is off screen. */
     const [barHidden, setBarHidden] = useState(true);
     // Lazy "weak tier" — fuzzy/partial name matches, loaded only when the user
@@ -99,6 +109,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                 { mode: 'discovery', enrich: true },
             );
             if (!response) return;
+            setSubmittedQuery(searchQuery.trim());
             if (response.validationError) {
                 setValidationError(response.validationError);
                 setResults([]);
@@ -148,9 +159,10 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
             if (!demoWasActive.current) {
                 // Entering the tour — snapshot the user's current search to restore on exit.
                 demoWasActive.current = true;
-                preDemoSearch.current = { query, results };
+                preDemoSearch.current = { query: submittedQuery, results };
             }
             setQuery(demoQuery);
+            setSubmittedQuery(demoQuery.trim());
             setResults(demoResults);
             setValidationError(null);
             setTruncatedInfo(null);
@@ -163,14 +175,16 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
             const pre = preDemoSearch.current;
             preDemoSearch.current = null;
             setQuery(pre?.query ?? '');
+            setSubmittedQuery(pre?.query ?? '');
             setResults(pre?.results ?? null);
             setValidationError(null);
             setTruncatedInfo(null);
             setSingleTokenResultCount(undefined);
         }
-        // query/results are read only to snapshot on entry; outside enter/exit
-        // this effect is a no-op, so including them can't clobber a real search.
-    }, [demoActive, demoQuery, demoResults, query, results]);
+        // query/submittedQuery/results are read only to snapshot on entry; outside
+        // enter/exit this effect is a no-op, so including them can't clobber a
+        // real search.
+    }, [demoActive, demoQuery, demoResults, query, submittedQuery, results]);
 
     const handleCreateNew = (e: React.MouseEvent) => {
         e.preventDefault();
@@ -181,7 +195,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
         // was written into `name`, so searching an address created an adopter
         // named after a street.
         const params = new URLSearchParams();
-        appendCreatePrefill(params, query);
+        appendCreatePrefill(params, submittedQuery || query);
         const queryString = params.toString();
         const createUrl = `/adopter/create${queryString ? `?${queryString}` : ''}`;
         if (!session?.user) {
@@ -215,6 +229,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                 { mode: 'discovery', enrich: true },
             );
             if (!response) throw new Error('No response from search');
+            setSubmittedQuery(query.trim());
             if (response.validationError) {
                 setValidationError(response.validationError);
                 setResults([]);
@@ -260,6 +275,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
 
     const handleClear = () => {
         setQuery('');
+        setSubmittedQuery('');
         setResults(null);
         setValidationError(null);
         setTruncatedInfo(null);
@@ -285,7 +301,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
     // The label names the person only when the create form will genuinely be
     // prefilled with one — same classifier, so the button can never promise what
     // the form will not do. A phone or an address yields the generic wording.
-    const prefillName = buildCreatePrefill(query).name;
+    const prefillName = buildCreatePrefill(submittedQuery || query).name;
     const createLabel = prefillName
         ? t('search.create_named').replace('{name}', prefillName)
         : t('search.create_generic');
@@ -413,7 +429,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                         <p className="text-xs text-stone-500 mt-0.5">
                             {shouldRefine
                                 ? t('search.summary_refine')
-                                : t('search.summary_for').replace('{query}', query)}
+                                : t('search.summary_for').replace('{query}', submittedQuery)}
                         </p>
                     </div>
                 )}
@@ -507,7 +523,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                         // the unmasked reveal seen in the result card vanishes
                         // when the profile opens (no grant got written because
                         // an unauth viewer has no email to attribute one to).
-                        const qParam = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : '';
+                        const qParam = submittedQuery ? `?q=${encodeURIComponent(submittedQuery)}` : '';
                         const profileHref = `/adopter/${res.adopter.id}${qParam}`;
 
                         const handleCardClick = (e: React.MouseEvent) => {
@@ -525,7 +541,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                                 showMetadata={showCardMetadata}
                                 href={profileHref}
                                 onClick={handleCardClick}
-                                query={query}
+                                query={submittedQuery}
                             />
                         );
                     })}
@@ -536,7 +552,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                         a rescuer never concludes "not here" without the recall net. Keyed by
                         query so it remounts (and re-applies defaultOpen) per search. Hidden
                         during the walkthrough and on validation errors. */}
-                    {!demoActive && !validationError && query.trim().length >= 2 && (() => {
+                    {!demoActive && !validationError && submittedQuery.length >= 2 && (() => {
                         // Combine the eager demoted partial matches (lowRelevanceResults)
                         // with the lazy fuzzy name matches (weakResults), deduped. Fuzzy is
                         // fetched on expand, excluding what's already shown (strong + partials).
@@ -548,7 +564,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                         ];
                         const isAuthenticated = !!session?.user;
                         const renderCard = (res: DiscoveryMatch) => {
-                            const qParam = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : '';
+                            const qParam = submittedQuery ? `?q=${encodeURIComponent(submittedQuery)}` : '';
                             const profileHref = `/adopter/${res.adopter.id}${qParam}`;
                             return (
                                 <AdopterResultCard
@@ -558,7 +574,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                                     showMetadata={showCardMetadata}
                                     href={profileHref}
                                     onClick={(e) => { if (!isAuthenticated) { e.preventDefault(); openLogin(profileHref); } }}
-                                    query={query}
+                                    query={submittedQuery}
                                 />
                             );
                         };
@@ -567,10 +583,10 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                             // search" affordance, deliberately quieter than the result
                             // cards so it doesn't compete with the real matches.
                             <details
-                                key={query.trim()}
+                                key={submittedQuery}
                                 className="group mt-3 border-t border-stone-100 pt-3"
                                 open={results.length === 0}
-                                onToggle={(e) => { if (e.currentTarget.open) loadWeakMatches(query, [...shownIds]); }}
+                                onToggle={(e) => { if (e.currentTarget.open) loadWeakMatches(submittedQuery, [...shownIds]); }}
                             >
                                 <summary className="flex flex-wrap items-center gap-x-2 gap-y-0.5 cursor-pointer list-none select-none rounded text-sm text-stone-500 hover:text-stone-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300">
                                     <svg className="w-3.5 h-3.5 flex-shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -640,7 +656,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                     {results.length === 0 && (
                         <div className="bg-stone-50 rounded-2xl p-8 text-center border border-stone-200">
                             <div className="text-4xl mb-3">🔍</div>
-                            <p className="text-stone-600 mb-1 text-lg">{t('search.no_history').replace('{query}', query)}</p>
+                            <p className="text-stone-600 mb-1 text-lg">{t('search.no_history').replace('{query}', submittedQuery)}</p>
                             <p className="text-stone-500 text-sm mb-4">{t('search.no_history_cta')}</p>
                             <button onClick={handleCreateNew} className="inline-block px-5 py-2.5 bg-teal-600 text-white rounded-xl font-semibold hover:bg-teal-700 transition-all shadow-sm">
                                 + {t('search.create_new')}

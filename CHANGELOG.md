@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.51.1] - 2026-09-03
+
+### Fixed — editing the search box re-highlighted the results already on screen
+
+The result cards highlighted matched tokens using `query`, which is the **live input state** — so typing a new term after a search re-highlighted the old cards on every keystroke, marking up whatever was now in the box against results it had nothing to do with.
+
+The highlight was the visible symptom; the same mistake had a quieter and worse instance. Each result's link carried `?q=` built from the same live value, and that parameter exists so a post-signin replay can re-run the match-and-grant logic for the now-authenticated viewer. Edit the box, click a result, and the replay would run **a search that never produced that match** — so the unmasked reveal seen on the card could vanish on the profile.
+
+Results now carry the query that produced them (`submittedQuery`), recorded when a search actually runs. It drives the highlighting, the replay parameter, the "no encontramos a nadie con X" message, the result-count subtitle, the weak-match disclosure and its remount key, and the create label and prefill — so everything describing the results agrees with what is on screen. The live `query` still drives the input itself: the clear button, the empty-state hint and the search submission.
+
+The guided walkthrough records its injected query the same way, so its fake cards highlight correctly and the rescuer's own search is restored intact on exit.
+
 ## [2.51.0] - 2026-09-03
 
 ### Changed — reaching “create new” when a search returns many results
