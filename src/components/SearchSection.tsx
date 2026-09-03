@@ -11,9 +11,9 @@ import { useAuthContext } from '@/context/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useShowToast } from '@/components/ui/Toast';
 import { notifyRequestError } from '@/lib/notifyError';
-import { isPlaceholderPhone } from '@/lib/tokenizer';
 import { zarazTrack } from '@/lib/zaraz';
 import WhatIsBuenAdoptante from '@/components/WhatIsBuenAdoptante';
+import { appendCreatePrefill } from '@/lib/createPrefill';
 
 export default function SearchSection({ locale, showCardMetadata = true }: { locale?: string; showCardMetadata?: boolean }) {
     const { t } = useLanguage();
@@ -165,27 +165,13 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
     const handleCreateNew = (e: React.MouseEvent) => {
         e.preventDefault();
 
-        // v2.19.35: tokenize the query before handing it off to the create
-        // form. A query like "Susana 11-2345-6789" is split into a name
-        // ("Susana") and a phone ("11-2345-6789") so the form prefills the
-        // phone as a confirmed contact-entry chip instead of leaving the
-        // rescuer to manually move the digits out of the name field.
-        // Disambiguation against street numbers ("Corrientes 3444") is free:
-        // the regex demands ≥6 digits after stripping separators, which
-        // door numbers don't reach. The original formatted substring is
-        // passed (not the digits-only normalized form) so the chip mirrors
-        // what the rescuer typed. `isPlaceholderPhone` is the same dummy
-        // filter the search engine itself applies — keeps prefill posture
-        // consistent with what's considered a "real" phone.
-        const trimmedQuery = query.trim();
-        const phoneMatch = trimmedQuery.match(/\+?[\d][\d\s\-\.\(\)]{5,}\d/);
-        const digits = phoneMatch ? phoneMatch[0].replace(/\D/g, '') : '';
-        const phone = digits.length >= 6 && !isPlaceholderPhone(digits) ? phoneMatch![0].trim() : '';
-        const name = phone ? trimmedQuery.replace(phoneMatch![0], '').replace(/\s+/g, ' ').trim() : trimmedQuery;
-
+        // The query may be a name, a phone, an address or a mix — the search box
+        // invites all three. `appendCreatePrefill` classifies it and seeds each
+        // part into the right field. Before v2.50.1 anything that was not a phone
+        // was written into `name`, so searching an address created an adopter
+        // named after a street.
         const params = new URLSearchParams();
-        if (name) params.set('name', name);
-        if (phone) params.set('phone', phone);
+        appendCreatePrefill(params, query);
         const queryString = params.toString();
         const createUrl = `/adopter/create${queryString ? `?${queryString}` : ''}`;
         if (!session?.user) {

@@ -6,6 +6,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import AdopterPicker from '@/components/AdopterPicker';
+import { appendCreatePrefill } from '@/lib/createPrefill';
 
 type RecordType = 'adoption' | 'observation';
 
@@ -86,7 +87,8 @@ export default function HomepageActionCard({
             continueToAdoption: 'true',
             newAdoption: recordType,
         });
-        if (searchText) params.set('name', searchText);
+        // Classified, not assumed to be a name — see lib/createPrefill.
+        appendCreatePrefill(params, searchText);
         router.push(`/adopter/create?${params.toString()}`);
     };
 

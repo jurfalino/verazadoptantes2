@@ -2,6 +2,29 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.50.1] - 2026-09-03
+
+### Fixed — searching an address and clicking “create” named the adopter after a street
+
+Every “create new” entry point assumed that whatever was not a phone number was a name, and wrote it straight into `?name=`:
+
+```js
+const name = phone ? trimmedQuery.replace(phoneMatch[0], '') : trimmedQuery;
+if (name) params.set('name', name);
+```
+
+But the search box invites *“Nombre, Teléfono ó Dirección”*. Searching `Av. Rivadavia 4820, Caballito` and clicking create produced an adopter whose **name** was a street — and a bad name is not a cosmetic problem here: it is what search and duplicate detection match on, so the record stays hard to find for its whole life.
+
+The query is now classified before it reaches the form, reusing `categorizeContactText` rather than guessing again. Phones, emails, socials, documents and addresses arrive as typed contact chips; only genuinely name-shaped text becomes the name. A query that is *only* an address now yields a form with an address chip and an empty name, ready for the rescuer to type the person.
+
+Three entry points had the same defect and now share one tested helper (`lib/createPrefill.ts`):
+
+- `SearchSection` — homepage search (split phones, but nothing else)
+- `HomepageActionCard` — the adopción/reporte flow (no splitting at all)
+- `PickAdopterForAnimalModal` — linking an adopter to an animal (no splitting at all)
+
+The mixed-query behaviour added in v2.19.35 is preserved and covered by a test: `Susana 11-2345-6789` still yields the name *Susana* plus a phone chip. Existing `?phone=` links keep working; the new `contacts` param is parsed defensively — unknown types rejected, capped at 10 entries and 300 characters each — since it arrives from a URL.
+
 ## [2.50.0] - 2026-09-03
 
 ### Changed — contact detail rows fit on a phone

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import AdopterPicker from '@/components/AdopterPicker';
 import type { DiscoveryMatch } from '@/app/actions';
+import { appendCreatePrefill } from '@/lib/createPrefill';
 
 interface PickAdopterForAnimalModalProps {
     animalId: string;
@@ -66,10 +67,9 @@ export default function PickAdopterForAnimalModal({
             newAdoption: recordType,
             animalId,
         });
-        // Forward whatever the user typed so the create form can prefill it
-        // as the adopter name (matches the existing AdopterPicker → create
-        // flow used on the homepage).
-        if (searchText.trim()) params.set('name', searchText.trim());
+        // Forward whatever the user typed, classified into the right field —
+        // a phone or an address must not land in the name (see lib/createPrefill).
+        appendCreatePrefill(params, searchText);
         onClose();
         router.push(`/adopter/create?${params.toString()}`);
     };
