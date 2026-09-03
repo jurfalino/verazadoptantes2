@@ -280,6 +280,17 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                     />
                     <button type="submit" className="px-4 py-2 bg-stone-900 text-white rounded-lg text-sm font-semibold flex-shrink-0">Search</button>
                 </form>
+                {/* Plain link, not fetch(): the browser handles the download and the
+                    Content-Disposition filename directly, with no blob juggling.
+                    Exports the FULL list, not the current filter — stated on the
+                    button so the two are not confused. */}
+                <a
+                    href="/api/admin/export-adopters"
+                    className="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-lg text-sm font-semibold flex-shrink-0 inline-flex items-center gap-1.5 no-underline"
+                    title="Descarga todos los adoptantes con sus datos de contacto (.xlsx)"
+                >
+                    ⬇ Exportar todo (.xlsx)
+                </a>
             </div>
 
             {/* ── Filter Summary Bars ────────────────────────────────── */}

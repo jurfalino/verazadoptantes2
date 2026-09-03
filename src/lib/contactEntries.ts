@@ -161,7 +161,15 @@ export function isStructuredAddress(entry: ContactEntry): boolean {
 
 /** True if the entry is an address using the raw-paste escape-hatch shape. */
 export function isRawAddress(entry: ContactEntry): boolean {
-    return entry.type === 'address' && !!entry.raw && !entry.streetAndNumber && !entry.locality;
+    // `typeof raw === 'string'`, NOT truthiness: this is a MODE predicate, and an
+    // empty string is a legitimate state — the user switched to raw paste and has
+    // not typed yet.
+    //
+    // With `!!entry.raw`, toggling "Pegar como texto" on a freshly added (empty)
+    // address set `raw: ''`, which read as falsy, so the component kept rendering
+    // the structured fields and the button looked completely dead. It only
+    // appeared to work on an address that already had text.
+    return entry.type === 'address' && typeof entry.raw === 'string' && !entry.streetAndNumber && !entry.locality;
 }
 
 /** Labels written into the derived contactInfo blob — one line per entry. */

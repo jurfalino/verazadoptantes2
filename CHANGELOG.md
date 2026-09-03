@@ -2,6 +2,151 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.18] - 2026-09-03
+
+### Added — export the adopters list to Excel
+
+Admin → Adoptantes now has **Exportar todo (.xlsx)**: every non-deleted adopter with their contact details, one row each, contact types broken into their own columns (Teléfonos, Emails, Redes sociales, Direcciones, Documento, Otros nombres) plus país, quién lo agregó, origen and dates. Socials keep their network (`instagram: juanp`), since a bare handle is ambiguous across platforms and platform+handle is what dedup matches on.
+
+**Admin-only and unmasked**, gated on `isAdminAsync` exactly like `/api/admin/export`. This is a bulk extraction of third-party PII that leaves the system and cannot be recalled; moderators cannot reach it.
+
+**Real `.xlsx`, not CSV.** Excel mangles CSV phone numbers into scientific notation and strips leading zeros — and phones are a primary duplicate-matching key, so a corrupted export would be worse than none. Every cell is written as an inline string, so Excel never reinterprets a value.
+
+`lib/xlsx.ts` is a ~200-line writer rather than a dependency:
+
+- **CPU.** A Worker gets 10ms on the Free plan, and DEFLATE is the expensive part of writing a zip. Entries are written with the STORE method — valid zip, accepted by Excel, LibreOffice and Numbers, and essentially free to produce. The trade is a larger file.
+- **Runtime.** exceljs needs Node streams and does not run on edge; SheetJS is ~500KB for one sheet of strings.
+
+Cost is **one query with no per-adopter fan-out** — contact entries live as JSON on the adopter row.
+
+Verified end to end against a copy of the production dataset: 403 for an unauthenticated request, then 1,224 adopters exported as 857KB in ~100ms, parsed back with a real xlsx reader. Leading zeros (`01133186767`, `0000123456`) survive, accents survive, XML-significant characters are escaped. One row carries a U+FFFD — confirmed already present in the stored data, faithfully reproduced rather than silently altered.
+
+Covered by 11 tests pinning the parts Excel refuses a file over: required package parts, inline-string typing, escaping, control-character stripping, column references past Z, sheet-name sanitisation and length limits.
+
+**Not filter-aware.** The button exports the full list regardless of the active search or filters, and says so. Making it honour the current view is a follow-up.
+
+## [2.49.17] - 2026-09-03
+
+### Fixed — the confidence badge appeared on text-only imports, where it grades nothing
+
+The pill grades the **AI extraction**: how well the model read a fetched post, a photo or a video. On a plain text paste there is nothing to grade — the user handed the data over directly, and a confidence score on reading it back conveys no information.
+
+It now renders only when the extraction actually had something to interpret: a source URL, uploaded images, or fetched images. Captured at extraction time rather than read from current UI state, which the user can still change on step 3.
+
+This mirrors the existing treatment of contacts imports (hidden, because the hydrate path hardcodes `'low'` with no AI signal behind it) and the `isPublicProfile` consent toggle, which is already hidden for "Google Contacts and text-only AI extractions — those aren't from a public channel, so the consent question doesn't apply". Same distinction, now applied consistently.
+
+Supersedes the note added in 2.49.16 suggesting the grade be replaced with field-completeness. That was wrong: confidence is a legitimate and intended output of vision/post extraction, and is genuinely useful there. The defect was showing it where no extraction judgement occurred, not the metric itself.
+
+## [2.49.16] - 2026-09-03
+
+### Fixed — import confidence badge mixed languages ("low confianza")
+
+The badge rendered `{extractedData.confidence}` — the raw enum, always English — next to a translated noun, producing "low confianza" in Spanish and "low confiança" in Portuguese.
+
+Fully translated labels already existed in all three locales (`Alta confianza` / `Confianza media` / `Baja confianza`) but were never wired to this badge. Added `import.confidence_high|medium|low` in es/en/pt and the badge now renders a single translated string.
+
+### Known issue — the confidence value itself is ungoverned
+
+Worth recording rather than leaving as folklore: the extraction prompt in `lib/gemini.ts` **never defines what `confidence` means or how to grade it**. The field appears only in the output JSON schema; the sole deterministic values are the `'low'` fallbacks used when extraction degrades or fails. (The "default to rating 2 (low confidence)" instruction in the prompt governs `adoptionRating`, a different field.)
+
+So the badge presents a grade with no criteria behind it. Translating it makes it legible, not meaningful. Fixing that is a prompt/UX change — either define the grading criteria, or replace the grade with something actionable such as which expected fields were not found.
+
+## [2.49.15] - 2026-09-03
+
+### Fixed — "Pegar como texto" did nothing on a newly added address
+
+`isRawAddress` decided which editor to render for an address, and it tested `!!entry.raw` — truthiness. Toggling into raw-paste mode on a **freshly added, still-empty** address sets `raw: ''`, which reads as falsy, so the predicate returned false, the component kept rendering the structured street/locality fields, and the button appeared completely dead.
+
+It only worked on an address that already had text — which is the case least likely to be tried first, so the feature looked broken to anyone adding a new address.
+
+The predicate now tests `typeof entry.raw === 'string'`. This is a **mode** flag, and an empty string is a legitimate state: the user switched to paste and has not typed yet. That also matches the function's own docblock, which already described it as "the raw-paste escape-hatch shape" rather than a content check — the implementation had drifted from its stated contract.
+
+Safe to change: `isRawAddress` has exactly three consumers, all in `ContactEntriesInput`, all driving this one toggle.
+
+Covered by 8 tests, including the empty-raw case and a full structured → raw → structured round trip. Verified they fail against the previous implementation on exactly the two cases that describe the bug.
+
+## [2.49.14] - 2026-09-03
+
+### Fixed — homepage search could not find a name with a one-character typo
+
+Searching "jonatan daniel fernandez" did not surface the stored "jonathan daniel fernandez". Name scoring compared tokens by exact substring, so `jonatan` matched nothing in `jonathan`: the record fell past `name_exact` (100), `name_contains` (50) and `name_tokens` (35) down to `name_partial` at `round(20 × 2/3)` = **13/100**. The most distinctive token in the query contributed zero, and two common words — `daniel`, `fernandez` — carried the entire result.
+
+Name tokens now tolerate edit distance, scaled by length: 0 for ≤4 characters, 1 for 5–7, 2 for 8+. Short names stay strict because one edit there usually means a *different* person (`jose`/`rose`, `ana`/`ada`, `luis`/`luiz`), while at 7+ characters it is nearly always a typo.
+
+The record now satisfies `allNameTokensMatch` and scores **35** instead of 13 — a 5× gap over the single-token noise it was previously tied up with:
+
+```
+ 35  name_tokens        jonathan daniel fernandez   (was 13)
+  7  name_partial 1/3   Daniela Catania
+  7  name_partial 1/3   Daniel Pedernera
+  7  name_partial 1/3   Jonatan Giménez
+```
+
+**Precision now comes from ranking, not from refusing to match.** `daniel`~`daniela` does match, and that is fine: a fuzzy hit still goes through the `m / tokens.length` scaling, so one-of-three scores 7 against this record's 35. The earlier framing — that search should stay exact for precision while dedup stayed loose for recall — was wrong. Dropping a *different person* is precision; dropping the *same name misspelled* is a false negative, and no amount of tightness makes that correct.
+
+Tolerance is applied to the **name branch only**. `anyTokenMatch`/`countTokenMatches` are shared with `contactInfo`, `addressInfo` and `familyMembers`, where edit distance would make phone numbers and email addresses collide; those keep exact semantics. The matchers live in `lib/scoring.ts` beside `levenshtein` — pure, and covered by 12 tests including the short-name cases that must *not* match.
+
+## [2.49.13] - 2026-09-03
+
+### Fixed — import dedup silently dropped the best match on common name stems
+
+The duplicate engine's LIKE fallback (Strategy 2, which exists to catch untokenized profiles) selected `.limit(20)` with **no ordering**. Importing "Jonatan Daniel Fernández" builds `%jonatan%`, `%daniel%`, `%fernandez%`; **31** production records match at least one — every "Daniel", "Daniela" and "Fernandez" — so SQLite returned an arbitrary 20 by scan order and the row matching **two** conditions, the actual duplicate, was cut while single-word matches survived.
+
+Rows are now ranked by how many of the conditions they satisfy before the cap. SQLite yields 1/0 from a boolean, so the same conditions are summed for the score — reusing the array verbatim, so ranking can never drift from filtering. Verified against production: the correct record moves from "not returned" to rank 1 with relevance 2, above every single-word match.
+
+This capped recall for **any** untokenized profile whose name shares a common stem, not just this record. Homepage search was unaffected because discovery scores and ranks candidates (`name_exact: 100`, `name_tokens: 35`…); only the dedup fallback took an unranked slice — which is why the same name was findable in one place and invisible in the other.
+
+Two independent faults had to coincide for this to surface: the record also had **zero tokens**, so Strategy 1 — whose prefix rule (`jonat%`) exists precisely to catch Jonatan↔Jonathan — never saw it. Those tokens were destroyed by the failed owner-delete fixed in 2.49.10: `Promise.all` rejects on the first failure but the sibling statements still complete, so the `duplicate_tokens` delete succeeded while the `adoptions` delete threw.
+
+## [2.49.12] - 2026-09-03
+
+### Fixed — admin sidebar labels were being cut off
+
+The rail was a fixed `w-64` (256px) with `truncate` on the label. After `px-4` padding (32px), the `gap-2` (8px) and the `Mod`/🔒 marker (~30px), roughly 186px was left — not enough for the longest Spanish entries, so "Registro de auditoría" and similar were silently clipped. Only admins saw it, because the marker that eats the space renders only for them.
+
+Widened to `w-72` **and** replaced `truncate` with wrapping (`leading-snug`). The extra width means labels rarely wrap in practice; dropping `truncate` means a label can never be silently lost — which matters for `pt`/`en` and for any entry added later.
+
+### Added — actionable-item counters in the admin sidebar
+
+Data requests and PII access requests now show a count badge when any are pending.
+
+**Deliberately just those two.** A badge earns attention by being usually zero. Two others were considered and rejected: pending duplicate candidates stands at **785** in production — a backlog to work through, not a to-do that appeared, and badging it would show a permanent large number and train the eye to ignore every badge — and `adopter_flags` has no status column, so "pending" is not expressible without a schema change.
+
+The low volume is the argument *for* this, not against: three data requests have ever been filed, so nobody has the habit of checking that page, and such requests typically carry a legal response deadline.
+
+**Cost is one D1 query per admin page view.** Both counts come from a single `SELECT` with subqueries rather than one query each, on a path that already spends several calls on `auth()` and role resolution — worth collapsing, given a Worker gets 50 subrequests and 10 ms CPU on the Free plan. It resolves server-side in the existing layout and rides down as a prop, so there is no client fetch and no LCP cost. A failure logs a warning and renders no badge rather than breaking the console.
+
+## [2.49.11] - 2026-09-03
+
+### Added — regression guard: nothing may write to a SQL view
+
+`src/db/viewWrites.test.ts` fails the build if any `db.delete/update/insert`, or raw `DELETE`/`UPDATE`/`INSERT`, targets a view. Nothing else catches this class: it type-checks (drizzle sees a table), lints clean, and only fails at runtime against a real database — which is how the `deleteOwnAdopter` 500 survived from migration 0056 to v2.49.10.
+
+Two details that make it actually work:
+
+- **Views are parsed from `drizzle/*.sql`**, not hardcoded, so a future table→view conversion is covered automatically. A sanity assertion fails if that list ever comes back empty, so the guard cannot silently pass forever.
+- **Aliases are resolved.** The real bug was `const { adoptions: adoptionsTable } = await import('@/db/schema')` followed by `db.delete(adoptionsTable)`. A search for `delete(adoptions` misses it entirely; the test tracks `name:` and `as` rebindings.
+
+Verified by reintroducing the bug in its original aliased form and confirming the test fails with `src/app/actions/adopters.ts:675 — .delete(adoptionsTable) writes to view "adoptions"`, then restoring the fix and confirming green.
+
+## [2.49.10] - 2026-09-03
+
+### Fixed — deleting an adopter from the profile returned a 500 (`DELETE` against a view)
+
+`deleteOwnAdopter` — the delete button at the bottom of an adopter profile, used by owners and admins — ran `DELETE FROM adoptions` as part of its cascade. `adoptions` has been a **view** since migration 0056 (the animals/placements normalization) and has no `INSTEAD OF` triggers, so SQLite rejects the statement outright:
+
+```
+Error: cannot modify adoptions because it is a view
+```
+
+The server action threw, and the request surfaced as `POST /adopter/<id> → 500`.
+
+It now calls `deleteAdopterRecords(db, adopterId)`, which cuts the real underlying tables (`placements`, `adopter_events`) — exactly what `deleteAdoption` and `/api/admin/delete-adopter` already do. Animals are deliberately left alone; they are the rescuer's inventory, and only their placements are severed. That matches the existing helper's contract.
+
+**This was pre-existing, not introduced by 2.49.x** — the identical line is in 2.44.14. It has been broken for every owner-delete since `adoptions` became a view. The normalization migrated `deleteAdoption` and the admin API route but missed this third path; a sweep confirms it was the **only** remaining write to the view anywhere in the codebase.
+
+Note the two delete buttons take different routes and fail differently: `DeleteAdopterButton` POSTs to `/api/admin/delete-adopter`, while the profile's own button invokes this server action and so POSTs to `/adopter/<id>`. The URL in the network tab is what distinguishes them.
+
 ## [2.49.9] - 2026-09-02
 
 ### Fixed — a failed scan could still look successful in the admin UI

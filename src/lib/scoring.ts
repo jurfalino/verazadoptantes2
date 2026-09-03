@@ -131,3 +131,46 @@ export function fuzzyNameScore(input: string, stored: string): number {
     if (dist === 2 && input.length > 7) return 0.3;
     return 0;
 }
+
+/**
+ * Typo tolerance for NAME tokens only.
+ *
+ * Names get misspelled — "Jonatan" for "Jonathan" — and an exact-substring test
+ * scores that at zero. Searching "jonatan daniel fernandez" for a stored
+ * "jonathan daniel fernandez" used to fall through to `name_partial` at
+ * round(20 × 2/3) = 13/100, because the most distinctive token contributed
+ * nothing and two common words carried the result. With tolerance it satisfies
+ * `allTokensMatch` and scores `name_tokens` (35) instead.
+ *
+ * Name-only on purpose: `allTokensMatch`/`anyTokenMatch`/`countTokenMatches` are
+ * shared with contactInfo, addressInfo and familyMembers, where edit-distance
+ * matching would make phone numbers and emails collide. Those keep exact
+ * semantics.
+ *
+ * Distance scales with length so short names stay strict — at length ≤ 4 a
+ * single edit is usually a DIFFERENT name ("jose"/"rose", "ana"/"ada"), while at
+ * 7+ it is nearly always a typo.
+ *
+ * Precision is preserved by ranking, not by refusing to match: a token that only
+ * fuzzy-matches still goes through the same `m / tokens.length` scaling, so a
+ * one-of-three hit like "Daniela" scores 7 against this record's 35.
+ */
+export function maxNameEditDistance(token: string): number {
+    if (token.length <= 4) return 0;
+    if (token.length <= 7) return 1;
+    return 2;
+}
+
+/** True if `token` appears in `text` exactly, or within edit distance of a word in it. */
+export function nameTokenMatches(text: string, token: string): boolean {
+    if (text.includes(token)) return true;
+    const budget = maxNameEditDistance(token);
+    if (budget === 0) return false;
+    for (const word of text.split(/\s+/)) {
+        if (!word) continue;
+        // Cheap length gate before the O(n·m) distance computation.
+        if (Math.abs(word.length - token.length) > budget) continue;
+        if (levenshtein(word, token) <= budget) return true;
+    }
+    return false;
+}
