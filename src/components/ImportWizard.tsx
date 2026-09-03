@@ -1454,7 +1454,7 @@ export default function ImportWizard() {
                                 extractedData.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' :
                                     'bg-red-100 text-red-700'
                                 }`}>
-                                {extractedData.confidence} {t('import.confidence') || 'confidence'}
+                                {t(`import.confidence_${extractedData.confidence}`)}
                             </span>
                         )}
                     </div>

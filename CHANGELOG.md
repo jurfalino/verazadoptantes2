@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.16] - 2026-09-03
+
+### Fixed — import confidence badge mixed languages ("low confianza")
+
+The badge rendered `{extractedData.confidence}` — the raw enum, always English — next to a translated noun, producing "low confianza" in Spanish and "low confiança" in Portuguese.
+
+Fully translated labels already existed in all three locales (`Alta confianza` / `Confianza media` / `Baja confianza`) but were never wired to this badge. Added `import.confidence_high|medium|low` in es/en/pt and the badge now renders a single translated string.
+
+### Known issue — the confidence value itself is ungoverned
+
+Worth recording rather than leaving as folklore: the extraction prompt in `lib/gemini.ts` **never defines what `confidence` means or how to grade it**. The field appears only in the output JSON schema; the sole deterministic values are the `'low'` fallbacks used when extraction degrades or fails. (The "default to rating 2 (low confidence)" instruction in the prompt governs `adoptionRating`, a different field.)
+
+So the badge presents a grade with no criteria behind it. Translating it makes it legible, not meaningful. Fixing that is a prompt/UX change — either define the grading criteria, or replace the grade with something actionable such as which expected fields were not found.
+
 ## [2.49.15] - 2026-09-03
 
 ### Fixed — "Pegar como texto" did nothing on a newly added address
