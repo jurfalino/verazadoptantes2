@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.12] - 2026-09-03
+
+### Fixed — admin sidebar labels were being cut off
+
+The rail was a fixed `w-64` (256px) with `truncate` on the label. After `px-4` padding (32px), the `gap-2` (8px) and the `Mod`/🔒 marker (~30px), roughly 186px was left — not enough for the longest Spanish entries, so "Registro de auditoría" and similar were silently clipped. Only admins saw it, because the marker that eats the space renders only for them.
+
+Widened to `w-72` **and** replaced `truncate` with wrapping (`leading-snug`). The extra width means labels rarely wrap in practice; dropping `truncate` means a label can never be silently lost — which matters for `pt`/`en` and for any entry added later.
+
+### Added — actionable-item counters in the admin sidebar
+
+Data requests and PII access requests now show a count badge when any are pending.
+
+**Deliberately just those two.** A badge earns attention by being usually zero. Two others were considered and rejected: pending duplicate candidates stands at **785** in production — a backlog to work through, not a to-do that appeared, and badging it would show a permanent large number and train the eye to ignore every badge — and `adopter_flags` has no status column, so "pending" is not expressible without a schema change.
+
+The low volume is the argument *for* this, not against: three data requests have ever been filed, so nobody has the habit of checking that page, and such requests typically carry a legal response deadline.
+
+**Cost is one D1 query per admin page view.** Both counts come from a single `SELECT` with subqueries rather than one query each, on a path that already spends several calls on `auth()` and role resolution — worth collapsing, given a Worker gets 50 subrequests and 10 ms CPU on the Free plan. It resolves server-side in the existing layout and rides down as a prop, so there is no client fetch and no LCP cost. A failure logs a warning and renders no badge rather than breaking the console.
+
 ## [2.49.11] - 2026-09-03
 
 ### Added — regression guard: nothing may write to a SQL view

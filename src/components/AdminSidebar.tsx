@@ -9,7 +9,7 @@ import { useLanguage } from '@/context/LanguageContext';
 // 'moderator' items) and the admin's per-item marker (Mod pill vs 🔒). Sections
 // whose items all get filtered out don't render. NOTE: this only drives the UI —
 // actual access control for admin-only pages must be enforced server-side.
-type NavItem = { href: string; labelKey: string; icon: string; minRole: 'moderator' | 'admin'; special?: boolean };
+type NavItem = { href: string; labelKey: string; icon: string; minRole: 'moderator' | 'admin'; special?: boolean; countKey?: 'dataRequests' | 'piiRequests' };
 const SECTIONS: Array<{ titleKey: string; items: NavItem[] }> = [
     { titleKey: 'nav_sect_panel', items: [
         { href: '/admin', labelKey: 'nav_overview', icon: '📊', minRole: 'moderator' },
@@ -21,8 +21,8 @@ const SECTIONS: Array<{ titleKey: string; items: NavItem[] }> = [
         { href: '/admin/deleted', labelKey: 'nav_deleted', icon: '🗑️', minRole: 'moderator' },
     ] },
     { titleKey: 'nav_sect_requests', items: [
-        { href: '/admin/data-requests', labelKey: 'nav_data_requests', icon: '📬', minRole: 'moderator' },
-        { href: '/admin/pii-requests', labelKey: 'nav_pii_requests', icon: '🔒', minRole: 'moderator' },
+        { href: '/admin/data-requests', labelKey: 'nav_data_requests', icon: '📬', minRole: 'moderator', countKey: 'dataRequests' },
+        { href: '/admin/pii-requests', labelKey: 'nav_pii_requests', icon: '🔒', minRole: 'moderator', countKey: 'piiRequests' },
     ] },
     { titleKey: 'nav_sect_admin', items: [
         { href: '/admin/users', labelKey: 'nav_users', icon: '👥', minRole: 'admin' },
@@ -41,7 +41,11 @@ const SECTIONS: Array<{ titleKey: string; items: NavItem[] }> = [
     ] },
 ];
 
-export default function AdminSidebar({ isAdmin }: { isAdmin: boolean }) {
+export default function AdminSidebar({ isAdmin, counts }: {
+    isAdmin: boolean;
+    /** Actionable-item counts; a badge renders only when > 0. See lib/adminCounts.ts. */
+    counts?: { dataRequests: number; piiRequests: number };
+}) {
     const [open, setOpen] = useState(false);
     const pathname = usePathname();
     const { t } = useLanguage();
@@ -80,7 +84,7 @@ export default function AdminSidebar({ isAdmin }: { isAdmin: boolean }) {
 
             {/* Sidebar — desktop: always visible, mobile: slide-in drawer */}
             <aside className={`
-                fixed top-16 left-0 z-50 h-[calc(100%-4rem)] w-64 bg-stone-900 text-stone-300 flex-shrink-0
+                fixed top-16 left-0 z-50 h-[calc(100%-4rem)] w-72 bg-stone-900 text-stone-300 flex-shrink-0
                 transition-transform duration-300 ease-in-out
                 ${open ? 'translate-x-0' : '-translate-x-full'}
                 lg:sticky lg:top-16 lg:self-start lg:h-[calc(100vh-4rem)] lg:overflow-y-auto lg:translate-x-0 lg:z-auto
@@ -124,7 +128,17 @@ export default function AdminSidebar({ isAdmin }: { isAdmin: boolean }) {
                                             ${item.special ? 'text-amber-500/80 hover:text-amber-400' : ''}
                                         `}
                                     >
-                                        <span className="min-w-0 truncate">{item.icon} {t(`admin.${item.labelKey}`)}</span>
+                                        <span className="min-w-0 leading-snug">{item.icon} {t(`admin.${item.labelKey}`)}</span>
+                                        {/* Actionable count. Rendered only when > 0 so the usual
+                                            state is unchanged and the badge keeps its meaning. */}
+                                        {item.countKey && (counts?.[item.countKey] ?? 0) > 0 && (
+                                            <span
+                                                className="flex-shrink-0 ml-auto text-[10px] font-bold text-white bg-rose-600 rounded-full px-1.5 py-px tabular-nums"
+                                                aria-label={`${counts![item.countKey]} ${t(`admin.${item.labelKey}`)}`}
+                                            >
+                                                {counts![item.countKey] > 99 ? '99+' : counts![item.countKey]}
+                                            </span>
+                                        )}
                                         {/* Marker only in the admin view: which items a moderator also sees. */}
                                         {isAdmin && (item.minRole === 'moderator'
                                             ? <span className="flex-shrink-0 text-[9px] font-bold text-teal-300 bg-teal-500/15 border border-teal-500/30 rounded-full px-1.5 py-px" title={t('admin.nav_mod_accessible')}>Mod</span>

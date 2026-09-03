@@ -3,6 +3,7 @@ import { isAdminAsync, isModeratorOrAdminAsync } from "@/config/admins";
 import { redirect } from 'next/navigation';
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminEnvWarnings from "@/components/AdminEnvWarnings";
+import { getAdminCounts } from "@/lib/adminCounts";
 
 export default async function AdminLayout({
     children,
@@ -22,10 +23,14 @@ export default async function AdminLayout({
     // moderators see only the moderator sections.
     const isAdmin = await isAdminAsync(email);
 
+    // Sidebar badges for items that need action. One query; see adminCounts.ts
+    // for why only these two are counted.
+    const counts = await getAdminCounts();
+
     return (
         <div className="min-h-screen bg-stone-100 lg:flex">
             {/* Sidebar — client component handles mobile drawer behavior */}
-            <AdminSidebar isAdmin={isAdmin} />
+            <AdminSidebar isAdmin={isAdmin} counts={counts} />
 
             {/* Main content. NOT its own scroll pane — the document scrolls as one.
                 A prior `overflow-y-auto lg:h-screen` here created a SECOND 100vh
