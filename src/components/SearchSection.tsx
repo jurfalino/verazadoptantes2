@@ -675,7 +675,13 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                 own scripted scroll. */}
             {hasResults && !demoActive && (results?.length ?? 0) > 0 && (
                 <div
-                    className={`sticky bottom-0 z-30 -mx-4 px-4 py-2.5 bg-white/95 backdrop-blur border-t border-stone-200 shadow-[0_-4px_12px_-6px_rgba(0,0,0,0.18)] flex items-center gap-3 transition-[transform,opacity] duration-200 motion-reduce:transition-none ${barHidden ? 'translate-y-[125%] opacity-0 pointer-events-none invisible' : ''
+                    // Themed utilities only. `bg-white/95` was the bug: globals.css remaps
+                    // .bg-white and the /20, /80 and /90 variants, but NOT /95, so it
+                    // rendered raw white on the dark ground. Opaque `bg-white` maps to
+                    // var(--surface-card) and matches the sticky footer in
+                    // ApplicantDetailPanel; the upward shadow reuses the value already
+                    // in FormResultsContent rather than introducing a second one.
+                    className={`sticky bottom-0 z-30 -mx-4 px-4 py-2.5 bg-white border-t border-stone-200 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] flex items-center gap-3 transition-[transform,opacity] duration-200 motion-reduce:transition-none ${barHidden ? 'translate-y-[125%] opacity-0 pointer-events-none invisible' : ''
                         }`}
                 >
                     <span className="flex-1 min-w-0 truncate text-sm font-medium text-stone-600">

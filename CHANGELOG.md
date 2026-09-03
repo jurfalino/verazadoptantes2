@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.51.2] - 2026-09-03
+
+### Fixed — the floating alta ignored the selected theme
+
+The sticky bar shipped in 2.51.0 used `bg-white/95`. `globals.css` remaps `.bg-white` to `var(--surface-card)` and remaps the `/20`, `/80` and `/90` opacity variants — but **not** `/95`, so the bar rendered raw white on the dark ground instead of following the theme.
+
+It now uses opaque `bg-white`, matching the sticky footer in `ApplicantDetailPanel`, and drops the `backdrop-blur` that only existed to justify the transparency. The upward shadow reuses the value already in `FormResultsContent` rather than introducing a second one.
+
+Every colour utility in `SearchSection` was then audited against the remap. The three that remain unmapped — `ring-teal-100`, `ring-teal-300` and `text-white` on the teal buttons — all predate this work and are the established pattern for those controls.
+
+**Note for the next person:** an opacity variant is a *different class* to the theme layer. `bg-white` being remapped says nothing about `bg-white/95`. The same latent bug exists at `FormResultsContent.tsx:390`.
+
 ## [2.51.1] - 2026-09-03
 
 ### Fixed — editing the search box re-highlighted the results already on screen
