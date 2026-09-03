@@ -1634,6 +1634,8 @@ export const pt = {
         public_profile_on: 'Este perfil ficará visível para todos',
         public_profile_off: 'Este perfil ficará protegido (só a sua organização)',
         public_profile_explainer: 'Os dados vêm de uma fonte pública (rede social). Se preferir que sejam protegidos, desative esta opção.',
+        public_profile_explainer_private_source: 'A publicação de origem não é visível publicamente, portanto este perfil é importado como protegido. Ative esta opção apenas se você verificou que a fonte é pública.',
+        source_not_public: 'Não conseguimos ler esta publicação porque ela não é visível publicamente no Facebook. Salvamos o link, e você pode colar o texto e/ou capturas de tela manualmente. O perfil será importado como protegido, porque a fonte não era pública.',
         public_profile_toggle_title: 'Ativar/desativar visibilidade pública',
         vcard_multiple_picked_first: 'Importei o primeiro contato do arquivo',
         vcard_parse_failed: 'Não foi possível ler o arquivo de contato',

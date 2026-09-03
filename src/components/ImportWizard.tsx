@@ -160,6 +160,15 @@ export default function ImportWizard() {
     // public channel, so the consent question doesn't apply.
     const [isPublicProfile, setIsPublicProfile] = useState(true);
 
+    // Set when the source post exists but Facebook would not serve its contents to
+    // us — i.e. it is not publicly visible. The default above assumes the opposite,
+    // so this flips the import to protected and swaps the "it came from a public
+    // source" explainer, which would otherwise be a false claim about the data.
+    // The toggle stays available: our signal is "Facebook denied our crawler",
+    // which a transient block can also produce, so the rescuer must be able to
+    // correct a false positive.
+    const [sourceNotPublic, setSourceNotPublic] = useState(false);
+
     // Extracted/fetched state
     const [_fetchedText, setFetchedText] = useState('');
     const [editableText, setEditableText] = useState(() => {
@@ -448,6 +457,8 @@ export default function ImportWizard() {
 
         setLoading(true);
         setError(null);
+        // Re-evaluated per attempt so retrying against a readable URL clears it.
+        setSourceNotPublic(false);
 
         try {
             // Check if it's a Facebook URL — redirect to specialized scraper
@@ -491,11 +502,19 @@ export default function ImportWizard() {
                     }
                 } else if (responseData.extractionFailed) {
                     if (responseData.requiresManualInput) {
-                        // Private group post or restricted content — skip to manual input
+                        // Private group post or restricted content — skip to manual
+                        // input. The URL is still worth keeping: it is the audit trail
+                        // for where the record came from, even when we could not read it.
                         setSourceUrl(targetUrl);
-                        setError(responseData.error || (locale !== 'en'
-                            ? 'No se pudo extraer contenido. Pegá el texto manualmente.'
-                            : 'Could not extract content. Please paste text manually.'));
+                        if (responseData.sourceNotPublic) {
+                            setSourceNotPublic(true);
+                            setIsPublicProfile(false);
+                        }
+                        setError(responseData.sourceNotPublic
+                            ? t('import.source_not_public')
+                            : responseData.error || (locale !== 'en'
+                                ? 'No se pudo extraer contenido. Pegá el texto manualmente.'
+                                : 'Could not extract content. Please paste text manually.'));
                         setStep(2);
                         return;
                     }
@@ -1518,7 +1537,9 @@ export default function ImportWizard() {
                                         : t('import.public_profile_off')}
                                 </p>
                                 <p className="text-stone-600 mt-0.5">
-                                    {t('import.public_profile_explainer')}
+                                    {sourceNotPublic
+                                        ? t('import.public_profile_explainer_private_source')
+                                        : t('import.public_profile_explainer')}
                                 </p>
                             </div>
                         </div>

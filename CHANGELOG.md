@@ -2,6 +2,29 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.19] - 2026-09-03
+
+### Fixed — Facebook imports of non-public posts silently dead-ended
+
+Importing a Facebook post that is not publicly visible produced an empty wizard with no explanation. Facebook answers such a post with `og:title` (the poster's profile name) and **no** `og:description`, and the route's content check counted that author as content:
+
+```js
+// For regular posts, require at least text or images   ← the stated contract
+const hasAnyContent = postData.text || postData.images.length > 0 || postData.author;
+```
+
+The `|| author` leniency was meant for video posts, where the caption is often empty and the rescuer supplies screenshots, but it was applied unconditionally. That made the route's own "restricted post" guard unreachable: the request returned **success with an empty post**, so the AI had nothing to extract. The scraper path already used the correct predicate, which is what identified this as drift rather than intent.
+
+The rule now lives in `domain/facebookExtraction.ts` under test. Video-ness is read from **either** signal — `og:type` comes from the same HTML that may be withholding everything, and the URL check only knows the shapes we listed — so video imports that pass today keep passing.
+
+### Fixed — non-public sources no longer default to a public profile
+
+A URL import defaults the public-visibility toggle **on**, and its copy tells the rescuer *"los datos vienen de una fuente pública (red social)"*. For a post Facebook refused to serve, that premise is false, so these imports were defaulting to **unmasked contact PII sourced from non-public content**.
+
+When the fetch shows Facebook named the poster but withheld the post, the import is now flagged `sourceNotPublic`: the profile defaults to **protected** and the toggle explains why. The rescuer can still override — the signal is "Facebook denied our crawler", which a transient block also produces, so a false positive has to be correctable.
+
+The source URL is kept either way; it is the audit trail for where a record came from even when we could not read it.
+
 ## [2.49.18] - 2026-09-03
 
 ### Added — export the adopters list to Excel

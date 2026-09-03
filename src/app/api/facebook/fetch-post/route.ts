@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { arrayBufferToBase64 } from '@/lib/base64';
+import { hasExtractableContent, isSourceNotPublic } from '@/domain/facebookExtraction';
 
 interface FacebookPostData {
     text: string;
@@ -185,16 +186,22 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        // For video posts, be lenient — any data at all is enough (user will add screenshots)
-        // For regular posts, require at least text or images
-        const hasAnyContent = postData.text || postData.images.length > 0 || postData.author;
-        if (!hasAnyContent) {
+        // Video posts are lenient (the rescuer adds screenshots); regular posts need
+        // text or images. See domain/facebookExtraction.ts for why the author does not
+        // count on its own — this predicate used to include it, which made the guard
+        // below unreachable and dead-ended the import on an empty success.
+        if (!hasExtractableContent(postData, isVideoUrl)) {
             // Private group posts and some reels can't be scraped — 
             // tell the UI to skip to manual input instead of retrying
             return NextResponse.json({
                 success: false,
                 extractionFailed: true,
                 requiresManualInput: true,
+                // Facebook served us the poster's name and withheld the post, so the
+                // source is NOT public. The wizard defaults such imports to a protected
+                // profile: the public-visibility toggle exists on the premise that the
+                // data was already public, and that premise fails here.
+                sourceNotPublic: isSourceNotPublic(postData, isVideoUrl),
                 error: 'Esta publicación es de un grupo privado o tiene restricciones. Pegá el texto y/o capturas de pantalla manualmente.',
             });
         }
