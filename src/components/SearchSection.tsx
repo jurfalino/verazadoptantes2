@@ -41,6 +41,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
     const resultsRef = useRef<HTMLDivElement>(null);
     // v2.51.0 — see the search-results CTA rework.
     const sentinelRef = useRef<HTMLDivElement>(null);
+    const searchCardRef = useRef<HTMLDivElement>(null);
     const closingRef = useRef<HTMLDivElement>(null);
     /** Desktop only: the card drops its stacked layout once scrolling starts. */
     const [condensed, setCondensed] = useState(false);
@@ -95,6 +96,32 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
         }
     }, []);
 
+    /**
+     * Bring the results into view without parking the first card underneath the
+     * chrome. `scrollIntoView({ block: 'start' })` aligns the list with the top of
+     * the VIEWPORT, but the global nav is pinned there and, on mobile, so is the
+     * search card — so the first result landed behind them.
+     *
+     * Each candidate is asked whether it is actually pinned rather than assumed:
+     * the nav's height is set by NavBar, and the search card is sticky on mobile
+     * but `md:static` from the medium breakpoint up.
+     */
+    const scrollToResults = useCallback(() => {
+        const el = resultsRef.current;
+        if (!el) return;
+        const pinnedHeight = (node: Element | null) => {
+            if (!node) return 0;
+            const pos = getComputedStyle(node).position;
+            return pos === 'sticky' || pos === 'fixed' ? (node as HTMLElement).offsetHeight : 0;
+        };
+        const occluded = pinnedHeight(document.querySelector('nav.sticky'))
+            + pinnedHeight(searchCardRef.current)
+            + 8; // a little air, so the card does not sit flush against the chrome
+        const top = el.getBoundingClientRect().top + window.scrollY - occluded;
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        window.scrollTo({ top: Math.max(0, top), behavior: reduced ? 'auto' : 'smooth' });
+    }, []);
+
     // Re-run search when returning to page with query in URL
     const runSearch = useCallback(async (searchQuery: string) => {
         if (!searchQuery.trim()) return;
@@ -121,7 +148,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                     setTruncatedInfo({ truncated: true, totalCount: response.totalCount });
                 }
                 // Auto-scroll to results on mobile
-                setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+                setTimeout(scrollToResults, 100);
             }
         } catch (err) {
             console.error(err);
@@ -261,7 +288,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                     });
                 }
                 // Auto-scroll to results on mobile
-                setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+                setTimeout(scrollToResults, 100);
             }
         } catch (err) {
             await notifyRequestError(toast.error, t, err, {
@@ -344,7 +371,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
             </div>
 
             {/* Search card — just the search tool */}
-            <div className={`bg-white rounded-3xl shadow-sm border border-stone-200 transition-all ${hasResults && !demoActive ? 'md:static sticky top-16 z-30 rounded-b-xl md:rounded-3xl shadow-md md:shadow-sm' : ''
+            <div ref={searchCardRef} className={`bg-white rounded-3xl shadow-sm border border-stone-200 transition-all ${hasResults && !demoActive ? 'md:static sticky top-16 z-30 rounded-b-xl md:rounded-3xl shadow-md md:shadow-sm' : ''
                 } ${condensed && hasResults ? 'p-5 md:px-6 md:py-3.5' : 'p-5 md:p-6'}`}>
                 {/* Condensed (desktop, after scrolling): keep the mobile row layout
                     instead of switching to the stacked one, so the button sits beside

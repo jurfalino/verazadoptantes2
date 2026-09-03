@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.51.3] - 2026-09-03
+
+### Fixed — the first result landed behind the sticky header after searching
+
+Searching auto-scrolls to the results on mobile. It used `scrollIntoView({ block: 'start' })`, which aligns the list with the top of the **viewport** — but the global nav is pinned there, and on mobile so is the search card, so the first card arrived underneath them. The `scroll-mt-4` on the results container was 16px against roughly 190px of chrome.
+
+The scroll now measures what is actually pinned and offsets by it. Each candidate is *asked* rather than assumed: the nav's height is set by `NavBar` rather than a class, and the search card is sticky on mobile but `md:static` from the medium breakpoint up, so the same code is correct at both breakpoints without a hardcoded number per breakpoint. `prefers-reduced-motion` switches the scroll to instant.
+
+This was pre-existing, but v2.51.0 made it worse: the consolidated count added a line to the sticky card, and every pixel of that card was another pixel of the first result hidden.
+
 ## [2.51.2] - 2026-09-03
 
 ### Fixed — the floating alta ignored the selected theme
