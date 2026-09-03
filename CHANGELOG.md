@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.51.0] - 2026-09-03
+
+### Changed — reaching “create new” when a search returns many results
+
+Results cap at 50 and render uncapped in page flow, so the closing panel could sit several screens down. Burying it was half-deliberate — on a duplicate-prevention tool that panel is a *conclusion*, and inviting creation early raises the duplicate rate — so the goal was to shorten the distance to the decision without shortening the consideration.
+
+**One count, in the sticky search card.** Above the cap the page used to show the blue *“Demasiados resultados (137)… refina tu búsqueda”* banner **and** the amber *“Agregá un apellido…”* nudge simultaneously — the same instruction twice, in two colours — while the header underneath read *“50 resultados encontrados”*, contradicting both. Both banners are gone. The search card now carries `137 coincidencias · mostrando 50` with the refine hint under it. No second input: the field it sits beneath is the refine control.
+
+**The closing block states the expectation.** *“Crear Nuevo Registro”* named a database operation and assumed the rescuer already knew that adding the person was expected. Nothing said so. It now leads with **¿Ninguna coincide?**, gives the reason — the next rescuer finds her because you added her — and carries the counterweight out loud: *duplicarla parte su historial*. This is parity with the zero-result state, which has always said *“Sé el primero en registrarlo”*.
+
+**One label, and it names the person.** The button reads `Agregar a María González` when the create form will genuinely be prefilled with a name, and `Agregar adoptante` otherwise — driven by the same `buildCreatePrefill` classifier that decides the prefill, so the label can never promise what the form will not do. A phone or an address query gets the generic wording instead of `Agregar a "Av. Rivadavia 4820"`.
+
+**A floating alta while the list is being read**, which slides out as the closing block arrives, so the same action is never on screen twice. It is the last child of the search section, so even if its observer never ran it could not reach the *Adopción / Reporte / Importar* cards below — those are competing create paths. The quiet duplicate that sat in the results header is gone: the alta now has exactly one home per scroll position.
+
+**Desktop condenses the search card on scroll.** The button moves from below the field to beside it, keeping its label, taking the sticky card from ~237px to ~136px at the moment the list needs the room. Mobile is untouched — it is already inline.
+
+Both behaviours use `IntersectionObserver` rather than scroll handlers: this sits above a list of up to fifty cards, and toggling layout classes from a per-frame callback is where a mid-range phone drops frames.
+
 ## [2.50.1] - 2026-09-03
 
 ### Fixed — searching an address and clicking “create” named the adopter after a street
