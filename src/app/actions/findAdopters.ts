@@ -14,7 +14,7 @@
  */
 
 import { adopters, searches, adopterHistory, adoptions, adopterStats, duplicateTokens, piiAccessGrants } from '@/db/schema';
-import { or, like, sql, and, isNull, eq, ne } from 'drizzle-orm';
+import { or, like, sql, and, isNull, eq, ne, desc } from 'drizzle-orm';
 import { logger, withTrace } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
@@ -561,7 +561,23 @@ async function runDuplicateMode(
         if (conditions.length === 0) return;
         const base = and(or(...conditions), isNull(adopters.deletedAt));
         const where = excludeId ? and(base, ne(adopters.id, excludeId)) : base;
-        const likeRows = await db.select({ id: adopters.id }).from(adopters).where(where).limit(20)
+        // Rank by HOW MANY of the conditions a row satisfies before capping.
+        //
+        // Without this the cap took an arbitrary unordered 20. Importing
+        // "Jonatan Daniel Fernández" builds `%jonatan%`, `%daniel%`,
+        // `%fernandez%`; 31 production records match at least one (every
+        // "Daniel", "Daniela", "Fernandez"), so the row matching TWO of them —
+        // the actual duplicate — was cut while single-word matches survived on
+        // scan order alone. That silently capped recall for every untokenized
+        // profile whose name shares a common stem.
+        //
+        // SQLite yields 1/0 from a boolean, so summing the same conditions
+        // scores them. Reuses `conditions` verbatim, so the ranking can never
+        // drift from the filter.
+        const relevance = sql.join(conditions.map(c => sql`(CASE WHEN ${c} THEN 1 ELSE 0 END)`), sql` + `);
+        const likeRows = await db.select({ id: adopters.id }).from(adopters).where(where)
+            .orderBy(desc(relevance))
+            .limit(20)
             .catch((e: unknown) => {
                 // Full-scan LIKE on a long/complex value (Facebook URLs) can trip
                 // SQLite's "pattern too complex". Degrade this fallback instead of

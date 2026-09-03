@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.13] - 2026-09-03
+
+### Fixed — import dedup silently dropped the best match on common name stems
+
+The duplicate engine's LIKE fallback (Strategy 2, which exists to catch untokenized profiles) selected `.limit(20)` with **no ordering**. Importing "Jonatan Daniel Fernández" builds `%jonatan%`, `%daniel%`, `%fernandez%`; **31** production records match at least one — every "Daniel", "Daniela" and "Fernandez" — so SQLite returned an arbitrary 20 by scan order and the row matching **two** conditions, the actual duplicate, was cut while single-word matches survived.
+
+Rows are now ranked by how many of the conditions they satisfy before the cap. SQLite yields 1/0 from a boolean, so the same conditions are summed for the score — reusing the array verbatim, so ranking can never drift from filtering. Verified against production: the correct record moves from "not returned" to rank 1 with relevance 2, above every single-word match.
+
+This capped recall for **any** untokenized profile whose name shares a common stem, not just this record. Homepage search was unaffected because discovery scores and ranks candidates (`name_exact: 100`, `name_tokens: 35`…); only the dedup fallback took an unranked slice — which is why the same name was findable in one place and invisible in the other.
+
+Two independent faults had to coincide for this to surface: the record also had **zero tokens**, so Strategy 1 — whose prefix rule (`jonat%`) exists precisely to catch Jonatan↔Jonathan — never saw it. Those tokens were destroyed by the failed owner-delete fixed in 2.49.10: `Promise.all` rejects on the first failure but the sibling statements still complete, so the `duplicate_tokens` delete succeeded while the `adoptions` delete threw.
+
 ## [2.49.12] - 2026-09-03
 
 ### Fixed — admin sidebar labels were being cut off
