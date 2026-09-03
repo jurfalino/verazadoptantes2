@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.17] - 2026-09-03
+
+### Fixed — the confidence badge appeared on text-only imports, where it grades nothing
+
+The pill grades the **AI extraction**: how well the model read a fetched post, a photo or a video. On a plain text paste there is nothing to grade — the user handed the data over directly, and a confidence score on reading it back conveys no information.
+
+It now renders only when the extraction actually had something to interpret: a source URL, uploaded images, or fetched images. Captured at extraction time rather than read from current UI state, which the user can still change on step 3.
+
+This mirrors the existing treatment of contacts imports (hidden, because the hydrate path hardcodes `'low'` with no AI signal behind it) and the `isPublicProfile` consent toggle, which is already hidden for "Google Contacts and text-only AI extractions — those aren't from a public channel, so the consent question doesn't apply". Same distinction, now applied consistently.
+
+Supersedes the note added in 2.49.16 suggesting the grade be replaced with field-completeness. That was wrong: confidence is a legitimate and intended output of vision/post extraction, and is genuinely useful there. The defect was showing it where no extraction judgement occurred, not the metric itself.
+
 ## [2.49.16] - 2026-09-03
 
 ### Fixed — import confidence badge mixed languages ("low confianza")

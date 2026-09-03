@@ -142,6 +142,13 @@ export default function ImportWizard() {
     // of the social-media post flow. Drives the Step 3 breadcrumb so the user
     // knows why animal fields are empty.
     const [fromContacts, setFromContacts] = useState(false);
+    // Did the AI have to INTERPRET something (a fetched post, a photo, a video),
+    // as opposed to the user pasting text directly? Captured at extraction time
+    // rather than read from current UI state, which the user can still change on
+    // step 3. Gates the confidence pill: grading how well the model read an image
+    // or a scraped post is meaningful; grading how well it read text the user
+    // typed themselves is not.
+    const [extractedFromSource, setExtractedFromSource] = useState(false);
     // v2.19.47: explicit per-record consent toggle for social-URL imports.
     // Default ON — historically these records were treated as public (the
     // contact data came from a public Facebook/Instagram post). The toggle
@@ -616,6 +623,8 @@ export default function ImportWizard() {
             }
 
             const imageUrls = fetchedImages.filter((_, i) => selectedFetchedImages.has(i));
+
+            setExtractedFromSource(!!sourceUrl || imagesToSend.length > 0 || imageUrls.length > 0);
 
             const response = await fetch('/api/ai/extract-from-post', {
                 method: 'POST',
@@ -1445,11 +1454,14 @@ export default function ImportWizard() {
                 <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
                     <div className="flex items-center justify-between">
                         <h3 className="text-lg font-semibold text-stone-900">{t('import.reviewExtracted') || 'Review Extracted Data'}</h3>
-                        {/* v2.19.20: confidence pill describes the AI extraction.
-                            For contacts imports the hydrate path hardcodes 'low'
-                            because there's no AI signal to grade — the pill is
-                            meaningless there, so we hide it. */}
-                        {!fromContacts && (
+                        {/* The pill grades the AI EXTRACTION, so it only shows when
+                            the model actually had to interpret something — a fetched
+                            post, a photo, a video.
+                            Hidden for contacts imports (the hydrate path hardcodes
+                            'low'; there is no AI signal to grade) and for plain text
+                            pastes, where the user handed over the data directly and a
+                            confidence grade on reading it back says nothing. */}
+                        {!fromContacts && extractedFromSource && (
                             <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${extractedData.confidence === 'high' ? 'bg-green-100 text-green-700' :
                                 extractedData.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' :
                                     'bg-red-100 text-red-700'
