@@ -1635,6 +1635,7 @@ export const pt = {
         public_profile_off: 'Este perfil ficará protegido (só a sua organização)',
         public_profile_explainer: 'Os dados vêm de uma fonte pública (rede social). Se preferir que sejam protegidos, desative esta opção.',
         missing_post_text: 'Não conseguimos ler o texto desta publicação: o Facebook não o compartilha, provavelmente porque ela não é pública. Guardamos o link e o que conseguimos trazer (foto, nome); você pode remover isso ou escrever o texto. O perfil será importado como protegido.',
+        removeImage: 'Descartar esta foto',
         public_profile_explainer_private_source: 'A publicação de origem não é visível publicamente, portanto este perfil é importado como protegido. Ative esta opção apenas se você verificou que a fonte é pública.',
         source_not_public: 'Não conseguimos ler esta publicação porque ela não é visível publicamente no Facebook. Salvamos o link, e você pode colar o texto e/ou capturas de tela manualmente. O perfil será importado como protegido, porque a fonte não era pública.',
         public_profile_toggle_title: 'Ativar/desativar visibilidade pública',

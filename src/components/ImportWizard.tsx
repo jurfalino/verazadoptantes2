@@ -20,6 +20,13 @@ import ContactEntriesInput from '@/components/ContactEntriesInput';
 import { buildContactEntries, contactEntriesToBlob, type ContactEntry } from '@/lib/contactEntries';
 import { humanMatchSentence } from '@/lib/importMatch';
 import { IMPORT_FLAGS } from '@/domain/constants';
+import { dedupeImages } from '@/domain/facebookExtraction';
+
+/**
+ * How many scraped images the review step keeps. The grid renders all of them
+ * and the selection is built from the same list, so the two cannot drift.
+ */
+const MAX_FETCHED_IMAGES = 12;
 import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
 import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
 
@@ -465,6 +472,27 @@ export default function ImportWizard() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    /**
+     * Drop a scraped image from the review step entirely.
+     *
+     * Distinct from deselecting it: a duplicate or an irrelevant grab (Facebook's
+     * own chrome often lands in the scrape) should leave the grid rather than sit
+     * there dimmed. Selection is stored as a Set of indices, so every index above
+     * the removed one shifts down by one — rebuilding it is not optional, or the
+     * wrong photos end up selected.
+     */
+    const removeFetchedImage = (idx: number) => {
+        setFetchedImages(prev => prev.filter((_, i) => i !== idx));
+        setSelectedFetchedImages(prev => {
+            const next = new Set<number>();
+            prev.forEach(i => {
+                if (i < idx) next.add(i);
+                else if (i > idx) next.add(i - 1);
+            });
+            return next;
+        });
+    };
+
     const handleFetchUrl = async (url?: string) => {
         const targetUrl = url || inputContent;
         if (!targetUrl.trim()) return;
@@ -508,7 +536,13 @@ export default function ImportWizard() {
                     }
                     setFetchedText(responseData.data.text || '');
                     setEditableText(responseData.data.text || '');
-                    const imgs = responseData.data.images || [];
+                    // Facebook serves one photo under many signed URLs, and the
+                    // Playwright scraper path does no de-duplication of its own, so
+                    // collapse them here as well as in the route. Capped so that what
+                    // is rendered and what is selected can never diverge — the grid
+                    // used to show the first 12 while selecting all of them, quietly
+                    // importing images the rescuer could not see or remove.
+                    const imgs = dedupeImages(responseData.data.images || []).slice(0, MAX_FETCHED_IMAGES);
                     setFetchedImages(imgs);
                     setSelectedFetchedImages(new Set(imgs.map((_: string, i: number) => i)));
 
@@ -517,13 +551,16 @@ export default function ImportWizard() {
                         setIsVideoPost(true);
                         if (responseData.data.videoThumbnailBase64) {
                             const dataUrl = responseData.data.videoThumbnailBase64 as string;
-                            // Add thumbnail to fetchedImages (not manualImages) so it appears
-                            // alongside other scraped images, not in the manual upload section
-                            setFetchedImages(prev => {
-                                const newIndex = prev.length;
-                                setSelectedFetchedImages(sel => new Set([...sel, newIndex]));
-                                return [...prev, dataUrl];
-                            });
+                            // The thumbnail IS images[0] re-fetched as base64, so OCR has
+                            // real pixels even when the signed CDN URL cannot be fetched
+                            // again later. Substitute it for the image it came from —
+                            // appending it showed the same photo twice on every
+                            // video-typed post, which is most of them: Facebook types
+                            // plain photo posts `video.other` too.
+                            setFetchedImages(prev => prev.length > 0
+                                ? [dataUrl, ...prev.slice(1)]
+                                : [dataUrl]);
+                            setSelectedFetchedImages(sel => new Set([...sel, 0]));
                         }
                     }
                 } else if (responseData.extractionFailed) {
@@ -1361,7 +1398,7 @@ export default function ImportWizard() {
                                 </button>
                             </div>
                             <div className="grid grid-cols-4 gap-2">
-                                {fetchedImages.slice(0, 12).map((url, i) => {
+                                {fetchedImages.map((url, i) => {
                                     const isSelected = selectedFetchedImages.has(i);
                                     return (
                                         <button
@@ -1402,6 +1439,31 @@ export default function ImportWizard() {
                                                 title={t('nav.expand_image')}
                                             >
                                                 ⤢
+                                            </div>
+                                            {/* Discard. A <div> rather than a <button>
+                                                because the tile itself is a button and
+                                                nesting them is invalid HTML — same
+                                                reason the expand control above is one. */}
+                                            <div
+                                                role="button"
+                                                tabIndex={0}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    removeFetchedImage(i);
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    removeFetchedImage(i);
+                                                }}
+                                                className="absolute bottom-1 right-1 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center md:opacity-0 md:group-hover:opacity-100 transition-opacity cursor-pointer"
+                                                title={t('import.removeImage')}
+                                                aria-label={t('import.removeImage')}
+                                            >
+                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
                                             </div>
                                         </button>
                                     );

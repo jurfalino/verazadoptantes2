@@ -1629,6 +1629,7 @@ export const en = {
         public_profile_off: 'This profile will be protected (your organization only)',
         public_profile_explainer: 'The data comes from a public source (social network). Disable this if you want it kept protected.',
         missing_post_text: 'We could not read this post’s text — Facebook does not share it, most likely because the post is not public. We kept the link and whatever we could retrieve (photo, name); you can remove that or type the text in yourself. The profile will be imported as protected.',
+        removeImage: 'Discard this photo',
         public_profile_explainer_private_source: 'The source post is not publicly visible, so this profile is imported as protected. Only turn this on if you have verified the source is public.',
         source_not_public: 'We could not read this post because it is not publicly visible on Facebook. We saved the link, and you can paste the text and/or screenshots manually. The profile will be imported as protected, because the source was not public.',
         public_profile_toggle_title: 'Toggle public visibility',

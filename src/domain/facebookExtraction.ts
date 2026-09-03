@@ -48,6 +48,42 @@ export function hasExtractableContent(post: ExtractedPost, isVideoUrl = false): 
     return isVideoPost(post, isVideoUrl) && Boolean(post.author);
 }
 
+/**
+ * A stable identity for a Facebook CDN image, for de-duplication.
+ *
+ * The same photo is served under many URLs: Facebook varies the size params
+ * (`stp`, `cstp`), the cache hints (`_nc_ohc`, `_nc_gid`) and the per-request
+ * signature (`oh`, `oe`) on every render, so two links to one photo rarely match
+ * as strings. De-duplicating on the exact URL therefore let the same image
+ * appear several times in the import review grid.
+ *
+ * The filename carries the photo's real identity — `738546332_2216399502449551_
+ * 8877869079595647378_n.jpg` — so key on the path's last segment and drop the
+ * query entirely. Non-CDN or unparseable values fall back to the whole string,
+ * which is no worse than the previous behaviour.
+ */
+export function imageIdentity(url: string): string {
+    if (!url) return url;
+    // data: URIs are their own identity; they have no meaningful path.
+    if (url.startsWith('data:')) return url;
+    const withoutQuery = url.split('?')[0];
+    const lastSegment = withoutQuery.slice(withoutQuery.lastIndexOf('/') + 1);
+    return lastSegment || url;
+}
+
+/** Collapse URLs that point at the same photo, keeping first-seen order. */
+export function dedupeImages(urls: string[]): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const url of urls) {
+        const id = imageIdentity(url);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push(url);
+    }
+    return out;
+}
+
 /** Did Facebook give us the post's own words? */
 export function hasPostText(post: ExtractedPost): boolean {
     return Boolean(post.text && post.text.trim());

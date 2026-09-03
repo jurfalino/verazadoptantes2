@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { arrayBufferToBase64 } from '@/lib/base64';
-import { hasExtractableContent, hasPostText, isSourceNotPublic } from '@/domain/facebookExtraction';
+import { hasExtractableContent, hasPostText, imageIdentity, isSourceNotPublic } from '@/domain/facebookExtraction';
 
 interface FacebookPostData {
     text: string;
@@ -271,8 +271,8 @@ function extractPostData(html: string): FacebookPostData {
     for (const match of ogImageMatches) {
         const imageUrl = decodeHtmlEntities(match[1]);
         // Filter out profile pics and icons
-        if (imageUrl && !imageUrl.includes('profile') && !imageUrl.includes('icon') && !seenImages.has(imageUrl)) {
-            seenImages.add(imageUrl);
+        if (imageUrl && !imageUrl.includes('profile') && !imageUrl.includes('icon') && !seenImages.has(imageIdentity(imageUrl))) {
+            seenImages.add(imageIdentity(imageUrl));
             data.images.push(imageUrl);
         }
     }
@@ -298,8 +298,8 @@ function extractPostData(html: string): FacebookPostData {
             if (jsonData.image) {
                 const images = Array.isArray(jsonData.image) ? jsonData.image : [jsonData.image];
                 for (const img of images) {
-                    if (!seenImages.has(img)) {
-                        seenImages.add(img);
+                    if (!seenImages.has(imageIdentity(img))) {
+                        seenImages.add(imageIdentity(img));
                         data.images.push(img);
                     }
                 }
@@ -321,8 +321,8 @@ function extractPostData(html: string): FacebookPostData {
             !imageUrl.includes('_t.') &&
             !imageUrl.includes('profile') &&
             !imageUrl.includes('emoji') &&
-            !seenImages.has(imageUrl)) {
-            seenImages.add(imageUrl);
+            !seenImages.has(imageIdentity(imageUrl))) {
+            seenImages.add(imageIdentity(imageUrl));
             data.images.push(imageUrl);
         }
     }
@@ -332,8 +332,8 @@ function extractPostData(html: string): FacebookPostData {
     for (const match of lookasideMatches) {
         let imageUrl = match[1];
         imageUrl = imageUrl.replace(/\\u0026/g, '&').replace(/&amp;/g, '&');
-        if (imageUrl && !seenImages.has(imageUrl)) {
-            seenImages.add(imageUrl);
+        if (imageUrl && !seenImages.has(imageIdentity(imageUrl))) {
+            seenImages.add(imageIdentity(imageUrl));
             data.images.push(imageUrl);
         }
     }
@@ -378,8 +378,8 @@ function extractPostData(html: string): FacebookPostData {
             !imageUrl.includes('static') &&
             !imageUrl.includes('_s.') &&
             !imageUrl.includes('_t.') &&
-            !seenImages.has(imageUrl)) {
-            seenImages.add(imageUrl);
+            !seenImages.has(imageIdentity(imageUrl))) {
+            seenImages.add(imageIdentity(imageUrl));
             data.images.push(imageUrl);
         }
     }

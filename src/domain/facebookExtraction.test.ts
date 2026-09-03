@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hasExtractableContent, hasPostText, isSourceNotPublic, isVideoPost } from './facebookExtraction';
+import { dedupeImages, hasExtractableContent, hasPostText, imageIdentity, isSourceNotPublic, isVideoPost } from './facebookExtraction';
 
 describe('hasExtractableContent', () => {
     // The regression this module exists for. Facebook answers a non-public post
@@ -49,6 +49,41 @@ describe('isVideoPost', () => {
 
     it('is false when neither signal is present', () => {
         expect(isVideoPost({})).toBe(false);
+    });
+});
+
+describe('imageIdentity / dedupeImages', () => {
+    // Both taken from the same post: Facebook re-signs and re-sizes on every
+    // render, so one photo arrives as several distinct strings.
+    const a = 'https://scontent.faep24-1.fna.fbcdn.net/v/t39.30808-6/738546332_2216399502449551_887_n.jpg?stp=dst-jpg_tt6&cstp=mx589x1280&oh=00_AQLFknQ&oe=6A9F56BD';
+    const b = 'https://scontent.faep24-2.fna.fbcdn.net/v/t39.30808-6/738546332_2216399502449551_887_n.jpg?stp=dst-jpg_s600x600&oh=00_ZZZZZZZ&oe=6B001111';
+
+    it('treats the same photo under different signatures as one image', () => {
+        expect(imageIdentity(a)).toBe(imageIdentity(b));
+        expect(dedupeImages([a, b])).toEqual([a]);
+    });
+
+    it('keeps genuinely different photos', () => {
+        const c = a.replace('738546332_2216399502449551_887_n.jpg', '999999999_1111111111111111_222_n.jpg');
+        expect(dedupeImages([a, c])).toHaveLength(2);
+    });
+
+    it('preserves first-seen order', () => {
+        const c = a.replace('738546332_2216399502449551_887_n.jpg', '999999999_1111111111111111_222_n.jpg');
+        expect(dedupeImages([c, a, b])).toEqual([c, a]);
+    });
+
+    // The OCR thumbnail is a data: URI; it has no path to key on and must not
+    // collapse into some other image.
+    it('gives data URIs their own identity', () => {
+        const d1 = 'data:image/jpeg;base64,AAAA';
+        const d2 = 'data:image/jpeg;base64,BBBB';
+        expect(dedupeImages([d1, d2])).toHaveLength(2);
+    });
+
+    it('does not crash on empty or odd values', () => {
+        expect(imageIdentity('')).toBe('');
+        expect(dedupeImages([])).toEqual([]);
     });
 });
 
