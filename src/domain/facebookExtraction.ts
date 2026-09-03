@@ -48,17 +48,30 @@ export function hasExtractableContent(post: ExtractedPost, isVideoUrl = false): 
     return isVideoPost(post, isVideoUrl) && Boolean(post.author);
 }
 
+/** Did Facebook give us the post's own words? */
+export function hasPostText(post: ExtractedPost): boolean {
+    return Boolean(post.text && post.text.trim());
+}
+
 /**
- * True when Facebook identified the poster but refused to serve the post — our
- * evidence that the source is not publicly visible.
+ * True when Facebook identified the poster but served none of the post's text —
+ * our evidence that the source is not publicly readable.
  *
- * The import still proceeds (the rescuer pastes the text by hand) but the
- * resulting profile must NOT default to public: the public-visibility toggle
- * rests on the premise that the data was already public, and here it was not.
+ * Deliberately ignores images. Facebook serves `og:image` for restricted posts
+ * too (it is the link-preview thumbnail), so a photo is NOT evidence that the
+ * content was public. The adopter's details live in the caption, and the caption
+ * is what was withheld. Keying this off images was what let a non-public post
+ * look like a successful import: photo + poster name, no caption, nothing for
+ * the AI to read.
  *
- * Note this is a proxy, not proof. A transient block or rate-limit produces the
- * same shape, which is why the rescuer keeps the ability to override it.
+ * The import still proceeds — the rescuer pastes the text by hand and keeps or
+ * drops whatever we did scrape — but the profile must NOT default to public. The
+ * public-visibility toggle rests on the premise that the data was already
+ * public, and here we could not read it at all.
+ *
+ * This is a proxy, not proof: a transient block or rate-limit produces the same
+ * shape, which is why the rescuer keeps the ability to override it.
  */
-export function isSourceNotPublic(post: ExtractedPost, isVideoUrl = false): boolean {
-    return !hasExtractableContent(post, isVideoUrl) && Boolean(post.author);
+export function isSourceNotPublic(post: ExtractedPost): boolean {
+    return !hasPostText(post) && Boolean(post.author);
 }

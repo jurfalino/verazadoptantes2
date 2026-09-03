@@ -149,6 +149,26 @@ export default function ImportWizard() {
     // or a scraped post is meaningful; grading how well it read text the user
     // typed themselves is not.
     const [extractedFromSource, setExtractedFromSource] = useState(false);
+    // Set when Facebook named the poster but served none of the post's text — i.e.
+    // the source is not publicly readable. Flips the import to protected and swaps
+    // the "it came from a public source" explainer, which would otherwise be a
+    // false claim about the data. The toggle stays available: the signal is
+    // "Facebook withheld the caption", which a transient block also produces, so
+    // the rescuer must be able to correct a false positive.
+    //
+    // Restored from the draft because the warning tells the rescuer to go and copy
+    // the caption. Leaving to do that and coming back would otherwise re-init this
+    // to false and the toggle to public, silently undoing the protection on
+    // exactly the flow the message sends them down.
+    const [sourceNotPublic, setSourceNotPublic] = useState(() => {
+        if (typeof window === 'undefined') return false;
+        const saved = sessionStorage.getItem('import_wizard_state');
+        if (saved) {
+            try { return Boolean(JSON.parse(saved).sourceNotPublic); } catch { return false; }
+        }
+        return false;
+    });
+
     // v2.19.47: explicit per-record consent toggle for social-URL imports.
     // Default ON — historically these records were treated as public (the
     // contact data came from a public Facebook/Instagram post). The toggle
@@ -158,16 +178,10 @@ export default function ImportWizard() {
     // block (per-entry `isPublic:true` stamping). Hidden for Google Contacts
     // (`fromContacts`) and text-only AI extractions — those aren't from a
     // public channel, so the consent question doesn't apply.
-    const [isPublicProfile, setIsPublicProfile] = useState(true);
-
-    // Set when the source post exists but Facebook would not serve its contents to
-    // us — i.e. it is not publicly visible. The default above assumes the opposite,
-    // so this flips the import to protected and swaps the "it came from a public
-    // source" explainer, which would otherwise be a false claim about the data.
-    // The toggle stays available: our signal is "Facebook denied our crawler",
-    // which a transient block can also produce, so the rescuer must be able to
-    // correct a false positive.
-    const [sourceNotPublic, setSourceNotPublic] = useState(false);
+    //
+    // v2.49.19: the "came from a public post" premise fails when Facebook
+    // withheld the caption, so such imports start protected instead.
+    const [isPublicProfile, setIsPublicProfile] = useState(() => !sourceNotPublic);
 
     // Extracted/fetched state
     const [_fetchedText, setFetchedText] = useState('');
@@ -213,9 +227,9 @@ export default function ImportWizard() {
             return;
         }
         sessionStorage.setItem('import_wizard_state', JSON.stringify({
-            step, inputContent, editableText, sourceUrl
+            step, inputContent, editableText, sourceUrl, sourceNotPublic
         }));
-    }, [step, inputContent, editableText, sourceUrl]);
+    }, [step, inputContent, editableText, sourceUrl, sourceNotPublic]);
 
     // Retry countdown timer
     useEffect(() => {
@@ -480,6 +494,18 @@ export default function ImportWizard() {
                 }
 
                 if (responseData.success && responseData.data) {
+                    // Facebook can answer with the photo and the poster's name but no
+                    // caption at all. That reads as a successful fetch and lands the
+                    // rescuer on step 2 with a placeholder, so without this they get no
+                    // signal that the part carrying the adopter's details is missing.
+                    // Everything scraped is still kept and still removable below.
+                    if (responseData.missingPostText) {
+                        setError(t('import.missing_post_text'));
+                        if (responseData.sourceNotPublic) {
+                            setSourceNotPublic(true);
+                            setIsPublicProfile(false);
+                        }
+                    }
                     setFetchedText(responseData.data.text || '');
                     setEditableText(responseData.data.text || '');
                     const imgs = responseData.data.images || [];

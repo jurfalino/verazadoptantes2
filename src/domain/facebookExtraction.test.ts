@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hasExtractableContent, isSourceNotPublic, isVideoPost } from './facebookExtraction';
+import { hasExtractableContent, hasPostText, isSourceNotPublic, isVideoPost } from './facebookExtraction';
 
 describe('hasExtractableContent', () => {
     // The regression this module exists for. Facebook answers a non-public post
@@ -52,14 +52,37 @@ describe('isVideoPost', () => {
     });
 });
 
+describe('hasPostText', () => {
+    it('requires the post to have actual words', () => {
+        expect(hasPostText({ text: 'Busco hogar' })).toBe(true);
+        expect(hasPostText({ text: '' })).toBe(false);
+        expect(hasPostText({})).toBe(false);
+    });
+
+    it('does not count whitespace as text', () => {
+        expect(hasPostText({ text: '   \n  ' })).toBe(false);
+    });
+});
+
 describe('isSourceNotPublic', () => {
     // Drives the import to a PROTECTED profile: the public-visibility toggle
     // asserts the data was already public, which is false for these.
-    it('is true when Facebook named the poster but served no post', () => {
+    it('is true when Facebook named the poster but served no post text', () => {
         expect(isSourceNotPublic({ author: 'Zulma Barragan', images: [] })).toBe(true);
     });
 
-    it('is false when the post was readable', () => {
+    // The reported case. Facebook served og:image (the link-preview thumbnail is
+    // sent for restricted posts too) and og:title, but no caption. Keying this off
+    // images made it look like a successful import: a photo, a name, and nothing
+    // for the AI to read.
+    it('is true when a photo came through but the caption did not', () => {
+        expect(isSourceNotPublic({
+            author: 'Zulma Barragan',
+            images: ['https://scontent.fbcdn.net/v/t39.30808-6/738546332.jpg'],
+        })).toBe(true);
+    });
+
+    it('is false when the post text was readable', () => {
         expect(isSourceNotPublic({ author: 'Zulma Barragan', text: 'hola', images: [] })).toBe(false);
     });
 
@@ -69,7 +92,9 @@ describe('isSourceNotPublic', () => {
         expect(isSourceNotPublic({ images: [] })).toBe(false);
     });
 
-    it('is false for an author-only video, which is a normal readable case', () => {
-        expect(isSourceNotPublic({ author: 'Refugio', images: [], isVideo: true })).toBe(false);
+    // A captionless video is also a source we could not read. It still imports
+    // (the rescuer adds screenshots) but must not claim a public origin.
+    it('is true for a captionless video with a known poster', () => {
+        expect(isSourceNotPublic({ author: 'Refugio', images: [], isVideo: true })).toBe(true);
     });
 });

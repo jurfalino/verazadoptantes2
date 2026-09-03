@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { arrayBufferToBase64 } from '@/lib/base64';
-import { hasExtractableContent, isSourceNotPublic } from '@/domain/facebookExtraction';
+import { hasExtractableContent, hasPostText, isSourceNotPublic } from '@/domain/facebookExtraction';
 
 interface FacebookPostData {
     text: string;
@@ -201,10 +201,18 @@ export async function POST(request: NextRequest) {
                 // source is NOT public. The wizard defaults such imports to a protected
                 // profile: the public-visibility toggle exists on the premise that the
                 // data was already public, and that premise fails here.
-                sourceNotPublic: isSourceNotPublic(postData, isVideoUrl),
+                sourceNotPublic: isSourceNotPublic(postData),
                 error: 'Esta publicación es de un grupo privado o tiene restricciones. Pegá el texto y/o capturas de pantalla manualmente.',
             });
         }
+
+        // Whether Facebook served the post's own words. Computed BEFORE the
+        // placeholder below, which would otherwise make an empty post look like it
+        // had text. A post can reach here with a photo and a poster name and no
+        // caption at all — that is a partial extraction, not a successful one, and
+        // the wizard has to say so rather than hand the AI a captionless photo.
+        const missingPostText = !hasPostText(postData);
+        const sourceNotPublic = isSourceNotPublic(postData);
 
         // For video posts with minimal text, prepend the author/group name for context
         if (postData.isVideo && postData.author && (!postData.text || postData.text.length < 20)) {
@@ -213,6 +221,10 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({
             success: true,
+            // The scraped data is still returned in full: the rescuer keeps or drops
+            // the photo and types the caption in themselves.
+            missingPostText,
+            sourceNotPublic,
             data: postData,
             ...(postData.isVideo && { isVideo: true }),
         });

@@ -4,26 +4,32 @@ All notable changes to BuenAdoptante are documented here.
 
 ## [2.49.19] - 2026-09-03
 
-### Fixed — Facebook imports of non-public posts silently dead-ended
+### Fixed — Facebook imports of non-public posts looked like they worked
 
-Importing a Facebook post that is not publicly visible produced an empty wizard with no explanation. Facebook answers such a post with `og:title` (the poster's profile name) and **no** `og:description`, and the route's content check counted that author as content:
+Importing a Facebook post that is not publicly visible produced a wizard with a photo, the poster's name, and no adopter details — with nothing saying why.
+
+Facebook answers such a post with `og:title` (the poster's profile name) and `og:image` (the link-preview thumbnail) but **no** `og:description`. The caption is where the adopter's details live, and the caption is what gets withheld. Because the thumbnail landed in `images`, the route saw content, reported success, substituted the placeholder `[Poster Name]` for the missing text, and handed the AI a captionless photo.
+
+The import still proceeds — everything scraped is kept and still removable, and the text box is there to paste the caption into — but the wizard now **says** the post's text could not be read instead of leaving the rescuer to infer it from an empty result.
+
+A second, narrower bug was found alongside it. The route's own "restricted post" guard was unreachable:
 
 ```js
 // For regular posts, require at least text or images   ← the stated contract
 const hasAnyContent = postData.text || postData.images.length > 0 || postData.author;
 ```
 
-The `|| author` leniency was meant for video posts, where the caption is often empty and the rescuer supplies screenshots, but it was applied unconditionally. That made the route's own "restricted post" guard unreachable: the request returned **success with an empty post**, so the AI had nothing to extract. The scraper path already used the correct predicate, which is what identified this as drift rather than intent.
+The `|| author` leniency was meant for video posts, where the caption is often empty and the rescuer supplies screenshots, but it was applied unconditionally — so an author-only post returned an empty success and dead-ended silently. Both rules now live in `domain/facebookExtraction.ts` under test.
 
-The rule now lives in `domain/facebookExtraction.ts` under test. Video-ness is read from **either** signal — `og:type` comes from the same HTML that may be withholding everything, and the URL check only knows the shapes we listed — so video imports that pass today keep passing.
+### Fixed — unreadable sources no longer default to a public profile
 
-### Fixed — non-public sources no longer default to a public profile
+A URL import defaults the public-visibility toggle **on**, and its copy tells the rescuer *"los datos vienen de una fuente pública (red social)"*. When Facebook withheld the post, that premise is false — so these imports were defaulting to **unmasked contact PII taken from content we could not confirm was ever public**.
 
-A URL import defaults the public-visibility toggle **on**, and its copy tells the rescuer *"los datos vienen de una fuente pública (red social)"*. For a post Facebook refused to serve, that premise is false, so these imports were defaulting to **unmasked contact PII sourced from non-public content**.
+When the poster is named but no post text comes through, the profile now defaults to **protected** and the toggle explains why. The flag is carried in the wizard's saved draft, because the new message sends the rescuer away to copy the caption and a reload would otherwise have reset the toggle back to public. `isPublic: false` is honoured server-side by skipping the `stampPublic` block (`api/adopters/route.ts`), so entries land non-public.
 
-When the fetch shows Facebook named the poster but withheld the post, the import is now flagged `sourceNotPublic`: the profile defaults to **protected** and the toggle explains why. The rescuer can still override — the signal is "Facebook denied our crawler", which a transient block also produces, so a false positive has to be correctable.
+The rescuer can still override: the signal is "Facebook withheld the caption", which a transient block also produces, so a false positive has to be correctable. The source URL is kept either way — it is the audit trail for where a record came from even when we could not read it.
 
-The source URL is kept either way; it is the audit trail for where a record came from even when we could not read it.
+**Known limitation:** this is wizard-time behaviour only; nothing is persisted on the record. A protected profile that has a `sourceUrl` still shows the "information that was publicly available on social media" provenance notice, and an admin can still flip it public from `/admin/adopters` with no indication the source was unreadable. Distinguishing those needs the flag stored on the adopter row.
 
 ## [2.49.18] - 2026-09-03
 
