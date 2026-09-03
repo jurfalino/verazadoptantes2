@@ -2,6 +2,53 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.20] - 2026-09-03
+
+### Added — discard scraped photos in the import review step
+
+Each scraped photo now has a discard (✕) control, matching the one the manually-uploaded images already had. Clicking a photo still toggles whether it is *used*; discarding removes it from the grid, which is what you want for a duplicate or for one of Facebook's own interface images that got caught in the scrape.
+
+### Fixed — the same photo appearing twice
+
+Two causes:
+
+**The OCR thumbnail was being appended, not substituted.** For video posts the route re-fetches `images[0]` as base64 so OCR has real pixels even when the signed CDN URL cannot be fetched again. The wizard added that to the grid *alongside* the image it came from, so the same photo showed twice. It now replaces the image it was derived from. This fired on more posts than "video" suggests — Facebook types ordinary photo posts `og:type: video.other`.
+
+**De-duplication compared whole URLs.** Facebook serves one photo under many URLs, varying the size params (`stp`, `cstp`), cache hints (`_nc_ohc`, `_nc_gid`) and a per-request signature (`oh`, `oe`), so two links to one photo almost never match as strings. Identity now comes from the CDN filename — `738546332_2216399502449551_..._n.jpg` — and is applied to the Playwright scraper path too, which did no de-duplication at all.
+
+### Fixed — images imported that the rescuer could not see
+
+The grid rendered the first 12 images but selected *all* of them, so anything past the twelfth was imported while being invisible and impossible to deselect. The cap is now applied to the list itself, so what is shown and what is selected cannot diverge.
+
+## [2.49.19] - 2026-09-03
+
+### Fixed — Facebook imports of non-public posts looked like they worked
+
+Importing a Facebook post that is not publicly visible produced a wizard with a photo, the poster's name, and no adopter details — with nothing saying why.
+
+Facebook answers such a post with `og:title` (the poster's profile name) and `og:image` (the link-preview thumbnail) but **no** `og:description`. The caption is where the adopter's details live, and the caption is what gets withheld. Because the thumbnail landed in `images`, the route saw content, reported success, substituted the placeholder `[Poster Name]` for the missing text, and handed the AI a captionless photo.
+
+The import still proceeds — everything scraped is kept and still removable, and the text box is there to paste the caption into — but the wizard now **says** the post's text could not be read instead of leaving the rescuer to infer it from an empty result.
+
+A second, narrower bug was found alongside it. The route's own "restricted post" guard was unreachable:
+
+```js
+// For regular posts, require at least text or images   ← the stated contract
+const hasAnyContent = postData.text || postData.images.length > 0 || postData.author;
+```
+
+The `|| author` leniency was meant for video posts, where the caption is often empty and the rescuer supplies screenshots, but it was applied unconditionally — so an author-only post returned an empty success and dead-ended silently. Both rules now live in `domain/facebookExtraction.ts` under test.
+
+### Fixed — unreadable sources no longer default to a public profile
+
+A URL import defaults the public-visibility toggle **on**, and its copy tells the rescuer *"los datos vienen de una fuente pública (red social)"*. When Facebook withheld the post, that premise is false — so these imports were defaulting to **unmasked contact PII taken from content we could not confirm was ever public**.
+
+When the poster is named but no post text comes through, the profile now defaults to **protected** and the toggle explains why. The flag is carried in the wizard's saved draft, because the new message sends the rescuer away to copy the caption and a reload would otherwise have reset the toggle back to public. `isPublic: false` is honoured server-side by skipping the `stampPublic` block (`api/adopters/route.ts`), so entries land non-public.
+
+The rescuer can still override: the signal is "Facebook withheld the caption", which a transient block also produces, so a false positive has to be correctable. The source URL is kept either way — it is the audit trail for where a record came from even when we could not read it.
+
+**Known limitation:** this is wizard-time behaviour only; nothing is persisted on the record. A protected profile that has a `sourceUrl` still shows the "information that was publicly available on social media" provenance notice, and an admin can still flip it public from `/admin/adopters` with no indication the source was unreadable. Distinguishing those needs the flag stored on the adopter row.
+
 ## [2.49.18] - 2026-09-03
 
 ### Added — export the adopters list to Excel
