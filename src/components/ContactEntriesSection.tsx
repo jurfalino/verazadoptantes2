@@ -644,7 +644,13 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 {branded
                                     ? <SocialLogo platform={branded} size={16} className="mt-0.5 shrink-0" />
                                     : <Icon className="w-4 h-4 mt-0.5 shrink-0 text-teal-600" aria-hidden="true" />}
-                                <span className="w-24 shrink-0 text-stone-500">{branded ? SOCIAL_LABEL[branded] : labelFor(entry)}</span>
+                                {/* The icon already states the type, so this label is a
+                                    second copy of it costing a fixed 96px — the width the
+                                    value (and, while editing, the input) has to give up on
+                                    a phone. Kept from `sm:` up, where it genuinely helps
+                                    scanning a list, and sr-only below so the type is still
+                                    announced: the icon beside it is aria-hidden. */}
+                                <span className="sr-only sm:not-sr-only sm:w-24 sm:shrink-0 text-stone-500">{branded ? SOCIAL_LABEL[branded] : labelFor(entry)}</span>
                                 <div className="flex-1 min-w-0">
                                     {isEditing ? (
                                         <div className="space-y-2">

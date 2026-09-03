@@ -689,6 +689,7 @@ export const en = {
         preview_simulate_title: 'Preview',
         preview_verify_explainer: 'If a visitor did this and guessed correctly, only that field would be revealed to them. You\'re in preview, so no action was performed.',
         preview_request_explainer: 'If a visitor did this, you\'d receive a notification to approve or deny their access request. You\'re in preview, so no request was sent.',
+        ce_type_label: 'Contact type',
         ce_type_phone: 'Phone',
         ce_type_email: 'Email',
         ce_type_social: 'Social',

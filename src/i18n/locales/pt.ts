@@ -696,6 +696,7 @@ export const pt = {
         preview_simulate_title: 'Pré-visualização',
         preview_verify_explainer: 'Se um visitante fizesse isso e acertasse, apenas esse dado seria mostrado a ele. Como você está na pré-visualização, nenhuma ação foi executada.',
         preview_request_explainer: 'Se um visitante fizesse isso, você receberia uma notificação para aprovar ou negar o pedido de acesso dele. Como você está na pré-visualização, nenhuma solicitação foi enviada.',
+        ce_type_label: 'Tipo de contato',
         ce_type_phone: 'Telefone',
         ce_type_email: 'Email',
         ce_type_social: 'Rede social',

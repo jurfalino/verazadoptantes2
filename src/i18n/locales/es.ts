@@ -696,6 +696,7 @@ export const es = {
         preview_simulate_title: 'Vista previa',
         preview_verify_explainer: 'Si un visitante hiciera esto y adivinara correctamente, solo se le mostraría ese dato. Como estás en vista previa, no se ejecutó ninguna acción.',
         preview_request_explainer: 'Si un visitante hiciera esto, te llegaría una notificación para aprobar o denegar su pedido de acceso. Como estás en vista previa, no se envió ninguna solicitud.',
+        ce_type_label: 'Tipo de contacto',
         ce_type_phone: 'Teléfono',
         ce_type_email: 'Email',
         ce_type_social: 'Red social',

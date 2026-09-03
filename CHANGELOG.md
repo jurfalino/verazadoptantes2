@@ -2,6 +2,35 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.50.0] - 2026-09-03
+
+### Changed — contact detail rows fit on a phone
+
+The value input in the import wizard's contact rows was around 50px wide on a 360px screen. The cause was not general crowding:
+
+```js
+// the type control, before
+className="shrink-0 ..."   // never yields width
+<option>Otro nombre/identidad</option>   // 21 chars — and a native <select>
+                                         // is sized by its LONGEST option
+```
+
+Every row reserved the width of *"Otro nombre/identidad"* even when it read "Email", and because the select was `shrink-0`, the value input — `flex-1 min-w-0` — absorbed the entire shortfall. The control describing the data had roughly three times the room of the data.
+
+**The type is now the icon.** An icon button opens a type picker, replacing both the select and the separate icon that sat beside it saying the same thing. This is the idiom the component already used twice: `SocialPlatformPicker` picks a network and `PhoneAppsToggle` picks WhatsApp/Telegram, both as unlabelled icon buttons. The input goes to roughly 230px at 360px wide.
+
+**Rows classify themselves.** Typing an unambiguous phone, email, social profile or document sets the row's type, via the existing `categorizeContactText`. Detection declines anything the classifier only reaches by falling back to `address`/`other`, so typing a name never reclassifies a row, and it never overrides a type the user picked by hand.
+
+**Address and social wrap to their own line on mobile**, inline from `sm:` up — they render sub-fields inside the value column, so they suffered most. Single DOM moved by CSS order, not a duplicated control, so breakpoint-hidden copies can't break `.first()` selectors.
+
+**The remove control is 44px**, up from 24px — a destructive action sitting beside a text input was the easiest thing to hit by accident.
+
+### Changed — the adopter screen's label column is mobile-only
+
+The same redundancy in a milder form: the profile's contact rows pair the type icon with a fixed 96px text label saying the same thing, narrowing the value and, while editing, the input. The label is kept from `sm:` up where it helps scanning a list, and is `sr-only` below — the icon is `aria-hidden`, so the type still has to be announced.
+
+The adopter screen's *composer* is unchanged. It picks a type with labelled pills in a dedicated full-width stage, which has neither the select's sizing problem nor a cramped row.
+
 ## [2.49.20] - 2026-09-03
 
 ### Added — discard scraped photos in the import review step

@@ -410,6 +410,29 @@ export function categorizeContactText(text: string | null | undefined): ContactE
     return dedupe(entries);
 }
 
+/**
+ * Classify a single field's value, for rows that type themselves as you write.
+ *
+ * Returns a type ONLY when the value is unambiguously identifiable — a phone,
+ * an email, a social handle or a document number. `categorizeContactText` falls
+ * back to `address`/`other` for anything it does not recognise, which is right
+ * for a paste (nothing should be dropped) but wrong here: it would reclassify a
+ * row the moment someone typed the first letter of a name. Null means "leave
+ * whatever type the row already has".
+ *
+ * Multi-token input is also declined. "11 3318-6767 ana@mail.com" is two
+ * entries, not one row's type, and guessing which one wins would be arbitrary.
+ */
+export function detectEntryType(value: string | null | undefined): ContactEntryType | null {
+    if (!value || !value.trim()) return null;
+    const parsed = categorizeContactText(value);
+    if (parsed.length !== 1) return null;
+    const type = parsed[0].type;
+    return type === 'phone' || type === 'email' || type === 'social' || type === 'id'
+        ? type
+        : null;
+}
+
 /** Best-effort parse of a legacy contactInfo blob into typed entries. */
 export function parseBlobToContactEntries(blob: string | null | undefined): ContactEntry[] {
     return categorizeContactText(blob);
