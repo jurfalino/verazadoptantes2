@@ -2,6 +2,29 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.49.18] - 2026-09-03
+
+### Added — export the adopters list to Excel
+
+Admin → Adoptantes now has **Exportar todo (.xlsx)**: every non-deleted adopter with their contact details, one row each, contact types broken into their own columns (Teléfonos, Emails, Redes sociales, Direcciones, Documento, Otros nombres) plus país, quién lo agregó, origen and dates. Socials keep their network (`instagram: juanp`), since a bare handle is ambiguous across platforms and platform+handle is what dedup matches on.
+
+**Admin-only and unmasked**, gated on `isAdminAsync` exactly like `/api/admin/export`. This is a bulk extraction of third-party PII that leaves the system and cannot be recalled; moderators cannot reach it.
+
+**Real `.xlsx`, not CSV.** Excel mangles CSV phone numbers into scientific notation and strips leading zeros — and phones are a primary duplicate-matching key, so a corrupted export would be worse than none. Every cell is written as an inline string, so Excel never reinterprets a value.
+
+`lib/xlsx.ts` is a ~200-line writer rather than a dependency:
+
+- **CPU.** A Worker gets 10ms on the Free plan, and DEFLATE is the expensive part of writing a zip. Entries are written with the STORE method — valid zip, accepted by Excel, LibreOffice and Numbers, and essentially free to produce. The trade is a larger file.
+- **Runtime.** exceljs needs Node streams and does not run on edge; SheetJS is ~500KB for one sheet of strings.
+
+Cost is **one query with no per-adopter fan-out** — contact entries live as JSON on the adopter row.
+
+Verified end to end against a copy of the production dataset: 403 for an unauthenticated request, then 1,224 adopters exported as 857KB in ~100ms, parsed back with a real xlsx reader. Leading zeros (`01133186767`, `0000123456`) survive, accents survive, XML-significant characters are escaped. One row carries a U+FFFD — confirmed already present in the stored data, faithfully reproduced rather than silently altered.
+
+Covered by 11 tests pinning the parts Excel refuses a file over: required package parts, inline-string typing, escaping, control-character stripping, column references past Z, sheet-name sanitisation and length limits.
+
+**Not filter-aware.** The button exports the full list regardless of the active search or filters, and says so. Making it honour the current view is a follow-up.
+
 ## [2.49.17] - 2026-09-03
 
 ### Fixed — the confidence badge appeared on text-only imports, where it grades nothing
