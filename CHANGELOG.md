@@ -2,6 +2,48 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.54.0] - 2026-09-04
+
+### Changed — import wizard audited against the design docs and brought back into line
+
+Full findings in `.agents/audits/2026-09-04-import-wizard-ui-audit.md`. The drift had a
+single root cause: changes were being reasoned from general UI principles instead of from
+`docs/ux-ui-guidelines.md`, which already answers most of them — including two of these as
+anti-patterns the project had explicitly walked back and this surface had reintroduced.
+
+**Emoji as functional icons** (§5 row 8, removed project-wide in v36 — emoji render per-OS
+and cannot inherit `currentColor`, so they can never follow the theme). 17 functional uses
+replaced with stroke SVG in a new `ui/Glyph.tsx`: status warnings, close controls, selection
+checks, seven loading spinners, and the attach/upload/video/AI/save affordances. Several
+lived inside the i18n strings themselves, so the copy was corrected in all three locales.
+
+The species picker (🐕/🐱/🐦) and record-type chips (🏠/📝/📞/👁️/🐾) are untouched — §1.3
+permits emoji as decorative subject markers beside a text label, and that is what they are.
+
+**`bg-blue-*` as a primary surface** (§5 row 6, fixed in `DisclaimerToast` at v32). Verified
+against `globals.css`: `bg-blue-500/600/700`, `border-blue-400/500`, `ring-blue-400` and
+`text-blue-500` are **not** in the `[data-theme]` remap, so those surfaces rendered raw in
+Azul Noche. All moved to themed teal. The blues that *are* remapped (`bg-blue-50/100`,
+`border-blue-200`, `text-blue-600/700`) stay as the info palette. An off-palette
+`bg-green-600` submit button went with them.
+
+**Inputs auto-zoomed on iOS** (§1.5, §2.3). Every full-width text control was 14px against
+the documented 16px minimum, so iOS Safari zoomed on focus. `SearchSection` carries a comment
+about having been bitten by exactly this; the wizard never got the fix. All now 16px, and the
+stray `focus:ring-green-500` uses the app's teal focus treatment.
+
+**Tap targets** (§1.5). Five step CTAs computed to ~40px against the 44px floor.
+
+**The button matrix now exists as code.** `ui/Button.tsx` implements §2.1 — two sizes, four
+variants, five states, a 44px floor and themed utilities only. The matrix had been a table
+nothing enforced, which is why the wizard had accumulated **eight distinct padding pairs**
+across ~22 buttons while using neither of the two sizes the matrix defines. The step CTAs
+now share one constant; migrating the remaining inline buttons is tracked in the audit.
+
+**Not fixed, recorded instead:** the type scale says section labels are 16px/700 while
+`AdopterForm` — the consistency reference — uses 14px/600. Conforming to the guide and
+matching the code currently disagree, and which one moves is a product decision.
+
 ## [2.53.4] - 2026-09-04
 
 ### Fixed — the import wizard's review step now has one heading style, not two
