@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.51.4] - 2026-09-03
+
+### Fixed — the floating alta ignored the site's surface conventions
+
+It was a square, full-bleed strip. The element that sets the convention for a pinned surface in this section is the search card six lines above it: that card keeps the content column and tightens its **exposed** edge to `xl` when stuck (`rounded-b-xl` at the top). A pinned footer is the mirror, so the bar now takes `rounded-t-xl`, drops the `-mx-4` full-bleed, and carries the card's `border border-stone-200` with `border-b-0` since its bottom edge is flush with the viewport.
+
+The bar had been modelled on `FormResultsContent`'s mobile action bar, which is `fixed bottom-0 left-0 right-0` — correctly square because it spans the screen edge to edge. That is a different context: this one is `sticky` inside the content column, where the column's own conventions apply.
+
 ## [2.51.3] - 2026-09-03
 
 ### Fixed — the first result landed behind the sticky header after searching
