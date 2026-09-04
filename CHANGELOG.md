@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.53.4] - 2026-09-04
+
+### Fixed — the import wizard's review step now has one heading style, not two
+
+v2.53.3 changed only the contact heading to match the profile, leaving the name and observation blocks as small grey labels. The result was worse than either consistent option: a teal uppercase heading sitting between two faint grey ones. The reasoning behind it — that a `<label>` labels an input while a heading titles a section — is true in general and irrelevant here, because these three are peer blocks in one step and the eye reads them as a set.
+
+All three now use `AdopterForm`'s section heading, which is the house pattern for a titled block in these forms (`Contacto` and `Familiares` already use it). The name heading also takes the profile's own `adopter.name` string.
+
+**Accessibility improved rather than lost.** The old `<label>` elements carried no `htmlFor` and did not wrap their inputs, so they associated nothing — they were styled text. The inputs now reference their headings with `aria-labelledby`, which does the job the markup was only pretending to do.
+
+**Off-brand focus rings.** The step's inputs used `focus:ring-blue-500 focus:border-blue-500` on a teal-accented product. Neither appears in the `[data-theme]` remap in `globals.css`, so they also rendered raw in dark mode. All four now use the same teal focus treatment as the rest of the app.
+
 ## [2.53.3] - 2026-09-04
 
 ### Fixed — three consistency slips in the wizard's contact step

@@ -1240,7 +1240,7 @@ export default function ImportWizard() {
                             value={inputContent}
                             onChange={e => setInputContent(e.target.value)}
                             placeholder={t('import.smartPlaceholder') || 'Paste a URL, Instagram post, WhatsApp message, or any text with adopter info...'}
-                            className="w-full px-4 py-3 border border-stone-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm min-h-[120px] resize-y"
+                            className="w-full px-4 py-3 border border-stone-300 rounded-xl outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100 text-sm min-h-[120px] resize-y"
                             autoFocus
                         />
                         <p className="text-xs text-stone-500 mt-1">
@@ -1372,7 +1372,7 @@ export default function ImportWizard() {
                         <textarea
                             value={editableText}
                             onChange={e => setEditableText(e.target.value)}
-                            className="w-full px-4 py-3 border border-stone-300 rounded-xl text-sm min-h-[150px] resize-y focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-4 py-3 border border-stone-300 rounded-xl text-sm min-h-[150px] resize-y outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
                         />
                     </div>
 
@@ -1635,11 +1635,12 @@ export default function ImportWizard() {
 
                     {/* Name */}
                     <div>
-                        <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.name') || 'Name'}</label>
+                        <h3 id="import-name-heading" className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.name')}</h3>
                         <input
+                            aria-labelledby="import-name-heading"
                             value={extractedData.name || ''}
                             onChange={e => setExtractedData({ ...extractedData, name: e.target.value })}
-                            className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
                         />
                     </div>
 
@@ -1678,11 +1679,12 @@ export default function ImportWizard() {
                         prompted VisitIntentCard on the destination profile (v2.19.18). */}
                     {!fromContacts && (
                         <div>
-                            <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.initial_observation') || 'Initial observation'}</label>
+                            <h3 id="import-observation-heading" className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('import.initial_observation')}</h3>
                             <textarea
+                                aria-labelledby="import-observation-heading"
                                 value={extractedData.notes || ''}
                                 onChange={e => setExtractedData({ ...extractedData, notes: e.target.value })}
-                                className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm min-h-[80px] resize-y focus:ring-2 focus:ring-blue-500"
+                                className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm min-h-[80px] resize-y outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
                                 placeholder={t('import.initial_observation_placeholder') || 'Saved as an observation record on the new profile.'}
                             />
                         </div>
