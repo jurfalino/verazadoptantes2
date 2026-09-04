@@ -2,6 +2,56 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.54.1] - 2026-09-04
+
+### Fixed — extracted contact details could not be edited or deleted
+
+v2.53.0 moved the import wizard onto `ContactEntriesSection`, the profile's contact
+component. That component gates every per-entry mutation on `entry.id`: the edit and delete
+buttons render only when one is set, and `startEdit`/`saveEdit`/`remove` all bail early
+without it. But the extraction producers never assigned ids — `buildContactEntries` and
+`categorizeContactText` pushed bare `{ type, value }`. The old `ContactEntriesInput` had
+been keyed by array index, so it never needed them.
+
+The result was a clean split by origin: details typed into the composer got a
+`crypto.randomUUID()` and stayed editable, while every detail the AI extracted rendered
+permanently read-only. It reached `parseBlobToContactEntries` too, so `AdopterForm`'s
+legacy-blob path had the same hole.
+
+Both producers now stamp a stable id via the existing `deriveStableLegacyId` — deterministic
+rather than random, so client and server derive the same id for the same entry.
+
+Also fixed a latent id collision the above would have made reachable: `dedupe` keys social
+entries on `type|value|platform`, so one handle on two networks is a legitimate pair, but the
+id derivation used only `type|value`. Both entries got the SAME id — and since edit is
+`map(e => e.id === entry.id ? … )` and delete is `filter(e => e.id !== entryId)`, editing one
+would have silently rewritten both. Platform now participates in the derivation for socials;
+non-social types and platform-less socials keep their previous ids.
+
+### Changed — correcting a mis-detected type now happens in one pass
+
+Re-filing a detail under the right type used to commit the change straight to the parent and
+then close the edit form, dropping the rescuer outside the only place the new type's fields
+live. A row corrected to `phone` could not reach its WhatsApp/Telegram toggles; one corrected
+to `social` could not reach its network picker — and for socials that picker's absence then
+disabled Save, so the correction could not be completed at all. Six clicks, ending in a dead
+end.
+
+The type is now part of the edit draft: picking one re-shapes the form in place and commits
+only on Guardar, with Cancelar reverting it like any other field. The control is
+`ContactTypePicker` — restored from before v2.53.0, where its own docstring records why it
+replaced a `<select>` (a native select is sized by its longest option, which on a 360px screen
+left the value input around 50px). Using the row's existing type icon as the control means
+correcting a type costs no vertical space, so Guardar stays on screen on a phone; the static
+icon and label stand down while it is open so two indicators never disagree. It matches the
+idiom the component already uses in `SocialPlatformPicker` and `PhoneAppsToggle`, and offers
+the same six types the add composer does.
+
+Four clicks now, all inside one form. The draft transition moved to `lib/contactEntries` as
+the pure `retypeDraft()` so the field-carry rules are unit-tested: `value` always survives,
+type-specific fields are dropped on the way across, and platform detection re-runs so
+retyping a profile URL to `social` lands on its network automatically.
+
 ## [2.54.0] - 2026-09-04
 
 ### Changed — import wizard audited against the design docs and brought back into line

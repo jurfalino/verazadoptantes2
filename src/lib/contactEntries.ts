@@ -254,9 +254,20 @@ export function normalizeEntryValue(type: ContactEntryType, value: string): stri
  * hyphen grouping). Once any per-entry mutation writes the row back, the
  * persisted JSON carries this id and the deterministic path stops firing
  * for that entry.
+ *
+ * `platform` participates for social entries only, mirroring what `dedupe`
+ * keys on. The same handle on two networks is a legitimate pair of entries
+ * (Gemini routinely extracts one for both Instagram and Facebook), and they
+ * must not collide: `ContactEntriesSection` edits with
+ * `entries.map(e => e.id === entry.id ? … )` and deletes with
+ * `filter(e => e.id !== entryId)`, so a shared id would silently rewrite or
+ * remove both. Non-social types and platform-less socials keep their previous
+ * derivation, so existing ids are unchanged.
  */
-export function deriveStableLegacyId(type: ContactEntryType, value: string): string {
-    const key = `${type}|${normalizeEntryValue(type, value)}`;
+export function deriveStableLegacyId(type: ContactEntryType, value: string, platform?: SocialPlatform): string {
+    const key = type === 'social' && platform
+        ? `${type}|${normalizeEntryValue(type, value)}|${platform}`
+        : `${type}|${normalizeEntryValue(type, value)}`;
     let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
     for (let i = 0; i < key.length; i++) {
         const ch = key.charCodeAt(i);
@@ -268,6 +279,28 @@ export function deriveStableLegacyId(type: ContactEntryType, value: string): str
     const a = (h1 >>> 0).toString(16).padStart(8, '0');
     const b = (h2 >>> 0).toString(16).padStart(8, '0');
     return `legacy-${a}-${b}`;
+}
+
+/**
+ * Stamp a stable id on an entry that lacks one, preserving any real id it
+ * already carries.
+ *
+ * `ContactEntriesSection` gates per-entry edit/delete on `entry.id` — it renders
+ * the action buttons only when one is set, and both startEdit and remove bail
+ * early without it. So EVERY producer of entries has to emit ids, not just the
+ * composer (`crypto.randomUUID()`) and `deserializeContactEntries`. When the
+ * import wizard moved onto that shared component in v2.53.0, the extraction
+ * producers here still emitted id-less entries, which made every extracted
+ * contact detail read-only: it could not be corrected or deleted.
+ *
+ * Uses the same deterministic derivation as `deserializeContactEntries` rather
+ * than a random UUID, so client and server independently agree on the id for the
+ * same entry — see `deriveStableLegacyId` for why that matters.
+ */
+function withStableId(e: ContactEntry): ContactEntry {
+    return typeof e.id === 'string' && e.id.trim()
+        ? e
+        : { ...e, id: deriveStableLegacyId(e.type, e.value, e.platform) };
 }
 
 /**
@@ -407,7 +440,7 @@ export function categorizeContactText(text: string | null | undefined): ContactE
         }
     }
 
-    return dedupe(entries);
+    return dedupe(entries).map(withStableId);
 }
 
 /** Best-effort parse of a legacy contactInfo blob into typed entries. */
@@ -476,7 +509,7 @@ export function buildContactEntries(parts: ContactParts): ContactEntry[] {
         entries.push({ type: 'social', value: val.trim(), ...(platform ? { platform } : {}) });
     }
     for (const a of parts.addresses ?? []) if (a?.trim()) entries.push({ type: 'address', value: a.trim() });
-    return dedupe(entries);
+    return dedupe(entries).map(withStableId);
 }
 
 /** Upper bounds applied when reading stored/untrusted entry JSON. */
@@ -506,20 +539,25 @@ export function deserializeContactEntries(json: string | null | undefined): Cont
             .filter((e): e is ContactEntry =>
                 e && typeof e.value === 'string' && valid.includes(e.type) && e.value.trim().length > 0)
             .slice(0, MAX_ENTRIES)
-            .map(e => ({
+            .map(e => {
+            const social = readSocialPlatform(e);
+            return {
                 // Legacy entries (pre-2.16) had no `id`; assign one on read. Use a
                 // deterministic hash of type+normalizedValue so client and server
                 // independently derive the SAME id for the same entry — without
                 // this, every deserialize would produce different UUIDs and the
                 // per-entry update/remove round-trip would fail with
                 // "Entry not found" (see v2.16.0-13). Real-id entries keep theirs.
+                // Platform is folded in for socials so the same handle on two
+                // networks gets two ids — must match `withStableId` exactly, or
+                // the two sides disagree on the id for the same entry.
                 id: typeof e.id === 'string' && e.id.trim()
                     ? e.id
-                    : deriveStableLegacyId(e.type, e.value),
+                    : deriveStableLegacyId(e.type, e.value, social.platform),
                 type: e.type,
                 value: e.value.slice(0, MAX_VALUE_LEN[e.type]),
                 ...(e.label ? { label: String(e.label).slice(0, MAX_LABEL_LEN) } : {}),
-                ...readSocialPlatform(e),
+                ...social,
                 ...readPhoneApps(e),
                 ...(e.masked === true ? { masked: true } : {}),
                 // Per-entry contributor attribution (v2.16.0-9+). Length-capped
@@ -541,7 +579,8 @@ export function deserializeContactEntries(json: string | null | undefined): Cont
                 ...(e.type === 'address' && typeof e.raw === 'string' && e.raw.trim()
                     ? { raw: e.raw.slice(0, MAX_VALUE_LEN.address) }
                     : {}),
-            }));
+            };
+        });
     } catch {
         return [];
     }
@@ -550,4 +589,48 @@ export function deserializeContactEntries(json: string | null | undefined): Cont
 /** Merge two entry lists, de-duplicating on normalized value. */
 export function mergeContactEntries(a: ContactEntry[], b: ContactEntry[]): ContactEntry[] {
     return dedupe([...a, ...b]);
+}
+
+/**
+ * The shape the contact edit form holds while a row is open. `type` is
+ * provisional — the form re-shapes around it so the new type's fields can be
+ * filled in before anything is committed.
+ */
+export interface ContactDraft {
+    type: ContactEntryType;
+    value: string;
+    streetAndNumber: string;
+    locality: string;
+    platform?: SocialPlatform | null;
+    apps?: MessagingApp[];
+}
+
+/**
+ * Move an open draft to a different type, keeping the value.
+ *
+ * Correcting a mis-extracted type is the import wizard's whole job, and the
+ * rescuer must be able to finish the correction in one pass: re-filing a row as
+ * a phone has to leave the WhatsApp/Telegram toggles reachable, and as a social
+ * it has to leave the network pickable. Keeping this a pure draft-to-draft
+ * transition is what lets the form stay open across the change.
+ *
+ * Fields that mean nothing under the new type are dropped rather than carried —
+ * a phone's messaging apps once it becomes a document, a structured address's
+ * parts once it becomes a note. `value` always survives; the rescuer is
+ * correcting the LABEL the AI guessed, not retyping the data.
+ *
+ * Platform detection re-runs against the value on the way in, so retyping a
+ * mis-read profile URL to `social` lands on its network immediately instead of
+ * making the rescuer pick one by hand.
+ */
+export function retypeDraft(draft: ContactDraft, next: ContactEntryType): ContactDraft {
+    if (draft.type === next) return draft;
+    return {
+        ...draft,
+        type: next,
+        streetAndNumber: next === 'address' ? draft.streetAndNumber : '',
+        locality: next === 'address' ? draft.locality : '',
+        platform: next === 'social' ? (detectSocialPlatform(draft.value) ?? null) : null,
+        apps: next === 'phone' ? (draft.apps ?? []) : [],
+    };
 }
