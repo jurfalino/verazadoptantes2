@@ -2,15 +2,25 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.53.2] - 2026-09-04
+
+### Fixed — the real reason production deploys were being skipped
+
+The E2E job had `timeout-minutes: 15` while the suite takes 10–15 minutes, so it intermittently ran over. A GitHub job timeout surfaces as `##[error]The operation was canceled` and a conclusion of **cancelled** — not *failed* — which reads exactly like a concurrency cancellation and nothing like a test failure. Both deploy jobs list `e2e` in `needs`, so the deploy was skipped and production stayed on the previous version after a green merge.
+
+Measured: 15m15s (timed out) against 11m25s and 10m05s on the runs either side. Raised to 30 minutes.
+
+**Correcting v2.53.1:** that release attributed these skipped deploys to the deploy jobs' concurrency groups cancelling sibling runs across branches. The timestamps disprove it — production's E2E was cancelled at 02:24:37 while the staging run supposedly responsible was not created until 02:24:55, eighteen seconds later. It was a timeout, roughly fifteen minutes after that E2E began.
+
+The concurrency change in 2.53.1 still stands on its own merits — a workflow-level group keyed to `github.ref` is the conventional shape and stops redundant parallel runs on a branch — but it did not fix this, and the changelog should not have said it did.
+
 ## [2.53.1] - 2026-09-03
 
-### Fixed — CI could silently skip a production deploy
+### Changed — CI concurrency moved to the workflow level
 
-The two deploy jobs carried `concurrency: deploy-staging | deploy-production` with `cancel-in-progress: true`, and there was no workflow-level group. Every run contains **both** deploy jobs — one disabled by an `if`, but still a member of its group — so a newer run entering `deploy-staging` cancelled an in-flight sibling run on the **other** branch, wholesale rather than just its deploy.
+The deploy jobs each carried their own `concurrency` group with `cancel-in-progress: true`, and there was no workflow-level group. Concurrency now sits at the workflow level keyed to `github.ref`, so a newer push supersedes an older run on the same branch and cannot reach across to the other one. `cancel-in-progress` is deliberately **false on master**: a newer staging push should replace an older one, but a production deploy already under way should finish rather than be interrupted part-way through `wrangler pages deploy`.
 
-On 2026-09-03 a push to staging cancelled the production run for PR #76 at its E2E step. `Deploy to Production` was skipped and prod stayed on the previous version after a green merge. Nothing failed — the merge succeeded, every code gate passed, the deploy simply never ran. That is the dangerous shape of this bug: it is invisible unless you check the deploy job's conclusion rather than the merge.
-
-Concurrency now sits at the workflow level, keyed to `github.ref`, so superseding is confined to one branch. `cancel-in-progress` is deliberately **false on master**: a newer staging push should replace an older one, but a production deploy already under way should finish rather than be interrupted part-way through `wrangler pages deploy`.
+This was originally written up as the fix for production deploys being skipped. It was not — see 2.53.2.
 
 ## [2.53.0] - 2026-09-03
 
