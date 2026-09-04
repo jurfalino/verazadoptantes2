@@ -36,6 +36,7 @@ import { AdopterFlagging } from '@/components/AdopterFlagging';
 import type { AdopterFlaggingHandle } from '@/components/AdopterFlagging';
 import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, AdoptionConfig } from '@/types/adopter';
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
+import { parseContactsParam } from '@/lib/createPrefill';
 
 interface AdopterFormProps {
     initialData?: Adopter | null;
@@ -341,6 +342,10 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     // (the form's source of truth for entries is `contactEntries`, and the
     // contactInfo blob is regenerated from it on every state update).
     const phoneFromUrl = searchParams.get('phone')?.trim() || '';
+    // v2.50.1: the search query is classified before it reaches here, so an
+    // address or an email arrives as a typed chip instead of being written into
+    // the name. `phone=` is still read above so older links keep working.
+    const contactsFromUrl = parseContactsParam(searchParams.get('contacts'));
     const [data, setData] = useState({
         id: initialData?.id || '',
         name: initialData?.name || formPrefill?.name || nameFromUrl || '',
@@ -365,6 +370,9 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         if (initialData?.contactEntries) return deserializeContactEntries(initialData.contactEntries);
         const blob = initialData?.contactInfo || formPrefill?.contactInfo || '';
         if (blob) return parseBlobToContactEntries(blob);
+        if (isNew && contactsFromUrl.length) {
+            return contactsFromUrl.map(c => ({ id: crypto.randomUUID(), ...c }));
+        }
         if (isNew && phoneFromUrl) {
             return [{ id: crypto.randomUUID(), type: 'phone', value: phoneFromUrl }];
         }

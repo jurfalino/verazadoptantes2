@@ -2,6 +2,142 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.52.0] - 2026-09-03
+
+### Fixed — searching one name returned a different name as an equal match
+
+Searching `maria` put **Mariano Gil** among the top results alongside **María González**, and surfaced records whose only connection was a street called Mariano. Three separate causes:
+
+**The name score was a binary substring test.** Both names merely *contain* "maria", so both took the `nameNorm.includes(qNorm)` branch and scored a flat 50. The sort compares only the relevance percentage, so the tie fell to incidental bonuses — a Mariano with a profile photo outranked a María without one.
+
+Name matching for single-word queries is now graded by *how* it matches (`lib/searchRanking.ts`): the whole name (100), the query as a whole word of the name (85), a word within the query's edit-distance budget (70), a word merely starting with the query (22), a mid-word substring (12). María scores 85 against Mariano's 22 — a margin the bonuses cannot close.
+
+The ordering of those bands is load-bearing: typo tolerance is checked **before** prefix containment, so `jonatan` still finds *Jonathan Daniel Fernández*. `nameTokenMatches` could not be reused for this, because it opens with `text.includes(token)` and so says yes to Mariano too — it is the right tool for recall and the wrong one for precision.
+
+**Relevance bucketing never ran for one-word searches.** It was gated on `isMultiToken`, so a single-word query skipped it entirely and everything clearing the anchor gate landed in the main list however weakly it scored. The floor now applies to every query, and a one-word *name* search answered only through an address or a note drops to the second tier. Identifier searches (phone, document, email) are unaffected — a contact-field match is the answer there.
+
+Nothing is lost by this: demoted results appear under **Ampliar la búsqueda**, one tap away with a count.
+
+### Fixed — the widened tier looked like it matched nothing
+
+Those results are, by construction, the ones that do *not* contain the query literally — the fuzzy tier excludes everything already shown above — so the highlighter had nothing to mark and the cards read as unrelated records. They now carry a *"parecido a «María»"* chip saying why they are there.
+
+### Added — a ranking fixture
+
+Nothing tested ordering or bucketing before this: `WEIGHTS` could be changed and no test would notice. `lib/searchRanking.test.ts` pins the two behaviours argued over in review — a different name must not tie a real one, and a typo'd name must still win — plus the bucketing rules, including that an identifier search is never demoted for lacking a name signal.
+
+## [2.51.4] - 2026-09-03
+
+### Fixed — the floating alta ignored the site's surface conventions
+
+It was a square, full-bleed strip. The element that sets the convention for a pinned surface in this section is the search card six lines above it: that card keeps the content column and tightens its **exposed** edge to `xl` when stuck (`rounded-b-xl` at the top). A pinned footer is the mirror, so the bar now takes `rounded-t-xl`, drops the `-mx-4` full-bleed, and carries the card's `border border-stone-200` with `border-b-0` since its bottom edge is flush with the viewport.
+
+The bar had been modelled on `FormResultsContent`'s mobile action bar, which is `fixed bottom-0 left-0 right-0` — correctly square because it spans the screen edge to edge. That is a different context: this one is `sticky` inside the content column, where the column's own conventions apply.
+
+## [2.51.3] - 2026-09-03
+
+### Fixed — the first result landed behind the sticky header after searching
+
+Searching auto-scrolls to the results on mobile. It used `scrollIntoView({ block: 'start' })`, which aligns the list with the top of the **viewport** — but the global nav is pinned there, and on mobile so is the search card, so the first card arrived underneath them. The `scroll-mt-4` on the results container was 16px against roughly 190px of chrome.
+
+The scroll now measures what is actually pinned and offsets by it. Each candidate is *asked* rather than assumed: the nav's height is set by `NavBar` rather than a class, and the search card is sticky on mobile but `md:static` from the medium breakpoint up, so the same code is correct at both breakpoints without a hardcoded number per breakpoint. `prefers-reduced-motion` switches the scroll to instant.
+
+This was pre-existing, but v2.51.0 made it worse: the consolidated count added a line to the sticky card, and every pixel of that card was another pixel of the first result hidden.
+
+## [2.51.2] - 2026-09-03
+
+### Fixed — the floating alta ignored the selected theme
+
+The sticky bar shipped in 2.51.0 used `bg-white/95`. `globals.css` remaps `.bg-white` to `var(--surface-card)` and remaps the `/20`, `/80` and `/90` opacity variants — but **not** `/95`, so the bar rendered raw white on the dark ground instead of following the theme.
+
+It now uses opaque `bg-white`, matching the sticky footer in `ApplicantDetailPanel`, and drops the `backdrop-blur` that only existed to justify the transparency. The upward shadow reuses the value already in `FormResultsContent` rather than introducing a second one.
+
+Every colour utility in `SearchSection` was then audited against the remap. The three that remain unmapped — `ring-teal-100`, `ring-teal-300` and `text-white` on the teal buttons — all predate this work and are the established pattern for those controls.
+
+**Note for the next person:** an opacity variant is a *different class* to the theme layer. `bg-white` being remapped says nothing about `bg-white/95`. The same latent bug exists at `FormResultsContent.tsx:390`.
+
+## [2.51.1] - 2026-09-03
+
+### Fixed — editing the search box re-highlighted the results already on screen
+
+The result cards highlighted matched tokens using `query`, which is the **live input state** — so typing a new term after a search re-highlighted the old cards on every keystroke, marking up whatever was now in the box against results it had nothing to do with.
+
+The highlight was the visible symptom; the same mistake had a quieter and worse instance. Each result's link carried `?q=` built from the same live value, and that parameter exists so a post-signin replay can re-run the match-and-grant logic for the now-authenticated viewer. Edit the box, click a result, and the replay would run **a search that never produced that match** — so the unmasked reveal seen on the card could vanish on the profile.
+
+Results now carry the query that produced them (`submittedQuery`), recorded when a search actually runs. It drives the highlighting, the replay parameter, the "no encontramos a nadie con X" message, the result-count subtitle, the weak-match disclosure and its remount key, and the create label and prefill — so everything describing the results agrees with what is on screen. The live `query` still drives the input itself: the clear button, the empty-state hint and the search submission.
+
+The guided walkthrough records its injected query the same way, so its fake cards highlight correctly and the rescuer's own search is restored intact on exit.
+
+## [2.51.0] - 2026-09-03
+
+### Changed — reaching “create new” when a search returns many results
+
+Results cap at 50 and render uncapped in page flow, so the closing panel could sit several screens down. Burying it was half-deliberate — on a duplicate-prevention tool that panel is a *conclusion*, and inviting creation early raises the duplicate rate — so the goal was to shorten the distance to the decision without shortening the consideration.
+
+**One count, in the sticky search card.** Above the cap the page used to show the blue *“Demasiados resultados (137)… refina tu búsqueda”* banner **and** the amber *“Agregá un apellido…”* nudge simultaneously — the same instruction twice, in two colours — while the header underneath read *“50 resultados encontrados”*, contradicting both. Both banners are gone. The search card now carries `137 coincidencias · mostrando 50` with the refine hint under it. No second input: the field it sits beneath is the refine control.
+
+**The closing block states the expectation.** *“Crear Nuevo Registro”* named a database operation and assumed the rescuer already knew that adding the person was expected. Nothing said so. It now leads with **¿Ninguna coincide?**, gives the reason — the next rescuer finds her because you added her — and carries the counterweight out loud: *duplicarla parte su historial*. This is parity with the zero-result state, which has always said *“Sé el primero en registrarlo”*.
+
+**One label, and it names the person.** The button reads `Agregar a María González` when the create form will genuinely be prefilled with a name, and `Agregar adoptante` otherwise — driven by the same `buildCreatePrefill` classifier that decides the prefill, so the label can never promise what the form will not do. A phone or an address query gets the generic wording instead of `Agregar a "Av. Rivadavia 4820"`.
+
+**A floating alta while the list is being read**, which slides out as the closing block arrives, so the same action is never on screen twice. It is the last child of the search section, so even if its observer never ran it could not reach the *Adopción / Reporte / Importar* cards below — those are competing create paths. The quiet duplicate that sat in the results header is gone: the alta now has exactly one home per scroll position.
+
+**Desktop condenses the search card on scroll.** The button moves from below the field to beside it, keeping its label, taking the sticky card from ~237px to ~136px at the moment the list needs the room. Mobile is untouched — it is already inline.
+
+Both behaviours use `IntersectionObserver` rather than scroll handlers: this sits above a list of up to fifty cards, and toggling layout classes from a per-frame callback is where a mid-range phone drops frames.
+
+## [2.50.1] - 2026-09-03
+
+### Fixed — searching an address and clicking “create” named the adopter after a street
+
+Every “create new” entry point assumed that whatever was not a phone number was a name, and wrote it straight into `?name=`:
+
+```js
+const name = phone ? trimmedQuery.replace(phoneMatch[0], '') : trimmedQuery;
+if (name) params.set('name', name);
+```
+
+But the search box invites *“Nombre, Teléfono ó Dirección”*. Searching `Av. Rivadavia 4820, Caballito` and clicking create produced an adopter whose **name** was a street — and a bad name is not a cosmetic problem here: it is what search and duplicate detection match on, so the record stays hard to find for its whole life.
+
+The query is now classified before it reaches the form, reusing `categorizeContactText` rather than guessing again. Phones, emails, socials, documents and addresses arrive as typed contact chips; only genuinely name-shaped text becomes the name. A query that is *only* an address now yields a form with an address chip and an empty name, ready for the rescuer to type the person.
+
+Three entry points had the same defect and now share one tested helper (`lib/createPrefill.ts`):
+
+- `SearchSection` — homepage search (split phones, but nothing else)
+- `HomepageActionCard` — the adopción/reporte flow (no splitting at all)
+- `PickAdopterForAnimalModal` — linking an adopter to an animal (no splitting at all)
+
+The mixed-query behaviour added in v2.19.35 is preserved and covered by a test: `Susana 11-2345-6789` still yields the name *Susana* plus a phone chip. Existing `?phone=` links keep working; the new `contacts` param is parsed defensively — unknown types rejected, capped at 10 entries and 300 characters each — since it arrives from a URL.
+
+## [2.50.0] - 2026-09-03
+
+### Changed — contact detail rows fit on a phone
+
+The value input in the import wizard's contact rows was around 50px wide on a 360px screen. The cause was not general crowding:
+
+```js
+// the type control, before
+className="shrink-0 ..."   // never yields width
+<option>Otro nombre/identidad</option>   // 21 chars — and a native <select>
+                                         // is sized by its LONGEST option
+```
+
+Every row reserved the width of *"Otro nombre/identidad"* even when it read "Email", and because the select was `shrink-0`, the value input — `flex-1 min-w-0` — absorbed the entire shortfall. The control describing the data had roughly three times the room of the data.
+
+**The type is now the icon.** An icon button opens a type picker, replacing both the select and the separate icon that sat beside it saying the same thing. This is the idiom the component already used twice: `SocialPlatformPicker` picks a network and `PhoneAppsToggle` picks WhatsApp/Telegram, both as unlabelled icon buttons. The input goes to roughly 230px at 360px wide.
+
+**Rows classify themselves.** Typing an unambiguous phone, email, social profile or document sets the row's type, via the existing `categorizeContactText`. Detection declines anything the classifier only reaches by falling back to `address`/`other`, so typing a name never reclassifies a row, and it never overrides a type the user picked by hand.
+
+**Address and social wrap to their own line on mobile**, inline from `sm:` up — they render sub-fields inside the value column, so they suffered most. Single DOM moved by CSS order, not a duplicated control, so breakpoint-hidden copies can't break `.first()` selectors.
+
+**The remove control is 44px**, up from 24px — a destructive action sitting beside a text input was the easiest thing to hit by accident.
+
+### Changed — the adopter screen's label column is mobile-only
+
+The same redundancy in a milder form: the profile's contact rows pair the type icon with a fixed 96px text label saying the same thing, narrowing the value and, while editing, the input. The label is kept from `sm:` up where it helps scanning a list, and is `sr-only` below — the icon is `aria-hidden`, so the type still has to be announced.
+
+The adopter screen's *composer* is unchanged. It picks a type with labelled pills in a dedicated full-width stage, which has neither the select's sizing problem nor a cramped row.
+
 ## [2.49.20] - 2026-09-03
 
 ### Added — discard scraped photos in the import review step

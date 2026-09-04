@@ -11,11 +11,14 @@ import { useAuthContext } from '@/context/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useShowToast } from '@/components/ui/Toast';
 import { notifyRequestError } from '@/lib/notifyError';
-import { isPlaceholderPhone } from '@/lib/tokenizer';
 import { zarazTrack } from '@/lib/zaraz';
 import WhatIsBuenAdoptante from '@/components/WhatIsBuenAdoptante';
+import { appendCreatePrefill, buildCreatePrefill } from '@/lib/createPrefill';
 
-export default function SearchSection({ locale, showCardMetadata = true }: { locale?: string; showCardMetadata?: boolean }) {
+// `locale` is still accepted so HomeClient's call site is unchanged, but nothing
+// reads it since v2.51.0: the refinement copy it used to switch on by hand now
+// comes from the locale files like everything else.
+export default function SearchSection({ locale: _locale, showCardMetadata = true }: { locale?: string; showCardMetadata?: boolean }) {
     const { t } = useLanguage();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -36,6 +39,24 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
     const [validationError, setValidationError] = useState<string | null>(null);
     const [singleTokenResultCount, setSingleTokenResultCount] = useState<number | undefined>(undefined);
     const resultsRef = useRef<HTMLDivElement>(null);
+    // v2.51.0 — see the search-results CTA rework.
+    const sentinelRef = useRef<HTMLDivElement>(null);
+    const searchCardRef = useRef<HTMLDivElement>(null);
+    const closingRef = useRef<HTMLDivElement>(null);
+    /** Desktop only: the card drops its stacked layout once scrolling starts. */
+    const [condensed, setCondensed] = useState(false);
+    /**
+     * The query that produced the results currently on screen — NOT what is in the
+     * box right now.
+     *
+     * `query` updates on every keystroke, so anything describing the results has to
+     * read this instead: typing after a search used to re-highlight the old cards
+     * live, and, worse, rewrote each result's `?q=` link so a post-signin
+     * match-and-grant replay would run a search that never produced that match.
+     */
+    const [submittedQuery, setSubmittedQuery] = useState('');
+    /** The floating alta exists only while the closing block is off screen. */
+    const [barHidden, setBarHidden] = useState(true);
     // Lazy "weak tier" — fuzzy/partial name matches, loaded only when the user
     // expands "Otras posibles coincidencias" (the duplicate engine's ~3s cost is
     // paid on demand, not on every search). `weakFor` caches which query the
@@ -75,6 +96,32 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
         }
     }, []);
 
+    /**
+     * Bring the results into view without parking the first card underneath the
+     * chrome. `scrollIntoView({ block: 'start' })` aligns the list with the top of
+     * the VIEWPORT, but the global nav is pinned there and, on mobile, so is the
+     * search card — so the first result landed behind them.
+     *
+     * Each candidate is asked whether it is actually pinned rather than assumed:
+     * the nav's height is set by NavBar, and the search card is sticky on mobile
+     * but `md:static` from the medium breakpoint up.
+     */
+    const scrollToResults = useCallback(() => {
+        const el = resultsRef.current;
+        if (!el) return;
+        const pinnedHeight = (node: Element | null) => {
+            if (!node) return 0;
+            const pos = getComputedStyle(node).position;
+            return pos === 'sticky' || pos === 'fixed' ? (node as HTMLElement).offsetHeight : 0;
+        };
+        const occluded = pinnedHeight(document.querySelector('nav.sticky'))
+            + pinnedHeight(searchCardRef.current)
+            + 8; // a little air, so the card does not sit flush against the chrome
+        const top = el.getBoundingClientRect().top + window.scrollY - occluded;
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        window.scrollTo({ top: Math.max(0, top), behavior: reduced ? 'auto' : 'smooth' });
+    }, []);
+
     // Re-run search when returning to page with query in URL
     const runSearch = useCallback(async (searchQuery: string) => {
         if (!searchQuery.trim()) return;
@@ -89,6 +136,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                 { mode: 'discovery', enrich: true },
             );
             if (!response) return;
+            setSubmittedQuery(searchQuery.trim());
             if (response.validationError) {
                 setValidationError(response.validationError);
                 setResults([]);
@@ -100,7 +148,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                     setTruncatedInfo({ truncated: true, totalCount: response.totalCount });
                 }
                 // Auto-scroll to results on mobile
-                setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+                setTimeout(scrollToResults, 100);
             }
         } catch (err) {
             console.error(err);
@@ -138,9 +186,10 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
             if (!demoWasActive.current) {
                 // Entering the tour — snapshot the user's current search to restore on exit.
                 demoWasActive.current = true;
-                preDemoSearch.current = { query, results };
+                preDemoSearch.current = { query: submittedQuery, results };
             }
             setQuery(demoQuery);
+            setSubmittedQuery(demoQuery.trim());
             setResults(demoResults);
             setValidationError(null);
             setTruncatedInfo(null);
@@ -153,39 +202,27 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
             const pre = preDemoSearch.current;
             preDemoSearch.current = null;
             setQuery(pre?.query ?? '');
+            setSubmittedQuery(pre?.query ?? '');
             setResults(pre?.results ?? null);
             setValidationError(null);
             setTruncatedInfo(null);
             setSingleTokenResultCount(undefined);
         }
-        // query/results are read only to snapshot on entry; outside enter/exit
-        // this effect is a no-op, so including them can't clobber a real search.
-    }, [demoActive, demoQuery, demoResults, query, results]);
+        // query/submittedQuery/results are read only to snapshot on entry; outside
+        // enter/exit this effect is a no-op, so including them can't clobber a
+        // real search.
+    }, [demoActive, demoQuery, demoResults, query, submittedQuery, results]);
 
     const handleCreateNew = (e: React.MouseEvent) => {
         e.preventDefault();
 
-        // v2.19.35: tokenize the query before handing it off to the create
-        // form. A query like "Susana 11-2345-6789" is split into a name
-        // ("Susana") and a phone ("11-2345-6789") so the form prefills the
-        // phone as a confirmed contact-entry chip instead of leaving the
-        // rescuer to manually move the digits out of the name field.
-        // Disambiguation against street numbers ("Corrientes 3444") is free:
-        // the regex demands ≥6 digits after stripping separators, which
-        // door numbers don't reach. The original formatted substring is
-        // passed (not the digits-only normalized form) so the chip mirrors
-        // what the rescuer typed. `isPlaceholderPhone` is the same dummy
-        // filter the search engine itself applies — keeps prefill posture
-        // consistent with what's considered a "real" phone.
-        const trimmedQuery = query.trim();
-        const phoneMatch = trimmedQuery.match(/\+?[\d][\d\s\-\.\(\)]{5,}\d/);
-        const digits = phoneMatch ? phoneMatch[0].replace(/\D/g, '') : '';
-        const phone = digits.length >= 6 && !isPlaceholderPhone(digits) ? phoneMatch![0].trim() : '';
-        const name = phone ? trimmedQuery.replace(phoneMatch![0], '').replace(/\s+/g, ' ').trim() : trimmedQuery;
-
+        // The query may be a name, a phone, an address or a mix — the search box
+        // invites all three. `appendCreatePrefill` classifies it and seeds each
+        // part into the right field. Before v2.50.1 anything that was not a phone
+        // was written into `name`, so searching an address created an adopter
+        // named after a street.
         const params = new URLSearchParams();
-        if (name) params.set('name', name);
-        if (phone) params.set('phone', phone);
+        appendCreatePrefill(params, submittedQuery || query);
         const queryString = params.toString();
         const createUrl = `/adopter/create${queryString ? `?${queryString}` : ''}`;
         if (!session?.user) {
@@ -219,6 +256,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                 { mode: 'discovery', enrich: true },
             );
             if (!response) throw new Error('No response from search');
+            setSubmittedQuery(query.trim());
             if (response.validationError) {
                 setValidationError(response.validationError);
                 setResults([]);
@@ -250,7 +288,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                     });
                 }
                 // Auto-scroll to results on mobile
-                setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+                setTimeout(scrollToResults, 100);
             }
         } catch (err) {
             await notifyRequestError(toast.error, t, err, {
@@ -264,6 +302,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
 
     const handleClear = () => {
         setQuery('');
+        setSubmittedQuery('');
         setResults(null);
         setValidationError(null);
         setTruncatedInfo(null);
@@ -277,6 +316,51 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
     // On mobile, make search form sticky when results are visible
     const hasResults = results !== null;
 
+    // ── Search-results CTA rework ──────────────────────────────────────────
+    // One honest count in the sticky card, replacing the blue truncation banner
+    // and the amber refinement nudge, which fired together above the cap and told
+    // the rescuer to refine twice while the header contradicted both counts.
+    const shownCount = results?.length ?? 0;
+    const totalMatches = truncatedInfo?.truncated ? truncatedInfo.totalCount : shownCount;
+    const isTruncated = !!truncatedInfo?.truncated;
+    const shouldRefine = isTruncated || (shownCount > 0 && singleTokenResultCount !== undefined);
+
+    // The label names the person only when the create form will genuinely be
+    // prefilled with one — same classifier, so the button can never promise what
+    // the form will not do. A phone or an address yields the generic wording.
+    const prefillName = buildCreatePrefill(submittedQuery || query).name;
+    const createLabel = prefillName
+        ? t('search.create_named').replace('{name}', prefillName)
+        : t('search.create_generic');
+
+    // Observers rather than scroll handlers: this sits above a list of up to 50
+    // cards, and toggling layout classes from a per-frame callback is where a
+    // mid-range phone drops frames.
+    useEffect(() => {
+        const sentinel = sentinelRef.current;
+        if (!sentinel || !hasResults) { setCondensed(false); return; }
+        const io = new IntersectionObserver(
+            ([e]) => setCondensed(!e.isIntersecting),
+            { threshold: 0 },
+        );
+        io.observe(sentinel);
+        return () => io.disconnect();
+    }, [hasResults]);
+
+    useEffect(() => {
+        const closing = closingRef.current;
+        if (!closing || !hasResults) { setBarHidden(true); return; }
+        // Fires a little before the block is properly in view, so the floating
+        // alta and the block are never legible at the same time.
+        const io = new IntersectionObserver(
+            ([e]) => setBarHidden(e.isIntersecting),
+            { rootMargin: '0px 0px -72px 0px', threshold: 0 },
+        );
+        io.observe(closing);
+        setBarHidden(false);
+        return () => io.disconnect();
+    }, [hasResults, shownCount]);
+
     return (
         <div className="w-full">
             {/* Hero explainer — click-to-expand "¿Qué es Buen Adoptante?".
@@ -287,9 +371,14 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
             </div>
 
             {/* Search card — just the search tool */}
-            <div className={`bg-white rounded-3xl p-5 md:p-6 shadow-sm border border-stone-200 transition-all ${hasResults && !demoActive ? 'md:static sticky top-16 z-30 rounded-b-xl md:rounded-3xl shadow-md md:shadow-sm' : ''
-                }`}>
-                <form onSubmit={handleSearch} className={hasResults ? 'flex gap-2 items-stretch md:block md:space-y-4' : 'space-y-3'}>
+            <div ref={searchCardRef} className={`bg-white rounded-3xl shadow-sm border border-stone-200 transition-all ${hasResults && !demoActive ? 'md:static sticky top-16 z-30 rounded-b-xl md:rounded-3xl shadow-md md:shadow-sm' : ''
+                } ${condensed && hasResults ? 'p-5 md:px-6 md:py-3.5' : 'p-5 md:p-6'}`}>
+                {/* Condensed (desktop, after scrolling): keep the mobile row layout
+                    instead of switching to the stacked one, so the button sits beside
+                    the field and the sticky card gives ~100px back to the results. */}
+                <form onSubmit={handleSearch} className={hasResults
+                    ? `flex gap-2 items-stretch ${condensed ? '' : 'md:block md:space-y-4'}`
+                    : 'space-y-3'}>
                     <div className="relative flex-1 min-w-0">
                         <label htmlFor="search" className="sr-only">{t('common.search')}</label>
                         {/* text-base (16px) in EVERY state: below 16px, iOS Safari auto-
@@ -300,7 +389,9 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                             id="search"
                             placeholder={t('search.placeholder')}
                             className={`w-full border border-stone-200 focus:border-teal-400 focus:ring-4 focus:ring-teal-100 transition-all outline-none text-stone-900 placeholder:text-stone-500 font-medium bg-stone-50 text-base ${hasResults
-                                ? 'px-4 py-3 pr-10 rounded-xl md:px-5 md:py-4 md:pr-12 md:rounded-2xl'
+                                ? (condensed
+                                    ? 'px-4 py-3 pr-10 rounded-xl md:px-5 md:py-3 md:pr-12'
+                                    : 'px-4 py-3 pr-10 rounded-xl md:px-5 md:py-4 md:pr-12 md:rounded-2xl')
                                 : 'px-4 py-3.5 pr-12 rounded-2xl'
                                 }`}
                             value={query}
@@ -328,7 +419,9 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                         disabled={loading}
                         aria-label={hasResults ? t('search.button') : undefined}
                         className={`bg-teal-200 text-teal-900 font-semibold shadow-sm hover:bg-teal-300 hover:shadow-md transition-all disabled:opacity-70 transform active:scale-[0.98] flex items-center justify-center ${hasResults
-                            ? 'flex-none w-12 rounded-xl md:w-full md:py-4 md:px-6 md:rounded-2xl md:text-lg'
+                            ? (condensed
+                                ? 'flex-none w-12 rounded-xl md:w-auto md:px-6 md:rounded-xl md:text-base'
+                                : 'flex-none w-12 rounded-xl md:w-full md:py-4 md:px-6 md:rounded-2xl md:text-lg')
                             : 'w-full py-3.5 px-6 rounded-2xl text-base'
                             }`}
                     >
@@ -346,6 +439,27 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                         ) : (loading ? t('search.searching') : t('search.button'))}
                     </button>
                 </form>
+
+                {/* One count, in the one place that is always on screen. Replaces the
+                    truncation banner and the refinement nudge, which used to stack above
+                    the results saying the same thing in two colours. No second input:
+                    the field it sits under IS the refine control. */}
+                {hasResults && shownCount > 0 && (
+                    <div className="mt-3 pt-3 border-t border-stone-100">
+                        <p className="text-sm font-semibold text-stone-800 tabular-nums">
+                            {isTruncated
+                                ? t('search.summary_shown')
+                                    .replace('{total}', totalMatches.toString())
+                                    .replace('{shown}', shownCount.toString())
+                                : t('search.summary_total').replace('{count}', shownCount.toString())}
+                        </p>
+                        <p className="text-xs text-stone-500 mt-0.5">
+                            {shouldRefine
+                                ? t('search.summary_refine')
+                                : t('search.summary_for').replace('{query}', submittedQuery)}
+                        </p>
+                    </div>
+                )}
 
                 {!results && !loading && !query && (
                     <p className="text-center text-stone-500 text-xs mt-2">
@@ -408,51 +522,22 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
             )}
 
 
-            {/* Truncation Warning Banner */}
-            {truncatedInfo?.truncated && (
-                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                    <p className="text-blue-800 font-medium text-center">
-                        ℹ️ {t('search.too_many_results').replace('{count}', truncatedInfo.totalCount.toString())}
-                    </p>
-                </div>
-            )}
+            {/* The truncation banner and the refinement nudge that used to live here
+                are now the summary line inside the search card — one count, stated
+                once, always on screen. */}
+            <div ref={sentinelRef} aria-hidden="true" className="h-px" />
 
             {results && (
                 <div ref={resultsRef} data-walkthrough="results" className="mt-8 space-y-4 scroll-mt-4">
 
-                    {/* Refinement Nudge — inside scroll target so mobile auto-scroll doesn't skip it (P1 fix)
-                        Amber palette to distinguish from the teal login_required banner (P2 fix) */}
-                    {results.length > 0 && singleTokenResultCount !== undefined && (
-                        <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
-                            <span className="text-amber-500 text-lg flex-shrink-0 mt-0.5">🔎</span>
-                            <div className="flex-1">
-                                <p className="text-amber-800 font-medium text-sm">
-                                    {locale === 'en'
-                                        ? `${singleTokenResultCount} results found for "${query}". Add a last name, phone, or address to narrow it down.`
-                                        : `Se encontraron ${singleTokenResultCount} resultados para "${query}". Agregá un apellido, teléfono o dirección para encontrar a quien buscás.`}
-                                </p>
-                            </div>
-                            <button
-                                onClick={() => setSingleTokenResultCount(undefined)}
-                                className="text-amber-400 hover:text-amber-600 flex-shrink-0 transition-colors"
-                                aria-label={t('nav.close_suggestion')}
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                            </button>
-                        </div>
-                    )}
+                    {/* The quiet duplicate that used to sit here is gone: the alta now has
+                        exactly one home per scroll position — the floating control while
+                        the list is being read, the block once it is on screen. */}
                     {results.length > 0 && (
-                        <div className="flex justify-between items-center px-2">
+                        <div className="px-2">
                             <h3 className="text-lg font-semibold text-stone-800">
                                 {t('search.results').replace('{count}', results.length.toString())}
                             </h3>
-                            <button
-                                onClick={handleCreateNew}
-                                className="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold text-teal-700 bg-teal-100 hover:bg-teal-200 rounded-lg transition-colors"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                                {t('search.create_new')}
-                            </button>
                         </div>
                     )}
 
@@ -465,7 +550,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                         // the unmasked reveal seen in the result card vanishes
                         // when the profile opens (no grant got written because
                         // an unauth viewer has no email to attribute one to).
-                        const qParam = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : '';
+                        const qParam = submittedQuery ? `?q=${encodeURIComponent(submittedQuery)}` : '';
                         const profileHref = `/adopter/${res.adopter.id}${qParam}`;
 
                         const handleCardClick = (e: React.MouseEvent) => {
@@ -483,7 +568,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                                 showMetadata={showCardMetadata}
                                 href={profileHref}
                                 onClick={handleCardClick}
-                                query={query}
+                                query={submittedQuery}
                             />
                         );
                     })}
@@ -494,7 +579,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                         a rescuer never concludes "not here" without the recall net. Keyed by
                         query so it remounts (and re-applies defaultOpen) per search. Hidden
                         during the walkthrough and on validation errors. */}
-                    {!demoActive && !validationError && query.trim().length >= 2 && (() => {
+                    {!demoActive && !validationError && submittedQuery.length >= 2 && (() => {
                         // Combine the eager demoted partial matches (lowRelevanceResults)
                         // with the lazy fuzzy name matches (weakResults), deduped. Fuzzy is
                         // fetched on expand, excluding what's already shown (strong + partials).
@@ -506,7 +591,7 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                         ];
                         const isAuthenticated = !!session?.user;
                         const renderCard = (res: DiscoveryMatch) => {
-                            const qParam = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : '';
+                            const qParam = submittedQuery ? `?q=${encodeURIComponent(submittedQuery)}` : '';
                             const profileHref = `/adopter/${res.adopter.id}${qParam}`;
                             return (
                                 <AdopterResultCard
@@ -516,7 +601,8 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                                     showMetadata={showCardMetadata}
                                     href={profileHref}
                                     onClick={(e) => { if (!isAuthenticated) { e.preventDefault(); openLogin(profileHref); } }}
-                                    query={query}
+                                    query={submittedQuery}
+                                    weakMatch
                                 />
                             );
                         };
@@ -525,10 +611,10 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                             // search" affordance, deliberately quieter than the result
                             // cards so it doesn't compete with the real matches.
                             <details
-                                key={query.trim()}
+                                key={submittedQuery}
                                 className="group mt-3 border-t border-stone-100 pt-3"
                                 open={results.length === 0}
-                                onToggle={(e) => { if (e.currentTarget.open) loadWeakMatches(query, [...shownIds]); }}
+                                onToggle={(e) => { if (e.currentTarget.open) loadWeakMatches(submittedQuery, [...shownIds]); }}
                             >
                                 <summary className="flex flex-wrap items-center gap-x-2 gap-y-0.5 cursor-pointer list-none select-none rounded text-sm text-stone-500 hover:text-stone-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300">
                                     <svg className="w-3.5 h-3.5 flex-shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -564,31 +650,81 @@ export default function SearchSection({ locale, showCardMetadata = true }: { loc
                         without scrolling back to the small top-of-list chip. Empty-state
                         below uses a more prominent treatment; this is the secondary path. */}
                     {results.length > 0 && (
-                        <div data-walkthrough="create-new" className="bg-stone-50 rounded-2xl p-6 text-center border border-stone-200 mt-4 scroll-mt-28 md:scroll-mt-4">
-                            <p className="text-stone-600 mb-1 text-base font-medium">
-                                {t('search.none_match_heading')}
+                        <div
+                            ref={closingRef}
+                            data-walkthrough="create-new"
+                            className="bg-white rounded-2xl p-6 text-center border border-teal-200 shadow-sm mt-4 scroll-mt-28 md:scroll-mt-4"
+                        >
+                            <p className="text-[11px] font-bold uppercase tracking-wide text-teal-600 mb-2">
+                                {t('search.none_match_kicker')}
                             </p>
-                            <p className="text-stone-500 text-sm mb-4">
-                                {t('search.none_match_desc')}
+                            <p className="text-stone-900 mb-1.5 text-base font-semibold">
+                                {t('search.none_match_q')}
+                            </p>
+                            {/* States the expectation and its reason, which a button alone
+                                never did — parity with the empty state below, which has
+                                always said "sé el primero en registrarlo". */}
+                            <p className="text-stone-600 text-sm mb-4 max-w-md mx-auto">
+                                {prefillName
+                                    ? t('search.none_match_named').replace('{name}', prefillName)
+                                    : t('search.none_match_generic')}
                             </p>
                             <button
                                 onClick={handleCreateNew}
-                                className="inline-block px-5 py-2.5 bg-teal-600 text-white rounded-xl font-semibold hover:bg-teal-700 transition-all shadow-sm"
+                                className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-teal-600 text-white rounded-xl font-semibold hover:bg-teal-700 transition-all shadow-sm max-w-full"
                             >
-                                + {t('search.create_new')}
+                                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.4} viewBox="0 0 24 24"><path strokeLinecap="round" d="M12 5v14m7-7H5" /></svg>
+                                <span className="truncate">{createLabel}</span>
                             </button>
+                            <span className="block text-xs text-stone-400 mt-3">
+                                {t('search.none_match_caution')}
+                            </span>
                         </div>
                     )}
                     {results.length === 0 && (
                         <div className="bg-stone-50 rounded-2xl p-8 text-center border border-stone-200">
                             <div className="text-4xl mb-3">🔍</div>
-                            <p className="text-stone-600 mb-1 text-lg">{t('search.no_history').replace('{query}', query)}</p>
+                            <p className="text-stone-600 mb-1 text-lg">{t('search.no_history').replace('{query}', submittedQuery)}</p>
                             <p className="text-stone-500 text-sm mb-4">{t('search.no_history_cta')}</p>
                             <button onClick={handleCreateNew} className="inline-block px-5 py-2.5 bg-teal-600 text-white rounded-xl font-semibold hover:bg-teal-700 transition-all shadow-sm">
                                 + {t('search.create_new')}
                             </button>
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* Floating alta. A LAST CHILD of this section, so even if the observer
+                never ran it could not reach the Adopción / Reporte / Importar cards
+                below — those are competing create paths and an alta hovering over
+                them would be worse than the duplication this avoids.
+                It slides out as the closing block arrives, so the same action is
+                never on screen twice. Hidden from the walkthrough, which drives its
+                own scripted scroll. */}
+            {hasResults && !demoActive && (results?.length ?? 0) > 0 && (
+                <div
+                    // Mirrors the search card above, which is the element that sets the
+                    // convention for a pinned surface in this section: it keeps the
+                    // content column (no full-bleed) and tightens its EXPOSED edge to
+                    // `xl` when stuck — `rounded-b-xl` at the top, so `rounded-t-xl`
+                    // here. `border-b-0` because the bottom edge is flush with the
+                    // viewport. Themed utilities only: `bg-white` maps to
+                    // var(--surface-card), whereas the `bg-white/95` this used to carry
+                    // is NOT in the remap and rendered raw white on the dark ground.
+                    className={`sticky bottom-0 z-30 px-4 py-2.5 bg-white border border-b-0 border-stone-200 rounded-t-xl shadow-[0_-4px_12px_rgba(0,0,0,0.06)] flex items-center gap-3 transition-[transform,opacity] duration-200 motion-reduce:transition-none ${barHidden ? 'translate-y-[125%] opacity-0 pointer-events-none invisible' : ''
+                        }`}
+                >
+                    <span className="flex-1 min-w-0 truncate text-sm font-medium text-stone-600">
+                        {t('search.none_match_q')}
+                    </span>
+                    <button
+                        onClick={handleCreateNew}
+                        tabIndex={barHidden ? -1 : 0}
+                        className="inline-flex items-center gap-1.5 shrink-0 max-w-[60%] px-4 py-2 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors shadow-sm"
+                    >
+                        <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.4} viewBox="0 0 24 24"><path strokeLinecap="round" d="M12 5v14m7-7H5" /></svg>
+                        <span className="truncate">{createLabel}</span>
+                    </button>
                 </div>
             )}
         </div>
