@@ -2,6 +2,42 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.54.3] - 2026-09-04
+
+### Fixed — four rendering bugs in the contact type control
+
+Found by actually rendering the component rather than reasoning about it. The previous three
+releases shipped this surface verified only by type-check and code reading; a throwaway harness
+page mounting `ContactEntriesSection` with fake entries — no DB — made all four visible in a
+minute.
+
+**The type icon rendered as a black box.** `globals.css:258` maps `.bg-white` to
+`var(--surface-card)` unconditionally and with `!important`. `ContactTypePicker` carried
+`bg-white`, which was fine while it lived inside the composer's `bg-stone-50` card — a
+deliberate `--surface-card` on `--surface-base` pairing — but v2.54.2 moved it onto the row
+itself, where it painted a card-coloured block on the row's own background. In the dark theme
+that reads as a black box. The button is now unfilled; its themed teal border still marks it as
+the one control in the row. Verified: computed `background-color: rgba(0, 0, 0, 0)` in both
+themes.
+
+**Type-specific fields did not line up with the input.** The network picker and the
+WhatsApp/Telegram toggles were siblings of the picker+input row, so they started at the type
+icon's left edge while the input started 44px further in. They now live inside the input's
+column in both the composer and the edit form. Verified: picker at x=16, input at x=60,
+dependent fields at x=60.
+
+**Choosing "Teléfono" surfaced no messaging-app toggles.** Both surfaces gated them on
+`value.trim().length > 0`, so selecting the type — or correcting a row to it — showed nothing
+until something was typed, which read as the option not existing. They now key off the type
+alone.
+
+**The required asterisk stayed lit after a network was chosen.** The marker keyed off whether
+the platform was auto-detected rather than whether one was set, so "¿Qué red social es? *"
+kept claiming an unmet requirement over an already-selected Instagram.
+
+Also confirmed while looking: the type menu popover is **not** clipped by its container — the
+open question carried since v2.54.1.
+
 ## [2.54.2] - 2026-09-04
 
 ### Changed — adding a contact detail is now the same surface as editing one

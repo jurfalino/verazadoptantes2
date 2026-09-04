@@ -806,23 +806,40 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                             autoFocus
                                                         />
                                                     )}
+                                                    {/* Type-specific fields sit INSIDE the input's
+                                                        column so they line up with it rather than
+                                                        starting back at the type picker's left edge.
+                                                        They also key off the type alone, not off a
+                                                        non-empty value: re-filing a row as a phone
+                                                        has to surface its app toggles immediately,
+                                                        or the option looks like it does not exist. */}
+                                                    {formType === 'social' && (() => {
+                                                        const det = detectSocialPlatform(editDraft.value);
+                                                        return (
+                                                            <div>
+                                                                {/* The asterisk marks an UNMET requirement, so it
+                                                                    tracks whether a network is actually set — not
+                                                                    whether one was auto-detected. Keying it to `det`
+                                                                    alone left "required" showing over an already
+                                                                    chosen network. */}
+                                                                {!det && (
+                                                                    <div className="text-xs font-semibold text-stone-700 mb-1.5">
+                                                                        {t('adopter.ce_social_which')}
+                                                                        {!editDraft.platform && <span className="text-red-600"> *</span>}
+                                                                    </div>
+                                                                )}
+                                                                <SocialPlatformPicker value={det ?? editDraft.platform ?? null} locked={!!det} onChange={(pl) => setEditDraft({ ...editDraft, platform: pl })} />
+                                                            </div>
+                                                        );
+                                                    })()}
+                                                    {formType === 'phone' && (
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className="text-xs font-semibold text-stone-500">{t('adopter.ce_phone_apps')}</span>
+                                                            <PhoneAppsToggle value={editDraft.apps ?? []} onChange={(apps) => setEditDraft({ ...editDraft, apps })} />
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
-                                            {formType === 'social' && editDraft.value.trim().length > 0 && (() => {
-                                                const det = detectSocialPlatform(editDraft.value);
-                                                return (
-                                                    <div>
-                                                        {!det && <div className="text-xs font-semibold text-stone-700 mb-1.5">{t('adopter.ce_social_which')} <span className="text-red-600">*</span></div>}
-                                                        <SocialPlatformPicker value={det ?? editDraft.platform ?? null} locked={!!det} onChange={(pl) => setEditDraft({ ...editDraft, platform: pl })} />
-                                                    </div>
-                                                );
-                                            })()}
-                                            {formType === 'phone' && editDraft.value.trim().length > 0 && (
-                                                <div className="flex items-center gap-2 flex-wrap">
-                                                    <span className="text-xs font-semibold text-stone-500">{t('adopter.ce_phone_apps')}</span>
-                                                    <PhoneAppsToggle value={editDraft.apps ?? []} onChange={(apps) => setEditDraft({ ...editDraft, apps })} />
-                                                </div>
-                                            )}
                                             <div className="flex items-center gap-2 justify-end">
                                                 <button
                                                     type="button"
@@ -966,25 +983,14 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                        no header left for it to hold, and two surfaces answering the same
                        question stop looking like different features. */
                     <div className="space-y-2 pt-3 border-t border-stone-100">
-                        {/* Network-first: pick the social network before typing so the
-                            input can show a per-network placeholder (Facebook nudges the
-                            profile link → captures the numeric id). Locked to "auto" when
-                            a pasted URL already reveals the platform. */}
-                        {composerType === 'social' && (
-                            <div className="mb-1">
-                                <div className="text-xs font-semibold text-stone-700 mb-1.5">
-                                    {t('adopter.ce_social_which')}{!socialDetected && <span className="text-red-600"> *</span>}
-                                </div>
-                                <SocialPlatformPicker
-                                    value={effectiveSocialPlatform}
-                                    locked={!!socialDetected}
-                                    onChange={setComposerPlatform}
-                                />
-                            </div>
-                        )}
                         {/* Type control inline with the value — the same shape the edit
                             form uses, so "which kind of detail is this" is asked the same
-                            way whether the row already exists or not. */}
+                            way whether the row already exists or not.
+
+                            Every type-specific field lives INSIDE the right-hand column
+                            rather than beside it, so the network picker and the app
+                            toggles line up with the input instead of starting back at the
+                            picker's left edge. */}
                         <div className="flex gap-2 items-start">
                             <ContactTypePicker
                                 compact
@@ -994,6 +1000,23 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 types={COMPOSABLE_TYPES}
                             />
                             <div className="flex-1 min-w-0 space-y-2">
+                                {/* Network-first: pick the social network before typing so the
+                                    input can show a per-network placeholder (Facebook nudges the
+                                    profile link → captures the numeric id). Locked to "auto" when
+                                    a pasted URL already reveals the platform. */}
+                                {composerType === 'social' && (
+                                    <div>
+                                        <div className="text-xs font-semibold text-stone-700 mb-1.5">
+                                            {/* Asterisk = still unmet, not "not auto-detected". */}
+                                            {t('adopter.ce_social_which')}{!effectiveSocialPlatform && <span className="text-red-600"> *</span>}
+                                        </div>
+                                        <SocialPlatformPicker
+                                            value={effectiveSocialPlatform}
+                                            locked={!!socialDetected}
+                                            onChange={setComposerPlatform}
+                                        />
+                                    </div>
+                                )}
                                 {composerType === 'address' ? (
                                     <>
                                         <input
@@ -1028,14 +1051,19 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                         autoFocus
                                     />
                                 )}
+                                {/* Shown as soon as the type is phone, not once a value has
+                                    been typed. Gating on a non-empty value meant choosing
+                                    "Teléfono" — or correcting a row to it — surfaced no
+                                    WhatsApp/Telegram toggles at all, which read as the
+                                    option simply not existing. */}
+                                {composerType === 'phone' && (
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-xs font-semibold text-stone-500">{t('adopter.ce_phone_apps')}</span>
+                                        <PhoneAppsToggle value={composerApps} onChange={setComposerApps} />
+                                    </div>
+                                )}
                             </div>
                         </div>
-                        {composerType === 'phone' && composerValue.trim().length > 0 && (
-                            <div className="mt-2 flex items-center gap-2 flex-wrap">
-                                <span className="text-xs font-semibold text-stone-500">{t('adopter.ce_phone_apps')}</span>
-                                <PhoneAppsToggle value={composerApps} onChange={setComposerApps} />
-                            </div>
-                        )}
                         {/* Cross-record duplicate warning. Renders nothing for
                             local mode, non-strong types, empty values, or
                             when no high-confidence match exists on another

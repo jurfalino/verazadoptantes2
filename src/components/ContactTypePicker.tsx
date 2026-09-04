@@ -85,7 +85,14 @@ export function ContactTypePicker({ value, onChange, disabled, compact, types }:
                 aria-label={`${t('adopter.ce_type_label')}: ${t(`adopter.ce_type_${value}`)}`}
                 title={t(`adopter.ce_type_${value}`)}
                 data-testid="ce-type-picker"
-                className={`${size} relative grid place-items-center rounded-lg border border-teal-200 bg-white text-teal-600 transition-colors hover:border-teal-400 hover:bg-teal-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:bg-stone-100 disabled:text-stone-400 disabled:cursor-not-allowed`}
+                // No background fill. `globals.css` maps `.bg-white` to
+                // `var(--surface-card)` unconditionally and with `!important`, so a
+                // filled button paints a card-coloured block wherever it sits — which
+                // read as a black box once this moved out of the composer's old
+                // `bg-stone-50` card and onto the row itself. Transparent lets it sit
+                // flush with the inputs beside it; the themed teal border still marks
+                // it as the one control in that row.
+                className={`${size} relative grid place-items-center rounded-lg border border-teal-200 text-teal-600 transition-colors hover:border-teal-400 hover:bg-teal-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:text-stone-400 disabled:cursor-not-allowed`}
             >
                 <Icon className="w-[18px] h-[18px] -translate-x-px -translate-y-px" aria-hidden="true" />
                 {!disabled && (
