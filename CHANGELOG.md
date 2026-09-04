@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.53.1] - 2026-09-03
+
+### Fixed — CI could silently skip a production deploy
+
+The two deploy jobs carried `concurrency: deploy-staging | deploy-production` with `cancel-in-progress: true`, and there was no workflow-level group. Every run contains **both** deploy jobs — one disabled by an `if`, but still a member of its group — so a newer run entering `deploy-staging` cancelled an in-flight sibling run on the **other** branch, wholesale rather than just its deploy.
+
+On 2026-09-03 a push to staging cancelled the production run for PR #76 at its E2E step. `Deploy to Production` was skipped and prod stayed on the previous version after a green merge. Nothing failed — the merge succeeded, every code gate passed, the deploy simply never ran. That is the dangerous shape of this bug: it is invisible unless you check the deploy job's conclusion rather than the merge.
+
+Concurrency now sits at the workflow level, keyed to `github.ref`, so superseding is confined to one branch. `cancel-in-progress` is deliberately **false on master**: a newer staging push should replace an older one, but a production deploy already under way should finish rather than be interrupted part-way through `wrangler pages deploy`.
+
 ## [2.53.0] - 2026-09-03
 
 ### Changed — the import wizard now uses the same contact component as the profile
