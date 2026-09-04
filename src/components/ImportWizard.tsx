@@ -1646,7 +1646,7 @@ export default function ImportWizard() {
                     {/* Contact Info — typed entries, AI-categorized and editable */}
                     <div>
                         <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.contactInfo') || 'Contact Info'}</label>
-                        <ContactEntriesInput entries={contactEntries} onChange={setContactEntries} />
+                        <ContactEntriesInput entries={contactEntries} onChange={setContactEntries} isPublic={isPublicProfile} />
                         {/* Field-overlap preview (v2.16.0-43 — Option B).
                             Step 3 previously surfaced every duplicate as its
                             own chip with type-list labels and a percentage,

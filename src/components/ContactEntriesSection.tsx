@@ -71,6 +71,21 @@ interface Props {
      */
     adopterId?: string;
     onChange?: (next: ContactEntry[]) => void;
+    /**
+     * Let an existing entry's TYPE be corrected in place (local mode only).
+     *
+     * Off by default, and deliberately so: on a saved profile the type was
+     * chosen on purpose a moment ago, and changing it would have to move the
+     * value across server-side validation — delete and re-add is the honest
+     * path there. The import wizard is the exception. Its whole job is
+     * reviewing what the AI guessed, and it guesses types wrong — a document
+     * number read as a phone, a note read as an address — so correcting one
+     * in place is the point of the review step rather than an edge case.
+     *
+     * It reuses the composer's own pills, so the affordance is identical to
+     * choosing the type in the first place.
+     */
+    allowTypeChange?: boolean;
     /** True if the viewer can edit/remove ANY entry (owner/admin). In local
      *  mode always true (you're creating it). Per-entry contributor-self
      *  edit is computed in addition to this — see `currentUser` below. */
@@ -113,7 +128,7 @@ function socialHref(value: string): string | null {
     return null;
 }
 
-export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick, adopterIsPublic = false, hidePublicMicrocopy = false }: Props) {
+export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick, adopterIsPublic = false, hidePublicMicrocopy = false, allowTypeChange = false }: Props) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
@@ -161,6 +176,8 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
     const [composerPlatform, setComposerPlatform] = useState<SocialPlatform | null>(null);
     const [composerApps, setComposerApps] = useState<MessagingApp[]>([]);
     const [composerBusy, setComposerBusy] = useState(false);
+    /** Id of the entry whose type is being re-picked, or null. */
+    const [retypingId, setRetypingId] = useState<string | null>(null);
     // Debounced value handed to <DuplicateHint>. 500ms idle keeps server load
     // low and avoids flashing while typing. Local mode skips this entirely:
     // the new-adopter flow already has DuplicatePeek + StrongMatchStrip
@@ -202,6 +219,29 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         }
         wasComposerOpenRef.current = isOpenNow;
     }, [composerStage]);
+
+    /**
+     * Re-file an entry under a different type, keeping its value.
+     *
+     * Local mode only — the caller batches the result, so there is no server
+     * validation to move the value across. Type-specific fields are dropped
+     * rather than carried: a phone's messaging apps mean nothing once it is a
+     * document, and a structured address's parts mean nothing once it is a note.
+     * The value itself survives, which is the whole point — the rescuer is
+     * correcting the LABEL the AI guessed, not retyping the data.
+     */
+    function changeEntryType(entry: ContactEntry, next: ContactEntryType) {
+        if (!isLocalMode) return;
+        const rebuilt: ContactEntry = {
+            id: entry.id,
+            type: next,
+            value: entry.value,
+            ...(entry.addedBy ? { addedBy: entry.addedBy } : {}),
+        };
+        onChange!(entries.map(e => (e.id === entry.id ? rebuilt : e)));
+        setRetypingId(null);
+        setEditingId(null);
+    }
 
     const visibleEntries = entries.filter(e => e.id !== deletingId);
     const sorted = [...visibleEntries].sort(
@@ -699,6 +739,44 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                 <div className="flex items-center gap-2 flex-wrap">
                                                     <span className="text-xs font-semibold text-stone-500">{t('adopter.ce_phone_apps')}</span>
                                                     <PhoneAppsToggle value={editDraft.apps ?? []} onChange={(apps) => setEditDraft({ ...editDraft, apps })} />
+                                                </div>
+                                            )}
+                                            {/* Correcting a mis-extracted type. Same pills as the
+                                                composer — one affordance for "which kind of detail
+                                                is this", wherever the question is asked. */}
+                                            {allowTypeChange && isLocalMode && (
+                                                <div className="pt-1">
+                                                    {retypingId === entry.id ? (
+                                                        <div className="space-y-2 border border-stone-200 rounded-md p-2 bg-white">
+                                                            <p className="text-xs font-medium text-stone-700">{t('adopter.ce_compose_prompt')}</p>
+                                                            <div className="flex flex-wrap gap-1.5">
+                                                                {COMPOSABLE_TYPES.map(typ => {
+                                                                    const Icon = TYPE_ICON[typ];
+                                                                    return (
+                                                                        <button
+                                                                            key={typ}
+                                                                            type="button"
+                                                                            onClick={() => changeEntryType(entry, typ)}
+                                                                            data-testid={`ce-retype-${typ}`}
+                                                                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-white border border-stone-300 text-stone-700 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-800 focus:outline-none transition-colors"
+                                                                        >
+                                                                            <Icon className="w-3 h-3" />
+                                                                            {t(`adopter.ce_type_${typ}`)}
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setRetypingId(entry.id ?? null)}
+                                                            data-testid="ce-retype-open"
+                                                            className="text-xs text-teal-700 hover:text-teal-900 hover:underline transition-colors"
+                                                        >
+                                                            ↺ {t('adopter.ce_compose_change_type')}
+                                                        </button>
+                                                    )}
                                                 </div>
                                             )}
                                             <div className="flex items-center gap-2 justify-end">

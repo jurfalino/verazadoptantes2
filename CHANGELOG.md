@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.53.0] - 2026-09-03
+
+### Changed — the import wizard now uses the same contact component as the profile
+
+The wizard had a parallel implementation of contact details: always-editable rows, each carrying its own type control, where you typed a value into a generic box and the row reclassified itself around what you had written. The adopter profile asks **which kind of detail first**, then shows the input for that kind.
+
+Type-first is the better shape, and not only for consistency: it is what lets the input arrive correct. An address opens with street and locality. A social asks which network *before* the handle, so the placeholder can nudge toward a profile link — whose numeric id is the stable dedup key. A phone offers WhatsApp/Telegram. A value-first box can only offer any of that *after* the rescuer has already typed into the wrong-shaped field.
+
+`ContactEntriesSection` has supported a local mode (`onChange` instead of server actions) since new-adopter creation needed it — `AdopterForm` has used it that way all along, with a comment stating the intent: *"Either way the add UX, edit UX and chip rendering are identical."* The wizard had simply never been migrated onto it. It now is, and `ContactEntriesInput` is a thin wrapper carrying only the paste box, which is genuinely import-specific.
+
+The wizard inherits what it silently lacked: branded social logos, messaging-app badges, structured two-field addresses, the duplicate hint, and the read-only row with hover-to-edit.
+
+**One capability is wizard-only.** Reviewing what the AI guessed is that surface's job, and it guesses types wrong — a document number read as a phone, a note read as an address. An entry's type can be corrected in place there, using the composer's own pills, so the affordance for "which kind of detail is this" is identical wherever the question is asked. The profile keeps its existing behaviour: a saved entry's type is fixed, delete and re-add.
+
+**A contradiction caught in the port:** the section's visibility microcopy defaults to *"Datos protegidos…"*, which would have sat directly above the wizard's own toggle reading *"Este perfil será visible para todos"* — two statements about one setting, disagreeing. The toggle is now forwarded so the microcopy tracks it.
+
+This removes the icon type-picker added in v2.50.0. That change fixed a real bug — the type `<select>` was sized by its longest option and squeezed the value input to ~50px at 360px — but fixed it by inventing a third pattern instead of adopting the profile's, which had neither problem. The mobile win survives: the composer is a full-width panel, so nothing competes for the row's width, and rows are now read-only summaries, which is narrower still.
+
+Net −189 lines.
+
 ## [2.52.0] - 2026-09-03
 
 ### Fixed — searching one name returned a different name as an equal match
