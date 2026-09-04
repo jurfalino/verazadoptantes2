@@ -1726,6 +1726,7 @@ export const pt = {
         reviewExtracted: 'Revisar Dados Extraídos',
         name: 'Nome',
         contactInfo: 'Info de Contato',
+        contact_none_extracted: 'Não foram extraídos dados de contato. Adicione você mesmo.',
         contactPlaceholder: 'Telefones, e-mails, endereços, redes sociais...',
         attachedImages: 'Imagens anexadas',
         notes: 'Notas',

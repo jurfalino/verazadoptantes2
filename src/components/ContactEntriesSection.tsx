@@ -86,6 +86,18 @@ interface Props {
      * choosing the type in the first place.
      */
     allowTypeChange?: boolean;
+    /**
+     * Suppress the visibility line entirely.
+     *
+     * For a surface that owns the visibility decision itself — the import
+     * wizard has its own labelled toggle with an explainer — this line is a
+     * second statement about one setting sitting above the list. One signal,
+     * not two (Nielsen #8), which is the same reason `hidePublicMicrocopy`
+     * exists for the profile header.
+     */
+    hideVisibilityMicrocopy?: boolean;
+    /** Override the "no entries yet" copy for contexts where "yet" is wrong. */
+    emptyMessage?: string;
     /** True if the viewer can edit/remove ANY entry (owner/admin). In local
      *  mode always true (you're creating it). Per-entry contributor-self
      *  edit is computed in addition to this — see `currentUser` below. */
@@ -128,7 +140,7 @@ function socialHref(value: string): string | null {
     return null;
 }
 
-export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick, adopterIsPublic = false, hidePublicMicrocopy = false, allowTypeChange = false }: Props) {
+export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick, adopterIsPublic = false, hidePublicMicrocopy = false, allowTypeChange = false, hideVisibilityMicrocopy = false, emptyMessage }: Props) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
@@ -640,7 +652,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
     // padlock line ("solo visible para vos") is owner-facing and always stays.
     const showPublicLine = profileEffectivelyPublic && !hidePublicMicrocopy;
     const showPrivateLine = !profileEffectivelyPublic && viewerIsPrivileged;
-    const showMicrocopy = showPublicLine || showPrivateLine;
+    const showMicrocopy = (showPublicLine || showPrivateLine) && !hideVisibilityMicrocopy;
     const microcopyKey = showPublicLine
         ? 'adopter.ce_visibility_profile_public'
         : 'adopter.ce_visibility_microcopy';
@@ -843,7 +855,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                 bottom. Suppressed when an undo bar is up (the deleted entry's
                 temporary absence isn't an empty state). */}
             {sorted.length === 0 && !deletingId && composerStage === 'closed' && (
-                <p className="text-sm text-stone-500 italic">{t('adopter.ce_empty')}</p>
+                <p className="text-sm text-stone-500 italic">{emptyMessage ?? t('adopter.ce_empty')}</p>
             )}
 
             {/* Inline three-stage composer (v2.18.4 — see composerStage docs above):

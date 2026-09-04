@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.53.3] - 2026-09-04
+
+### Fixed — three consistency slips in the wizard's contact step
+
+**A stray visibility line.** *"Este perfil es público y visible para todos."* appeared above the contact list. The shared section prints that line for the profile, where it is the only statement about visibility — but the wizard has its own labelled toggle with an explainer a few lines below, so this was a second statement about one setting. Suppressed there via a new `hideVisibilityMicrocopy`, the same reasoning that `hidePublicMicrocopy` already encodes for the profile header.
+
+This replaces the approach taken in 2.53.0, which forwarded the wizard's toggle into `adopterIsPublic` so the two would agree. Agreeing was the wrong goal — one signal is better than two that match.
+
+**The section heading did not match the profile.** The wizard used a small grey field label reading *"Info de Contacto"*; `AdopterForm` uses `<h3 class="text-sm font-semibold text-teal-800 uppercase tracking-wider">` reading *"Datos de Contacto"*. Different element, size, weight, colour, casing **and** wording for the same section. It now uses the profile's heading and the profile's own `adopter.contact` string, so the two cannot drift apart again.
+
+The name and observation labels beside it are left as `<label>` elements: they label single inputs, which is what a label is for. Only the contact block is a section — it introduces a whole sub-component.
+
+**The empty state read as "not yet".** *"Aún no hay datos de contacto"* is right on a profile someone is filling in, and wrong in a review step where the extraction has already run and found nothing. The wizard now says *"No se extrajeron datos de contacto. Agregalos vos."* through a new `emptyMessage` override, leaving the profile's copy untouched.
+
 ## [2.53.2] - 2026-09-04
 
 ### Fixed — the real reason production deploys were being skipped

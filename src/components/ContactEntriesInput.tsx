@@ -8,14 +8,6 @@ import ContactEntriesSection from '@/components/ContactEntriesSection';
 interface ContactEntriesInputProps {
     entries: ContactEntry[];
     onChange: (entries: ContactEntry[]) => void;
-    /**
-     * The wizard's own public-visibility toggle, forwarded so the section's
-     * visibility microcopy tracks it. Without this the section defaults to
-     * "Datos protegidos…" while the toggle a few lines below can read "Este
-     * perfil será visible para todos" — two statements about one setting,
-     * disagreeing.
-     */
-    isPublic?: boolean;
 }
 
 /**
@@ -45,7 +37,7 @@ interface ContactEntriesInputProps {
  * APPENDS through `mergeContactEntries` and never replaces, so a paste cannot
  * discard what the rescuer already corrected by hand.
  */
-export default function ContactEntriesInput({ entries, onChange, isPublic = false }: ContactEntriesInputProps) {
+export default function ContactEntriesInput({ entries, onChange }: ContactEntriesInputProps) {
     const { t } = useLanguage();
     const [draft, setDraft] = useState('');
     const [pasteOpen, setPasteOpen] = useState(false);
@@ -86,7 +78,13 @@ export default function ContactEntriesInput({ entries, onChange, isPublic = fals
                 entries={entries}
                 onChange={onChange}
                 canEditAll
-                adopterIsPublic={isPublic}
+                // The wizard has its own labelled visibility toggle with an
+                // explainer, so the section must not add a second statement about
+                // the same setting directly above the list.
+                hideVisibilityMicrocopy
+                // "Aún no hay…" reads as "not yet" — wrong for a review step where
+                // the extraction has already run and found nothing.
+                emptyMessage={t('import.contact_none_extracted')}
                 // Reviewing what the AI guessed is this surface's whole job, and it
                 // guesses types wrong. Correcting one in place reuses the composer's
                 // own pills — see the prop's docs on ContactEntriesSection.

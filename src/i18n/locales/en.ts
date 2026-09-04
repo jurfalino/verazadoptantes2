@@ -1721,6 +1721,7 @@ export const en = {
         reviewExtracted: 'Review Extracted Data',
         name: 'Name',
         contactInfo: 'Contact Info',
+        contact_none_extracted: 'No contact details were extracted. Add them yourself.',
         contactPlaceholder: 'Phones, emails, addresses, social profiles...',
         attachedImages: 'Attached Images',
         notes: 'Notes',
