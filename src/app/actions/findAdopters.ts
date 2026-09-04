@@ -29,6 +29,7 @@ import type {
 } from './types';
 import { enrichAdopters } from './enrichAdopters';
 import { normalizeConfidence, fuzzyNameScore, nameTokenMatches, SEARCH_SCORE_CEILING, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
+import { classifyNameMatch, NAME_MATCH_WEIGHT, NAME_MATCH_TYPE, isNameLikeQuery, qualifiesForMainList } from '@/lib/searchRanking';
 import { normalizeText, extractPhones, extractEmails, extractSocials, isPlaceholderPhone, extractIds, stripIdsFromText, normalizeSocialHandle, detectSocialPlatformFromValue } from '@/lib/tokenizer';
 import { count } from 'drizzle-orm';
 import { matchSearchEntries, matchSearchNameTokens, hashNameToken, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
@@ -983,7 +984,20 @@ async function runDiscoveryMode(
         // Name (accent-insensitive — v2.26.7). Comparisons run on NFD-stripped
         // strings so "jose"/"José" match; snippets keep the original text.
         const nlNorm = normalizeText(a.name || '');
-        if (nlNorm === qNorm) {
+        if (!isMultiToken) {
+            // A single word is scored by HOW it matches, not merely whether the
+            // name contains it. The old flat `includes` gave "Mariano Gil" and
+            // "María González" the same 50 for a search of "maria", leaving the
+            // order to incidental bonuses. See lib/searchRanking for the bands and
+            // for why typo tolerance is checked before prefix containment.
+            const kind = classifyNameMatch(nlNorm, qNorm);
+            if (kind !== 'none') {
+                const w = NAME_MATCH_WEIGHT[kind];
+                score += w; matchTypes.push(NAME_MATCH_TYPE[kind]);
+                const s = buildSnippet('name', a.name, normalizedQuery, tokens);
+                if (s && w > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = w; }
+            }
+        } else if (nlNorm === qNorm) {
             score += WEIGHTS.name_exact; matchTypes.push('name_exact');
             const s = buildSnippet('name', a.name, normalizedQuery, tokens);
             if (s && WEIGHTS.name_exact > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.name_exact; }
@@ -1199,16 +1213,24 @@ async function runDiscoveryMode(
     // if the name half of the query didn't match). Partial-coverage matches
     // (e.g. "maipu 888" for a "maipu 1955" search) drop to the weak tier so the
     // top list stays high-signal. Very-low-relevance results also drop.
-    let mainResults = allResults;
-    let lowRelevanceResults: DiscoveryMatch[] = [];
-    if (isMultiToken) {
-        const strongIdMatch = new Set<string>(phoneTokenIds);
-        const isStrong = (r: DiscoveryMatch) =>
-            r.relevancePercent >= LOW_RELEVANCE_PERCENT_THRESHOLD
-            && ((coverageById.get(r.adopterId) ?? 1) >= 1 || strongIdMatch.has(r.adopterId));
-        mainResults = allResults.filter(isStrong);
-        lowRelevanceResults = allResults.filter(r => !isStrong(r));
-    }
+    // Bucketing now runs for EVERY query. It used to be gated on `isMultiToken`,
+    // so a one-word search skipped it entirely and everything clearing the anchor
+    // gate landed in the main list however weakly it scored — which is how a
+    // record whose only tie to "maria" was a street called Mariano got in.
+    // Demotion is not deletion: these appear under "Ampliar la búsqueda".
+    const strongIdMatch = new Set<string>(phoneTokenIds);
+    const queryIsNameLike = isNameLikeQuery(normalizedQuery);
+    const isStrong = (r: DiscoveryMatch) => qualifiesForMainList({
+        relevancePercent: r.relevancePercent,
+        matchTypes: r.matchTypes ?? [],
+        coverage: coverageById.get(r.adopterId) ?? 1,
+        hasStrongId: strongIdMatch.has(r.adopterId),
+        isMultiToken,
+        isNameLike: queryIsNameLike,
+        minRelevance: LOW_RELEVANCE_PERCENT_THRESHOLD,
+    });
+    const mainResults = allResults.filter(isStrong);
+    const lowRelevanceResults = allResults.filter(r => !isStrong(r));
 
     const singleTokenResultCount = (!isMultiToken && allResults.length > REFINEMENT_NUDGE_THRESHOLD)
         ? allResults.length : undefined;

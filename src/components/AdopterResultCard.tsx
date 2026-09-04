@@ -89,9 +89,16 @@ export interface AdopterResultCardProps {
     onClick?: (e: React.MouseEvent) => void;
     /** The search query — used to highlight matched tokens in the name. */
     query?: string;
+    /**
+     * Rendered under "Ampliar la búsqueda". Those results are, by construction,
+     * the ones that do NOT contain the query literally — the fuzzy tier excludes
+     * everything already shown above — so the highlighter has nothing to mark and
+     * the card looked like it matched nothing at all. This says why it is there.
+     */
+    weakMatch?: boolean;
 }
 
-export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = true, href, onClick, query = '' }: AdopterResultCardProps) {
+export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = true, href, onClick, query = '', weakMatch = false }: AdopterResultCardProps) {
     const { t } = useLanguage();
     const nameRanges = tokenHighlightRanges(res.adopter.name, query);
     const contactRanges = tokenHighlightRanges(res.adopter.contactInfo || '', query);
@@ -241,6 +248,16 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
             <div className="md:hidden text-xs text-stone-500 break-words mb-3" title={res.adopter.contactInfo || undefined}>
                 {contactNode}
             </div>
+
+            {/* Why this one is in the widened tier — it has no literal match to
+                highlight, so without this the card reads as a random record. */}
+            {weakMatch && query.trim() && (
+                <div className="mb-2">
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-stone-100 text-stone-600">
+                        ≈ {t('search.weak_reason').replace('{query}', query.trim())}
+                    </span>
+                </div>
+            )}
 
             {/* Stats Row */}
             <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500">

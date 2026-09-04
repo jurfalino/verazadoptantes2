@@ -2,6 +2,30 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.52.0] - 2026-09-03
+
+### Fixed — searching one name returned a different name as an equal match
+
+Searching `maria` put **Mariano Gil** among the top results alongside **María González**, and surfaced records whose only connection was a street called Mariano. Three separate causes:
+
+**The name score was a binary substring test.** Both names merely *contain* "maria", so both took the `nameNorm.includes(qNorm)` branch and scored a flat 50. The sort compares only the relevance percentage, so the tie fell to incidental bonuses — a Mariano with a profile photo outranked a María without one.
+
+Name matching for single-word queries is now graded by *how* it matches (`lib/searchRanking.ts`): the whole name (100), the query as a whole word of the name (85), a word within the query's edit-distance budget (70), a word merely starting with the query (22), a mid-word substring (12). María scores 85 against Mariano's 22 — a margin the bonuses cannot close.
+
+The ordering of those bands is load-bearing: typo tolerance is checked **before** prefix containment, so `jonatan` still finds *Jonathan Daniel Fernández*. `nameTokenMatches` could not be reused for this, because it opens with `text.includes(token)` and so says yes to Mariano too — it is the right tool for recall and the wrong one for precision.
+
+**Relevance bucketing never ran for one-word searches.** It was gated on `isMultiToken`, so a single-word query skipped it entirely and everything clearing the anchor gate landed in the main list however weakly it scored. The floor now applies to every query, and a one-word *name* search answered only through an address or a note drops to the second tier. Identifier searches (phone, document, email) are unaffected — a contact-field match is the answer there.
+
+Nothing is lost by this: demoted results appear under **Ampliar la búsqueda**, one tap away with a count.
+
+### Fixed — the widened tier looked like it matched nothing
+
+Those results are, by construction, the ones that do *not* contain the query literally — the fuzzy tier excludes everything already shown above — so the highlighter had nothing to mark and the cards read as unrelated records. They now carry a *"parecido a «María»"* chip saying why they are there.
+
+### Added — a ranking fixture
+
+Nothing tested ordering or bucketing before this: `WEIGHTS` could be changed and no test would notice. `lib/searchRanking.test.ts` pins the two behaviours argued over in review — a different name must not tie a real one, and a typo'd name must still win — plus the bucketing rules, including that an identifier search is never demoted for lacking a name signal.
+
 ## [2.51.4] - 2026-09-03
 
 ### Fixed — the floating alta ignored the site's surface conventions

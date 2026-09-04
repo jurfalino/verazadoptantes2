@@ -416,6 +416,7 @@ export const pt = {
         create_new: 'Criar Novo Registro',
         more_matches_title: 'Ampliar a busca',
         more_matches_subtitle: 'incluir correspondências parciais ou aproximadas',
+        weak_reason: 'parecido com “{query}”',
         more_matches_loading: 'Procurando correspondências parecidas…',
         more_matches_empty: 'Não encontramos outras correspondências parecidas.',
         none_match_heading: 'Nenhuma pessoa corresponde?',

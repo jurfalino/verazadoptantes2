@@ -602,6 +602,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                                     href={profileHref}
                                     onClick={(e) => { if (!isAuthenticated) { e.preventDefault(); openLogin(profileHref); } }}
                                     query={submittedQuery}
+                                    weakMatch
                                 />
                             );
                         };
