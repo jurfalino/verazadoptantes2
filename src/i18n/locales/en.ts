@@ -657,8 +657,6 @@ export const en = {
         ce_autocommit_saved: 'Saved',
         // Three-state composer (v2.18.4).
         ce_compose_prompt: 'What do you want to add?',
-        ce_compose_adding_label: 'Adding',
-        ce_compose_change_type: 'Change type',
         dup_hint_shared_handle: 'This contact appears on {n} records — it may be a shared contact (yours or a shelter\'s), not the adopter\'s. Verify before marking it as a duplicate.',
         dup_hint_checking: 'Checking for matches…',
         dup_hint_one: 'This value already exists on another profile',

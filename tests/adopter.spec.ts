@@ -154,7 +154,7 @@ test.describe('Adopter Profile', () => {
         // type on a fresh form. Cancel it to put the composer back into
         // the 'closed' state so the test can exercise the original
         // trigger → pick-type → editing path that's the focus of this
-        // spec (change-type discard behaviour).
+        // spec (correcting the type from within the editing stage).
         await page.getByTestId('ce-composer-cancel').click();
 
         await page.getByTestId('ce-add-trigger').click();
@@ -162,18 +162,33 @@ test.describe('Adopter Profile', () => {
         // shouldn't render either — guard against it for regression sake.
         await expect(page.getByTestId('ce-composer-submit')).toHaveCount(0);
 
-        // Pick address, type something, then "↺ cambiar" → input is wiped,
-        // pills are visible again. Switch to phone and save successfully.
+        // Pick address, type something, then correct the type IN PLACE via the
+        // row's type picker.
+        //
+        // v2.54.2 replaced the "↺ Cambiar tipo" link (which returned to the
+        // pick-type stage and discarded the input) with the inline
+        // ContactTypePicker. Two behaviour changes are asserted below:
+        //   1. the form re-shapes in place — it does NOT bounce back to pills;
+        //   2. address parts still do not survive the move, because street and
+        //      locality are meaningless as a phone number. `value` carries
+        //      across a type change; the structured address fields do not.
         await page.getByTestId('ce-type-address').click();
         await page.locator('input[placeholder*="Calle"], input[placeholder*="Street"]').first().fill('THROWAWAY ADDRESS');
-        await page.getByTestId('ce-compose-change-type').click();
+        await page.getByTestId('ce-type-picker').click();
+        await page.getByTestId('ce-type-option-phone').click();
 
-        // Back in pick-type. Pick phone and submit a real value.
-        await page.getByTestId('ce-type-phone').click();
-        await page.locator('input[placeholder*="2345-6789"], input[placeholder*="+54"]').first().fill('11 5555-1234');
+        // Still in the editing stage: Save is present, and the pick-type pills
+        // are gone. Previously this point in the flow was back at the pills.
+        await expect(page.getByTestId('ce-composer-submit')).toBeVisible();
+        await expect(page.getByTestId('ce-type-address')).toHaveCount(0);
+
+        const phoneInput = page.locator('input[placeholder*="2345-6789"], input[placeholder*="+54"]').first();
+        // The discarded address text must not have been carried onto the phone.
+        await expect(phoneInput).toHaveValue('');
+        await phoneInput.fill('11 5555-1234');
         await page.getByTestId('ce-composer-submit').click();
 
-        // Exactly ONE chip — the address draft was discarded by "cambiar".
+        // Exactly ONE chip — the address draft never became an entry.
         const chips = page.getByTestId('ce-chip');
         await expect(chips).toHaveCount(1, { timeout: 10000 });
 

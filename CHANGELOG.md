@@ -2,6 +2,33 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.54.2] - 2026-09-04
+
+### Changed — adding a contact detail is now the same surface as editing one
+
+The composer sat in its own bordered `bg-stone-50` card below the list, with a header naming
+the chosen type and a `↺ Cambiar tipo` link. Editing a row happens inline, in the row. Two
+surfaces answering the same question looked like two different features.
+
+Adding a detail is editing a row that does not exist yet, so it now gets the row treatment:
+no card, no grey panel, just the list's own separator, with `ContactTypePicker` beside the
+input exactly as v2.54.1 put it in the edit form. The pills stay as the way in — a new detail
+still starts by choosing a type from nothing — but once one is chosen, add and edit are the
+same layout.
+
+**Behaviour change:** correcting the type mid-compose no longer discards what you typed.
+`returnToPickType` used to clear the inputs and send you back to the pick-type stage; that was
+defensible while changing type meant leaving the form, but the control now sits beside the
+input and there is no stage to return to. Picking the wrong type first is the common case, not
+a reset. The switch delegates to the same `retypeDraft` the edit form uses, so `value` carries
+across while type-specific fields are dropped — a structured address's street and locality
+still do not survive becoming a phone number, because they are not one.
+
+`tests/adopter.spec.ts` covered the old discard behaviour directly and was rewritten to assert
+the new contract: the form re-shapes in place rather than returning to the pills, and the
+address parts still do not carry. Removed `ce_compose_adding_label` and
+`ce_compose_change_type` from all three locales — the header they belonged to is gone.
+
 ## [2.54.1] - 2026-09-04
 
 ### Fixed — extracted contact details could not be edited or deleted

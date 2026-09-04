@@ -254,13 +254,35 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         setComposerStage('closed');
     }
 
-    /** Discard in-progress input + return to the pick-type stage so the
-     *  user can choose a different type. Triggered by the "↺ cambiar"
-     *  link in the editing stage. Per v2.18.4 design, this is a
-     *  deliberate user-action discard — no auto-commit fallback. */
-    function returnToPickType() {
-        clearComposerInputs();
-        setComposerStage('pick-type');
+    /**
+     * Re-file the in-progress entry under a different type, KEEPING what has
+     * been typed.
+     *
+     * This replaces `returnToPickType`, which sent the user back to the
+     * pick-type stage and discarded the input on the way. That discard was
+     * defensible while changing type meant leaving the form — but the type
+     * control now sits beside the input, so there is no stage to return to and
+     * nothing to justify throwing the value away. Choosing the wrong type first
+     * is the common case, not a reset.
+     *
+     * Delegates to the same `retypeDraft` the edit form uses, so the rules for
+     * which fields survive a type change live in one tested place rather than
+     * being re-derived per surface.
+     */
+    function changeComposerType(next: ContactEntryType) {
+        const moved = retypeDraft({
+            type: composerType,
+            value: composerValue,
+            streetAndNumber: composerStreet,
+            locality: composerLocality,
+            platform: composerPlatform,
+            apps: composerApps,
+        }, next);
+        setComposerType(moved.type);
+        setComposerStreet(moved.streetAndNumber);
+        setComposerLocality(moved.locality);
+        setComposerPlatform(moved.platform ?? null);
+        setComposerApps(moved.apps ?? []);
     }
 
     // Social platform: deduced from a URL (locked) or picked by the user.
@@ -936,27 +958,14 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                 )}
 
                 {composerStage === 'editing' && (
-                    <div className="space-y-2 border border-stone-200 rounded-md p-3 bg-stone-50">
-                        {/* Header — names the type the user picked and offers
-                            an explicit "↺ cambiar" link to return to the
-                            pick-type stage (discards any in-progress input;
-                            this is a user-initiated action so the discard is
-                            never a surprise). */}
-                        <div className="flex items-center justify-between gap-2">
-                            <p className="text-xs text-stone-600">
-                                <span className="font-medium">{t('adopter.ce_compose_adding_label')}:</span>{' '}
-                                <span className="text-stone-900">{t(`adopter.ce_type_${composerType}`)}</span>
-                            </p>
-                            <button
-                                type="button"
-                                onClick={returnToPickType}
-                                disabled={composerBusy}
-                                className="text-xs text-teal-700 hover:text-teal-900 hover:underline transition-colors disabled:opacity-50"
-                                data-testid="ce-compose-change-type"
-                            >
-                                ↺ {t('adopter.ce_compose_change_type')}
-                            </button>
-                        </div>
+                    /* Adding a detail is editing a row that does not exist yet, so it
+                       gets the row treatment rather than a card: no border, no grey
+                       panel, just the list's own separator. The card used to carry the
+                       "Añadiendo: X / ↺ Cambiar tipo" header; with the type control now
+                       beside the input — exactly as in the inline edit form — there is
+                       no header left for it to hold, and two surfaces answering the same
+                       question stop looking like different features. */
+                    <div className="space-y-2 pt-3 border-t border-stone-100">
                         {/* Network-first: pick the social network before typing so the
                             input can show a per-network placeholder (Facebook nudges the
                             profile link → captures the numeric id). Locked to "auto" when
@@ -973,40 +982,54 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 />
                             </div>
                         )}
-                        {composerType === 'address' ? (
-                            <div className="space-y-2">
-                                <input
-                                    type="text"
-                                    value={composerStreet}
-                                    onChange={e => setComposerStreet(e.target.value)}
-                                    placeholder={t('adopter.ce_input_ph_address')}
-                                    className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm"
-                                    autoFocus
-                                />
-                                <input
-                                    type="text"
-                                    value={composerLocality}
-                                    onChange={e => setComposerLocality(e.target.value)}
-                                    placeholder={t('adopter.ce_input_ph_locality')}
-                                    className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm"
-                                />
-                            </div>
-                        ) : (
-                            <input
-                                type="text"
-                                value={composerValue}
-                                onChange={e => setComposerValue(e.target.value)}
-                                placeholder={composerType === 'social'
-                                    ? (effectiveSocialPlatform ? t(`adopter.ce_input_ph_social_${effectiveSocialPlatform}`) : t('adopter.ce_input_ph_social'))
-                                    : placeholderFor(composerType)}
-                                onKeyDown={e => {
-                                    if (e.key === 'Enter') { e.preventDefault(); handleAdd(); }
-                                    if (e.key === 'Escape') { e.preventDefault(); resetComposer(); }
-                                }}
-                                className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm"
-                                autoFocus
+                        {/* Type control inline with the value — the same shape the edit
+                            form uses, so "which kind of detail is this" is asked the same
+                            way whether the row already exists or not. */}
+                        <div className="flex gap-2 items-start">
+                            <ContactTypePicker
+                                compact
+                                value={composerType}
+                                onChange={changeComposerType}
+                                disabled={composerBusy}
+                                types={COMPOSABLE_TYPES}
                             />
-                        )}
+                            <div className="flex-1 min-w-0 space-y-2">
+                                {composerType === 'address' ? (
+                                    <>
+                                        <input
+                                            type="text"
+                                            value={composerStreet}
+                                            onChange={e => setComposerStreet(e.target.value)}
+                                            placeholder={t('adopter.ce_input_ph_address')}
+                                            className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm"
+                                            autoFocus
+                                        />
+                                        <input
+                                            type="text"
+                                            value={composerLocality}
+                                            onChange={e => setComposerLocality(e.target.value)}
+                                            placeholder={t('adopter.ce_input_ph_locality')}
+                                            className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm"
+                                        />
+                                    </>
+                                ) : (
+                                    <input
+                                        type="text"
+                                        value={composerValue}
+                                        onChange={e => setComposerValue(e.target.value)}
+                                        placeholder={composerType === 'social'
+                                            ? (effectiveSocialPlatform ? t(`adopter.ce_input_ph_social_${effectiveSocialPlatform}`) : t('adopter.ce_input_ph_social'))
+                                            : placeholderFor(composerType)}
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter') { e.preventDefault(); handleAdd(); }
+                                            if (e.key === 'Escape') { e.preventDefault(); resetComposer(); }
+                                        }}
+                                        className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm"
+                                        autoFocus
+                                    />
+                                )}
+                            </div>
+                        </div>
                         {composerType === 'phone' && composerValue.trim().length > 0 && (
                             <div className="mt-2 flex items-center gap-2 flex-wrap">
                                 <span className="text-xs font-semibold text-stone-500">{t('adopter.ce_phone_apps')}</span>
