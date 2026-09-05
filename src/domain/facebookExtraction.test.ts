@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { dedupeImages, hasExtractableContent, hasPostText, imageIdentity, isSourceNotPublic, isVideoPost } from './facebookExtraction';
+import { dedupeImages, hasExtractableContent, hasPostText, imageIdentity, isPlaceholderAssetUrl, isSourceNotPublic, isVideoPost, realImages } from './facebookExtraction';
+
+// The lookaside stub Facebook serves to crawlers in place of a login-walled
+// post's real photo. Fetching it returns text/html, not an image.
+const CRAWLER_STUB = 'https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=2216399499116218';
 
 describe('hasExtractableContent', () => {
     // The regression this module exists for. Facebook answers a non-public post
@@ -38,6 +42,52 @@ describe('hasExtractableContent', () => {
     it('accepts a video with no author only when it has real content', () => {
         expect(hasExtractableContent({ images: [] }, true)).toBe(false);
         expect(hasExtractableContent({ text: 'algo', images: [] }, true)).toBe(true);
+    });
+
+    /**
+     * Regression: the login wall for a walled personal-profile post
+     * (facebook.com/share/19EN1HpufE/, 2026-09-04) carries og:title (the
+     * poster's name), a lookaside CRAWLER STUB as og:image — a text/html
+     * endpoint, not a photo — and a fabricated `og:type: video.other`. The stub
+     * satisfied `images.length > 0` and the bogus og:type activated the video
+     * leniency, so a page that withheld everything sailed through as a success
+     * with no text, one broken image, and a manufactured "[Author]" caption.
+     */
+    describe('login-wall pages must not pass', () => {
+        it('does not count the crawler stub as an image', () => {
+            expect(hasExtractableContent({ author: 'Zulma Barragan', images: [CRAWLER_STUB] })).toBe(false);
+        });
+
+        it('does not grant the og:type video leniency when a crawler stub betrays a wall', () => {
+            expect(hasExtractableContent({ author: 'Zulma Barragan', images: [CRAWLER_STUB], isVideo: true })).toBe(false);
+        });
+
+        it('still grants the leniency on a rescuer-typed video URL even behind a wall', () => {
+            // The URL shape is the rescuer's own input, not the walled HTML's
+            // claim — a real reel link stays on the lenient path.
+            expect(hasExtractableContent({ author: 'Refugio', images: [CRAWLER_STUB] }, true)).toBe(true);
+        });
+
+        it('a real scontent photo alongside the stub still counts', () => {
+            expect(hasExtractableContent({ images: [CRAWLER_STUB, 'https://scontent.faep24-1.fna.fbcdn.net/photo1.jpg'] })).toBe(true);
+        });
+    });
+});
+
+describe('isPlaceholderAssetUrl / realImages', () => {
+    it('flags the lookaside crawler stub', () => {
+        expect(isPlaceholderAssetUrl(CRAWLER_STUB)).toBe(true);
+    });
+
+    it('leaves real CDN photos, data URIs and odd values alone', () => {
+        expect(isPlaceholderAssetUrl('https://scontent.faep24-1.fna.fbcdn.net/v/t39/738546332_n.jpg?stp=x')).toBe(false);
+        expect(isPlaceholderAssetUrl('data:image/png;base64,AAAA')).toBe(false);
+        expect(isPlaceholderAssetUrl('')).toBe(false);
+    });
+
+    it('realImages strips only the placeholders', () => {
+        expect(realImages([CRAWLER_STUB, 'https://scontent.x/1.jpg'])).toEqual(['https://scontent.x/1.jpg']);
+        expect(realImages([CRAWLER_STUB])).toEqual([]);
     });
 });
 

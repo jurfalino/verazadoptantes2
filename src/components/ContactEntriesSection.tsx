@@ -921,15 +921,26 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                         ref={triggerRef}
                         onClick={() => setComposerStage('pick-type')}
                         data-testid="ce-add-trigger"
-                        // One action, one appearance. This used to render as a bordered
-                        // button when the list was empty and a bare text link once it had
-                        // entries — the same control changing shape based on how many
-                        // rows happened to be above it. The empty state is already
-                        // carried by its own hint line, so emphasis does not need a
-                        // second, different-looking button. Settled on the style guide's
-                        // Secondary variant (§2.1): accent-subtle background, accent
-                        // text, accent border. A bare text link is not one of the four
-                        // documented variants, and it was also the smaller touch target.
+                        /* One treatment in BOTH states — deliberate, and it must stay
+                         * that way. Until v2.54.4 this was a Secondary button on an empty
+                         * list and a bare text link once entries existed.
+                         *
+                         * The deciding evidence is `HouseholdSection`, the sibling
+                         * list-section on the same profile: its section-level "add a
+                         * member" is this exact Secondary button, rendered unconditionally
+                         * (HouseholdSection.tsx:274), while its NESTED per-member "add a
+                         * contact" is a bare text link (:266). The link is not a lighter
+                         * button — it marks an action one level down. Swapping to it
+                         * whenever this list happened to be non-empty dressed a
+                         * section-level action as a nested one, and made two sibling
+                         * sections answer "add a record to this list" differently.
+                         *
+                         * Emphasis for the empty state is carried by its own hint line
+                         * above ("Aún no hay datos de contacto…"), not by changing what
+                         * the button is. If this ever reads too loud beside a populated
+                         * list, quiet the Secondary variant globally — do not special-case
+                         * one state back into a different component.
+                         */
                         className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-teal-800 bg-teal-50 border border-teal-200 hover:bg-teal-100 rounded-md transition-colors"
                     >
                         <Plus className="w-4 h-4" />

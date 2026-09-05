@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { arrayBufferToBase64 } from '@/lib/base64';
-import { hasExtractableContent, hasPostText, imageIdentity, isSourceNotPublic } from '@/domain/facebookExtraction';
+import { hasExtractableContent, hasPostText, imageIdentity, isPlaceholderAssetUrl, isSourceNotPublic, realImages } from '@/domain/facebookExtraction';
 
 interface FacebookPostData {
     text: string;
@@ -13,6 +13,14 @@ interface FacebookPostData {
     error?: string;
     isVideo?: boolean;
     videoThumbnailBase64?: string;
+    /**
+     * A lookaside crawler URL seen in og:image, kept OUT of `images` (it is
+     * text/html to a browser, so it renders broken and must not count as
+     * content) but retained for the server-side video-thumbnail fetch below —
+     * for a genuine public reel that endpoint serves real image bytes to a
+     * crawler UA, and it is often the only thumbnail source there is.
+     */
+    crawlerThumbnailUrl?: string;
 }
 
 /**
@@ -80,12 +88,19 @@ export async function POST(request: NextRequest) {
 
                     if (scraperData.success && scraperData.data) {
 
-                        // Return scraper results if we got meaningful content
-                        if (scraperData.data.images.length > 0 || scraperData.data.text.length > 50) {
+                        // Return scraper results if we got meaningful content.
+                        // REAL content: the scraper's own fallback fetch can hand back a
+                        // lookaside crawler stub as the sole "image" on a login-walled
+                        // post, and counting it here returned that wall as a playwright
+                        // success — no text, one broken image — instead of falling
+                        // through to the manual-input path (share/19EN1HpufE).
+                        const scraperImages = realImages(scraperData.data.images);
+                        if (scraperImages.length > 0 || scraperData.data.text.length > 50) {
                             return NextResponse.json({
                                 success: true,
                                 data: {
                                     ...scraperData.data,
+                                    images: scraperImages,
                                     ...(isVideoUrl ? { isVideo: true as const } : {}),
                                 },
                                 source: 'playwright',
@@ -153,10 +168,15 @@ export async function POST(request: NextRequest) {
 
         const postData = extractPostData(html);
 
-        // For video posts, try to fetch the thumbnail and convert to base64 for OCR
-        if (postData.isVideo && postData.images.length > 0) {
+        // For video posts, try to fetch the thumbnail and convert to base64 for OCR.
+        // The lookaside crawler URL is a valid source HERE (crawler UA, server
+        // side) even though it never renders in the browser — but on a
+        // login-walled post the same endpoint answers 200 with text/html, so
+        // the content-type gate below is what separates a real thumbnail from
+        // a wall page dressed as one.
+        const thumbnailUrl = postData.images[0] ?? postData.crawlerThumbnailUrl;
+        if (postData.isVideo && thumbnailUrl) {
             try {
-                const thumbnailUrl = postData.images[0];
                 const thumbController = new AbortController();
                 const thumbTimeout = setTimeout(() => thumbController.abort(), 5000);
                 const thumbResponse = await fetch(thumbnailUrl, {
@@ -164,8 +184,8 @@ export async function POST(request: NextRequest) {
                     signal: thumbController.signal,
                 });
                 clearTimeout(thumbTimeout);
-                if (thumbResponse.ok) {
-                    const contentType = thumbResponse.headers.get('content-type') || 'image/jpeg';
+                const contentType = thumbResponse.headers.get('content-type') || '';
+                if (thumbResponse.ok && contentType.startsWith('image/')) {
                     const buffer = await thumbResponse.arrayBuffer();
                     const base64 = arrayBufferToBase64(buffer);
                     postData.videoThumbnailBase64 = `data:${contentType};base64,${base64}`;
@@ -174,8 +194,9 @@ export async function POST(request: NextRequest) {
                         contentType,
                     });
                 } else {
-                    logger.warn('Video thumbnail fetch returned non-OK status', {
+                    logger.warn('Video thumbnail fetch unusable (non-OK or not an image)', {
                         status: thumbResponse.status,
+                        contentType,
                         thumbnailUrl,
                     });
                 }
@@ -270,6 +291,13 @@ function extractPostData(html: string): FacebookPostData {
 
     for (const match of ogImageMatches) {
         const imageUrl = decodeHtmlEntities(match[1]);
+        // A lookaside crawler URL is not content (text/html to a browser), but
+        // it may be a real reel's only thumbnail source — park it separately
+        // for the server-side thumbnail fetch instead of counting it.
+        if (imageUrl && isPlaceholderAssetUrl(imageUrl)) {
+            data.crawlerThumbnailUrl ??= imageUrl;
+            continue;
+        }
         // Filter out profile pics and icons
         if (imageUrl && !imageUrl.includes('profile') && !imageUrl.includes('icon') && !seenImages.has(imageIdentity(imageUrl))) {
             seenImages.add(imageIdentity(imageUrl));

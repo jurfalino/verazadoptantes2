@@ -37,15 +37,45 @@ export function isVideoPost(post: ExtractedPost, isVideoUrl = false): boolean {
 }
 
 /**
+ * A crawler placeholder is Facebook's stand-in for a photo it is withholding.
+ *
+ * A login-walled post's HTML still carries an `og:image` — but it points at
+ * `lookaside.fbsbx.com/lookaside/crawler/media/`, an endpoint that answers a
+ * browser with a few hundred bytes of text/html, never image bytes. It renders
+ * as a broken thumbnail and, worse, it counts as "an image" to any
+ * `images.length > 0` check, which is exactly how a walled post used to pass
+ * for a successful extraction (share/19EN1HpufE, 2026-09-04).
+ */
+export function isPlaceholderAssetUrl(url: string): boolean {
+    return /lookaside\.fbsbx\.com\/lookaside\/crawler\//i.test(url);
+}
+
+/** The images that are actually photos — crawler placeholders dropped. */
+export function realImages(urls: string[] | undefined): string[] {
+    return (urls ?? []).filter(u => !isPlaceholderAssetUrl(u));
+}
+
+/**
  * True when the fetch produced something worth importing.
  *
- * Regular posts need text or images. Only video posts may pass on the author
- * alone.
+ * Regular posts need text or REAL images — a crawler placeholder (see
+ * `isPlaceholderAssetUrl`) is evidence of a login wall, not content.
+ *
+ * Only video posts may pass on the author alone, and the two video signals are
+ * no longer equally trusted: `isVideoUrl` comes from the URL the rescuer typed,
+ * but `post.isVideo` comes from `og:type` in the fetched HTML — and a login
+ * wall FABRICATES `og:type: video.other` on posts that are not videos at all.
+ * So when the same HTML also served a crawler placeholder, its og:type claim is
+ * disqualified: that combination is the wall's signature, and honoring it
+ * manufactured author-only "successes" out of unreadable posts. A genuine video
+ * post unlucky enough to be walled still passes via its URL shape.
  */
 export function hasExtractableContent(post: ExtractedPost, isVideoUrl = false): boolean {
     if (post.text) return true;
-    if (post.images && post.images.length > 0) return true;
-    return isVideoPost(post, isVideoUrl) && Boolean(post.author);
+    if (realImages(post.images).length > 0) return true;
+    const sawWallPlaceholder = (post.images ?? []).some(isPlaceholderAssetUrl);
+    const videoSignal = isVideoUrl || (Boolean(post.isVideo) && !sawWallPlaceholder);
+    return videoSignal && Boolean(post.author);
 }
 
 /**

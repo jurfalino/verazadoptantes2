@@ -2,6 +2,48 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.54.5] - 2026-09-04
+
+### Fixed — login-walled Facebook posts no longer come back as empty "successes"
+
+Root cause traced end-to-end on `facebook.com/share/19EN1HpufE/`: Facebook serves a login
+wall to unauthenticated requests for personal-profile posts, and that wall carries og:title
+(the poster's name), a `lookaside.fbsbx.com/lookaside/crawler/` URL as og:image — an endpoint
+that answers a browser with text/html, never image bytes — and a fabricated
+`og:type: video.other`. The phantom "image" satisfied every `images.length > 0` check in the
+chain, so the wall sailed through the scraper AND the app as a success with no text, one
+broken image, and a manufactured `[Author]` caption. To the rescuer this read as "the import
+is not scraping".
+
+Truth layer, both sides:
+- `domain/facebookExtraction.ts`: new `isPlaceholderAssetUrl` / `realImages`;
+  `hasExtractableContent` no longer counts crawler stubs, and no longer honors og:type's
+  video leniency when a stub betrays a wall (a rescuer-typed reel URL keeps it).
+- `api/facebook/fetch-post`: the scraper-success gate counts REAL images only; the crawler
+  stub is parked as `crawlerThumbnailUrl` for the server-side video-thumbnail fetch (where a
+  crawler UA legitimately gets image bytes for genuine reels), now gated on an `image/*`
+  content-type so a wall page can never be base64'd as a "thumbnail".
+
+### Changed — scraper v2.0.0: layered resolver, honest failures, telemetry
+
+`scraper/` (deployed separately to Fly.io — `cd scraper && fly deploy`; tag `scraper-v1`
+holds the previous code for rollback):
+- **Layer 1 first:** a crawler-UA OG fetch before any browser. Public Page posts return
+  caption + real photos in ~1s with no Playwright at all, and the fetch resolves
+  `/share/<id>/` stubs (which answer 400 to browser UAs) to the canonical `/posts/` URL —
+  previously Playwright navigated straight into that 400 by construction.
+- **Honest endings:** when nothing real was extracted the scraper returns
+  `success:false` with `reason: 'login_walled' | 'no_content'` (200 — an outcome, not a
+  server error), keeping the author so the app can mark the source not-public and route the
+  rescuer to paste/screenshots with an explanation.
+- **Outcome telemetry:** one structured `scrape_outcome` log line per request (platform,
+  layer, reason, sizes, ms) so per-platform success rates are measurable instead of guessed.
+
+Verified locally: the failing post returns `login_walled` with zero phantom images; a public
+page short-circuits through Layer 1 in ~4.6s; the Twitter proxy path is untouched. Local
+runs use a residential IP, so production (datacenter) coverage still needs verifying after
+`fly deploy`.
+
 ## [2.54.4] - 2026-09-04
 
 ### Fixed — the type-selection stage was still a dark box
