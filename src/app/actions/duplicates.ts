@@ -1,7 +1,7 @@
 'use server';
 
 import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, adopterStats, duplicateTokens, duplicateCandidates, auditLog, placements, adopterEvents } from '@/db/schema';
-import { eq, or, and, inArray, sql } from 'drizzle-orm';
+import { eq, or, and, gt, ne, inArray, sql } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { getDb } from './_db';
 import { reassignAdopterRecords } from './_recordWrite';
@@ -343,6 +343,74 @@ export async function mergeAdopters(
     }
 }
 
+/** Rows per undo UPDATE statement: 40 id params + the SET values stays well
+ *  under D1's ~100-bound-parameter cap. */
+const UNDO_CHUNK = 40;
+
+/** Re-point rows back to an adopter by primary key, in chunked OR-batches. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- one helper over six differently-typed tables; each call site passes a real table + its id column
+async function repointRows(db: any, table: any, idCol: any, ids: string[], adopterId: string): Promise<void> {
+    for (let i = 0; i < ids.length; i += UNDO_CHUNK) {
+        const chunk = ids.slice(i, i + UNDO_CHUNK);
+        await db.update(table).set({ adopterId }).where(or(...chunk.map(id => eq(idCol, id))));
+    }
+}
+
+/**
+ * Merge one PENDING candidate pair, picking the survivor automatically:
+ * more activity records wins; tie → more contact entries; tie → older record.
+ * The loser is absorbed via the shared mergeAdopters mechanics (alias
+ * carry-over, candidate cleanup, undo payload).
+ *
+ * `skipped: true` (with success) means the pair no longer needs merging —
+ * already resolved (typically by an earlier merge in the same batch that
+ * absorbed one of its records) or referencing a soft-deleted profile. That is
+ * the EXPECTED outcome when a user batch-selects overlapping pairs, not an
+ * error; any still-real match resurfaces against the survivor on next scan.
+ */
+export async function mergeCandidatePair(candidateId: string, actorEmail: string): Promise<{
+    success: boolean; skipped?: boolean; error?: string; auditId?: string; primaryId?: string; secondaryId?: string;
+}> {
+    try {
+        const db = await getDb();
+        if (!db) return { success: false, error: 'Database not available' };
+
+        const cand = await db.select().from(duplicateCandidates).where(eq(duplicateCandidates.id, candidateId)).get();
+        if (!cand) return { success: false, error: `Candidate ${candidateId} not found` };
+        if (cand.status !== 'pending') return { success: true, skipped: true };
+
+        const [a1, a2] = await Promise.all([
+            db.select().from(adopters).where(eq(adopters.id, cand.adopter1Id)).get(),
+            db.select().from(adopters).where(eq(adopters.id, cand.adopter2Id)).get(),
+        ]);
+        if (!a1 || !a2 || a1.deletedAt || a2.deletedAt) return { success: true, skipped: true };
+
+        const [acts1, acts2] = await Promise.all([
+            db.select({ count: sql<number>`COUNT(*)` }).from(adoptions).where(eq(adoptions.adopterId, a1.id)),
+            db.select({ count: sql<number>`COUNT(*)` }).from(adoptions).where(eq(adoptions.adopterId, a2.id)),
+        ]);
+        const n1 = acts1[0]?.count || 0;
+        const n2 = acts2[0]?.count || 0;
+        const e1 = deserializeContactEntries(a1.contactEntries).length;
+        const e2 = deserializeContactEntries(a2.contactEntries).length;
+        const t1 = a1.createdAt ? a1.createdAt.getTime() : Number.MAX_SAFE_INTEGER;
+        const t2 = a2.createdAt ? a2.createdAt.getTime() : Number.MAX_SAFE_INTEGER;
+
+        // Most activity → most contact data → oldest. a1 wins ties beyond that.
+        let primary = a1;
+        if (n2 !== n1) primary = n2 > n1 ? a2 : a1;
+        else if (e2 !== e1) primary = e2 > e1 ? a2 : a1;
+        else if (t2 < t1) primary = a2;
+        const secondary = primary.id === a1.id ? a2 : a1;
+
+        const result = await mergeAdopters(primary.id, secondary.id, actorEmail);
+        return { ...result, primaryId: primary.id, secondaryId: secondary.id };
+    } catch (error) {
+        const errorId = logger.error('mergeCandidatePair failed', error, { candidateId, actor: actorEmail });
+        return { success: false, error: `Pair merge failed (Error ID: ${errorId})` };
+    }
+}
+
 /** Everything unmergeAdopters needs to reverse one merge, stored in the merge's audit_log row. */
 interface MergeUndoPayload {
     primarySnapshot: {
@@ -385,7 +453,7 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
         if (!auditRow || auditRow.action !== 'adopter_merge') {
             return { success: false, error: 'Merge record not found' };
         }
-        let details: { primaryId?: string; secondaryId?: string; secondaryName?: string; undo?: MergeUndoPayload; undoneAt?: number };
+        let details: { primaryId?: string; secondaryId?: string; secondaryName?: string; undo?: MergeUndoPayload; undoneAt?: number; undoStartedAt?: number };
         try {
             details = JSON.parse(auditRow.details || '{}');
         } catch {
@@ -398,24 +466,36 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
         if (details.undoneAt) {
             return { success: false, error: 'This merge was already undone' };
         }
+        // A started-but-unfinished undo (a prior attempt died mid-reversal)
+        // is retried, not refused: every reversal step below writes fixed
+        // values, so re-running from the top converges on the same end state.
+        const isRetry = !!details.undoStartedAt;
 
         const [primary, secondary] = await Promise.all([
             db.select().from(adopters).where(eq(adopters.id, primaryId)).get(),
             db.select().from(adopters).where(eq(adopters.id, secondaryId)).get(),
         ]);
         if (!primary || !secondary) return { success: false, error: 'One of the merged profiles no longer exists' };
-        if (!secondary.deletedAt || secondary.tokenHash !== 'MERGED') {
+        // The pristine-secondary check only applies to a FIRST attempt: a
+        // retry's earlier attempt may already have revived the secondary, and
+        // refusing here would strand the half-reversed state permanently.
+        if (!isRetry && (!secondary.deletedAt || secondary.tokenHash !== 'MERGED')) {
             return { success: false, error: 'The absorbed profile changed since the merge — cannot undo safely' };
         }
 
         // A later not-yet-undone merge into the same survivor means our
         // snapshot is stale — restoring it would erase that merge's data.
+        // gt() (not a raw sql fragment) so the Date is mapped to the column's
+        // epoch-seconds driver value — D1 cannot bind a raw Date object.
+        // If createdAt is somehow missing, fall back to treating EVERY other
+        // merge into this survivor as potentially later (conservative).
         const laterMerges = await db.select({ id: auditLog.id, details: auditLog.details })
             .from(auditLog)
             .where(and(
                 eq(auditLog.action, 'adopter_merge'),
                 eq(auditLog.target, primaryId),
-                sql`${auditLog.createdAt} > ${auditRow.createdAt}`,
+                ne(auditLog.id, auditId),
+                ...(auditRow.createdAt ? [gt(auditLog.createdAt, auditRow.createdAt)] : []),
             )) as Array<{ id: string; details: string | null }>;
         for (const later of laterMerges) {
             try {
@@ -427,20 +507,30 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
             }
         }
 
+        // 0. Mark the undo as started BEFORE mutating anything, so a crash
+        //    mid-reversal leaves a retryable record instead of a stranded one
+        //    (the isRetry path above keys off this marker).
+        if (!isRetry) {
+            details = { ...details, undoStartedAt: Date.now() };
+            await db.update(auditLog)
+                .set({ details: JSON.stringify(details) })
+                .where(eq(auditLog.id, auditId));
+        }
+
         // 1. Restore the absorbed profile.
         await db.update(adopters).set({ deletedAt: null, tokenHash: null, updatedAt: new Date() })
             .where(eq(adopters.id, secondaryId));
 
-        // 2. Re-point the moved rows back. Per-id fan-out (D1 can't expand
-        //    IN-arrays); lists are the rows one adopter owned, i.e. small.
-        await Promise.all([
-            ...undo.placementIds.map(id => db.update(placements).set({ adopterId: secondaryId }).where(eq(placements.id, id))),
-            ...undo.adopterEventIds.map(id => db.update(adopterEvents).set({ adopterId: secondaryId }).where(eq(adopterEvents.id, id))),
-            ...undo.imageIds.map(id => db.update(adopterImages).set({ adopterId: secondaryId }).where(eq(adopterImages.id, id))),
-            ...undo.flagIds.map(id => db.update(adopterFlags).set({ adopterId: secondaryId }).where(eq(adopterFlags.id, id))),
-            ...undo.historyIds.map(id => db.update(adopterHistory).set({ adopterId: secondaryId }).where(eq(adopterHistory.id, id))),
-            ...undo.statsIds.map(id => db.update(adopterStats).set({ adopterId: secondaryId }).where(eq(adopterStats.id, id))),
-        ]);
+        // 2. Re-point the moved rows back. Chunked OR-batches, not one query
+        //    per row: a long-lived profile can own hundreds of history rows,
+        //    and per-id fan-out would blow the Workers subrequest ceiling
+        //    mid-undo. (D1 can't expand IN-arrays; explicit ORs are safe.)
+        await repointRows(db, placements, placements.id, undo.placementIds, secondaryId);
+        await repointRows(db, adopterEvents, adopterEvents.id, undo.adopterEventIds, secondaryId);
+        await repointRows(db, adopterImages, adopterImages.id, undo.imageIds, secondaryId);
+        await repointRows(db, adopterFlags, adopterFlags.id, undo.flagIds, secondaryId);
+        await repointRows(db, adopterHistory, adopterHistory.id, undo.historyIds, secondaryId);
+        await repointRows(db, adopterStats, adopterStats.id, undo.statsIds, secondaryId);
 
         // 3. Restore the survivor's pre-merge fields (drops the appended
         //    contact blob, the merged entries and the auto-alias in one go).
@@ -454,12 +544,22 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
             updatedAt: new Date(),
         }).where(eq(adopters.id, primaryId));
 
-        // 4. Put the touched duplicate candidates back to their prior status.
-        await Promise.all(undo.candidates.map(c =>
-            db.update(duplicateCandidates)
-                .set({ status: c.status, resolvedAt: null, resolvedBy: null })
-                .where(eq(duplicateCandidates.id, c.id)),
-        ));
+        // 4. Put the touched duplicate candidates back to their prior status —
+        //    grouped by target status so each group is a few chunked updates.
+        const byStatus = new Map<string, string[]>();
+        for (const c of undo.candidates) {
+            const list = byStatus.get(c.status);
+            if (list) list.push(c.id);
+            else byStatus.set(c.status, [c.id]);
+        }
+        for (const [status, ids] of byStatus) {
+            for (let i = 0; i < ids.length; i += UNDO_CHUNK) {
+                const chunk = ids.slice(i, i + UNDO_CHUNK);
+                await db.update(duplicateCandidates)
+                    .set({ status, resolvedAt: null, resolvedBy: null })
+                    .where(or(...chunk.map(id => eq(duplicateCandidates.id, id))));
+            }
+        }
 
         // 5. Restore the annotated duplicate-flag details.
         await Promise.all(undo.annotatedFlags.map(f =>

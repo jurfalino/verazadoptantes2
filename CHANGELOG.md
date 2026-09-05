@@ -2,6 +2,89 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.6] - 2026-09-05
+
+### Changed — batch merge is now PAIR-WISE: the queue-clearing tool it should have been
+
+The mass-merge shipped in v2.55.2 pooled every selected record into ONE survivor — a
+cluster-collapse tool, useless (and dangerous) for the real job: clearing ~780 pending
+pairs of mostly *different* people, where confirming a multi-pair selection would have
+merged unrelated profiles together. The floating bar's primary action is now **"Fusionar
+cada par"**: every selected pair merges independently, the server auto-picking each pair's
+survivor (more activity records → more contact entries → older record). Pairs invalidated
+mid-batch by an earlier merge (a record shared between selections) come back as clean
+skips, not errors. A "Seleccionar página" header checkbox ticks all 50 visible pairs at
+once. The pool-into-one mode survives as a clearly-labeled secondary action ("Unir todo en
+un perfil…") for genuine same-person clusters. One undo banner covers the whole batch.
+E2E extended: auto-survivor rule (entries, then age) and overlap-skip both pinned.
+
+## [2.55.5] - 2026-09-05
+
+### Fixed — undo was broken end-to-end: D1 can't bind a raw Date
+
+The merge-undo e2e's first honest run caught a real bug the type system couldn't: the
+undo's later-merge guard compared timestamps via a raw ``sql`created_at > ${date}` ``
+fragment, and D1 refuses a bound JS Date object — so EVERY undo failed at that query.
+v2.55.1–v2.55.4 shipped an undo that never once worked; the banner would have alerted
+"Undo failed" on first prod use. Replaced with drizzle's typed `gt()` (which maps the Date
+to the column's epoch-seconds driver value) plus a `ne(id)` self-exclusion and a
+conservative fallback when the audit row lacks a timestamp.
+
+## [2.55.4] - 2026-09-05
+
+### Changed — 50 pairs per page, mass-merge up to 50
+
+Page size raised 20 → 50 (50 pairs × 4 enrichment queries stays under the Workers
+subrequest ceiling; noted inline not to raise further without batching the enrichment). A
+mass-merge selection may now absorb up to 50 profiles: the server keeps its 10-per-request
+cap, and the panel transparently splits bigger selections into sequential batches — one
+click either way, with aggregated results and a single undo banner covering the lot (undo
+batches the same way, newest-first preserved across batches; a transport failure stops
+later batches rather than merging into a survivor in unknown state).
+
+### Fixed — merge-undo e2e green on CI
+
+First CI run of `merge-undo.authed.spec.ts` failed on an environment quirk: wrangler's
+`--json` output renders SQL NULL as the string "null" on the runner, so `toBeNull()`
+assertions on nullable columns can never pass there. Null checks now go through a
+normalizer that accepts both. (DB state was verified correct — the failure was purely the
+assertion encoding.)
+
+## [2.55.3] - 2026-09-05
+
+### Fixed — undo hardening: crash-retryable, subrequest-safe, and now tested
+
+Three gaps from the v2.55.1 undo, found in review before any prod incident:
+
+- **A crashed undo could strand a half-reversed merge.** If the reversal died after
+  reviving the absorbed profile, retrying hit the "profile changed since the merge" safety
+  guard — the guard's own first step had tripped it, leaving the state fixable only by
+  hand. The undo now writes an `undoStartedAt` marker to the audit row before mutating
+  anything; a retry sees the marker, skips the pristine-secondary check, and re-runs the
+  reversal (every step writes fixed values, so re-running converges).
+- **Unbounded subrequest fan-out.** Re-pointing rows back ran one query per row; a
+  long-lived profile's history could blow the Workers subrequest ceiling mid-undo. All
+  re-points and candidate restores now go in chunked OR-batches (40 ids/statement, under
+  D1's bound-parameter cap).
+- **Zero test coverage on the most destructive path.** New `merge-undo.authed.spec.ts`
+  drives mass-merge (A←[B,C]) and undo through the real authed endpoints with isolated
+  fixtures, asserting DB state between steps: soft-deletes, alias carry-over, ghost-pair
+  (B↔C) resolution, full restoration on undo, and double-undo refusal.
+
+## [2.55.2] - 2026-09-05
+
+### Changed — mass-merge is now checkbox selection, not auto-detected groups
+
+v2.55.0's mass-merge only appeared when a connected cluster happened to sit on one page of
+results — invisible whenever a trio's pairs straddled a page boundary, and undiscoverable
+("select multiple records" reads as checkboxes, not as a computed group card). Replaced:
+every pending pair card has a checkbox; ticking any shows a floating bottom bar with the
+pooled profile count and a "Fusionar seleccionados" button that opens the survivor-picker
+modal over the union of the ticked pairs' records. Selection survives paging (tick on page
+1, keep ticking on page 3), clears after any merge/undo, and the modal enforces the
+10-profiles-per-merge server cap inline. The auto-grouped "Grupos conectados" section is
+gone.
+
 ## [2.55.1] - 2026-09-05
 
 ### Changed — merge is 2 clicks, guarded by undo instead of a confirm dialog

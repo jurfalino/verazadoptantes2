@@ -45,7 +45,10 @@ export async function GET(request: Request) {
         const { searchParams } = new URL(request.url);
         const status = searchParams.get('status') || 'pending';
         const page = Math.max(1, parseInt(searchParams.get('page') || '1') || 1);
-        const limit = 20;
+        // 50 pairs/page × 4 enrichment queries each = 200 subrequests; with the
+        // user-flagged section's own fan-out this stays under the Workers
+        // ceiling, but don't raise it further without batching the enrichment.
+        const limit = 50;
         const offset = (page - 1) * limit;
 
         // Optional confidence filter, e.g. `confidence=high,medium`. The low

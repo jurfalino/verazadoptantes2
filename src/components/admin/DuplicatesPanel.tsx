@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import DuplicateMergeModal from '@/components/DuplicateMergeModal';
 import { useLanguage } from '@/context/LanguageContext';
 
@@ -52,6 +52,14 @@ interface Counts {
     userFlagged: number;
 }
 
+/** Pairs per page — must match the API route's `limit`. */
+const PAGE_SIZE = 50;
+/** The merge/unmerge endpoints cap each request at 10 (Workers subrequest
+ *  budget); bigger selections are sent as sequential batches of this size. */
+const MERGE_CHUNK = 10;
+/** Most profiles one mass-merge selection may absorb (5 request batches). */
+const MASS_MERGE_SELECTION_MAX = 50;
+
 /** One profile inside a connected duplicate cluster. */
 interface ClusterRecord {
     id: string;
@@ -60,38 +68,33 @@ interface ClusterRecord {
     avgRating?: number | null;
 }
 
+/** The two records of a pair, shaped for the mass-merge modal. */
+function pairRecords(c: DuplicateCandidate): ClusterRecord[] {
+    return [
+        { id: c.adopter1Id, name: c.adopter1Name, contact: c.adopter1Contact, avgRating: c.adopter1AvgRating },
+        { id: c.adopter2Id, name: c.adopter2Name, contact: c.adopter2Contact, avgRating: c.adopter2AvgRating },
+    ];
+}
+
 /**
- * Group pending pairs into connected components (union-find): A↔B plus B↔C
- * means A, B, C are one cluster. Only clusters of 3+ profiles are returned —
- * a 2-profile "cluster" is just a pair, already handled by the pair card.
- * Operates on the current page only; a cluster split across pages shows the
- * members visible here.
+ * Union of the records behind the ticked pairs, deduped by adopter id. Reads
+ * from the tick-time cache so pairs selected on other pages still count; the
+ * current page's rows refresh their cached info on render.
  */
-function buildClusters(candidates: DuplicateCandidate[]): ClusterRecord[][] {
-    const parent = new Map<string, string>();
-    const find = (x: string): string => {
-        let root = parent.get(x) ?? x;
-        while (root !== (parent.get(root) ?? root)) root = parent.get(root) ?? root;
-        parent.set(x, root);
-        return root;
-    };
-    const records = new Map<string, ClusterRecord>();
-
-    for (const c of candidates) {
-        const [ra, rb] = [find(c.adopter1Id), find(c.adopter2Id)];
-        if (ra !== rb) parent.set(ra, rb);
-        if (!records.has(c.adopter1Id)) records.set(c.adopter1Id, { id: c.adopter1Id, name: c.adopter1Name, contact: c.adopter1Contact, avgRating: c.adopter1AvgRating });
-        if (!records.has(c.adopter2Id)) records.set(c.adopter2Id, { id: c.adopter2Id, name: c.adopter2Name, contact: c.adopter2Contact, avgRating: c.adopter2AvgRating });
+function collectRecords(
+    candidates: DuplicateCandidate[],
+    selected: Set<string>,
+    cacheRef: { current: Map<string, ClusterRecord[]> },
+): ClusterRecord[] {
+    const byId = new Map<string, ClusterRecord>();
+    for (const candidateId of selected) {
+        const records = cacheRef.current.get(candidateId)
+            ?? candidates.filter(c => c.id === candidateId).flatMap(pairRecords);
+        for (const rec of records) {
+            if (!byId.has(rec.id)) byId.set(rec.id, rec);
+        }
     }
-
-    const groups = new Map<string, ClusterRecord[]>();
-    for (const rec of records.values()) {
-        const root = find(rec.id);
-        const list = groups.get(root);
-        if (list) list.push(rec);
-        else groups.set(root, [rec]);
-    }
-    return [...groups.values()].filter(g => g.length >= 3);
+    return [...byId.values()];
 }
 
 export default function DuplicatesPanel() {
@@ -118,11 +121,17 @@ export default function DuplicatesPanel() {
     // share one name word — hidden by default so real signal isn't drowned.
     const [showLow, setShowLow] = useState(false);
     const [massMergeCluster, setMassMergeCluster] = useState<ClusterRecord[] | null>(null);
+    // Ticked pending pair cards (candidate ids) + a cache of their records so
+    // the selection survives paging away from where a pair was ticked.
+    const [selectedPairs, setSelectedPairs] = useState<Set<string>>(new Set());
+    const selectedRecordCache = useRef(new Map<string, ClusterRecord[]>());
     // The last merge action's audit ids (one per absorbed profile), newest
     // last — the handle for the Deshacer banner. Cleared by the next merge,
     // an undo, or dismissing the banner; surviving a refetch is intentional.
     const [lastMerge, setLastMerge] = useState<{ auditIds: string[]; label: string } | null>(null);
     const [undoing, setUndoing] = useState(false);
+    // Batch pair-merge progress ('' = not running); disables the bar while set.
+    const [bulkProgress, setBulkProgress] = useState('');
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -146,13 +155,109 @@ export default function DuplicatesPanel() {
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
-    const totalPages = Math.max(1, Math.ceil(filteredTotal / 20));
+    const totalPages = Math.max(1, Math.ceil(filteredTotal / PAGE_SIZE));
     // Merges/dismissals shrink the list under us; clamp rather than show an empty page.
     useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
-    // Connected components among the pairs on this page: A↔B + B↔C means
-    // A, B and C are one duplicate cluster, mass-mergeable in one pass.
-    const clusters = statusFilter === 'pending' ? buildClusters(candidates) : [];
+    // Mass-merge selection: tick pending pair cards, then merge the union of
+    // their records in one pass. Keyed by candidate id; survives paging so a
+    // cluster split across pages can still be gathered into one merge.
+    const selectedRecords = collectRecords(candidates, selectedPairs, selectedRecordCache);
+    useEffect(() => {
+        // Cache the record info of every selected pair so a selection made on
+        // page 1 still renders in the bar/modal after paging to page 3.
+        for (const c of candidates) {
+            if (selectedPairs.has(c.id)) {
+                selectedRecordCache.current.set(c.id, pairRecords(c));
+            }
+        }
+    });
+
+    function togglePair(c: DuplicateCandidate) {
+        setSelectedPairs(prev => {
+            const next = new Set(prev);
+            if (next.has(c.id)) {
+                next.delete(c.id);
+                selectedRecordCache.current.delete(c.id);
+            } else {
+                next.add(c.id);
+                selectedRecordCache.current.set(c.id, pairRecords(c));
+            }
+            return next;
+        });
+    }
+
+    function clearSelection() {
+        setSelectedPairs(new Set());
+        selectedRecordCache.current.clear();
+    }
+
+    const allVisibleSelected = candidates.length > 0 && candidates.every(c => selectedPairs.has(c.id));
+
+    function toggleAllVisible() {
+        setSelectedPairs(prev => {
+            const next = new Set(prev);
+            if (allVisibleSelected) {
+                for (const c of candidates) {
+                    next.delete(c.id);
+                    selectedRecordCache.current.delete(c.id);
+                }
+            } else {
+                for (const c of candidates) {
+                    next.add(c.id);
+                    selectedRecordCache.current.set(c.id, pairRecords(c));
+                }
+            }
+            return next;
+        });
+    }
+
+    /**
+     * The queue-clearing action: merge EACH selected pair independently — the
+     * server auto-picks each pair's survivor (more activity → more contact
+     * data → older). Chunked requests; pairs invalidated by an earlier merge
+     * in the batch come back as skips, which is expected, not an error.
+     */
+    async function handleMergePairs() {
+        const candidateIds = [...selectedPairs];
+        if (candidateIds.length === 0 || bulkProgress) return;
+        let merged = 0;
+        let skipped = 0;
+        const failures: string[] = [];
+        const auditIds: string[] = [];
+        try {
+            for (let i = 0; i < candidateIds.length; i += MERGE_CHUNK) {
+                setBulkProgress(`Fusionando… ${merged + skipped}/${candidateIds.length}`);
+                const batch = candidateIds.slice(i, i + MERGE_CHUNK);
+                const res = await fetch('/api/admin/duplicates/merge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ candidateIds: batch }),
+                });
+                const data = await res.json() as { error?: string; results?: Array<{ candidateId: string; success: boolean; skipped?: boolean; error?: string; auditId?: string }> };
+                if (!res.ok) {
+                    failures.push(data.error ?? `HTTP ${res.status}`);
+                    break;
+                }
+                for (const r of data.results || []) {
+                    if (!r.success) failures.push(r.error ?? 'unknown');
+                    else if (r.skipped) skipped++;
+                    else {
+                        merged++;
+                        if (r.auditId) auditIds.push(r.auditId);
+                    }
+                }
+            }
+        } finally {
+            setBulkProgress('');
+        }
+        if (failures.length > 0) {
+            alert(`Se fusionaron ${merged} pares, pero hubo fallas:\n${failures.map(f => `• ${f}`).join('\n')}`);
+        }
+        setLastMerge(auditIds.length > 0 ? { auditIds, label: `${merged} par${merged === 1 ? '' : 'es'} fusionado${merged === 1 ? '' : 's'}${skipped ? ` (${skipped} ya resueltos)` : ''}` } : null);
+        clearSelection();
+        fetchData();
+    }
 
     /**
      * The scan re-tokenizes in batches (the endpoint caps each call so a Worker
@@ -253,6 +358,7 @@ export default function DuplicatesPanel() {
             const auditIds = (data.results || []).filter(r => r.success && r.auditId).map(r => r.auditId!);
             setLastMerge(auditIds.length > 0 ? { auditIds, label: '1 perfil fusionado' } : null);
             setMergeTarget(null);
+            clearSelection();
             fetchData();
         } else {
             alert(`Merge failed: ${data.error}`);
@@ -260,24 +366,44 @@ export default function DuplicatesPanel() {
     }
 
     async function handleMassMerge(primaryId: string, secondaryIds: string[]) {
-        const res = await fetch('/api/admin/duplicates/merge', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ primaryId, secondaryIds }),
-        });
-        const data = await res.json() as { mergedCount?: number; error?: string; results?: Array<{ secondaryId: string; success: boolean; error?: string; auditId?: string }> };
-        if (res.ok) {
-            const failed = (data.results || []).filter(r => !r.success);
-            if (failed.length > 0) {
-                alert(`Se fusionaron ${data.mergedCount ?? 0} perfiles, pero ${failed.length} fallaron:\n${failed.map(f => `• ${f.error}`).join('\n')}`);
+        // The endpoint caps each request at MERGE_CHUNK secondaries; bigger
+        // selections go as sequential batches (server-side merges are already
+        // sequential per request, so this is the same semantics, just spread
+        // over several Workers invocations). Stop at the first transport-level
+        // failure — later batches would merge into a survivor whose state we
+        // no longer trust.
+        const allResults: Array<{ secondaryId: string; success: boolean; error?: string; auditId?: string }> = [];
+        let transportError: string | null = null;
+        for (let i = 0; i < secondaryIds.length; i += MERGE_CHUNK) {
+            const batch = secondaryIds.slice(i, i + MERGE_CHUNK);
+            const res = await fetch('/api/admin/duplicates/merge', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ primaryId, secondaryIds: batch }),
+            });
+            const data = await res.json() as { error?: string; results?: Array<{ secondaryId: string; success: boolean; error?: string; auditId?: string }> };
+            if (!res.ok) {
+                transportError = data.error ?? `HTTP ${res.status}`;
+                if (data.results) allResults.push(...data.results);
+                break;
             }
-            const auditIds = (data.results || []).filter(r => r.success && r.auditId).map(r => r.auditId!);
-            setLastMerge(auditIds.length > 0 ? { auditIds, label: `${auditIds.length} perfil${auditIds.length === 1 ? '' : 'es'} fusionado${auditIds.length === 1 ? '' : 's'}` } : null);
-            setMassMergeCluster(null);
-            fetchData();
-        } else {
-            alert(`Merge failed: ${data.error}`);
+            allResults.push(...(data.results || []));
         }
+
+        const okResults = allResults.filter(r => r.success);
+        const failed = allResults.filter(r => !r.success);
+        if (transportError && okResults.length === 0) {
+            alert(`Merge failed: ${transportError}`);
+            return;
+        }
+        if (failed.length > 0 || transportError) {
+            alert(`Se fusionaron ${okResults.length} perfiles, pero ${failed.length || 'algunos'} fallaron:\n${failed.map(f => `• ${f.error}`).join('\n')}${transportError ? `\n• ${transportError}` : ''}`);
+        }
+        const auditIds = okResults.filter(r => r.auditId).map(r => r.auditId!);
+        setLastMerge(auditIds.length > 0 ? { auditIds, label: `${auditIds.length} perfil${auditIds.length === 1 ? '' : 'es'} fusionado${auditIds.length === 1 ? '' : 's'}` } : null);
+        setMassMergeCluster(null);
+        clearSelection();
+        fetchData();
     }
 
     async function handleUndo() {
@@ -286,21 +412,33 @@ export default function DuplicatesPanel() {
         try {
             // Newest-first: a later merge into the same survivor must be
             // reversed before an earlier one (the server enforces this too).
-            const res = await fetch('/api/admin/duplicates/unmerge', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ auditIds: [...lastMerge.auditIds].reverse() }),
-            });
-            const data = await res.json() as { undoneCount?: number; error?: string; results?: Array<{ success: boolean; error?: string }> };
-            if (res.ok) {
-                const failed = (data.results || []).filter(r => !r.success);
-                if (failed.length > 0) {
-                    alert(`Se deshicieron ${data.undoneCount ?? 0} fusiones, pero ${failed.length} fallaron:\n${failed.map(f => `• ${f.error}`).join('\n')}`);
+            // Chunked like the merge — the endpoint takes at most MERGE_CHUNK
+            // per request; batch order preserves the newest-first invariant.
+            const reversed = [...lastMerge.auditIds].reverse();
+            let undone = 0;
+            const failures: string[] = [];
+            for (let i = 0; i < reversed.length; i += MERGE_CHUNK) {
+                const batch = reversed.slice(i, i + MERGE_CHUNK);
+                const res = await fetch('/api/admin/duplicates/unmerge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ auditIds: batch }),
+                });
+                const data = await res.json() as { undoneCount?: number; error?: string; results?: Array<{ success: boolean; error?: string }> };
+                if (!res.ok) {
+                    failures.push(data.error ?? `HTTP ${res.status}`);
+                    break;
                 }
+                undone += data.undoneCount ?? 0;
+                failures.push(...(data.results || []).filter(r => !r.success).map(r => r.error ?? 'unknown'));
+            }
+            if (failures.length > 0) {
+                alert(`Se deshicieron ${undone} fusiones, pero hubo fallas:\n${failures.map(f => `• ${f}`).join('\n')}`);
+            }
+            if (undone > 0 || failures.length === 0) {
                 setLastMerge(null);
+                clearSelection();
                 fetchData();
-            } else {
-                alert(`No se pudo deshacer: ${data.error}`);
             }
         } finally {
             setUndoing(false);
@@ -449,49 +587,34 @@ export default function DuplicatesPanel() {
                         </section>
                     )}
 
-                    {/* Section 1.5: connected clusters on this page — 3+ profiles
-                        linked by pairwise matches, offered as one mass-merge. */}
-                    {clusters.length > 0 && (
-                        <section>
-                            <h2 className="text-lg font-semibold text-stone-800 mb-3">🔗 Grupos conectados</h2>
-                            <div className="space-y-3">
-                                {clusters.map(cluster => (
-                                    <div key={cluster.map(r => r.id).join('|')} className="bg-teal-50/50 border border-teal-200 rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap">
-                                        <div className="min-w-0">
-                                            <p className="text-sm font-semibold text-stone-900">
-                                                {cluster.length} perfiles conectados entre sí
-                                            </p>
-                                            <p className="text-xs text-stone-600 mt-0.5 line-clamp-2">
-                                                {cluster.map(r => r.name).join(' · ')}
-                                            </p>
-                                        </div>
-                                        <button
-                                            onClick={() => setMassMergeCluster(cluster)}
-                                            className="px-3 py-1.5 text-xs font-semibold text-white bg-teal-600 rounded-lg hover:bg-teal-700 flex-shrink-0"
-                                        >
-                                            Fusionar grupo…
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
-                    )}
-
                     {/* Section 2: System-Detected */}
                     <section>
                         <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
                             <h2 className="text-lg font-semibold text-stone-800">
                                 🔍 System-Detected ({statusFilter})
                             </h2>
-                            <label className="flex items-center gap-2 text-sm text-stone-600 cursor-pointer select-none">
-                                <input
-                                    type="checkbox"
-                                    checked={showLow}
-                                    onChange={e => { setShowLow(e.target.checked); setPage(1); }}
-                                    className="rounded border-stone-300 text-teal-600 focus:ring-teal-500"
-                                />
-                                Mostrar confianza baja
-                            </label>
+                            <div className="flex items-center gap-4 flex-wrap">
+                                {statusFilter === 'pending' && candidates.length > 0 && (
+                                    <label className="flex items-center gap-2 text-sm font-medium text-teal-700 cursor-pointer select-none">
+                                        <input
+                                            type="checkbox"
+                                            checked={allVisibleSelected}
+                                            onChange={toggleAllVisible}
+                                            className="h-5 w-5 rounded border-stone-300 text-teal-600 focus:ring-teal-500"
+                                        />
+                                        Seleccionar página ({candidates.length})
+                                    </label>
+                                )}
+                                <label className="flex items-center gap-2 text-sm text-stone-600 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={showLow}
+                                        onChange={e => { setShowLow(e.target.checked); setPage(1); }}
+                                        className="rounded border-stone-300 text-teal-600 focus:ring-teal-500"
+                                    />
+                                    Mostrar confianza baja
+                                </label>
+                            </div>
                         </div>
                         {candidates.length === 0 ? (
                             <div className="text-center py-12 text-stone-500 bg-stone-50 rounded-xl">
@@ -520,6 +643,8 @@ export default function DuplicatesPanel() {
                                             flaggedBy={null}
                                             onMerge={statusFilter === 'pending' ? () => openMergeModal(c) : undefined}
                                             onDismiss={statusFilter === 'pending' ? () => handleDismiss(c.id) : undefined}
+                                            selected={selectedPairs.has(c.id)}
+                                            onToggleSelect={statusFilter === 'pending' ? () => togglePair(c) : undefined}
                                         />
                                     );
                                 })}
@@ -551,6 +676,43 @@ export default function DuplicatesPanel() {
                         )}
                     </section>
                 </>
+            )}
+
+            {/* Floating mass-merge bar — appears while pending pairs are ticked.
+                Fixed to the viewport bottom so it stays reachable however far
+                down the list the last checkbox was. */}
+            {statusFilter === 'pending' && selectedPairs.size > 0 && (
+                <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-stone-900 text-white rounded-2xl shadow-lg px-5 py-3 flex items-center gap-4 flex-wrap justify-center">
+                    <span className="text-sm">
+                        {selectedPairs.size} par{selectedPairs.size === 1 ? '' : 'es'} seleccionado{selectedPairs.size === 1 ? '' : 's'}
+                    </span>
+                    {/* Primary: each pair merges independently (queue clearing). */}
+                    <button
+                        onClick={handleMergePairs}
+                        disabled={!!bulkProgress || undoing}
+                        className="px-4 py-1.5 text-sm font-semibold bg-teal-500 rounded-lg hover:bg-teal-400 disabled:opacity-50"
+                    >
+                        {bulkProgress || `Fusionar cada par (${selectedPairs.size})`}
+                    </button>
+                    {/* Secondary: pool EVERY selected record into ONE survivor —
+                        only for a single person's cluster, never for clearing
+                        unrelated pairs. */}
+                    <button
+                        onClick={() => setMassMergeCluster(selectedRecords)}
+                        disabled={!!bulkProgress || selectedRecords.length < 2}
+                        className="px-3 py-1.5 text-xs font-medium text-stone-300 border border-stone-600 rounded-lg hover:text-white hover:border-stone-400 disabled:opacity-50"
+                        title="Solo para varios registros de la MISMA persona"
+                    >
+                        Unir todo en un perfil…
+                    </button>
+                    <button
+                        onClick={clearSelection}
+                        disabled={!!bulkProgress}
+                        className="text-sm text-stone-300 hover:text-white disabled:opacity-50"
+                    >
+                        Limpiar
+                    </button>
+                </div>
             )}
 
             {/* Merge Modal */}
@@ -690,6 +852,11 @@ function MassMergeModal({ records, onMerge, onClose }: {
                         <p className="text-amber-700">
                             Se fusionarán <strong>{secondaryIds.length}</strong> perfil{secondaryIds.length === 1 ? '' : 'es'} en <strong>{primary?.name}</strong>. Sus actividades y contactos se mueven al perfil conservado y sus nombres quedan como alias (siguen encontrándose al buscar).
                         </p>
+                        {secondaryIds.length > MASS_MERGE_SELECTION_MAX && (
+                            <p className="text-red-700 font-medium mt-2">
+                                Máximo {MASS_MERGE_SELECTION_MAX} perfiles por fusión — destildá {secondaryIds.length - MASS_MERGE_SELECTION_MAX} o hacelo en tandas.
+                            </p>
+                        )}
                     </div>
                 </div>
 
@@ -704,7 +871,7 @@ function MassMergeModal({ records, onMerge, onClose }: {
                     <button
                         type="button"
                         onClick={handleConfirm}
-                        disabled={merging || secondaryIds.length === 0}
+                        disabled={merging || secondaryIds.length === 0 || secondaryIds.length > MASS_MERGE_SELECTION_MAX}
                         className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50"
                     >
                         {merging ? 'Fusionando…' : `Fusionar ${secondaryIds.length || ''}`}
@@ -718,7 +885,7 @@ function MassMergeModal({ records, onMerge, onClose }: {
 function CandidateCard({
     name1, name2, contact1, contact2, id1, id2,
     matchTypes, confidence, score, details, flaggedBy,
-    onMerge, onDismiss,
+    onMerge, onDismiss, selected, onToggleSelect,
 }: {
     name1: string; name2: string;
     contact1?: string | null; contact2?: string | null;
@@ -726,6 +893,7 @@ function CandidateCard({
     matchTypes: string[]; confidence: string; score: number | null;
     details: string | null; flaggedBy: string | null;
     onMerge?: () => void; onDismiss?: () => void;
+    selected?: boolean; onToggleSelect?: () => void;
 }) {
     const matchLabels: Record<string, string> = {
         phone: '📞 Phone', email: '✉️ Email', social: '🌐 Social',
@@ -745,8 +913,19 @@ function CandidateCard({
     };
 
     return (
-        <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
+        <div className={`bg-white border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow ${selected ? 'border-teal-500 ring-1 ring-teal-500' : 'border-stone-200'}`}>
             <div className="flex items-start justify-between gap-4">
+                {/* Select for mass-merge: ticked pairs pool their records into
+                    one multi-profile merge via the floating action bar. */}
+                {onToggleSelect && (
+                    <input
+                        type="checkbox"
+                        checked={!!selected}
+                        onChange={onToggleSelect}
+                        aria-label="Seleccionar para fusión múltiple"
+                        className="mt-1 h-5 w-5 flex-shrink-0 rounded border-stone-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
+                    />
+                )}
                 {/* Left: profiles */}
                 <div className="flex-1 min-w-0">
                     <div className="grid grid-cols-2 gap-3 mb-3">
