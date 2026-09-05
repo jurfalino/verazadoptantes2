@@ -130,6 +130,8 @@ export default function DuplicatesPanel() {
     // an undo, or dismissing the banner; surviving a refetch is intentional.
     const [lastMerge, setLastMerge] = useState<{ auditIds: string[]; label: string } | null>(null);
     const [undoing, setUndoing] = useState(false);
+    // Batch pair-merge progress ('' = not running); disables the bar while set.
+    const [bulkProgress, setBulkProgress] = useState('');
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -188,6 +190,73 @@ export default function DuplicatesPanel() {
     function clearSelection() {
         setSelectedPairs(new Set());
         selectedRecordCache.current.clear();
+    }
+
+    const allVisibleSelected = candidates.length > 0 && candidates.every(c => selectedPairs.has(c.id));
+
+    function toggleAllVisible() {
+        setSelectedPairs(prev => {
+            const next = new Set(prev);
+            if (allVisibleSelected) {
+                for (const c of candidates) {
+                    next.delete(c.id);
+                    selectedRecordCache.current.delete(c.id);
+                }
+            } else {
+                for (const c of candidates) {
+                    next.add(c.id);
+                    selectedRecordCache.current.set(c.id, pairRecords(c));
+                }
+            }
+            return next;
+        });
+    }
+
+    /**
+     * The queue-clearing action: merge EACH selected pair independently — the
+     * server auto-picks each pair's survivor (more activity → more contact
+     * data → older). Chunked requests; pairs invalidated by an earlier merge
+     * in the batch come back as skips, which is expected, not an error.
+     */
+    async function handleMergePairs() {
+        const candidateIds = [...selectedPairs];
+        if (candidateIds.length === 0 || bulkProgress) return;
+        let merged = 0;
+        let skipped = 0;
+        const failures: string[] = [];
+        const auditIds: string[] = [];
+        try {
+            for (let i = 0; i < candidateIds.length; i += MERGE_CHUNK) {
+                setBulkProgress(`Fusionando… ${merged + skipped}/${candidateIds.length}`);
+                const batch = candidateIds.slice(i, i + MERGE_CHUNK);
+                const res = await fetch('/api/admin/duplicates/merge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ candidateIds: batch }),
+                });
+                const data = await res.json() as { error?: string; results?: Array<{ candidateId: string; success: boolean; skipped?: boolean; error?: string; auditId?: string }> };
+                if (!res.ok) {
+                    failures.push(data.error ?? `HTTP ${res.status}`);
+                    break;
+                }
+                for (const r of data.results || []) {
+                    if (!r.success) failures.push(r.error ?? 'unknown');
+                    else if (r.skipped) skipped++;
+                    else {
+                        merged++;
+                        if (r.auditId) auditIds.push(r.auditId);
+                    }
+                }
+            }
+        } finally {
+            setBulkProgress('');
+        }
+        if (failures.length > 0) {
+            alert(`Se fusionaron ${merged} pares, pero hubo fallas:\n${failures.map(f => `• ${f}`).join('\n')}`);
+        }
+        setLastMerge(auditIds.length > 0 ? { auditIds, label: `${merged} par${merged === 1 ? '' : 'es'} fusionado${merged === 1 ? '' : 's'}${skipped ? ` (${skipped} ya resueltos)` : ''}` } : null);
+        clearSelection();
+        fetchData();
     }
 
     /**
@@ -524,15 +593,28 @@ export default function DuplicatesPanel() {
                             <h2 className="text-lg font-semibold text-stone-800">
                                 🔍 System-Detected ({statusFilter})
                             </h2>
-                            <label className="flex items-center gap-2 text-sm text-stone-600 cursor-pointer select-none">
-                                <input
-                                    type="checkbox"
-                                    checked={showLow}
-                                    onChange={e => { setShowLow(e.target.checked); setPage(1); }}
-                                    className="rounded border-stone-300 text-teal-600 focus:ring-teal-500"
-                                />
-                                Mostrar confianza baja
-                            </label>
+                            <div className="flex items-center gap-4 flex-wrap">
+                                {statusFilter === 'pending' && candidates.length > 0 && (
+                                    <label className="flex items-center gap-2 text-sm font-medium text-teal-700 cursor-pointer select-none">
+                                        <input
+                                            type="checkbox"
+                                            checked={allVisibleSelected}
+                                            onChange={toggleAllVisible}
+                                            className="h-5 w-5 rounded border-stone-300 text-teal-600 focus:ring-teal-500"
+                                        />
+                                        Seleccionar página ({candidates.length})
+                                    </label>
+                                )}
+                                <label className="flex items-center gap-2 text-sm text-stone-600 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={showLow}
+                                        onChange={e => { setShowLow(e.target.checked); setPage(1); }}
+                                        className="rounded border-stone-300 text-teal-600 focus:ring-teal-500"
+                                    />
+                                    Mostrar confianza baja
+                                </label>
+                            </div>
                         </div>
                         {candidates.length === 0 ? (
                             <div className="text-center py-12 text-stone-500 bg-stone-50 rounded-xl">
@@ -600,20 +682,33 @@ export default function DuplicatesPanel() {
                 Fixed to the viewport bottom so it stays reachable however far
                 down the list the last checkbox was. */}
             {statusFilter === 'pending' && selectedPairs.size > 0 && (
-                <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-stone-900 text-white rounded-2xl shadow-lg px-5 py-3 flex items-center gap-4">
+                <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-stone-900 text-white rounded-2xl shadow-lg px-5 py-3 flex items-center gap-4 flex-wrap justify-center">
                     <span className="text-sm">
-                        {selectedRecords.length} perfil{selectedRecords.length === 1 ? '' : 'es'} en {selectedPairs.size} par{selectedPairs.size === 1 ? '' : 'es'}
+                        {selectedPairs.size} par{selectedPairs.size === 1 ? '' : 'es'} seleccionado{selectedPairs.size === 1 ? '' : 's'}
                     </span>
+                    {/* Primary: each pair merges independently (queue clearing). */}
                     <button
-                        onClick={() => setMassMergeCluster(selectedRecords)}
-                        disabled={selectedRecords.length < 2}
+                        onClick={handleMergePairs}
+                        disabled={!!bulkProgress || undoing}
                         className="px-4 py-1.5 text-sm font-semibold bg-teal-500 rounded-lg hover:bg-teal-400 disabled:opacity-50"
                     >
-                        Fusionar seleccionados
+                        {bulkProgress || `Fusionar cada par (${selectedPairs.size})`}
+                    </button>
+                    {/* Secondary: pool EVERY selected record into ONE survivor —
+                        only for a single person's cluster, never for clearing
+                        unrelated pairs. */}
+                    <button
+                        onClick={() => setMassMergeCluster(selectedRecords)}
+                        disabled={!!bulkProgress || selectedRecords.length < 2}
+                        className="px-3 py-1.5 text-xs font-medium text-stone-300 border border-stone-600 rounded-lg hover:text-white hover:border-stone-400 disabled:opacity-50"
+                        title="Solo para varios registros de la MISMA persona"
+                    >
+                        Unir todo en un perfil…
                     </button>
                     <button
                         onClick={clearSelection}
-                        className="text-sm text-stone-300 hover:text-white"
+                        disabled={!!bulkProgress}
+                        className="text-sm text-stone-300 hover:text-white disabled:opacity-50"
                     >
                         Limpiar
                     </button>

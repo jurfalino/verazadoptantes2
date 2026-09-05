@@ -356,6 +356,61 @@ async function repointRows(db: any, table: any, idCol: any, ids: string[], adopt
     }
 }
 
+/**
+ * Merge one PENDING candidate pair, picking the survivor automatically:
+ * more activity records wins; tie → more contact entries; tie → older record.
+ * The loser is absorbed via the shared mergeAdopters mechanics (alias
+ * carry-over, candidate cleanup, undo payload).
+ *
+ * `skipped: true` (with success) means the pair no longer needs merging —
+ * already resolved (typically by an earlier merge in the same batch that
+ * absorbed one of its records) or referencing a soft-deleted profile. That is
+ * the EXPECTED outcome when a user batch-selects overlapping pairs, not an
+ * error; any still-real match resurfaces against the survivor on next scan.
+ */
+export async function mergeCandidatePair(candidateId: string, actorEmail: string): Promise<{
+    success: boolean; skipped?: boolean; error?: string; auditId?: string; primaryId?: string; secondaryId?: string;
+}> {
+    try {
+        const db = await getDb();
+        if (!db) return { success: false, error: 'Database not available' };
+
+        const cand = await db.select().from(duplicateCandidates).where(eq(duplicateCandidates.id, candidateId)).get();
+        if (!cand) return { success: false, error: `Candidate ${candidateId} not found` };
+        if (cand.status !== 'pending') return { success: true, skipped: true };
+
+        const [a1, a2] = await Promise.all([
+            db.select().from(adopters).where(eq(adopters.id, cand.adopter1Id)).get(),
+            db.select().from(adopters).where(eq(adopters.id, cand.adopter2Id)).get(),
+        ]);
+        if (!a1 || !a2 || a1.deletedAt || a2.deletedAt) return { success: true, skipped: true };
+
+        const [acts1, acts2] = await Promise.all([
+            db.select({ count: sql<number>`COUNT(*)` }).from(adoptions).where(eq(adoptions.adopterId, a1.id)),
+            db.select({ count: sql<number>`COUNT(*)` }).from(adoptions).where(eq(adoptions.adopterId, a2.id)),
+        ]);
+        const n1 = acts1[0]?.count || 0;
+        const n2 = acts2[0]?.count || 0;
+        const e1 = deserializeContactEntries(a1.contactEntries).length;
+        const e2 = deserializeContactEntries(a2.contactEntries).length;
+        const t1 = a1.createdAt ? a1.createdAt.getTime() : Number.MAX_SAFE_INTEGER;
+        const t2 = a2.createdAt ? a2.createdAt.getTime() : Number.MAX_SAFE_INTEGER;
+
+        // Most activity → most contact data → oldest. a1 wins ties beyond that.
+        let primary = a1;
+        if (n2 !== n1) primary = n2 > n1 ? a2 : a1;
+        else if (e2 !== e1) primary = e2 > e1 ? a2 : a1;
+        else if (t2 < t1) primary = a2;
+        const secondary = primary.id === a1.id ? a2 : a1;
+
+        const result = await mergeAdopters(primary.id, secondary.id, actorEmail);
+        return { ...result, primaryId: primary.id, secondaryId: secondary.id };
+    } catch (error) {
+        const errorId = logger.error('mergeCandidatePair failed', error, { candidateId, actor: actorEmail });
+        return { success: false, error: `Pair merge failed (Error ID: ${errorId})` };
+    }
+}
+
 /** Everything unmergeAdopters needs to reverse one merge, stored in the merge's audit_log row. */
 interface MergeUndoPayload {
     primarySnapshot: {

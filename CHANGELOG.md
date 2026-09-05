@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.6] - 2026-09-05
+
+### Changed — batch merge is now PAIR-WISE: the queue-clearing tool it should have been
+
+The mass-merge shipped in v2.55.2 pooled every selected record into ONE survivor — a
+cluster-collapse tool, useless (and dangerous) for the real job: clearing ~780 pending
+pairs of mostly *different* people, where confirming a multi-pair selection would have
+merged unrelated profiles together. The floating bar's primary action is now **"Fusionar
+cada par"**: every selected pair merges independently, the server auto-picking each pair's
+survivor (more activity records → more contact entries → older record). Pairs invalidated
+mid-batch by an earlier merge (a record shared between selections) come back as clean
+skips, not errors. A "Seleccionar página" header checkbox ticks all 50 visible pairs at
+once. The pool-into-one mode survives as a clearly-labeled secondary action ("Unir todo en
+un perfil…") for genuine same-person clusters. One undo banner covers the whole batch.
+E2E extended: auto-survivor rule (entries, then age) and overlap-skip both pinned.
+
 ## [2.55.5] - 2026-09-05
 
 ### Fixed — undo was broken end-to-end: D1 can't bind a raw Date

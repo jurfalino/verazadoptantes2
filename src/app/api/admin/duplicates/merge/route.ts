@@ -3,7 +3,7 @@ export const runtime = 'edge';
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { isAdminAsync } from '@/config/admins';
-import { mergeAdopters } from '@/app/actions/duplicates';
+import { mergeAdopters, mergeCandidatePair } from '@/app/actions/duplicates';
 
 /**
  * How many secondaries one request may merge into the primary. Each merge is
@@ -27,7 +27,37 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const body = await request.json() as { primaryId: string; secondaryId?: string; secondaryIds?: string[] };
+    const body = await request.json() as { primaryId?: string; secondaryId?: string; secondaryIds?: string[]; candidateIds?: string[] };
+
+    // Batch PAIR-WISE mode: each candidate pair merges independently, survivor
+    // picked automatically (see mergeCandidatePair). This is the queue-clearing
+    // workhorse — NOT the pool-into-one-survivor mode below.
+    if (body.candidateIds && body.candidateIds.length > 0) {
+        const candidateIds = [...new Set(body.candidateIds)].filter(Boolean);
+        if (candidateIds.length > MASS_MERGE_MAX) {
+            return NextResponse.json({ error: `At most ${MASS_MERGE_MAX} pairs can be merged per request` }, { status: 400 });
+        }
+        // Sequential: an earlier merge may resolve a later selected pair (a
+        // record shared between them) — processing in order turns that into a
+        // clean skip instead of a race.
+        const results: Array<{ candidateId: string; success: boolean; skipped?: boolean; error?: string; auditId?: string }> = [];
+        for (const candidateId of candidateIds) {
+            const r = await mergeCandidatePair(candidateId, session.user.email);
+            results.push({ candidateId, success: r.success, skipped: r.skipped, error: r.error, auditId: r.auditId });
+        }
+        const failed = results.filter(r => !r.success);
+        const merged = results.filter(r => r.success && !r.skipped);
+        if (failed.length === results.length) {
+            return NextResponse.json({ error: failed[0]?.error ?? 'Merge failed', results }, { status: 500 });
+        }
+        return NextResponse.json({
+            success: failed.length === 0,
+            mergedCount: merged.length,
+            skippedCount: results.filter(r => r.skipped).length,
+            results,
+        });
+    }
+
     const { primaryId } = body;
     // Dedupe and drop the primary itself; a UI slip must not merge A into A.
     const secondaryIds = [...new Set(body.secondaryIds ?? (body.secondaryId ? [body.secondaryId] : []))]

@@ -48,10 +48,18 @@ function isDbNull(v: unknown): boolean {
     return v === null || v === undefined || v === 'null';
 }
 
-function seedAdopter(id: string, name: string, contact: string) {
+function seedAdopter(id: string, name: string, contact: string, entriesJson: string | null = null, createdAtExpr = `strftime('%s','now')`) {
+    const entries = entriesJson === null ? 'NULL' : `'${entriesJson}'`;
     execD1(
         `INSERT OR REPLACE INTO adopters (id, name, contact_info, contact_entries, country, status, added_by, deleted_at, token_hash, created_at, updated_at) ` +
-        `VALUES ('${id}', '${name}', '${contact}', NULL, 'AR', '5', 'gatitosolivos@gmail.com', NULL, NULL, strftime('%s','now'), strftime('%s','now'))`,
+        `VALUES ('${id}', '${name}', '${contact}', ${entries}, 'AR', '5', 'gatitosolivos@gmail.com', NULL, NULL, ${createdAtExpr}, strftime('%s','now'))`,
+    );
+}
+
+function seedCandidate(candId: string, id1: string, id2: string) {
+    execD1(
+        `INSERT OR REPLACE INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at, resolved_at, resolved_by) ` +
+        `VALUES ('${candId}', '${id1}', '${id2}', '["name_full"]', '{}', 50, 'high', 'pending', strftime('%s','now'), NULL, NULL)`,
     );
 }
 
@@ -62,12 +70,8 @@ test.describe('Duplicate mass-merge and undo', () => {
         seedAdopter(A, NAME_A, 'alpha-contact-original');
         seedAdopter(B, NAME_B, 'beta-contact 1111-2222');
         seedAdopter(C, NAME_C, 'gamma-contact 3333-4444');
-        for (const [candId, id1, id2] of [[CAND_AB, A, B], [CAND_BC, B, C]] as const) {
-            execD1(
-                `INSERT OR REPLACE INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at, resolved_at, resolved_by) ` +
-                `VALUES ('${candId}', '${id1}', '${id2}', '["name_full"]', '{}', 50, 'high', 'pending', strftime('%s','now'), NULL, NULL)`,
-            );
-        }
+        seedCandidate(CAND_AB, A, B);
+        seedCandidate(CAND_BC, B, C);
 
         // ── Mass-merge B and C into A through the real endpoint (admin session).
         const mergeRes = await page.request.post('/api/admin/duplicates/merge', {
@@ -152,5 +156,58 @@ test.describe('Duplicate mass-merge and undo', () => {
             data: { auditIds: [auditIds[1]] },
         });
         expect(doubleUndo.ok()).toBeFalsy();
+    });
+
+    test('batch pair-merge resolves each pair independently: auto-survivor by data then age, overlapping pair skips', async ({ page }) => {
+        // Independent pairs P↔Q (P has more contact entries) and R↔S (equal
+        // data, R older), plus Q↔E which overlaps the first pair — merging
+        // P↔Q absorbs Q, so Q↔E must come back as a skip, not an error.
+        const P = 'test-pairmerge-fixture-p';
+        const Q = 'test-pairmerge-fixture-q';
+        const R = 'test-pairmerge-fixture-r';
+        const S = 'test-pairmerge-fixture-s';
+        const E = 'test-pairmerge-fixture-e';
+        const CAND_PQ = 'test-cand-pairmerge-pq';
+        const CAND_RS = 'test-cand-pairmerge-rs';
+        const CAND_QE = 'test-cand-pairmerge-qe';
+
+        seedAdopter(P, 'PairMergeFixture Uno', 'p-contact', '[{"type":"phone","value":"555111"},{"type":"email","value":"p@fixture.test"}]');
+        seedAdopter(Q, 'PairMergeFixture Dos', 'q-contact');
+        seedAdopter(R, 'PairMergeFixture Tres', 'r-contact', null, `strftime('%s','now') - 5000`);
+        seedAdopter(S, 'PairMergeFixture Cuatro', 's-contact');
+        seedAdopter(E, 'PairMergeFixture Cinco', 'e-contact');
+        seedCandidate(CAND_PQ, P, Q);
+        seedCandidate(CAND_RS, R, S);
+        seedCandidate(CAND_QE, Q, E);
+
+        const res = await page.request.post('/api/admin/duplicates/merge', {
+            data: { candidateIds: [CAND_PQ, CAND_RS, CAND_QE] },
+        });
+        expect(res.ok()).toBeTruthy();
+        const data = await res.json() as {
+            success: boolean; mergedCount: number; skippedCount: number;
+            results: Array<{ candidateId: string; success: boolean; skipped?: boolean; auditId?: string }>;
+        };
+        expect(data.success).toBeTruthy();
+        expect(data.mergedCount).toBe(2);
+        expect(data.skippedCount).toBe(1);
+        expect(data.results.find(r => r.candidateId === CAND_QE)?.skipped).toBeTruthy();
+
+        // Survivors: P (more contact entries) and R (older). Losers absorbed.
+        const rows = parseD1Rows(execD1(
+            `SELECT id, deleted_at FROM adopters WHERE id IN ('${P}', '${Q}', '${R}', '${S}', '${E}') ORDER BY id`,
+        ));
+        const deletedById = new Map(rows.map(r => [r.id, !isDbNull(r.deleted_at)]));
+        expect(deletedById.get(P), 'P survives (more entries)').toBe(false);
+        expect(deletedById.get(Q), 'Q absorbed into P').toBe(true);
+        expect(deletedById.get(R), 'R survives (older)').toBe(false);
+        expect(deletedById.get(S), 'S absorbed into R').toBe(true);
+        expect(deletedById.get(E), 'E untouched by the skipped pair').toBe(false);
+
+        // The overlapping pair was auto-resolved by the P↔Q merge's cleanup.
+        const qe = parseD1Rows(execD1(
+            `SELECT status FROM duplicate_candidates WHERE id = '${CAND_QE}'`,
+        ))[0];
+        expect(qe.status).toBe('merged');
     });
 });
