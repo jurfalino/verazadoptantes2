@@ -921,11 +921,16 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                         ref={triggerRef}
                         onClick={() => setComposerStage('pick-type')}
                         data-testid="ce-add-trigger"
-                        className={
-                            sorted.length === 0
-                                ? 'inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-teal-800 bg-teal-50 border border-teal-200 hover:bg-teal-100 rounded-md transition-colors'
-                                : 'inline-flex items-center gap-1 text-sm font-medium text-teal-700 hover:text-teal-900 transition-colors'
-                        }
+                        // One action, one appearance. This used to render as a bordered
+                        // button when the list was empty and a bare text link once it had
+                        // entries — the same control changing shape based on how many
+                        // rows happened to be above it. The empty state is already
+                        // carried by its own hint line, so emphasis does not need a
+                        // second, different-looking button. Settled on the style guide's
+                        // Secondary variant (§2.1): accent-subtle background, accent
+                        // text, accent border. A bare text link is not one of the four
+                        // documented variants, and it was also the smaller touch target.
+                        className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-teal-800 bg-teal-50 border border-teal-200 hover:bg-teal-100 rounded-md transition-colors"
                     >
                         <Plus className="w-4 h-4" />
                         {t('adopter.contrib_cta')}
@@ -933,7 +938,11 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                 )}
 
                 {composerStage === 'pick-type' && (
-                    <div className="space-y-3 border border-stone-200 rounded-md p-3 bg-stone-50">
+                    /* Same row treatment as the editing stage below it — the card
+                       this used to sit in painted `bg-stone-50` (→ --surface-base),
+                       which reads as a dark box in the dark theme and made choosing a
+                       type look like a different surface from filling one in. */
+                    <div className="space-y-3 pt-3 border-t border-stone-100">
                         <p className="text-sm font-medium text-stone-700">
                             {t('adopter.ce_compose_prompt')}
                         </p>

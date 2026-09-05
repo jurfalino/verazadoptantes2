@@ -2,6 +2,29 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.54.4] - 2026-09-04
+
+### Fixed — the type-selection stage was still a dark box
+
+v2.54.3 unboxed the composer's *editing* stage but left the *pick-type* stage in its
+`border border-stone-200 rounded-md p-3 bg-stone-50` card. `bg-stone-50` maps to
+`--surface-base`, so choosing a type happened inside a dark panel while filling one in
+happened on the row — the same split the previous release was meant to close, one stage
+earlier. It now uses the same row treatment: no card, just the list's separator. Verified in
+both themes: computed `background-color: rgba(0, 0, 0, 0)`, `border-width: 1px 0 0`.
+
+### Changed — one add-contact button instead of two
+
+The trigger rendered as a bordered button when the list was empty and a bare text link once it
+had entries — the same control changing shape based on how many rows happened to sit above it.
+The intent was to emphasise it as the primary affordance in the empty state, but the empty
+state already carries its own hint line, so the emphasis was doing work twice and paying for it
+with an inconsistency.
+
+Both now use the style guide's **Secondary** variant (§2.1: `--accent-subtle-bg`, accent text,
+`--border-accent`). The bare link was not one of the four documented variants, and was also the
+smaller touch target of the two.
+
 ## [2.54.3] - 2026-09-04
 
 ### Fixed — four rendering bugs in the contact type control
