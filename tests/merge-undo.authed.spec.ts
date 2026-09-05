@@ -241,4 +241,36 @@ test.describe('Duplicate mass-merge and undo', () => {
         // Visible WITHOUT clicking "Ampliar la búsqueda" ⇒ main list, full coverage.
         await expect(page.getByText(ACC_NAME).first()).toBeVisible({ timeout: 30000 });
     });
+
+    test('searching a household member name surfaces the titular record in the MAIN list', async ({ page }) => {
+        // Regression for the recall/score source mismatch (v2.55.9): household
+        // member and onBehalfOf names emit recall tokens, but the scorer never
+        // read those fields — the record surfaced with no score, no match chip
+        // and no snippet, demoted to the weak tier. A perfect relative-name
+        // match must land in the main list, scored via the family branch.
+        const HH = 'test-household-fixture-1';
+        const HH_NAME = 'HouseholdFixture Titular';
+        seedAdopter(HH, HH_NAME, 'household-fixture-contact');
+        execD1(
+            `UPDATE adopters SET household_members = '[{"id":"hm-test-0001","name":"RelativeFixture Ondina","relationship":"partner","contactEntries":[]}]' WHERE id = '${HH}'`,
+        );
+        // Tokens as extractTokens writes them: household names → name_words.
+        const toks: Array<[string, string]> = [
+            ['test-tok-hh-1', 'relativefixture'],
+            ['test-tok-hh-2', 'ondina'],
+        ];
+        for (const [id, value] of toks) {
+            execD1(`INSERT OR REPLACE INTO duplicate_tokens (id, adopter_id, token_type, token_value) VALUES ('${id}', '${HH}', 'name_word', '${value}')`);
+        }
+
+        await page.goto('/');
+        await dismissCountryBanner(page);
+        await page.fill('input#search', 'relativefixture ondina');
+        await page.getByRole('button', { name: /search records|buscar registros/i }).click();
+        await expect(page.getByText(/found \d+ match|resultados encontrados/i)).toBeVisible({ timeout: 30000 });
+        // The titular's card in the MAIN list (no expander click) ...
+        await expect(page.getByText(HH_NAME).first()).toBeVisible({ timeout: 30000 });
+        // ... and the card explains WHY: family-circle match, relative visible.
+        await expect(page.getByText(/RelativeFixture Ondina/).first()).toBeVisible({ timeout: 30000 });
+    });
 });

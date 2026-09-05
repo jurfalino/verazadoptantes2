@@ -36,6 +36,7 @@ import { matchSearchEntries, matchSearchNameTokens, hashNameToken, NO_ACCESS_VIS
 import { assembleDiscoveryMatch } from '@/lib/discoveryMatch';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
 import { deserializeContactEntries, TYPE_LABEL } from '@/lib/contactEntries';
+import { deserializeHouseholdMembers } from '@/lib/householdMembers';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -355,7 +356,11 @@ const WEIGHTS = {
     name_exact: 100, name_contains: 50, name_tokens: 35, name_partial: 20,
     contact: 40, contact_partial: 25,
     address: 25, address_partial: 15,
-    family: 20, family_partial: 12,
+    // A FULL-phrase hit on a family-circle name (family blob, household
+    // member, onBehalfOf) is identity-grade on a vetting tool — relatives are
+    // an abuse-evasion vector — so it ranks just under a name_contains hit,
+    // not down with incidental field matches. Partial word overlap stays weak.
+    family_full: 45, family: 20, family_partial: 12,
     adoption: 15, history: 10,
     query_coverage_full: 40,
     has_thumbnail: 5, has_rating: 3, verified: 2, recent_update: 3,
@@ -896,6 +901,26 @@ async function runDiscoveryMode(
         if (!adoptionTextMap.has(m.adopterId)) adoptionTextMap.set(m.adopterId, m.matchedText);
     }
 
+    // Relative names from adoptions.onBehalfOf ("adopted on behalf of X").
+    // These tokenize as name_words (an abuser may adopt under a relative's
+    // name — see the family/alias tokenization design), so recall surfaces
+    // the record; the scorer must see the SAME text or the result arrives
+    // with no score, no match chip and no snippet — invisible-why matches.
+    // One unfiltered select grouped in memory: D1 can't expand IN-arrays and
+    // the table is small (same pattern as the scan endpoint).
+    const onBehalfByAdopter = new Map<string, string[]>();
+    try {
+        const rows = await db.select({ adopterId: adoptions.adopterId, onBehalfOf: adoptions.onBehalfOf }).from(adoptions) as Array<{ adopterId: string | null; onBehalfOf: string | null }>;
+        for (const r of rows) {
+            if (!r.adopterId || !r.onBehalfOf) continue;
+            const list = onBehalfByAdopter.get(r.adopterId);
+            if (list) list.push(r.onBehalfOf);
+            else onBehalfByAdopter.set(r.adopterId, [r.onBehalfOf]);
+        }
+    } catch (e) {
+        logger.warn('findAdopters: onBehalfOf fetch fallback hit', { error: e instanceof Error ? e.message : String(e) });
+    }
+
     const extraIds = new Set([...historyIds, ...adoptionIds, ...phoneTokenIds, ...nameTokenIds]);
     directResults.forEach((r: any) => extraIds.delete(r.id));
 
@@ -1069,17 +1094,31 @@ async function runDiscoveryMode(
             if (s && w > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = w; }
         }
 
-        // Family
-        const familyNorm = normalizeText(a.familyMembers || '');
+        // Family circle: legacy familyMembers blob + structured household
+        // members (name + their contacts) + adoptions' onBehalfOf names.
+        // Every one of these emits recall tokens (extractTokens), so every
+        // one must be scoreable and snippetable here — a source that can
+        // recall but not score produces the "why did this match?" result.
+        const familyText = [
+            a.familyMembers,
+            ...deserializeHouseholdMembers(a.householdMembers).map(m =>
+                [m.name, ...m.contactEntries.map(e2 => e2.value)].filter(Boolean).join(' ')),
+            ...(onBehalfByAdopter.get(a.id) ?? []),
+        ].filter(Boolean).join('\n');
+        const familyNorm = normalizeText(familyText);
         if (qNorm && familyNorm.includes(qNorm)) {
+            score += WEIGHTS.family_full; matchTypes.push('family');
+            const s = buildSnippet('family', familyText, normalizedQuery, tokens);
+            if (s && WEIGHTS.family_full > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.family_full; }
+        } else if (isMultiToken && allNameTokensMatch(familyNorm, tokensNorm)) {
             score += WEIGHTS.family; matchTypes.push('family');
-            const s = buildSnippet('family', a.familyMembers, normalizedQuery, tokens);
+            const s = buildSnippet('family', familyText, normalizedQuery, tokens);
             if (s && WEIGHTS.family > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.family; }
         } else if (isMultiToken && anyTokenMatch(familyNorm, tokensNorm)) {
             const m = countTokenMatches(familyNorm, tokensNorm);
             const w = Math.round(WEIGHTS.family_partial * (m / tokens.length));
             score += w; matchTypes.push('family_partial');
-            const s = buildSnippet('family', a.familyMembers, normalizedQuery, tokens);
+            const s = buildSnippet('family', familyText, normalizedQuery, tokens);
             // Snippet priority = ACTUAL (scaled) strength, so a half-matched
             // name partial can't out-rank a full-phrase family/contact match.
             if (s && w > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = w; }
@@ -1111,7 +1150,7 @@ async function runDiscoveryMode(
         // didn't, so "sebastian vazquez" recalled "Sebastián Vázquez" but then
         // demoted it to the weak tier for "partial coverage" of its own name).
         const allTextNorm = normalizeText(
-            [a.name, a.contactInfo, a.addressInfo, a.familyMembers, adoptionTextMap.get(a.id), historyTextMap.get(a.id)].filter(Boolean).join(' '),
+            [a.name, a.contactInfo, a.addressInfo, familyText, adoptionTextMap.get(a.id), historyTextMap.get(a.id)].filter(Boolean).join(' '),
         );
         // Anchor gate (v2.27.12): did any ≥3-char token match this record?
         // false when the query has no anchor tokens at all (e.g. bare "av") —

@@ -2,6 +2,25 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.9] - 2026-09-05
+
+### Fixed — relative-name searches now score, rank and explain themselves
+
+Searching a relative's name recalled the record (household member and onBehalfOf names
+tokenize as name_words — an abuser may adopt under a relative's name) but the scorer
+never read those fields: the result arrived with no score, no match chip and no snippet,
+and got demoted to the weak tier — a perfect match that looked like noise. Same disease
+as the accent bug one level up: recall and scoring disagreed on which TEXT SOURCES exist.
+
+The family branch now scores a "family circle" built from every token-emitting source:
+the legacy familyMembers blob, structured household members (names + their contacts),
+and adoptions' onBehalfOf names — snippeted so the card shows the relative that matched
+(the existing "Coincide con miembros de la familia" chip). A full-phrase family-circle
+hit is weighted identity-grade (45, just under name_contains) instead of 20 — on a
+vetting tool a perfect relative-name match is a lead, not an incidental. Coverage now
+sees the same text, so these results qualify for the main list. E2E pins it: household
+member name search → titular in the MAIN list with the relative visible on the card.
+
 ## [2.55.8] - 2026-09-05
 
 ### Fixed — search now has ONE accent-normalized comparison space
