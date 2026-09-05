@@ -2,6 +2,33 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.0] - 2026-09-05
+
+### Added — duplicate queue: pagination, cluster mass-merge, low-confidence filter
+
+The admin duplicates panel fetched only page 1 of the candidates API (top 20 by score, no
+pager), silently presenting "top 20" as "all duplicates" — 779 pending pairs in prod looked
+like 20, so whole clusters (e.g. four "Sebastián Vázquez" spelling variants) never surfaced.
+The panel now pages through the queue, hides the low-confidence tier by default (~75% of the
+queue, mostly two people sharing one name word — a checkbox re-shows it), and groups the
+visible pairs into connected clusters (A↔B + B↔C ⇒ one group): a cluster card opens a
+mass-merge modal — pick the survivor, tick which of the rest to absorb — served by the merge
+endpoint's new `secondaryIds[]` batch mode (sequential merges, capped at 10 per request).
+
+### Fixed — merge leftovers: ghost pairs, lost name evidence, stale tokens
+
+Merging B into A left every other pending pair naming B (e.g. B↔C) in the queue as a
+"ghost": it rendered like a live duplicate but its merge was refused by the already-deleted
+guard. `mergeAdopters` now resolves all pending candidates referencing the absorbed record,
+and the pending list/count exclude pairs whose sides are soft-deleted (18 such ghosts in
+prod). Two adjacent gaps closed in the same path: the absorbed record's name is carried onto
+the survivor as an alias contact entry (it's abuse-detection name evidence; merge doesn't
+merge `name`, so it previously stopped matching entirely), its structured contactEntries are
+merged in, and the survivor is re-tokenized immediately instead of sitting stale until the
+next scan. Also: the batch scan's stale-record query omitted `contactEntries`, silently
+tokenizing every record as if it had no aliases and no platform-tagged socials — the
+per-save path read them correctly, so the two paths disagreed.
+
 ## [2.54.7] - 2026-09-05
 
 ### Added — de-select media in the import review step

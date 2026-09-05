@@ -3,7 +3,7 @@ export const runtime = 'edge';
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { adopters, adoptions, duplicateTokens, duplicateCandidates, adopterFlags, appConfig } from '@/db/schema';
-import { eq, sql, isNull, or } from 'drizzle-orm';
+import { eq, sql, isNull, or, and } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { isAdminAsync } from '@/config/admins';
 import { logger } from '@/lib/logger';
@@ -44,9 +44,30 @@ export async function GET(request: Request) {
 
         const { searchParams } = new URL(request.url);
         const status = searchParams.get('status') || 'pending';
-        const page = parseInt(searchParams.get('page') || '1');
+        const page = Math.max(1, parseInt(searchParams.get('page') || '1') || 1);
         const limit = 20;
         const offset = (page - 1) * limit;
+
+        // Optional confidence filter, e.g. `confidence=high,medium`. The low
+        // tier is ~75% of the queue and mostly single-shared-name-word noise,
+        // so the panel defaults to hiding it; unknown values are dropped.
+        const confidenceParam = (searchParams.get('confidence') || '')
+            .split(',').map(s => s.trim()).filter(c => c === 'high' || c === 'medium' || c === 'low');
+        const confidenceCond = confidenceParam.length > 0 && confidenceParam.length < 3
+            ? or(...confidenceParam.map(c => eq(duplicateCandidates.confidence, c)))
+            : undefined;
+
+        // Exclude pairs referencing a soft-deleted (merged-away) adopter from
+        // the PENDING view only — such "ghost" pairs render like live
+        // duplicates but their merge is refused by the already-deleted guard.
+        // The dismissed/merged views keep them: there one deleted side is the
+        // expected outcome, and filtering would empty the merged tab.
+        const bothSidesLive = sql`${duplicateCandidates.adopter1Id} IN (SELECT id FROM adopters WHERE deleted_at IS NULL) AND ${duplicateCandidates.adopter2Id} IN (SELECT id FROM adopters WHERE deleted_at IS NULL)`;
+        const candidateWhere = and(
+            eq(duplicateCandidates.status, status),
+            ...(status === 'pending' ? [bothSidesLive] : []),
+            ...(confidenceCond ? [confidenceCond] : []),
+        );
 
         // 1. User-flagged duplicates (from adopterFlags)
         const userFlagged = await db.select({
@@ -92,10 +113,18 @@ export async function GET(request: Request) {
         // 2. System-detected candidates
         const candidates = await db.select()
             .from(duplicateCandidates)
-            .where(eq(duplicateCandidates.status, status))
+            .where(candidateWhere)
             .orderBy(sql`${duplicateCandidates.score} DESC`)
             .limit(limit)
             .offset(offset);
+
+        // Total under the CURRENT filter — what the pagination math needs.
+        // The stat-card counts below are per-status totals and ignore the
+        // confidence filter, so they can't stand in for this.
+        const filteredTotalRows = await db.select({ count: sql<number>`COUNT(*)` })
+            .from(duplicateCandidates)
+            .where(candidateWhere);
+        const filteredTotal = filteredTotalRows[0]?.count || 0;
 
         // Enrich with adopter data + computed avgRating.
         const candidatesEnriched = await Promise.all(
@@ -123,7 +152,10 @@ export async function GET(request: Request) {
 
         // Counts
         const [pendingCount, dismissedCount, mergedCount] = await Promise.all([
-            db.select({ count: sql<number>`COUNT(*)` }).from(duplicateCandidates).where(eq(duplicateCandidates.status, 'pending')),
+            // Pending counts only actionable pairs — ghosts referencing a
+            // merged-away adopter are excluded, same as the pending listing.
+            db.select({ count: sql<number>`COUNT(*)` }).from(duplicateCandidates)
+                .where(and(eq(duplicateCandidates.status, 'pending'), bothSidesLive)),
             db.select({ count: sql<number>`COUNT(*)` }).from(duplicateCandidates).where(eq(duplicateCandidates.status, 'dismissed')),
             db.select({ count: sql<number>`COUNT(*)` }).from(duplicateCandidates).where(eq(duplicateCandidates.status, 'merged')),
         ]);
@@ -192,6 +224,7 @@ export async function GET(request: Request) {
         return NextResponse.json({
             userFlagged: userFlaggedEnriched,
             candidates: candidatesEnriched,
+            filteredTotal,
             staleCount,
             scan,
             counts: {
@@ -322,6 +355,11 @@ export async function POST(request: Request) {
                 id: adopters.id,
                 name: adopters.name,
                 contactInfo: adopters.contactInfo,
+                // Aliases and platform-tagged socials live in contactEntries;
+                // without this column the batch scan silently tokenized every
+                // record as if it had neither (the per-save tokenizeAdopter
+                // path always read them).
+                contactEntries: adopters.contactEntries,
                 addressInfo: adopters.addressInfo,
                 familyMembers: adopters.familyMembers,
                 householdMembers: adopters.householdMembers,

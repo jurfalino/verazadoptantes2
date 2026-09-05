@@ -8,7 +8,7 @@ import { reassignAdopterRecords } from './_recordWrite';
 import { extractTokens, computeTokenHash, normalizeText, extractPhones, extractEmails, extractSocials, normalizeSocialHandle, detectSocialPlatformFromValue, type Token } from '@/lib/tokenizer';
 import { deserializeHouseholdMembers } from '@/lib/householdMembers';
 import { normalizeConfidence, confidenceBand, fuzzyNameScore, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
-import { deserializeContactEntries } from '@/lib/contactEntries';
+import { deserializeContactEntries, mergeContactEntries } from '@/lib/contactEntries';
 
 /**
  * Tokenize an adopter for duplicate detection.
@@ -181,6 +181,27 @@ export async function mergeAdopters(
             updates.sourceUrl = secondary.sourceUrl;
         }
 
+        // 6b. Merge structured contact entries, and carry the secondary's name
+        // over as an alias. Merge does NOT merge the `name` field, so without
+        // this the absorbed record's name stops being a NAME token — a person
+        // recorded under that spelling elsewhere would silently stop matching
+        // the survivor (aliases tokenize as name_words; see extractTokens).
+        const mergedEntries = mergeContactEntries(
+            deserializeContactEntries(primary.contactEntries),
+            deserializeContactEntries(secondary.contactEntries),
+        );
+        const secondaryName = (secondary.name || '').trim();
+        const knownNames = new Set(
+            [primary.name || '', ...mergedEntries.filter(e => e.type === 'alias').map(e => e.value)]
+                .map(n => normalizeText(n)),
+        );
+        if (secondaryName && !knownNames.has(normalizeText(secondaryName))) {
+            mergedEntries.push({ id: crypto.randomUUID(), type: 'alias', value: secondaryName, addedBy: actorEmail });
+        }
+        if (mergedEntries.length > 0) {
+            updates.contactEntries = JSON.stringify(mergedEntries);
+        }
+
         // Force re-tokenization on next save
         updates.tokenHash = null;
         updates.updatedAt = new Date();
@@ -198,10 +219,20 @@ export async function mergeAdopters(
         // 8. Clean up tokens for secondary
         await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, secondaryId));
 
-        // 9. Mark any pending duplicate candidates between these two as resolved
+        // 9. Resolve the pair between these two, plus EVERY other pending
+        // candidate that references the absorbed record. Leaving those behind
+        // creates ghost rows in the review queue: a pair naming the (now
+        // soft-deleted) secondary renders like a live duplicate, but merging it
+        // is refused by the already-deleted guard above. No evidence is lost —
+        // the survivor absorbed the contacts and name (as an alias), so the
+        // next scan resurfaces any still-real match against the primary.
         const candidateConditions = or(
             and(eq(duplicateCandidates.adopter1Id, primaryId), eq(duplicateCandidates.adopter2Id, secondaryId)),
             and(eq(duplicateCandidates.adopter1Id, secondaryId), eq(duplicateCandidates.adopter2Id, primaryId)),
+            and(
+                eq(duplicateCandidates.status, 'pending'),
+                or(eq(duplicateCandidates.adopter1Id, secondaryId), eq(duplicateCandidates.adopter2Id, secondaryId)),
+            ),
         );
         if (candidateConditions) {
             await db.update(duplicateCandidates).set({
@@ -237,6 +268,13 @@ export async function mergeAdopters(
             }),
             createdAt: new Date(),
         });
+
+        // 12. Re-tokenize the survivor NOW instead of leaving it stale until
+        // the next scan — the absorbed phones/emails and the new alias become
+        // searchable/dedup-matchable immediately. tokenizeAdopter logs its own
+        // failure and never throws, so a hiccup here can't fail the merge; the
+        // null tokenHash set above means the next scan retries it anyway.
+        await tokenizeAdopter(primaryId);
 
         logger.info('Adopter merge complete', {
             primaryId,

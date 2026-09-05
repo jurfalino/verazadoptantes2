@@ -52,6 +52,48 @@ interface Counts {
     userFlagged: number;
 }
 
+/** One profile inside a connected duplicate cluster. */
+interface ClusterRecord {
+    id: string;
+    name: string;
+    contact?: string | null;
+    avgRating?: number | null;
+}
+
+/**
+ * Group pending pairs into connected components (union-find): A↔B plus B↔C
+ * means A, B, C are one cluster. Only clusters of 3+ profiles are returned —
+ * a 2-profile "cluster" is just a pair, already handled by the pair card.
+ * Operates on the current page only; a cluster split across pages shows the
+ * members visible here.
+ */
+function buildClusters(candidates: DuplicateCandidate[]): ClusterRecord[][] {
+    const parent = new Map<string, string>();
+    const find = (x: string): string => {
+        let root = parent.get(x) ?? x;
+        while (root !== (parent.get(root) ?? root)) root = parent.get(root) ?? root;
+        parent.set(x, root);
+        return root;
+    };
+    const records = new Map<string, ClusterRecord>();
+
+    for (const c of candidates) {
+        const [ra, rb] = [find(c.adopter1Id), find(c.adopter2Id)];
+        if (ra !== rb) parent.set(ra, rb);
+        if (!records.has(c.adopter1Id)) records.set(c.adopter1Id, { id: c.adopter1Id, name: c.adopter1Name, contact: c.adopter1Contact, avgRating: c.adopter1AvgRating });
+        if (!records.has(c.adopter2Id)) records.set(c.adopter2Id, { id: c.adopter2Id, name: c.adopter2Name, contact: c.adopter2Contact, avgRating: c.adopter2AvgRating });
+    }
+
+    const groups = new Map<string, ClusterRecord[]>();
+    for (const rec of records.values()) {
+        const root = find(rec.id);
+        const list = groups.get(root);
+        if (list) list.push(rec);
+        else groups.set(root, [rec]);
+    }
+    return [...groups.values()].filter(g => g.length >= 3);
+}
+
 export default function DuplicatesPanel() {
     const { t } = useLanguage();
     const [userFlagged, setUserFlagged] = useState<UserFlagged[]>([]);
@@ -68,16 +110,26 @@ export default function DuplicatesPanel() {
     const [scan, setScan] = useState<{ status: string | null; lastRun: string | null }>({ status: null, lastRun: null });
     const [mergeTarget, setMergeTarget] = useState<{ a1: any; a2: any; matchTypes: string[]; candidateId?: string; flagId?: string } | null>(null);
     const [statusFilter, setStatusFilter] = useState<'pending' | 'dismissed' | 'merged'>('pending');
+    const [page, setPage] = useState(1);
+    // Total candidates under the current status+confidence filter — drives the
+    // pager. counts.pending can't stand in: it ignores the confidence filter.
+    const [filteredTotal, setFilteredTotal] = useState(0);
+    // Low-confidence pairs are ~75% of the queue and mostly two people who
+    // share one name word — hidden by default so real signal isn't drowned.
+    const [showLow, setShowLow] = useState(false);
+    const [massMergeCluster, setMassMergeCluster] = useState<ClusterRecord[] | null>(null);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await fetch(`/api/admin/duplicates?status=${statusFilter}`);
+            const conf = showLow ? '' : '&confidence=high,medium';
+            const res = await fetch(`/api/admin/duplicates?status=${statusFilter}&page=${page}${conf}`);
             if (!res.ok) throw new Error('Failed to fetch');
-            const data = await res.json() as { userFlagged?: UserFlagged[]; candidates?: DuplicateCandidate[]; counts?: Counts; staleCount?: number; scan?: { status: string | null; lastRun: string | null } };
+            const data = await res.json() as { userFlagged?: UserFlagged[]; candidates?: DuplicateCandidate[]; counts?: Counts; filteredTotal?: number; staleCount?: number; scan?: { status: string | null; lastRun: string | null } };
             setUserFlagged(data.userFlagged || []);
             setCandidates(data.candidates || []);
             setCounts(data.counts || { pending: 0, dismissed: 0, merged: 0, userFlagged: 0 });
+            setFilteredTotal(data.filteredTotal ?? (data.candidates?.length || 0));
             setStaleCount(typeof data.staleCount === 'number' ? data.staleCount : -1);
             setScan(data.scan ?? { status: null, lastRun: null });
         } catch (error) {
@@ -85,9 +137,17 @@ export default function DuplicatesPanel() {
         } finally {
             setLoading(false);
         }
-    }, [statusFilter]);
+    }, [statusFilter, page, showLow]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
+
+    const totalPages = Math.max(1, Math.ceil(filteredTotal / 20));
+    // Merges/dismissals shrink the list under us; clamp rather than show an empty page.
+    useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+
+    // Connected components among the pairs on this page: A↔B + B↔C means
+    // A, B and C are one duplicate cluster, mass-mergeable in one pass.
+    const clusters = statusFilter === 'pending' ? buildClusters(candidates) : [];
 
     /**
      * The scan re-tokenizes in batches (the endpoint caps each call so a Worker
@@ -192,6 +252,25 @@ export default function DuplicatesPanel() {
         }
     }
 
+    async function handleMassMerge(primaryId: string, secondaryIds: string[]) {
+        const res = await fetch('/api/admin/duplicates/merge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ primaryId, secondaryIds }),
+        });
+        const data = await res.json() as { mergedCount?: number; error?: string; results?: Array<{ secondaryId: string; success: boolean; error?: string }> };
+        if (res.ok) {
+            const failed = (data.results || []).filter(r => !r.success);
+            if (failed.length > 0) {
+                alert(`Se fusionaron ${data.mergedCount ?? 0} perfiles, pero ${failed.length} fallaron:\n${failed.map(f => `• ${f.error}`).join('\n')}`);
+            }
+            setMassMergeCluster(null);
+            fetchData();
+        } else {
+            alert(`Merge failed: ${data.error}`);
+        }
+    }
+
     function openMergeModal(item: UserFlagged | DuplicateCandidate) {
         if (item.source === 'user') {
             const flag = item as UserFlagged;
@@ -273,10 +352,10 @@ export default function DuplicatesPanel() {
 
             {/* Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <StatCard label="Pending" value={counts.pending} color="amber" active={statusFilter === 'pending'} onClick={() => setStatusFilter('pending')} />
+                <StatCard label="Pending" value={counts.pending} color="amber" active={statusFilter === 'pending'} onClick={() => { setStatusFilter('pending'); setPage(1); }} />
                 <StatCard label="User Flagged" value={counts.userFlagged} color="rose" />
-                <StatCard label="Dismissed" value={counts.dismissed} color="stone" active={statusFilter === 'dismissed'} onClick={() => setStatusFilter('dismissed')} />
-                <StatCard label="Merged" value={counts.merged} color="teal" active={statusFilter === 'merged'} onClick={() => setStatusFilter('merged')} />
+                <StatCard label="Dismissed" value={counts.dismissed} color="stone" active={statusFilter === 'dismissed'} onClick={() => { setStatusFilter('dismissed'); setPage(1); }} />
+                <StatCard label="Merged" value={counts.merged} color="teal" active={statusFilter === 'merged'} onClick={() => { setStatusFilter('merged'); setPage(1); }} />
             </div>
 
             {loading ? (
@@ -310,11 +389,50 @@ export default function DuplicatesPanel() {
                         </section>
                     )}
 
+                    {/* Section 1.5: connected clusters on this page — 3+ profiles
+                        linked by pairwise matches, offered as one mass-merge. */}
+                    {clusters.length > 0 && (
+                        <section>
+                            <h2 className="text-lg font-semibold text-stone-800 mb-3">🔗 Grupos conectados</h2>
+                            <div className="space-y-3">
+                                {clusters.map(cluster => (
+                                    <div key={cluster.map(r => r.id).join('|')} className="bg-teal-50/50 border border-teal-200 rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap">
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-semibold text-stone-900">
+                                                {cluster.length} perfiles conectados entre sí
+                                            </p>
+                                            <p className="text-xs text-stone-600 mt-0.5 line-clamp-2">
+                                                {cluster.map(r => r.name).join(' · ')}
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={() => setMassMergeCluster(cluster)}
+                                            className="px-3 py-1.5 text-xs font-semibold text-white bg-teal-600 rounded-lg hover:bg-teal-700 flex-shrink-0"
+                                        >
+                                            Fusionar grupo…
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
                     {/* Section 2: System-Detected */}
                     <section>
-                        <h2 className="text-lg font-semibold text-stone-800 mb-3">
-                            🔍 System-Detected ({statusFilter})
-                        </h2>
+                        <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+                            <h2 className="text-lg font-semibold text-stone-800">
+                                🔍 System-Detected ({statusFilter})
+                            </h2>
+                            <label className="flex items-center gap-2 text-sm text-stone-600 cursor-pointer select-none">
+                                <input
+                                    type="checkbox"
+                                    checked={showLow}
+                                    onChange={e => { setShowLow(e.target.checked); setPage(1); }}
+                                    className="rounded border-stone-300 text-teal-600 focus:ring-teal-500"
+                                />
+                                Mostrar confianza baja
+                            </label>
+                        </div>
                         {candidates.length === 0 ? (
                             <div className="text-center py-12 text-stone-500 bg-stone-50 rounded-xl">
                                 {statusFilter === 'pending'
@@ -347,6 +465,30 @@ export default function DuplicatesPanel() {
                                 })}
                             </div>
                         )}
+                        {/* Pager. The API caps each page at 20; without this the
+                            panel silently presented "top 20 by score" as the whole
+                            queue — 779 pending in prod looked like 20. */}
+                        {totalPages > 1 && (
+                            <div className="flex items-center justify-center gap-4 mt-4 text-sm">
+                                <button
+                                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                                    disabled={page <= 1}
+                                    className="px-3 py-1.5 font-medium text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    ← Anterior
+                                </button>
+                                <span className="text-stone-600">
+                                    Página {page} de {totalPages} · {filteredTotal} candidatos
+                                </span>
+                                <button
+                                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={page >= totalPages}
+                                    className="px-3 py-1.5 font-medium text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    Siguiente →
+                                </button>
+                            </div>
+                        )}
                     </section>
                 </>
             )}
@@ -359,6 +501,15 @@ export default function DuplicatesPanel() {
                     matchTypes={mergeTarget.matchTypes}
                     onMerge={handleMerge}
                     onClose={() => setMergeTarget(null)}
+                />
+            )}
+
+            {/* Mass-merge Modal */}
+            {massMergeCluster && (
+                <MassMergeModal
+                    records={massMergeCluster}
+                    onMerge={handleMassMerge}
+                    onClose={() => setMassMergeCluster(null)}
                 />
             )}
         </div>
@@ -384,6 +535,122 @@ function StatCard({ label, value, color, active, onClick }: {
             <p className="text-2xl font-semibold">{value}</p>
             <p className="text-xs font-medium">{label}</p>
         </button>
+    );
+}
+
+/**
+ * Mass-merge a connected cluster: pick ONE survivor, tick which of the rest to
+ * absorb (all by default). Calls the merge endpoint once with secondaryIds[];
+ * the server merges them sequentially into the survivor.
+ */
+function MassMergeModal({ records, onMerge, onClose }: {
+    records: ClusterRecord[];
+    onMerge: (primaryId: string, secondaryIds: string[]) => Promise<void>;
+    onClose: () => void;
+}) {
+    const [primaryId, setPrimaryId] = useState<string>(records[0]?.id ?? '');
+    const [selected, setSelected] = useState<Set<string>>(new Set(records.map(r => r.id)));
+    const [merging, setMerging] = useState(false);
+
+    const primary = records.find(r => r.id === primaryId);
+    const secondaryIds = records.filter(r => r.id !== primaryId && selected.has(r.id)).map(r => r.id);
+
+    function toggle(id: string) {
+        setSelected(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    }
+
+    async function handleConfirm() {
+        if (!primary || secondaryIds.length === 0) return;
+        if (!confirm(`¿Fusionar ${secondaryIds.length} perfil${secondaryIds.length === 1 ? '' : 'es'} en "${primary.name}"?\n\nLos perfiles fusionados quedarán eliminados; sus registros, contactos y nombres (como alias) pasan al perfil conservado.`)) return;
+        setMerging(true);
+        try {
+            await onMerge(primaryId, secondaryIds);
+        } finally {
+            setMerging(false);
+        }
+    }
+
+    return (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+            <div
+                className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90svh] overflow-y-auto"
+                onClick={e => e.stopPropagation()}
+            >
+                <div className="p-6 border-b border-stone-200">
+                    <h3 className="text-xl font-semibold text-stone-900">Fusionar grupo de duplicados</h3>
+                    <p className="text-sm text-stone-500 mt-1">Elegí qué perfil conservar; los seleccionados se fusionan dentro de él.</p>
+                </div>
+
+                <div className="p-6 space-y-2">
+                    {records.map(rec => {
+                        const isPrimary = rec.id === primaryId;
+                        return (
+                            <div
+                                key={rec.id}
+                                className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${isPrimary ? 'border-teal-500 bg-teal-50/50' : 'border-stone-200'}`}
+                            >
+                                <label className="flex items-center gap-2 flex-shrink-0 cursor-pointer" title="Conservar este perfil">
+                                    <input
+                                        type="radio"
+                                        name="mass-merge-primary"
+                                        checked={isPrimary}
+                                        onChange={() => setPrimaryId(rec.id)}
+                                        className="text-teal-600 focus:ring-teal-500"
+                                    />
+                                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${isPrimary ? 'bg-teal-100 text-teal-700' : 'bg-stone-100 text-stone-400'}`}>
+                                        Conservar
+                                    </span>
+                                </label>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold text-stone-900 truncate">{rec.name}</p>
+                                    {rec.contact && <p className="text-xs text-stone-500 line-clamp-1">{rec.contact}</p>}
+                                </div>
+                                {!isPrimary && (
+                                    <label className="flex items-center gap-2 flex-shrink-0 cursor-pointer text-xs text-stone-600 select-none">
+                                        <input
+                                            type="checkbox"
+                                            checked={selected.has(rec.id)}
+                                            onChange={() => toggle(rec.id)}
+                                            className="rounded border-stone-300 text-red-600 focus:ring-red-500"
+                                        />
+                                        Fusionar
+                                    </label>
+                                )}
+                            </div>
+                        );
+                    })}
+
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm mt-4">
+                        <p className="text-amber-700">
+                            Se fusionarán <strong>{secondaryIds.length}</strong> perfil{secondaryIds.length === 1 ? '' : 'es'} en <strong>{primary?.name}</strong>. Sus actividades y contactos se mueven al perfil conservado y sus nombres quedan como alias (siguen encontrándose al buscar).
+                        </p>
+                    </div>
+                </div>
+
+                <div className="p-6 border-t border-stone-200 flex justify-end gap-3">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="px-4 py-2 text-sm font-medium text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200"
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleConfirm}
+                        disabled={merging || secondaryIds.length === 0}
+                        className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50"
+                    >
+                        {merging ? 'Fusionando…' : `Fusionar ${secondaryIds.length || ''}`}
+                    </button>
+                </div>
+            </div>
+        </div>
     );
 }
 
