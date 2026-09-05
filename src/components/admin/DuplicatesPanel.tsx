@@ -52,6 +52,14 @@ interface Counts {
     userFlagged: number;
 }
 
+/** Pairs per page — must match the API route's `limit`. */
+const PAGE_SIZE = 50;
+/** The merge/unmerge endpoints cap each request at 10 (Workers subrequest
+ *  budget); bigger selections are sent as sequential batches of this size. */
+const MERGE_CHUNK = 10;
+/** Most profiles one mass-merge selection may absorb (5 request batches). */
+const MASS_MERGE_SELECTION_MAX = 50;
+
 /** One profile inside a connected duplicate cluster. */
 interface ClusterRecord {
     id: string;
@@ -145,7 +153,7 @@ export default function DuplicatesPanel() {
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
-    const totalPages = Math.max(1, Math.ceil(filteredTotal / 20));
+    const totalPages = Math.max(1, Math.ceil(filteredTotal / PAGE_SIZE));
     // Merges/dismissals shrink the list under us; clamp rather than show an empty page.
     useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
@@ -289,25 +297,44 @@ export default function DuplicatesPanel() {
     }
 
     async function handleMassMerge(primaryId: string, secondaryIds: string[]) {
-        const res = await fetch('/api/admin/duplicates/merge', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ primaryId, secondaryIds }),
-        });
-        const data = await res.json() as { mergedCount?: number; error?: string; results?: Array<{ secondaryId: string; success: boolean; error?: string; auditId?: string }> };
-        if (res.ok) {
-            const failed = (data.results || []).filter(r => !r.success);
-            if (failed.length > 0) {
-                alert(`Se fusionaron ${data.mergedCount ?? 0} perfiles, pero ${failed.length} fallaron:\n${failed.map(f => `• ${f.error}`).join('\n')}`);
+        // The endpoint caps each request at MERGE_CHUNK secondaries; bigger
+        // selections go as sequential batches (server-side merges are already
+        // sequential per request, so this is the same semantics, just spread
+        // over several Workers invocations). Stop at the first transport-level
+        // failure — later batches would merge into a survivor whose state we
+        // no longer trust.
+        const allResults: Array<{ secondaryId: string; success: boolean; error?: string; auditId?: string }> = [];
+        let transportError: string | null = null;
+        for (let i = 0; i < secondaryIds.length; i += MERGE_CHUNK) {
+            const batch = secondaryIds.slice(i, i + MERGE_CHUNK);
+            const res = await fetch('/api/admin/duplicates/merge', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ primaryId, secondaryIds: batch }),
+            });
+            const data = await res.json() as { error?: string; results?: Array<{ secondaryId: string; success: boolean; error?: string; auditId?: string }> };
+            if (!res.ok) {
+                transportError = data.error ?? `HTTP ${res.status}`;
+                if (data.results) allResults.push(...data.results);
+                break;
             }
-            const auditIds = (data.results || []).filter(r => r.success && r.auditId).map(r => r.auditId!);
-            setLastMerge(auditIds.length > 0 ? { auditIds, label: `${auditIds.length} perfil${auditIds.length === 1 ? '' : 'es'} fusionado${auditIds.length === 1 ? '' : 's'}` } : null);
-            setMassMergeCluster(null);
-            clearSelection();
-            fetchData();
-        } else {
-            alert(`Merge failed: ${data.error}`);
+            allResults.push(...(data.results || []));
         }
+
+        const okResults = allResults.filter(r => r.success);
+        const failed = allResults.filter(r => !r.success);
+        if (transportError && okResults.length === 0) {
+            alert(`Merge failed: ${transportError}`);
+            return;
+        }
+        if (failed.length > 0 || transportError) {
+            alert(`Se fusionaron ${okResults.length} perfiles, pero ${failed.length || 'algunos'} fallaron:\n${failed.map(f => `• ${f.error}`).join('\n')}${transportError ? `\n• ${transportError}` : ''}`);
+        }
+        const auditIds = okResults.filter(r => r.auditId).map(r => r.auditId!);
+        setLastMerge(auditIds.length > 0 ? { auditIds, label: `${auditIds.length} perfil${auditIds.length === 1 ? '' : 'es'} fusionado${auditIds.length === 1 ? '' : 's'}` } : null);
+        setMassMergeCluster(null);
+        clearSelection();
+        fetchData();
     }
 
     async function handleUndo() {
@@ -316,22 +343,33 @@ export default function DuplicatesPanel() {
         try {
             // Newest-first: a later merge into the same survivor must be
             // reversed before an earlier one (the server enforces this too).
-            const res = await fetch('/api/admin/duplicates/unmerge', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ auditIds: [...lastMerge.auditIds].reverse() }),
-            });
-            const data = await res.json() as { undoneCount?: number; error?: string; results?: Array<{ success: boolean; error?: string }> };
-            if (res.ok) {
-                const failed = (data.results || []).filter(r => !r.success);
-                if (failed.length > 0) {
-                    alert(`Se deshicieron ${data.undoneCount ?? 0} fusiones, pero ${failed.length} fallaron:\n${failed.map(f => `• ${f.error}`).join('\n')}`);
+            // Chunked like the merge — the endpoint takes at most MERGE_CHUNK
+            // per request; batch order preserves the newest-first invariant.
+            const reversed = [...lastMerge.auditIds].reverse();
+            let undone = 0;
+            const failures: string[] = [];
+            for (let i = 0; i < reversed.length; i += MERGE_CHUNK) {
+                const batch = reversed.slice(i, i + MERGE_CHUNK);
+                const res = await fetch('/api/admin/duplicates/unmerge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ auditIds: batch }),
+                });
+                const data = await res.json() as { undoneCount?: number; error?: string; results?: Array<{ success: boolean; error?: string }> };
+                if (!res.ok) {
+                    failures.push(data.error ?? `HTTP ${res.status}`);
+                    break;
                 }
+                undone += data.undoneCount ?? 0;
+                failures.push(...(data.results || []).filter(r => !r.success).map(r => r.error ?? 'unknown'));
+            }
+            if (failures.length > 0) {
+                alert(`Se deshicieron ${undone} fusiones, pero hubo fallas:\n${failures.map(f => `• ${f}`).join('\n')}`);
+            }
+            if (undone > 0 || failures.length === 0) {
                 setLastMerge(null);
                 clearSelection();
                 fetchData();
-            } else {
-                alert(`No se pudo deshacer: ${data.error}`);
             }
         } finally {
             setUndoing(false);
@@ -719,9 +757,9 @@ function MassMergeModal({ records, onMerge, onClose }: {
                         <p className="text-amber-700">
                             Se fusionarán <strong>{secondaryIds.length}</strong> perfil{secondaryIds.length === 1 ? '' : 'es'} en <strong>{primary?.name}</strong>. Sus actividades y contactos se mueven al perfil conservado y sus nombres quedan como alias (siguen encontrándose al buscar).
                         </p>
-                        {secondaryIds.length > 10 && (
+                        {secondaryIds.length > MASS_MERGE_SELECTION_MAX && (
                             <p className="text-red-700 font-medium mt-2">
-                                Máximo 10 perfiles por fusión — destildá {secondaryIds.length - 10} o hacelo en dos tandas.
+                                Máximo {MASS_MERGE_SELECTION_MAX} perfiles por fusión — destildá {secondaryIds.length - MASS_MERGE_SELECTION_MAX} o hacelo en tandas.
                             </p>
                         )}
                     </div>
@@ -738,7 +776,7 @@ function MassMergeModal({ records, onMerge, onClose }: {
                     <button
                         type="button"
                         onClick={handleConfirm}
-                        disabled={merging || secondaryIds.length === 0 || secondaryIds.length > 10}
+                        disabled={merging || secondaryIds.length === 0 || secondaryIds.length > MASS_MERGE_SELECTION_MAX}
                         className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50"
                     >
                         {merging ? 'Fusionando…' : `Fusionar ${secondaryIds.length || ''}`}

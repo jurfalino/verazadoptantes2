@@ -43,6 +43,11 @@ function parseD1Rows(output: string): Array<Record<string, unknown>> {
     }
 }
 
+/** Wrangler's --json renders SQL NULL as the string "null" in CI — normalize. */
+function isDbNull(v: unknown): boolean {
+    return v === null || v === undefined || v === 'null';
+}
+
 function seedAdopter(id: string, name: string, contact: string) {
     execD1(
         `INSERT OR REPLACE INTO adopters (id, name, contact_info, contact_entries, country, status, added_by, deleted_at, token_hash, created_at, updated_at) ` +
@@ -84,14 +89,14 @@ test.describe('Duplicate mass-merge and undo', () => {
         ));
         expect(merged).toHaveLength(2);
         for (const row of merged) {
-            expect(row.deleted_at, `${row.id} should be soft-deleted`).not.toBeNull();
+            expect(isDbNull(row.deleted_at), `${row.id} should be soft-deleted`).toBe(false);
             expect(row.token_hash).toBe('MERGED');
         }
 
         const survivor = parseD1Rows(execD1(
             `SELECT contact_info, contact_entries, deleted_at FROM adopters WHERE id = '${A}'`,
         ))[0];
-        expect(survivor.deleted_at).toBeNull();
+        expect(isDbNull(survivor.deleted_at), 'survivor must stay live').toBe(true);
         // Absorbed contact blobs appended; absorbed names carried as aliases.
         expect(String(survivor.contact_info)).toContain('beta-contact');
         expect(String(survivor.contact_info)).toContain('gamma-contact');
@@ -123,7 +128,7 @@ test.describe('Duplicate mass-merge and undo', () => {
         ));
         expect(revived).toHaveLength(2);
         for (const row of revived) {
-            expect(row.deleted_at, `${row.id} should be revived by undo`).toBeNull();
+            expect(isDbNull(row.deleted_at), `${row.id} should be revived by undo`).toBe(true);
         }
 
         const restored = parseD1Rows(execD1(
@@ -139,7 +144,7 @@ test.describe('Duplicate mass-merge and undo', () => {
         ));
         for (const row of restoredCands) {
             expect(row.status, `${row.id} should be pending again`).toBe('pending');
-            expect(row.resolved_by).toBeNull();
+            expect(isDbNull(row.resolved_by), `${row.id} resolved_by should clear`).toBe(true);
         }
 
         // Double-undo is refused (all-failed → non-2xx).

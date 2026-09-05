@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.4] - 2026-09-05
+
+### Changed — 50 pairs per page, mass-merge up to 50
+
+Page size raised 20 → 50 (50 pairs × 4 enrichment queries stays under the Workers
+subrequest ceiling; noted inline not to raise further without batching the enrichment). A
+mass-merge selection may now absorb up to 50 profiles: the server keeps its 10-per-request
+cap, and the panel transparently splits bigger selections into sequential batches — one
+click either way, with aggregated results and a single undo banner covering the lot (undo
+batches the same way, newest-first preserved across batches; a transport failure stops
+later batches rather than merging into a survivor in unknown state).
+
+### Fixed — merge-undo e2e green on CI
+
+First CI run of `merge-undo.authed.spec.ts` failed on an environment quirk: wrangler's
+`--json` output renders SQL NULL as the string "null" on the runner, so `toBeNull()`
+assertions on nullable columns can never pass there. Null checks now go through a
+normalizer that accepts both. (DB state was verified correct — the failure was purely the
+assertion encoding.)
+
 ## [2.55.3] - 2026-09-05
 
 ### Fixed — undo hardening: crash-retryable, subrequest-safe, and now tested
