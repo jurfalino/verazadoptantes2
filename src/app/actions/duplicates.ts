@@ -143,6 +143,7 @@ export async function mergeAdopters(
                 addressInfo: primary.addressInfo,
                 familyMembers: primary.familyMembers,
                 sourceUrl: primary.sourceUrl,
+                isPublic: primary.isPublic,
             },
             placementIds: [],
             adopterEventIds: [],
@@ -212,6 +213,15 @@ export async function mergeAdopters(
 
         if (secondary.sourceUrl && !primary.sourceUrl) {
             updates.sourceUrl = secondary.sourceUrl;
+        }
+
+        // Public status travels with the evidence: if EITHER side was marked
+        // publicly known, the merged profile stays public — the survivor just
+        // absorbed the publicly-sourced record. Silently dropping this (as
+        // merges did before v2.55.10) re-protected 4 prod profiles whose
+        // absorbed twin carried links to public sources.
+        if (secondary.isPublic && !primary.isPublic) {
+            updates.isPublic = 1;
         }
 
         // 6b. Merge structured contact entries, and carry the secondary's name
@@ -419,6 +429,8 @@ interface MergeUndoPayload {
         addressInfo: string | null;
         familyMembers: string | null;
         sourceUrl: string | null;
+        /** Absent in payloads written before v2.55.10 — undo leaves the flag as-is then. */
+        isPublic?: number;
     };
     placementIds: string[];
     adopterEventIds: string[];
@@ -540,6 +552,8 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
             addressInfo: undo.primarySnapshot.addressInfo,
             familyMembers: undo.primarySnapshot.familyMembers,
             sourceUrl: undo.primarySnapshot.sourceUrl,
+            // Pre-v2.55.10 payloads have no isPublic — leave the flag alone then.
+            ...(undo.primarySnapshot.isPublic !== undefined ? { isPublic: undo.primarySnapshot.isPublic } : {}),
             tokenHash: null,
             updatedAt: new Date(),
         }).where(eq(adopters.id, primaryId));

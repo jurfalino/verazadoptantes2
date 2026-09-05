@@ -73,6 +73,10 @@ test.describe('Duplicate mass-merge and undo', () => {
         seedAdopter(C, NAME_C, 'gamma-contact 3333-4444');
         seedCandidate(CAND_AB, A, B);
         seedCandidate(CAND_BC, B, C);
+        // B is marked publicly known — the merge must carry the flag onto the
+        // survivor (public status travels with the absorbed evidence), and
+        // undo must take it back off.
+        execD1(`UPDATE adopters SET is_public = 1 WHERE id = '${B}'`);
 
         // ── Mass-merge B and C into A through the real endpoint (admin session).
         const mergeRes = await page.request.post('/api/admin/duplicates/merge', {
@@ -99,9 +103,10 @@ test.describe('Duplicate mass-merge and undo', () => {
         }
 
         const survivor = parseD1Rows(execD1(
-            `SELECT contact_info, contact_entries, deleted_at FROM adopters WHERE id = '${A}'`,
+            `SELECT contact_info, contact_entries, deleted_at, is_public FROM adopters WHERE id = '${A}'`,
         ))[0];
         expect(isDbNull(survivor.deleted_at), 'survivor must stay live').toBe(true);
+        expect(Number(survivor.is_public), 'public flag travels with absorbed B').toBe(1);
         // Absorbed contact blobs appended; absorbed names carried as aliases.
         expect(String(survivor.contact_info)).toContain('beta-contact');
         expect(String(survivor.contact_info)).toContain('gamma-contact');
@@ -137,9 +142,10 @@ test.describe('Duplicate mass-merge and undo', () => {
         }
 
         const restored = parseD1Rows(execD1(
-            `SELECT contact_info, contact_entries FROM adopters WHERE id = '${A}'`,
+            `SELECT contact_info, contact_entries, is_public FROM adopters WHERE id = '${A}'`,
         ))[0];
         expect(restored.contact_info).toBe('alpha-contact-original');
+        expect(Number(restored.is_public), 'undo reverts the inherited public flag').toBe(0);
         // The auto-aliases came with the merge; undo must take them back out.
         expect(String(restored.contact_entries ?? '')).not.toContain(NAME_B);
         expect(String(restored.contact_entries ?? '')).not.toContain(NAME_C);

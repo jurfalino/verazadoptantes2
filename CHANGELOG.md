@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.10] - 2026-09-05
+
+### Fixed — merges silently re-protected publicly-known profiles
+
+`mergeAdopters` never considered `is_public`: absorbing a record marked publicly known
+(public-source links) into a private survivor dropped the flag — the first batch-merge
+session re-protected 4 prod profiles this way (Sebastián Vazquez among them). The merge
+now carries the flag: if EITHER side was public, the survivor stays public (public status
+travels with the absorbed evidence). Undo snapshots and restores the survivor's original
+flag (pre-v2.55.10 payloads leave it untouched). E2E extended: public flag propagates on
+merge and reverts on undo. The 4 affected prod profiles need a one-time backfill (or the
+existing Admin → Adopters visibility toggle, which was always the manual path).
+
 ## [2.55.9] - 2026-09-05
 
 ### Fixed — relative-name searches now score, rank and explain themselves
