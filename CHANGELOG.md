@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.11] - 2026-09-05
+
+### Added — post-merge success toast with a link to the resulting profile
+
+After any merge (pair, mass, or batch) the panel shows a success toast for 15 seconds
+with "Abrir el perfil resultante →" (shown when the action has a single surviving
+profile — pair/mass merges and single-pair batches; multi-survivor batches show the
+count only). Deshacer deliberately outlives the toast: when it auto-hides, a compact
+"↩︎ Deshacer última fusión" chip remains until the next action — the undo safety net
+that replaced the confirm() dialogs must not expire on a timer. Batch results now carry
+each pair's surviving profile id to power the link.
+
 ## [2.55.10] - 2026-09-05
 
 ### Fixed — merges silently re-protected publicly-known profiles
