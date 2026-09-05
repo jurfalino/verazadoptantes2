@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.2] - 2026-09-05
+
+### Changed — mass-merge is now checkbox selection, not auto-detected groups
+
+v2.55.0's mass-merge only appeared when a connected cluster happened to sit on one page of
+results — invisible whenever a trio's pairs straddled a page boundary, and undiscoverable
+("select multiple records" reads as checkboxes, not as a computed group card). Replaced:
+every pending pair card has a checkbox; ticking any shows a floating bottom bar with the
+pooled profile count and a "Fusionar seleccionados" button that opens the survivor-picker
+modal over the union of the ticked pairs' records. Selection survives paging (tick on page
+1, keep ticking on page 3), clears after any merge/undo, and the modal enforces the
+10-profiles-per-merge server cap inline. The auto-grouped "Grupos conectados" section is
+gone.
+
 ## [2.55.1] - 2026-09-05
 
 ### Changed — merge is 2 clicks, guarded by undo instead of a confirm dialog
